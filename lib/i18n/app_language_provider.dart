@@ -145,6 +145,8 @@ const Map<AppLanguage, Map<String, String>> _localizedValues = {
     'dark_mode_subtitle': '夜间使用更低眩光的配色。',
     'multi_thread_playback': '多线程播放',
     'multi_thread_playback_subtitle': '开启后可同时播放多首音频；关闭后始终只保留一个播放会话。',
+    'notification_bar': '通知栏',
+    'notification_bar_subtitle': '在通知栏中显示播放控制和当前播放信息。',
     'allow_background_run': '允许后台运行',
     'allow_background_run_subtitle': '打开系统设置，将本应用设为不限制电量/允许后台运行，降低息屏后被系统限制的概率。',
     'allow_background_run_ready': '系统已允许本应用后台运行，息屏播放会更稳定。',
@@ -312,6 +314,8 @@ const Map<AppLanguage, Map<String, String>> _localizedValues = {
     'dark_mode_subtitle': '夜間に眩しさを抑えた配色を使います。',
     'multi_thread_playback': 'マルチスレッド再生',
     'multi_thread_playback_subtitle': 'オンにすると複数音声を同時再生し、オフでは再生セッションを1つだけ保持します。',
+    'notification_bar': '通知バー',
+    'notification_bar_subtitle': '通知バーに再生コントロールと現在の再生情報を表示します。',
     'allow_background_run': 'バックグラウンド実行を許可',
     'allow_background_run_subtitle': 'システム設定でこのアプリを電池制限の対象外にし、画面オフ時の制限を減らします。',
     'allow_background_run_ready': 'このアプリのバックグラウンド実行は許可されています。画面オフ再生がより安定します。',
@@ -487,6 +491,8 @@ const Map<AppLanguage, Map<String, String>> _localizedValues = {
     'multi_thread_playback': 'Multi-thread playback',
     'multi_thread_playback_subtitle':
         'When on, multiple tracks can play together. When off, only one playback session is kept.',
+    'notification_bar': 'Notification bar',
+    'notification_bar_subtitle': 'Show playback controls and current track info in the notification bar.',
     'allow_background_run': 'Allow background run',
     'allow_background_run_subtitle':
         'Open system settings and set this app to unrestricted/allowed in the background to reduce screen-off restrictions.',

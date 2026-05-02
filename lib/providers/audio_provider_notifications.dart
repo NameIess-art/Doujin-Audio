@@ -1,14 +1,12 @@
 part of 'audio_provider.dart';
 
 extension AudioProviderNotifications on AudioProvider {
-  bool get _usesNativePlaybackAuthority => false;
-
   bool get _hasActivePlaybackSession => activeSessions.any(
     (session) => session.state.playing || session.isLoading,
   );
 
   void _bindNotificationHandler() {
-    _notificationHandler.bindCallbacks(
+    _notificationService.bindCallbacks(
       onPlay: playPrimarySessionFromNotification,
       onPlayFromMediaId: playNotificationSessionById,
       onPause: pausePrimarySessionFromNotification,
@@ -172,13 +170,8 @@ extension AudioProviderNotifications on AudioProvider {
   }
 
   Future<void> dismissNotificationsAfterPauseAll() async {
-    if (!_multiThreadPlaybackEnabled) {
-      _notificationsDismissedWhilePaused = false;
-      _syncNotificationState(immediateUnifiedSync: true);
-      _notifyListeners();
-      return;
-    }
     _notificationsDismissedWhilePaused = true;
+    await NativePlaybackBridge.instance.dismissNotifications();
     await _stopPlaybackKeepAliveOnPlatform();
     if (_multiThreadPlaybackEnabled) {
       await clearAllSessions();
@@ -186,13 +179,22 @@ extension AudioProviderNotifications on AudioProvider {
       await pauseAllSessions();
     }
     await _clearUnifiedPlaybackNotificationsOnPlatform();
-    _notificationHandler.updateSnapshot(null);
+    _notificationService.updateSnapshot(null);
+    await AudioService.stopService();
     _notificationFocusSessionId = _preferredSingleSessionId;
     _syncKeepCpuAwake();
     _notifyListeners();
   }
 
   Future<void> restoreNotificationsAfterSystemClear() async {
+    _notificationsDismissedWhilePaused = false;
+    _unifiedNotificationSyncKey = null;
+    _syncNotificationState(immediateUnifiedSync: true);
+    _notifyListeners();
+  }
+
+  void resyncNotificationsAfterResume() {
+    if (!_notificationsDismissedWhilePaused) return;
     _notificationsDismissedWhilePaused = false;
     _unifiedNotificationSyncKey = null;
     _syncNotificationState(immediateUnifiedSync: true);
@@ -311,76 +313,6 @@ extension AudioProviderNotifications on AudioProvider {
     await _startSessionPlayback(session, shouldStartTriggerCountdown: true);
   }
 
-  AudioProcessingState _mapProcessingState(ProcessingState state) {
-    switch (state) {
-      case ProcessingState.idle:
-        return AudioProcessingState.idle;
-      case ProcessingState.loading:
-        return AudioProcessingState.loading;
-      case ProcessingState.buffering:
-        return AudioProcessingState.buffering;
-      case ProcessingState.ready:
-        return AudioProcessingState.ready;
-      case ProcessingState.completed:
-        return AudioProcessingState.completed;
-    }
-  }
-
-  PlaybackNotificationSnapshot? _buildNotificationSnapshot() {
-    final sessions = _notificationQueueSessions;
-    if (sessions.isEmpty) {
-      _notificationFocusSessionId = null;
-      return null;
-    }
-
-    if (sessions.length > 1 && _multiThreadPlaybackEnabled) {
-      final hasPlayingSession = sessions.any(
-        (session) => session.state.playing,
-      );
-      final focusedSession = _notificationFocusedSession;
-      if (focusedSession == null) return null;
-      _notificationFocusSessionId = focusedSession.id;
-      final mediaItem = _summaryMediaItemForSessions(sessions);
-
-      return PlaybackNotificationSnapshot(
-        queue: <MediaItem>[mediaItem],
-        queueIndex: 0,
-        mediaItem: mediaItem,
-        playing: hasPlayingSession,
-        processingState: _mapProcessingState(
-          focusedSession.state.processingState,
-        ),
-        updatePosition: Duration.zero,
-        bufferedPosition: Duration.zero,
-        speed: 1.0,
-        hasPrevious: false,
-        hasNext: false,
-        showTransportControls: false,
-      );
-    }
-
-    final session = _notificationFocusedSession;
-    if (session == null) return null;
-
-    _notificationFocusSessionId = session.id;
-    final mediaItem = _mediaItemForSession(session);
-    final previousPath = _nextPathFor(session, forward: false);
-    final nextPath = _nextPathFor(session, forward: true);
-
-    return PlaybackNotificationSnapshot(
-      queue: <MediaItem>[mediaItem],
-      queueIndex: 0,
-      mediaItem: mediaItem,
-      playing: session.state.playing,
-      processingState: _mapProcessingState(session.state.processingState),
-      updatePosition: session.position,
-      bufferedPosition: session.bufferedPosition,
-      speed: session.speed,
-      hasPrevious: previousPath != null,
-      hasNext: nextPath != null,
-    );
-  }
-
   String _notificationTitleForSession(PlaybackSession session) {
     final track = trackByPath(session.currentTrackPath);
     return track?.displayName ??
@@ -410,61 +342,6 @@ extension AudioProviderNotifications on AudioProvider {
       return '${titles[0]} / ${titles[1]}';
     }
     return '${titles.first} +${titles.length - 1}';
-  }
-
-  MediaItem _summaryMediaItemForSessions(List<PlaybackSession> sessions) {
-    final titles = _notificationOverviewTitles(sessions);
-    return MediaItem(
-      id: 'notification_summary',
-      title: 'AudioPlayer',
-      album: 'AudioPlayer',
-      artist: _notificationSummaryText(sessions),
-      displayTitle: 'AudioPlayer',
-      displaySubtitle: _notificationSummaryText(sessions),
-      displayDescription: null,
-      extras: <String, dynamic>{
-        AudioProvider._androidGroupSummaryKey: 1,
-        'android_group_key': AudioProvider._androidNotificationGroupKey,
-        AudioProvider._androidSummaryTitleKey: 'AudioPlayer',
-        AudioProvider._androidSummaryTextKey: _notificationSummaryText(
-          sessions,
-        ),
-        AudioProvider._androidSummaryLinesKey: titles.join('\n'),
-      },
-    );
-  }
-
-  MediaItem _mediaItemForSession(PlaybackSession session) {
-    final track = trackByPath(session.currentTrackPath);
-    final displayName = _notificationTitleForSession(session);
-    final groupTitle = track?.groupTitle ?? 'Audio';
-    final notificationSubtitle = _notificationSubtitleForSession(session);
-    return MediaItem(
-      id: session.id,
-      title: displayName,
-      album: groupTitle,
-      artist: notificationSubtitle ?? groupTitle,
-      artUri: _notificationArtUriForTrack(track),
-      duration: session.duration,
-      displayTitle: displayName,
-      displaySubtitle: notificationSubtitle ?? groupTitle,
-      displayDescription: notificationSubtitle ?? groupTitle,
-      extras: const <String, dynamic>{},
-    );
-  }
-
-  Uri? _notificationArtUriForTrack(MusicTrack? track) {
-    final coverSearchKey = _notificationCoverSearchKey(track);
-    if (coverSearchKey == null) {
-      return null;
-    }
-    final coverPath = _resolvedNotificationCoverPaths[coverSearchKey];
-    if (!_resolvedNotificationCoverPaths.containsKey(coverSearchKey)) {
-      unawaited(_resolveNotificationCoverPathForTrack(track));
-      return null;
-    }
-    if (coverPath == null || coverPath.isEmpty) return null;
-    return Uri.file(coverPath);
   }
 
   String? coverPathForTrack(MusicTrack? track) {
@@ -658,15 +535,7 @@ extension AudioProviderNotifications on AudioProvider {
 
   Future<void> _clearUnifiedPlaybackNotificationsOnPlatform() async {
     _unifiedNotificationSyncKey = null;
-    try {
-      await AudioProvider._notificationsChannel.invokeMethod<void>(
-        'clearUnifiedPlaybackNotifications',
-      );
-    } on MissingPluginException {
-      // The Android notifications channel is not available on this platform.
-    } catch (e) {
-      debugPrint('AudioProvider._clearUnifiedPlaybackNotifications error: $e');
-    }
+    await _notificationService.clearUnifiedNotifications();
   }
 
   Future<void> _stopPlaybackKeepAliveOnPlatform() async {
@@ -682,52 +551,33 @@ extension AudioProviderNotifications on AudioProvider {
   }
 
   void _syncNotificationState({bool immediateUnifiedSync = false}) {
-    if (_usesNativePlaybackAuthority) {
-      _notificationHandler.updateSnapshot(null);
-      if (immediateUnifiedSync || activeSessions.isEmpty) {
-        _unifiedNotificationSyncTimer?.cancel();
-        _unifiedNotificationSyncTimer = null;
-        _requestUnifiedPlaybackNotificationFlush();
-      } else {
-        _scheduleUnifiedPlaybackNotificationSync();
-      }
+    if (!_notificationsEnabled) {
+      _unifiedNotificationSyncTimer?.cancel();
+      _unifiedNotificationSyncTimer = null;
+      _notificationService.updateSnapshot(null);
+      _clearUnifiedPlaybackNotificationsOnPlatform();
       return;
     }
 
     if (_notificationsDismissedWhilePaused && !_hasPlaybackToKeepAlive) {
       _unifiedNotificationSyncTimer?.cancel();
       _unifiedNotificationSyncTimer = null;
-      _notificationHandler.updateSnapshot(null);
+      _notificationService.updateSnapshot(null);
       _requestUnifiedPlaybackNotificationFlush();
       return;
     }
 
-    if (_shouldUseUnifiedPlaybackNotifications) {
-      _notificationHandler.updateSnapshot(null);
-      if (immediateUnifiedSync) {
-        _unifiedNotificationSyncTimer?.cancel();
-        _unifiedNotificationSyncTimer = null;
-        _requestUnifiedPlaybackNotificationFlush();
-      } else {
-        _scheduleUnifiedPlaybackNotificationSync();
-      }
-      return;
-    }
-
-    _unifiedNotificationSyncTimer?.cancel();
-    _unifiedNotificationSyncTimer = null;
-    _notificationHandler.updateSnapshot(_buildNotificationSnapshot());
-    _requestUnifiedPlaybackNotificationFlush();
-  }
-
-  void _scheduleUnifiedPlaybackNotificationSync() {
-    if (!_usesNativePlaybackAuthority &&
-        !_shouldUseUnifiedPlaybackNotifications) {
+    _notificationService.updateSnapshot(null);
+    if (immediateUnifiedSync) {
       _unifiedNotificationSyncTimer?.cancel();
       _unifiedNotificationSyncTimer = null;
       _requestUnifiedPlaybackNotificationFlush();
-      return;
+    } else {
+      _scheduleUnifiedPlaybackNotificationSync();
     }
+  }
+
+  void _scheduleUnifiedPlaybackNotificationSync() {
     if (_unifiedNotificationSyncTimer != null) {
       return;
     }
@@ -754,10 +604,8 @@ extension AudioProviderNotifications on AudioProvider {
       while (_unifiedNotificationSyncPending) {
         _unifiedNotificationSyncPending = false;
         final shouldShowUnifiedNotifications =
-            !_notificationsDismissedWhilePaused &&
-            (_usesNativePlaybackAuthority
-                ? activeSessions.isNotEmpty
-                : _shouldUseUnifiedPlaybackNotifications);
+            _notificationsEnabled &&
+            !_notificationsDismissedWhilePaused;
         if (!shouldShowUnifiedNotifications) {
           await _clearUnifiedPlaybackNotificationsOnPlatform();
           continue;
@@ -811,21 +659,12 @@ extension AudioProviderNotifications on AudioProvider {
 
   Future<void> _syncUnifiedPlaybackNotifications() async {
     final isMultiMode = _multiThreadPlaybackEnabled;
-    final playingSessions = activeSessions
-        .where((session) => session.state.playing || session.isPlaybackStarting)
-        .toList(growable: false);
     final mainSession = _focusedSessionFrom(
-      isMultiMode ? activeSessions : playingSessions,
+      isMultiMode ? activeSessions : _singleThreadNotificationSessions,
     );
-    final sessionsToShow = _usesNativePlaybackAuthority
-        ? (isMultiMode
-              ? activeSessions
-              : mainSession == null
-              ? const <PlaybackSession>[]
-              : <PlaybackSession>[mainSession])
-        : (_shouldUseUnifiedPlaybackNotifications
-              ? activeSessions
-              : const <PlaybackSession>[]);
+    final sessionsToShow = isMultiMode
+        ? activeSessions
+        : (mainSession == null ? const <PlaybackSession>[] : <PlaybackSession>[mainSession]);
     final showUnifiedSummary = sessionsToShow.isNotEmpty;
     final summaryText = showUnifiedSummary
         ? _notificationSummaryText(sessionsToShow)
@@ -869,34 +708,22 @@ extension AudioProviderNotifications on AudioProvider {
       return;
     }
 
-    try {
-      if (payload.isEmpty) {
-        await _clearUnifiedPlaybackNotificationsOnPlatform();
-      } else {
-        await AudioProvider._notificationsChannel.invokeMethod<void>(
-          'syncUnifiedPlaybackNotifications',
-          <String, dynamic>{
-            'mode': isMultiMode ? 'multi' : 'single',
-            'styleVariant': styleVariant,
-            'mainSessionId': mainSession?.id,
-            'items': payload,
-            'showSummary': showUnifiedSummary,
-            'summaryText': summaryText,
-            'summaryLines': summaryLines,
-            'suppressRebuild': suppressRebuild,
-          },
-        );
-      }
-      if (!suppressRebuild) {
-        _unifiedNotificationSyncKey = nextSyncKey;
-      }
-    } on MissingPluginException {
-      debugPrint(
-        'AudioProvider._syncUnifiedPlaybackNotifications: notifications '
-        'channel not ready yet; will retry on next sync.',
-      );
-    } catch (e) {
-      debugPrint('AudioProvider._syncUnifiedPlaybackNotifications error: $e');
+    if (payload.isEmpty) {
+      await _clearUnifiedPlaybackNotificationsOnPlatform();
+    } else {
+      await _notificationService.syncUnifiedNotifications(<String, dynamic>{
+        'mode': isMultiMode ? 'multi' : 'single',
+        'styleVariant': styleVariant,
+        'mainSessionId': mainSession?.id,
+        'items': payload,
+        'showSummary': showUnifiedSummary,
+        'summaryText': summaryText,
+        'summaryLines': summaryLines,
+        'suppressRebuild': suppressRebuild,
+      });
+    }
+    if (!suppressRebuild) {
+      _unifiedNotificationSyncKey = nextSyncKey;
     }
   }
 

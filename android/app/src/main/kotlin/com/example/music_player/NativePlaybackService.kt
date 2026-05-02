@@ -1,18 +1,14 @@
 package com.example.music_player
 
-import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.content.pm.ServiceInfo
 import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
-import androidx.core.app.NotificationCompat
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
@@ -37,6 +33,12 @@ class NativePlaybackService : MediaSessionService() {
         @Volatile
         private var instance: NativePlaybackService? = null
 
+        @Volatile
+        var foregroundSuppressed = false
+
+        @Volatile
+        var notificationsDismissed = false
+
         fun controller(): NativePlaybackService? = instance
     }
 
@@ -47,7 +49,7 @@ class NativePlaybackService : MediaSessionService() {
     private var focusedSessionId: String? = null
     private var tickerScheduled = false
     private var foregroundWatchdogScheduled = false
-    private var foregroundStarted = false
+    private var playbackSuspended = false
     private var playbackWakeLock: PowerManager.WakeLock? = null
     private val positionTicker = object : Runnable {
         override fun run() {
@@ -137,29 +139,46 @@ class NativePlaybackService : MediaSessionService() {
         val autoPlay = args["autoPlay"] as? Boolean ?: false
         val volume = (args["volume"] as? Number)?.toFloat() ?: 1f
         val repeatOne = args["repeatOne"] as? Boolean ?: false
+        if (autoPlay) {
+            notificationsDismissed = false
+            playbackSuspended = false
+        }
 
         val nativeSession = sessions.getOrPut(sessionId) {
             NativePlaybackSession(sessionId, createPlayer(sessionId))
         }
-        nativeSession.configure(
-            uri = uri,
-            title = title,
-            subtitle = subtitle,
-            artUri = artUri,
-            startPositionMs = startPositionMs,
-            volume = volume,
-            repeatOne = repeatOne,
-            autoPlay = autoPlay
-        )
-        focusSession(sessionId)
-        publishSessionState(sessionId)
-        ensureTicker()
-        syncForegroundState()
-        return okResult(nativeSession.snapshot())
+        return try {
+            nativeSession.configure(
+                uri = uri,
+                title = title,
+                subtitle = subtitle,
+                artUri = artUri,
+                startPositionMs = startPositionMs,
+                volume = volume,
+                repeatOne = repeatOne,
+                autoPlay = autoPlay
+            )
+            focusSession(sessionId)
+            publishSessionState(sessionId)
+            ensureTicker()
+            syncForegroundState()
+            okResult(nativeSession.snapshot())
+        } catch (e: Exception) {
+            sessions.remove(sessionId)
+            nativeSession.release()
+            if (focusedSessionId == sessionId) {
+                focusedSessionId = sessions.keys.firstOrNull()
+                updateMediaSessionPlayer()
+            }
+            syncForegroundState()
+            errorResult("Failed to prepare session: ${e.message}")
+        }
     }
 
     fun play(sessionId: String): Map<String, Any?> {
         val session = sessions[sessionId] ?: return errorResult("Unknown session.")
+        notificationsDismissed = false
+        playbackSuspended = false
         focusSession(sessionId)
         session.player.play()
         publishSessionState(sessionId)
@@ -195,7 +214,6 @@ class NativePlaybackService : MediaSessionService() {
     fun setVolume(sessionId: String, volume: Float): Map<String, Any?> {
         val session = sessions[sessionId] ?: return errorResult("Unknown session.")
         session.player.volume = volume.coerceIn(0f, 1f)
-        publishSessionState(sessionId)
         return okResult(session.snapshot())
     }
 
@@ -206,7 +224,6 @@ class NativePlaybackService : MediaSessionService() {
         } else {
             Player.REPEAT_MODE_OFF
         }
-        publishSessionState(sessionId)
         return okResult(session.snapshot())
     }
 
@@ -229,15 +246,20 @@ class NativePlaybackService : MediaSessionService() {
     }
 
     fun pauseAll(): Map<String, Any?> {
+        notificationsDismissed = true
         sessions.values.forEach { it.player.pause() }
         publishAllSessionStates()
         stopForegroundWatchdog()
         releasePlaybackWakeLock()
+        mediaSession?.release()
+        mediaSession = null
+        playbackSuspended = true
         stopPlaybackForeground(removeNotification = sessions.isEmpty())
         return okResult(null)
     }
 
     fun clearAll(): Map<String, Any?> {
+        notificationsDismissed = true
         sessions.values.forEach { it.release() }
         sessions.clear()
         focusedSessionId = null
@@ -254,6 +276,36 @@ class NativePlaybackService : MediaSessionService() {
             "sessions" to sessions.values.map { it.snapshot() },
             "focusedSessionId" to focusedSessionId
         )
+    }
+
+    fun setForegroundEnabled(enabled: Boolean): Map<String, Any?> {
+        foregroundSuppressed = !enabled
+        if (!enabled) {
+            notificationsDismissed = true
+            stopForegroundWatchdog()
+            stopPlaybackForeground(removeNotification = true)
+            mediaSession?.release()
+            mediaSession = null
+        } else {
+            notificationsDismissed = false
+            updateMediaSessionPlayer()
+            if (hasActivePlayback()) {
+                ensureForegroundWatchdog()
+            }
+        }
+        return okResult(null)
+    }
+
+    fun dismissNotifications(): Map<String, Any?> {
+        notificationsDismissed = true
+        mediaSession?.release()
+        mediaSession = null
+        return okResult(null)
+    }
+
+    fun undismissNotifications(): Map<String, Any?> {
+        notificationsDismissed = false
+        return okResult(null)
     }
 
     private fun createPlayer(sessionId: String): ExoPlayer {
@@ -295,8 +347,12 @@ class NativePlaybackService : MediaSessionService() {
     }
 
     private fun ensureMediaSession(): MediaSession? {
+        if (notificationsDismissed) return null
+        if (foregroundSuppressed) return null
+        if (playbackSuspended) return null
         mediaSession?.let { return it }
         val player = sessions[focusedSessionId]?.player ?: return null
+        if (!player.playWhenReady && !player.isPlaying) return null
         return MediaSession.Builder(this, player)
             .setId("AudioPlayer")
             .build()
@@ -337,43 +393,20 @@ class NativePlaybackService : MediaSessionService() {
     }
 
     private fun startPlaybackForeground() {
-        if (!hasActivePlayback()) return
-        if (foregroundStarted) return
-        val notification = buildForegroundNotification()
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                startForeground(
-                    FOREGROUND_NOTIFICATION_ID,
-                    notification,
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
-                )
-            } else {
-                startForeground(FOREGROUND_NOTIFICATION_ID, notification)
-            }
-            foregroundStarted = true
-        } catch (_: Exception) {
-            foregroundStarted = false
-        }
+        // audio_service's AudioService provides the foreground notification
+        // with transport controls. Since both services run in the same
+        // process, this service does not need its own startForeground() call.
     }
 
     private fun stopPlaybackForeground(removeNotification: Boolean = true) {
-        if (!foregroundStarted) return
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            stopForeground(
-                if (removeNotification) {
-                    STOP_FOREGROUND_REMOVE
-                } else {
-                    STOP_FOREGROUND_DETACH
-                }
-            )
-        } else {
-            @Suppress("DEPRECATION")
-            stopForeground(removeNotification)
+        if (removeNotification) {
+            val manager = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+            manager?.cancel(FOREGROUND_NOTIFICATION_ID)
         }
-        foregroundStarted = false
     }
 
     private fun ensureForegroundWatchdog() {
+        if (foregroundSuppressed) return
         if (foregroundWatchdogScheduled) return
         foregroundWatchdogScheduled = true
         mainHandler.postDelayed(foregroundWatchdog, FOREGROUND_WATCHDOG_INTERVAL_MS)
@@ -407,52 +440,6 @@ class NativePlaybackService : MediaSessionService() {
             wakeLock.release()
         }
         playbackWakeLock = null
-    }
-
-    private fun buildForegroundNotification(): Notification {
-        val focusedSession = sessions[focusedSessionId]
-        val displaySession = focusedSession ?: sessions.values.firstOrNull()
-        val playingCount = sessions.values.count { it.player.isPlaying || it.player.playWhenReady }
-        val title = displaySession?.title?.takeIf { it.isNotBlank() } ?: "AudioPlayer"
-        val text = when {
-            playingCount > 1 -> "${playingCount} 首音频正在播放"
-            !displaySession?.subtitle.isNullOrBlank() -> displaySession?.subtitle
-            else -> "正在播放"
-        }
-        return NotificationCompat.Builder(this, PLAYBACK_CHANNEL_ID)
-            .setSmallIcon(R.mipmap.ic_launcher)
-            .setContentTitle(title)
-            .setContentText(text)
-            .setContentIntent(buildContentIntent())
-            .setCategory(NotificationCompat.CATEGORY_TRANSPORT)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            .setOnlyAlertOnce(true)
-            .setOngoing(true)
-            .setSilent(true)
-            .setShowWhen(false)
-            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
-            .apply {
-                if (sessions.size > 1) {
-                    setGroup(PLAYBACK_GROUP_KEY)
-                    setGroupSummary(true)
-                    setGroupAlertBehavior(NotificationCompat.GROUP_ALERT_SUMMARY)
-                    setSortKey("0_summary")
-                }
-            }
-            .build()
-    }
-
-    private fun buildContentIntent(): PendingIntent {
-        val intent = Intent(this, MainActivity::class.java).apply {
-            addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-        }
-        val flags = PendingIntent.FLAG_UPDATE_CURRENT or if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            PendingIntent.FLAG_IMMUTABLE
-        } else {
-            0
-        }
-        return PendingIntent.getActivity(this, FOREGROUND_NOTIFICATION_ID, intent, flags)
     }
 
     private fun ensurePlaybackChannel() {

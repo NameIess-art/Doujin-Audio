@@ -1233,6 +1233,13 @@ class AudioService {
     await _platform.stopService(const StopServiceRequest());
   }
 
+  /// Manually stops the native audio service, removing any foreground
+  /// notification. The service is restarted automatically the next time a
+  /// non-idle [PlaybackState] is emitted by [AudioHandler.playbackState].
+  static Future<void> stopService() async {
+    await _stop();
+  }
+
   static Future<void> _loadAllArtwork(List<MediaItem> queue) async {
     for (var mediaItem in queue) {
       await _loadArtwork(mediaItem);

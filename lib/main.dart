@@ -9,6 +9,7 @@ import 'i18n/app_language_provider.dart';
 import 'providers/audio_provider.dart';
 import 'screens/main_screen.dart';
 import 'services/playback_notification_handler.dart';
+import 'services/playback_notification_service.dart';
 import 'theme/theme_provider.dart';
 
 Future<void> main() async {
@@ -35,6 +36,7 @@ Future<void> main() async {
       androidStopForegroundOnPause: true,
     ),
   );
+  final notificationService = PlaybackNotificationService(audioHandler);
 
   runApp(
     MultiProvider(
@@ -42,7 +44,7 @@ Future<void> main() async {
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
         ChangeNotifierProvider(create: (_) => AppLanguageProvider()),
         ChangeNotifierProvider(
-          create: (_) => AudioProvider(notificationHandler: audioHandler),
+          create: (_) => AudioProvider(notificationService: notificationService),
         ),
       ],
       child: const MusicPlayerApp(),

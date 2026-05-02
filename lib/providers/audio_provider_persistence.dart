@@ -111,6 +111,9 @@ extension AudioProviderPersistence on AudioProvider {
     await _loadPlaybackSettings();
     await _loadConverterSettings();
     await _loadTimerSettings();
+    if (!_notificationsEnabled) {
+      await NativePlaybackBridge.instance.setForegroundEnabled(false);
+    }
     await _loadSessions();
     if (!_multiThreadPlaybackEnabled) {
       await _enforceSingleThreadPlayback();
@@ -167,7 +170,7 @@ extension AudioProviderPersistence on AudioProvider {
           final uri = track.path.startsWith('content://')
               ? Uri.parse(track.path)
               : Uri.file(track.path);
-          await NativePlaybackBridge.instance.prepareSession(
+          final prepareResult = await NativePlaybackBridge.instance.prepareSession(
             sessionId: session.id,
             uri: uri,
             title: track.displayName,
@@ -178,6 +181,9 @@ extension AudioProviderPersistence on AudioProvider {
             repeatOne: loopMode == SessionLoopMode.single,
             autoPlay: false,
           );
+          if ((prepareResult['ok'] as bool?) != true) {
+            continue;
+          }
           session.loadedPath = track.path;
           _ensureSubtitleTrackLoaded(track.path);
           _refreshNotificationSubtitleForSession(
@@ -271,6 +277,8 @@ extension AudioProviderPersistence on AudioProvider {
       final map = json.decode(raw) as Map<String, dynamic>;
       _multiThreadPlaybackEnabled =
           map['multiThreadPlaybackEnabled'] as bool? ?? false;
+      _notificationsEnabled =
+          map['notificationsEnabled'] as bool? ?? true;
     } catch (_) {}
   }
 
@@ -279,6 +287,7 @@ extension AudioProviderPersistence on AudioProvider {
       final prefs = await SharedPreferences.getInstance();
       final encoded = json.encode({
         'multiThreadPlaybackEnabled': _multiThreadPlaybackEnabled,
+        'notificationsEnabled': _notificationsEnabled,
       });
       await prefs.setString(_kPlaybackSettingsKey, encoded);
     } catch (_) {}
@@ -553,6 +562,23 @@ extension AudioProviderPersistence on AudioProvider {
     }
     _unifiedNotificationSyncKey = null;
     await _clearUnifiedPlaybackNotificationsOnPlatform();
+    _syncKeepCpuAwake();
+    _syncNotificationState(immediateUnifiedSync: true);
+    _notifyListeners();
+    unawaited(_savePlaybackSettings());
+  }
+
+  Future<void> setNotificationsEnabled(bool enabled) async {
+    if (_notificationsEnabled == enabled) return;
+    _notificationsEnabled = enabled;
+    _unifiedNotificationSyncKey = null;
+    _notifyListeners();
+    await _notificationService.setEnabled(enabled);
+    if (enabled) {
+      await NativePlaybackBridge.instance.undismissNotifications();
+    } else {
+      await NativePlaybackBridge.instance.dismissNotifications();
+    }
     _syncKeepCpuAwake();
     _syncNotificationState(immediateUnifiedSync: true);
     _notifyListeners();

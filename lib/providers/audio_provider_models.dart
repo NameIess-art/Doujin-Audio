@@ -230,8 +230,19 @@ class PlaybackSession {
 
   void applyNativeSnapshot(NativePlaybackSnapshot snapshot) {
     if (snapshot.sessionId != id) return;
+    // Once native confirms playback, clear the startup guard so
+    // subsequent legitimate pause/stop events are not suppressed.
+    if (isPlaybackStarting && snapshot.playing) {
+      isPlaybackStarting = false;
+    }
+    var effectivePlaying = snapshot.playing;
+    if (isPlaybackStarting &&
+        !effectivePlaying &&
+        snapshot.error == null) {
+      effectivePlaying = true;
+    }
     final nextState = PlayerState(
-      snapshot.playing,
+      effectivePlaying,
       _nativeProcessingState(snapshot.processingState),
     );
     if (state != nextState) {
@@ -273,6 +284,15 @@ class PlaybackSession {
   void setOptimisticPosition(Duration position) {
     lastKnownPosition = position;
     _positionController.add(position);
+  }
+
+  void resetStreamsForNewTrack() {
+    lastKnownPosition = Duration.zero;
+    _positionController.add(Duration.zero);
+    duration = null;
+    _durationController.add(null);
+    bufferedPosition = Duration.zero;
+    _bufferedPositionController.add(Duration.zero);
   }
 
   void dispose() {

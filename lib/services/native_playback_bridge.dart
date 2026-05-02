@@ -156,6 +156,18 @@ class NativePlaybackBridge {
     return _invoke('clearAll');
   }
 
+  Future<Map<dynamic, dynamic>> setForegroundEnabled(bool enabled) {
+    return _invoke('setForegroundEnabled', {'enabled': enabled});
+  }
+
+  Future<Map<dynamic, dynamic>> dismissNotifications() {
+    return _invoke('dismissNotifications');
+  }
+
+  Future<Map<dynamic, dynamic>> undismissNotifications() {
+    return _invoke('undismissNotifications');
+  }
+
   Future<Map<dynamic, dynamic>> snapshot() {
     return _invoke('snapshot');
   }

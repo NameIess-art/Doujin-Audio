@@ -348,6 +348,21 @@ class _SettingsTabState extends State<SettingsTab> with WidgetsBindingObserver {
                     ),
                   ),
                   const SizedBox(height: 8),
+                  SwitchListTile(
+                    value: audioProvider.notificationsEnabled,
+                    onChanged: audioProvider.setNotificationsEnabled,
+                    title: Text(i18n.tr('notification_bar')),
+                    subtitle: Text(
+                      i18n.tr('notification_bar_subtitle'),
+                      style: descStyle,
+                    ),
+                    secondary: const Icon(Icons.notifications_active_rounded),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
                   ListTile(
                     title: Text(i18n.tr('language')),
                     subtitle: Text(

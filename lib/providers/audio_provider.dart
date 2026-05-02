@@ -13,8 +13,9 @@ import 'package:just_audio/just_audio.dart';
 import 'package:path/path.dart' as path;
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../services/playback_notification_handler.dart';
 import '../services/native_playback_bridge.dart';
+import '../services/playback_notification_handler.dart';
+import '../services/playback_notification_service.dart';
 import '../services/subtitle_parser.dart';
 
 part 'audio_provider_models.dart';
@@ -59,11 +60,7 @@ class AudioProvider with ChangeNotifier {
   static const MethodChannel _fileCacheChannel = MethodChannel(
     'music_player/file_cache',
   );
-  static const MethodChannel _notificationsChannel = MethodChannel(
-    'music_player/notifications',
-  );
-
-  final PlaybackNotificationHandler _notificationHandler;
+  final PlaybackNotificationService _notificationService;
   final List<MusicTrack> _library = [];
   final Map<String, MusicTrack> _libraryByPath = {};
   final Map<String, List<MusicTrack>> _tracksByGroup = {};
@@ -98,6 +95,7 @@ class AudioProvider with ChangeNotifier {
   String _converterFormat = 'mp3';
   String _converterBitrate = '320k';
   bool _multiThreadPlaybackEnabled = false;
+  bool _notificationsEnabled = true;
 
   static const List<String> converterFormats = [
     'mp3',
@@ -169,6 +167,7 @@ class AudioProvider with ChangeNotifier {
   String get converterFormat => _converterFormat;
   String get converterBitrate => _converterBitrate;
   bool get multiThreadPlaybackEnabled => _multiThreadPlaybackEnabled;
+  bool get notificationsEnabled => _notificationsEnabled;
 
   List<MusicTrack> get library => List.unmodifiable(_library);
   int get libraryTrackCount => _library.length;
@@ -217,8 +216,8 @@ class AudioProvider with ChangeNotifier {
 
   bool get isScanning => _isScanning;
 
-  AudioProvider({required PlaybackNotificationHandler notificationHandler})
-    : _notificationHandler = notificationHandler {
+  AudioProvider({required PlaybackNotificationService notificationService})
+    : _notificationService = notificationService {
     NativePlaybackBridge.instance.startListening();
     _nativePlaybackSubscription = NativePlaybackBridge.instance.snapshots
         .listen(_handleNativePlaybackSnapshot);

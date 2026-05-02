@@ -10,12 +10,8 @@ import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
-import android.support.v4.media.MediaMetadataCompat
-import android.support.v4.media.session.MediaSessionCompat
-import android.support.v4.media.session.PlaybackStateCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
-import androidx.media.app.NotificationCompat.MediaStyle
 
 class PlaybackKeepAliveService : Service() {
     companion object {
@@ -38,7 +34,6 @@ class PlaybackKeepAliveService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
     private var currentNotificationId: Int? = null
     private var currentForegroundSignature: String? = null
-    private var mediaSession: MediaSessionCompat? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -47,7 +42,6 @@ class PlaybackKeepAliveService : Service() {
             ACTION_STOP -> {
                 stopForegroundCompat()
                 releaseWakeLock()
-                releaseMediaSession()
                 currentForegroundSignature = null
                 currentNotificationId = null
                 stopSelf()
@@ -72,14 +66,12 @@ class PlaybackKeepAliveService : Service() {
                 if (!keepForegroundServiceAlive) {
                     stopForegroundCompat()
                     releaseWakeLock()
-                    releaseMediaSession()
                     currentForegroundSignature = null
                     currentNotificationId = null
                     stopSelf()
                     START_NOT_STICKY
                 } else {
                     createNotificationChannels()
-                    syncMediaSession(hasActivePlayback = hasActivePlayback)
                     val foregroundSignature = listOf(
                         NOTIFICATION_ID,
                         hasActivePlayback,
@@ -122,7 +114,6 @@ class PlaybackKeepAliveService : Service() {
     override fun onDestroy() {
         stopForegroundCompat()
         releaseWakeLock()
-        releaseMediaSession()
         currentForegroundSignature = null
         currentNotificationId = null
         super.onDestroy()
@@ -189,82 +180,9 @@ class PlaybackKeepAliveService : Service() {
                     setGroup(GROUP_KEY)
                     setGroupSummary(true)
                     setSortKey("0_summary")
-                } else {
-                    ensureMediaSession()?.sessionToken?.let { sessionToken ->
-                        setStyle(MediaStyle().setMediaSession(sessionToken))
-                    }
                 }
             }
         return builder.build()
-    }
-
-    private fun syncMediaSession(hasActivePlayback: Boolean) {
-        if (!hasActivePlayback) {
-            releaseMediaSession()
-            return
-        }
-        val session = ensureMediaSession()
-        val playbackState = PlaybackStateCompat.Builder()
-            .setActions(
-                PlaybackStateCompat.ACTION_PLAY or
-                    PlaybackStateCompat.ACTION_PAUSE or
-                    PlaybackStateCompat.ACTION_PLAY_PAUSE or
-                    PlaybackStateCompat.ACTION_STOP
-            )
-            .setState(
-                if (hasActivePlayback) {
-                    PlaybackStateCompat.STATE_PLAYING
-                } else {
-                    PlaybackStateCompat.STATE_PAUSED
-                },
-                PlaybackStateCompat.PLAYBACK_POSITION_UNKNOWN,
-                1f
-            )
-            .build()
-        session.setPlaybackState(playbackState)
-        session.setMetadata(
-            MediaMetadataCompat.Builder()
-                .putString(MediaMetadataCompat.METADATA_KEY_TITLE, "AudioPlayer")
-                .putString(
-                    MediaMetadataCompat.METADATA_KEY_DISPLAY_TITLE,
-                    "AudioPlayer"
-                )
-                .build()
-        )
-        session.isActive = true
-    }
-
-    private fun ensureMediaSession(): MediaSessionCompat {
-        mediaSession?.let { return it }
-        val launchIntent = packageManager.getLaunchIntentForPackage(packageName)?.apply {
-            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
-        }
-        val sessionActivity = launchIntent?.let {
-            PendingIntent.getActivity(
-                this,
-                1,
-                it,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-        }
-        return MediaSessionCompat(this, "$packageName.keepalive").also { session ->
-            session.setFlags(
-                MediaSessionCompat.FLAG_HANDLES_MEDIA_BUTTONS or
-                    MediaSessionCompat.FLAG_HANDLES_TRANSPORT_CONTROLS
-            )
-            if (sessionActivity != null) {
-                session.setSessionActivity(sessionActivity)
-            }
-            mediaSession = session
-        }
-    }
-
-    private fun releaseMediaSession() {
-        mediaSession?.apply {
-            isActive = false
-            release()
-        }
-        mediaSession = null
     }
 
     private fun createNotificationChannels() {

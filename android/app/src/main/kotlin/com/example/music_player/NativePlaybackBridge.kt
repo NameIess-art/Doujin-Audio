@@ -14,8 +14,6 @@ class NativePlaybackBridge(
     private var events: EventChannel.EventSink? = null
     private val listenerId = "flutter"
     private val mainHandler = Handler(Looper.getMainLooper())
-    private var listenerAttached = false
-
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         val service = ensureService()
         attachEventListenerIfNeeded(service)
@@ -46,6 +44,13 @@ class NativePlaybackBridge(
                 ?: mapOf("ok" to false, "error" to "Native playback service is not ready.")
             "clearAll" -> service?.clearAll()
                 ?: mapOf("ok" to true, "value" to null)
+            "setForegroundEnabled" -> service?.setForegroundEnabled(
+                call.argument<Boolean>("enabled") ?: true
+            ) ?: mapOf("ok" to false, "error" to "Native playback service is not ready.")
+            "dismissNotifications" -> service?.dismissNotifications()
+                ?: mapOf("ok" to false, "error" to "Native playback service is not ready.")
+            "undismissNotifications" -> service?.undismissNotifications()
+                ?: mapOf("ok" to false, "error" to "Native playback service is not ready.")
             "snapshot" -> service?.snapshot()
                 ?: mapOf("sessions" to emptyList<Map<String, Any?>>())
             else -> {
@@ -59,15 +64,13 @@ class NativePlaybackBridge(
 
     override fun onListen(arguments: Any?, eventSink: EventChannel.EventSink?) {
         events = eventSink
-        listenerAttached = false
         attachEventListenerIfNeeded(ensureService())
-        mainHandler.postDelayed({ attachEventListenerIfNeeded(NativePlaybackService.controller()) }, 80L)
-        mainHandler.postDelayed({ attachEventListenerIfNeeded(NativePlaybackService.controller()) }, 240L)
+        mainHandler.postDelayed({ attachEventListenerIfNeeded(ensureService()) }, 80L)
+        mainHandler.postDelayed({ attachEventListenerIfNeeded(ensureService()) }, 240L)
     }
 
     override fun onCancel(arguments: Any?) {
         NativePlaybackService.controller()?.removeStateListener(listenerId)
-        listenerAttached = false
         events = null
     }
 
@@ -93,8 +96,7 @@ class NativePlaybackBridge(
     }
 
     private fun attachEventListenerIfNeeded(service: NativePlaybackService?) {
-        if (events == null || service == null || listenerAttached) return
-        listenerAttached = true
+        if (service == null) return
         service.addStateListener(listenerId) { snapshot ->
             events?.success(snapshot)
         }

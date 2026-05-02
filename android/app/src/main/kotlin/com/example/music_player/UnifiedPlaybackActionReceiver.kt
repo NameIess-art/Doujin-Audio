@@ -13,7 +13,7 @@ class UnifiedPlaybackActionReceiver : BroadcastReceiver() {
         private const val dismissAction = "dismiss_all_playback_notifications"
         private const val restoreAction = "restore_playback_notifications"
         private const val dismissNotificationIdExtra = "notificationId"
-        private const val dismissSettleDelayMs = 500L
+        private const val dismissSettleDelayMs = 160L
         private val mainHandler = Handler(Looper.getMainLooper())
         private val pendingDismissIds = linkedSetOf<Int>()
         private var pendingDismissCount = 0

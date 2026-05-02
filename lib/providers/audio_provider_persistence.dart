@@ -204,6 +204,16 @@ extension AudioProviderPersistence on AudioProvider {
           ? restoredIds.first
           : null;
 
+      final snapshotResponse = await NativePlaybackBridge.instance.snapshot();
+      final snapshotValue = snapshotResponse['value'];
+      if (snapshotValue is List) {
+        for (final raw in snapshotValue.whereType<Map<dynamic, dynamic>>()) {
+          _handleNativePlaybackSnapshot(NativePlaybackSnapshot.fromMap(raw));
+        }
+      } else if (snapshotValue is Map) {
+        _handleNativePlaybackSnapshot(NativePlaybackSnapshot.fromMap(snapshotValue));
+      }
+
       _syncNotificationState();
       if (_sessions.isNotEmpty) _notifyListeners();
     } catch (_) {}
@@ -536,6 +546,8 @@ extension AudioProviderPersistence on AudioProvider {
   Future<void> setMultiThreadPlaybackEnabled(bool enabled) async {
     if (_multiThreadPlaybackEnabled == enabled) return;
     _multiThreadPlaybackEnabled = enabled;
+    _multiThreadNotificationRebuildSuppressedUntil = null;
+    _multiThreadNotificationRebuildTimer?.cancel();
     if (!enabled) {
       await _resetSessionsForSingleThreadMode();
     }

@@ -172,6 +172,12 @@ extension AudioProviderNotifications on AudioProvider {
   }
 
   Future<void> dismissNotificationsAfterPauseAll() async {
+    if (!_multiThreadPlaybackEnabled) {
+      _notificationsDismissedWhilePaused = false;
+      _syncNotificationState(immediateUnifiedSync: true);
+      _notifyListeners();
+      return;
+    }
     _notificationsDismissedWhilePaused = true;
     await _stopPlaybackKeepAliveOnPlatform();
     if (_multiThreadPlaybackEnabled) {
@@ -195,7 +201,14 @@ extension AudioProviderNotifications on AudioProvider {
 
   List<PlaybackSession> get _singleThreadNotificationSessions {
     return activeSessions
-        .where((session) => session.state.playing || session.isPlaybackStarting)
+        .where(
+          (session) =>
+              session.state.playing ||
+              session.isPlaybackStarting ||
+              session.state.processingState == ProcessingState.idle ||
+              session.state.processingState == ProcessingState.ready ||
+              session.state.processingState == ProcessingState.completed,
+        )
         .toList(growable: false);
   }
 
@@ -255,7 +268,7 @@ extension AudioProviderNotifications on AudioProvider {
 
     _notificationActionRefreshTimer?.cancel();
     _notificationActionRefreshTimer = Timer(
-      const Duration(milliseconds: 220),
+      const Duration(milliseconds: 80),
       () {
         _notificationActionRefreshTimer = null;
         _syncNotificationState();
@@ -266,7 +279,7 @@ extension AudioProviderNotifications on AudioProvider {
 
   void _suppressMultiThreadNotificationRebuildBriefly() {
     if (!_multiThreadPlaybackEnabled) return;
-    const suppressionWindow = Duration(milliseconds: 1200);
+    const suppressionWindow = Duration(milliseconds: 320);
     final suppressedUntil = DateTime.now().add(suppressionWindow);
     _multiThreadNotificationRebuildSuppressedUntil = suppressedUntil;
     _multiThreadNotificationRebuildTimer?.cancel();
@@ -320,7 +333,7 @@ extension AudioProviderNotifications on AudioProvider {
       return null;
     }
 
-    if (sessions.length > 1) {
+    if (sessions.length > 1 && _multiThreadPlaybackEnabled) {
       final hasPlayingSession = sessions.any(
         (session) => session.state.playing,
       );
@@ -841,8 +854,10 @@ extension AudioProviderNotifications on AudioProvider {
         })
         .toList(growable: false);
 
+    final styleVariant = isMultiMode ? 'multi_thread' : 'single_thread';
     final nextSyncKey = json.encode(<String, dynamic>{
       'mode': isMultiMode ? 'multi' : 'single',
+      'styleVariant': styleVariant,
       'mainSessionId': mainSession?.id,
       'items': payload,
       'showSummary': showUnifiedSummary,
@@ -862,6 +877,7 @@ extension AudioProviderNotifications on AudioProvider {
           'syncUnifiedPlaybackNotifications',
           <String, dynamic>{
             'mode': isMultiMode ? 'multi' : 'single',
+            'styleVariant': styleVariant,
             'mainSessionId': mainSession?.id,
             'items': payload,
             'showSummary': showUnifiedSummary,

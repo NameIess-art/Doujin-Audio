@@ -1934,6 +1934,7 @@ class _ProgressBar extends StatefulWidget {
 
 class _ProgressBarState extends State<_ProgressBar> {
   double? _dragValueMs;
+  bool _isDragging = false;
 
   @override
   Widget build(BuildContext context) {
@@ -1941,7 +1942,7 @@ class _ProgressBarState extends State<_ProgressBar> {
       stream: widget.session.durationStream,
       initialData: widget.session.duration,
       builder: (context, snapshot) {
-        final duration = snapshot.data ?? Duration.zero;
+        final duration = snapshot.data;
         return StreamBuilder<Duration>(
           stream: widget.session.positionStream,
           initialData: widget.session.position,
@@ -1950,26 +1951,37 @@ class _ProgressBarState extends State<_ProgressBar> {
               stream: widget.session.bufferedPositionStream,
               initialData: widget.session.bufferedPosition,
               builder: (context, bufferedSnapshot) {
+                final hasKnownDuration = duration != null;
+                final effectiveDuration = duration ?? Duration.zero;
                 var position = snapshot.data ?? Duration.zero;
-                if (position > duration) position = duration;
+                if (hasKnownDuration && position > effectiveDuration) {
+                  position = effectiveDuration;
+                }
 
                 final buffered = bufferedSnapshot.data ?? Duration.zero;
-                final maxDurationMs = max(1, duration.inMilliseconds);
-                final maxMillis = maxDurationMs.toDouble();
-                final sliderValue =
-                    (_dragValueMs ??
-                            position.inMilliseconds
-                                .clamp(0, maxDurationMs)
-                                .toDouble())
-                        .clamp(0.0, maxMillis);
-                final bufferedValue = buffered.inMilliseconds
-                    .clamp(0, maxDurationMs)
+                final durationMs = hasKnownDuration
+                    ? max(1, effectiveDuration.inMilliseconds)
+                    : max(1, max(position.inMilliseconds, buffered.inMilliseconds));
+                final maxMillis = durationMs.toDouble();
+                final basePositionMs = position.inMilliseconds
+                    .clamp(0, durationMs)
+                    .toDouble();
+                final sliderValue = (_isDragging
+                        ? (_dragValueMs ?? basePositionMs)
+                        : basePositionMs)
+                    .clamp(0.0, maxMillis);
+                final bufferedValue = (_isDragging
+                        ? max(buffered.inMilliseconds, sliderValue.round())
+                        : buffered.inMilliseconds)
+                    .clamp(0, durationMs)
                     .toDouble();
                 final shownPosition = Duration(
-                  milliseconds: sliderValue.round().clamp(0, maxDurationMs),
+                  milliseconds: sliderValue.round().clamp(0, durationMs),
                 );
-                final remaining = duration - shownPosition;
-                final canSeek = duration.inMilliseconds > 0;
+                final remaining = hasKnownDuration
+                    ? (effectiveDuration - shownPosition)
+                    : Duration.zero;
+                final canSeek = hasKnownDuration && effectiveDuration.inMilliseconds > 0;
 
                 return Column(
                   children: [
@@ -1993,6 +2005,7 @@ class _ProgressBarState extends State<_ProgressBar> {
                             : (value) {
                                 HapticFeedback.selectionClick();
                                 setState(() {
+                                  _isDragging = true;
                                   _dragValueMs = value;
                                 });
                               },
@@ -2008,6 +2021,7 @@ class _ProgressBarState extends State<_ProgressBar> {
                             : (value) {
                                 HapticFeedback.selectionClick();
                                 setState(() {
+                                  _isDragging = false;
                                   _dragValueMs = null;
                                 });
                                 widget.provider.seekSession(
@@ -2024,9 +2038,9 @@ class _ProgressBarState extends State<_ProgressBar> {
                         children: [
                           _TimecodeLabel(text: _fmt(shownPosition)),
                           _TimecodeLabel(
-                            text: canSeek
+                            text: hasKnownDuration
                                 ? '-${_fmt(remaining.isNegative ? Duration.zero : remaining)}'
-                                : _fmt(duration),
+                                : '--:--',
                             alignEnd: true,
                           ),
                         ],

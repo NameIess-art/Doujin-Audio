@@ -119,6 +119,7 @@ internal object UnifiedPlaybackNotificationController {
     private val activeItemsById = linkedMapOf<String, UnifiedPlaybackNotificationItem>()
     private val artCache = object : LruCache<String, Bitmap>(12) {}
     private var lastSummarySignature: String? = null
+    private var lastStyleVariant: String? = null
     var lastRichSummaryNotification: android.app.Notification? = null
 
     @Synchronized
@@ -130,7 +131,8 @@ internal object UnifiedPlaybackNotificationController {
         showSummary: Boolean,
         summaryText: String?,
         summaryLines: List<String>,
-        suppressRebuild: Boolean
+        suppressRebuild: Boolean,
+        styleVariant: String?
     ) {
         val manager = NotificationManagerCompat.from(context)
         ensureChannel(context)
@@ -150,19 +152,21 @@ internal object UnifiedPlaybackNotificationController {
                 items,
                 summaryText,
                 summaryLines,
-                suppressRebuild
+                suppressRebuild,
+                styleVariant
             )
             return
         }
 
-        syncSingleSession(context, manager, postedNotificationIds, items)
+        syncSingleSession(context, manager, postedNotificationIds, items, styleVariant)
     }
 
     private fun syncSingleSession(
         context: Context,
         manager: NotificationManagerCompat,
         postedNotificationIds: Set<Int>,
-        items: List<UnifiedPlaybackNotificationItem>
+        items: List<UnifiedPlaybackNotificationItem>,
+        styleVariant: String?
     ) {
         val previousIds = buildSet {
             addAll(activeNotificationIds)
@@ -175,10 +179,12 @@ internal object UnifiedPlaybackNotificationController {
         val notificationId = summaryNotificationId
         val nextIds = setOf(notificationId)
         val postedUnifiedNotifications = postedUnifiedNotificationIds(context)
+        val styleKey = styleVariant ?: "single_thread"
         if (
             activeItemsById[item.id] != item ||
                 !postedNotificationIds.contains(notificationId) ||
-                !postedUnifiedNotifications.contains(notificationId)
+                !postedUnifiedNotifications.contains(notificationId) ||
+                lastStyleVariant != styleKey
         ) {
             manager.notify(
                 notificationId,
@@ -195,7 +201,8 @@ internal object UnifiedPlaybackNotificationController {
             clear()
             addAll(nextIds)
         }
-        lastSummarySignature = "single\u0000${item.id}\u0000${item.playing}"
+        lastStyleVariant = styleKey
+        lastSummarySignature = "single|${item.id}|${item.playing}|$styleKey"
         savePersistedNotificationIds(context, nextIds)
     }
 
@@ -207,7 +214,8 @@ internal object UnifiedPlaybackNotificationController {
         items: List<UnifiedPlaybackNotificationItem>,
         summaryText: String?,
         summaryLines: List<String>,
-        suppressRebuild: Boolean
+        suppressRebuild: Boolean,
+        styleVariant: String?
     ) {
         val previousIds = buildSet {
             addAll(activeNotificationIds)
@@ -217,8 +225,10 @@ internal object UnifiedPlaybackNotificationController {
             ?: items.firstOrNull { it.playing }
             ?: items.first()
         val nextIds = mutableSetOf(summaryNotificationId)
+        val styleKey = styleVariant ?: "multi_thread"
         val summarySignature = buildString {
             append("multi")
+            append(styleKey)
             append('\u0000')
             append(mainItem.id)
             append('\u0000')
@@ -275,16 +285,16 @@ internal object UnifiedPlaybackNotificationController {
         previousIds
             .filterNot(nextIds::contains)
             .forEach(manager::cancel)
-        if (!suppressRebuild) {
-            activeItemsById.clear()
-            items.forEach { item -> activeItemsById[item.id] = item }
-            activeNotificationIds.apply {
-                clear()
-                addAll(nextIds)
-            }
-            lastSummarySignature = summarySignature
-            savePersistedNotificationIds(context, nextIds)
+        activeItemsById.clear()
+        items.forEach { item -> activeItemsById[item.id] = item }
+        activeNotificationIds.apply {
+            clear()
+            addAll(nextIds)
         }
+        if (!suppressRebuild) {
+            lastSummarySignature = summarySignature
+        }
+        savePersistedNotificationIds(context, nextIds)
     }
 
     private fun buildSingleSessionNotification(
@@ -737,6 +747,7 @@ class MainActivity : AudioServiceActivity() {
                             call.argument<List<String>>("summaryLines") ?: emptyList()
                         val suppressRebuild =
                             call.argument<Boolean>("suppressRebuild") ?: false
+                        val styleVariant = call.argument<String>("styleVariant")
                         val items = rawItems.mapNotNull { raw ->
                             val id = raw["id"] as? String ?: return@mapNotNull null
                             val title = raw["title"] as? String ?: return@mapNotNull null
@@ -758,7 +769,8 @@ class MainActivity : AudioServiceActivity() {
                             showSummary,
                             summaryText,
                             summaryLines,
-                            suppressRebuild
+                            suppressRebuild,
+                            styleVariant
                         )
                         result.success(null)
                     }

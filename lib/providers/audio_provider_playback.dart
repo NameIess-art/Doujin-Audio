@@ -55,7 +55,7 @@ extension AudioProviderPlayback on AudioProvider {
       volume: volume,
       createdAt: DateTime.now(),
       state: PlayerState(false, ProcessingState.idle),
-    )..isLoading = true;
+    );
   }
 
   void _registerSession(PlaybackSession session) {
@@ -78,6 +78,10 @@ extension AudioProviderPlayback on AudioProvider {
     _sessionPreparationQueue = _sessionPreparationQueue.catchError((_) {}).then(
       (_) async {
         if (!_sessions.containsKey(session.id)) return;
+        session.isLoading = true;
+        _syncKeepCpuAwake();
+        _syncNotificationState();
+        _notifyListeners();
         await _prepareAndPlay(
           session,
           nextPath: nextPath,
@@ -102,18 +106,26 @@ extension AudioProviderPlayback on AudioProvider {
       final isNewCompletion =
           previousProcessing != ProcessingState.completed &&
           state.processingState == ProcessingState.completed;
+      final currentGeneration = session.playbackCommandGeneration;
       final shouldAutoAdvanceAfterCompletion =
           isNewCompletion &&
           !session.isLoading &&
+          !session.isAdvancingAfterCompletion &&
           session.loopMode != SessionLoopMode.single &&
-          _nextPathFor(session, forward: true) != null;
+          _nextPathFor(session, forward: true) != null &&
+          session.lastHandledCompletionGeneration != currentGeneration;
       if (shouldAutoAdvanceAfterCompletion) {
         session.isLoading = true;
+        session.isAdvancingAfterCompletion = true;
+        session.lastHandledCompletionGeneration = currentGeneration;
       }
       if (state.playing ||
           state.processingState == ProcessingState.idle ||
           state.processingState == ProcessingState.completed) {
         session.isPlaybackStarting = false;
+      }
+      if (state.processingState != ProcessingState.completed) {
+        session.isAdvancingAfterCompletion = false;
       }
       _syncKeepCpuAwake();
       _syncNotificationState();
@@ -170,6 +182,8 @@ extension AudioProviderPlayback on AudioProvider {
     if (!_sessions.containsKey(session.id)) return;
 
     session.loadGeneration++;
+    final generation = session.loadGeneration;
+    session.playbackCommandGeneration = generation;
     if (!session.isLoading) {
       session.isLoading = true;
       _syncKeepCpuAwake();
@@ -183,6 +197,9 @@ extension AudioProviderPlayback on AudioProvider {
     var prepared = false;
 
     try {
+      if (!_sessions.containsKey(session.id) || session.loadGeneration != generation) {
+        return;
+      }
       session.currentTrackPath = nextPath;
       session.lastKnownPosition = Duration.zero;
       session.lastPersistedPositionBucket = 0;
@@ -210,31 +227,48 @@ extension AudioProviderPlayback on AudioProvider {
           repeatOne: session.loopMode == SessionLoopMode.single,
           autoPlay: false,
         );
+        if (!_sessions.containsKey(session.id) || session.loadGeneration != generation) {
+          return;
+        }
         session.loadedPath = nextPath;
       } else {
         await NativePlaybackBridge.instance.seek(session.id, Duration.zero);
+        if (!_sessions.containsKey(session.id) || session.loadGeneration != generation) {
+          return;
+        }
         session.setOptimisticPosition(Duration.zero);
       }
 
       await NativePlaybackBridge.instance.setVolume(session.id, session.volume);
+      if (!_sessions.containsKey(session.id) || session.loadGeneration != generation) {
+        return;
+      }
       await NativePlaybackBridge.instance.setRepeatOne(
         session.id,
         session.loopMode == SessionLoopMode.single,
       );
+      if (!_sessions.containsKey(session.id) || session.loadGeneration != generation) {
+        return;
+      }
       prepared = true;
     } catch (e) {
       debugPrint('AudioProvider._prepareAndPlay error: $e');
     } finally {
-      if (_sessions.containsKey(session.id)) {
+      if (_sessions.containsKey(session.id) && session.loadGeneration == generation) {
         session.isLoading = false;
+        session.isAdvancingAfterCompletion = false;
         _syncNotificationState();
         _scheduleSaveSessionState();
         _notifyListeners();
       }
     }
-    if (_sessions.containsKey(session.id) && autoPlay && prepared) {
+    if (_sessions.containsKey(session.id) &&
+        session.loadGeneration == generation &&
+        autoPlay &&
+        prepared) {
       await _startSessionPlayback(session, shouldStartTriggerCountdown: true);
-    } else if (_sessions.containsKey(session.id)) {
+    } else if (_sessions.containsKey(session.id) &&
+        session.loadGeneration == generation) {
       _syncNotificationState();
       _syncKeepCpuAwake();
     }
@@ -750,13 +784,20 @@ extension AudioProviderPlayback on AudioProvider {
     required bool shouldStartTriggerCountdown,
   }) async {
     if (!_sessions.containsKey(session.id)) return;
+    final generation = ++session.playbackCommandGeneration;
     _notificationsDismissedWhilePaused = false;
     if (!_multiThreadPlaybackEnabled) {
       await _enforceSingleThreadPlayback(preferredSessionId: session.id);
     }
-    if (!_sessions.containsKey(session.id)) return;
+    if (!_sessions.containsKey(session.id) ||
+        session.playbackCommandGeneration != generation) {
+      return;
+    }
     final activated = await _activateAudioSessionForPlayback();
-    if (!_sessions.containsKey(session.id)) return;
+    if (!_sessions.containsKey(session.id) ||
+        session.playbackCommandGeneration != generation) {
+      return;
+    }
     if (!activated) {
       debugPrint(
         'AudioProvider._startSessionPlayback: audio session activation '
@@ -773,18 +814,49 @@ extension AudioProviderPlayback on AudioProvider {
           ? ProcessingState.loading
           : null,
     );
-    unawaited(NativePlaybackBridge.instance.play(session.id));
+
+    try {
+      final playResult = await NativePlaybackBridge.instance.play(session.id);
+      if (!_sessions.containsKey(session.id) ||
+          session.playbackCommandGeneration != generation) {
+        return;
+      }
+      if ((playResult['ok'] as bool?) != true) {
+        session.setOptimisticState(
+          playing: false,
+          processingState: ProcessingState.ready,
+        );
+      }
+    } catch (e) {
+      if (_sessions.containsKey(session.id) &&
+          session.playbackCommandGeneration == generation) {
+        session.setOptimisticState(
+          playing: false,
+          processingState: ProcessingState.ready,
+        );
+      }
+      debugPrint('AudioProvider._startSessionPlayback error: $e');
+    }
+
+    if (!_sessions.containsKey(session.id) ||
+        session.playbackCommandGeneration != generation) {
+      return;
+    }
     _syncKeepCpuAwake();
-    unawaited(_clearPlaybackStartingIfStillPending(session.id));
+    unawaited(_clearPlaybackStartingIfStillPending(session.id, generation));
     if (shouldStartTriggerCountdown) {
       _maybeStartTriggerCountdown();
     }
   }
 
-  Future<void> _clearPlaybackStartingIfStillPending(String sessionId) async {
+  Future<void> _clearPlaybackStartingIfStillPending(
+    String sessionId,
+    int generation,
+  ) async {
     await Future<void>.delayed(const Duration(seconds: 8));
     final session = _sessions[sessionId];
     if (session == null ||
+        session.playbackCommandGeneration != generation ||
         !session.isPlaybackStarting ||
         session.state.playing) {
       return;
@@ -873,33 +945,45 @@ extension AudioProviderPlayback on AudioProvider {
   Future<void> _handleSessionCompleted(String sessionId) async {
     final session = _sessions[sessionId];
     if (session == null) return;
-    if (session.isLoading &&
-        session.state.processingState != ProcessingState.completed) {
-      return;
-    }
     if (session.loopMode == SessionLoopMode.single) {
+      session.isAdvancingAfterCompletion = false;
       return;
     }
 
     final nextPath = _nextPathFor(session, forward: true);
-    if (nextPath == null) return;
+    if (nextPath == null) {
+      session.isAdvancingAfterCompletion = false;
+      session.isLoading = false;
+      _syncKeepCpuAwake();
+      _syncNotificationState();
+      return;
+    }
 
+    final completionGeneration = session.playbackCommandGeneration;
     session.isLoading = true;
+    session.isAdvancingAfterCompletion = true;
     _syncKeepCpuAwake();
     _syncNotificationState();
 
     if (nextPath == session.currentTrackPath) {
       try {
         await NativePlaybackBridge.instance.seek(session.id, Duration.zero);
+        if (!_sessions.containsKey(session.id) ||
+            session.playbackCommandGeneration != completionGeneration) {
+          return;
+        }
         session.setOptimisticPosition(Duration.zero);
       } finally {
-        if (_sessions.containsKey(session.id)) {
+        if (_sessions.containsKey(session.id) &&
+            session.playbackCommandGeneration == completionGeneration) {
           session.isLoading = false;
+          session.isAdvancingAfterCompletion = false;
           _syncNotificationState();
           _notifyListeners();
         }
       }
-      if (_sessions.containsKey(session.id)) {
+      if (_sessions.containsKey(session.id) &&
+          session.playbackCommandGeneration == completionGeneration) {
         await _startSessionPlayback(
           session,
           shouldStartTriggerCountdown: false,
@@ -907,6 +991,9 @@ extension AudioProviderPlayback on AudioProvider {
       }
     } else {
       await _prepareAndPlay(session, nextPath: nextPath, markLoading: false);
+      if (_sessions.containsKey(session.id)) {
+        session.isAdvancingAfterCompletion = false;
+      }
     }
   }
 

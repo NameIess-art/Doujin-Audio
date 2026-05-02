@@ -48,10 +48,10 @@ class AudioProvider with ChangeNotifier {
     milliseconds: 750,
   );
   static const Duration _multiSessionNotificationRefreshInterval = Duration(
-    milliseconds: 1500,
+    milliseconds: 700,
   );
   static const Duration _unifiedNotificationDebounceInterval = Duration(
-    milliseconds: 260,
+    milliseconds: 90,
   );
   static const MethodChannel _powerChannel = MethodChannel(
     'music_player/power',

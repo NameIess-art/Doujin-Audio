@@ -210,6 +210,9 @@ class PlaybackSession {
   bool isLoading = false;
   bool isPlaybackStarting = false;
   int loadGeneration = 0;
+  int playbackCommandGeneration = 0;
+  int lastHandledCompletionGeneration = -1;
+  bool isAdvancingAfterCompletion = false;
   Duration lastKnownPosition = Duration.zero;
   Duration? duration;
   Duration bufferedPosition = Duration.zero;
@@ -228,7 +231,7 @@ class PlaybackSession {
   void applyNativeSnapshot(NativePlaybackSnapshot snapshot) {
     if (snapshot.sessionId != id) return;
     final nextState = PlayerState(
-      snapshot.playWhenReady || snapshot.playing,
+      snapshot.playing,
       _nativeProcessingState(snapshot.processingState),
     );
     if (state != nextState) {

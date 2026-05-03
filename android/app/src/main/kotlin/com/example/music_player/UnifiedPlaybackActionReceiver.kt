@@ -45,7 +45,11 @@ class UnifiedPlaybackActionReceiver : BroadcastReceiver() {
 
         @Synchronized
         private fun flushPendingDismisses() {
-            val shouldRestore = pendingDismissCount > 1 || pendingDismissIds.size > 1
+            // Only restore when multiple *different* notification IDs are
+            // dismissed simultaneously. The same ID dismissed multiple times
+            // (high count, single ID) is Android duplicating a single swipe —
+            // that should be treated as a real dismiss, not a restore.
+            val shouldRestore = pendingDismissIds.size > 1
             val extras = pendingDismissExtras
             pendingDismissIds.clear()
             pendingDismissCount = 0

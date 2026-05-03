@@ -22,6 +22,9 @@ class UnifiedPlaybackActionReceiver : BroadcastReceiver() {
 
         @Synchronized
         private fun queueDismiss(intent: Intent) {
+            // Block notification re-posts immediately so the Dart side
+            // cannot repost notifications while the 160ms debounce runs.
+            UnifiedPlaybackNotificationController.dismissPending = true
             val notificationId = intent.getIntExtra(dismissNotificationIdExtra, Int.MIN_VALUE)
             if (notificationId != Int.MIN_VALUE) {
                 pendingDismissIds.add(notificationId)
@@ -39,6 +42,13 @@ class UnifiedPlaybackActionReceiver : BroadcastReceiver() {
             pendingDismissIds.clear()
             pendingDismissCount = 0
             pendingDismissExtras = null
+            // For restore, clear dismissPending immediately so that the
+            // subsequent sync from restoreNotificationsAfterSystemClear()
+            // is not blocked. For dismiss, keep it set until the Dart side
+            // calls clear() to prevent a re-post race.
+            if (shouldRestore) {
+                UnifiedPlaybackNotificationController.dismissPending = false
+            }
             AudioService.dispatchCustomAction(
                 if (shouldRestore) restoreAction else dismissAction,
                 extras

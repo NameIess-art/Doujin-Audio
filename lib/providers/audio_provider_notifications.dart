@@ -21,161 +21,129 @@ extension AudioProviderNotifications on AudioProvider {
     _syncNotificationState();
   }
 
-  Future<void> playPrimarySessionFromNotification() async {
-    _beginNotificationAction();
-    final session = _resolveNotificationSession();
-    if (session == null) {
-      _scheduleNotificationActionRefresh();
-      return;
-    }
-    await _resumeNotificationSession(session);
-    _scheduleNotificationActionRefresh();
+  Future<void> playPrimarySessionFromNotification() {
+    return _guardNotificationAction(() async {
+      final session = _resolveNotificationSession();
+      if (session == null) return;
+      await _resumeNotificationSession(session);
+    });
   }
 
-  Future<void> playNotificationSessionById(String mediaId) async {
-    _beginNotificationAction();
-    final session = _resolveNotificationSession(mediaId);
-    if (session == null) {
-      _scheduleNotificationActionRefresh();
-      return;
-    }
-    await _resumeNotificationSession(session);
-    _scheduleNotificationActionRefresh();
+  Future<void> playNotificationSessionById(String mediaId) {
+    return _guardNotificationAction(() async {
+      final session = _resolveNotificationSession(mediaId);
+      if (session == null) return;
+      await _resumeNotificationSession(session);
+    });
   }
 
-  Future<void> pausePrimarySessionFromNotification() async {
-    _beginNotificationAction();
-    final session = _notificationActionSession;
-    if (session == null || !session.state.playing) {
-      _scheduleNotificationActionRefresh();
-      return;
-    }
-    _notificationFocusSessionId = session.id;
-    await NativePlaybackBridge.instance.pause(session.id);
-    session.setOptimisticState(playing: false);
-    _scheduleNotificationActionRefresh();
-  }
-
-  Future<void> togglePrimarySessionPlayPauseFromNotification() async {
-    _beginNotificationAction();
-    final session = _resolveNotificationSession();
-    if (session == null || session.isLoading) {
-      _scheduleNotificationActionRefresh();
-      return;
-    }
-    if (session.state.playing) {
+  Future<void> pausePrimarySessionFromNotification() {
+    return _guardNotificationAction(() async {
+      final session = _notificationActionSession;
+      if (session == null || !session.state.playing) return;
+      _notificationFocusSessionId = session.id;
       await NativePlaybackBridge.instance.pause(session.id);
       session.setOptimisticState(playing: false);
-      _scheduleNotificationActionRefresh();
-      return;
-    }
-    await _resumeNotificationSession(session);
-    _scheduleNotificationActionRefresh();
+    });
   }
 
-  Future<void> stopPrimarySessionFromNotification() async {
-    _beginNotificationAction();
-    final session = _notificationActionSession;
-    if (session == null) {
-      _scheduleNotificationActionRefresh();
-      return;
-    }
-    _notificationFocusSessionId = session.id;
-    await NativePlaybackBridge.instance.pause(session.id);
-    session.setOptimisticState(playing: false);
-    _scheduleNotificationActionRefresh();
+  Future<void> togglePrimarySessionPlayPauseFromNotification() {
+    return _guardNotificationAction(() async {
+      final session = _resolveNotificationSession();
+      if (session == null || session.isLoading) return;
+      if (session.state.playing) {
+        await NativePlaybackBridge.instance.pause(session.id);
+        session.setOptimisticState(playing: false);
+        return;
+      }
+      await _resumeNotificationSession(session);
+    });
   }
 
-  Future<void> skipPrimarySessionToNextFromNotification() async {
-    _beginNotificationAction();
-    final session = _notificationActionSession;
-    if (session == null) {
-      _scheduleNotificationActionRefresh();
-      return;
-    }
-    _notificationFocusSessionId = session.id;
-    await seekSessionToNext(session.id);
-    _scheduleNotificationActionRefresh();
-  }
-
-  Future<void> skipPrimarySessionToPreviousFromNotification() async {
-    _beginNotificationAction();
-    final session = _notificationActionSession;
-    if (session == null) {
-      _scheduleNotificationActionRefresh();
-      return;
-    }
-    _notificationFocusSessionId = session.id;
-    await seekSessionToPrev(session.id);
-    _scheduleNotificationActionRefresh();
-  }
-
-  Future<void> toggleSessionPlaybackFromNotification(String sessionId) async {
-    _beginNotificationAction();
-    final session = _sessions[sessionId];
-    if (session == null) {
-      _scheduleNotificationActionRefresh();
-      return;
-    }
-    if (!_multiThreadPlaybackEnabled) {
+  Future<void> stopPrimarySessionFromNotification() {
+    return _guardNotificationAction(() async {
+      final session = _notificationActionSession;
+      if (session == null) return;
       _notificationFocusSessionId = session.id;
-    }
-    await toggleSessionPlayPause(session.id);
-    _scheduleNotificationActionRefresh();
+      await NativePlaybackBridge.instance.pause(session.id);
+      session.setOptimisticState(playing: false);
+    });
   }
 
-  Future<void> skipNotificationSessionToPreviousById(String sessionId) async {
-    _beginNotificationAction();
-    final session = _sessions[sessionId];
-    if (session == null) {
-      _scheduleNotificationActionRefresh();
-      return;
-    }
-    if (!_multiThreadPlaybackEnabled) {
+  Future<void> skipPrimarySessionToNextFromNotification() {
+    return _guardNotificationAction(() async {
+      final session = _notificationActionSession;
+      if (session == null) return;
       _notificationFocusSessionId = session.id;
-    }
-    await seekSessionToPrev(session.id);
-    _scheduleNotificationActionRefresh();
+      await seekSessionToNext(session.id);
+    });
   }
 
-  Future<void> skipNotificationSessionToNextById(String sessionId) async {
-    _beginNotificationAction();
-    final session = _sessions[sessionId];
-    if (session == null) {
-      _scheduleNotificationActionRefresh();
-      return;
-    }
-    if (!_multiThreadPlaybackEnabled) {
+  Future<void> skipPrimarySessionToPreviousFromNotification() {
+    return _guardNotificationAction(() async {
+      final session = _notificationActionSession;
+      if (session == null) return;
       _notificationFocusSessionId = session.id;
-    }
-    await seekSessionToNext(session.id);
-    _scheduleNotificationActionRefresh();
+      await seekSessionToPrev(session.id);
+    });
   }
 
-  Future<void> seekPrimarySessionFromNotification(Duration position) async {
-    _beginNotificationAction();
-    final session = _notificationActionSession;
-    if (session == null) {
-      _scheduleNotificationActionRefresh();
-      return;
-    }
-    _notificationFocusSessionId = session.id;
-    await seekSession(session.id, position);
-    _scheduleNotificationActionRefresh();
+  Future<void> toggleSessionPlaybackFromNotification(String sessionId) {
+    return _guardNotificationAction(() async {
+      final session = _sessions[sessionId];
+      if (session == null) return;
+      if (!_multiThreadPlaybackEnabled) {
+        _notificationFocusSessionId = session.id;
+      }
+      await toggleSessionPlayPause(session.id);
+    });
+  }
+
+  Future<void> skipNotificationSessionToPreviousById(String sessionId) {
+    return _guardNotificationAction(() async {
+      final session = _sessions[sessionId];
+      if (session == null) return;
+      if (!_multiThreadPlaybackEnabled) {
+        _notificationFocusSessionId = session.id;
+      }
+      await seekSessionToPrev(session.id);
+    });
+  }
+
+  Future<void> skipNotificationSessionToNextById(String sessionId) {
+    return _guardNotificationAction(() async {
+      final session = _sessions[sessionId];
+      if (session == null) return;
+      if (!_multiThreadPlaybackEnabled) {
+        _notificationFocusSessionId = session.id;
+      }
+      await seekSessionToNext(session.id);
+    });
+  }
+
+  Future<void> seekPrimarySessionFromNotification(Duration position) {
+    return _guardNotificationAction(() async {
+      final session = _notificationActionSession;
+      if (session == null) return;
+      _notificationFocusSessionId = session.id;
+      await seekSession(session.id, position);
+    });
   }
 
   Future<void> dismissNotificationsAfterPauseAll() async {
     _notificationsDismissedWhilePaused = true;
     await NativePlaybackBridge.instance.dismissNotifications();
-    await _stopPlaybackKeepAliveOnPlatform();
-    if (_multiThreadPlaybackEnabled) {
-      await clearAllSessions();
-    } else {
-      await pauseAllSessions();
-    }
+    // Clear unified notifications before stopping the keep-alive service
+    // so that activeNotificationCount is 0, which causes the keep-alive
+    // service to use STOP_FOREGROUND_REMOVE instead of DETACH.
     await _clearUnifiedPlaybackNotificationsOnPlatform();
+    await _stopPlaybackKeepAliveOnPlatform();
+    await pauseAllSessions();
+    // Clear the handler snapshot so audio_service shows no notification,
+    // but keep the handler registered so that unified notification button
+    // actions (via UnifiedPlaybackActionReceiver -> AudioService.dispatchCustomAction)
+    // continue to work.
     _notificationService.updateSnapshot(null);
-    await AudioService.stopService();
     _notificationFocusSessionId = _preferredSingleSessionId;
     _syncKeepCpuAwake();
     _notifyListeners();
@@ -184,6 +152,7 @@ extension AudioProviderNotifications on AudioProvider {
   Future<void> restoreNotificationsAfterSystemClear() async {
     _notificationsDismissedWhilePaused = false;
     _unifiedNotificationSyncKey = null;
+    await NativePlaybackBridge.instance.undismissNotifications();
     _syncNotificationState(immediateUnifiedSync: true);
     _notifyListeners();
   }
@@ -192,6 +161,7 @@ extension AudioProviderNotifications on AudioProvider {
     if (!_notificationsDismissedWhilePaused) return;
     _notificationsDismissedWhilePaused = false;
     _unifiedNotificationSyncKey = null;
+    unawaited(NativePlaybackBridge.instance.undismissNotifications());
     _syncNotificationState(immediateUnifiedSync: true);
     _notifyListeners();
   }
@@ -263,7 +233,39 @@ extension AudioProviderNotifications on AudioProvider {
     _unifiedNotificationSyncTimer?.cancel();
     _unifiedNotificationSyncTimer = null;
     _notificationActionRefreshTimer?.cancel();
+    _notificationActionRefreshTimer = null;
     _notificationActionRefreshPending = true;
+
+    // Safety timeout: force-clear the guard if _scheduleNotificationActionRefresh
+    // is never called (e.g., due to an uncaught exception between begin/schedule).
+    _notificationActionGuardTimeout?.cancel();
+    _notificationActionGuardTimeout = Timer(
+      const Duration(seconds: 5),
+      () {
+        _notificationActionGuardTimeout = null;
+        if (_notificationActionRefreshPending) {
+          debugPrint(
+            'AudioProvider: notification action guard timed out, force-clearing',
+          );
+          _notificationActionRefreshPending = false;
+          if (_keepAliveSyncDeferred) {
+            _keepAliveSyncDeferred = false;
+            _syncKeepCpuAwake();
+          }
+          _syncNotificationState(immediateUnifiedSync: true);
+          _notifyListeners();
+        }
+      },
+    );
+  }
+
+  Future<void> _guardNotificationAction(Future<void> Function() action) async {
+    _beginNotificationAction();
+    try {
+      await action();
+    } finally {
+      _scheduleNotificationActionRefresh();
+    }
   }
 
   void _scheduleNotificationActionRefresh() {
@@ -271,6 +273,8 @@ extension AudioProviderNotifications on AudioProvider {
     // timer so we extend the window from the last state mutation, then
     // schedule the real sync once SystemUI has finished processing the
     // PendingIntent.
+    _notificationActionGuardTimeout?.cancel();
+    _notificationActionGuardTimeout = null;
     _notificationActionRefreshTimer?.cancel();
     _notificationActionRefreshTimer = Timer(
       const Duration(milliseconds: 250),

@@ -725,14 +725,12 @@ extension AudioProviderPlayback on AudioProvider {
 
   void _syncKeepCpuAwake() {
     final hasPlayback = _hasPlaybackToKeepAlive;
-    final shouldKeepPlaybackAwake = false;
     final hasTimer =
         _timerActive || _timerWaitingForPlayback || _hasPendingAutoResume;
     final usesUnifiedNotifications = _multiThreadPlaybackEnabled && _notificationsEnabled;
     final keepForegroundServiceAlive = _notificationsEnabled &&
-        ((hasTimer && !hasPlayback) || (_multiThreadPlaybackEnabled && hasPlayback));
-    final shouldKeepAwake =
-        shouldKeepPlaybackAwake || keepForegroundServiceAlive;
+        (hasPlayback || hasTimer || _hasPendingAutoResume);
+    final shouldKeepAwake = keepForegroundServiceAlive;
     if (_keepCpuAwake == shouldKeepAwake &&
         _keepAliveHasPlayback == hasPlayback &&
         _keepAliveHasTimer == hasTimer &&

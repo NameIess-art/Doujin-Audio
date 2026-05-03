@@ -144,6 +144,7 @@ class AudioProvider with ChangeNotifier {
   Timer? _saveSessionOrderTimer;
   Future<void> _sessionPreparationQueue = Future<void>.value();
   Timer? _notificationActionRefreshTimer;
+  Timer? _notificationActionGuardTimeout;
   StreamSubscription<NativePlaybackSnapshot>? _nativePlaybackSubscription;
 
   final List<String> _pausedByTimerPaths = [];
@@ -234,6 +235,7 @@ class AudioProvider with ChangeNotifier {
     _notificationProgressRefreshTimer?.cancel();
     _unifiedNotificationSyncTimer?.cancel();
     _notificationActionRefreshTimer?.cancel();
+    _notificationActionGuardTimeout?.cancel();
     unawaited(_saveSessionState());
     unawaited(_saveSessionOrder());
     unawaited(

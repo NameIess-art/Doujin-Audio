@@ -91,6 +91,11 @@ class PlaybackNotificationService {
       await _notificationsChannel.invokeMethod<void>(
         'syncUnifiedPlaybackNotifications',
         payload,
+      ).timeout(
+        const Duration(seconds: 5),
+        onTimeout: () => debugPrint(
+          'PlaybackNotificationService.syncUnifiedNotifications timed out',
+        ),
       );
     } on MissingPluginException {
       // Channel not available on this platform.
@@ -105,6 +110,11 @@ class PlaybackNotificationService {
     try {
       await _notificationsChannel.invokeMethod<void>(
         'clearUnifiedPlaybackNotifications',
+      ).timeout(
+        const Duration(seconds: 5),
+        onTimeout: () => debugPrint(
+          'PlaybackNotificationService._clearUnifiedNotifications timed out',
+        ),
       );
     } on MissingPluginException {
       // Channel not available on this platform.

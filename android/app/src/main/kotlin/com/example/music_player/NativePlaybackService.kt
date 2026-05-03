@@ -393,9 +393,9 @@ class NativePlaybackService : MediaSessionService() {
     }
 
     private fun startPlaybackForeground() {
-        // audio_service's AudioService provides the foreground notification
-        // with transport controls. Since both services run in the same
-        // process, this service does not need its own startForeground() call.
+        // audio_service's AudioService and PlaybackKeepAliveService provide
+        // foreground notifications. This service does not need its own
+        // startForeground() call since all three run in the same process.
     }
 
     private fun stopPlaybackForeground(removeNotification: Boolean = true) {

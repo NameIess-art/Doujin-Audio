@@ -705,7 +705,7 @@ class _SessionDetailPageState extends State<SessionDetailPage>
 
   void _primeCoverArtwork(Future<String?> coverPathFuture) {
     final mediaSize = MediaQuery.sizeOf(context);
-    final heroHeight = min(300.0, max(210.0, mediaSize.height * 0.34));
+    final heroHeight = min(250.0, max(180.0, mediaSize.height * 0.28));
     final dpr = min(MediaQuery.devicePixelRatioOf(context), 2.0);
     final cacheWidth = (mediaSize.width * dpr).round();
     final cacheHeight = (heroHeight * dpr).round();
@@ -1019,8 +1019,8 @@ class _SessionDetailScaffold extends StatelessWidget {
           child: LayoutBuilder(
             builder: (context, constraints) {
               final heroHeight = min(
-                300.0,
-                max(210.0, constraints.maxHeight * 0.34),
+                250.0,
+                max(180.0, constraints.maxHeight * 0.28),
               );
 
               return Padding(
@@ -1042,12 +1042,15 @@ class _SessionDetailScaffold extends StatelessWidget {
                     ),
                     const SizedBox(height: 8),
                     RepaintBoundary(
-                      child: _SessionHeroArtwork(
-                        height: heroHeight,
-                        coverPathFuture: coverPathFuture,
-                        title: '',
-                        folderName: '',
-                        isPlaying: session.state.playing,
+                      child: AspectRatio(
+                        aspectRatio: 4 / 3,
+                        child: _SessionHeroArtwork(
+                          height: heroHeight,
+                          coverPathFuture: coverPathFuture,
+                          title: '',
+                          folderName: '',
+                          isPlaying: session.state.playing,
+                        ),
                       ),
                     ),
                     const SizedBox(height: 14),
@@ -1128,23 +1131,41 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
           ),
         ),
         const SizedBox(height: 10),
-        Text(
-          displayName,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-            fontWeight: FontWeight.w900,
-            fontSize: 20,
-            height: 1,
-          ),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Text(
+                displayName,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.w900,
+                  fontSize: 20,
+                  height: 1,
+                ),
+              ),
+            ),
+          ],
         ),
         const SizedBox(height: 6),
-        Text(
-          _loopModeSummary(context, session.loopMode),
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-            color: cs.onSurfaceVariant,
-            fontWeight: FontWeight.w600,
-          ),
+        Row(
+          children: [
+            const Spacer(),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 180),
+              child: Text(
+                _loopModeSummary(context, session.loopMode),
+                textAlign: TextAlign.right,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: cs.onSurfaceVariant,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
         ),
         const SizedBox(height: 10),
         _ProgressBar(session: session, provider: provider),
@@ -1372,6 +1393,7 @@ class _SessionHeroArtwork extends StatelessWidget {
     }
 
     return SizedBox(
+      width: double.infinity,
       height: height,
       child: ClipRRect(
         clipBehavior: Clip.hardEdge,
@@ -1576,18 +1598,26 @@ class _SwitcherSlot extends StatelessWidget {
 
 class _LoopModeButton extends StatelessWidget {
   const _LoopModeButton({
-    required this.icon,
+    this.icon,
+    this.iconWidget,
     required this.onPressed,
     this.active = false,
-  });
+  }) : assert(icon != null || iconWidget != null);
 
-  final IconData icon;
+  final IconData? icon;
+  final Widget? iconWidget;
   final VoidCallback onPressed;
   final bool active;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final child = iconWidget ?? Icon(
+      icon,
+      key: ValueKey<IconData?>(icon),
+      size: 18,
+      color: active ? cs.primary : cs.onSurfaceVariant,
+    );
     return IconButton(
       onPressed: onPressed,
       style: IconButton.styleFrom(
@@ -1606,12 +1636,7 @@ class _LoopModeButton extends StatelessWidget {
         width: 18,
         height: 18,
         duration: const Duration(milliseconds: 140),
-        child: Icon(
-          icon,
-          key: ValueKey<IconData>(icon),
-          size: 18,
-          color: active ? cs.primary : cs.onSurfaceVariant,
-        ),
+        child: child,
       ),
     );
   }
@@ -1645,16 +1670,54 @@ class _ExpandableLoopOptionsState extends State<_ExpandableLoopOptions>
         mode == SessionLoopMode.folderRandom;
   }
 
-  bool get _singleActive => widget.session.loopMode == SessionLoopMode.single;
-  bool get _shuffleActive => _isShuffle(widget.session.loopMode);
-  bool get _crossFolderActive => _isCross(widget.session.loopMode);
+  SessionLoopMode get _effectiveNonSingleMode {
+    if (widget.session.loopMode == SessionLoopMode.single) {
+      return widget.session.nonSingleLoopMode;
+    }
+    return widget.session.loopMode;
+  }
 
-  IconData get _mainIcon {
-    if (_singleActive) return Icons.repeat_one_rounded;
-    if (_shuffleActive) return Icons.shuffle_rounded;
-    return _crossFolderActive
-        ? Icons.folder_copy_rounded
-        : Icons.repeat_rounded;
+  bool get _singleActive => widget.session.loopMode == SessionLoopMode.single;
+  bool get _shuffleActive => _isShuffle(_effectiveNonSingleMode);
+  bool get _crossFolderActive => _isCross(_effectiveNonSingleMode);
+
+  bool get _shuffleButtonHighlighted => !_singleActive;
+  bool get _scopeButtonHighlighted => !_singleActive;
+
+  IconData get _orderIcon =>
+      _shuffleActive ? Icons.shuffle_rounded : Icons.repeat_rounded;
+  IconData get _scopeIcon =>
+      _crossFolderActive ? Icons.folder_copy_rounded : Icons.folder_rounded;
+
+  Widget _collapsedCompositeIcon(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return SizedBox(
+      key: ValueKey<String>('composite_${_orderIcon.codePoint}_${_scopeIcon.codePoint}'),
+      width: 20,
+      height: 20,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Positioned.fill(
+            child: Opacity(
+              opacity: 0.28,
+              child: Icon(
+                _scopeIcon,
+                size: 20,
+                color: cs.onSurfaceVariant,
+              ),
+            ),
+          ),
+          Center(
+            child: Icon(
+              _orderIcon,
+              size: 13,
+              color: cs.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -1840,27 +1903,30 @@ class _ExpandableLoopOptionsState extends State<_ExpandableLoopOptions>
                           ),
                           const SizedBox(height: 4),
                           animatedBubble(
-                            icon: _shuffleActive
-                                ? Icons.shuffle_rounded
-                                : Icons.repeat_rounded,
-                            active: _shuffleActive,
+                            icon: _orderIcon,
+                            active: _shuffleButtonHighlighted,
                             onPressed: _toggleShuffleLoop,
                             start: 0.28,
                             end: 0.74,
                           ),
                           const SizedBox(height: 4),
                           animatedBubble(
-                            icon: _crossFolderActive
-                                ? Icons.folder_copy_rounded
-                                : Icons.folder_rounded,
-                            active: _crossFolderActive,
+                            icon: _scopeIcon,
+                            active: _scopeButtonHighlighted,
                             onPressed: _toggleCrossFolderLoop,
                             start: 0.4,
                             end: 0.9,
                           ),
                           const SizedBox(height: 4),
                           _LoopModeButton(
-                            icon: _mainIcon,
+                            iconWidget: _singleActive
+                                ? Icon(
+                                    Icons.repeat_one_rounded,
+                                    key: const ValueKey<String>('single_main'),
+                                    size: 18,
+                                    color: cs.primary,
+                                  )
+                                : _collapsedCompositeIcon(context),
                             active: true,
                             onPressed: _toggleExpanded,
                           ),
@@ -1899,8 +1965,15 @@ class _ExpandableLoopOptionsState extends State<_ExpandableLoopOptions>
             child: Align(
               alignment: Alignment.center,
               child: _LoopModeButton(
-                icon: _mainIcon,
-                active: _singleActive || _shuffleActive || _crossFolderActive,
+                iconWidget: _singleActive
+                    ? Icon(
+                        Icons.repeat_one_rounded,
+                        key: const ValueKey<String>('single_main_collapsed'),
+                        size: 18,
+                        color: Theme.of(context).colorScheme.primary,
+                      )
+                    : _collapsedCompositeIcon(context),
+                active: true,
                 onPressed: _toggleExpanded,
               ),
             ),

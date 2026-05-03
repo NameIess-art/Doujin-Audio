@@ -504,6 +504,8 @@ extension AudioProviderPlayback on AudioProvider {
     await NativePlaybackBridge.instance.pauseAll();
     for (final session in _sessions.values) {
       session.setOptimisticState(playing: false);
+      session.isLoading = false;
+      session.isPlaybackStarting = false;
     }
     _syncKeepCpuAwake();
     _scheduleSaveSessionState();
@@ -763,6 +765,26 @@ extension AudioProviderPlayback on AudioProvider {
     if (!hasPlayback && !_hasRetainedPlaybackSession) {
       unawaited(_deactivateAudioSession());
     }
+  }
+
+  void syncKeepAliveBeforeBackground() {
+    _keepAliveHasPlayback = _hasPlaybackToKeepAlive;
+    _keepAliveHasTimer =
+        _timerActive || _timerWaitingForPlayback || _hasPendingAutoResume;
+    _keepAliveUsesUnifiedNotifications =
+        _multiThreadPlaybackEnabled && _notificationsEnabled;
+    _keepAliveKeepsForegroundService = _notificationsEnabled &&
+        (_keepAliveHasPlayback || _keepAliveHasTimer || _hasPendingAutoResume);
+    _keepCpuAwake = _keepAliveKeepsForegroundService;
+    unawaited(
+      _setKeepCpuAwake(
+        _keepCpuAwake,
+        hasActivePlayback: _keepAliveHasPlayback,
+        hasActiveTimer: _keepAliveHasTimer,
+        usesUnifiedPlaybackNotifications: _keepAliveUsesUnifiedNotifications,
+        keepForegroundServiceAlive: _keepAliveKeepsForegroundService,
+      ),
+    );
   }
 
   Future<void> _setKeepCpuAwake(

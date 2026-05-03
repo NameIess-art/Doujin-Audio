@@ -214,6 +214,19 @@ class _SettingsTabState extends State<SettingsTab> with WidgetsBindingObserver {
       },
     );
     if (shouldDownload == true && context.mounted) {
+      final canInstallUnknownApps = await AppUpdateService.canInstallUnknownApps();
+      if (!context.mounted) return;
+      if (!canInstallUnknownApps) {
+        await AppUpdateService.openInstallPermissionSettings();
+        if (!context.mounted) return;
+        showAppSnackBar(
+          context,
+          i18n.tr('install_permission_needed'),
+          tone: AppFeedbackTone.warning,
+          icon: Icons.admin_panel_settings_rounded,
+        );
+        return;
+      }
       await _downloadAndInstallUpdate(context, info);
     }
   }

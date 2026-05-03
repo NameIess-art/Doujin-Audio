@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 class NativePlaybackSnapshot {
@@ -73,18 +74,52 @@ class NativePlaybackBridge {
   final StreamController<NativePlaybackSnapshot> _snapshotController =
       StreamController<NativePlaybackSnapshot>.broadcast();
   StreamSubscription<dynamic>? _eventSubscription;
+  int _reconnectAttempt = 0;
+  static const int _maxReconnectAttempts = 5;
 
   Stream<NativePlaybackSnapshot> get snapshots => _snapshotController.stream;
 
   void startListening() {
-    _eventSubscription ??= _events.receiveBroadcastStream().listen((event) {
-      if (event is Map) {
-        _snapshotController.add(NativePlaybackSnapshot.fromMap(event));
-      }
+    if (_eventSubscription != null) return;
+    _attachEventListener();
+  }
+
+  void _attachEventListener() {
+    _eventSubscription?.cancel();
+    _eventSubscription = _events.receiveBroadcastStream().listen(
+      (event) {
+        if (event is Map) {
+          _snapshotController.add(NativePlaybackSnapshot.fromMap(event));
+        }
+      },
+      onError: (error) {
+        debugPrint('NativePlaybackBridge EventChannel error: $error');
+        _scheduleReconnect();
+      },
+      onDone: () {
+        _scheduleReconnect();
+      },
+      cancelOnError: false,
+    );
+  }
+
+  void _scheduleReconnect() {
+    _eventSubscription = null;
+    if (_reconnectAttempt >= _maxReconnectAttempts) return;
+    _reconnectAttempt++;
+    final delay = Duration(milliseconds: 200 * _reconnectAttempt);
+    debugPrint(
+      'NativePlaybackBridge: reconnecting in ${delay.inMilliseconds}ms '
+      '(attempt $_reconnectAttempt/$_maxReconnectAttempts)',
+    );
+    Future.delayed(delay, () {
+      if (_eventSubscription != null) return;
+      _attachEventListener();
     });
   }
 
   Future<void> stopListening() async {
+    _reconnectAttempt = _maxReconnectAttempts;
     await _eventSubscription?.cancel();
     _eventSubscription = null;
   }

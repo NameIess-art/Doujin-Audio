@@ -98,6 +98,11 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused) {
+      final provider = context.read<AudioProvider>();
+      provider.syncKeepAliveBeforeBackground();
+      return;
+    }
     if (state != AppLifecycleState.resumed) {
       return;
     }

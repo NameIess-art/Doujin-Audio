@@ -170,6 +170,22 @@ class AppUpdateService {
     }
   }
 
+  static Future<bool> canInstallUnknownApps() async {
+    try {
+      return await _channel.invokeMethod<bool>('canInstallUnknownApps') ?? true;
+    } catch (_) {
+      return true;
+    }
+  }
+
+  static Future<bool> openInstallPermissionSettings() async {
+    try {
+      return await _channel.invokeMethod<bool>('openInstallPermissionSettings') ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
   static Future<UpdateInstallResult> installApk(File file) async {
     final raw = await _channel.invokeMapMethod<String, Object?>('installApk', {
       'path': file.path,

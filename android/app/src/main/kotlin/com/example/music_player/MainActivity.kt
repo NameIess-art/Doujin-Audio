@@ -172,6 +172,12 @@ class MainActivity : AudioServiceActivity() {
                         val apkPath = call.argument<String>("path")
                         result.success(installDownloadedApk(apkPath))
                     }
+                    "canInstallUnknownApps" -> {
+                        result.success(canInstallUnknownApps())
+                    }
+                    "openInstallPermissionSettings" -> {
+                        result.success(openInstallPermissionSettings())
+                    }
                     else -> result.notImplemented()
                 }
             }
@@ -681,10 +687,7 @@ class MainActivity : AudioServiceActivity() {
             )
         }
 
-        if (
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
-                !packageManager.canRequestPackageInstalls()
-        ) {
+        if (!canInstallUnknownApps()) {
             openInstallPermissionSettings()
             return mapOf(
                 "ok" to false,
@@ -726,6 +729,13 @@ class MainActivity : AudioServiceActivity() {
                 "message" to (e.message ?: "Cannot open installer.")
             )
         }
+    }
+
+    private fun canInstallUnknownApps(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            return true
+        }
+        return packageManager.canRequestPackageInstalls()
     }
 
     private fun openInstallPermissionSettings(): Boolean {

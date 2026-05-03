@@ -300,7 +300,7 @@ class NativePlaybackService : MediaSessionService() {
 
     private fun createPlayer(sessionId: String): ExoPlayer {
         return ExoPlayer.Builder(this).build().also { player ->
-            player.setWakeMode(C.WAKE_MODE_NETWORK)
+            player.setWakeMode(C.WAKE_MODE_LOCAL)
             player.addListener(object : Player.Listener {
                 override fun onPlaybackStateChanged(playbackState: Int) {
                     publishSessionState(sessionId)
@@ -424,7 +424,13 @@ class NativePlaybackService : MediaSessionService() {
     private fun publishSessionState(sessionId: String) {
         val session = sessions[sessionId] ?: return
         val snapshot = session.snapshot()
-        stateListeners.values.forEach { listener -> listener(snapshot) }
+        for (listener in stateListeners.values) {
+            try {
+                listener(snapshot)
+            } catch (_: Exception) {
+                // Prevent one broken listener from crashing the service.
+            }
+        }
     }
 
     private fun publishAllSessionStates() {

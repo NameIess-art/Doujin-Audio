@@ -40,7 +40,9 @@ class PlaybackKeepAliveService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         return when (intent?.action) {
             ACTION_STOP -> {
-                stopForegroundCompat()
+                val hasUnifiedNotifications =
+                    UnifiedPlaybackNotificationController.activeNotificationCount > 0
+                stopForegroundCompat(detachOnly = hasUnifiedNotifications)
                 releaseWakeLock()
                 currentForegroundSignature = null
                 currentNotificationId = null
@@ -64,7 +66,9 @@ class PlaybackKeepAliveService : Service() {
                     ) == true
 
                 if (!keepForegroundServiceAlive) {
-                    stopForegroundCompat()
+                    val hasUnifiedNotifications =
+                        UnifiedPlaybackNotificationController.activeNotificationCount > 0
+                    stopForegroundCompat(detachOnly = hasUnifiedNotifications)
                     releaseWakeLock()
                     currentForegroundSignature = null
                     currentNotificationId = null
@@ -123,7 +127,9 @@ class PlaybackKeepAliveService : Service() {
     }
 
     override fun onDestroy() {
-        stopForegroundCompat()
+        val hasUnifiedNotifications =
+            UnifiedPlaybackNotificationController.activeNotificationCount > 0
+        stopForegroundCompat(detachOnly = hasUnifiedNotifications)
         releaseWakeLock()
         currentForegroundSignature = null
         currentNotificationId = null
@@ -256,12 +262,14 @@ class PlaybackKeepAliveService : Service() {
         }
     }
 
-    private fun stopForegroundCompat() {
+    private fun stopForegroundCompat(detachOnly: Boolean = false) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopForeground(
+                if (detachOnly) STOP_FOREGROUND_DETACH else STOP_FOREGROUND_REMOVE
+            )
         } else {
             @Suppress("DEPRECATION")
-            stopForeground(true)
+            stopForeground(!detachOnly)
         }
     }
 }

@@ -1,9 +1,6 @@
 part of 'audio_provider.dart';
 
 extension AudioProviderNotifications on AudioProvider {
-  bool get _hasActivePlaybackSession => activeSessions.any(
-    (session) => session.state.playing || session.isLoading,
-  );
 
   void _bindNotificationHandler() {
     _notificationService.bindCallbacks(
@@ -25,32 +22,29 @@ extension AudioProviderNotifications on AudioProvider {
   }
 
   Future<void> playPrimarySessionFromNotification() async {
+    _beginNotificationAction();
     final session = _resolveNotificationSession();
     if (session == null) {
       _scheduleNotificationActionRefresh();
       return;
     }
-    final hadActivePlayback = _hasActivePlaybackSession;
     await _resumeNotificationSession(session);
-    _scheduleNotificationActionRefresh(
-      suppressMultiThreadRebuild: hadActivePlayback,
-    );
+    _scheduleNotificationActionRefresh();
   }
 
   Future<void> playNotificationSessionById(String mediaId) async {
+    _beginNotificationAction();
     final session = _resolveNotificationSession(mediaId);
     if (session == null) {
       _scheduleNotificationActionRefresh();
       return;
     }
-    final hadActivePlayback = _hasActivePlaybackSession;
     await _resumeNotificationSession(session);
-    _scheduleNotificationActionRefresh(
-      suppressMultiThreadRebuild: hadActivePlayback,
-    );
+    _scheduleNotificationActionRefresh();
   }
 
   Future<void> pausePrimarySessionFromNotification() async {
+    _beginNotificationAction();
     final session = _notificationActionSession;
     if (session == null || !session.state.playing) {
       _scheduleNotificationActionRefresh();
@@ -63,6 +57,7 @@ extension AudioProviderNotifications on AudioProvider {
   }
 
   Future<void> togglePrimarySessionPlayPauseFromNotification() async {
+    _beginNotificationAction();
     final session = _resolveNotificationSession();
     if (session == null || session.isLoading) {
       _scheduleNotificationActionRefresh();
@@ -74,14 +69,12 @@ extension AudioProviderNotifications on AudioProvider {
       _scheduleNotificationActionRefresh();
       return;
     }
-    final hadActivePlayback = _hasActivePlaybackSession;
     await _resumeNotificationSession(session);
-    _scheduleNotificationActionRefresh(
-      suppressMultiThreadRebuild: hadActivePlayback,
-    );
+    _scheduleNotificationActionRefresh();
   }
 
   Future<void> stopPrimarySessionFromNotification() async {
+    _beginNotificationAction();
     final session = _notificationActionSession;
     if (session == null) {
       _scheduleNotificationActionRefresh();
@@ -94,6 +87,7 @@ extension AudioProviderNotifications on AudioProvider {
   }
 
   Future<void> skipPrimarySessionToNextFromNotification() async {
+    _beginNotificationAction();
     final session = _notificationActionSession;
     if (session == null) {
       _scheduleNotificationActionRefresh();
@@ -105,6 +99,7 @@ extension AudioProviderNotifications on AudioProvider {
   }
 
   Future<void> skipPrimarySessionToPreviousFromNotification() async {
+    _beginNotificationAction();
     final session = _notificationActionSession;
     if (session == null) {
       _scheduleNotificationActionRefresh();
@@ -116,6 +111,7 @@ extension AudioProviderNotifications on AudioProvider {
   }
 
   Future<void> toggleSessionPlaybackFromNotification(String sessionId) async {
+    _beginNotificationAction();
     final session = _sessions[sessionId];
     if (session == null) {
       _scheduleNotificationActionRefresh();
@@ -124,15 +120,12 @@ extension AudioProviderNotifications on AudioProvider {
     if (!_multiThreadPlaybackEnabled) {
       _notificationFocusSessionId = session.id;
     }
-    final hadActivePlayback = _hasActivePlaybackSession;
-    final wasPlaying = session.state.playing;
     await toggleSessionPlayPause(session.id);
-    _scheduleNotificationActionRefresh(
-      suppressMultiThreadRebuild: wasPlaying || hadActivePlayback,
-    );
+    _scheduleNotificationActionRefresh();
   }
 
   Future<void> skipNotificationSessionToPreviousById(String sessionId) async {
+    _beginNotificationAction();
     final session = _sessions[sessionId];
     if (session == null) {
       _scheduleNotificationActionRefresh();
@@ -146,6 +139,7 @@ extension AudioProviderNotifications on AudioProvider {
   }
 
   Future<void> skipNotificationSessionToNextById(String sessionId) async {
+    _beginNotificationAction();
     final session = _sessions[sessionId];
     if (session == null) {
       _scheduleNotificationActionRefresh();
@@ -159,6 +153,7 @@ extension AudioProviderNotifications on AudioProvider {
   }
 
   Future<void> seekPrimarySessionFromNotification(Duration position) async {
+    _beginNotificationAction();
     final session = _notificationActionSession;
     if (session == null) {
       _scheduleNotificationActionRefresh();
@@ -259,22 +254,41 @@ extension AudioProviderNotifications on AudioProvider {
     return focusedSession;
   }
 
-  void _scheduleNotificationActionRefresh({
-    bool suppressMultiThreadRebuild = true,
-  }) {
-    // Invalidate the sync key so the next debounced flush always produces
-    // an update, even if another sync raced in ahead of us.
+  // Must be called synchronously at the *start* of every notification
+  // button callback, before any state changes or platform calls that
+  // could trigger intermediate NotificationManager.notify() while
+  // Android's SystemUI is still processing the PendingIntent.
+  void _beginNotificationAction() {
     _unifiedNotificationSyncKey = null;
-    // Cancel any pending debounce and restart it. This guarantees the sync
-    // fires a full debounce interval after the button tap, giving Android
-    // time to finish processing the PendingIntent before we rebuild the
-    // notification. Without this, the notification panel collapses and
-    // re-expands (visual flash) on every button press.
     _unifiedNotificationSyncTimer?.cancel();
     _unifiedNotificationSyncTimer = null;
     _notificationActionRefreshTimer?.cancel();
-    _notificationActionRefreshTimer = null;
-    _syncNotificationState();
+    _notificationActionRefreshPending = true;
+  }
+
+  void _scheduleNotificationActionRefresh() {
+    // The guard was already set by _beginNotificationAction; reset the
+    // timer so we extend the window from the last state mutation, then
+    // schedule the real sync once SystemUI has finished processing the
+    // PendingIntent.
+    _notificationActionRefreshTimer?.cancel();
+    _notificationActionRefreshTimer = Timer(
+      const Duration(milliseconds: 250),
+      () {
+        _notificationActionRefreshTimer = null;
+        _notificationActionRefreshPending = false;
+        // Flush any keep-alive sync that was deferred while the action
+        // guard was active, so the foreground service state is updated
+        // BEFORE the notification is re-posted.
+        if (_keepAliveSyncDeferred) {
+          _keepAliveSyncDeferred = false;
+          _syncKeepCpuAwake();
+        }
+        _syncNotificationState(immediateUnifiedSync: true);
+        _notifyListeners();
+      },
+    );
+
     _notifyListeners();
   }
 
@@ -553,6 +567,9 @@ extension AudioProviderNotifications on AudioProvider {
 
   void _scheduleUnifiedPlaybackNotificationSync() {
     if (_unifiedNotificationSyncTimer != null) {
+      return;
+    }
+    if (_notificationActionRefreshPending) {
       return;
     }
     _unifiedNotificationSyncTimer = Timer(

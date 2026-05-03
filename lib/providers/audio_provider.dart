@@ -80,6 +80,8 @@ class AudioProvider with ChangeNotifier {
   Timer? _unifiedNotificationSyncTimer;
   bool _unifiedNotificationSyncInFlight = false;
   bool _unifiedNotificationSyncPending = false;
+  bool _notificationActionRefreshPending = false;
+  bool _keepAliveSyncDeferred = false;
   String? _queuedNotificationRefreshSessionId;
   bool _notificationsDismissedWhilePaused = false;
 

@@ -1,4 +1,4 @@
-﻿package com.example.music_player
+package com.example.music_player
 
 import android.app.Activity
 import android.app.NotificationChannel
@@ -117,6 +117,7 @@ internal object UnifiedPlaybackNotificationController {
     private const val prefsName = "music_player_notifications"
     private const val activeIdsKey = "active_notification_ids"
     private val activeNotificationIds = linkedSetOf<Int>()
+    val activeNotificationCount: Int get() = activeNotificationIds.size
     private val activeItemsById = linkedMapOf<String, UnifiedPlaybackNotificationItem>()
     private val artCache = object : LruCache<String, Bitmap>(12) {}
     private var lastSummarySignature: String? = null
@@ -1107,8 +1108,13 @@ class MainActivity : AudioServiceActivity() {
         applicationContext.stopService(
             Intent(applicationContext, PlaybackKeepAliveService::class.java)
         )
-        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
-        manager?.cancel(1107)
+        // Only cancel the notification if the unified notification controller
+        // is NOT actively managing it; otherwise the cancel would remove the
+        // rich playback notification and cause a visible collapse/reappear.
+        if (UnifiedPlaybackNotificationController.activeNotificationCount == 0) {
+            val manager = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+            manager?.cancel(1107)
+        }
     }
 
     private fun openNotificationSettings(): Boolean {

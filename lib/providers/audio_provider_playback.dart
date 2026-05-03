@@ -745,15 +745,23 @@ extension AudioProviderPlayback on AudioProvider {
     _keepAliveHasTimer = hasTimer;
     _keepAliveUsesUnifiedNotifications = usesUnifiedNotifications;
     _keepAliveKeepsForegroundService = keepForegroundServiceAlive;
-    unawaited(
-      _setKeepCpuAwake(
-        shouldKeepAwake,
-        hasActivePlayback: hasPlayback,
-        hasActiveTimer: hasTimer,
-        usesUnifiedPlaybackNotifications: usesUnifiedNotifications,
-        keepForegroundServiceAlive: keepForegroundServiceAlive,
-      ),
-    );
+    // While a notification button action is in flight, defer the platform
+    // call to avoid the keep-alive service calling stopForeground which
+    // would remove the notification and cause a visible collapse/reappear.
+    if (_notificationActionRefreshPending) {
+      _keepAliveSyncDeferred = true;
+    } else {
+      _keepAliveSyncDeferred = false;
+      unawaited(
+        _setKeepCpuAwake(
+          shouldKeepAwake,
+          hasActivePlayback: hasPlayback,
+          hasActiveTimer: hasTimer,
+          usesUnifiedPlaybackNotifications: usesUnifiedNotifications,
+          keepForegroundServiceAlive: keepForegroundServiceAlive,
+        ),
+      );
+    }
     if (!hasPlayback && !_hasRetainedPlaybackSession) {
       unawaited(_deactivateAudioSession());
     }

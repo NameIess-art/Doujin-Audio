@@ -72,29 +72,40 @@ class PlaybackKeepAliveService : Service() {
                     START_NOT_STICKY
                 } else {
                     createNotificationChannels()
+                    // Use a structural signature that does NOT include
+                    // hasActivePlayback so that toggling play/pause does not
+                    // cause startForeground to re-post the notification and
+                    // overwrite the unified controller's rich notification.
                     val foregroundSignature = listOf(
                         NOTIFICATION_ID,
-                        hasActivePlayback,
                         hasActiveTimer,
                         usesUnifiedPlaybackNotification,
                         keepForegroundServiceAlive
                     ).joinToString("|")
+                    val alreadyForeground = currentNotificationId == NOTIFICATION_ID
                     val needsForegroundRefresh =
-                        currentNotificationId != NOTIFICATION_ID ||
+                        !alreadyForeground ||
                             currentForegroundSignature != foregroundSignature
 
                     if (needsForegroundRefresh) {
-                        ServiceCompat.startForeground(
-                            this,
-                            NOTIFICATION_ID,
-                            buildNotification(
-                                hasActivePlayback = hasActivePlayback,
-                                hasActiveTimer = hasActiveTimer,
-                                usesUnifiedPlaybackNotification =
-                                    usesUnifiedPlaybackNotification
-                            ),
-                            ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
-                        )
+                        // When unified notifications manage the same
+                        // notification ID and we are already in foreground,
+                        // skip the re-post to avoid a visual flash.
+                        val skipNotificationRepost = usesUnifiedPlaybackNotification &&
+                            alreadyForeground
+                        if (!skipNotificationRepost) {
+                            ServiceCompat.startForeground(
+                                this,
+                                NOTIFICATION_ID,
+                                buildNotification(
+                                    hasActivePlayback = hasActivePlayback,
+                                    hasActiveTimer = hasActiveTimer,
+                                    usesUnifiedPlaybackNotification =
+                                        usesUnifiedPlaybackNotification
+                                ),
+                                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+                            )
+                        }
                         currentNotificationId = NOTIFICATION_ID
                         currentForegroundSignature = foregroundSignature
                     } else {

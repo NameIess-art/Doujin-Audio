@@ -555,8 +555,6 @@ extension AudioProviderPersistence on AudioProvider {
   Future<void> setMultiThreadPlaybackEnabled(bool enabled) async {
     if (_multiThreadPlaybackEnabled == enabled) return;
     _multiThreadPlaybackEnabled = enabled;
-    _multiThreadNotificationRebuildSuppressedUntil = null;
-    _multiThreadNotificationRebuildTimer?.cancel();
     if (!enabled) {
       await _resetSessionsForSingleThreadMode();
     }

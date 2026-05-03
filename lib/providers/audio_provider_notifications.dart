@@ -262,45 +262,20 @@ extension AudioProviderNotifications on AudioProvider {
   void _scheduleNotificationActionRefresh({
     bool suppressMultiThreadRebuild = true,
   }) {
-    if (suppressMultiThreadRebuild) {
-      _suppressMultiThreadNotificationRebuildBriefly();
-    }
+    // Invalidate the sync key so the next debounced flush always produces
+    // an update, even if another sync raced in ahead of us.
+    _unifiedNotificationSyncKey = null;
+    // Cancel any pending debounce and restart it. This guarantees the sync
+    // fires a full debounce interval after the button tap, giving Android
+    // time to finish processing the PendingIntent before we rebuild the
+    // notification. Without this, the notification panel collapses and
+    // re-expands (visual flash) on every button press.
+    _unifiedNotificationSyncTimer?.cancel();
+    _unifiedNotificationSyncTimer = null;
+    _notificationActionRefreshTimer?.cancel();
+    _notificationActionRefreshTimer = null;
     _syncNotificationState();
     _notifyListeners();
-
-    _notificationActionRefreshTimer?.cancel();
-    _notificationActionRefreshTimer = Timer(
-      const Duration(milliseconds: 80),
-      () {
-        _notificationActionRefreshTimer = null;
-        _syncNotificationState();
-        _notifyListeners();
-      },
-    );
-  }
-
-  void _suppressMultiThreadNotificationRebuildBriefly() {
-    if (!_multiThreadPlaybackEnabled) return;
-    const suppressionWindow = Duration(milliseconds: 320);
-    final suppressedUntil = DateTime.now().add(suppressionWindow);
-    _multiThreadNotificationRebuildSuppressedUntil = suppressedUntil;
-    _multiThreadNotificationRebuildTimer?.cancel();
-    _multiThreadNotificationRebuildTimer = Timer(suppressionWindow, () {
-      if (_multiThreadNotificationRebuildSuppressedUntil != suppressedUntil) {
-        return;
-      }
-      _multiThreadNotificationRebuildSuppressedUntil = null;
-      _multiThreadNotificationRebuildTimer = null;
-      _unifiedNotificationSyncKey = null;
-      _requestUnifiedPlaybackNotificationFlush();
-    });
-  }
-
-  bool get _shouldSuppressMultiThreadNotificationRebuild {
-    final suppressedUntil = _multiThreadNotificationRebuildSuppressedUntil;
-    return _multiThreadPlaybackEnabled &&
-        suppressedUntil != null &&
-        DateTime.now().isBefore(suppressedUntil);
   }
 
   Future<void> _resumeNotificationSession(PlaybackSession session) async {
@@ -567,7 +542,6 @@ extension AudioProviderNotifications on AudioProvider {
       return;
     }
 
-    _notificationService.updateSnapshot(null);
     if (immediateUnifiedSync) {
       _unifiedNotificationSyncTimer?.cancel();
       _unifiedNotificationSyncTimer = null;
@@ -703,8 +677,7 @@ extension AudioProviderNotifications on AudioProvider {
       'summaryText': summaryText,
       'summaryLines': summaryLines,
     });
-    final suppressRebuild = _shouldSuppressMultiThreadNotificationRebuild;
-    if (_unifiedNotificationSyncKey == nextSyncKey && !suppressRebuild) {
+    if (_unifiedNotificationSyncKey == nextSyncKey) {
       return;
     }
 
@@ -719,12 +692,9 @@ extension AudioProviderNotifications on AudioProvider {
         'showSummary': showUnifiedSummary,
         'summaryText': summaryText,
         'summaryLines': summaryLines,
-        'suppressRebuild': suppressRebuild,
       });
     }
-    if (!suppressRebuild) {
-      _unifiedNotificationSyncKey = nextSyncKey;
-    }
+    _unifiedNotificationSyncKey = nextSyncKey;
   }
 
   void refreshNotificationState() {

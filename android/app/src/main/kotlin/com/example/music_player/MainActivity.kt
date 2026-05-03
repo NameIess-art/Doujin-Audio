@@ -97,12 +97,13 @@ private fun UnifiedPlaybackNotificationItem.hasSameStableNotification(
         title == other.title &&
         subtitle == other.subtitle &&
         artPath == other.artPath &&
+        playing == other.playing &&
         hasPrevious == other.hasPrevious &&
         hasNext == other.hasNext
 }
 
 internal fun UnifiedPlaybackNotificationItem.stableNotificationSignature(): String {
-    return "$id:$title:$subtitle:$artPath:$hasPrevious:$hasNext"
+    return "$id:$title:$subtitle:$artPath:$playing:$hasPrevious:$hasNext"
 }
 
 internal object UnifiedPlaybackNotificationController {
@@ -120,7 +121,18 @@ internal object UnifiedPlaybackNotificationController {
     private val artCache = object : LruCache<String, Bitmap>(12) {}
     private var lastSummarySignature: String? = null
     private var lastStyleVariant: String? = null
+    private val lastNotifyTimestampsMs = mutableMapOf<Int, Long>()
     var lastRichSummaryNotification: android.app.Notification? = null
+
+    private fun isNotifyThrottled(notificationId: Int): Boolean {
+        val now = android.os.SystemClock.elapsedRealtime()
+        val last = lastNotifyTimestampsMs[notificationId] ?: 0L
+        return now - last < 120L
+    }
+
+    private fun markNotified(notificationId: Int) {
+        lastNotifyTimestampsMs[notificationId] = android.os.SystemClock.elapsedRealtime()
+    }
 
     @Synchronized
     fun sync(
@@ -131,7 +143,6 @@ internal object UnifiedPlaybackNotificationController {
         showSummary: Boolean,
         summaryText: String?,
         summaryLines: List<String>,
-        suppressRebuild: Boolean,
         styleVariant: String?
     ) {
         val manager = NotificationManagerCompat.from(context)
@@ -152,7 +163,6 @@ internal object UnifiedPlaybackNotificationController {
                 items,
                 summaryText,
                 summaryLines,
-                suppressRebuild,
                 styleVariant
             )
             return
@@ -186,10 +196,13 @@ internal object UnifiedPlaybackNotificationController {
                 !postedUnifiedNotifications.contains(notificationId) ||
                 lastStyleVariant != styleKey
         ) {
-            manager.notify(
-                notificationId,
-                buildSingleSessionNotification(context, item)
-            )
+            if (!isNotifyThrottled(notificationId)) {
+                manager.notify(
+                    notificationId,
+                    buildSingleSessionNotification(context, item)
+                )
+                markNotified(notificationId)
+            }
         }
 
         previousIds
@@ -214,7 +227,6 @@ internal object UnifiedPlaybackNotificationController {
         items: List<UnifiedPlaybackNotificationItem>,
         summaryText: String?,
         summaryLines: List<String>,
-        suppressRebuild: Boolean,
         styleVariant: String?
     ) {
         val previousIds = buildSet {
@@ -246,38 +258,41 @@ internal object UnifiedPlaybackNotificationController {
             postedNotificationIds.contains(summaryNotificationId) &&
                 !postedUnifiedNotifications.contains(summaryNotificationId)
         if (
-            (!suppressRebuild && summaryChanged) ||
+            summaryChanged ||
                 summaryWasReplacedByForegroundService ||
                 !postedNotificationIds.contains(summaryNotificationId)
         ) {
-            val notification = buildMultiSessionNotification(
-                context,
-                mainItem,
-                items,
-                summaryText,
-                summaryLines
-            )
-            manager.notify(
-                summaryNotificationId,
-                notification
-            )
-            lastRichSummaryNotification = notification
+            if (!isNotifyThrottled(summaryNotificationId)) {
+                val notification = buildMultiSessionNotification(
+                    context,
+                    mainItem,
+                    items,
+                    summaryText,
+                    summaryLines
+                )
+                manager.notify(
+                    summaryNotificationId,
+                    notification
+                )
+                markNotified(summaryNotificationId)
+                lastRichSummaryNotification = notification
+            }
         }
 
         for (item in items) {
             val notificationId = notificationIdFor(item.id)
             if (
-                (
-                    !suppressRebuild &&
-                        activeItemsById[item.id]?.hasSameStableNotification(item) != true
-                    ) ||
+                activeItemsById[item.id]?.hasSameStableNotification(item) != true ||
                     !postedUnifiedNotifications.contains(notificationId) ||
                     !postedNotificationIds.contains(notificationId)
             ) {
-                manager.notify(
-                    notificationId,
-                    buildMultiSessionChildNotification(context, item)
-                )
+                if (!isNotifyThrottled(notificationId)) {
+                    manager.notify(
+                        notificationId,
+                        buildMultiSessionChildNotification(context, item)
+                    )
+                    markNotified(notificationId)
+                }
             }
             nextIds.add(notificationId)
         }
@@ -291,9 +306,7 @@ internal object UnifiedPlaybackNotificationController {
             clear()
             addAll(nextIds)
         }
-        if (!suppressRebuild) {
-            lastSummarySignature = summarySignature
-        }
+        lastSummarySignature = summarySignature
         savePersistedNotificationIds(context, nextIds)
     }
 
@@ -745,8 +758,6 @@ class MainActivity : AudioServiceActivity() {
                         val summaryText = call.argument<String>("summaryText")
                         val summaryLines =
                             call.argument<List<String>>("summaryLines") ?: emptyList()
-                        val suppressRebuild =
-                            call.argument<Boolean>("suppressRebuild") ?: false
                         val styleVariant = call.argument<String>("styleVariant")
                         val items = rawItems.mapNotNull { raw ->
                             val id = raw["id"] as? String ?: return@mapNotNull null
@@ -769,7 +780,6 @@ class MainActivity : AudioServiceActivity() {
                             showSummary,
                             summaryText,
                             summaryLines,
-                            suppressRebuild,
                             styleVariant
                         )
                         result.success(null)

@@ -180,11 +180,6 @@ class NativePlaybackBridge {
       method,
       arguments,
     );
-    final response = result ?? const <dynamic, dynamic>{};
-    final value = response['value'];
-    if (value is Map && value['sessionId'] != null) {
-      _snapshotController.add(NativePlaybackSnapshot.fromMap(value));
-    }
-    return response;
+    return result ?? const <dynamic, dynamic>{};
   }
 }

@@ -18,20 +18,11 @@ import '../widgets/confirm_action_dialog.dart';
 import '../widgets/mobile_overlay_inset.dart';
 import '../widgets/top_page_header.dart';
 
-final Map<String, Future<String?>> _sessionCoverFutureCache = {};
-
-Future<String?> _coverFutureForTrack(
-  Map<String, Future<String?>> cache,
-  AudioProvider provider,
-  MusicTrack? track,
-) {
+Future<String?> _coverFutureForTrack(AudioProvider provider, MusicTrack? track) {
   if (track == null) {
     return Future<String?>.value();
   }
-  return cache.putIfAbsent(
-    track.path,
-    () => provider.coverPathFutureForTrack(track),
-  );
+  return provider.coverPathFutureForTrack(track);
 }
 
 PageRoute<void> buildSessionDetailRoute({required String sessionId}) {
@@ -163,7 +154,6 @@ class _PlaylistTabState extends State<PlaylistTab> {
                           session: session,
                           provider: provider,
                           coverPathFuture: _coverFutureForTrack(
-                            _sessionCoverFutureCache,
                             provider,
                             track,
                           ),
@@ -871,7 +861,6 @@ class _SessionDetailPageState extends State<SessionDetailPage>
 
     final track = provider.trackByPath(session.currentTrackPath);
     final coverPathFuture = _coverFutureForTrack(
-      _sessionCoverFutureCache,
       provider,
       track,
     );

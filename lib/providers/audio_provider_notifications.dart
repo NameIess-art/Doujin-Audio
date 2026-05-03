@@ -491,7 +491,28 @@ extension AudioProviderNotifications on AudioProvider {
     final directory = Directory(folderPath);
     if (!await directory.exists()) return null;
 
-    final images = <String>[];
+    try {
+      // First pass: check common cover file names in the top-level directory
+      // (non-recursive) — this covers the vast majority of cases.
+      final shallowList = directory.list(followLinks: false);
+      String? firstImage;
+      await for (final entity in shallowList) {
+        if (entity is! File) continue;
+        final extension = path.extension(entity.path).toLowerCase();
+        if (!AudioProvider._supportedImageExtensions.contains(extension)) continue;
+        firstImage ??= entity.path;
+        final basename = path.basenameWithoutExtension(entity.path).toLowerCase();
+        if (basename == 'cover' || basename == 'folder' || basename == 'album' ||
+            basename == 'albumart' || basename == 'front' || basename == 'artwork') {
+          return entity.path;
+        }
+      }
+      if (firstImage != null) return firstImage;
+    } catch (_) {
+      // Shallow pass failed — fall through to recursive search.
+    }
+
+    // Second pass: recursive search with early exit on first image found.
     try {
       await for (final entity in directory.list(
         recursive: true,
@@ -500,23 +521,14 @@ extension AudioProviderNotifications on AudioProvider {
         if (entity is! File) continue;
         final extension = path.extension(entity.path).toLowerCase();
         if (AudioProvider._supportedImageExtensions.contains(extension)) {
-          images.add(entity.path);
+          return entity.path;
         }
       }
     } catch (_) {
       return null;
     }
 
-    if (images.isEmpty) return null;
-    images.sort((a, b) {
-      final nameResult = path
-          .basename(a)
-          .toLowerCase()
-          .compareTo(path.basename(b).toLowerCase());
-      if (nameResult != 0) return nameResult;
-      return a.toLowerCase().compareTo(b.toLowerCase());
-    });
-    return images.first;
+    return null;
   }
 
   void _clearResolvedCoverPaths() {

@@ -58,9 +58,8 @@ class _ActiveSessionCarouselState extends State<ActiveSessionCarousel> {
     if (oldWidget.compactForFab == widget.compactForFab) return;
 
     final currentPage = _pageController.hasClients
-        ? (_pageController.page ?? _pageController.initialPage.toDouble())
-              .round()
-        : 0;
+        ? (_pageController.page ?? _page).round()
+        : _page.round();
     _pageController
       ..removeListener(_handlePageTick)
       ..dispose();
@@ -81,8 +80,8 @@ class _ActiveSessionCarouselState extends State<ActiveSessionCarousel> {
 
   void _handlePageTick() {
     final nextPage = _pageController.hasClients
-        ? (_pageController.page ?? _pageController.initialPage.toDouble())
-        : 0.0;
+        ? (_pageController.page ?? _page)
+        : _page;
     if ((nextPage - _page).abs() < 0.001) return;
     setState(() {
       _page = nextPage;

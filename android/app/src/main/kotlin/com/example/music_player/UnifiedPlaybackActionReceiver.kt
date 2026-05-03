@@ -14,17 +14,25 @@ class UnifiedPlaybackActionReceiver : BroadcastReceiver() {
         private const val restoreAction = "restore_playback_notifications"
         private const val dismissNotificationIdExtra = "notificationId"
         private const val dismissSettleDelayMs = 160L
+        private const val dismissPendingSafetyTimeoutMs = 30_000L
         private val mainHandler = Handler(Looper.getMainLooper())
         private val pendingDismissIds = linkedSetOf<Int>()
         private var pendingDismissCount = 0
         private var pendingDismissExtras: Bundle? = null
         private val flushDismissRunnable = Runnable { flushPendingDismisses() }
+        private val dismissPendingSafetyRunnable = Runnable {
+            UnifiedPlaybackNotificationController.dismissPending = false
+        }
 
         @Synchronized
         private fun queueDismiss(intent: Intent) {
             // Block notification re-posts immediately so the Dart side
             // cannot repost notifications while the 160ms debounce runs.
             UnifiedPlaybackNotificationController.dismissPending = true
+            // Safety timeout: if the Dart engine is killed before clear() is called,
+            // reset dismissPending so notifications are not permanently blocked.
+            mainHandler.removeCallbacks(dismissPendingSafetyRunnable)
+            mainHandler.postDelayed(dismissPendingSafetyRunnable, dismissPendingSafetyTimeoutMs)
             val notificationId = intent.getIntExtra(dismissNotificationIdExtra, Int.MIN_VALUE)
             if (notificationId != Int.MIN_VALUE) {
                 pendingDismissIds.add(notificationId)
@@ -48,6 +56,7 @@ class UnifiedPlaybackActionReceiver : BroadcastReceiver() {
             // calls clear() to prevent a re-post race.
             if (shouldRestore) {
                 UnifiedPlaybackNotificationController.dismissPending = false
+                mainHandler.removeCallbacks(dismissPendingSafetyRunnable)
             }
             AudioService.dispatchCustomAction(
                 if (shouldRestore) restoreAction else dismissAction,

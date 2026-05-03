@@ -3,7 +3,7 @@ part of 'audio_provider.dart';
 extension AudioProviderPersistence on AudioProvider {
   Future<void> _loadLibrary() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = await _prefs;
       final raw = prefs.getString(_kLibraryKey);
       if (raw == null || raw.isEmpty) return;
       final list = json.decode(raw) as List<dynamic>;
@@ -14,20 +14,20 @@ extension AudioProviderPersistence on AudioProvider {
       _library.addAll(tracks);
       _rebuildLibraryIndexes();
       _notifyListeners();
-    } catch (_) {}
+    } catch (e) { debugPrint('AudioProvider persistence error: $e'); }
   }
 
   Future<void> _saveLibrary() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = await _prefs;
       final encoded = json.encode(_library.map((t) => t.toJson()).toList());
       await prefs.setString(_kLibraryKey, encoded);
-    } catch (_) {}
+    } catch (e) { debugPrint('AudioProvider persistence error: $e'); }
   }
 
   Future<void> _loadGroupOrder() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = await _prefs;
       final raw = prefs.getString(_kGroupOrderKey);
       if (raw == null || raw.isEmpty) return;
       final list = (json.decode(raw) as List<dynamic>).cast<String>();
@@ -37,41 +37,41 @@ extension AudioProviderPersistence on AudioProvider {
       _groupOrderSet
         ..clear()
         ..addAll(list);
-    } catch (_) {}
+    } catch (e) { debugPrint('AudioProvider persistence error: $e'); }
   }
 
   Future<void> _saveGroupOrder() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = await _prefs;
       await prefs.setString(_kGroupOrderKey, json.encode(_groupOrder));
-    } catch (_) {}
+    } catch (e) { debugPrint('AudioProvider persistence error: $e'); }
   }
 
   Future<void> _loadLibraryNodeOrder() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = await _prefs;
       final raw = prefs.getString(_kLibraryNodeOrderKey);
       if (raw == null || raw.isEmpty) return;
       final list = (json.decode(raw) as List<dynamic>).cast<String>();
       _libraryNodeOrder
         ..clear()
         ..addAll(list);
-    } catch (_) {}
+    } catch (e) { debugPrint('AudioProvider persistence error: $e'); }
   }
 
   Future<void> _saveLibraryNodeOrder() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = await _prefs;
       await prefs.setString(
         _kLibraryNodeOrderKey,
         json.encode(_libraryNodeOrder),
       );
-    } catch (_) {}
+    } catch (e) { debugPrint('AudioProvider persistence error: $e'); }
   }
 
   Future<void> _loadSessionOrder() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = await _prefs;
       final raw = prefs.getString(_kSessionOrderKey);
       if (raw == null || raw.isEmpty) return;
       final list = (json.decode(raw) as List<dynamic>).cast<String>();
@@ -79,14 +79,14 @@ extension AudioProviderPersistence on AudioProvider {
         ..clear()
         ..addAll(list);
       _markActiveSessionsDirty();
-    } catch (_) {}
+    } catch (e) { debugPrint('AudioProvider persistence error: $e'); }
   }
 
   Future<void> _saveSessionOrder() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = await _prefs;
       await prefs.setString(_kSessionOrderKey, json.encode(_sessionOrder));
-    } catch (_) {}
+    } catch (e) { debugPrint('AudioProvider persistence error: $e'); }
   }
 
   void _scheduleSaveSessionOrder({
@@ -125,7 +125,7 @@ extension AudioProviderPersistence on AudioProvider {
 
   Future<void> _loadSessions() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = await _prefs;
       final raw = prefs.getString(_kSessionsKey);
       if (raw == null || raw.isEmpty) return;
       final list = json.decode(raw) as List<dynamic>;
@@ -191,7 +191,7 @@ extension AudioProviderPersistence on AudioProvider {
             position: restoredPosition,
             syncNotification: false,
           );
-        } catch (_) {}
+        } catch (e) { debugPrint('AudioProvider persistence error: $e'); }
       }
 
       final validOrdered = _sessionOrder
@@ -222,12 +222,12 @@ extension AudioProviderPersistence on AudioProvider {
 
       _syncNotificationState();
       if (_sessions.isNotEmpty) _notifyListeners();
-    } catch (_) {}
+    } catch (e) { debugPrint('AudioProvider persistence error: $e'); }
   }
 
   Future<void> _saveSessionState() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = await _prefs;
       final ordered = _sessionOrder
           .map((id) => _sessions[id])
           .whereType<PlaybackSession>()
@@ -252,7 +252,7 @@ extension AudioProviderPersistence on AudioProvider {
             .toList(),
       );
       await prefs.setString(_kSessionsKey, encoded);
-    } catch (_) {}
+    } catch (e) { debugPrint('AudioProvider persistence error: $e'); }
   }
 
   void _scheduleSaveSessionState({
@@ -271,7 +271,7 @@ extension AudioProviderPersistence on AudioProvider {
 
   Future<void> _loadPlaybackSettings() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = await _prefs;
       final raw = prefs.getString(_kPlaybackSettingsKey);
       if (raw == null || raw.isEmpty) return;
       final map = json.decode(raw) as Map<String, dynamic>;
@@ -279,64 +279,64 @@ extension AudioProviderPersistence on AudioProvider {
           map['multiThreadPlaybackEnabled'] as bool? ?? false;
       _notificationsEnabled =
           map['notificationsEnabled'] as bool? ?? true;
-    } catch (_) {}
+    } catch (e) { debugPrint('AudioProvider persistence error: $e'); }
   }
 
   Future<void> _savePlaybackSettings() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = await _prefs;
       final encoded = json.encode({
         'multiThreadPlaybackEnabled': _multiThreadPlaybackEnabled,
         'notificationsEnabled': _notificationsEnabled,
       });
       await prefs.setString(_kPlaybackSettingsKey, encoded);
-    } catch (_) {}
+    } catch (e) { debugPrint('AudioProvider persistence error: $e'); }
   }
 
   Future<void> _loadWatchedFolders() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = await _prefs;
       final raw = prefs.getString(_kWatchedFoldersKey);
       if (raw == null || raw.isEmpty) return;
       final list = (json.decode(raw) as List<dynamic>).cast<String>();
       _watchedFolders
         ..clear()
         ..addAll(list);
-    } catch (_) {}
+    } catch (e) { debugPrint('AudioProvider persistence error: $e'); }
   }
 
   Future<void> _saveWatchedFolders() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = await _prefs;
       await prefs.setString(_kWatchedFoldersKey, json.encode(_watchedFolders));
-    } catch (_) {}
+    } catch (e) { debugPrint('AudioProvider persistence error: $e'); }
   }
 
   Future<void> _loadWatchedLibraries() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = await _prefs;
       final raw = prefs.getString(_kWatchedLibrariesKey);
       if (raw == null || raw.isEmpty) return;
       final list = (json.decode(raw) as List<dynamic>).cast<String>();
       _watchedLibraries
         ..clear()
         ..addAll(list);
-    } catch (_) {}
+    } catch (e) { debugPrint('AudioProvider persistence error: $e'); }
   }
 
   Future<void> _saveWatchedLibraries() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = await _prefs;
       await prefs.setString(
         _kWatchedLibrariesKey,
         json.encode(_watchedLibraries),
       );
-    } catch (_) {}
+    } catch (e) { debugPrint('AudioProvider persistence error: $e'); }
   }
 
   Future<void> _loadTimerSettings() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = await _prefs;
       final raw = prefs.getString(_kTimerSettingsKey);
       if (raw == null || raw.isEmpty) return;
       final map = json.decode(raw) as Map<String, dynamic>;
@@ -353,12 +353,12 @@ extension AudioProviderPersistence on AudioProvider {
       if (draftDurationMs != null && draftDurationMs > 0) {
         _timerDraftDuration = Duration(milliseconds: draftDurationMs);
       }
-    } catch (_) {}
+    } catch (e) { debugPrint('AudioProvider persistence error: $e'); }
   }
 
   Future<void> _saveTimerSettings() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = await _prefs;
       final encoded = json.encode({
         'autoResumeEnabled': _autoResumeEnabled,
         'autoResumeHour': _autoResumeHour,
@@ -367,7 +367,7 @@ extension AudioProviderPersistence on AudioProvider {
         'timerDraftDurationMs': _timerDraftDuration.inMilliseconds,
       });
       await prefs.setString(_kTimerSettingsKey, encoded);
-    } catch (_) {}
+    } catch (e) { debugPrint('AudioProvider persistence error: $e'); }
   }
 
   void setTimerDraft(TimerMode mode, Duration duration) {
@@ -385,7 +385,7 @@ extension AudioProviderPersistence on AudioProvider {
 
   Future<void> _loadTimerRuntime() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = await _prefs;
       final raw = prefs.getString(_kTimerRuntimeKey);
       if (raw == null || raw.isEmpty) return;
 
@@ -477,12 +477,12 @@ extension AudioProviderPersistence on AudioProvider {
 
       _syncNotificationState();
       _notifyListeners();
-    } catch (_) {}
+    } catch (e) { debugPrint('AudioProvider persistence error: $e'); }
   }
 
   Future<void> _saveTimerRuntime() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = await _prefs;
       final hasRuntime = _hasArmedTimerRuntime;
       if (!hasRuntime) {
         await prefs.remove(_kTimerRuntimeKey);
@@ -498,12 +498,12 @@ extension AudioProviderPersistence on AudioProvider {
         'pausedByTimerPaths': _pausedByTimerPaths,
       });
       await prefs.setString(_kTimerRuntimeKey, encoded);
-    } catch (_) {}
+    } catch (e) { debugPrint('AudioProvider persistence error: $e'); }
   }
 
   Future<void> _loadConverterSettings() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = await _prefs;
       final raw = prefs.getString(_kConverterSettingsKey);
       if (raw == null || raw.isEmpty) return;
       final map = json.decode(raw) as Map<String, dynamic>;
@@ -519,18 +519,18 @@ extension AudioProviderPersistence on AudioProvider {
           AudioProvider.converterBitrates.contains(savedBitrate)) {
         _converterBitrate = savedBitrate;
       }
-    } catch (_) {}
+    } catch (e) { debugPrint('AudioProvider persistence error: $e'); }
   }
 
   Future<void> _saveConverterSettings() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = await _prefs;
       final encoded = json.encode({
         'format': _converterFormat,
         'bitrate': _converterBitrate,
       });
       await prefs.setString(_kConverterSettingsKey, encoded);
-    } catch (_) {}
+    } catch (e) { debugPrint('AudioProvider persistence error: $e'); }
   }
 
   void setConverterSettings({String? format, String? bitrate}) {

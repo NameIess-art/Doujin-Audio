@@ -61,6 +61,7 @@ class AudioProvider with ChangeNotifier {
     'music_player/file_cache',
   );
   final PlaybackNotificationService _notificationService;
+  SharedPreferences? _cachedPrefs;
   final List<MusicTrack> _library = [];
   final Map<String, MusicTrack> _libraryByPath = {};
   final Map<String, List<MusicTrack>> _tracksByGroup = {};
@@ -306,6 +307,11 @@ class AudioProvider with ChangeNotifier {
     _groupOrderSet
       ..clear()
       ..addAll(_groupOrder);
+  }
+
+  Future<SharedPreferences> get _prefs async {
+    _cachedPrefs ??= await SharedPreferences.getInstance();
+    return _cachedPrefs!;
   }
 
   void _notifyListeners() {

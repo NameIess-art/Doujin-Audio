@@ -8,7 +8,6 @@ import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
-import android.os.PowerManager
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
@@ -28,7 +27,6 @@ class NativePlaybackService : MediaSessionService() {
         private const val PLAYBACK_GROUP_KEY = "com.example.music_player.PLAYBACK_GROUP"
         private const val FOREGROUND_NOTIFICATION_ID = 11_225
         private const val FOREGROUND_WATCHDOG_INTERVAL_MS = 4 * 60 * 1000L
-        private const val PLAYBACK_WAKE_LOCK_TIMEOUT_MS = 6 * 60 * 1000L
 
         @Volatile
         private var instance: NativePlaybackService? = null
@@ -50,7 +48,6 @@ class NativePlaybackService : MediaSessionService() {
     private var tickerScheduled = false
     private var foregroundWatchdogScheduled = false
     private var playbackSuspended = false
-    private var playbackWakeLock: PowerManager.WakeLock? = null
     private val positionTicker = object : Runnable {
         override fun run() {
             if (stateListeners.isEmpty() || sessions.isEmpty()) {
@@ -65,11 +62,9 @@ class NativePlaybackService : MediaSessionService() {
         override fun run() {
             if (!hasActivePlayback()) {
                 foregroundWatchdogScheduled = false
-                releasePlaybackWakeLock()
                 stopPlaybackForeground(removeNotification = sessions.isEmpty())
                 return
             }
-            acquirePlaybackWakeLock()
             mainHandler.postDelayed(this, FOREGROUND_WATCHDOG_INTERVAL_MS)
         }
     }
@@ -94,7 +89,6 @@ class NativePlaybackService : MediaSessionService() {
             syncForegroundState()
         } else {
             stopForegroundWatchdog()
-            releasePlaybackWakeLock()
             stopPlaybackForeground(removeNotification = sessions.isEmpty())
             stopSelf()
         }
@@ -109,7 +103,6 @@ class NativePlaybackService : MediaSessionService() {
         mediaSession = null
         sessions.values.forEach { it.release() }
         sessions.clear()
-        releasePlaybackWakeLock()
         stopPlaybackForeground(removeNotification = true)
         instance = null
         super.onDestroy()
@@ -236,7 +229,6 @@ class NativePlaybackService : MediaSessionService() {
         }
         if (sessions.isEmpty()) {
             stopForegroundWatchdog()
-            releasePlaybackWakeLock()
             stopPlaybackForeground(removeNotification = true)
             stopSelf()
         } else {
@@ -250,7 +242,6 @@ class NativePlaybackService : MediaSessionService() {
         sessions.values.forEach { it.player.pause() }
         publishAllSessionStates()
         stopForegroundWatchdog()
-        releasePlaybackWakeLock()
         mediaSession?.release()
         mediaSession = null
         playbackSuspended = true
@@ -265,7 +256,6 @@ class NativePlaybackService : MediaSessionService() {
         focusedSessionId = null
         updateMediaSessionPlayer()
         stopForegroundWatchdog()
-        releasePlaybackWakeLock()
         stopPlaybackForeground(removeNotification = true)
         stopSelf()
         return okResult(null)
@@ -310,7 +300,7 @@ class NativePlaybackService : MediaSessionService() {
 
     private fun createPlayer(sessionId: String): ExoPlayer {
         return ExoPlayer.Builder(this).build().also { player ->
-            player.setWakeMode(C.WAKE_MODE_LOCAL)
+            player.setWakeMode(C.WAKE_MODE_NETWORK)
             player.addListener(object : Player.Listener {
                 override fun onPlaybackStateChanged(playbackState: Int) {
                     publishSessionState(sessionId)
@@ -383,11 +373,9 @@ class NativePlaybackService : MediaSessionService() {
     private fun syncForegroundState() {
         if (hasActivePlayback()) {
             startPlaybackForeground()
-            acquirePlaybackWakeLock()
             ensureForegroundWatchdog()
         } else {
             stopForegroundWatchdog()
-            releasePlaybackWakeLock()
             stopPlaybackForeground(removeNotification = sessions.isEmpty())
         }
     }
@@ -416,30 +404,6 @@ class NativePlaybackService : MediaSessionService() {
         if (!foregroundWatchdogScheduled) return
         mainHandler.removeCallbacks(foregroundWatchdog)
         foregroundWatchdogScheduled = false
-    }
-
-    private fun acquirePlaybackWakeLock() {
-        val existingWakeLock = playbackWakeLock
-        if (existingWakeLock?.isHeld == true) {
-            existingWakeLock.acquire(PLAYBACK_WAKE_LOCK_TIMEOUT_MS)
-            return
-        }
-        val powerManager = getSystemService(Context.POWER_SERVICE) as? PowerManager ?: return
-        playbackWakeLock = powerManager.newWakeLock(
-            PowerManager.PARTIAL_WAKE_LOCK,
-            "$packageName:native_playback"
-        ).apply {
-            setReferenceCounted(false)
-            acquire(PLAYBACK_WAKE_LOCK_TIMEOUT_MS)
-        }
-    }
-
-    private fun releasePlaybackWakeLock() {
-        val wakeLock = playbackWakeLock
-        if (wakeLock?.isHeld == true) {
-            wakeLock.release()
-        }
-        playbackWakeLock = null
     }
 
     private fun ensurePlaybackChannel() {

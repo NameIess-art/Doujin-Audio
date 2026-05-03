@@ -47,7 +47,6 @@ dependencies:
   provider: ^6.1.2
   audio_session: ^0.2.1
   audio_service: ^0.18.18
-  just_audio_background: ^0.0.1-beta.17
   marquee: ^2.3.0
   text_scroll: ^0.2.1
   auto_size_text: ^3.0.0

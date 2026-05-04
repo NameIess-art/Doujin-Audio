@@ -78,11 +78,7 @@ extension AudioProviderPlayback on AudioProvider {
     _sessionPreparationQueue = _sessionPreparationQueue.catchError((_) {}).then(
       (_) async {
         if (!_sessions.containsKey(session.id)) return;
-        await _prepareAndPlay(
-          session,
-          nextPath: nextPath,
-          autoPlay: autoPlay,
-        );
+        await _prepareAndPlay(session, nextPath: nextPath, autoPlay: autoPlay);
       },
     );
     return _sessionPreparationQueue;
@@ -188,7 +184,8 @@ extension AudioProviderPlayback on AudioProvider {
 
     var prepared = false;
     try {
-      if (!_sessions.containsKey(session.id) || session.loadGeneration != generation) {
+      if (!_sessions.containsKey(session.id) ||
+          session.loadGeneration != generation) {
         return;
       }
 
@@ -216,7 +213,8 @@ extension AudioProviderPlayback on AudioProvider {
       }
 
       if (isNewTrack) {
-        final title = track?.displayName ?? path.basenameWithoutExtension(nextPath);
+        final title =
+            track?.displayName ?? path.basenameWithoutExtension(nextPath);
         final artUri = coverPath == null ? null : Uri.file(coverPath);
         var ok = false;
         for (var attempt = 0; attempt < 2; attempt++) {
@@ -269,7 +267,8 @@ extension AudioProviderPlayback on AudioProvider {
     } catch (e) {
       debugPrint('AudioProvider._prepareAndPlay error: $e');
     } finally {
-      if (_sessions.containsKey(session.id) && session.loadGeneration == generation) {
+      if (_sessions.containsKey(session.id) &&
+          session.loadGeneration == generation) {
         session.isLoading = false;
         session.isAdvancingAfterCompletion = false;
         _syncKeepCpuAwake();
@@ -301,7 +300,7 @@ extension AudioProviderPlayback on AudioProvider {
       await NativePlaybackBridge.instance.pause(session.id);
       session.setOptimisticState(playing: false);
     } else if (session.state.processingState == ProcessingState.completed ||
-               session.state.processingState == ProcessingState.idle) {
+        session.state.processingState == ProcessingState.idle) {
       await _prepareAndPlay(session, nextPath: session.currentTrackPath);
     } else {
       await _startSessionPlayback(session, shouldStartTriggerCountdown: true);
@@ -717,7 +716,11 @@ extension AudioProviderPlayback on AudioProvider {
   }
 
   bool get _hasPlaybackToKeepAlive => _sessions.values.any(
-    (s) => s.state.playing || s.isLoading || s.isPlaybackStarting,
+    (s) =>
+        s.state.playing ||
+        s.isLoading ||
+        s.isPlaybackStarting ||
+        s.loadedPath != null,
   );
 
   bool get _hasRetainedPlaybackSession => _sessions.isNotEmpty;
@@ -729,9 +732,10 @@ extension AudioProviderPlayback on AudioProvider {
     final hasPlayback = _hasPlaybackToKeepAlive;
     final hasTimer =
         _timerActive || _timerWaitingForPlayback || _hasPendingAutoResume;
-    final usesUnifiedNotifications = _multiThreadPlaybackEnabled && _notificationsEnabled;
-    final keepForegroundServiceAlive = _notificationsEnabled &&
-        (hasPlayback || hasTimer || _hasPendingAutoResume);
+    final usesUnifiedNotifications =
+        _multiThreadPlaybackEnabled && _notificationsEnabled;
+    final keepForegroundServiceAlive =
+        hasPlayback || hasTimer || _hasPendingAutoResume;
     final shouldKeepAwake = keepForegroundServiceAlive;
     if (_keepCpuAwake == shouldKeepAwake &&
         _keepAliveHasPlayback == hasPlayback &&
@@ -773,8 +777,8 @@ extension AudioProviderPlayback on AudioProvider {
         _timerActive || _timerWaitingForPlayback || _hasPendingAutoResume;
     _keepAliveUsesUnifiedNotifications =
         _multiThreadPlaybackEnabled && _notificationsEnabled;
-    _keepAliveKeepsForegroundService = _notificationsEnabled &&
-        (_keepAliveHasPlayback || _keepAliveHasTimer || _hasPendingAutoResume);
+    _keepAliveKeepsForegroundService =
+        _keepAliveHasPlayback || _keepAliveHasTimer || _hasPendingAutoResume;
     _keepCpuAwake = _keepAliveKeepsForegroundService;
     unawaited(
       _setKeepCpuAwake(
@@ -879,8 +883,7 @@ extension AudioProviderPlayback on AudioProvider {
               ? ProcessingState.ready
               : ProcessingState.idle,
         );
-      } else if (!session.state.playing &&
-          session.isPlaybackStarting) {
+      } else if (!session.state.playing && session.isPlaybackStarting) {
         // Stale EventChannel snapshots from prepareSession may have
         // overwritten the optimistic playing state. Re-assert it.
         session.setOptimisticState(
@@ -1072,15 +1075,12 @@ extension AudioProviderPlayback on AudioProvider {
         return currentTrack.path;
       case SessionLoopMode.crossRandom:
         if (forward) {
-          final all = _sortedLibraryTracks
-              .map((track) => track.path)
-              .toList(growable: false);
-          if (all.length == 1) return all.first;
-          final rnd = Random();
-          String candidate = all[rnd.nextInt(all.length)];
+          final all = _sortedLibraryTrackPaths;
+          if (all.length <= 1) return all.first;
+          String candidate = all[_random.nextInt(all.length)];
           var guard = 0;
           while (candidate == currentTrack.path && guard < 10) {
-            candidate = all[rnd.nextInt(all.length)];
+            candidate = all[_random.nextInt(all.length)];
             guard++;
           }
           return candidate;
@@ -1095,11 +1095,38 @@ extension AudioProviderPlayback on AudioProvider {
         final next = (idx + (forward ? 1 : -1) + scope.length) % scope.length;
         return scope[next].path;
       case SessionLoopMode.crossSequential:
-        final all = _sortedLibraryTracks;
-        final idx = all.indexWhere((t) => t.path == currentTrack.path);
-        if (idx < 0) return all.first.path;
-        final next = (idx + (forward ? 1 : -1) + all.length) % all.length;
-        return all[next].path;
+        final groupEntries = _tracksByGroup.entries.toList()
+          ..sort((a, b) {
+            final titleA = a.value.first.groupTitle.toLowerCase();
+            final titleB = b.value.first.groupTitle.toLowerCase();
+            return titleA.compareTo(titleB);
+          });
+        if (groupEntries.isEmpty) return currentTrack.path;
+        final currentGroupIdx = groupEntries.indexWhere(
+          (e) => e.key == currentTrack.groupKey,
+        );
+        if (currentGroupIdx < 0) {
+          return groupEntries.first.value.first.path;
+        }
+        final currentGroup = groupEntries[currentGroupIdx].value;
+        final trackIdx = currentGroup.indexWhere(
+          (t) => t.path == currentTrack.path,
+        );
+        if (trackIdx < 0) return currentGroup.first.path;
+        if (forward) {
+          if (trackIdx < currentGroup.length - 1) {
+            return currentGroup[trackIdx + 1].path;
+          }
+          final nextGroupIdx = (currentGroupIdx + 1) % groupEntries.length;
+          return groupEntries[nextGroupIdx].value.first.path;
+        } else {
+          if (trackIdx > 0) {
+            return currentGroup[trackIdx - 1].path;
+          }
+          final prevGroupIdx =
+              (currentGroupIdx - 1 + groupEntries.length) % groupEntries.length;
+          return groupEntries[prevGroupIdx].value.last.path;
+        }
       case SessionLoopMode.folderRandom:
         if (forward) {
           final scope =
@@ -1108,11 +1135,10 @@ extension AudioProviderPlayback on AudioProvider {
                   .toList(growable: false);
           if (scope.isEmpty) return currentTrack.path;
           if (scope.length == 1) return scope.first;
-          final rnd = Random();
-          String candidate = scope[rnd.nextInt(scope.length)];
+          String candidate = scope[_random.nextInt(scope.length)];
           var guard = 0;
           while (candidate == currentTrack.path && guard < 10) {
-            candidate = scope[rnd.nextInt(scope.length)];
+            candidate = scope[_random.nextInt(scope.length)];
             guard++;
           }
           return candidate;

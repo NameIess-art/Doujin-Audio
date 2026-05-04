@@ -100,6 +100,12 @@ extension AudioProviderLibrary on AudioProvider {
   void setScanning(bool scanning) {
     if (_isScanning == scanning) return;
     _isScanning = scanning;
+    if (scanning) {
+      _scanCurrentFolder = '';
+      _scanFoundCount = 0;
+      _scanDuplicateCount = 0;
+      _scanFailureCount = 0;
+    }
     _notifyListeners();
   }
 
@@ -133,7 +139,7 @@ extension AudioProviderLibrary on AudioProvider {
         _notifyListeners();
       }
       if (persist) {
-        _saveLibrary();
+        unawaited(AppDatabase.instance.insertTracks(toAdd));
         if (didChangeGroupOrder) {
           _saveGroupOrder();
         }
@@ -165,7 +171,7 @@ extension AudioProviderLibrary on AudioProvider {
     _rebuildLibraryIndexes();
     _syncLibraryNodeOrder(persist: false);
     _notifyListeners();
-    _saveLibrary();
+    unawaited(AppDatabase.instance.deleteTracks([trackPath]));
     _saveGroupOrder();
     _saveLibraryNodeOrder();
   }
@@ -205,7 +211,7 @@ extension AudioProviderLibrary on AudioProvider {
     _rebuildLibraryIndexes();
     _syncLibraryNodeOrder(persist: false);
     _notifyListeners();
-    _saveLibrary();
+    unawaited(AppDatabase.instance.deleteTracks(trackPaths.toList()));
     _saveGroupOrder();
     _saveLibraryNodeOrder();
   }

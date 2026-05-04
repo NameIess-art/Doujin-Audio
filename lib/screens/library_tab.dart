@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:collection';
 import 'dart:io';
 import 'dart:math';
+import 'dart:ui';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -17,6 +18,7 @@ import '../providers/audio_provider.dart';
 import '../widgets/app_feedback.dart';
 import '../widgets/confirm_action_dialog.dart';
 import '../widgets/mobile_overlay_inset.dart';
+import '../widgets/swipe_reveal_card.dart';
 import '../widgets/top_page_header.dart';
 import 'video_converter_tab.dart';
 
@@ -27,10 +29,29 @@ class LibraryTab extends StatefulWidget {
   State<LibraryTab> createState() => _LibraryTabState();
 }
 
-class _LibraryTabState extends State<LibraryTab> {
+class _LibraryTabState extends State<LibraryTab>
+    with AutomaticKeepAliveClientMixin {
   static const MethodChannel _fileCacheChannel = MethodChannel(
     'music_player/file_cache',
   );
+
+  @override
+  bool get wantKeepAlive => true;
+
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+  Timer? _searchDebounceTimer;
+  List<LibraryNode>? _cachedFilteredTree;
+  List<LibraryNode>? _cachedFilterRawTree;
+  String _cachedFilterQuery = '';
+
+  final GlobalKey _headerKey = GlobalKey();
+  double _headerHeight = 72;
+  static const double _searchBarHeight = 46;
+
+  final ScrollController _scrollController = ScrollController();
+  double _searchBarOffset =
+      0; // 0 is fully visible, -_searchBarHeight is hidden
 
   Future<void> _openVideoConverterPage() async {
     if (!mounted) return;
@@ -43,8 +64,29 @@ class _LibraryTabState extends State<LibraryTab> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _refreshWatchedFolders(silent: true);
+      if (mounted) {
+        _refreshWatchedFolders(silent: true);
+        _measureHeader();
+      }
     });
+  }
+
+  void _measureHeader() {
+    final box = _headerKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box != null && mounted) {
+      final h = box.size.height;
+      if (h > 0 && h != _headerHeight) {
+        setState(() => _headerHeight = h);
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _searchDebounceTimer?.cancel();
+    _searchController.dispose();
+    _scrollController.dispose();
+    super.dispose();
   }
 
   Future<void> _refreshWatchedFolders({bool silent = false}) async {
@@ -73,7 +115,14 @@ class _LibraryTabState extends State<LibraryTab> {
         }
       }
 
+      final totalFolders = foldersToRefresh.length;
+      var processedFolders = 0;
       for (final folderPath in foldersToRefresh) {
+        if (!provider.isScanning) break;
+        processedFolders++;
+        provider.setScanProgress(
+          currentFolder: '[$processedFolders/$totalFolders] ${path.basename(folderPath)}',
+        );
         final nativeTracks = await _scanFolderViaNative(folderPath);
         if (nativeTracks != null) {
           final toAdd = nativeTracks
@@ -91,7 +140,12 @@ class _LibraryTabState extends State<LibraryTab> {
               .toList();
           final before = provider.library.length;
           provider.addTracks(toAdd, notify: false);
-          totalAdded += provider.library.length - before;
+          final added = provider.library.length - before;
+          totalAdded += added;
+          provider.setScanProgress(
+            foundCount: provider.scanFoundCount + added,
+            duplicateCount: provider.scanDuplicateCount + (toAdd.length - added),
+          );
         } else {
           totalAdded += await _importFolderIncrementally(folderPath, provider);
         }
@@ -170,6 +224,7 @@ class _LibraryTabState extends State<LibraryTab> {
     var added = 0;
 
     try {
+      provider.setScanProgress(currentFolder: path.basename(folderPath));
       final nativeTracks = await _scanFolderViaNative(folderPath);
       if (nativeTracks != null) {
         final toAdd = nativeTracks
@@ -189,6 +244,10 @@ class _LibraryTabState extends State<LibraryTab> {
         final beforeCount = provider.library.length;
         provider.addTracks(toAdd, notify: false);
         added = provider.library.length - beforeCount;
+        provider.setScanProgress(
+          foundCount: added,
+          duplicateCount: toAdd.length - added,
+        );
       } else {
         added = await _importFolderIncrementally(folderPath, provider);
       }
@@ -216,9 +275,16 @@ class _LibraryTabState extends State<LibraryTab> {
 
     provider.setScanning(true);
     var added = 0;
+    final totalFolders = uniqueFolderPaths.length;
+    var processedFolders = 0;
 
     try {
       for (final folderPath in uniqueFolderPaths) {
+        if (!provider.isScanning) break;
+        processedFolders++;
+        provider.setScanProgress(
+          currentFolder: '[$processedFolders/$totalFolders] ${path.basename(folderPath)}',
+        );
         final nativeTracks = await _scanFolderViaNative(folderPath);
         if (nativeTracks != null) {
           final toAdd = nativeTracks
@@ -237,7 +303,12 @@ class _LibraryTabState extends State<LibraryTab> {
 
           final beforeCount = provider.library.length;
           provider.addTracks(toAdd, notify: false);
-          added += provider.library.length - beforeCount;
+          final folderAdded = provider.library.length - beforeCount;
+          added += folderAdded;
+          provider.setScanProgress(
+            foundCount: provider.scanFoundCount + folderAdded,
+            duplicateCount: provider.scanDuplicateCount + (toAdd.length - folderAdded),
+          );
         } else {
           added += await _importFolderIncrementally(folderPath, provider);
         }
@@ -468,51 +539,78 @@ class _LibraryTabState extends State<LibraryTab> {
     final batch = <MusicTrack>[];
     const batchSize = 350;
     var added = 0;
+    var duplicates = 0;
+    var failures = 0;
+    var dirsProcessed = 0;
 
-    while (pendingDirs.isNotEmpty && mounted) {
+    while (pendingDirs.isNotEmpty && mounted && provider.isScanning) {
       final currentDir = pendingDirs.removeFirst();
       late final Stream<FileSystemEntity> stream;
       try {
         stream = currentDir.list(followLinks: false);
       } catch (_) {
+        failures++;
         continue;
       }
 
-      await for (final entity in stream.handleError((_) {})) {
-        if (entity is Directory) {
-          pendingDirs.add(entity);
-          continue;
-        }
-        if (entity is! File) continue;
-
-        final absolutePath = path.normalize(entity.path);
-        if (!_isSupportedAudioFile(absolutePath)) continue;
-        if (existingPaths.contains(absolutePath)) continue;
-        existingPaths.add(absolutePath);
-
-        final parentFolder = path.dirname(absolutePath);
-        final folderName = path.basename(parentFolder);
-
-        batch.add(
-          MusicTrack(
-            path: absolutePath,
-            displayName: path.basenameWithoutExtension(absolutePath),
-            groupKey: parentFolder,
-            groupTitle: folderName.isEmpty ? parentFolder : folderName,
-            groupSubtitle: parentFolder,
-            isSingle: false,
-          ),
+      dirsProcessed++;
+      if (dirsProcessed % 8 == 0) {
+        provider.setScanProgress(
+          currentFolder: path.basename(currentDir.path),
+          foundCount: provider.scanFoundCount + added,
+          duplicateCount: provider.scanDuplicateCount + duplicates,
+          failureCount: provider.scanFailureCount + failures,
         );
-        added++;
+      }
 
-        if (batch.length >= batchSize) {
-          provider.addTracks(batch, notify: false);
-          batch.clear();
-          await Future<void>.delayed(Duration.zero);
+      try {
+        await for (final entity in stream.handleError((_) {})) {
+          if (!provider.isScanning) break;
+          if (entity is Directory) {
+            pendingDirs.add(entity);
+            continue;
+          }
+          if (entity is! File) continue;
+
+          final absolutePath = path.normalize(entity.path);
+          if (!_isSupportedAudioFile(absolutePath)) continue;
+          if (existingPaths.contains(absolutePath)) {
+            duplicates++;
+            continue;
+          }
+          existingPaths.add(absolutePath);
+
+          final parentFolder = path.dirname(absolutePath);
+          final folderName = path.basename(parentFolder);
+
+          batch.add(
+            MusicTrack(
+              path: absolutePath,
+              displayName: path.basenameWithoutExtension(absolutePath),
+              groupKey: parentFolder,
+              groupTitle: folderName.isEmpty ? parentFolder : folderName,
+              groupSubtitle: parentFolder,
+              isSingle: false,
+            ),
+          );
+          added++;
+
+          if (batch.length >= batchSize) {
+            provider.addTracks(batch, notify: false);
+            batch.clear();
+            await Future<void>.delayed(Duration.zero);
+          }
         }
+      } catch (_) {
+        failures++;
       }
     }
     provider.addTracks(batch, notify: false);
+    provider.setScanProgress(
+      foundCount: provider.scanFoundCount + added,
+      duplicateCount: provider.scanDuplicateCount + duplicates,
+      failureCount: provider.scanFailureCount + failures,
+    );
     return added;
   }
 
@@ -543,152 +641,467 @@ class _LibraryTabState extends State<LibraryTab> {
       ..showSnackBar(SnackBar(content: Text(message)));
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final i18n = context.watch<AppLanguageProvider>();
-    final provider = context.watch<AudioProvider>();
-    final tree = provider.buildLibraryTree();
-    final leafFolderCount = context.select<AudioProvider, int>(
-      (value) => value.libraryLeafFolderCount,
-    );
-    final bottomInset = max(132.0, MobileOverlayInset.of(context));
-    final _ =
-        '${i18n.tr('audio_count', {'count': provider.library.length})} 路 '
-        '${i18n.tr('folder_count', {'count': leafFolderCount})}';
+  List<LibraryNode> _filterTreeCached(List<LibraryNode> tree, String query) {
+    if (identical(tree, _cachedFilterRawTree) && query == _cachedFilterQuery) {
+      return _cachedFilteredTree!;
+    }
+    _cachedFilterRawTree = tree;
+    _cachedFilterQuery = query;
+    _cachedFilteredTree = _filterTree(tree, query);
+    return _cachedFilteredTree!;
+  }
 
-    return SafeArea(
+  List<LibraryNode> _filterTree(List<LibraryNode> tree, String query) {
+    if (query.isEmpty) return tree;
+    final lowerQuery = query.toLowerCase();
+    final result = <LibraryNode>[];
+
+    for (final node in tree) {
+      final nameMatch = node.name.toLowerCase().contains(lowerQuery);
+      if (node is FolderNode) {
+        if (nameMatch) {
+          result.add(node);
+        } else {
+          final filtered = _filterTree(node.children, query);
+          if (filtered.isNotEmpty) {
+            final copy = FolderNode(node.name, node.path, depth: node.depth);
+            copy.children.addAll(filtered);
+            result.add(copy);
+          }
+        }
+      } else if (node is TrackNode) {
+        if (nameMatch) result.add(node);
+      }
+    }
+    return result;
+  }
+
+  int _countTrackNodes(List<LibraryNode> nodes) {
+    var count = 0;
+    for (final node in nodes) {
+      if (node is TrackNode) {
+        count++;
+      } else if (node is FolderNode) {
+        count += _countTrackNodes(node.children);
+      }
+    }
+    return count;
+  }
+
+  Widget _buildSearchBar(AppLanguageProvider i18n, int matchCount, int totalCount) {
+    final cs = Theme.of(context).colorScheme;
+    final hasText = _searchController.text.isNotEmpty;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          TopPageHeader(
-            icon: Icons.library_music_rounded,
-            title: i18n.tr('music_library'),
-            subtitle: i18n.tr('audio_count', {
-              'count': provider.library.length,
-            }),
-            trailing: SizedBox(
-              width: 112,
-              height: 44,
-              child: provider.isScanning
-                  ? const Align(
-                      alignment: Alignment.centerRight,
-                      child: SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2.2),
-                      ),
-                    )
-                  : Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        Semantics(
-                          button: true,
-                          label: i18n.tr('refresh_watched_folder'),
-                          child: IconButton(
-                            icon: const Icon(Icons.refresh_rounded),
-                            tooltip: i18n.tr('refresh_watched_folder'),
-                            onPressed: provider.watchedFolders.isEmpty
-                                ? null
-                                : () => _refreshWatchedFolders(),
-                          ),
+          SizedBox(
+            height: 34,
+            child: TextField(
+              controller: _searchController,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 13),
+              decoration: InputDecoration(
+                filled: true,
+                fillColor: cs.surfaceContainerHigh,
+                prefixIcon: Icon(
+                  Icons.search_rounded,
+                  color: cs.onSurfaceVariant,
+                  size: 18,
+                ),
+                suffixIcon: hasText
+                    ? IconButton(
+                        icon: const Icon(Icons.clear_rounded, size: 18),
+                        onPressed: () {
+                          _searchController.clear();
+                          _searchDebounceTimer?.cancel();
+                          setState(() => _searchQuery = '');
+                        },
+                        color: cs.onSurfaceVariant,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(
+                          minWidth: 32,
+                          minHeight: 32,
                         ),
-                        PopupMenuButton<int>(
-                          icon: const Icon(Icons.add_circle_outline_rounded),
-                          tooltip: i18n.tr('more_actions'),
-                          onSelected: (value) {
-                            if (value == 0) _addFolder();
-                            if (value == 1) _addLibrary();
-                            if (value == 2) _addFiles();
-                            if (value == 3) _openVideoConverterPage();
-                          },
-                          itemBuilder: (context) => [
-                            PopupMenuItem(
-                              value: 0,
-                              child: Row(
-                                children: [
-                                  const Icon(
-                                    Icons.create_new_folder_rounded,
-                                    size: 20,
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Text(i18n.tr('import_folder')),
-                                ],
-                              ),
-                            ),
-                            PopupMenuItem(
-                              value: 1,
-                              child: Row(
-                                children: [
-                                  const Icon(
-                                    Icons.library_add_rounded,
-                                    size: 20,
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Text(i18n.tr('choose_library')),
-                                ],
-                              ),
-                            ),
-                            PopupMenuItem(
-                              value: 2,
-                              child: Row(
-                                children: [
-                                  const Icon(
-                                    Icons.upload_file_rounded,
-                                    size: 20,
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Text(i18n.tr('import_file')),
-                                ],
-                              ),
-                            ),
-                            PopupMenuItem(
-                              value: 3,
-                              child: Row(
-                                children: [
-                                  const Icon(
-                                    Icons.video_library_rounded,
-                                    size: 20,
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Text(i18n.tr('video_to_audio')),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
+                      )
+                    : null,
+                hintText: i18n.tr('search_audio_placeholder'),
+                hintStyle: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(17),
+                  borderSide: BorderSide.none,
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(17),
+                  borderSide: BorderSide.none,
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(17),
+                  borderSide: BorderSide.none,
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 7,
+                ),
+                isDense: true,
+              ),
+              onChanged: (value) {
+                _searchDebounceTimer?.cancel();
+                _searchDebounceTimer = Timer(const Duration(milliseconds: 220), () {
+                  if (!mounted) return;
+                  setState(() => _searchQuery = value.trim());
+                });
+              },
             ),
-            bottomSpacing: 10,
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-          ),
-          Expanded(
-            child: tree.isEmpty
-                ? _LibraryEmptyState(
-                    onImportLibrary: _addLibrary,
-                    onImportFolder: _addFolder,
-                    onImportFile: _addFiles,
-                    bottomInset: bottomInset,
-                  )
-                : ReorderableListView.builder(
-                    padding: EdgeInsets.fromLTRB(16, 4, 16, bottomInset),
-                    cacheExtent: 720,
-                    keyboardDismissBehavior:
-                        ScrollViewKeyboardDismissBehavior.onDrag,
-                    buildDefaultDragHandles: false,
-                    onReorder: provider.reorderLibraryNodes,
-                    itemCount: tree.length,
-                    itemBuilder: (context, index) {
-                      final node = tree[index];
-                      return ReorderableDelayedDragStartListener(
-                        key: ValueKey(node.path),
-                        index: index,
-                        child: _LibraryTreeItem(node: node),
-                      );
-                    },
-                  ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildScanProgressCard(
+    AppLanguageProvider i18n,
+    AudioProvider provider,
+    String currentFolder,
+    int found,
+    int dup,
+    int fail,
+  ) {
+    final cs = Theme.of(context).colorScheme;
+    return Card(
+      elevation: 4,
+      shadowColor: cs.shadow,
+      color: cs.surfaceContainerHigh,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: cs.primary,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    i18n.tr('scanning_title'),
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                TextButton.icon(
+                  onPressed: () => provider.cancelScan(),
+                  icon: Icon(Icons.close_rounded, size: 16, color: cs.error),
+                  label: Text(
+                    i18n.tr('scan_cancel'),
+                    style: TextStyle(color: cs.error, fontSize: 12),
+                  ),
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                ),
+              ],
+            ),
+            if (currentFolder.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Icon(
+                    Icons.folder_open_rounded,
+                    size: 14,
+                    color: cs.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Text(
+                      currentFolder,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: cs.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                _ScanCountChip(
+                  label: i18n.tr('scan_found'),
+                  count: found,
+                  color: cs.primary,
+                ),
+                const SizedBox(width: 8),
+                _ScanCountChip(
+                  label: i18n.tr('scan_duplicate'),
+                  count: dup,
+                  color: cs.tertiary,
+                ),
+                const SizedBox(width: 8),
+                _ScanCountChip(
+                  label: i18n.tr('scan_failure'),
+                  count: fail,
+                  color: cs.error,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  bool _onLibraryScrollNotification(ScrollNotification n) {
+    if (n is ScrollUpdateNotification) {
+      final d = n.scrollDelta ?? 0;
+      final pixels = n.metrics.pixels;
+
+      if (pixels <= 0) {
+        if (_searchBarOffset != 0) {
+          setState(() => _searchBarOffset = 0);
+        }
+      } else if (d > 0.5) {
+        // Scrolling up (content moves up)
+        if (_searchBarOffset > -_searchBarHeight) {
+          setState(() {
+            _searchBarOffset = max(-_searchBarHeight, _searchBarOffset - d);
+          });
+        }
+      } else if (d < -0.5 && pixels < 100) {
+        // Scrolling down (content moves down) - only near top
+        if (_searchBarOffset < 0) {
+          setState(() {
+            _searchBarOffset = min(0.0, _searchBarOffset - d);
+          });
+        }
+      }
+    }
+    return false;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final i18n = context.watch<AppLanguageProvider>();
+    final provider = context.read<AudioProvider>();
+    final rawTree = context.select<AudioProvider, List<LibraryNode>>(
+      (p) => p.libraryTree,
+    );
+    final audioCount = context.select<AudioProvider, int>(
+      (p) => p.libraryTrackCount,
+    );
+    final isScanning = context.select<AudioProvider, bool>((p) => p.isScanning);
+    final scanFolder = context.select<AudioProvider, String>((p) => p.scanCurrentFolder);
+    final scanFound = context.select<AudioProvider, int>((p) => p.scanFoundCount);
+    final scanDup = context.select<AudioProvider, int>((p) => p.scanDuplicateCount);
+    final scanFail = context.select<AudioProvider, int>((p) => p.scanFailureCount);
+    final tree = _filterTreeCached(rawTree, _searchQuery);
+    final matchCount = _countTrackNodes(tree);
+    final bottomInset = MobileOverlayInset.of(context);
+    final topTotalHeight = _headerHeight + _searchBarOffset + 4;
+    final hasLibrary = rawTree.isNotEmpty;
+
+    return Stack(
+      children: [
+        // 1. Content Layer (Scrolls behind header)
+        Positioned.fill(
+          child: tree.isEmpty
+              ? (_searchQuery.isNotEmpty
+                    ? Center(
+                        child: Padding(
+                          padding: EdgeInsets.only(top: topTotalHeight),
+                          child: Text(
+                            hasLibrary
+                                ? i18n.tr('no_search_results')
+                                : i18n.tr('no_audio_files'),
+                            style: Theme.of(context).textTheme.bodyLarge
+                                ?.copyWith(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurfaceVariant,
+                                ),
+                          ),
+                        ),
+                      )
+                    : Column(
+                        children: [
+                          SizedBox(height: topTotalHeight),
+                          Expanded(
+                            child: _LibraryEmptyState(
+                              onImportLibrary: _addLibrary,
+                              onImportFolder: _addFolder,
+                              onImportFile: _addFiles,
+                              bottomInset: bottomInset,
+                            ),
+                          ),
+                        ],
+                      ))
+              : NotificationListener<ScrollNotification>(
+                  onNotification: _onLibraryScrollNotification,
+                  child: RefreshIndicator(
+                    onRefresh: () => _refreshWatchedFolders(),
+                    displacement: topTotalHeight + 10,
+                    child: ReorderableListView.builder(
+                      scrollController: _scrollController,
+                      padding: EdgeInsets.fromLTRB(
+                        16,
+                        topTotalHeight,
+                        16,
+                        bottomInset,
+                      ),
+                      cacheExtent: 720,
+                      keyboardDismissBehavior:
+                          ScrollViewKeyboardDismissBehavior.onDrag,
+                      buildDefaultDragHandles: true,
+                      onReorder: (oldIndex, newIndex) {
+                        if (_searchQuery.isNotEmpty) return;
+                        provider.reorderLibraryNodes(oldIndex, newIndex);
+                      },
+                      itemCount: tree.length,
+                      itemBuilder: (context, index) {
+                        final node = tree[index];
+                        return ReorderableDelayedDragStartListener(
+                          key: ValueKey(node.path),
+                          index: index,
+                          child: _LibraryTreeItem(node: node),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+        ),
+
+        // Scan progress card
+        if (isScanning)
+          Positioned(
+            top: _headerHeight + 6 + _searchBarHeight + _searchBarOffset + 10,
+            left: 12,
+            right: 12,
+            child: _buildScanProgressCard(
+              i18n,
+              provider,
+              scanFolder,
+              scanFound,
+              scanDup,
+              scanFail,
+            ),
+          ),
+
+        // 2. Header Layer (Frosted Glass via TopPageHeader)
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          child: TopPageHeader(
+            key: _headerKey,
+            icon: Icons.library_music_rounded,
+            title: i18n.tr('music_library'),
+            titleSuffix: Text(
+              i18n.tr('audio_count', {'count': audioCount}),
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            trailing: SizedBox(
+              width: 52,
+              height: 44,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  PopupMenuButton<int>(
+                    icon: const Icon(Icons.add_circle_outline_rounded),
+                    tooltip: i18n.tr('more_actions'),
+                    onSelected: (value) {
+                      if (value == 0) _addFolder();
+                      if (value == 1) _addLibrary();
+                      if (value == 2) _addFiles();
+                      if (value == 3) _openVideoConverterPage();
+                    },
+                    itemBuilder: (context) => [
+                      PopupMenuItem(
+                        value: 0,
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.create_new_folder_rounded,
+                              size: 20,
+                            ),
+                            const SizedBox(width: 12),
+                            Text(i18n.tr('import_folder')),
+                          ],
+                        ),
+                      ),
+                      PopupMenuItem(
+                        value: 1,
+                        child: Row(
+                          children: [
+                            const Icon(Icons.library_add_rounded, size: 20),
+                            const SizedBox(width: 12),
+                            Text(i18n.tr('choose_library')),
+                          ],
+                        ),
+                      ),
+                      PopupMenuItem(
+                        value: 2,
+                        child: Row(
+                          children: [
+                            const Icon(Icons.upload_file_rounded, size: 20),
+                            const SizedBox(width: 12),
+                            Text(i18n.tr('import_file')),
+                          ],
+                        ),
+                      ),
+                      PopupMenuItem(
+                        value: 3,
+                        child: Row(
+                          children: [
+                            const Icon(Icons.video_library_rounded, size: 20),
+                            const SizedBox(width: 12),
+                            Text(i18n.tr('video_to_audio')),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            bottomSpacing: 4,
+            padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+            additionalChild: Container(
+              height: _searchBarHeight + _searchBarOffset,
+              clipBehavior: Clip.hardEdge,
+              decoration: const BoxDecoration(),
+              child: OverflowBox(
+                alignment: Alignment.topCenter,
+                maxHeight: _searchBarHeight,
+                minHeight: _searchBarHeight,
+                child: Opacity(
+                  opacity: (1.0 + (_searchBarOffset / _searchBarHeight)).clamp(
+                    0.0,
+                    1.0,
+                  ),
+                  child: _buildSearchBar(i18n, matchCount, audioCount),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -700,6 +1113,36 @@ void _showSessionCreatedSnack(BuildContext context, String message) {
     tone: AppFeedbackTone.success,
     icon: Icons.queue_music_rounded,
   );
+}
+
+class _ScanCountChip extends StatelessWidget {
+  const _ScanCountChip({
+    required this.label,
+    required this.count,
+    required this.color,
+  });
+
+  final String label;
+  final int count;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withAlpha(30),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        '$label: $count',
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+          color: color,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
 }
 
 class _LibraryEmptyState extends StatelessWidget {
@@ -862,7 +1305,7 @@ class _FolderNodeWidgetState extends State<_FolderNodeWidget> {
         ? ''
         : path.basename(path.dirname(widget.folder.path));
 
-    return _SwipeRevealCard(
+    return SwipeRevealCard(
       margin: const EdgeInsets.only(bottom: 6),
       shape: cardShape,
       actionLabel: i18n.tr('remove'),
@@ -890,7 +1333,12 @@ class _FolderNodeWidgetState extends State<_FolderNodeWidget> {
             collapsedShape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(14),
             ),
-            tilePadding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
+            tilePadding: EdgeInsets.fromLTRB(
+              isRootFolder ? 12 : 10,
+              isRootFolder ? 10 : 6,
+              10,
+              isRootFolder ? 10 : 6,
+            ),
             childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
             leading: isRootFolder
                 ? _LibraryCoverThumbnail(
@@ -902,8 +1350,9 @@ class _FolderNodeWidgetState extends State<_FolderNodeWidget> {
                 : null,
             title: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
-                if (groupLabel.isNotEmpty)
+                if (groupLabel.isNotEmpty) ...[
                   Text(
                     groupLabel,
                     maxLines: 1,
@@ -914,7 +1363,8 @@ class _FolderNodeWidgetState extends State<_FolderNodeWidget> {
                       fontSize: 10,
                     ),
                   ),
-                if (groupLabel.isNotEmpty) const SizedBox(height: 3),
+                  const SizedBox(height: 3),
+                ],
                 Text(
                   widget.folder.name,
                   maxLines: 2,
@@ -925,16 +1375,18 @@ class _FolderNodeWidgetState extends State<_FolderNodeWidget> {
                     height: 1.06,
                   ),
                 ),
-                const SizedBox(height: 6),
-                SizedBox(
-                  width: double.infinity,
-                  child: _LibraryMetaChip(
-                    icon: Icons.library_music_rounded,
-                    text: i18n.tr('audio_count', {
-                      'count': widget.folder.totalTrackCount,
-                    }),
+                if (isRootFolder) ...[
+                  const SizedBox(height: 6),
+                  SizedBox(
+                    width: double.infinity,
+                    child: _LibraryMetaChip(
+                      icon: Icons.library_music_rounded,
+                      text: i18n.tr('audio_count', {
+                        'count': widget.folder.totalTrackCount,
+                      }),
+                    ),
                   ),
-                ),
+                ],
               ],
             ),
             trailing: SizedBox(
@@ -945,6 +1397,7 @@ class _FolderNodeWidgetState extends State<_FolderNodeWidget> {
                   IconButton.filledTonal(
                     onPressed: () => _playFolder(context, provider),
                     visualDensity: VisualDensity.compact,
+                    tooltip: i18n.tr('play'),
                     icon: const Icon(Icons.play_arrow_rounded, size: 20),
                   ),
                   const SizedBox(width: 4),
@@ -1017,15 +1470,10 @@ class _TrackNodeWidget extends StatelessWidget {
         ? i18n.tr('imported_files')
         : track.groupTitle;
     final cardShape = RoundedRectangleBorder(
-      side: BorderSide(
-        color: isAlreadyPlaying
-            ? cs.primary.withValues(alpha: 0.48)
-            : cs.outlineVariant,
-      ),
       borderRadius: BorderRadius.circular(14),
     );
 
-    return _SwipeRevealCard(
+    return SwipeRevealCard(
       margin: const EdgeInsets.only(bottom: 6),
       shape: cardShape,
       actionLabel: i18n.tr('remove'),
@@ -1035,11 +1483,16 @@ class _TrackNodeWidget extends StatelessWidget {
         margin: EdgeInsets.zero,
         clipBehavior: Clip.antiAlias,
         shape: cardShape,
-        color: cs.surface,
+        color: isAlreadyPlaying
+            ? Color.alphaBlend(
+                cs.primaryContainer.withValues(alpha: 0.40),
+                cs.surfaceContainerHighest,
+              )
+            : cs.surfaceContainerHighest,
         child: SizedBox(
-          height: 88,
+          height: 64,
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 10, 8),
+            padding: const EdgeInsets.fromLTRB(12, 6, 10, 6),
             child: Row(
               children: [
                 Expanded(
@@ -1084,226 +1537,13 @@ class _TrackNodeWidget extends StatelessWidget {
                   },
                   icon: Icon(
                     isAlreadyPlaying
-                        ? Icons.add_circle_outline_rounded
+                        ? Icons.playlist_add_rounded
                         : Icons.play_arrow_rounded,
                     size: 20,
                   ),
                 ),
               ],
             ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _SwipeRevealCard extends StatefulWidget {
-  const _SwipeRevealCard({
-    required this.child,
-    required this.onRemove,
-    required this.actionLabel,
-    required this.removeTooltip,
-    required this.shape,
-    this.margin = EdgeInsets.zero,
-    this.onWillReveal,
-  });
-
-  final Widget child;
-  final VoidCallback onRemove;
-  final String actionLabel;
-  final String removeTooltip;
-  final ShapeBorder shape;
-  final EdgeInsets margin;
-  final VoidCallback? onWillReveal;
-
-  @override
-  State<_SwipeRevealCard> createState() => _SwipeRevealCardState();
-}
-
-class _SwipeRevealCardState extends State<_SwipeRevealCard> {
-  static const double _actionWidth = 128;
-
-  double _revealedWidth = 0;
-
-  bool get _isOpen => _revealedWidth > (_actionWidth * 0.5);
-
-  void _closePane() {
-    if (_revealedWidth == 0) return;
-    setState(() {
-      _revealedWidth = 0;
-    });
-  }
-
-  void _handleHorizontalDragUpdate(DragUpdateDetails details) {
-    final nextWidth = (_revealedWidth - details.delta.dx).clamp(
-      0.0,
-      _actionWidth,
-    );
-    if (nextWidth == _revealedWidth) return;
-    if (_revealedWidth == 0 && nextWidth > 0) {
-      HapticFeedback.selectionClick();
-      widget.onWillReveal?.call();
-    }
-    setState(() {
-      _revealedWidth = nextWidth;
-    });
-  }
-
-  void _handleHorizontalDragEnd(DragEndDetails details) {
-    final velocity = details.primaryVelocity ?? 0;
-    final shouldOpen =
-        velocity < -180 || (velocity.abs() < 180 && _revealedWidth > 44);
-    setState(() {
-      _revealedWidth = shouldOpen ? _actionWidth : 0;
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final i18n = context.watch<AppLanguageProvider>();
-    final cs = Theme.of(context).colorScheme;
-    final revealProgress = (_revealedWidth / _actionWidth).clamp(0.0, 1.0);
-
-    return TapRegion(
-      onTapOutside: (_) => _closePane(),
-      child: Padding(
-        padding: widget.margin,
-        child: GestureDetector(
-          behavior: HitTestBehavior.translucent,
-          onHorizontalDragUpdate: _handleHorizontalDragUpdate,
-          onHorizontalDragEnd: _handleHorizontalDragEnd,
-          child: Stack(
-            children: [
-              Positioned.fill(
-                child: DecoratedBox(
-                  decoration: ShapeDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        cs.errorContainer.withValues(alpha: 0.94),
-                        cs.errorContainer.withValues(alpha: 0.82),
-                      ],
-                    ),
-                    shape: widget.shape,
-                  ),
-                  child: Stack(
-                    children: [
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: Padding(
-                          padding: const EdgeInsets.only(left: 18, right: 86),
-                          child: AnimatedOpacity(
-                            opacity: 0.24 + (revealProgress * 0.76),
-                            duration: const Duration(milliseconds: 160),
-                            curve: Curves.easeOutCubic,
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 10,
-                                    vertical: 5,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: cs.error.withValues(alpha: 0.12),
-                                    borderRadius: BorderRadius.circular(999),
-                                    border: Border.all(
-                                      color: cs.error.withValues(alpha: 0.18),
-                                    ),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(
-                                        Icons.swipe_left_rounded,
-                                        size: 14,
-                                        color: cs.error,
-                                      ),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        widget.actionLabel,
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .labelMedium
-                                            ?.copyWith(
-                                              color: cs.error,
-                                              fontWeight: FontWeight.w800,
-                                            ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  widget.removeTooltip,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: Theme.of(context).textTheme.bodySmall
-                                      ?.copyWith(
-                                        color: cs.onErrorContainer,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: Padding(
-                          padding: const EdgeInsets.only(right: 14),
-                          child: AnimatedScale(
-                            scale: 0.92 + (revealProgress * 0.08),
-                            duration: const Duration(milliseconds: 180),
-                            curve: Curves.easeOutBack,
-                            child: IconButton.filled(
-                              onPressed: () {
-                                Feedback.forTap(context);
-                                HapticFeedback.mediumImpact();
-                                _closePane();
-                                widget.onRemove();
-                              },
-                              style: IconButton.styleFrom(
-                                backgroundColor: cs.error,
-                                foregroundColor: cs.onError,
-                                minimumSize: const Size(54, 54),
-                                maximumSize: const Size(54, 54),
-                              ),
-                              tooltip: i18n.tr('remove'),
-                              icon: const Icon(Icons.delete_outline_rounded),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              TweenAnimationBuilder<double>(
-                tween: Tween<double>(begin: 0, end: _revealedWidth),
-                duration: const Duration(milliseconds: 220),
-                curve: Curves.easeOutCubic,
-                builder: (context, value, child) {
-                  return Transform.translate(
-                    offset: Offset(-value, 0),
-                    child: child,
-                  );
-                },
-                child: IgnorePointer(ignoring: _isOpen, child: widget.child),
-              ),
-              if (_isOpen)
-                Positioned.fill(
-                  right: _actionWidth,
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.translucent,
-                    onTap: _closePane,
-                  ),
-                ),
-            ],
           ),
         ),
       ),
@@ -1358,9 +1598,12 @@ class _LibraryCoverThumbnail extends StatelessWidget {
             if (coverPath == null || coverPath.isEmpty) {
               return fallback();
             }
+            final dpr = MediaQuery.devicePixelRatioOf(context);
             return Image.file(
               File(coverPath),
               fit: BoxFit.cover,
+              cacheWidth: (78 * dpr).round(),
+              cacheHeight: (78 * dpr).round(),
               errorBuilder: (_, _, _) => fallback(),
             );
           },

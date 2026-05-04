@@ -3,25 +3,28 @@ part of 'audio_provider.dart';
 extension AudioProviderPersistence on AudioProvider {
   Future<void> _loadLibrary() async {
     try {
+      final db = AppDatabase.instance;
+      var tracks = await db.loadAllTracks();
+      if (tracks.isNotEmpty) {
+        _library.addAll(tracks);
+        _rebuildLibraryIndexes();
+        _notifyListeners();
+        // Clean up legacy SharedPreferences blob after successful migration.
+        final prefs = await _prefs;
+        await prefs.remove(_kLibraryKey);
+        return;
+      }
+      // One-shot migration from legacy SharedPreferences JSON.
       final prefs = await _prefs;
       final raw = prefs.getString(_kLibraryKey);
-      if (raw == null || raw.isEmpty) return;
-      final list = json.decode(raw) as List<dynamic>;
-      final tracks = list
-          .whereType<Map<String, dynamic>>()
-          .map(MusicTrack.fromJson)
-          .toList();
-      _library.addAll(tracks);
-      _rebuildLibraryIndexes();
-      _notifyListeners();
-    } catch (e) { debugPrint('AudioProvider persistence error: $e'); }
-  }
-
-  Future<void> _saveLibrary() async {
-    try {
-      final prefs = await _prefs;
-      final encoded = json.encode(_library.map((t) => t.toJson()).toList());
-      await prefs.setString(_kLibraryKey, encoded);
+      final migrated = AppDatabase.tryMigrateFromJson(raw);
+      if (migrated != null && migrated.isNotEmpty) {
+        await db.saveAllTracks(migrated);
+        await prefs.remove(_kLibraryKey);
+        _library.addAll(migrated);
+        _rebuildLibraryIndexes();
+        _notifyListeners();
+      }
     } catch (e) { debugPrint('AudioProvider persistence error: $e'); }
   }
 
@@ -94,6 +97,7 @@ extension AudioProviderPersistence on AudioProvider {
   }) {
     _saveSessionOrderTimer?.cancel();
     _saveSessionOrderTimer = Timer(delay, () {
+      _saveSessionOrderTimer = null;
       unawaited(_saveSessionOrder());
     });
   }
@@ -114,6 +118,7 @@ extension AudioProviderPersistence on AudioProvider {
     if (!_notificationsEnabled) {
       await NativePlaybackBridge.instance.setForegroundEnabled(false);
     }
+    _notifyListeners();
     await _loadSessions();
     if (!_multiThreadPlaybackEnabled) {
       await _enforceSingleThreadPlayback();
@@ -260,6 +265,7 @@ extension AudioProviderPersistence on AudioProvider {
   }) {
     _saveSessionStateTimer?.cancel();
     _saveSessionStateTimer = Timer(delay, () {
+      _saveSessionStateTimer = null;
       unawaited(_saveSessionState());
     });
   }
@@ -279,6 +285,8 @@ extension AudioProviderPersistence on AudioProvider {
           map['multiThreadPlaybackEnabled'] as bool? ?? false;
       _notificationsEnabled =
           map['notificationsEnabled'] as bool? ?? true;
+      _showPlaybackCard =
+          map['showPlaybackCard'] as bool? ?? true;
     } catch (e) { debugPrint('AudioProvider persistence error: $e'); }
   }
 
@@ -288,6 +296,7 @@ extension AudioProviderPersistence on AudioProvider {
       final encoded = json.encode({
         'multiThreadPlaybackEnabled': _multiThreadPlaybackEnabled,
         'notificationsEnabled': _notificationsEnabled,
+        'showPlaybackCard': _showPlaybackCard,
       });
       await prefs.setString(_kPlaybackSettingsKey, encoded);
     } catch (e) { debugPrint('AudioProvider persistence error: $e'); }
@@ -579,6 +588,13 @@ extension AudioProviderPersistence on AudioProvider {
     }
     _syncKeepCpuAwake();
     _syncNotificationState(immediateUnifiedSync: true);
+    _notifyListeners();
+    unawaited(_savePlaybackSettings());
+  }
+
+  Future<void> setShowPlaybackCard(bool show) async {
+    if (_showPlaybackCard == show) return;
+    _showPlaybackCard = show;
     _notifyListeners();
     unawaited(_savePlaybackSettings());
   }

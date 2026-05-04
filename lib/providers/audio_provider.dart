@@ -5,7 +5,6 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:audio_session/audio_session.dart';
-import 'package:audio_service/audio_service.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -13,8 +12,11 @@ import 'package:just_audio/just_audio.dart';
 import 'package:path/path.dart' as path;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../models/music_track.dart';
+import '../services/app_database.dart';
+
+export '../models/music_track.dart';
 import '../services/native_playback_bridge.dart';
-import '../services/playback_notification_handler.dart';
 import '../services/playback_notification_service.dart';
 import '../services/subtitle_parser.dart';
 
@@ -66,6 +68,7 @@ class AudioProvider with ChangeNotifier {
   final Map<String, MusicTrack> _libraryByPath = {};
   final Map<String, List<MusicTrack>> _tracksByGroup = {};
   List<MusicTrack> _sortedLibraryTracks = const <MusicTrack>[];
+  List<String> _sortedLibraryTrackPaths = const <String>[];
   final Map<String, PlaybackSession> _sessions = {};
   final Map<String, Future<SubtitleTrack?>> _subtitleTrackFutures = {};
   final Map<String, SubtitleTrack?> _subtitleTracks = {};
@@ -97,6 +100,7 @@ class AudioProvider with ChangeNotifier {
   String _converterBitrate = '320k';
   bool _multiThreadPlaybackEnabled = false;
   bool _notificationsEnabled = true;
+  bool _showPlaybackCard = true;
 
   static const List<String> converterFormats = [
     'mp3',
@@ -111,15 +115,14 @@ class AudioProvider with ChangeNotifier {
     '256k',
     '320k',
   ];
-  static const String _androidNotificationGroupKey =
-      'com.example.music_player.PLAYBACK_GROUP';
-  static const String _androidGroupSummaryKey = 'android_group_summary';
-  static const String _androidSummaryTitleKey = 'android_summary_title';
-  static const String _androidSummaryTextKey = 'android_summary_text';
-  static const String _androidSummaryLinesKey = 'android_summary_lines';
 
   int _sessionSeed = 0;
   bool _isScanning = false;
+  String _scanCurrentFolder = '';
+  int _scanFoundCount = 0;
+  int _scanDuplicateCount = 0;
+  int _scanFailureCount = 0;
+  final Random _random = Random();
 
   TimerMode? _timerMode;
   Duration? _timerDuration;
@@ -170,6 +173,7 @@ class AudioProvider with ChangeNotifier {
   String get converterBitrate => _converterBitrate;
   bool get multiThreadPlaybackEnabled => _multiThreadPlaybackEnabled;
   bool get notificationsEnabled => _notificationsEnabled;
+  bool get showPlaybackCard => _showPlaybackCard;
 
   List<MusicTrack> get library => List.unmodifiable(_library);
   int get libraryTrackCount => _library.length;
@@ -199,6 +203,7 @@ class AudioProvider with ChangeNotifier {
   List<PlaybackSession> get activeSessions {
     if (_activeSessionsDirty) {
       final result = <PlaybackSession>[];
+      final orderSet = _sessionOrder.toSet();
       for (final id in _sessionOrder) {
         final session = _sessions[id];
         if (session != null) {
@@ -206,7 +211,7 @@ class AudioProvider with ChangeNotifier {
         }
       }
       for (final session in _sessions.values) {
-        if (!_sessionOrder.contains(session.id)) {
+        if (!orderSet.contains(session.id)) {
           result.add(session);
         }
       }
@@ -217,6 +222,29 @@ class AudioProvider with ChangeNotifier {
   }
 
   bool get isScanning => _isScanning;
+  String get scanCurrentFolder => _scanCurrentFolder;
+  int get scanFoundCount => _scanFoundCount;
+  int get scanDuplicateCount => _scanDuplicateCount;
+  int get scanFailureCount => _scanFailureCount;
+
+  void setScanProgress({
+    String? currentFolder,
+    int? foundCount,
+    int? duplicateCount,
+    int? failureCount,
+  }) {
+    if (currentFolder != null) _scanCurrentFolder = currentFolder;
+    if (foundCount != null) _scanFoundCount = foundCount;
+    if (duplicateCount != null) _scanDuplicateCount = duplicateCount;
+    if (failureCount != null) _scanFailureCount = failureCount;
+    _notifyListeners();
+  }
+
+  void cancelScan() {
+    if (!_isScanning) return;
+    _isScanning = false;
+    _notifyListeners();
+  }
 
   AudioProvider({required PlaybackNotificationService notificationService})
     : _notificationService = notificationService {
@@ -289,6 +317,9 @@ class AudioProvider with ChangeNotifier {
       );
     _sortedLibraryTracks = List<MusicTrack>.unmodifiable(
       _library.toList()..sort(getTrackComparator),
+    );
+    _sortedLibraryTrackPaths = List<String>.unmodifiable(
+      _sortedLibraryTracks.map((t) => t.path),
     );
     _groupOrderSet
       ..clear()

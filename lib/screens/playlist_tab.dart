@@ -16,9 +16,13 @@ import '../widgets/app_feedback.dart';
 import '../widgets/app_transitions.dart';
 import '../widgets/confirm_action_dialog.dart';
 import '../widgets/mobile_overlay_inset.dart';
+import '../widgets/swipe_reveal_card.dart';
 import '../widgets/top_page_header.dart';
 
-Future<String?> _coverFutureForTrack(AudioProvider provider, MusicTrack? track) {
+Future<String?> _coverFutureForTrack(
+  AudioProvider provider,
+  MusicTrack? track,
+) {
   if (track == null) {
     return Future<String?>.value();
   }
@@ -28,19 +32,40 @@ Future<String?> _coverFutureForTrack(AudioProvider provider, MusicTrack? track) 
 PageRoute<void> buildSessionDetailRoute({required String sessionId}) {
   return buildAppOverlayRoute(
     child: SessionDetailPage(sessionId: sessionId),
-    beginOffset: const Offset(0, 0.028),
+    beginOffset: const Offset(0, 1.0),
     reverseDuration: Duration.zero,
   );
 }
 
 class PlaylistTab extends StatefulWidget {
-  const PlaylistTab({super.key});
+  const PlaylistTab({super.key, this.onTimerTap});
+
+  final VoidCallback? onTimerTap;
 
   @override
   State<PlaylistTab> createState() => _PlaylistTabState();
 }
 
 class _PlaylistTabState extends State<PlaylistTab> {
+  final GlobalKey _headerKey = GlobalKey();
+  double _headerHeight = 90;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _measureHeader());
+  }
+
+  void _measureHeader() {
+    final box = _headerKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box != null && mounted) {
+      final h = box.size.height;
+      if (h > 0 && h != _headerHeight) {
+        setState(() => _headerHeight = h);
+      }
+    }
+  }
+
   Future<void> _confirmClearAll(
     BuildContext context,
     AudioProvider provider,
@@ -86,23 +111,86 @@ class _PlaylistTabState extends State<PlaylistTab> {
     final sessionSummary =
         '${i18n.tr('sessions_count', {'count': sessions.length})} · '
         '${i18n.tr('playing_count', {'count': playingCount})}';
+    final timerDuration = context.select<AudioProvider, Duration?>(
+      (value) => value.timerDuration,
+    );
+    final timerRemaining = context.select<AudioProvider, Duration?>(
+      (value) => value.timerRemaining,
+    );
+    final timerActive = context.select<AudioProvider, bool>(
+      (value) => value.timerActive,
+    );
+    final topTotalHeight = _headerHeight + 4;
 
-    return SafeArea(
-      child: Column(
-        children: [
-          TopPageHeader(
+    return Stack(
+      children: [
+        sessions.isEmpty
+            ? Column(
+                children: [
+                  SizedBox(height: topTotalHeight),
+                  Expanded(
+                    child: _SessionsEmptyState(bottomInset: bottomInset),
+                  ),
+                ],
+              )
+            : ReorderableListView.builder(
+                padding: EdgeInsets.fromLTRB(
+                  16,
+                  topTotalHeight,
+                  16,
+                  bottomInset,
+                ),
+                cacheExtent: 720,
+                keyboardDismissBehavior:
+                    ScrollViewKeyboardDismissBehavior.onDrag,
+                buildDefaultDragHandles: true,
+                onReorder: provider.reorderSessions,
+                itemCount: sessions.length,
+                itemBuilder: (context, index) {
+                  final session = sessions[index];
+                  final track = provider.trackByPath(session.currentTrackPath);
+                  return ReorderableDelayedDragStartListener(
+                    key: ValueKey(session.id),
+                    index: index,
+                    child: _SessionListCard(
+                      session: session,
+                      provider: provider,
+                      coverPathFuture: _coverFutureForTrack(provider, track),
+                      onOpen: () => _openSessionDetail(context, session.id),
+                    ),
+                  );
+                },
+              ),
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          child: TopPageHeader(
+            key: _headerKey,
             icon: Icons.graphic_eq_rounded,
             title: i18n.tr('playback_sessions'),
             subtitle: sessionSummary,
             subtitleMaxLines: 1,
-            subtitleFontSize: 9,
+            subtitleFontSize: 11,
             fitSubtitleToWidth: true,
             trailing: SizedBox(
-              width: 112,
+              width: 168,
               height: 44,
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
+                  if (timerDuration != null)
+                    _TimerCountdownCapsule(
+                      remaining: timerRemaining ?? timerDuration!,
+                      active: timerActive,
+                      onTap: widget.onTimerTap,
+                    )
+                  else
+                    IconButton(
+                      onPressed: widget.onTimerTap,
+                      icon: const Icon(Icons.alarm_rounded),
+                      tooltip: i18n.tr('timer'),
+                    ),
                   IconButton(
                     onPressed: sessions.isEmpty
                         ? null
@@ -129,42 +217,10 @@ class _PlaylistTabState extends State<PlaylistTab> {
               ),
             ),
             bottomSpacing: 10,
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+            padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
           ),
-          Expanded(
-            child: sessions.isEmpty
-                ? _SessionsEmptyState(bottomInset: bottomInset)
-                : ReorderableListView.builder(
-                    padding: EdgeInsets.fromLTRB(16, 4, 16, bottomInset),
-                    cacheExtent: 720,
-                    keyboardDismissBehavior:
-                        ScrollViewKeyboardDismissBehavior.onDrag,
-                    buildDefaultDragHandles: false,
-                    onReorder: provider.reorderSessions,
-                    itemCount: sessions.length,
-                    itemBuilder: (context, index) {
-                      final session = sessions[index];
-                      final track = provider.trackByPath(
-                        session.currentTrackPath,
-                      );
-                      return ReorderableDelayedDragStartListener(
-                        key: ValueKey(session.id),
-                        index: index,
-                        child: _SessionListCard(
-                          session: session,
-                          provider: provider,
-                          coverPathFuture: _coverFutureForTrack(
-                            provider,
-                            track,
-                          ),
-                          onOpen: () => _openSessionDetail(context, session.id),
-                        ),
-                      );
-                    },
-                  ),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
@@ -243,20 +299,6 @@ class _SessionListCard extends StatefulWidget {
 }
 
 class _SessionListCardState extends State<_SessionListCard> {
-  static const double _actionWidth = 128;
-
-  double _revealedWidth = 0;
-
-  bool get _isOpen => _revealedWidth > (_actionWidth * 0.5);
-
-  @override
-  void didUpdateWidget(covariant _SessionListCard oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.session.id != widget.session.id && _revealedWidth != 0) {
-      _revealedWidth = 0;
-    }
-  }
-
   Future<void> _confirmRemoveSession(BuildContext context) async {
     final i18n = context.read<AppLanguageProvider>();
     final track = widget.provider.trackByPath(widget.session.currentTrackPath);
@@ -292,36 +334,6 @@ class _SessionListCardState extends State<_SessionListCard> {
     return '$order - $scope';
   }
 
-  void _closeActionPane() {
-    if (_revealedWidth == 0) return;
-    setState(() {
-      _revealedWidth = 0;
-    });
-  }
-
-  void _handleHorizontalDragUpdate(DragUpdateDetails details) {
-    final nextWidth = (_revealedWidth - details.delta.dx).clamp(
-      0.0,
-      _actionWidth,
-    );
-    if (nextWidth == _revealedWidth) return;
-    if (_revealedWidth == 0 && nextWidth > 0) {
-      HapticFeedback.selectionClick();
-    }
-    setState(() {
-      _revealedWidth = nextWidth;
-    });
-  }
-
-  void _handleHorizontalDragEnd(DragEndDetails details) {
-    final velocity = details.primaryVelocity ?? 0;
-    final shouldOpen =
-        velocity < -180 || (velocity.abs() < 180 && _revealedWidth > 44);
-    setState(() {
-      _revealedWidth = shouldOpen ? _actionWidth : 0;
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
     final i18n = context.watch<AppLanguageProvider>();
@@ -354,7 +366,6 @@ class _SessionListCardState extends State<_SessionListCard> {
     final folderName = (track != null && !track.isSingle)
         ? track.groupTitle
         : i18n.tr('imported_files');
-    final revealProgress = (_revealedWidth / _actionWidth).clamp(0.0, 1.0);
 
     return StreamBuilder<PlayerState>(
       stream: session.stateStream,
@@ -363,303 +374,133 @@ class _SessionListCardState extends State<_SessionListCard> {
         final playerState = snapshot.data ?? session.state;
         final isPlaying = playerState.playing;
         final cardShape = RoundedRectangleBorder(
-          side: BorderSide(
-            color: isPlaying
-                ? cs.primary.withValues(alpha: 0.3)
-                : cs.outlineVariant.withValues(alpha: 0.82),
-          ),
-          borderRadius: BorderRadius.circular(22),
+          borderRadius: BorderRadius.circular(14),
         );
 
-        return TapRegion(
-          onTapOutside: (_) => _closeActionPane(),
-          child: Padding(
-            padding: const EdgeInsets.only(bottom: 6),
-            child: GestureDetector(
-              behavior: HitTestBehavior.translucent,
-              onHorizontalDragUpdate: _handleHorizontalDragUpdate,
-              onHorizontalDragEnd: _handleHorizontalDragEnd,
-              child: SizedBox(
-                height: 88,
-                child: Stack(
-                  children: [
-                    Positioned.fill(
-                      child: DecoratedBox(
-                        decoration: ShapeDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: [
-                              cs.errorContainer.withValues(alpha: 0.94),
-                              cs.errorContainer.withValues(alpha: 0.82),
-                            ],
+        return SwipeRevealCard(
+          key: ValueKey(session.id),
+          margin: const EdgeInsets.only(bottom: 6),
+          shape: cardShape,
+          actionLabel: i18n.tr('remove'),
+          removeTooltip: i18n.tr('remove_audio'),
+          onRemove: () => _confirmRemoveSession(context),
+          child: SizedBox(
+            height: 88,
+            child: Material(
+              color: Colors.transparent,
+              child: Card(
+                margin: EdgeInsets.zero,
+                clipBehavior: Clip.antiAlias,
+                shape: cardShape,
+                color: isPlaying
+                    ? Color.alphaBlend(
+                        cs.primaryContainer.withValues(alpha: 0.35),
+                        cs.surfaceContainerHigh,
+                      )
+                    : cs.surfaceContainerHigh,
+                elevation: 0,
+                shadowColor: Colors.transparent,
+                child: Semantics(
+                  button: true,
+                  label: displayName,
+                  child: InkWell(
+                    onTap: () {
+                      HapticFeedback.lightImpact();
+                      widget.onOpen();
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 8, 10, 8),
+                      child: Row(
+                        children: [
+                          _SessionCoverThumbnail(
+                            coverPathFuture: provider.coverPathFutureForTrack(
+                              track,
+                            ),
+                            title: displayName,
                           ),
-                          shape: cardShape,
-                        ),
-                        child: Stack(
-                          children: [
-                            Align(
-                              alignment: Alignment.centerLeft,
-                              child: Padding(
-                                padding: const EdgeInsets.only(
-                                  left: 18,
-                                  right: 86,
-                                ),
-                                child: AnimatedOpacity(
-                                  opacity: 0.24 + (revealProgress * 0.76),
-                                  duration: const Duration(milliseconds: 160),
-                                  curve: Curves.easeOutCubic,
-                                  child: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 10,
-                                          vertical: 5,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: cs.error.withValues(
-                                            alpha: 0.12,
-                                          ),
-                                          borderRadius: BorderRadius.circular(
-                                            999,
-                                          ),
-                                          border: Border.all(
-                                            color: cs.error.withValues(
-                                              alpha: 0.18,
-                                            ),
-                                          ),
-                                        ),
-                                        child: Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Icon(
-                                              Icons.swipe_left_rounded,
-                                              size: 14,
-                                              color: cs.error,
-                                            ),
-                                            const SizedBox(width: 4),
-                                            Text(
-                                              i18n.tr('remove'),
-                                              style: Theme.of(context)
-                                                  .textTheme
-                                                  .labelMedium
-                                                  ?.copyWith(
-                                                    color: cs.error,
-                                                    fontWeight: FontWeight.w800,
-                                                  ),
-                                            ),
-                                          ],
-                                        ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  folderName,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: Theme.of(context).textTheme.bodySmall
+                                      ?.copyWith(
+                                        color: cs.onSurfaceVariant,
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 12,
                                       ),
-                                      const SizedBox(height: 8),
-                                      Text(
-                                        i18n.tr('remove_audio'),
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .bodySmall
-                                            ?.copyWith(
-                                              color: cs.onErrorContainer,
-                                              fontWeight: FontWeight.w600,
-                                            ),
-                                      ),
-                                    ],
-                                  ),
                                 ),
-                              ),
-                            ),
-                            Align(
-                              alignment: Alignment.centerRight,
-                              child: Padding(
-                                padding: const EdgeInsets.only(right: 14),
-                                child: AnimatedScale(
-                                  scale: 0.92 + (revealProgress * 0.08),
-                                  duration: const Duration(milliseconds: 180),
-                                  curve: Curves.easeOutBack,
-                                  child: IconButton.filled(
-                                    onPressed: () {
-                                      Feedback.forTap(context);
-                                      HapticFeedback.mediumImpact();
-                                      _closeActionPane();
-                                      _confirmRemoveSession(context);
-                                    },
-                                    style: IconButton.styleFrom(
-                                      backgroundColor: cs.error,
-                                      foregroundColor: cs.onError,
-                                      minimumSize: const Size(54, 54),
-                                      maximumSize: const Size(54, 54),
-                                    ),
-                                    icon: const Icon(
-                                      Icons.delete_outline_rounded,
+                                const SizedBox(height: 3),
+                                Text(
+                                  displayName,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: Theme.of(context).textTheme.titleMedium
+                                      ?.copyWith(
+                                        fontWeight: FontWeight.w900,
+                                        fontSize: 14,
+                                        height: 1.12,
+                                      ),
+                                ),
+                                const SizedBox(height: 6),
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: _SessionMetaChip(
+                                    icon: Icons.repeat_rounded,
+                                    text: _loopModeSummary(
+                                      context,
+                                      sessionView.loopMode,
                                     ),
                                   ),
                                 ),
-                              ),
+                              ],
                             ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    AnimatedPositioned(
-                      duration: const Duration(milliseconds: 220),
-                      curve: Curves.easeOutCubic,
-                      left: -_revealedWidth,
-                      right: _revealedWidth,
-                      top: 0,
-                      bottom: 0,
-                      child: Material(
-                        color: Colors.transparent,
-                        child: Card(
-                          margin: EdgeInsets.zero,
-                          clipBehavior: Clip.antiAlias,
-                          shape: cardShape,
-                          color: isPlaying
-                              ? cs.surfaceContainerLow
-                              : cs.surfaceContainer,
-                          elevation: 0,
-                          shadowColor: Colors.transparent,
-                          child: InkWell(
-                            onTap: _isOpen
-                                ? _closeActionPane
+                          ),
+                          const SizedBox(width: 10),
+                          IconButton.filledTonal(
+                            onPressed: sessionView.isLoading
+                                ? null
                                 : () {
                                     Feedback.forTap(context);
-                                    widget.onOpen();
+                                    provider.toggleSessionPlayPause(session.id);
                                   },
-                            child: Padding(
-                              padding: const EdgeInsets.fromLTRB(12, 8, 10, 8),
-                              child: Row(
-                                children: [
-                                  _SessionCoverThumbnail(
-                                    coverPathFuture: provider
-                                        .coverPathFutureForTrack(track),
-                                    title: displayName,
-                                  ),
-                                  const SizedBox(width: 14),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          folderName,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: Theme.of(context)
-                                              .textTheme
-                                              .bodySmall
-                                              ?.copyWith(
-                                                color: cs.onSurfaceVariant,
-                                                fontWeight: FontWeight.w600,
-                                                fontSize: 10.2,
-                                              ),
-                                        ),
-                                        const SizedBox(height: 3),
-                                        Text(
-                                          displayName,
-                                          maxLines: 2,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: Theme.of(context)
-                                              .textTheme
-                                              .titleMedium
-                                              ?.copyWith(
-                                                fontWeight: FontWeight.w900,
-                                                fontSize: 14,
-                                                height: 1.12,
-                                              ),
-                                        ),
-                                        const SizedBox(height: 6),
-                                        SizedBox(
-                                          width: double.infinity,
-                                          child: _SessionMetaChip(
-                                            icon: Icons.repeat_rounded,
-                                            text: _loopModeSummary(
-                                              context,
-                                              sessionView.loopMode,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  IconButton.filledTonal(
-                                    onPressed: sessionView.isLoading
-                                        ? null
-                                        : () {
-                                            Feedback.forTap(context);
-                                            provider.toggleSessionPlayPause(
-                                              session.id,
-                                            );
-                                          },
-                                    style: IconButton.styleFrom(
-                                      backgroundColor: isPlaying
-                                          ? cs.primaryContainer
-                                          : cs.surfaceContainerLow,
-                                      foregroundColor: isPlaying
-                                          ? cs.onPrimaryContainer
-                                          : cs.onSurface,
-                                      side: BorderSide(
-                                        color: isPlaying
-                                            ? cs.primary.withValues(alpha: 0.2)
-                                            : cs.outlineVariant.withValues(
-                                                alpha: 0.72,
-                                              ),
-                                      ),
-                                    ),
-                                    icon: _SwitcherSlot(
-                                      width: 22,
-                                      height: 22,
-                                      duration: const Duration(
-                                        milliseconds: 150,
-                                      ),
-                                      child: Icon(
-                                        isPlaying
-                                            ? Icons.pause_rounded
-                                            : Icons.play_arrow_rounded,
-                                        key: ValueKey<IconData>(
-                                          isPlaying
-                                              ? Icons.pause_rounded
-                                              : Icons.play_arrow_rounded,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ],
+                            style: IconButton.styleFrom(
+                              backgroundColor: isPlaying
+                                  ? cs.primaryContainer
+                                  : cs.surfaceContainerLow,
+                              foregroundColor: isPlaying
+                                  ? cs.onPrimaryContainer
+                                  : cs.onSurface,
+                              side: BorderSide(
+                                color: isPlaying
+                                    ? cs.primary.withValues(alpha: 0.2)
+                                    : cs.outlineVariant.withValues(alpha: 0.72),
                               ),
                             ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    if (_isOpen)
-                      Positioned.fill(
-                        right: _actionWidth,
-                        child: GestureDetector(
-                          behavior: HitTestBehavior.translucent,
-                          onTap: _closeActionPane,
-                        ),
-                      ),
-                    if (_revealedWidth > 0)
-                      Positioned.fill(
-                        child: IgnorePointer(
-                          ignoring: true,
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(22),
-                              border: Border.all(
-                                color: cs.outlineVariant.withValues(
-                                  alpha: 0.18,
+                            icon: _SwitcherSlot(
+                              width: 22,
+                              height: 22,
+                              duration: const Duration(milliseconds: 150),
+                              child: Icon(
+                                isPlaying
+                                    ? Icons.pause_rounded
+                                    : Icons.play_arrow_rounded,
+                                key: ValueKey<IconData>(
+                                  isPlaying
+                                      ? Icons.pause_rounded
+                                      : Icons.play_arrow_rounded,
                                 ),
                               ),
                             ),
                           ),
-                        ),
+                        ],
                       ),
-                  ],
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -741,7 +582,7 @@ class _SessionDetailPageState extends State<SessionDetailPage>
   ) async {
     final navigator = Navigator.of(context);
     final velocity = details.primaryVelocity ?? 0;
-    final shouldDismiss = _dismissController.value > 0.18 || velocity > 900;
+    final shouldDismiss = _dismissController.value > 0.15 || velocity > 800;
     if (shouldDismiss) {
       await _animateDismissToEnd(velocity: velocity);
       if (mounted) {
@@ -755,21 +596,21 @@ class _SessionDetailPageState extends State<SessionDetailPage>
   Future<void> _animateDismissToEnd({double velocity = 0}) {
     final remaining = (1 - _dismissController.value).clamp(0.0, 1.0);
     final velocityFactor = (velocity.abs() / 2200).clamp(0.0, 1.0);
-    final durationMs = lerpDouble(170, 82, velocityFactor)! * remaining;
+    final durationMs = lerpDouble(320, 200, velocityFactor)! * remaining;
     return _dismissController.animateTo(
       1,
-      duration: Duration(milliseconds: durationMs.round().clamp(72, 170)),
-      curve: Curves.easeOutCubic,
+      duration: Duration(milliseconds: durationMs.round().clamp(180, 340)),
+      curve: Curves.linear,
     );
   }
 
   Future<void> _animateDismissBack() {
     final progress = _dismissController.value.clamp(0.0, 1.0);
-    final durationMs = lerpDouble(90, 190, progress)!;
+    final durationMs = lerpDouble(140, 260, progress)!;
     return _dismissController.animateBack(
       0,
-      duration: Duration(milliseconds: durationMs.round().clamp(90, 190)),
-      curve: Curves.easeOutCubic,
+      duration: Duration(milliseconds: durationMs.round().clamp(140, 280)),
+      curve: Curves.easeOutQuart,
     );
   }
 
@@ -860,10 +701,7 @@ class _SessionDetailPageState extends State<SessionDetailPage>
     }
 
     final track = provider.trackByPath(session.currentTrackPath);
-    final coverPathFuture = _coverFutureForTrack(
-      provider,
-      track,
-    );
+    final coverPathFuture = _coverFutureForTrack(provider, track);
     _primeCoverArtwork(coverPathFuture);
     final routeAnimation = ModalRoute.of(context)?.animation;
     final animatedListenable = routeAnimation == null
@@ -875,17 +713,17 @@ class _SessionDetailPageState extends State<SessionDetailPage>
       child: AnimatedBuilder(
         animation: animatedListenable,
         builder: (context, child) {
-          final enterProgress = Curves.easeOutCubic.transform(
+          final enterProgress = Curves.easeOutQuart.transform(
             (routeAnimation?.value ?? 1).clamp(0.0, 1.0),
           );
-          final dismissProgress = Curves.easeOutCubic.transform(
+          final dismissProgress = Curves.easeOutQuart.transform(
             _dismissController.value.clamp(0.0, 1.0),
           );
           final dragDistance =
-              MediaQuery.sizeOf(context).height * 0.54 * dismissProgress;
-          final enterOffset = (1 - enterProgress) * 38;
-          final backdropOpacity =
-              (enterProgress * (1 - (dismissProgress * 0.94))).clamp(0.0, 1.0);
+              MediaQuery.sizeOf(context).height * dismissProgress;
+          final enterOffset = (1 - enterProgress) * 50;
+          final backdropProgress = (enterProgress * pow(1 - dismissProgress, 6))
+              .clamp(0.0, 1.0);
 
           return Stack(
             fit: StackFit.expand,
@@ -898,15 +736,21 @@ class _SessionDetailPageState extends State<SessionDetailPage>
               ),
               Positioned.fill(
                 child: IgnorePointer(
-                  child: Opacity(
-                    opacity: backdropOpacity,
-                    child: const _SessionDetailBackdrop(),
-                  ),
+                  child: _SessionDetailBackdrop(progress: backdropProgress),
                 ),
               ),
-              Transform.translate(
-                offset: Offset(0, enterOffset + dragDistance),
-                child: child,
+              Opacity(
+                opacity: (1 - dismissProgress).clamp(0.0, 1.0),
+                child: Align(
+                  alignment: Alignment.bottomCenter,
+                  child: FractionallySizedBox(
+                    heightFactor: 1.0,
+                    child: Transform.translate(
+                      offset: Offset(0, enterOffset + dragDistance),
+                      child: child,
+                    ),
+                  ),
+                ),
               ),
             ],
           );
@@ -954,11 +798,17 @@ class _SessionDetailPageState extends State<SessionDetailPage>
 }
 
 class _SessionDetailBackdrop extends StatelessWidget {
-  const _SessionDetailBackdrop();
+  const _SessionDetailBackdrop({this.progress = 1.0});
+
+  final double progress;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final blurSigma = lerpDouble(0, 16, progress) ?? 0;
+    final gradientAlpha = lerpDouble(0, 1, progress) ?? 0;
+
+    if (blurSigma < 0.1 && gradientAlpha < 0.01) return const SizedBox.shrink();
 
     return Stack(
       fit: StackFit.expand,
@@ -969,19 +819,20 @@ class _SessionDetailBackdrop extends StatelessWidget {
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
               colors: [
-                cs.surface.withValues(alpha: 0.08),
-                cs.scrim.withValues(alpha: 0.08),
-                cs.scrim.withValues(alpha: 0.14),
+                cs.surface.withValues(alpha: 0.08 * gradientAlpha),
+                cs.scrim.withValues(alpha: 0.08 * gradientAlpha),
+                cs.scrim.withValues(alpha: 0.14 * gradientAlpha),
               ],
             ),
           ),
         ),
-        ClipRect(
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-            child: SizedBox.expand(),
+        if (blurSigma > 0)
+          ClipRect(
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: blurSigma, sigmaY: blurSigma),
+              child: const SizedBox.expand(),
+            ),
           ),
-        ),
       ],
     );
   }
@@ -1005,67 +856,92 @@ class _SessionDetailScaffold extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
 
     return Material(
-      color: Colors.transparent,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [cs.surface, cs.surfaceContainerLow, cs.surface],
+      color: cs.surface,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          // Dynamic Blurred Background
+          Positioned.fill(
+            child: FutureBuilder<String?>(
+              future: coverPathFuture,
+              builder: (context, snapshot) {
+                final path = snapshot.data;
+                if (path == null || path.isEmpty) {
+                  return ColoredBox(color: cs.surfaceDim);
+                }
+                return Image.file(
+                  File(path),
+                  fit: BoxFit.cover,
+                  color: cs.surface.withValues(alpha: 0.45),
+                  colorBlendMode: BlendMode.darken,
+                );
+              },
+            ),
           ),
-        ),
-        child: SafeArea(
-          bottom: false,
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final heroHeight = min(
-                250.0,
-                max(180.0, constraints.maxHeight * 0.28),
-              );
-
-              return Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+          Positioned.fill(
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 45, sigmaY: 45),
+              child: const SizedBox.expand(),
+            ),
+          ),
+          // Content
+          SafeArea(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                return Column(
                   children: [
-                    Row(
-                      children: [
-                        const Spacer(),
-                        IconButton(
-                          onPressed: () {
-                            Feedback.forTap(context);
-                            onClose();
-                          },
-                          icon: const Icon(Icons.expand_more_rounded, size: 28),
-                        ),
-                      ],
+                    // Top Bar
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: Row(
+                        children: [
+                          IconButton(
+                            onPressed: onClose,
+                            icon: Icon(
+                              Icons.keyboard_arrow_down_rounded,
+                              color: cs.onSurface,
+                              size: 32,
+                            ),
+                          ),
+                          const Spacer(),
+                        ],
+                      ),
                     ),
-                    const SizedBox(height: 8),
-                    RepaintBoundary(
-                      child: AspectRatio(
-                        aspectRatio: 4 / 3,
-                        child: _SessionHeroArtwork(
-                          height: heroHeight,
-                          coverPathFuture: coverPathFuture,
-                          title: '',
-                          folderName: '',
-                          isPlaying: session.state.playing,
+                    // Large Artwork
+                    Expanded(
+                      flex: 6,
+                      child: Center(
+                        child: RepaintBoundary(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 32),
+                            child: _SessionHeroArtwork(
+                              height: constraints.maxHeight * 0.48,
+                              coverPathFuture: coverPathFuture,
+                              title: '',
+                              folderName: '',
+                              isPlaying: session.state.playing,
+                            ),
+                          ),
                         ),
                       ),
                     ),
-                    const SizedBox(height: 14),
+                    // Detail Content
                     Expanded(
-                      child: _SessionDetailContent(
-                        session: session,
-                        provider: provider,
+                      flex: 5,
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(28, 0, 28, 16),
+                        child: _SessionDetailContent(
+                          session: session,
+                          provider: provider,
+                        ),
                       ),
                     ),
                   ],
-                ),
-              );
-            },
+                );
+              },
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
@@ -1120,178 +996,147 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
         : context.read<AppLanguageProvider>().tr('imported_files');
     final hasSiblings =
         provider.tracksInSameGroup(session.currentTrackPath).length > 1;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          folderName,
-          style: Theme.of(context).textTheme.labelLarge?.copyWith(
-            color: cs.onSurfaceVariant,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        const SizedBox(height: 10),
         Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Expanded(
               child: Text(
-                displayName,
-                maxLines: 2,
+                folderName,
+                maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.w900,
-                  fontSize: 20,
-                  height: 1,
+                style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                  color: cs.onSurface.withValues(alpha: 0.8),
+                  fontWeight: FontWeight.w700,
                 ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Text(
+              _loopModeSummary(context, session.loopMode),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: cs.onSurface.withValues(alpha: 0.7),
+                fontWeight: FontWeight.w600,
+                fontStyle: FontStyle.italic,
               ),
             ),
           ],
         ),
-        const SizedBox(height: 6),
-        Row(
-          children: [
-            const Spacer(),
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 180),
-              child: Text(
-                _loopModeSummary(context, session.loopMode),
-                textAlign: TextAlign.right,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: cs.onSurfaceVariant,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ],
+        const SizedBox(height: 12),
+        Text(
+          displayName,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+            fontWeight: FontWeight.w900,
+            fontSize: 24,
+            color: cs.onSurface,
+            height: 1.1,
+          ),
         ),
-        const SizedBox(height: 10),
-        _ProgressBar(session: session, provider: provider),
-        const SizedBox(height: 14),
+        const SizedBox(height: 8),
+        _SessionSubtitlePanel(session: session, provider: provider),
+        const Spacer(),
+        _ProgressBar(
+          key: ValueKey(session.id),
+          session: session,
+          provider: provider,
+        ),
+        const SizedBox(height: 12),
         SizedBox(
-          height: 82,
-          child: Stack(
-            alignment: Alignment.center,
+          height: 84,
+          child: Row(
             children: [
-              Align(
-                alignment: Alignment.centerLeft,
-                child: _ExpandableLoopOptions(
-                  session: session,
-                  provider: provider,
+              _ExpandableLoopOptions(session: session, provider: provider),
+              const Spacer(),
+              IconButton(
+                onPressed: session.isLoading
+                    ? null
+                    : () {
+                        HapticFeedback.lightImpact();
+                        provider.seekSessionToPrev(session.id);
+                      },
+                icon: Icon(
+                  Icons.skip_previous_rounded,
+                  size: 44,
+                  color: cs.onSurface,
                 ),
               ),
-              Align(
-                alignment: Alignment.center,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButton.filledTonal(
-                      onPressed: session.isLoading
-                          ? null
-                          : () {
-                              Feedback.forTap(context);
-                              provider.seekSessionToPrev(session.id);
-                            },
-                      icon: const Icon(Icons.skip_previous_rounded, size: 24),
-                      style: IconButton.styleFrom(
-                        minimumSize: const Size(44, 44),
-                        maximumSize: const Size(44, 44),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    SizedBox(
-                      width: 74,
-                      height: 74,
-                      child: FilledButton(
-                        onPressed: session.isLoading
-                            ? null
-                            : () {
-                                Feedback.forTap(context);
-                                provider.toggleSessionPlayPause(session.id);
-                              },
-                        style: FilledButton.styleFrom(
-                          shape: const CircleBorder(),
-                          padding: EdgeInsets.zero,
+              const SizedBox(width: 12),
+              IconButton(
+                onPressed: session.isLoading
+                    ? null
+                    : () {
+                        HapticFeedback.mediumImpact();
+                        provider.toggleSessionPlayPause(session.id);
+                      },
+                iconSize: 64,
+                icon: _SwitcherSlot(
+                  width: 64,
+                  height: 64,
+                  duration: const Duration(milliseconds: 150),
+                  child: session.isLoading
+                      ? SizedBox(
+                          key: const ValueKey<String>('loading'),
+                          width: 32,
+                          height: 32,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 3,
+                            color: cs.onSurface,
+                          ),
+                        )
+                      : Icon(
+                          session.state.playing
+                              ? Icons.pause_rounded
+                              : Icons.play_arrow_rounded,
+                          key: ValueKey<IconData>(
+                            session.state.playing
+                                ? Icons.pause_rounded
+                                : Icons.play_arrow_rounded,
+                          ),
+                          size: 64,
+                          color: cs.onSurface,
                         ),
-                        child: _SwitcherSlot(
-                          width: 42,
-                          height: 42,
-                          duration: const Duration(milliseconds: 150),
-                          child: session.isLoading
-                              ? const SizedBox(
-                                  key: ValueKey<String>('loading'),
-                                  width: 24,
-                                  height: 24,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2.4,
-                                  ),
-                                )
-                              : Icon(
-                                  session.state.playing
-                                      ? Icons.pause_rounded
-                                      : Icons.play_arrow_rounded,
-                                  key: ValueKey<IconData>(
-                                    session.state.playing
-                                        ? Icons.pause_rounded
-                                        : Icons.play_arrow_rounded,
-                                  ),
-                                  size: 42,
-                                ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    IconButton.filledTonal(
-                      onPressed: session.isLoading
-                          ? null
-                          : () {
-                              Feedback.forTap(context);
-                              provider.seekSessionToNext(session.id);
-                            },
-                      icon: const Icon(Icons.skip_next_rounded, size: 24),
-                      style: IconButton.styleFrom(
-                        minimumSize: const Size(44, 44),
-                        maximumSize: const Size(44, 44),
-                      ),
-                    ),
-                  ],
                 ),
               ),
-              Align(
-                alignment: Alignment.centerRight,
-                child: IconButton.filledTonal(
-                  onPressed: hasSiblings
-                      ? () {
-                          Feedback.forTap(context);
-                          _showTrackSwitcher(context);
-                        }
-                      : null,
-                  tooltip: context.read<AppLanguageProvider>().tr(
-                    'switch_audio',
-                  ),
-                  icon: const Icon(Icons.queue_music_rounded, size: 20),
-                  style: IconButton.styleFrom(
-                    minimumSize: const Size(44, 44),
-                    maximumSize: const Size(44, 44),
-                  ),
+              const SizedBox(width: 12),
+              IconButton(
+                onPressed: session.isLoading
+                    ? null
+                    : () {
+                        HapticFeedback.lightImpact();
+                        provider.seekSessionToNext(session.id);
+                      },
+                icon: Icon(
+                  Icons.skip_next_rounded,
+                  size: 44,
+                  color: cs.onSurface,
+                ),
+              ),
+              const Spacer(),
+              _SessionVolumeButton(session: session, provider: provider),
+              const SizedBox(width: 12),
+              IconButton(
+                onPressed: hasSiblings
+                    ? () {
+                        HapticFeedback.selectionClick();
+                        _showTrackSwitcher(context);
+                      }
+                    : null,
+                tooltip: context.read<AppLanguageProvider>().tr('switch_audio'),
+                icon: Icon(
+                  Icons.queue_music_rounded,
+                  size: 24,
+                  color: cs.onSurface,
                 ),
               ),
             ],
           ),
         ),
-        const SizedBox(height: 8),
-        Row(
-          children: [
-            Expanded(
-              child: _SessionVolumeSlider(session: session, provider: provider),
-            ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        _SessionSubtitlePanel(session: session, provider: provider),
-        const Spacer(),
+        const SizedBox(height: 16),
       ],
     );
   }
@@ -1392,52 +1237,62 @@ class _SessionHeroArtwork extends StatelessWidget {
       );
     }
 
-    return SizedBox(
-      width: double.infinity,
-      height: height,
-      child: ClipRRect(
-        clipBehavior: Clip.hardEdge,
-        borderRadius: BorderRadius.circular(34),
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            FutureBuilder<String?>(
-              future: coverPathFuture,
-              builder: (context, snapshot) {
-                final coverPath = snapshot.data;
-                if (coverPath == null || coverPath.isEmpty) {
-                  return fallback();
-                }
-                return RepaintBoundary(
-                  child: Image.file(
-                    File(coverPath),
-                    fit: BoxFit.cover,
-                    gaplessPlayback: true,
-                    filterQuality: FilterQuality.none,
-                    cacheWidth: cacheWidth,
-                    cacheHeight: cacheHeight,
-                    errorBuilder: (_, _, _) => fallback(),
-                  ),
-                );
-              },
+    return Center(
+      child: Container(
+        width: height,
+        height: height,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(28),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.35),
+              blurRadius: 40,
+              offset: const Offset(0, 16),
             ),
-            Positioned.fill(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.black.withValues(alpha: 0.12),
-                      Colors.black.withValues(alpha: 0.03),
-                      Colors.black.withValues(alpha: 0.18),
-                    ],
-                    stops: const [0, 0.48, 1],
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(28),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              FutureBuilder<String?>(
+                future: coverPathFuture,
+                builder: (context, snapshot) {
+                  final coverPath = snapshot.data;
+                  if (coverPath == null || coverPath.isEmpty) {
+                    return fallback();
+                  }
+                  return RepaintBoundary(
+                    child: Image.file(
+                      File(coverPath),
+                      fit: BoxFit.cover,
+                      gaplessPlayback: true,
+                      filterQuality: FilterQuality.medium,
+                      cacheWidth: cacheWidth,
+                      cacheHeight: cacheHeight,
+                      errorBuilder: (_, _, _) => fallback(),
+                    ),
+                  );
+                },
+              ),
+              Positioned.fill(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.black.withValues(alpha: 0.1),
+                        Colors.transparent,
+                        Colors.black.withValues(alpha: 0.2),
+                      ],
+                    ),
                   ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -1512,19 +1367,14 @@ class _SessionMetaChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: cs.surfaceContainerHigh,
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.7)),
-      ),
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
       child: Row(
         mainAxisSize: MainAxisSize.max,
         children: [
           Icon(
             icon,
-            size: 12,
+            size: 11,
             color: cs.onSurfaceVariant.withValues(alpha: 0.65),
           ),
           const SizedBox(width: 5),
@@ -1535,8 +1385,9 @@ class _SessionMetaChip extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
                 fontWeight: FontWeight.w600,
+                fontStyle: FontStyle.italic,
                 color: cs.onSurfaceVariant.withValues(alpha: 0.65),
-                fontSize: 9,
+                fontSize: 11,
               ),
             ),
           ),
@@ -1612,12 +1463,14 @@ class _LoopModeButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final child = iconWidget ?? Icon(
-      icon,
-      key: ValueKey<IconData?>(icon),
-      size: 18,
-      color: active ? cs.primary : cs.onSurfaceVariant,
-    );
+    final child =
+        iconWidget ??
+        Icon(
+          icon,
+          key: ValueKey<IconData?>(icon),
+          size: 18,
+          color: active ? cs.primary : cs.onSurfaceVariant,
+        );
     return IconButton(
       onPressed: onPressed,
       style: IconButton.styleFrom(
@@ -1692,7 +1545,9 @@ class _ExpandableLoopOptionsState extends State<_ExpandableLoopOptions>
   Widget _collapsedCompositeIcon(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     return SizedBox(
-      key: ValueKey<String>('composite_${_orderIcon.codePoint}_${_scopeIcon.codePoint}'),
+      key: ValueKey<String>(
+        'composite_${_orderIcon.codePoint}_${_scopeIcon.codePoint}',
+      ),
       width: 20,
       height: 20,
       child: Stack(
@@ -1701,20 +1556,10 @@ class _ExpandableLoopOptionsState extends State<_ExpandableLoopOptions>
           Positioned.fill(
             child: Opacity(
               opacity: 0.28,
-              child: Icon(
-                _scopeIcon,
-                size: 20,
-                color: cs.onSurfaceVariant,
-              ),
+              child: Icon(_scopeIcon, size: 20, color: cs.onSurfaceVariant),
             ),
           ),
-          Center(
-            child: Icon(
-              _orderIcon,
-              size: 13,
-              color: cs.onSurfaceVariant,
-            ),
-          ),
+          Center(child: Icon(_orderIcon, size: 13, color: cs.onSurfaceVariant)),
         ],
       ),
     );
@@ -1985,7 +1830,11 @@ class _ExpandableLoopOptionsState extends State<_ExpandableLoopOptions>
 }
 
 class _ProgressBar extends StatefulWidget {
-  const _ProgressBar({required this.session, required this.provider});
+  const _ProgressBar({
+    super.key,
+    required this.session,
+    required this.provider,
+  });
 
   final PlaybackSession session;
   final AudioProvider provider;
@@ -2023,39 +1872,53 @@ class _ProgressBarState extends State<_ProgressBar> {
                 final buffered = bufferedSnapshot.data ?? Duration.zero;
                 final durationMs = hasKnownDuration
                     ? max(1, effectiveDuration.inMilliseconds)
-                    : max(1, max(position.inMilliseconds, buffered.inMilliseconds));
+                    : max(
+                        1,
+                        max(position.inMilliseconds, buffered.inMilliseconds),
+                      );
                 final maxMillis = durationMs.toDouble();
                 final basePositionMs = position.inMilliseconds
                     .clamp(0, durationMs)
                     .toDouble();
-                final sliderValue = (_isDragging
-                        ? (_dragValueMs ?? basePositionMs)
-                        : basePositionMs)
-                    .clamp(0.0, maxMillis);
-                final bufferedValue = (_isDragging
-                        ? max(buffered.inMilliseconds, sliderValue.round())
-                        : buffered.inMilliseconds)
-                    .clamp(0, durationMs)
-                    .toDouble();
+                final sliderValue =
+                    (_isDragging
+                            ? (_dragValueMs ?? basePositionMs)
+                            : basePositionMs)
+                        .clamp(0.0, maxMillis);
+                final bufferedValue =
+                    (_isDragging
+                            ? max(buffered.inMilliseconds, sliderValue.round())
+                            : buffered.inMilliseconds)
+                        .clamp(0, durationMs)
+                        .toDouble();
                 final shownPosition = Duration(
                   milliseconds: sliderValue.round().clamp(0, durationMs),
                 );
                 final remaining = hasKnownDuration
                     ? (effectiveDuration - shownPosition)
                     : Duration.zero;
-                final canSeek = hasKnownDuration && effectiveDuration.inMilliseconds > 0;
+                final canSeek =
+                    hasKnownDuration && effectiveDuration.inMilliseconds > 0;
+                final cs = Theme.of(context).colorScheme;
 
                 return Column(
                   children: [
                     SliderTheme(
-                      data: Theme.of(context).sliderTheme.copyWith(
-                        trackHeight: 5,
+                      data: SliderTheme.of(context).copyWith(
+                        trackHeight: 2.2,
                         thumbShape: const RoundSliderThumbShape(
-                          enabledThumbRadius: 8.5,
+                          enabledThumbRadius: 6,
+                          elevation: 1,
                         ),
                         overlayShape: const RoundSliderOverlayShape(
-                          overlayRadius: 16,
+                          overlayRadius: 12,
                         ),
+                        activeTrackColor: cs.onSurface,
+                        inactiveTrackColor: cs.onSurface.withValues(
+                          alpha: 0.25,
+                        ),
+                        thumbColor: cs.onSurface,
+                        overlayColor: cs.onSurface.withValues(alpha: 0.12),
                       ),
                       child: Slider(
                         min: 0,
@@ -2167,31 +2030,18 @@ class _SubtitleChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    const accent = Color(0xFFFF2D55);
-
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
-      decoration: BoxDecoration(
-        color: accent.withValues(alpha: 0.14),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: accent.withValues(alpha: 0.28)),
-        boxShadow: [
-          BoxShadow(
-            color: accent.withValues(alpha: 0.12),
-            blurRadius: 18,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
+      padding: const EdgeInsets.symmetric(vertical: 4),
       child: Text(
         text,
         maxLines: 2,
         overflow: TextOverflow.ellipsis,
         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-          color: cs.onSurface,
-          fontWeight: FontWeight.w700,
-          height: 1.18,
+          color: cs.onSurface.withValues(alpha: 0.85),
+          fontWeight: FontWeight.w600,
+          fontSize: 16,
+          height: 1.3,
         ),
       ),
     );
@@ -2346,6 +2196,256 @@ class _SessionVolumeSliderState extends State<_SessionVolumeSlider> {
   }
 }
 
+class _SessionVolumeButton extends StatefulWidget {
+  const _SessionVolumeButton({required this.session, required this.provider});
+
+  final PlaybackSession session;
+  final AudioProvider provider;
+
+  @override
+  State<_SessionVolumeButton> createState() => _SessionVolumeButtonState();
+}
+
+class _SessionVolumeButtonState extends State<_SessionVolumeButton> {
+  final LayerLink _link = LayerLink();
+  OverlayEntry? _overlay;
+
+  void _toggleVolume() {
+    if (_overlay != null) {
+      _overlay?.remove();
+      _overlay = null;
+    } else {
+      final overlay = Overlay.of(context);
+      _overlay = OverlayEntry(
+        builder: (context) => _VerticalVolumeSlider(
+          link: _link,
+          session: widget.session,
+          provider: widget.provider,
+          onClose: () {
+            _overlay?.remove();
+            _overlay = null;
+            if (mounted) setState(() {});
+          },
+        ),
+      );
+      overlay.insert(_overlay!);
+    }
+    setState(() {});
+  }
+
+  @override
+  void dispose() {
+    _overlay?.remove();
+    _overlay = null;
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final volume = widget.session.volume;
+    final icon = volume == 0
+        ? Icons.volume_off_rounded
+        : volume < 0.45
+        ? Icons.volume_down_rounded
+        : Icons.volume_up_rounded;
+
+    final cs = Theme.of(context).colorScheme;
+    return CompositedTransformTarget(
+      link: _link,
+      child: IconButton(
+        onPressed: _toggleVolume,
+        icon: Icon(icon, size: 20, color: cs.onSurface),
+      ),
+    );
+  }
+}
+
+class _VerticalVolumeSlider extends StatefulWidget {
+  const _VerticalVolumeSlider({
+    required this.link,
+    required this.session,
+    required this.provider,
+    required this.onClose,
+  });
+
+  final LayerLink link;
+  final PlaybackSession session;
+  final AudioProvider provider;
+  final VoidCallback onClose;
+
+  @override
+  State<_VerticalVolumeSlider> createState() => _VerticalVolumeSliderState();
+}
+
+class _VerticalVolumeSliderState extends State<_VerticalVolumeSlider> {
+  double? _dragVolume;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final volume = (_dragVolume ?? widget.session.volume).clamp(0.0, 1.0);
+
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: widget.onClose,
+            child: const ColoredBox(color: Colors.transparent),
+          ),
+        ),
+        CompositedTransformFollower(
+          link: widget.link,
+          followerAnchor: Alignment.bottomCenter,
+          targetAnchor: Alignment.topCenter,
+          offset: const Offset(0, -8),
+          child: Material(
+            color: Colors.transparent,
+            child: Container(
+              width: 44,
+              height: 180,
+              decoration: BoxDecoration(
+                color: cs.surfaceContainerHigh.withValues(alpha: 0.95),
+                borderRadius: BorderRadius.circular(22),
+                border: Border.all(
+                  color: cs.outlineVariant.withValues(alpha: 0.8),
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.1),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Column(
+                children: [
+                  Text(
+                    '${(volume * 100).round()}%',
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      fontWeight: FontWeight.w900,
+                      fontSize: 10,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Expanded(
+                    child: RotatedBox(
+                      quarterTurns: 3,
+                      child: SliderTheme(
+                        data: SliderTheme.of(context).copyWith(
+                          trackHeight: 6,
+                          thumbShape: const RoundSliderThumbShape(
+                            enabledThumbRadius: 8,
+                          ),
+                          overlayShape: const RoundSliderOverlayShape(
+                            overlayRadius: 14,
+                          ),
+                        ),
+                        child: Slider(
+                          value: volume,
+                          onChanged: (v) {
+                            setState(() => _dragVolume = v);
+                            widget.provider.setSessionVolume(
+                              widget.session.id,
+                              v,
+                              persist: false,
+                              notify: true,
+                            );
+                          },
+                          onChangeEnd: (v) {
+                            setState(() => _dragVolume = null);
+                            widget.provider.setSessionVolume(
+                              widget.session.id,
+                              v,
+                              persist: true,
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _TimerCountdownCapsule extends StatelessWidget {
+  const _TimerCountdownCapsule({
+    required this.remaining,
+    required this.active,
+    required this.onTap,
+  });
+
+  final Duration remaining;
+  final bool active;
+  final VoidCallback? onTap;
+
+  String _fmt(Duration d) {
+    final h = d.inHours;
+    final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    if (h > 0) return '${h.toString().padLeft(2, '0')}:$m:$s';
+    return '$m:$s';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final hasRemaining = remaining > Duration.zero;
+
+    return Material(
+      color: cs.primaryContainer.withValues(alpha: 0.85),
+      borderRadius: BorderRadius.circular(999),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(999),
+        onTap: () {
+          Feedback.forTap(context);
+          HapticFeedback.selectionClick();
+          onTap?.call();
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              color: cs.primary.withValues(alpha: 0.3),
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                active
+                    ? Icons.timer_rounded
+                    : hasRemaining
+                        ? Icons.timer_rounded
+                        : Icons.alarm_off_rounded,
+                size: 14,
+                color: cs.onPrimaryContainer,
+              ),
+              const SizedBox(width: 5),
+              Text(
+                hasRemaining ? _fmt(remaining) : '00:00',
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: cs.onPrimaryContainer,
+                  fontWeight: FontWeight.w800,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _TimecodeLabel extends StatelessWidget {
   const _TimecodeLabel({required this.text, this.alignEnd = false});
 
@@ -2360,7 +2460,7 @@ class _TimecodeLabel extends StatelessWidget {
       text,
       textAlign: alignEnd ? TextAlign.end : TextAlign.start,
       style: Theme.of(context).textTheme.labelMedium?.copyWith(
-        color: cs.onSurfaceVariant,
+        color: cs.onSurface.withValues(alpha: 0.7),
         fontWeight: FontWeight.w700,
         fontFeatures: const [FontFeature.tabularFigures()],
       ),

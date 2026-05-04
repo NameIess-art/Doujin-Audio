@@ -115,11 +115,7 @@ class PlaybackKeepAliveService : Service() {
                     } else {
                         currentNotificationId = NOTIFICATION_ID
                     }
-                    if (hasActivePlayback || hasActiveTimer) {
-                        acquireWakeLock()
-                    } else {
-                        releaseWakeLock()
-                    }
+                    acquireWakeLock()
                     START_REDELIVER_INTENT
                 }
             }
@@ -147,11 +143,9 @@ class PlaybackKeepAliveService : Service() {
             }
         }
         val contentText = if (hasActiveTimer) {
-            "睡眠定时器运行中"
-        } else if (usesUnifiedPlaybackNotification) {
-            "正在播放"
+            getString(R.string.keep_alive_timer_active)
         } else if (hasActivePlayback) {
-            "正在播放"
+            getString(R.string.keep_alive_playback_active)
         } else {
             null
         }

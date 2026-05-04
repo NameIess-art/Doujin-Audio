@@ -18,6 +18,7 @@ import '../widgets/active_session_carousel.dart';
 import '../widgets/app_feedback.dart';
 import '../widgets/confirm_action_dialog.dart';
 import '../widgets/mobile_overlay_inset.dart';
+import '../widgets/snap_scroll_physics.dart';
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
@@ -28,9 +29,9 @@ class MainScreen extends StatefulWidget {
 
 class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   static const Duration _pageTransitionDuration = Duration(milliseconds: 300);
-  static const Curve _pageTransitionCurve = Curves.easeInOutCubic;
+  static const Curve _pageTransitionCurve = Curves.easeOutCubic;
   static const double _desktopBreakpoint = 980;
-  static const Color _appleMusicAccent = Color(0xFFFF2D55);
+  static const double _mobileDockContentGap = 4;
   static const String _backgroundKeepAliveInitializedKey =
       'background_keep_alive_initialized_v2';
   static const MethodChannel _powerChannel = MethodChannel(
@@ -42,6 +43,10 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
   int _currentIndex = 0;
   late final PageController _pageController;
+  final GlobalKey _bottomDockKey = GlobalKey();
+  final GlobalKey _dockContentKey = GlobalKey();
+  double _measuredBottomInset = 0;
+  double _measuredDockContent = 0;
   bool _notificationPermissionCheckDone = false;
   bool _notificationPermissionCheckQueued = false;
   bool _notificationSettingsDialogVisible = false;
@@ -51,11 +56,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   String? _lastOpenedNotificationSessionId;
   DateTime? _lastOpenedNotificationAt;
 
-  final List<Widget> _pages = const [
-    LibraryTab(),
-    PlaylistTab(),
-    SettingsTab(),
-  ];
+  late final List<Widget> _pages;
 
   static const List<_MainDestination> _destinations = [
     _MainDestination(
@@ -78,6 +79,11 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    _pages = [
+      const LibraryTab(),
+      PlaylistTab(onTimerTap: _openTimerFromPlaylist),
+      const SettingsTab(),
+    ];
     _pageController = PageController();
     WidgetsBinding.instance.addObserver(this);
     _notificationsChannel.setMethodCallHandler(_handleNotificationsChannelCall);
@@ -85,6 +91,18 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       unawaited(_consumePendingNotificationSession());
       unawaited(_maybeEnableBackgroundKeepAliveOnFirstLaunch());
     });
+  }
+
+  void _openTimerFromPlaylist() {
+    if (!mounted) return;
+    final provider = context.read<AudioProvider>();
+    final timerState = _TimerPresentation(
+      duration: provider.timerDuration,
+      remaining: provider.timerRemaining,
+      active: provider.timerActive,
+      mode: provider.timerMode,
+    );
+    _openTimerSettingsPage(context, timerState);
   }
 
   @override
@@ -173,6 +191,21 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     final ignoringBatteryOptimizations =
         await _isIgnoringBatteryOptimizations();
     if (!mounted || ignoringBatteryOptimizations) return;
+    await _promptOpenBatteryOptimizationSettings();
+  }
+
+  Future<void> _promptOpenBatteryOptimizationSettings() async {
+    if (!mounted) return;
+    final i18n = context.read<AppLanguageProvider>();
+    final openSettings = await showConfirmActionDialog(
+      context: context,
+      title: i18n.tr('background_play_permission_title'),
+      message: i18n.tr('background_play_permission_message'),
+      cancelLabel: i18n.tr('later'),
+      confirmLabel: i18n.tr('go_settings'),
+      icon: Icons.battery_saver_rounded,
+    );
+    if (openSettings != true) return;
     await _openBatteryOptimizationSettings();
   }
 
@@ -394,7 +427,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     return PageView.builder(
       controller: _pageController,
       itemCount: _pages.length,
-      physics: const PageScrollPhysics(parent: ClampingScrollPhysics()),
+      pageSnapping: false,
+      physics: const SnapScrollPhysics(parent: BouncingScrollPhysics()),
       onPageChanged: (index) {
         if (_currentIndex == index) return;
         setState(() {
@@ -517,12 +551,12 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                   ),
                   decoration: BoxDecoration(
                     color: selected
-                        ? _appleMusicAccent.withValues(alpha: 0.12)
+                        ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.12)
                         : Colors.transparent,
                     borderRadius: BorderRadius.circular(18),
                     border: Border.all(
                       color: selected
-                          ? _appleMusicAccent.withValues(alpha: 0.24)
+                          ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.24)
                           : Colors.transparent,
                     ),
                   ),
@@ -542,7 +576,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                           selected ? item.selectedIcon : item.icon,
                           key: ValueKey<bool>(selected),
                           size: 21,
-                          color: selected ? _appleMusicAccent : inactive,
+                          color: selected ? Theme.of(context).colorScheme.primary : inactive,
                         ),
                       ),
                       const SizedBox(height: 3),
@@ -556,7 +590,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                               ? FontWeight.w700
                               : FontWeight.w600,
                           letterSpacing: 0.1,
-                          color: selected ? _appleMusicAccent : inactive,
+                          color: selected ? Theme.of(context).colorScheme.primary : inactive,
                         ),
                       ),
                     ],
@@ -580,9 +614,9 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     required AppLanguageProvider i18n,
     required _TimerPresentation timerState,
     required List<PlaybackSession> overlaySessions,
-    required bool showTimerChip,
   }) {
     return SafeArea(
+      key: _bottomDockKey,
       top: false,
       minimum: const EdgeInsets.fromLTRB(12, 0, 12, 8),
       child: Align(
@@ -590,18 +624,9 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 430),
           child: Column(
+            key: _dockContentKey,
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (showTimerChip)
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: _DockTimerChip(
-                    label: _timerFabLabel(timerState, i18n),
-                    onTap: () => _openTimerSettingsPage(context, timerState),
-                  ),
-                ),
-              if (showTimerChip)
-                SizedBox(height: overlaySessions.isNotEmpty ? 8 : 14),
               if (overlaySessions.isNotEmpty)
                 ActiveSessionCarousel(
                   sessions: overlaySessions,
@@ -721,14 +746,34 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     );
   }
 
+  void _measureBottomDock() {
+    final safeAreaBox = _bottomDockKey.currentContext?.findRenderObject() as RenderBox?;
+    if (safeAreaBox != null && safeAreaBox.hasSize && mounted) {
+      final h = safeAreaBox.size.height;
+      if (h > 0 && (_measuredBottomInset - h).abs() > 0.5) {
+        setState(() => _measuredBottomInset = h);
+      }
+    }
+    final contentBox = _dockContentKey.currentContext?.findRenderObject() as RenderBox?;
+    if (contentBox != null && contentBox.hasSize && mounted) {
+      final h = contentBox.size.height;
+      if (h > 0 && (_measuredDockContent - h).abs() > 0.5) {
+        setState(() => _measuredDockContent = h);
+      }
+    }
+  }
+
   double _mobileContentInset({
     required bool hasNowPlaying,
-    required bool hasTimerChip,
   }) {
-    if (hasNowPlaying && hasTimerChip) return 248;
-    if (hasNowPlaying) return 196;
-    if (hasTimerChip) return 156;
-    return 112;
+    if (_measuredDockContent > 0) {
+      final systemBottom = MediaQuery.of(context).padding.bottom;
+      return (systemBottom + _measuredDockContent + 8 - _mobileDockContentGap)
+          .clamp(0.0, double.infinity);
+    }
+    final systemBottom = MediaQuery.of(context).padding.bottom;
+    if (hasNowPlaying) return systemBottom + 158;
+    return systemBottom + 64;
   }
 
   @override
@@ -771,7 +816,11 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     final activeSessionCount = context.select<AudioProvider, int>(
       (provider) => provider.activeSessions.length,
     );
-    final hasNowPlaying = overlaySessions.isNotEmpty;
+    final showCard = context.select<AudioProvider, bool>(
+      (provider) => provider.showPlaybackCard,
+    );
+    final visibleSessions = showCard ? overlaySessions : <PlaybackSession>[];
+    final hasNowPlaying = visibleSessions.isNotEmpty;
     if (activeSessionCount > 0 &&
         !_notificationPermissionCheckDone &&
         !_notificationPermissionCheckQueued) {
@@ -790,18 +839,19 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     );
     final width = MediaQuery.sizeOf(context).width;
     final isDesktop = width >= _desktopBreakpoint;
-    final showTimerChip = !isDesktop && _currentIndex == 1;
     final mobileContentInset = isDesktop
         ? 0.0
         : _mobileContentInset(
             hasNowPlaying: hasNowPlaying,
-            hasTimerChip: showTimerChip,
           );
+
+    WidgetsBinding.instance.addPostFrameCallback((_) => _measureBottomDock());
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: overlayStyle,
       child: Scaffold(
         extendBody: !isDesktop,
+        resizeToAvoidBottomInset: false,
         backgroundColor: Colors.transparent,
         body: Stack(
           fit: StackFit.expand,
@@ -826,8 +876,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                     context,
                     i18n: i18n,
                     timerState: timerState,
-                    overlaySessions: overlaySessions,
-                    showTimerChip: showTimerChip,
+                    overlaySessions: visibleSessions,
                   ),
                 ],
               ),
@@ -1101,54 +1150,8 @@ class _FloatingGlassPanel extends StatelessWidget {
   }
 }
 
-class _DockTimerChip extends StatelessWidget {
-  const _DockTimerChip({required this.label, required this.onTap});
 
-  final String label;
-  final VoidCallback onTap;
 
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-
-    return _FloatingGlassPanel(
-      radius: 20,
-      borderOpacity: 0.72,
-      shadowOpacity: 0.08,
-      showTopHighlight: false,
-      primaryFillOpacity: 1,
-      secondaryFillOpacity: 0.84,
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(20),
-          onTap: () {
-            Feedback.forTap(context);
-            HapticFeedback.selectionClick();
-            onTap();
-          },
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.timer_rounded, size: 18, color: cs.onSurface),
-                const SizedBox(width: 8),
-                Text(
-                  label,
-                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                    color: cs.onSurface,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
 
 class _TimerOverlaySheet extends StatelessWidget {
   const _TimerOverlaySheet({

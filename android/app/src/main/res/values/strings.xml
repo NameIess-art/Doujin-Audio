@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="keep_alive_timer_active">Sleep timer running</string>
+    <string name="keep_alive_playback_active">Playing</string>
+</resources>

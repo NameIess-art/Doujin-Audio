@@ -198,8 +198,16 @@ extension AudioProviderNotificationCovers on AudioProvider {
   }
 
   Future<String?> _findNotificationCoverPath(String folderPath) async {
+    final normalizedFolderPath = path.normalize(folderPath);
+    if (_notificationCoverSearchMisses.contains(normalizedFolderPath)) {
+      return null;
+    }
+
     final directory = Directory(folderPath);
-    if (!await directory.exists()) return null;
+    if (!await directory.exists()) {
+      _notificationCoverSearchMisses.add(normalizedFolderPath);
+      return null;
+    }
 
     try {
       // First pass: check common cover file names in the top-level directory
@@ -222,10 +230,14 @@ extension AudioProviderNotificationCovers on AudioProvider {
             basename == 'albumart' ||
             basename == 'front' ||
             basename == 'artwork') {
+          _notificationCoverSearchMisses.remove(normalizedFolderPath);
           return entity.path;
         }
       }
-      if (firstImage != null) return firstImage;
+      if (firstImage != null) {
+        _notificationCoverSearchMisses.remove(normalizedFolderPath);
+        return firstImage;
+      }
     } catch (_) {
       // Shallow pass failed — fall through to recursive search.
     }
@@ -239,13 +251,16 @@ extension AudioProviderNotificationCovers on AudioProvider {
         if (entity is! File) continue;
         final extension = path.extension(entity.path).toLowerCase();
         if (AudioProvider._supportedImageExtensions.contains(extension)) {
+          _notificationCoverSearchMisses.remove(normalizedFolderPath);
           return entity.path;
         }
       }
     } catch (_) {
+      _notificationCoverSearchMisses.add(normalizedFolderPath);
       return null;
     }
 
+    _notificationCoverSearchMisses.add(normalizedFolderPath);
     return null;
   }
 
@@ -254,5 +269,6 @@ extension AudioProviderNotificationCovers on AudioProvider {
     _resolvedCoverPaths.clear();
     _notificationCoverPathFutures.clear();
     _resolvedNotificationCoverPaths.clear();
+    _notificationCoverSearchMisses.clear();
   }
 }

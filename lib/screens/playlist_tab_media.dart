@@ -21,7 +21,6 @@ class _SessionHeroArtwork extends StatelessWidget {
     final availableWidth = max(1.0, MediaQuery.sizeOf(context).width - 32);
     final dpr = min(MediaQuery.devicePixelRatioOf(context), 2.0);
     final cacheWidth = max(1, (availableWidth * dpr).round());
-    final cacheHeight = max(1, (height * dpr).round());
 
     Widget fallback() {
       return DecoratedBox(
@@ -77,7 +76,6 @@ class _SessionHeroArtwork extends StatelessWidget {
                       fit: BoxFit.cover,
                       gaplessPlayback: true,
                       cacheWidth: cacheWidth,
-                      cacheHeight: cacheHeight,
                       errorBuilder: (_, _, _) => fallback(),
                     ),
                   );
@@ -134,7 +132,7 @@ class _SessionCoverThumbnail extends StatelessWidget {
         child: Center(
           child: Icon(
             Icons.photo_album_rounded,
-            size: 28,
+            size: 26,
             color: cs.onPrimaryContainer,
           ),
         ),
@@ -142,8 +140,8 @@ class _SessionCoverThumbnail extends StatelessWidget {
     }
 
     return SizedBox(
-      width: 78,
-      height: 78,
+      width: 90,
+      height: 72,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(14),
         child: FutureBuilder<String?>(

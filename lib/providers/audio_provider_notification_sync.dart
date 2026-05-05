@@ -22,6 +22,9 @@ extension AudioProviderNotificationSync on AudioProvider {
     if (!_notificationsEnabled) {
       _unifiedNotificationSyncTimer?.cancel();
       _unifiedNotificationSyncTimer = null;
+      _notificationProgressRefreshTimer?.cancel();
+      _notificationProgressRefreshTimer = null;
+      _queuedNotificationRefreshSessionId = null;
       _notificationService.updateSnapshot(null);
       _clearUnifiedPlaybackNotificationsOnPlatform();
       return;
@@ -30,6 +33,9 @@ extension AudioProviderNotificationSync on AudioProvider {
     if (_notificationsDismissedWhilePaused && !_hasPlaybackToKeepAlive) {
       _unifiedNotificationSyncTimer?.cancel();
       _unifiedNotificationSyncTimer = null;
+      _notificationProgressRefreshTimer?.cancel();
+      _notificationProgressRefreshTimer = null;
+      _queuedNotificationRefreshSessionId = null;
       _notificationService.updateSnapshot(null);
       _requestUnifiedPlaybackNotificationFlush();
       return;
@@ -93,7 +99,15 @@ extension AudioProviderNotificationSync on AudioProvider {
     String sessionId, {
     bool immediate = false,
   }) {
-    if (_notificationFocusedSession?.id != sessionId) {
+    if (!_notificationsEnabled ||
+        (_notificationsDismissedWhilePaused && !_hasPlaybackToKeepAlive)) {
+      _notificationProgressRefreshTimer?.cancel();
+      _notificationProgressRefreshTimer = null;
+      _queuedNotificationRefreshSessionId = null;
+      return;
+    }
+
+    if (!_isNotificationFocusedSessionId(sessionId)) {
       return;
     }
 
@@ -122,8 +136,20 @@ extension AudioProviderNotificationSync on AudioProvider {
           _notificationFocusedSession?.id != queuedSessionId) {
         return;
       }
+      if (!_notificationsEnabled ||
+          (_notificationsDismissedWhilePaused && !_hasPlaybackToKeepAlive)) {
+        return;
+      }
       _syncNotificationState();
     });
+  }
+
+  bool _isNotificationFocusedSessionId(String sessionId) {
+    final focusedId = _notificationFocusSessionId;
+    if (focusedId != null && focusedId != sessionId) {
+      return false;
+    }
+    return _notificationFocusedSession?.id == sessionId;
   }
 
   Future<void> _syncUnifiedPlaybackNotifications() async {
@@ -158,14 +184,14 @@ extension AudioProviderNotificationSync on AudioProvider {
             if (subtitle != null && subtitle.isNotEmpty) 'subtitle': subtitle,
             if (artPath != null && artPath.isNotEmpty) 'artPath': artPath,
             'playing': session.state.playing,
-            'hasPrevious': _nextPathFor(session, forward: false) != null,
-            'hasNext': _nextPathFor(session, forward: true) != null,
+            'hasPrevious': _hasAdjacentPathFor(session, forward: false),
+            'hasNext': _hasAdjacentPathFor(session, forward: true),
           };
         })
         .toList(growable: false);
 
     final styleVariant = isMultiMode ? 'multi_thread' : 'single_thread';
-    final nextSyncKey = json.encode(<String, dynamic>{
+    final syncPayload = <String, dynamic>{
       'mode': isMultiMode ? 'multi' : 'single',
       'styleVariant': styleVariant,
       'mainSessionId': mainSession?.id,
@@ -173,7 +199,8 @@ extension AudioProviderNotificationSync on AudioProvider {
       'showSummary': showUnifiedSummary,
       'summaryText': summaryText,
       'summaryLines': summaryLines,
-    });
+    };
+    final nextSyncKey = json.encode(syncPayload);
     if (_unifiedNotificationSyncKey == nextSyncKey) {
       return;
     }
@@ -181,15 +208,7 @@ extension AudioProviderNotificationSync on AudioProvider {
     if (payload.isEmpty) {
       await _clearUnifiedPlaybackNotificationsOnPlatform();
     } else {
-      await _notificationService.syncUnifiedNotifications(<String, dynamic>{
-        'mode': isMultiMode ? 'multi' : 'single',
-        'styleVariant': styleVariant,
-        'mainSessionId': mainSession?.id,
-        'items': payload,
-        'showSummary': showUnifiedSummary,
-        'summaryText': summaryText,
-        'summaryLines': summaryLines,
-      });
+      await _notificationService.syncUnifiedNotifications(syncPayload);
     }
     _unifiedNotificationSyncKey = nextSyncKey;
   }

@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:file_picker/file_picker.dart';
 import 'package:ffmpeg_kit_flutter_new_audio/ffmpeg_kit.dart';
 import 'package:ffmpeg_kit_flutter_new_audio/ffmpeg_kit_config.dart';
@@ -12,6 +10,7 @@ import 'package:provider/provider.dart';
 
 import '../i18n/app_language_provider.dart';
 import '../providers/audio_provider.dart';
+import '../services/video_conversion_plan.dart';
 import '../widgets/app_feedback.dart';
 import '../widgets/top_page_header.dart';
 
@@ -31,33 +30,6 @@ class _VideoConverterTabState extends State<VideoConverterTab> {
   double _progress = 0.0;
   String _statusMessage = '';
   int _videoDurationMs = 0;
-
-  int _parseDurationMs(String? durationStr) {
-    if (durationStr == null || durationStr.isEmpty) return 0;
-    final seconds = double.tryParse(durationStr);
-    if (seconds == null || !seconds.isFinite || seconds <= 0) {
-      return 0;
-    }
-    return (seconds * 1000).round();
-  }
-
-  Future<String> _resolveOutputPath(
-    String outputDirectoryPath,
-    String fileNameNoExt,
-    String selectedFormat,
-  ) async {
-    var suffix = 0;
-    while (true) {
-      final candidateName = suffix == 0
-          ? '$fileNameNoExt.$selectedFormat'
-          : '$fileNameNoExt ($suffix).$selectedFormat';
-      final candidatePath = path.join(outputDirectoryPath, candidateName);
-      if (!await File(candidatePath).exists()) {
-        return candidatePath;
-      }
-      suffix++;
-    }
-  }
 
   Future<void> _pickVideoFile() async {
     final i18n = context.read<AppLanguageProvider>();
@@ -86,7 +58,7 @@ class _VideoConverterTabState extends State<VideoConverterTab> {
   Future<void> _getVideoDuration(String videoPath) async {
     final mediaInformation = await FFprobeKit.getMediaInformation(videoPath);
     final information = mediaInformation.getMediaInformation();
-    final durationMs = _parseDurationMs(information?.getDuration());
+    final durationMs = parseVideoDurationMs(information?.getDuration());
 
     if (!mounted) return;
     setState(() {
@@ -114,28 +86,12 @@ class _VideoConverterTabState extends State<VideoConverterTab> {
 
     final selectedFormat = provider.converterFormat;
     final selectedBitrate = provider.converterBitrate;
-    final fileNameNoExt = path.basenameWithoutExtension(_selectedVideoPath!);
-    final outputPath = await _resolveOutputPath(
-      _outputDirectoryPath!,
-      fileNameNoExt,
-      selectedFormat,
+    final plan = await createVideoConversionPlan(
+      inputPath: _selectedVideoPath!,
+      outputDirectoryPath: _outputDirectoryPath!,
+      format: selectedFormat,
+      bitrate: selectedBitrate,
     );
-
-    var command = '-i "$_selectedVideoPath" ';
-
-    if (selectedFormat == 'mp3') {
-      command += '-vn -ar 44100 -ac 2 -b:a $selectedBitrate ';
-    } else if (selectedFormat == 'flac') {
-      command += '-vn -c:a flac ';
-    } else if (selectedFormat == 'wav') {
-      command += '-vn -c:a pcm_s16le -ar 44100 -ac 2 ';
-    } else if (selectedFormat == 'aac') {
-      command += '-vn -c:a aac -b:a $selectedBitrate ';
-    } else if (selectedFormat == 'ogg') {
-      command += '-vn -c:a libvorbis -b:a $selectedBitrate ';
-    }
-
-    command += '"$outputPath"';
 
     FFmpegKitConfig.enableStatisticsCallback((Statistics statistics) {
       if (!mounted) return;
@@ -150,7 +106,7 @@ class _VideoConverterTabState extends State<VideoConverterTab> {
       }
     });
 
-    await FFmpegKit.executeAsync(command, (session) async {
+    await FFmpegKit.executeAsync(plan.command, (session) async {
       final returnCode = await session.getReturnCode();
       if (!mounted) return;
 
@@ -159,7 +115,7 @@ class _VideoConverterTabState extends State<VideoConverterTab> {
           _isConverting = false;
           _progress = 1.0;
           _statusMessage = i18n.tr('conversion_done_saved', {
-            'path': outputPath,
+            'path': plan.outputPath,
           });
         });
         Future<void>.delayed(const Duration(seconds: 3), () {

@@ -7,8 +7,12 @@ import 'package:music_player/services/playback_notification_handler.dart';
 import 'package:music_player/services/playback_notification_service.dart';
 import 'package:music_player/theme/theme_provider.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  SharedPreferences.setMockInitialValues(const <String, Object>{});
+
   testWidgets('app shell renders tab navigation', (WidgetTester tester) async {
     final themeProvider = ThemeProvider();
     final languageProvider = AppLanguageProvider();

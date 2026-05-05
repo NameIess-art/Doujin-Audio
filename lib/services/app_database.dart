@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
 
@@ -7,6 +8,9 @@ import '../models/music_track.dart';
 
 class AppDatabase {
   AppDatabase._();
+
+  @visibleForTesting
+  AppDatabase.test(Database db) : _db = db;
 
   static AppDatabase? _instance;
   static AppDatabase get instance => _instance ??= AppDatabase._();
@@ -29,7 +33,7 @@ class AppDatabase {
     return db;
   }
 
-  Future<void> _onCreate(Database db, int version) async {
+  static Future<void> _onCreate(Database db, int version) async {
     await db.execute('''
       CREATE TABLE tracks (
         path TEXT PRIMARY KEY,
@@ -41,6 +45,9 @@ class AppDatabase {
       )
     ''');
   }
+
+  @visibleForTesting
+  static Future<void> createSchemaForTest(Database db) => _onCreate(db, 1);
 
   // ---- Tracks ----
 

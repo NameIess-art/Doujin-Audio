@@ -4,7 +4,6 @@ import 'dart:math';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:path/path.dart' as path;
@@ -153,6 +152,9 @@ class _PlaylistTabState extends State<PlaylistTab> {
                 keyboardDismissBehavior:
                     ScrollViewKeyboardDismissBehavior.onDrag,
                 onReorder: provider.reorderSessions,
+                onReorderStart: (index) => HapticFeedback.heavyImpact(),
+                proxyDecorator: (child, index, animation) =>
+                    _buildReorderProxy(context, child, animation),
                 itemCount: sessions.length,
                 itemBuilder: (context, index) {
                   final session = sessions[index];
@@ -228,6 +230,34 @@ class _PlaylistTabState extends State<PlaylistTab> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildReorderProxy(
+    BuildContext context,
+    Widget child,
+    Animation<double> animation,
+  ) {
+    return AnimatedBuilder(
+      animation: animation,
+      builder: (context, child) {
+        final double animValue = Curves.easeInOut.transform(animation.value);
+        final double scale = 1.0 + (0.012 * animValue);
+        final double elevation = 3.0 * animValue;
+
+        return Transform.scale(
+          scale: scale,
+          child: Material(
+            elevation: elevation,
+            color: Colors.transparent,
+            shadowColor: Theme.of(
+              context,
+            ).colorScheme.shadow.withValues(alpha: 0.12),
+            child: child,
+          ),
+        );
+      },
+      child: child,
     );
   }
 }

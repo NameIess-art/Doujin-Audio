@@ -2,27 +2,35 @@ part of 'audio_provider.dart';
 
 extension AudioProviderNotificationSubtitles on AudioProvider {
   Future<SubtitleTrack?> subtitleTrackForPath(String trackPath) {
+    if (_subtitleTracks.containsKey(trackPath)) {
+      return Future<SubtitleTrack?>.value(_subtitleTracks[trackPath]);
+    }
+
     return _subtitleTrackFutures.putIfAbsent(trackPath, () async {
-      final subtitleTrack = await loadSubtitleTrackForAudio(trackPath);
-      _subtitleTracks[trackPath] = subtitleTrack;
+      try {
+        final subtitleTrack = await loadSubtitleTrackForAudio(trackPath);
+        _subtitleTracks[trackPath] = subtitleTrack;
 
-      var shouldRefreshNotification = false;
-      for (final session in _sessions.values) {
-        if (session.currentTrackPath != trackPath) continue;
-        final changed = _refreshNotificationSubtitleForSession(
-          session,
-          syncNotification: false,
-        );
-        if (changed && _notificationFocusedSession?.id == session.id) {
-          shouldRefreshNotification = true;
+        var shouldRefreshNotification = false;
+        for (final session in _sessions.values) {
+          if (session.currentTrackPath != trackPath) continue;
+          final changed = _refreshNotificationSubtitleForSession(
+            session,
+            syncNotification: false,
+          );
+          if (changed && _notificationFocusedSession?.id == session.id) {
+            shouldRefreshNotification = true;
+          }
         }
-      }
 
-      if (shouldRefreshNotification) {
-        _syncNotificationState();
-        _notifyListeners();
+        if (shouldRefreshNotification) {
+          _syncNotificationState();
+          _notifyListeners();
+        }
+        return subtitleTrack;
+      } finally {
+        _subtitleTrackFutures.remove(trackPath)?.ignore();
       }
-      return subtitleTrack;
     });
   }
 

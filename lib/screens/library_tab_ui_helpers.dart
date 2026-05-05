@@ -186,4 +186,32 @@ extension _LibraryTabUiHelpers on _LibraryTabState {
       ),
     );
   }
+
+  Widget _buildReorderProxy(
+    BuildContext context,
+    Widget child,
+    Animation<double> animation,
+  ) {
+    return AnimatedBuilder(
+      animation: animation,
+      builder: (context, child) {
+        final double animValue = Curves.easeInOut.transform(animation.value);
+        final double scale = 1.0 + (0.012 * animValue);
+        final double elevation = 3.0 * animValue;
+
+        return Transform.scale(
+          scale: scale,
+          child: Material(
+            elevation: elevation,
+            color: Colors.transparent,
+            shadowColor: Theme.of(
+              context,
+            ).colorScheme.shadow.withValues(alpha: 0.12),
+            child: child,
+          ),
+        );
+      },
+      child: child,
+    );
+  }
 }

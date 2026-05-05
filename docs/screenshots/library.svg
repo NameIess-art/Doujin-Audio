@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="420" height="840" viewBox="0 0 420 840" role="img" aria-label="AudioPlayer audio library screenshot">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#140d15"/>
+      <stop offset="1" stop-color="#20152a"/>
+    </linearGradient>
+    <linearGradient id="cover" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7b314d"/>
+      <stop offset="1" stop-color="#24334a"/>
+    </linearGradient>
+  </defs>
+  <rect width="420" height="840" rx="28" fill="url(#bg)"/>
+  <text x="32" y="70" fill="#f9eef3" font-family="Arial, sans-serif" font-size="38" font-weight="800">音频库</text>
+  <text x="300" y="67" fill="#d8c8d0" font-family="Arial, sans-serif" font-size="18" font-weight="700">85 首音频</text>
+  <rect x="32" y="104" width="356" height="48" rx="24" fill="#2d2430"/>
+  <text x="76" y="135" fill="#bdaeb7" font-family="Arial, sans-serif" font-size="15">搜索音频...</text>
+  <g transform="translate(32 184)">
+    <rect width="356" height="92" rx="18" fill="#0f0d15" stroke="#5f4a5d"/>
+    <rect x="16" y="16" width="76" height="60" rx="14" fill="url(#cover)"/>
+    <text x="112" y="40" fill="#fff7fa" font-family="Arial, sans-serif" font-size="20" font-weight="800">白键との性活</text>
+    <text x="112" y="67" fill="#b9a7b1" font-family="Arial, sans-serif" font-size="13">13 首音频</text>
+    <circle cx="306" cy="46" r="24" fill="#253145"/>
+    <polygon points="299,34 299,58 318,46" fill="#ffd5df"/>
+  </g>
+  <g transform="translate(32 292)">
+    <rect width="356" height="92" rx="18" fill="#0f0d15" stroke="#5f4a5d"/>
+    <rect x="16" y="16" width="76" height="60" rx="14" fill="#3b2940"/>
+    <text x="112" y="36" fill="#fff7fa" font-family="Arial, sans-serif" font-size="20" font-weight="800">专心舔耳的天使</text>
+    <text x="112" y="60" fill="#fff7fa" font-family="Arial, sans-serif" font-size="20" font-weight="800">与恶魔</text>
+    <text x="112" y="78" fill="#b9a7b1" font-family="Arial, sans-serif" font-size="13">9 首音频</text>
+    <circle cx="306" cy="46" r="24" fill="#253145"/>
+    <polygon points="299,34 299,58 318,46" fill="#ffd5df"/>
+  </g>
+  <g transform="translate(32 400)">
+    <rect width="356" height="92" rx="18" fill="#0f0d15" stroke="#5f4a5d"/>
+    <rect x="16" y="16" width="76" height="60" rx="14" fill="url(#cover)"/>
+    <text x="112" y="36" fill="#fff7fa" font-family="Arial, sans-serif" font-size="20" font-weight="800">你能在完全勃起</text>
+    <text x="112" y="60" fill="#fff7fa" font-family="Arial, sans-serif" font-size="20" font-weight="800">无套插入...</text>
+    <text x="112" y="78" fill="#b9a7b1" font-family="Arial, sans-serif" font-size="13">5 首音频</text>
+    <circle cx="306" cy="46" r="24" fill="#253145"/>
+    <polygon points="299,34 299,58 318,46" fill="#ffd5df"/>
+  </g>
+  <rect x="48" y="758" width="324" height="54" rx="27" fill="#352a33" stroke="#6c4d61"/>
+  <text x="82" y="791" fill="#ff6f9a" font-family="Arial, sans-serif" font-size="14" font-weight="800">音频库</text>
+  <text x="186" y="791" fill="#a99aa3" font-family="Arial, sans-serif" font-size="14">播放列表</text>
+  <text x="302" y="791" fill="#a99aa3" font-family="Arial, sans-serif" font-size="14">设置</text>
+</svg>

@@ -6,6 +6,29 @@ typedef NextInt = int Function(int max);
 class PlaybackQueueResolver {
   const PlaybackQueueResolver();
 
+  bool hasAdjacentPath({
+    required MusicTrack? currentTrack,
+    required bool forward,
+    required SessionLoopMode loopMode,
+    required List<String> sortedLibraryTrackPaths,
+    required Map<String, List<MusicTrack>> tracksByGroup,
+  }) {
+    if (currentTrack == null || sortedLibraryTrackPaths.isEmpty) return false;
+
+    switch (loopMode) {
+      case SessionLoopMode.single:
+      case SessionLoopMode.crossRandom:
+        return true;
+      case SessionLoopMode.folderRandom:
+      case SessionLoopMode.folderSequential:
+        final scope =
+            tracksByGroup[currentTrack.groupKey] ?? const <MusicTrack>[];
+        return scope.isNotEmpty;
+      case SessionLoopMode.crossSequential:
+        return true;
+    }
+  }
+
   String? resolveNextPath({
     required MusicTrack? currentTrack,
     required bool forward,

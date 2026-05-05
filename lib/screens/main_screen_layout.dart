@@ -39,44 +39,50 @@ extension _MainScreenLayout on _MainScreenState {
       );
     }
 
-    return PageView.builder(
-      controller: _pageController,
-      itemCount: _pages.length,
-      pageSnapping: false,
-      physics: const SnapScrollPhysics(parent: BouncingScrollPhysics()),
-      onPageChanged: (index) {
-        if (_currentIndex == index) return;
-        _setLocalState(() {
-          _currentIndex = index;
-        });
+    return NotificationListener<ScrollNotification>(
+      onNotification: (notification) {
+        if (notification is ScrollStartNotification) {
+          context.read<AudioProvider>().setPageTransitioning(true);
+        } else if (notification is ScrollEndNotification) {
+          context.read<AudioProvider>().setPageTransitioning(false);
+        }
+        return false;
       },
-      itemBuilder: (context, index) {
-        return AnimatedBuilder(
-          animation: _pageController,
-          builder: (context, child) {
-            double pageOffset = 0;
-            if (_pageController.hasClients &&
-                _pageController.position.haveDimensions) {
-              pageOffset =
-                  ((_pageController.page ?? _currentIndex.toDouble()) - index)
-                      .toDouble();
-            } else {
-              pageOffset = (_currentIndex - index).toDouble();
-            }
-            final clampedOffset = pageOffset.clamp(-1.0, 1.0).toDouble();
-            final pageProgress = clampedOffset.abs();
-            final curveValue = Curves.easeOutCubic.transform(1 - pageProgress);
-            final opacity = 0.84 + (0.16 * curveValue);
-            final scale = 0.984 + (0.016 * curveValue);
+      child: PageView.builder(
+        controller: _pageController,
+        itemCount: _pages.length,
+        physics: const SnapScrollPhysics(parent: ClampingScrollPhysics()),
+        onPageChanged: (index) {
+          if (_pendingTargetIndex != null && index != _pendingTargetIndex) return;
+          _pendingTargetIndex = null;
+          if (_currentIndex == index) return;
+          _setLocalState(() {
+            _currentIndex = index;
+          });
+        },
+        itemBuilder: (context, index) {
+          return AnimatedBuilder(
+            animation: _pageController,
+            builder: (context, child) {
+              double pageOffset = 0;
+              if (_pageController.hasClients &&
+                  _pageController.position.haveDimensions) {
+                pageOffset =
+                    ((_pageController.page ?? _currentIndex.toDouble()) - index)
+                        .toDouble();
+              } else {
+                pageOffset = (_currentIndex - index).toDouble();
+              }
+              final clampedOffset = pageOffset.clamp(-1.0, 1.0).toDouble();
+              // Simplify opacity animation for smoother transitions
+              final opacity = 1.0 - (clampedOffset.abs() * 0.05);
 
-            return Opacity(
-              opacity: opacity.clamp(0.0, 1.0),
-              child: Transform.scale(scale: scale, child: child),
-            );
-          },
-          child: pageShell(index),
-        );
-      },
+              return Opacity(opacity: opacity.clamp(0.0, 1.0), child: child);
+            },
+            child: pageShell(index),
+          );
+        },
+      ),
     );
   }
 
@@ -147,99 +153,70 @@ extension _MainScreenLayout on _MainScreenState {
 
   Widget _buildBottomBar(BuildContext context) {
     final i18n = context.watch<AppLanguageProvider>();
+    final cs = Theme.of(context).colorScheme;
+
     final items = _MainScreenState._destinations.asMap().entries.map((entry) {
       final index = entry.key;
       final item = entry.value;
       final selected = index == _currentIndex;
       final label = i18n.tr(item.labelKey);
-      final inactive = Theme.of(
-        context,
-      ).colorScheme.onSurfaceVariant.withValues(alpha: 0.6);
+      final inactive = cs.onSurfaceVariant.withValues(alpha: 0.6);
 
       return Expanded(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 2),
-          child: Semantics(
-            button: true,
-            selected: selected,
-            label: label,
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                borderRadius: BorderRadius.circular(18),
-                onTap: () => _switchPage(index),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 180),
-                  curve: Curves.easeOutCubic,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 6,
-                    vertical: 7,
-                  ),
-                  decoration: BoxDecoration(
-                    color: selected
-                        ? Theme.of(
-                            context,
-                          ).colorScheme.primary.withValues(alpha: 0.12)
-                        : Colors.transparent,
-                    borderRadius: BorderRadius.circular(18),
-                    border: Border.all(
-                      color: selected
-                          ? Theme.of(
-                              context,
-                            ).colorScheme.primary.withValues(alpha: 0.24)
-                          : Colors.transparent,
+        child: Semantics(
+          button: true,
+          selected: selected,
+          label: label,
+          child: GestureDetector(
+            onTap: () => _switchPage(index),
+            behavior: HitTestBehavior.opaque,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 300),
+                      curve: Curves.easeOutQuint,
+                      width: selected ? 56 : 0,
+                      height: 28,
+                      decoration: BoxDecoration(
+                        color: selected
+                            ? cs.primary.withValues(alpha: 0.14)
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(16),
+                      ),
                     ),
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 200),
-                        transitionBuilder: (child, animation) => FadeTransition(
-                          opacity: animation,
-                          child: ScaleTransition(
-                            scale: animation,
-                            child: child,
-                          ),
-                        ),
-                        child: Icon(
-                          selected ? item.selectedIcon : item.icon,
-                          key: ValueKey<bool>(selected),
-                          size: 21,
-                          color: selected
-                              ? Theme.of(context).colorScheme.primary
-                              : inactive,
-                        ),
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          fontSize: 9.4,
-                          fontWeight: selected
-                              ? FontWeight.w700
-                              : FontWeight.w600,
-                          letterSpacing: 0.1,
-                          color: selected
-                              ? Theme.of(context).colorScheme.primary
-                              : inactive,
-                        ),
-                      ),
-                    ],
+                    Icon(
+                      selected ? item.selectedIcon : item.icon,
+                      size: 20,
+                      color: selected ? cs.primary : inactive,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 1),
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    fontSize: 10,
+                    fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                    color: selected ? cs.primary : inactive,
+                    letterSpacing: 0.1,
                   ),
                 ),
-              ),
+              ],
             ),
           ),
         ),
       );
     }).toList();
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(3, 0, 3, 0),
-      child: Row(children: items),
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceAround,
+      children: items,
     );
   }
 
@@ -252,7 +229,7 @@ extension _MainScreenLayout on _MainScreenState {
     return SafeArea(
       key: _bottomDockKey,
       top: false,
-      minimum: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+      minimum: const EdgeInsets.fromLTRB(12, 0, 12, 6),
       child: Align(
         alignment: Alignment.bottomCenter,
         child: ConstrainedBox(
@@ -273,14 +250,17 @@ extension _MainScreenLayout on _MainScreenState {
                   },
                 ),
               if (overlaySessions.isNotEmpty) const SizedBox(height: 6),
-              _FloatingGlassPanel(
-                padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
-                borderOpacity: 0.8,
-                shadowOpacity: 0.11,
-                showTopHighlight: false,
-                primaryFillOpacity: 1,
-                secondaryFillOpacity: 0.82,
-                child: _buildBottomBar(context),
+              FractionallySizedBox(
+                widthFactor: 0.9,
+                child: _FloatingGlassPanel(
+                  padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
+                  borderOpacity: 0.12,
+                  shadowOpacity: 0.08,
+                  showTopHighlight: false,
+                  primaryFillOpacity: 0.75,
+                  secondaryFillOpacity: 0.65,
+                  child: _buildBottomBar(context),
+                ),
               ),
             ],
           ),

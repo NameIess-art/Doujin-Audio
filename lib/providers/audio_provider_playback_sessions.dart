@@ -110,7 +110,7 @@ extension AudioProviderPlaybackSessions on AudioProvider {
         session.lastPersistedPositionBucket = positionBucket;
         _scheduleSaveSessionState(delay: const Duration(milliseconds: 800));
       }
-      if (_notificationFocusedSession?.id != session.id) return;
+      if (!_isNotificationFocusedSessionId(session.id)) return;
       final changed = _refreshNotificationSubtitleForSession(
         session,
         position: position,
@@ -122,12 +122,19 @@ extension AudioProviderPlaybackSessions on AudioProvider {
 
     final durationSub = session.durationStream.listen((_) {
       if (!_sessions.containsKey(session.id)) return;
+      if (!_isNotificationFocusedSessionId(session.id)) return;
       _scheduleFocusedNotificationRefresh(session.id, immediate: true);
     });
     session.subscriptions.add(durationSub);
 
     final bufferedPositionSub = session.bufferedPositionStream.listen((_) {
       if (!_sessions.containsKey(session.id)) return;
+      if (!session.state.playing &&
+          !session.isLoading &&
+          !session.isPlaybackStarting) {
+        return;
+      }
+      if (!_isNotificationFocusedSessionId(session.id)) return;
       _scheduleFocusedNotificationRefresh(session.id);
     });
     session.subscriptions.add(bufferedPositionSub);

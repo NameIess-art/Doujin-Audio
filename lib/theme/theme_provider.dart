@@ -5,6 +5,9 @@ import '../services/app_preferences.dart';
 
 class ThemeProvider with ChangeNotifier {
   bool _isDarkMode = false;
+  late final ThemeData _lightTheme = _buildTheme(_lightScheme);
+  late final ThemeData _darkTheme = _buildTheme(_darkScheme);
+
   bool get isDarkMode => _isDarkMode;
 
   ThemeProvider() {
@@ -12,11 +15,14 @@ class ThemeProvider with ChangeNotifier {
   }
 
   Future<void> _loadTheme() async {
-    _isDarkMode = await AppPreferences.getBool('isDarkMode') ?? false;
+    final savedDarkMode = await AppPreferences.getBool('isDarkMode') ?? false;
+    if (_isDarkMode == savedDarkMode) return;
+    _isDarkMode = savedDarkMode;
     notifyListeners();
   }
 
   Future<void> toggleTheme(bool value) async {
+    if (_isDarkMode == value) return;
     _isDarkMode = value;
     await AppPreferences.setBool('isDarkMode', value);
     notifyListeners();
@@ -247,6 +253,6 @@ class ThemeProvider with ChangeNotifier {
   }
 
   ThemeData get currentTheme {
-    return _buildTheme(_isDarkMode ? _darkScheme : _lightScheme);
+    return _isDarkMode ? _darkTheme : _lightTheme;
   }
 }

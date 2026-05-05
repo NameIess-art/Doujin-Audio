@@ -94,6 +94,7 @@ class AudioProvider with ChangeNotifier {
   final Map<String, String?> _resolvedCoverPaths = {};
   final Map<String, Future<String?>> _notificationCoverPathFutures = {};
   final Map<String, String?> _resolvedNotificationCoverPaths = {};
+  final Set<String> _notificationCoverSearchMisses = <String>{};
   String? _notificationFocusSessionId;
   String? _unifiedNotificationSyncKey;
   Timer? _notificationProgressRefreshTimer;
@@ -138,6 +139,7 @@ class AudioProvider with ChangeNotifier {
   int _scanFoundCount = 0;
   int _scanDuplicateCount = 0;
   int _scanFailureCount = 0;
+  bool _isPageTransitioning = false;
   final Random _random = Random();
 
   TimerMode? _timerMode;
@@ -190,6 +192,7 @@ class AudioProvider with ChangeNotifier {
   bool get multiThreadPlaybackEnabled => _multiThreadPlaybackEnabled;
   bool get notificationsEnabled => _notificationsEnabled;
   bool get showPlaybackCard => _showPlaybackCard;
+  bool get isPageTransitioning => _isPageTransitioning;
 
   List<MusicTrack> get library => List.unmodifiable(_library);
   int get libraryTrackCount => _library.length;
@@ -259,6 +262,12 @@ class AudioProvider with ChangeNotifier {
   void cancelScan() {
     if (!_isScanning) return;
     _isScanning = false;
+    _notifyListeners();
+  }
+
+  void setPageTransitioning(bool value) {
+    if (_isPageTransitioning == value) return;
+    _isPageTransitioning = value;
     _notifyListeners();
   }
 

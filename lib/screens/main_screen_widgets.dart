@@ -189,7 +189,7 @@ class _FloatingGlassPanel extends StatelessWidget {
   });
 
   final Widget child;
-  final double radius = 24;
+  final double radius = 100;
   final EdgeInsetsGeometry padding;
   final double borderOpacity;
   final double shadowOpacity;
@@ -201,26 +201,18 @@ class _FloatingGlassPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final fillAlpha = isDark ? 0.42 : 0.62;
+    final fillAlpha = isDark ? 0.72 : 0.85;
+    final bgColor = isDark ? cs.surfaceBright : cs.surfaceContainerHighest;
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(radius),
       child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
+        filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
         child: DecoratedBox(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(radius),
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                cs.surfaceContainerLow.withValues(
-                  alpha: (primaryFillOpacity * fillAlpha).clamp(0.0, 0.92),
-                ),
-                cs.surfaceContainer.withValues(
-                  alpha: (secondaryFillOpacity * fillAlpha).clamp(0.0, 0.82),
-                ),
-              ],
+            color: bgColor.withValues(
+              alpha: (primaryFillOpacity * fillAlpha).clamp(0.0, 0.95),
             ),
             border: Border.all(
               color: cs.outlineVariant.withValues(alpha: borderOpacity),

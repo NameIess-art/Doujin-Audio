@@ -246,4 +246,15 @@ extension AudioProviderPlaybackEngine on AudioProvider {
       nextInt: _random.nextInt,
     );
   }
+
+  bool _hasAdjacentPathFor(PlaybackSession session, {required bool forward}) {
+    final currentTrack = trackByPath(session.currentTrackPath);
+    return _playbackQueueResolver.hasAdjacentPath(
+      currentTrack: currentTrack,
+      forward: forward,
+      loopMode: session.loopMode,
+      sortedLibraryTrackPaths: _sortedLibraryTrackPaths,
+      tracksByGroup: _tracksByGroup,
+    );
+  }
 }

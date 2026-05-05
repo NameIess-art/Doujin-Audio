@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:ui';
 
@@ -20,7 +21,16 @@ Future<String?> _sessionCoverFutureForTrack(
   AudioProvider provider,
   MusicTrack? track,
 ) {
-  return provider.coverPathFutureForTrack(track);
+  if (track == null) {
+    return Future<String?>.value();
+  }
+  final cacheKey = track.path.startsWith('content://')
+      ? 'content:${track.groupKey.isNotEmpty ? track.groupKey : track.path}'
+      : path.normalize(path.dirname(track.path));
+  return cache.putIfAbsent(
+    cacheKey,
+    () => provider.coverPathFutureForTrack(track),
+  );
 }
 
 class ActiveSessionCarousel extends StatefulWidget {

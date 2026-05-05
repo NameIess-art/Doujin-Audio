@@ -87,4 +87,33 @@ void main() {
   test('missing current track returns null', () {
     expect(resolve(null, mode: SessionLoopMode.folderSequential), isNull);
   });
+
+  test('hasAdjacentPath does not consume random values', () {
+    var randomCalls = 0;
+
+    final hasAdjacent = resolver.hasAdjacentPath(
+      currentTrack: a1,
+      forward: true,
+      loopMode: SessionLoopMode.crossRandom,
+      sortedLibraryTrackPaths: const <String>['a1', 'a2', 'b1'],
+      tracksByGroup: tracksByGroup,
+    );
+
+    expect(hasAdjacent, isTrue);
+    expect(randomCalls, 0);
+
+    resolver.resolveNextPath(
+      currentTrack: a1,
+      forward: true,
+      loopMode: SessionLoopMode.crossRandom,
+      sortedLibraryTrackPaths: const <String>['a1', 'a2', 'b1'],
+      tracksByGroup: tracksByGroup,
+      nextInt: (_) {
+        randomCalls++;
+        return 1;
+      },
+    );
+
+    expect(randomCalls, 1);
+  });
 }

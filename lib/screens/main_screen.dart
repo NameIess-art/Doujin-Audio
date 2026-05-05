@@ -62,6 +62,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   String? _lastOpenedNotificationSessionId;
   DateTime? _lastOpenedNotificationAt;
 
+  int? _pendingTargetIndex;
+
   late final List<Widget> _pages;
 
   void _setLocalState(VoidCallback fn) => setState(fn);
@@ -147,6 +149,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     if (withFeedback) {
       Feedback.forTap(context);
     }
+    _pendingTargetIndex = index;
     setState(() {
       _currentIndex = index;
     });
@@ -251,6 +254,28 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                   MobileOverlayInset(
                     bottomInset: mobileContentInset,
                     child: _buildAnimatedBody(isDesktop: false),
+                  ),
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    height: _measuredDockContent > 0
+                        ? _measuredDockContent + 36
+                        : 136,
+                    child: IgnorePointer(
+                      child: ShaderMask(
+                        shaderCallback: (bounds) => const LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [Colors.transparent, Colors.white],
+                          stops: [0, 0.45],
+                        ).createShader(bounds),
+                        child: BackdropFilter(
+                          filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                          child: const SizedBox.expand(),
+                        ),
+                      ),
+                    ),
                   ),
                   _buildMobileBottomDock(
                     context,

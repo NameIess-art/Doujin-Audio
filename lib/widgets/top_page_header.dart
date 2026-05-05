@@ -1,6 +1,8 @@
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../providers/audio_provider.dart';
 
 class TopPageHeader extends StatelessWidget {
   const TopPageHeader({
@@ -35,6 +37,9 @@ class TopPageHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final isTransitioning = context.select<AudioProvider, bool>(
+      (p) => p.isPageTransitioning,
+    );
     final topPadding = useSafeAreaTop ? MediaQuery.paddingOf(context).top : 0.0;
 
     final headerContent = Padding(
@@ -102,26 +107,32 @@ class TopPageHeader extends StatelessWidget {
       ),
     );
 
-    return ClipRect(
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-        child: Container(
-          padding: EdgeInsets.only(top: topPadding),
-          decoration: BoxDecoration(
-            color: cs.surface.withValues(alpha: 0.65),
-            border: Border(
-              bottom: BorderSide(
-                color: cs.outlineVariant.withValues(alpha: 0.15),
-                width: 0.5,
-              ),
-            ),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [headerContent, ?additionalChild],
+    final headerWidget = Container(
+      padding: EdgeInsets.only(top: topPadding),
+      decoration: BoxDecoration(
+        color: cs.surface.withValues(alpha: isTransitioning ? 0.94 : 0.68),
+        border: Border(
+          bottom: BorderSide(
+            color: cs.outlineVariant.withValues(alpha: 0.15),
+            width: 0.5,
           ),
         ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [headerContent, ?additionalChild],
+      ),
+    );
+
+    if (isTransitioning) {
+      return ClipRect(child: headerWidget);
+    }
+
+    return ClipRect(
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+        child: headerWidget,
       ),
     );
   }

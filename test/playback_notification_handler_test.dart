@@ -74,6 +74,69 @@ void main() {
     expect(state.controls.single.action, MediaAction.playPause);
   });
 
+  test(
+    'notification snapshot exposes previous and next controls when available',
+    () {
+      final handler = PlaybackNotificationHandler();
+
+      handler.updateSnapshot(
+        const PlaybackNotificationSnapshot(
+          queue: <MediaItem>[
+            MediaItem(id: 'session_1', title: 'Track 1'),
+            MediaItem(id: 'session_2', title: 'Track 2'),
+          ],
+          queueIndex: 1,
+          mediaItem: MediaItem(id: 'session_2', title: 'Track 2'),
+          playing: true,
+          processingState: AudioProcessingState.ready,
+          updatePosition: Duration(seconds: 4),
+          bufferedPosition: Duration(seconds: 8),
+          speed: 1.0,
+          hasPrevious: true,
+          hasNext: true,
+        ),
+      );
+
+      final state = handler.playbackState.value;
+
+      expect(state.controls.map((control) => control.action), [
+        MediaAction.skipToPrevious,
+        MediaAction.playPause,
+        MediaAction.skipToNext,
+      ]);
+      expect(state.androidCompactActionIndices, [0, 1, 2]);
+      expect(state.queueIndex, 1);
+      expect(state.playing, isTrue);
+    },
+  );
+
+  test('clearing notification snapshot resets queue and media item', () {
+    final handler = PlaybackNotificationHandler();
+
+    handler.updateSnapshot(
+      const PlaybackNotificationSnapshot(
+        queue: <MediaItem>[MediaItem(id: 'session_1', title: 'Track 1')],
+        queueIndex: 0,
+        mediaItem: MediaItem(id: 'session_1', title: 'Track 1'),
+        playing: true,
+        processingState: AudioProcessingState.ready,
+        updatePosition: Duration.zero,
+        bufferedPosition: Duration.zero,
+        speed: 1.0,
+        hasPrevious: false,
+        hasNext: false,
+      ),
+    );
+    handler.updateSnapshot(null);
+
+    expect(handler.queue.value, isEmpty);
+    expect(handler.mediaItem.value, isNull);
+    expect(
+      handler.playbackState.value.controls.single.action,
+      MediaAction.play,
+    );
+  });
+
   test('session custom action forwards session id', () async {
     final handler = PlaybackNotificationHandler();
     String? toggledSessionId;

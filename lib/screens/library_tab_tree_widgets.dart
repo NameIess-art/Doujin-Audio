@@ -26,6 +26,11 @@ class _FolderNodeWidget extends StatefulWidget {
 }
 
 class _FolderNodeWidgetState extends State<_FolderNodeWidget> {
+  static const double _rootFolderTileHeight = 70;
+  static const double _childFolderTileHeight = 62;
+  static const double _rootFolderTitleBlockHeight = 34;
+  static const double _childFolderTitleBlockHeight = 50;
+
   final ExpansibleController _expansionController = ExpansibleController();
   bool _expanded = false;
 
@@ -89,6 +94,9 @@ class _FolderNodeWidgetState extends State<_FolderNodeWidget> {
           data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
           child: ExpansionTile(
             controller: _expansionController,
+            minTileHeight: isRootFolder
+                ? _rootFolderTileHeight
+                : _childFolderTileHeight,
             onExpansionChanged: (expanded) {
               if (_expanded == expanded) return;
               setState(() {
@@ -101,60 +109,77 @@ class _FolderNodeWidgetState extends State<_FolderNodeWidget> {
             collapsedShape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(14),
             ),
-            tilePadding: EdgeInsets.fromLTRB(
-              isRootFolder ? 12 : 10,
-              isRootFolder ? 10 : 6,
-              10,
-              isRootFolder ? 10 : 6,
-            ),
+            tilePadding: EdgeInsets.fromLTRB(isRootFolder ? 12 : 10, 2, 10, 2),
             childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
-            leading: isRootFolder
-                ? _LibraryCoverThumbnail(
+            title: Row(
+              children: [
+                if (isRootFolder) ...[
+                  _LibraryCoverThumbnail(
                     coverPathFuture: provider.coverPathFutureForFolder(
                       widget.folder.path,
                     ),
                     title: widget.folder.name,
-                  )
-                : null,
-            title: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (groupLabel.isNotEmpty) ...[
-                  Text(
-                    groupLabel,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: cs.onSurfaceVariant.withValues(alpha: 0.65),
-                      fontWeight: FontWeight.w500,
-                      fontSize: 10,
-                    ),
                   ),
-                  const SizedBox(height: 3),
+                  const SizedBox(width: 14),
                 ],
-                Text(
-                  widget.folder.name,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w900,
-                    fontSize: 14,
-                    height: 1.06,
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SizedBox(
+                        height: isRootFolder
+                            ? _rootFolderTitleBlockHeight
+                            : _childFolderTitleBlockHeight,
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (groupLabel.isNotEmpty) ...[
+                              Text(
+                                groupLabel,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(
+                                      color: cs.onSurfaceVariant.withValues(
+                                        alpha: 0.65,
+                                      ),
+                                      fontWeight: FontWeight.w500,
+                                      fontSize: 10,
+                                    ),
+                              ),
+                              const SizedBox(height: 3),
+                            ],
+                            Text(
+                              widget.folder.name,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.titleMedium
+                                  ?.copyWith(
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 14,
+                                    height: 1.06,
+                                  ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (isRootFolder) ...[
+                        const SizedBox(height: 4),
+                        SizedBox(
+                          width: double.infinity,
+                          child: _LibraryMetaChip(
+                            icon: Icons.library_music_rounded,
+                            text: i18n.tr('audio_count', {
+                              'count': widget.folder.totalTrackCount,
+                            }),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
-                if (isRootFolder) ...[
-                  const SizedBox(height: 6),
-                  SizedBox(
-                    width: double.infinity,
-                    child: _LibraryMetaChip(
-                      icon: Icons.library_music_rounded,
-                      text: i18n.tr('audio_count', {
-                        'count': widget.folder.totalTrackCount,
-                      }),
-                    ),
-                  ),
-                ],
               ],
             ),
             trailing: SizedBox(
@@ -187,9 +212,11 @@ class _FolderNodeWidgetState extends State<_FolderNodeWidget> {
                 .map(
                   (childNode) => Padding(
                     padding: const EdgeInsets.only(top: 6),
-                    child: _LibraryTreeItem(
-                      key: ValueKey(childNode.path),
-                      node: childNode,
+                    child: RepaintBoundary(
+                      child: _LibraryTreeItem(
+                        key: ValueKey(childNode.path),
+                        node: childNode,
+                      ),
                     ),
                   ),
                 )
@@ -234,15 +261,12 @@ class _TrackNodeWidget extends StatelessWidget {
     final isAlreadyPlaying = context.select<AudioProvider, bool>(
       (value) => value.isTrackActive(track.path),
     );
-    final folderName = track.isSingle
-        ? i18n.tr('imported_files')
-        : track.groupTitle;
     final cardShape = RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(14),
     );
 
     return SwipeRevealCard(
-      margin: const EdgeInsets.only(bottom: 6),
+      margin: const EdgeInsets.only(bottom: 2),
       shape: cardShape,
       actionLabel: i18n.tr('remove'),
       removeTooltip: i18n.tr('remove_audio'),
@@ -258,39 +282,21 @@ class _TrackNodeWidget extends StatelessWidget {
               )
             : cs.surfaceContainerHighest,
         child: SizedBox(
-          height: 64,
+          height: 54,
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 6, 10, 6),
+            padding: const EdgeInsets.fromLTRB(12, 5, 10, 5),
             child: Row(
               children: [
                 Expanded(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        folderName,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: cs.onSurfaceVariant.withValues(alpha: 0.65),
-                          fontWeight: FontWeight.w500,
-                          fontSize: 10,
-                        ),
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        track.displayName,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(
-                              fontWeight: FontWeight.w900,
-                              fontSize: 14,
-                              height: 1.06,
-                            ),
-                      ),
-                    ],
+                  child: Text(
+                    track.displayName,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w900,
+                      fontSize: 14,
+                      height: 1.06,
+                    ),
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -355,26 +361,28 @@ class _LibraryCoverThumbnail extends StatelessWidget {
     }
 
     return SizedBox(
-      width: 78,
-      height: 78,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(14),
-        child: FutureBuilder<String?>(
-          future: coverPathFuture,
-          builder: (context, snapshot) {
-            final coverPath = snapshot.data;
-            if (coverPath == null || coverPath.isEmpty) {
-              return fallback();
-            }
-            final dpr = MediaQuery.devicePixelRatioOf(context);
-            return Image.file(
-              File(coverPath),
-              fit: BoxFit.cover,
-              cacheWidth: (78 * dpr).round(),
-              cacheHeight: (78 * dpr).round(),
-              errorBuilder: (_, _, _) => fallback(),
-            );
-          },
+      width: 82,
+      height: 66,
+      child: Padding(
+        padding: EdgeInsets.zero,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: FutureBuilder<String?>(
+            future: coverPathFuture,
+            builder: (context, snapshot) {
+              final coverPath = snapshot.data;
+              if (coverPath == null || coverPath.isEmpty) {
+                return fallback();
+              }
+              final dpr = MediaQuery.devicePixelRatioOf(context);
+              return Image.file(
+                File(coverPath),
+                fit: BoxFit.cover,
+                cacheWidth: (82 * dpr).round(),
+                errorBuilder: (_, _, _) => fallback(),
+              );
+            },
+          ),
         ),
       ),
     );
@@ -390,35 +398,28 @@ class _LibraryMetaChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: cs.surfaceContainerHigh,
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.7)),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            icon,
-            size: 12,
-            color: cs.onSurfaceVariant.withValues(alpha: 0.65),
-          ),
-          const SizedBox(width: 5),
-          Flexible(
-            child: Text(
-              text,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                fontWeight: FontWeight.w600,
-                color: cs.onSurfaceVariant.withValues(alpha: 0.65),
-                fontSize: 9,
-              ),
+    return Row(
+      children: [
+        Icon(
+          icon,
+          size: 12,
+          color: cs.onSurfaceVariant.withValues(alpha: 0.65),
+        ),
+        const SizedBox(width: 5),
+        Flexible(
+          child: Text(
+            text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              fontWeight: FontWeight.w600,
+              fontStyle: FontStyle.italic,
+              color: cs.onSurfaceVariant.withValues(alpha: 0.65),
+              fontSize: 9,
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:collection';
 import 'dart:io';
-import 'dart:math';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -53,11 +52,8 @@ class _LibraryTabState extends State<LibraryTab>
 
   final GlobalKey _headerKey = GlobalKey();
   double _headerHeight = 72;
-  static const double _searchBarHeight = 46;
 
   final ScrollController _scrollController = ScrollController();
-  double _searchBarOffset =
-      0; // 0 is fully visible, -_searchBarHeight is hidden
 
   void _setLocalState(VoidCallback fn) => setState(fn);
 
@@ -82,7 +78,8 @@ class _LibraryTabState extends State<LibraryTab>
   void _measureHeader() {
     final box = _headerKey.currentContext?.findRenderObject() as RenderBox?;
     if (box != null && mounted) {
-      final h = box.size.height;
+      const double searchBarFullHeight = 44.0;
+      final h = box.size.height - searchBarFullHeight;
       if (h > 0 && h != _headerHeight) {
         setState(() => _headerHeight = h);
       }
@@ -95,34 +92,6 @@ class _LibraryTabState extends State<LibraryTab>
     _searchController.dispose();
     _scrollController.dispose();
     super.dispose();
-  }
-
-  bool _onLibraryScrollNotification(ScrollNotification n) {
-    if (n is ScrollUpdateNotification) {
-      final d = n.scrollDelta ?? 0;
-      final pixels = n.metrics.pixels;
-
-      if (pixels <= 0) {
-        if (_searchBarOffset != 0) {
-          setState(() => _searchBarOffset = 0);
-        }
-      } else if (d > 0.5) {
-        // Scrolling up (content moves up)
-        if (_searchBarOffset > -_searchBarHeight) {
-          setState(() {
-            _searchBarOffset = max(-_searchBarHeight, _searchBarOffset - d);
-          });
-        }
-      } else if (d < -0.5 && pixels < 100) {
-        // Scrolling down (content moves down) - only near top
-        if (_searchBarOffset < 0) {
-          setState(() {
-            _searchBarOffset = min(0.0, _searchBarOffset - d);
-          });
-        }
-      }
-    }
-    return false;
   }
 
   @override
@@ -152,8 +121,26 @@ class _LibraryTabState extends State<LibraryTab>
     final tree = _filterTreeCached(rawTree, _searchQuery);
     final matchCount = _countTrackNodes(tree);
     final bottomInset = MobileOverlayInset.of(context);
-    final topTotalHeight = _headerHeight + _searchBarOffset + 4;
+
+    const double searchBarFullHeight = 44.0;
+    final topTotalHeight = _headerHeight + 4;
     final hasLibrary = rawTree.isNotEmpty;
+    final canReorder = _searchQuery.isEmpty;
+
+    Widget dynamicSearchBar() {
+      return _CollapsingSearchBar(
+        controller: _scrollController,
+        height: searchBarFullHeight,
+        child: _buildSearchBar(i18n, matchCount, audioCount),
+      );
+    }
+
+    Widget buildLibraryItem(BuildContext context, int index) {
+      final node = tree[index];
+      return RepaintBoundary(
+        child: _LibraryTreeItem(key: ValueKey(node.path), node: node),
+      );
+    }
 
     return Stack(
       children: [
@@ -164,22 +151,31 @@ class _LibraryTabState extends State<LibraryTab>
                     ? Center(
                         child: Padding(
                           padding: EdgeInsets.only(top: topTotalHeight),
-                          child: Text(
-                            hasLibrary
-                                ? i18n.tr('no_search_results')
-                                : i18n.tr('no_audio_files'),
-                            style: Theme.of(context).textTheme.bodyLarge
-                                ?.copyWith(
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.onSurfaceVariant,
-                                ),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              // No search bar here anymore, it's in the fixed header
+                              const SizedBox(height: 24),
+                              Text(
+                                hasLibrary
+                                    ? i18n.tr('no_search_results')
+                                    : i18n.tr('no_audio_files'),
+                                style: Theme.of(context).textTheme.bodyLarge
+                                    ?.copyWith(
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.onSurfaceVariant,
+                                    ),
+                              ),
+                            ],
                           ),
                         ),
                       )
                     : Column(
                         children: [
-                          SizedBox(height: topTotalHeight),
+                          SizedBox(
+                            height: topTotalHeight + searchBarFullHeight,
+                          ),
                           Expanded(
                             child: _LibraryEmptyState(
                               onImportLibrary: _addLibrary,
@@ -190,44 +186,72 @@ class _LibraryTabState extends State<LibraryTab>
                           ),
                         ],
                       ))
-              : NotificationListener<ScrollNotification>(
-                  onNotification: _onLibraryScrollNotification,
-                  child: RefreshIndicator(
-                    onRefresh: () => _refreshWatchedFolders(),
-                    displacement: topTotalHeight + 10,
-                    child: ReorderableListView.builder(
-                      scrollController: _scrollController,
-                      padding: EdgeInsets.fromLTRB(
-                        16,
-                        topTotalHeight,
-                        16,
-                        bottomInset,
-                      ),
-                      cacheExtent: 720,
-                      keyboardDismissBehavior:
-                          ScrollViewKeyboardDismissBehavior.onDrag,
-                      onReorder: (oldIndex, newIndex) {
-                        if (_searchQuery.isNotEmpty) return;
-                        provider.reorderLibraryNodes(oldIndex, newIndex);
-                      },
-                      itemCount: tree.length,
-                      itemBuilder: (context, index) {
-                        final node = tree[index];
-                        return ReorderableDelayedDragStartListener(
-                          key: ValueKey(node.path),
-                          index: index,
-                          child: _LibraryTreeItem(node: node),
-                        );
-                      },
-                    ),
-                  ),
+              : RefreshIndicator(
+                  onRefresh: () => _refreshWatchedFolders(),
+                  displacement: topTotalHeight + 10,
+                  child: canReorder
+                      ? ReorderableListView.builder(
+                          scrollController: _scrollController,
+                          padding: EdgeInsets.fromLTRB(
+                            16,
+                            topTotalHeight,
+                            16,
+                            bottomInset,
+                          ),
+                          header: const Padding(
+                            padding: EdgeInsets.only(bottom: 10),
+                            child: SizedBox(height: searchBarFullHeight),
+                          ),
+                          cacheExtent: 720,
+                          buildDefaultDragHandles: false,
+                          keyboardDismissBehavior:
+                              ScrollViewKeyboardDismissBehavior.onDrag,
+                          onReorder: provider.reorderLibraryNodes,
+                          onReorderStart: (index) =>
+                              HapticFeedback.heavyImpact(),
+                          proxyDecorator: (child, index, animation) =>
+                              _buildReorderProxy(context, child, animation),
+                          itemCount: tree.length,
+                          itemBuilder: (context, index) {
+                            final node = tree[index];
+                            return ReorderableDelayedDragStartListener(
+                              key: ValueKey(node.path),
+                              index: index,
+                              child: RepaintBoundary(
+                                child: _LibraryTreeItem(node: node),
+                              ),
+                            );
+                          },
+                        )
+                      : ListView.builder(
+                          controller: _scrollController,
+                          padding: EdgeInsets.fromLTRB(
+                            16,
+                            topTotalHeight,
+                            16,
+                            bottomInset,
+                          ),
+                          cacheExtent: 960,
+                          keyboardDismissBehavior:
+                              ScrollViewKeyboardDismissBehavior.onDrag,
+                          itemCount: tree.length + 1,
+                          itemBuilder: (context, index) {
+                            if (index == 0) {
+                              return const Padding(
+                                padding: EdgeInsets.only(bottom: 10),
+                                child: SizedBox(height: searchBarFullHeight),
+                              );
+                            }
+                            return buildLibraryItem(context, index - 1);
+                          },
+                        ),
                 ),
         ),
 
         // Scan progress card
         if (isScanning)
           Positioned(
-            top: _headerHeight + 6 + _searchBarHeight + _searchBarOffset + 10,
+            top: _headerHeight + 10,
             left: 12,
             right: 12,
             child: _buildScanProgressCard(
@@ -322,26 +346,43 @@ class _LibraryTabState extends State<LibraryTab>
             ),
             bottomSpacing: 4,
             padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
-            additionalChild: Container(
-              height: _searchBarHeight + _searchBarOffset,
-              clipBehavior: Clip.hardEdge,
-              decoration: const BoxDecoration(),
-              child: OverflowBox(
-                alignment: Alignment.topCenter,
-                maxHeight: _searchBarHeight,
-                minHeight: _searchBarHeight,
-                child: Opacity(
-                  opacity: (1.0 + (_searchBarOffset / _searchBarHeight)).clamp(
-                    0.0,
-                    1.0,
-                  ),
-                  child: _buildSearchBar(i18n, matchCount, audioCount),
-                ),
-              ),
-            ),
+            additionalChild: dynamicSearchBar(),
           ),
         ),
       ],
+    );
+  }
+}
+
+class _CollapsingSearchBar extends StatelessWidget {
+  const _CollapsingSearchBar({
+    required this.controller,
+    required this.height,
+    required this.child,
+  });
+
+  final ScrollController controller;
+  final double height;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: controller,
+      child: child,
+      builder: (context, child) {
+        final offset = controller.hasClients ? controller.offset : 0.0;
+        final hidden = offset.clamp(0.0, height);
+        return SizedBox(
+          height: height - hidden,
+          child: ClipRect(
+            child: Transform.translate(
+              offset: Offset(0, -hidden),
+              child: child,
+            ),
+          ),
+        );
+      },
     );
   }
 }

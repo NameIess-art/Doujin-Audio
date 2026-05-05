@@ -14,10 +14,10 @@ class _ActiveSessionCard extends StatelessWidget {
   final AudioProvider provider;
   final Future<String?> coverPathFuture;
   final VoidCallback onOpen;
-
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     const cardRadius = 20.0;
 
     return StreamBuilder<PlayerState>(
@@ -37,7 +37,7 @@ class _ActiveSessionCard extends StatelessWidget {
           child: ClipRRect(
             borderRadius: BorderRadius.circular(cardRadius),
             child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+              filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
               child: Material(
                 color: Colors.transparent,
                 child: InkWell(
@@ -47,15 +47,15 @@ class _ActiveSessionCard extends StatelessWidget {
                     height: 74,
                     decoration: BoxDecoration(
                       color:
-                          (isPlaying
-                                  ? cs.surfaceContainerLow
-                                  : cs.surfaceContainer)
-                              .withValues(alpha: 0.52),
+                          (isDark
+                                  ? cs.surfaceBright
+                                  : cs.surfaceContainerHighest)
+                              .withValues(alpha: isDark ? 0.55 : 0.75),
                       borderRadius: BorderRadius.circular(cardRadius),
                       boxShadow: [
                         BoxShadow(
                           color: cs.shadow.withValues(
-                            alpha: isPlaying ? 0.1 : 0.06,
+                            alpha: isPlaying ? 0.16 : 0.10,
                           ),
                           blurRadius: isPlaying ? 22 : 16,
                           offset: const Offset(0, 10),
@@ -74,66 +74,10 @@ class _ActiveSessionCard extends StatelessWidget {
                               ),
                               const SizedBox(width: 12),
                               Expanded(
-                                child: FutureBuilder<SubtitleTrack?>(
-                                  future: provider.subtitleTrackForPath(
-                                    session.currentTrackPath,
-                                  ),
-                                  builder: (context, snapshot) {
-                                    final subtitleTrack = snapshot.data;
-                                    return StreamBuilder<Duration>(
-                                      stream: session.positionStream,
-                                      initialData: session.position,
-                                      builder: (context, positionSnapshot) {
-                                        final subtitleText = provider
-                                            .subtitleTextForTrackAt(
-                                              session.currentTrackPath,
-                                              positionSnapshot.data ??
-                                                  session.position,
-                                              subtitleTrack: subtitleTrack,
-                                            );
-
-                                        return Column(
-                                          mainAxisSize: MainAxisSize.min,
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              displayName,
-                                              maxLines: 2,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: Theme.of(context)
-                                                  .textTheme
-                                                  .titleSmall
-                                                  ?.copyWith(
-                                                    fontWeight: FontWeight.w900,
-                                                    fontSize: 14,
-                                                    height: 1.08,
-                                                  ),
-                                            ),
-                                            if (subtitleText != null) ...[
-                                              const SizedBox(height: 2),
-                                              Text(
-                                                subtitleText,
-                                                maxLines: 2,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: Theme.of(context)
-                                                    .textTheme
-                                                    .bodySmall
-                                                    ?.copyWith(
-                                                      color:
-                                                          cs.onSurfaceVariant,
-                                                      fontWeight:
-                                                          FontWeight.w600,
-                                                      fontSize: 10.2,
-                                                      height: 1.15,
-                                                    ),
-                                              ),
-                                            ],
-                                          ],
-                                        );
-                                      },
-                                    );
-                                  },
+                                child: _ActiveSessionTitleSubtitle(
+                                  session: session,
+                                  provider: provider,
+                                  displayName: displayName,
                                 ),
                               ),
                               const SizedBox(width: 8),
@@ -182,40 +126,196 @@ class _ActiveSessionCard extends StatelessWidget {
                             ],
                           ),
                         ),
-                        StreamBuilder<Duration>(
-                          stream: session.positionStream,
-                          initialData: session.position,
-                          builder: (context, posSnapshot) {
-                            final pos = posSnapshot.data ?? session.position;
-                            final dur = session.duration;
-                            if (dur == null || dur.inMilliseconds <= 0) {
-                              return const SizedBox(height: 3);
-                            }
-                            final fraction =
-                                pos.inMilliseconds / dur.inMilliseconds;
-                            return Center(
-                              child: FractionallySizedBox(
-                                widthFactor: 0.8,
-                                child: ClipRRect(
-                                  borderRadius: const BorderRadius.only(
-                                    bottomLeft: Radius.circular(cardRadius - 1),
-                                    bottomRight: Radius.circular(
-                                      cardRadius - 1,
-                                    ),
-                                  ),
-                                  child: LinearProgressIndicator(
-                                    value: fraction.clamp(0.0, 1.0),
-                                    minHeight: 3,
-                                    backgroundColor: cs.surfaceContainerHighest,
-                                    color: cs.primary.withValues(alpha: 0.7),
-                                  ),
-                                ),
-                              ),
-                            );
-                          },
-                        ),
+                        _ActiveSessionProgressStrip(session: session),
                       ],
                     ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _ActiveSessionTitleSubtitle extends StatefulWidget {
+  const _ActiveSessionTitleSubtitle({
+    required this.session,
+    required this.provider,
+    required this.displayName,
+  });
+
+  final PlaybackSession session;
+  final AudioProvider provider;
+  final String displayName;
+
+  @override
+  State<_ActiveSessionTitleSubtitle> createState() =>
+      _ActiveSessionTitleSubtitleState();
+}
+
+class _ActiveSessionTitleSubtitleState
+    extends State<_ActiveSessionTitleSubtitle> {
+  StreamSubscription<Duration>? _positionSub;
+  SubtitleTrack? _subtitleTrack;
+  String? _subtitleText;
+  String? _loadedPath;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSubtitleTrack();
+    _bindPosition();
+  }
+
+  @override
+  void didUpdateWidget(covariant _ActiveSessionTitleSubtitle oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.session != widget.session) {
+      unawaited(_positionSub?.cancel());
+      _bindPosition();
+    }
+    if (oldWidget.session.currentTrackPath != widget.session.currentTrackPath) {
+      _loadSubtitleTrack();
+    }
+  }
+
+  @override
+  void dispose() {
+    unawaited(_positionSub?.cancel());
+    super.dispose();
+  }
+
+  void _bindPosition() {
+    _positionSub = widget.session.positionStream.listen(_updateSubtitleText);
+  }
+
+  void _loadSubtitleTrack() {
+    final trackPath = widget.session.currentTrackPath;
+    _loadedPath = trackPath;
+    widget.provider.subtitleTrackForPath(trackPath).then((track) {
+      if (!mounted || _loadedPath != trackPath) return;
+      _subtitleTrack = track;
+      _updateSubtitleText(widget.session.position);
+    });
+  }
+
+  void _updateSubtitleText(Duration position) {
+    final nextText = widget.provider.subtitleTextForTrackAt(
+      widget.session.currentTrackPath,
+      position,
+      subtitleTrack: _subtitleTrack,
+    );
+    if (_subtitleText == nextText) return;
+    setState(() {
+      _subtitleText = nextText;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          widget.displayName,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+            fontWeight: FontWeight.w900,
+            fontSize: 14,
+            height: 1.08,
+          ),
+        ),
+        if (_subtitleText != null) ...[
+          const SizedBox(height: 2),
+          Text(
+            _subtitleText!,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: cs.onSurfaceVariant,
+              fontWeight: FontWeight.w600,
+              fontSize: 10.2,
+              height: 1.15,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _ActiveSessionProgressStrip extends StatelessWidget {
+  const _ActiveSessionProgressStrip({required this.session});
+
+  final PlaybackSession session;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return StreamBuilder<Duration>(
+      stream: session.positionStream,
+      initialData: session.position,
+      builder: (context, posSnapshot) {
+        final pos = posSnapshot.data ?? session.position;
+        final dur = session.duration;
+        if (dur == null || dur.inMilliseconds <= 0) {
+          return const SizedBox(height: 3);
+        }
+        final fraction = pos.inMilliseconds / dur.inMilliseconds;
+        return Center(
+          child: FractionallySizedBox(
+            widthFactor: 0.8,
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: 2),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(3),
+                child: SizedBox(
+                  height: 4,
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final barWidth = constraints.maxWidth;
+                      final fillWidth = (barWidth * fraction.clamp(0.0, 1.0))
+                          .roundToDouble();
+                      return Stack(
+                        children: [
+                          Positioned.fill(
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: cs.surfaceContainerHighest.withValues(
+                                  alpha: 0.6,
+                                ),
+                              ),
+                            ),
+                          ),
+                          Positioned(
+                            left: 0,
+                            top: 0,
+                            bottom: 0,
+                            width: fillWidth,
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: [
+                                    cs.primary,
+                                    cs.primary.withValues(alpha: 0.82),
+                                  ],
+                                ),
+                                borderRadius: const BorderRadius.only(
+                                  topRight: Radius.circular(3),
+                                  bottomRight: Radius.circular(3),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      );
+                    },
                   ),
                 ),
               ),

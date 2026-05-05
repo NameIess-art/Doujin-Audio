@@ -74,23 +74,8 @@ class _SessionListCard extends StatefulWidget {
 }
 
 class _SessionListCardState extends State<_SessionListCard> {
-  Future<void> _confirmRemoveSession(BuildContext context) async {
-    final i18n = context.read<AppLanguageProvider>();
-    final track = widget.provider.trackByPath(widget.session.currentTrackPath);
-    final displayName =
-        track?.displayName ??
-        path.basenameWithoutExtension(widget.session.currentTrackPath);
-    final confirmed = await showConfirmActionDialog(
-      context: context,
-      title: i18n.tr('remove_audio'),
-      message: displayName,
-      cancelLabel: i18n.tr('cancel'),
-      confirmLabel: i18n.tr('remove'),
-      icon: Icons.delete_outline_rounded,
-    );
-    if (confirmed && context.mounted) {
-      await widget.provider.removeSession(widget.session.id);
-    }
+  void _confirmRemoveSession(BuildContext context) {
+    widget.provider.removeSession(widget.session.id);
   }
 
   String _loopModeSummary(BuildContext context, SessionLoopMode mode) {
@@ -160,7 +145,7 @@ class _SessionListCardState extends State<_SessionListCard> {
           removeTooltip: i18n.tr('remove_audio'),
           onRemove: () => _confirmRemoveSession(context),
           child: SizedBox(
-            height: 96,
+            height: 88,
             child: Material(
               color: Colors.transparent,
               child: Card(

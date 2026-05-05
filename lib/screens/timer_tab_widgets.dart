@@ -149,3 +149,179 @@ class _ModeSelector extends StatelessWidget {
     );
   }
 }
+
+class _TimerPanelCard extends StatelessWidget {
+  const _TimerPanelCard({required this.child, this.accentColor});
+
+  final Widget child;
+  final Color? accentColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final accent = accentColor ?? cs.primary;
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(24),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            cs.surface.withValues(alpha: 0.94),
+            cs.surfaceContainerHigh.withValues(alpha: 0.86),
+          ],
+        ),
+        border: Border.all(color: accent.withValues(alpha: 0.18), width: 1.2),
+        boxShadow: [
+          BoxShadow(
+            color: cs.shadow.withValues(alpha: 0.08),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: child,
+    );
+  }
+}
+
+class _TimerSummaryChip extends StatelessWidget {
+  const _TimerSummaryChip({
+    required this.icon,
+    required this.text,
+    this.foregroundColor,
+    this.backgroundColor,
+    this.compact = false,
+  });
+
+  final IconData icon;
+  final String text;
+  final Color? foregroundColor;
+  final Color? backgroundColor;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final fg = foregroundColor ?? cs.onSurfaceVariant;
+    final bg =
+        backgroundColor ?? cs.surfaceContainerHighest.withValues(alpha: 0.64);
+
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 9 : 10,
+        vertical: compact ? 5 : 6,
+      ),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: fg.withValues(alpha: 0.12)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: compact ? 13 : 14, color: fg),
+          SizedBox(width: compact ? 5 : 6),
+          ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: compact ? 180 : 220),
+            child: Text(
+              text,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style:
+                  (compact
+                          ? Theme.of(context).textTheme.labelSmall
+                          : Theme.of(context).textTheme.labelMedium)
+                      ?.copyWith(color: fg, fontWeight: FontWeight.w700),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TimerSectionTitle extends StatelessWidget {
+  const _TimerSectionTitle({
+    required this.icon,
+    required this.title,
+    this.subtitle = '',
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
+    return Row(
+      children: [
+        Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: cs.primaryContainer.withValues(alpha: 0.9),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Icon(icon, color: cs.onPrimaryContainer, size: 20),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: Theme.of(
+                  context,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+              ),
+              if (subtitle.isNotEmpty)
+                Text(
+                  subtitle,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: cs.onSurfaceVariant,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _TimerFieldLabel extends StatelessWidget {
+  const _TimerFieldLabel({required this.icon, required this.text});
+
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(icon, size: 12, color: cs.onSurfaceVariant),
+        const SizedBox(width: 4),
+        Flexible(
+          child: Text(
+            text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: cs.onSurfaceVariant,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}

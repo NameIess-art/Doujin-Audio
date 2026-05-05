@@ -133,13 +133,16 @@ class _FeedbackAnimationWrapperState extends State<_FeedbackAnimationWrapper>
     _controller.forward();
 
     final stayDuration = widget.duration - const Duration(milliseconds: 250);
-    Future.delayed(stayDuration > Duration.zero ? stayDuration : Duration.zero, () {
-      if (mounted) {
-        _controller.reverse().then((_) {
-          if (mounted) widget.onRemove();
-        });
-      }
-    });
+    Future.delayed(
+      stayDuration > Duration.zero ? stayDuration : Duration.zero,
+      () {
+        if (mounted) {
+          _controller.reverse().then((_) {
+            if (mounted) widget.onRemove();
+          });
+        }
+      },
+    );
   }
 
   @override

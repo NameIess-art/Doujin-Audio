@@ -9,3 +9,5 @@ New core business rules should prefer pure Dart helpers under `lib/services` whe
 - `TimerRuntimeCalculator`: calculates timer runtime state, countdown ticks, trigger waiting, and auto-resume readiness.
 
 Shared lightweight models live under `lib/models`. Tests for these pure helpers live in `test/*_test.dart` and should be expanded before changing behavior in the corresponding provider methods.
+
+Large screen and provider files are split with same-library `part` files when the extracted code still depends on private state. This keeps public APIs unchanged while separating page state, UI widgets, notification helpers, playback helpers, and persistence helpers into smaller maintenance units.

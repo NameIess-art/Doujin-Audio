@@ -32,6 +32,15 @@ part 'audio_provider_notifications.dart';
 part 'audio_provider_persistence.dart';
 part 'audio_provider_library.dart';
 part 'audio_provider_playback.dart';
+part 'audio_provider_playback_sessions.dart';
+part 'audio_provider_playback_timer.dart';
+part 'audio_provider_playback_keepalive.dart';
+part 'audio_provider_playback_engine.dart';
+part 'audio_provider_notification_covers.dart';
+part 'audio_provider_notification_sync.dart';
+part 'audio_provider_notification_subtitles.dart';
+part 'audio_provider_persistence_sessions.dart';
+part 'audio_provider_persistence_timer.dart';
 
 const _kLibraryKey = 'library_v1';
 const _kSessionsKey = 'sessions_v1';

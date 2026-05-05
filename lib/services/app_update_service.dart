@@ -180,7 +180,10 @@ class AppUpdateService {
 
   static Future<bool> openInstallPermissionSettings() async {
     try {
-      return await _channel.invokeMethod<bool>('openInstallPermissionSettings') ?? false;
+      return await _channel.invokeMethod<bool>(
+            'openInstallPermissionSettings',
+          ) ??
+          false;
     } catch (_) {
       return false;
     }

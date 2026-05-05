@@ -1,7 +1,6 @@
 part of 'audio_provider.dart';
 
 extension AudioProviderNotifications on AudioProvider {
-
   void _bindNotificationHandler() {
     _notificationService.bindCallbacks(
       onPlay: playPrimarySessionFromNotification,
@@ -239,24 +238,21 @@ extension AudioProviderNotifications on AudioProvider {
     // Safety timeout: force-clear the guard if _scheduleNotificationActionRefresh
     // is never called (e.g., due to an uncaught exception between begin/schedule).
     _notificationActionGuardTimeout?.cancel();
-    _notificationActionGuardTimeout = Timer(
-      const Duration(seconds: 5),
-      () {
-        _notificationActionGuardTimeout = null;
-        if (_notificationActionRefreshPending) {
-          debugPrint(
-            'AudioProvider: notification action guard timed out, force-clearing',
-          );
-          _notificationActionRefreshPending = false;
-          if (_keepAliveSyncDeferred) {
-            _keepAliveSyncDeferred = false;
-            _syncKeepCpuAwake();
-          }
-          _syncNotificationState(immediateUnifiedSync: true);
-          _notifyListeners();
+    _notificationActionGuardTimeout = Timer(const Duration(seconds: 5), () {
+      _notificationActionGuardTimeout = null;
+      if (_notificationActionRefreshPending) {
+        debugPrint(
+          'AudioProvider: notification action guard timed out, force-clearing',
+        );
+        _notificationActionRefreshPending = false;
+        if (_keepAliveSyncDeferred) {
+          _keepAliveSyncDeferred = false;
+          _syncKeepCpuAwake();
         }
-      },
-    );
+        _syncNotificationState(immediateUnifiedSync: true);
+        _notifyListeners();
+      }
+    });
   }
 
   Future<void> _guardNotificationAction(Future<void> Function() action) async {
@@ -351,7 +347,7 @@ extension AudioProviderNotifications on AudioProvider {
 
   Future<String?> coverPathFutureForFolder(String folderPath) {
     if (folderPath.startsWith('content://')) {
-      return Future<String?>.value(null);
+      return Future<String?>.value();
     }
     return _resolveCoverPathForFolder(folderPath);
   }
@@ -377,7 +373,7 @@ extension AudioProviderNotifications on AudioProvider {
   Future<String?> _resolveNotificationCoverPathForTrack(MusicTrack? track) {
     final coverSearchKey = _notificationCoverSearchKey(track);
     if (coverSearchKey == null) {
-      return Future<String?>.value(null);
+      return Future<String?>.value();
     }
     if (_resolvedNotificationCoverPaths.containsKey(coverSearchKey)) {
       return Future<String?>.value(
@@ -401,7 +397,10 @@ extension AudioProviderNotifications on AudioProvider {
         }
       }
 
-      _notificationCoverPathFutures.remove(coverSearchKey);
+      unawaited(
+        _notificationCoverPathFutures.remove(coverSearchKey) ??
+            Future<String?>.value(),
+      );
       final previous = _resolvedNotificationCoverPaths[coverSearchKey];
       _resolvedNotificationCoverPaths[coverSearchKey] = coverPath;
 
@@ -474,7 +473,9 @@ extension AudioProviderNotifications on AudioProvider {
 
     return _coverPathFutures.putIfAbsent(folderPath, () async {
       final coverPath = await _findNotificationCoverPath(folderPath);
-      _coverPathFutures.remove(folderPath);
+      unawaited(
+        _coverPathFutures.remove(folderPath) ?? Future<String?>.value(),
+      );
 
       final previous = _resolvedCoverPaths[folderPath];
       _resolvedCoverPaths[folderPath] = coverPath;
@@ -499,11 +500,19 @@ extension AudioProviderNotifications on AudioProvider {
       await for (final entity in shallowList) {
         if (entity is! File) continue;
         final extension = path.extension(entity.path).toLowerCase();
-        if (!AudioProvider._supportedImageExtensions.contains(extension)) continue;
+        if (!AudioProvider._supportedImageExtensions.contains(extension)) {
+          continue;
+        }
         firstImage ??= entity.path;
-        final basename = path.basenameWithoutExtension(entity.path).toLowerCase();
-        if (basename == 'cover' || basename == 'folder' || basename == 'album' ||
-            basename == 'albumart' || basename == 'front' || basename == 'artwork') {
+        final basename = path
+            .basenameWithoutExtension(entity.path)
+            .toLowerCase();
+        if (basename == 'cover' ||
+            basename == 'folder' ||
+            basename == 'album' ||
+            basename == 'albumart' ||
+            basename == 'front' ||
+            basename == 'artwork') {
           return entity.path;
         }
       }
@@ -611,8 +620,7 @@ extension AudioProviderNotifications on AudioProvider {
       while (_unifiedNotificationSyncPending) {
         _unifiedNotificationSyncPending = false;
         final shouldShowUnifiedNotifications =
-            _notificationsEnabled &&
-            !_notificationsDismissedWhilePaused;
+            _notificationsEnabled && !_notificationsDismissedWhilePaused;
         if (!shouldShowUnifiedNotifications) {
           await _clearUnifiedPlaybackNotificationsOnPlatform();
           continue;
@@ -671,7 +679,9 @@ extension AudioProviderNotifications on AudioProvider {
     );
     final sessionsToShow = isMultiMode
         ? activeSessions
-        : (mainSession == null ? const <PlaybackSession>[] : <PlaybackSession>[mainSession]);
+        : (mainSession == null
+              ? const <PlaybackSession>[]
+              : <PlaybackSession>[mainSession]);
     final showUnifiedSummary = sessionsToShow.isNotEmpty;
     final summaryText = showUnifiedSummary
         ? _notificationSummaryText(sessionsToShow)

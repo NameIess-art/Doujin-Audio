@@ -153,7 +153,6 @@ class _ActiveSessionCarouselState extends State<ActiveSessionCarousel> {
               offset: Offset(translateX, translateY),
               child: Transform.scale(
                 scale: scale,
-                alignment: Alignment.center,
                 child: _ActiveSessionCard(
                   session: session,
                   track: track,
@@ -220,10 +219,11 @@ class _ActiveSessionCard extends StatelessWidget {
                   child: Ink(
                     height: 74,
                     decoration: BoxDecoration(
-                      color: (isPlaying
-                              ? cs.surfaceContainerLow
-                              : cs.surfaceContainer)
-                          .withValues(alpha: 0.52),
+                      color:
+                          (isPlaying
+                                  ? cs.surfaceContainerLow
+                                  : cs.surfaceContainer)
+                              .withValues(alpha: 0.52),
                       borderRadius: BorderRadius.circular(cardRadius),
                       boxShadow: [
                         BoxShadow(
@@ -235,163 +235,166 @@ class _ActiveSessionCard extends StatelessWidget {
                         ),
                       ],
                     ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(10, 6, 8, 4),
-                      child: Row(
-                        children: [
-                          _ActiveSessionCover(
-                              coverPathFuture: coverPathFuture),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: FutureBuilder<SubtitleTrack?>(
-                              future: provider.subtitleTrackForPath(
-                                session.currentTrackPath,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(10, 6, 8, 4),
+                          child: Row(
+                            children: [
+                              _ActiveSessionCover(
+                                coverPathFuture: coverPathFuture,
                               ),
-                              builder: (context, snapshot) {
-                                final subtitleTrack = snapshot.data;
-                                return StreamBuilder<Duration>(
-                                  stream: session.positionStream,
-                                  initialData: session.position,
-                                  builder:
-                                      (context, positionSnapshot) {
-                                    final subtitleText = provider
-                                        .subtitleTextForTrackAt(
-                                          session.currentTrackPath,
-                                          positionSnapshot.data ??
-                                              session.position,
-                                          subtitleTrack: subtitleTrack,
-                                        );
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: FutureBuilder<SubtitleTrack?>(
+                                  future: provider.subtitleTrackForPath(
+                                    session.currentTrackPath,
+                                  ),
+                                  builder: (context, snapshot) {
+                                    final subtitleTrack = snapshot.data;
+                                    return StreamBuilder<Duration>(
+                                      stream: session.positionStream,
+                                      initialData: session.position,
+                                      builder: (context, positionSnapshot) {
+                                        final subtitleText = provider
+                                            .subtitleTextForTrackAt(
+                                              session.currentTrackPath,
+                                              positionSnapshot.data ??
+                                                  session.position,
+                                              subtitleTrack: subtitleTrack,
+                                            );
 
-                                    return Column(
-                                      mainAxisSize: MainAxisSize.min,
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          displayName,
-                                          maxLines: 2,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: Theme.of(context)
-                                              .textTheme
-                                              .titleSmall
-                                              ?.copyWith(
-                                                fontWeight: FontWeight.w900,
-                                                fontSize: 14,
-                                                height: 1.08,
+                                        return Column(
+                                          mainAxisSize: MainAxisSize.min,
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              displayName,
+                                              maxLines: 2,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: Theme.of(context)
+                                                  .textTheme
+                                                  .titleSmall
+                                                  ?.copyWith(
+                                                    fontWeight: FontWeight.w900,
+                                                    fontSize: 14,
+                                                    height: 1.08,
+                                                  ),
+                                            ),
+                                            if (subtitleText != null) ...[
+                                              const SizedBox(height: 2),
+                                              Text(
+                                                subtitleText,
+                                                maxLines: 2,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: Theme.of(context)
+                                                    .textTheme
+                                                    .bodySmall
+                                                    ?.copyWith(
+                                                      color:
+                                                          cs.onSurfaceVariant,
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                      fontSize: 10.2,
+                                                      height: 1.15,
+                                                    ),
                                               ),
-                                        ),
-                                        if (subtitleText != null) ...[
-                                          const SizedBox(height: 2),
-                                          Text(
-                                            subtitleText,
-                                            maxLines: 2,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: Theme.of(context)
-                                                .textTheme
-                                                .bodySmall
-                                                ?.copyWith(
-                                                  color: cs.onSurfaceVariant,
-                                                  fontWeight: FontWeight.w600,
-                                                  fontSize: 10.2,
-                                                  height: 1.15,
-                                                ),
-                                          ),
-                                        ],
-                                      ],
+                                            ],
+                                          ],
+                                        );
+                                      },
                                     );
                                   },
-                                );
-                              },
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          IconButton.filledTonal(
-                            onPressed: session.isLoading
-                                ? null
-                                : () {
-                                    HapticFeedback.mediumImpact();
-                                    provider.toggleSessionPlayPause(
-                                        session.id);
-                                  },
-                            style: IconButton.styleFrom(
-                              minimumSize: const Size(48, 48),
-                              maximumSize: const Size(48, 48),
-                              backgroundColor: isPlaying
-                                  ? cs.primaryContainer
-                                  : cs.surfaceContainerLow,
-                              foregroundColor: isPlaying
-                                  ? cs.onPrimaryContainer
-                                  : cs.onSurface,
-                              shape: const CircleBorder(),
-                              side: BorderSide(
-                                color: isPlaying
-                                    ? cs.primary.withValues(alpha: 0.24)
-                                    : cs.outlineVariant
-                                        .withValues(alpha: 0.72),
-                              ),
-                            ),
-                            icon: _CarouselSwitcherSlot(
-                              width: 22,
-                              height: 22,
-                              duration: const Duration(milliseconds: 150),
-                              child: Icon(
-                                isPlaying
-                                    ? Icons.pause_rounded
-                                    : Icons.play_arrow_rounded,
-                                key: ValueKey<IconData>(
-                                  isPlaying
-                                      ? Icons.pause_rounded
-                                      : Icons.play_arrow_rounded,
                                 ),
                               ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    StreamBuilder<Duration>(
-                      stream: session.positionStream,
-                      initialData: session.position,
-                      builder: (context, posSnapshot) {
-                        final pos = posSnapshot.data ?? session.position;
-                        final dur = session.duration;
-                        if (dur == null || dur.inMilliseconds <= 0) {
-                          return const SizedBox(height: 3);
-                        }
-                        final fraction =
-                            pos.inMilliseconds / dur.inMilliseconds;
-                        return Center(
-                          child: FractionallySizedBox(
-                            widthFactor: 0.8,
-                            child: ClipRRect(
-                              borderRadius: const BorderRadius.only(
-                                bottomLeft: Radius.circular(cardRadius - 1),
-                                bottomRight:
-                                    Radius.circular(cardRadius - 1),
+                              const SizedBox(width: 8),
+                              IconButton.filledTonal(
+                                onPressed: session.isLoading
+                                    ? null
+                                    : () {
+                                        HapticFeedback.mediumImpact();
+                                        provider.toggleSessionPlayPause(
+                                          session.id,
+                                        );
+                                      },
+                                style: IconButton.styleFrom(
+                                  minimumSize: const Size(48, 48),
+                                  maximumSize: const Size(48, 48),
+                                  backgroundColor: isPlaying
+                                      ? cs.primaryContainer
+                                      : cs.surfaceContainerLow,
+                                  foregroundColor: isPlaying
+                                      ? cs.onPrimaryContainer
+                                      : cs.onSurface,
+                                  shape: const CircleBorder(),
+                                  side: BorderSide(
+                                    color: isPlaying
+                                        ? cs.primary.withValues(alpha: 0.24)
+                                        : cs.outlineVariant.withValues(
+                                            alpha: 0.72,
+                                          ),
+                                  ),
+                                ),
+                                icon: _CarouselSwitcherSlot(
+                                  width: 22,
+                                  height: 22,
+                                  child: Icon(
+                                    isPlaying
+                                        ? Icons.pause_rounded
+                                        : Icons.play_arrow_rounded,
+                                    key: ValueKey<IconData>(
+                                      isPlaying
+                                          ? Icons.pause_rounded
+                                          : Icons.play_arrow_rounded,
+                                    ),
+                                  ),
+                                ),
                               ),
-                              child: LinearProgressIndicator(
-                                value: fraction.clamp(0.0, 1.0),
-                                minHeight: 3,
-                                backgroundColor:
-                                    cs.surfaceContainerHighest,
-                                color: cs.primary.withValues(alpha: 0.7),
-                              ),
-                            ),
+                            ],
                           ),
-                        );
-                      },
+                        ),
+                        StreamBuilder<Duration>(
+                          stream: session.positionStream,
+                          initialData: session.position,
+                          builder: (context, posSnapshot) {
+                            final pos = posSnapshot.data ?? session.position;
+                            final dur = session.duration;
+                            if (dur == null || dur.inMilliseconds <= 0) {
+                              return const SizedBox(height: 3);
+                            }
+                            final fraction =
+                                pos.inMilliseconds / dur.inMilliseconds;
+                            return Center(
+                              child: FractionallySizedBox(
+                                widthFactor: 0.8,
+                                child: ClipRRect(
+                                  borderRadius: const BorderRadius.only(
+                                    bottomLeft: Radius.circular(cardRadius - 1),
+                                    bottomRight: Radius.circular(
+                                      cardRadius - 1,
+                                    ),
+                                  ),
+                                  child: LinearProgressIndicator(
+                                    value: fraction.clamp(0.0, 1.0),
+                                    minHeight: 3,
+                                    backgroundColor: cs.surfaceContainerHighest,
+                                    color: cs.primary.withValues(alpha: 0.7),
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ],
                     ),
-                  ],
+                  ),
                 ),
               ),
             ),
-                ),
-              ),
-            ),
-          );
+          ),
+        );
       },
     );
   }
@@ -457,13 +460,12 @@ class _CarouselSwitcherSlot extends StatelessWidget {
     required this.child,
     required this.width,
     required this.height,
-    this.duration = const Duration(milliseconds: 150),
   });
 
   final Widget child;
   final double width;
   final double height;
-  final Duration duration;
+  final Duration duration = const Duration(milliseconds: 180);
 
   @override
   Widget build(BuildContext context) {

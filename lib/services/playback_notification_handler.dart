@@ -96,9 +96,6 @@ class PlaybackNotificationHandler extends BaseAudioHandler
         PlaybackState(
           controls: [MediaControl.play],
           systemActions: {MediaAction.play, MediaAction.pause},
-          processingState: AudioProcessingState.idle,
-          playing: false,
-          updatePosition: Duration.zero,
           queueIndex: 0,
         ),
       );

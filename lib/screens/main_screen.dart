@@ -20,6 +20,8 @@ import '../widgets/confirm_action_dialog.dart';
 import '../widgets/mobile_overlay_inset.dart';
 import '../widgets/snap_scroll_physics.dart';
 
+part 'main_screen_timer_scrim.dart';
+
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
 
@@ -28,8 +30,8 @@ class MainScreen extends StatefulWidget {
 }
 
 class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
-  static const Duration _pageTransitionDuration = Duration(milliseconds: 300);
-  static const Curve _pageTransitionCurve = Curves.easeOutCubic;
+  static const Duration _pageTransitionDuration = Duration(milliseconds: 380);
+  static const Curve _pageTransitionCurve = Curves.easeOutQuart;
   static const double _desktopBreakpoint = 980;
   static const double _mobileDockContentGap = 4;
   static const String _backgroundKeepAliveInitializedKey =
@@ -51,6 +53,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   bool _notificationPermissionCheckQueued = false;
   bool _notificationSettingsDialogVisible = false;
   bool _notificationSettingsOpened = false;
+  bool _timerOverlayPrimed = false;
   Timer? _notificationSessionNavigationTimer;
   String? _pendingNotificationSessionId;
   String? _lastOpenedNotificationSessionId;
@@ -449,13 +452,13 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
               pageOffset = (_currentIndex - index).toDouble();
             }
             final clampedOffset = pageOffset.clamp(-1.0, 1.0).toDouble();
-            final opacity = (1 - (clampedOffset.abs() * 0.16))
-                .clamp(0.0, 1.0)
-                .toDouble();
-            final scale = 1 - (clampedOffset.abs() * 0.018);
+            final pageProgress = clampedOffset.abs();
+            final curveValue = Curves.easeOutCubic.transform(1 - pageProgress);
+            final opacity = 0.84 + (0.16 * curveValue);
+            final scale = 0.984 + (0.016 * curveValue);
 
             return Opacity(
-              opacity: opacity,
+              opacity: opacity.clamp(0.0, 1.0),
               child: Transform.scale(scale: scale, child: child),
             );
           },
@@ -473,6 +476,12 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     final mediaSize = MediaQuery.sizeOf(context);
     final isDesktop = mediaSize.width >= _desktopBreakpoint;
 
+    if (!_timerOverlayPrimed) {
+      setState(() {
+        _timerOverlayPrimed = true;
+      });
+    }
+
     return showGeneralDialog<void>(
       context: context,
       barrierLabel: i18n.tr('close'),
@@ -486,7 +495,12 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
           openDetail: timerState.duration != null,
         );
       },
-    ).then((_) {});
+    ).whenComplete(() {
+      if (!mounted) return;
+      setState(() {
+        _timerOverlayPrimed = false;
+      });
+    });
   }
 
   String _fmtDuration(Duration duration) {
@@ -551,12 +565,16 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                   ),
                   decoration: BoxDecoration(
                     color: selected
-                        ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.12)
+                        ? Theme.of(
+                            context,
+                          ).colorScheme.primary.withValues(alpha: 0.12)
                         : Colors.transparent,
                     borderRadius: BorderRadius.circular(18),
                     border: Border.all(
                       color: selected
-                          ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.24)
+                          ? Theme.of(
+                              context,
+                            ).colorScheme.primary.withValues(alpha: 0.24)
                           : Colors.transparent,
                     ),
                   ),
@@ -576,7 +594,9 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                           selected ? item.selectedIcon : item.icon,
                           key: ValueKey<bool>(selected),
                           size: 21,
-                          color: selected ? Theme.of(context).colorScheme.primary : inactive,
+                          color: selected
+                              ? Theme.of(context).colorScheme.primary
+                              : inactive,
                         ),
                       ),
                       const SizedBox(height: 3),
@@ -590,7 +610,9 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                               ? FontWeight.w700
                               : FontWeight.w600,
                           letterSpacing: 0.1,
-                          color: selected ? Theme.of(context).colorScheme.primary : inactive,
+                          color: selected
+                              ? Theme.of(context).colorScheme.primary
+                              : inactive,
                         ),
                       ),
                     ],
@@ -640,7 +662,6 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                 ),
               if (overlaySessions.isNotEmpty) const SizedBox(height: 6),
               _FloatingGlassPanel(
-                radius: 24,
                 padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
                 borderOpacity: 0.8,
                 shadowOpacity: 0.11,
@@ -747,14 +768,16 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   }
 
   void _measureBottomDock() {
-    final safeAreaBox = _bottomDockKey.currentContext?.findRenderObject() as RenderBox?;
+    final safeAreaBox =
+        _bottomDockKey.currentContext?.findRenderObject() as RenderBox?;
     if (safeAreaBox != null && safeAreaBox.hasSize && mounted) {
       final h = safeAreaBox.size.height;
       if (h > 0 && (_measuredBottomInset - h).abs() > 0.5) {
         setState(() => _measuredBottomInset = h);
       }
     }
-    final contentBox = _dockContentKey.currentContext?.findRenderObject() as RenderBox?;
+    final contentBox =
+        _dockContentKey.currentContext?.findRenderObject() as RenderBox?;
     if (contentBox != null && contentBox.hasSize && mounted) {
       final h = contentBox.size.height;
       if (h > 0 && (_measuredDockContent - h).abs() > 0.5) {
@@ -763,9 +786,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     }
   }
 
-  double _mobileContentInset({
-    required bool hasNowPlaying,
-  }) {
+  double _mobileContentInset({required bool hasNowPlaying}) {
     if (_measuredDockContent > 0) {
       final systemBottom = MediaQuery.of(context).padding.bottom;
       return (systemBottom + _measuredDockContent + 8 - _mobileDockContentGap)
@@ -841,9 +862,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     final isDesktop = width >= _desktopBreakpoint;
     final mobileContentInset = isDesktop
         ? 0.0
-        : _mobileContentInset(
-            hasNowPlaying: hasNowPlaying,
-          );
+        : _mobileContentInset(hasNowPlaying: hasNowPlaying);
 
     WidgetsBinding.instance.addPostFrameCallback((_) => _measureBottomDock());
 
@@ -880,6 +899,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                   ),
                 ],
               ),
+            if (_timerOverlayPrimed) const _ImmediateTimerScrim(),
           ],
         ),
       ),
@@ -1067,7 +1087,6 @@ class _TimerPresentation {
 class _FloatingGlassPanel extends StatelessWidget {
   const _FloatingGlassPanel({
     required this.child,
-    this.radius = 24,
     this.padding = EdgeInsets.zero,
     this.borderOpacity = 0.42,
     this.shadowOpacity = 0.22,
@@ -1077,7 +1096,7 @@ class _FloatingGlassPanel extends StatelessWidget {
   });
 
   final Widget child;
-  final double radius;
+  final double radius = 24;
   final EdgeInsetsGeometry padding;
   final double borderOpacity;
   final double shadowOpacity;
@@ -1150,9 +1169,6 @@ class _FloatingGlassPanel extends StatelessWidget {
   }
 }
 
-
-
-
 class _TimerOverlaySheet extends StatelessWidget {
   const _TimerOverlaySheet({
     required this.isDesktop,
@@ -1193,26 +1209,12 @@ class _TimerOverlaySheet extends StatelessWidget {
               Positioned.fill(
                 child: GestureDetector(
                   onTap: () => Navigator.of(context).maybePop(),
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: cs.scrim.withValues(
-                            alpha: 0.08 + (0.14 * progress),
-                          ),
-                        ),
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: cs.scrim.withValues(
+                        alpha: 0.08 + (0.14 * progress),
                       ),
-                      Opacity(
-                        opacity: progress,
-                        child: ClipRect(
-                          child: BackdropFilter(
-                            filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
-                            child: const SizedBox.expand(),
-                          ),
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
                 ),
               ),

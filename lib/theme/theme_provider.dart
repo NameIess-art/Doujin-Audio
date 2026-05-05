@@ -23,10 +23,7 @@ class ThemeProvider with ChangeNotifier {
   }
 
   static final ColorScheme _lightScheme =
-      ColorScheme.fromSeed(
-        seedColor: const Color(0xFFE05A74),
-        brightness: Brightness.light,
-      ).copyWith(
+      ColorScheme.fromSeed(seedColor: const Color(0xFFE05A74)).copyWith(
         primary: const Color(0xFFD94B66),
         onPrimary: Colors.white,
         secondary: const Color(0xFF526074),

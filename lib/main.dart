@@ -29,11 +29,10 @@ Future<void> main() async {
   await audioSession.configure(const AudioSessionConfiguration.music());
   final audioHandler = await AudioService.init(
     builder: PlaybackNotificationHandler.new,
-    config: AudioServiceConfig(
+    config: const AudioServiceConfig(
       androidNotificationChannelId: 'com.example.music_player.channel.playback',
       androidNotificationChannelName: 'Playback',
       androidNotificationOngoing: true,
-      androidStopForegroundOnPause: true,
     ),
   );
   final notificationService = PlaybackNotificationService(audioHandler);
@@ -44,7 +43,8 @@ Future<void> main() async {
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
         ChangeNotifierProvider(create: (_) => AppLanguageProvider()),
         ChangeNotifierProvider(
-          create: (_) => AudioProvider(notificationService: notificationService),
+          create: (_) =>
+              AudioProvider(notificationService: notificationService),
         ),
       ],
       child: const MusicPlayerApp(),

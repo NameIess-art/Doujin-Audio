@@ -10,7 +10,8 @@ class MobileOverlayInset extends InheritedWidget {
   final double bottomInset;
 
   static double of(BuildContext context) {
-    final scope = context.dependOnInheritedWidgetOfExactType<MobileOverlayInset>();
+    final scope = context
+        .dependOnInheritedWidgetOfExactType<MobileOverlayInset>();
     return scope?.bottomInset ?? 0;
   }
 

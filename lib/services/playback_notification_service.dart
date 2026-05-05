@@ -62,16 +62,7 @@ class PlaybackNotificationService {
   Future<void> setEnabled(bool enabled) async {
     if (_enabled == enabled) return;
     if (!enabled) {
-      _handler.playbackState.add(
-        PlaybackState(
-          controls: const [],
-          systemActions: const {},
-          processingState: AudioProcessingState.idle,
-          playing: false,
-          updatePosition: Duration.zero,
-          queueIndex: 0,
-        ),
-      );
+      _handler.playbackState.add(PlaybackState(queueIndex: 0));
       _handler.mediaItem.add(null);
       _handler.queue.add(const []);
       await AudioService.stopService();
@@ -88,15 +79,14 @@ class PlaybackNotificationService {
   Future<void> syncUnifiedNotifications(Map<String, dynamic> payload) async {
     if (!_enabled) return;
     try {
-      await _notificationsChannel.invokeMethod<void>(
-        'syncUnifiedPlaybackNotifications',
-        payload,
-      ).timeout(
-        const Duration(seconds: 5),
-        onTimeout: () => debugPrint(
-          'PlaybackNotificationService.syncUnifiedNotifications timed out',
-        ),
-      );
+      await _notificationsChannel
+          .invokeMethod<void>('syncUnifiedPlaybackNotifications', payload)
+          .timeout(
+            const Duration(seconds: 5),
+            onTimeout: () => debugPrint(
+              'PlaybackNotificationService.syncUnifiedNotifications timed out',
+            ),
+          );
     } on MissingPluginException {
       // Channel not available on this platform.
     } catch (e) {
@@ -108,14 +98,14 @@ class PlaybackNotificationService {
 
   Future<void> _clearUnifiedNotifications() async {
     try {
-      await _notificationsChannel.invokeMethod<void>(
-        'clearUnifiedPlaybackNotifications',
-      ).timeout(
-        const Duration(seconds: 5),
-        onTimeout: () => debugPrint(
-          'PlaybackNotificationService._clearUnifiedNotifications timed out',
-        ),
-      );
+      await _notificationsChannel
+          .invokeMethod<void>('clearUnifiedPlaybackNotifications')
+          .timeout(
+            const Duration(seconds: 5),
+            onTimeout: () => debugPrint(
+              'PlaybackNotificationService._clearUnifiedNotifications timed out',
+            ),
+          );
     } on MissingPluginException {
       // Channel not available on this platform.
     } catch (e) {

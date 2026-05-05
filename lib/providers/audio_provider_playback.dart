@@ -1,16 +1,21 @@
 part of 'audio_provider.dart';
 
 extension AudioProviderPlayback on AudioProvider {
+  static const PlaybackQueueResolver _playbackQueueResolver =
+      PlaybackQueueResolver();
+  static const TimerRuntimeCalculator _timerRuntimeCalculator =
+      TimerRuntimeCalculator();
+
   bool get _hasArmedTimerRuntime {
-    final hasPendingTrigger =
-        _timerMode == TimerMode.trigger &&
-        _timerDuration != null &&
-        _timerWaitingForPlayback;
-    final hasRunningCountdown = _timerActive && _timerEndsAt != null;
-    return hasPendingTrigger ||
-        hasRunningCountdown ||
-        _autoResumeAt != null ||
-        _pausedByTimerPaths.isNotEmpty;
+    return _timerRuntimeCalculator.hasArmedRuntime(
+      mode: _timerMode,
+      duration: _timerDuration,
+      waitingForPlayback: _timerWaitingForPlayback,
+      active: _timerActive,
+      endsAt: _timerEndsAt,
+      autoResumeAt: _autoResumeAt,
+      hasPausedByTimerPaths: _pausedByTimerPaths.isNotEmpty,
+    );
   }
 
   void _resetTimerRuntimeState({bool clearPausedSessions = true}) {
@@ -235,10 +240,8 @@ extension AudioProviderPlayback on AudioProvider {
             title: title,
             subtitle: track?.groupTitle,
             artUri: artUri,
-            startPosition: Duration.zero,
             volume: session.volume,
             repeatOne: session.loopMode == SessionLoopMode.single,
-            autoPlay: false,
           );
           if (!_sessions.containsKey(session.id) ||
               session.loadGeneration != generation) {
@@ -544,7 +547,7 @@ extension AudioProviderPlayback on AudioProvider {
     _timerWaitingForPlayback = false;
     _timerRemaining = _timerDuration;
     _timerEndsAt = DateTime.now().add(_timerDuration!);
-    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+    _countdownTimer = Timer.periodic(const Duration(milliseconds: 200), (_) {
       if (generation != _timerGeneration) return;
       _tickCountdown();
     });
@@ -662,12 +665,11 @@ extension AudioProviderPlayback on AudioProvider {
   }
 
   DateTime _nextClockTime(int hour, int minute) {
-    final now = DateTime.now();
-    var target = DateTime(now.year, now.month, now.day, hour, minute);
-    if (!target.isAfter(now)) {
-      target = target.add(const Duration(days: 1));
-    }
-    return target;
+    return _timerRuntimeCalculator.nextClockTime(
+      now: DateTime.now(),
+      hour: hour,
+      minute: minute,
+    );
   }
 
   void _scheduleAutoResumeTimer(DateTime target) {
@@ -692,19 +694,20 @@ extension AudioProviderPlayback on AudioProvider {
   }
 
   void _tickCountdown() {
-    if (!_timerActive || _timerEndsAt == null) return;
-    final remaining = _timerEndsAt!.difference(DateTime.now());
-    if (remaining <= Duration.zero) {
-      _timerRemaining = Duration.zero;
+    final tick = _timerRuntimeCalculator.countdownTick(
+      active: _timerActive,
+      endsAt: _timerEndsAt,
+      now: DateTime.now(),
+      currentRemaining: _timerRemaining,
+    );
+    if (tick.expired) {
+      _timerRemaining = tick.remaining;
       _notifyListeners();
       _onTimerExpired();
       return;
     }
-
-    final roundedSeconds = (remaining.inMilliseconds + 999) ~/ 1000;
-    final next = Duration(seconds: roundedSeconds);
-    if (next == _timerRemaining) return;
-    _timerRemaining = next;
+    if (!tick.changed) return;
+    _timerRemaining = tick.remaining;
     _notifyListeners();
   }
 
@@ -726,7 +729,10 @@ extension AudioProviderPlayback on AudioProvider {
   bool get _hasRetainedPlaybackSession => _sessions.isNotEmpty;
 
   bool get _hasPendingAutoResume =>
-      _autoResumeAt != null && _pausedByTimerPaths.isNotEmpty;
+      _timerRuntimeCalculator.hasPendingAutoResume(
+        autoResumeAt: _autoResumeAt,
+        hasPausedByTimerPaths: _pausedByTimerPaths.isNotEmpty,
+      );
 
   void _syncKeepCpuAwake() {
     final hasPlayback = _hasPlaybackToKeepAlive;
@@ -734,9 +740,8 @@ extension AudioProviderPlayback on AudioProvider {
         _timerActive || _timerWaitingForPlayback || _hasPendingAutoResume;
     final usesUnifiedNotifications =
         _multiThreadPlaybackEnabled && _notificationsEnabled;
-    final keepForegroundServiceAlive =
-        hasPlayback || hasTimer || _hasPendingAutoResume;
-    final shouldKeepAwake = keepForegroundServiceAlive;
+    final shouldKeepAwake = hasPlayback || hasTimer || _hasPendingAutoResume;
+    final keepForegroundServiceAlive = _notificationsEnabled && shouldKeepAwake;
     if (_keepCpuAwake == shouldKeepAwake &&
         _keepAliveHasPlayback == hasPlayback &&
         _keepAliveHasTimer == hasTimer &&
@@ -777,9 +782,9 @@ extension AudioProviderPlayback on AudioProvider {
         _timerActive || _timerWaitingForPlayback || _hasPendingAutoResume;
     _keepAliveUsesUnifiedNotifications =
         _multiThreadPlaybackEnabled && _notificationsEnabled;
-    _keepAliveKeepsForegroundService =
+    _keepCpuAwake =
         _keepAliveHasPlayback || _keepAliveHasTimer || _hasPendingAutoResume;
-    _keepCpuAwake = _keepAliveKeepsForegroundService;
+    _keepAliveKeepsForegroundService = _notificationsEnabled && _keepCpuAwake;
     unawaited(
       _setKeepCpuAwake(
         _keepCpuAwake,
@@ -1068,82 +1073,13 @@ extension AudioProviderPlayback on AudioProvider {
 
   String? _nextPathFor(PlaybackSession session, {required bool forward}) {
     final currentTrack = trackByPath(session.currentTrackPath);
-    if (currentTrack == null || _library.isEmpty) return null;
-
-    switch (session.loopMode) {
-      case SessionLoopMode.single:
-        return currentTrack.path;
-      case SessionLoopMode.crossRandom:
-        if (forward) {
-          final all = _sortedLibraryTrackPaths;
-          if (all.length <= 1) return all.first;
-          String candidate = all[_random.nextInt(all.length)];
-          var guard = 0;
-          while (candidate == currentTrack.path && guard < 10) {
-            candidate = all[_random.nextInt(all.length)];
-            guard++;
-          }
-          return candidate;
-        }
-        return _nextPathFor(session, forward: true);
-      case SessionLoopMode.folderSequential:
-        final scope =
-            _tracksByGroup[currentTrack.groupKey] ?? const <MusicTrack>[];
-        if (scope.isEmpty) return currentTrack.path;
-        final idx = scope.indexWhere((t) => t.path == currentTrack.path);
-        if (idx < 0) return scope.first.path;
-        final next = (idx + (forward ? 1 : -1) + scope.length) % scope.length;
-        return scope[next].path;
-      case SessionLoopMode.crossSequential:
-        final groupEntries = _tracksByGroup.entries.toList()
-          ..sort((a, b) {
-            final titleA = a.value.first.groupTitle.toLowerCase();
-            final titleB = b.value.first.groupTitle.toLowerCase();
-            return titleA.compareTo(titleB);
-          });
-        if (groupEntries.isEmpty) return currentTrack.path;
-        final currentGroupIdx = groupEntries.indexWhere(
-          (e) => e.key == currentTrack.groupKey,
-        );
-        if (currentGroupIdx < 0) {
-          return groupEntries.first.value.first.path;
-        }
-        final currentGroup = groupEntries[currentGroupIdx].value;
-        final trackIdx = currentGroup.indexWhere(
-          (t) => t.path == currentTrack.path,
-        );
-        if (trackIdx < 0) return currentGroup.first.path;
-        if (forward) {
-          if (trackIdx < currentGroup.length - 1) {
-            return currentGroup[trackIdx + 1].path;
-          }
-          final nextGroupIdx = (currentGroupIdx + 1) % groupEntries.length;
-          return groupEntries[nextGroupIdx].value.first.path;
-        } else {
-          if (trackIdx > 0) {
-            return currentGroup[trackIdx - 1].path;
-          }
-          final prevGroupIdx =
-              (currentGroupIdx - 1 + groupEntries.length) % groupEntries.length;
-          return groupEntries[prevGroupIdx].value.last.path;
-        }
-      case SessionLoopMode.folderRandom:
-        if (forward) {
-          final scope =
-              (_tracksByGroup[currentTrack.groupKey] ?? const <MusicTrack>[])
-                  .map((track) => track.path)
-                  .toList(growable: false);
-          if (scope.isEmpty) return currentTrack.path;
-          if (scope.length == 1) return scope.first;
-          String candidate = scope[_random.nextInt(scope.length)];
-          var guard = 0;
-          while (candidate == currentTrack.path && guard < 10) {
-            candidate = scope[_random.nextInt(scope.length)];
-            guard++;
-          }
-          return candidate;
-        }
-        return _nextPathFor(session, forward: true);
-    }
+    return _playbackQueueResolver.resolveNextPath(
+      currentTrack: currentTrack,
+      forward: forward,
+      loopMode: session.loopMode,
+      sortedLibraryTrackPaths: _sortedLibraryTrackPaths,
+      tracksByGroup: _tracksByGroup,
+      nextInt: _random.nextInt,
+    );
   }
 }

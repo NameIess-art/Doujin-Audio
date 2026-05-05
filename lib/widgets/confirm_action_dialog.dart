@@ -56,7 +56,6 @@ Future<bool> showConfirmActionDialog({
                           icon: icon ?? Icons.delete_outline_rounded,
                           title: title,
                           message: message,
-                          borderRadius: 22,
                           padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
                         ),
                         const SizedBox(height: 14),

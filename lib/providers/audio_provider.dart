@@ -13,9 +13,16 @@ import 'package:path/path.dart' as path;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/music_track.dart';
+import '../models/library_node.dart';
+import '../models/playback_mode.dart';
 import '../services/app_database.dart';
+import '../services/library_organizer.dart';
+import '../services/playback_queue_resolver.dart';
+import '../services/timer_runtime_calculator.dart';
 
+export '../models/library_node.dart';
 export '../models/music_track.dart';
+export '../models/playback_mode.dart';
 import '../services/native_playback_bridge.dart';
 import '../services/playback_notification_service.dart';
 import '../services/subtitle_parser.dart';
@@ -254,6 +261,10 @@ class AudioProvider with ChangeNotifier {
     _bindNotificationHandler();
     _loadData();
   }
+
+  @visibleForTesting
+  AudioProvider.test({required PlaybackNotificationService notificationService})
+    : _notificationService = notificationService;
 
   @override
   void dispose() {

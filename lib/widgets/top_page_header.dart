@@ -43,7 +43,6 @@ class TopPageHeader extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               Expanded(
                 child: Text(
@@ -51,9 +50,9 @@ class TopPageHeader extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: -0.5,
-                      ),
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.5,
+                  ),
                 ),
               ),
               if (titleSuffix != null) ...[
@@ -68,11 +67,11 @@ class TopPageHeader extends StatelessWidget {
             LayoutBuilder(
               builder: (context, constraints) {
                 final style = Theme.of(context).textTheme.bodySmall?.copyWith(
-                      fontSize: subtitleFontSize ?? 11,
-                      height: 1.16,
-                      color: cs.onSurfaceVariant,
-                      fontWeight: FontWeight.w600,
-                    );
+                  fontSize: subtitleFontSize ?? 11,
+                  height: 1.16,
+                  color: cs.onSurfaceVariant,
+                  fontWeight: FontWeight.w600,
+                );
                 final text = Text(
                   subtitle!,
                   maxLines: subtitleMaxLines,
@@ -120,10 +119,7 @@ class TopPageHeader extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              headerContent,
-              if (additionalChild != null) additionalChild!,
-            ],
+            children: [headerContent, ?additionalChild],
           ),
         ),
       ),

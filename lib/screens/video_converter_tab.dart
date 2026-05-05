@@ -198,8 +198,12 @@ class _VideoConverterTabState extends State<VideoConverterTab> {
   Widget build(BuildContext context) {
     final i18n = context.watch<AppLanguageProvider>();
     final provider = context.read<AudioProvider>();
-    final selectedFormat = context.select<AudioProvider, String>((p) => p.converterFormat);
-    final selectedBitrate = context.select<AudioProvider, String>((p) => p.converterBitrate);
+    final selectedFormat = context.select<AudioProvider, String>(
+      (p) => p.converterFormat,
+    );
+    final selectedBitrate = context.select<AudioProvider, String>(
+      (p) => p.converterBitrate,
+    );
     final bitrateEnabled = selectedFormat != 'wav' && selectedFormat != 'flac';
     final descStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
       fontSize: 11,
@@ -333,7 +337,9 @@ class _VideoConverterTabState extends State<VideoConverterTab> {
                     end: _isConverting && _videoDurationMs == 0 ? 0 : _progress,
                   ),
                   builder: (context, value, _) => LinearProgressIndicator(
-                    value: _isConverting && _videoDurationMs == 0 ? null : value,
+                    value: _isConverting && _videoDurationMs == 0
+                        ? null
+                        : value,
                     minHeight: 8,
                     borderRadius: BorderRadius.circular(4),
                   ),
@@ -347,7 +353,9 @@ class _VideoConverterTabState extends State<VideoConverterTab> {
                     vertical: 10,
                   ),
                   decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.surfaceContainerHighest,
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
                       color: Theme.of(context).colorScheme.outlineVariant,

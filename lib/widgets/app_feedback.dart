@@ -63,25 +63,20 @@ void _showTopFeedback(
         top: topInset,
         left: 16,
         right: 16,
-        child: IgnorePointer(
-          child: Material(
-            color: Colors.transparent,
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 420),
-                child: TweenAnimationBuilder<double>(
-                  tween: Tween<double>(begin: 0, end: 1),
-                  duration: const Duration(milliseconds: 220),
-                  curve: Curves.easeOutCubic,
-                  builder: (context, value, child) {
-                    return Opacity(
-                      opacity: value,
-                      child: Transform.translate(
-                        offset: Offset(0, (1 - value) * -12),
-                        child: child,
-                      ),
-                    );
-                  },
+        child: _FeedbackAnimationWrapper(
+          duration: duration,
+          onRemove: () {
+            if (_activeFeedbackEntry == entry) {
+              _activeFeedbackEntry = null;
+            }
+            entry.remove();
+          },
+          child: IgnorePointer(
+            child: Material(
+              color: Colors.transparent,
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 420),
                   child: AppFeedbackSurface(
                     tone: tone,
                     icon: resolvedIcon,
@@ -98,12 +93,68 @@ void _showTopFeedback(
 
   overlay.insert(entry);
   _activeFeedbackEntry = entry;
-  _activeFeedbackTimer = Timer(duration, () {
-    if (_activeFeedbackEntry == entry) {
-      _activeFeedbackEntry = null;
-    }
-    entry.remove();
+}
+
+class _FeedbackAnimationWrapper extends StatefulWidget {
+  const _FeedbackAnimationWrapper({
+    required this.child,
+    required this.duration,
+    required this.onRemove,
   });
+
+  final Widget child;
+  final Duration duration;
+  final VoidCallback onRemove;
+
+  @override
+  State<_FeedbackAnimationWrapper> createState() =>
+      _FeedbackAnimationWrapperState();
+}
+
+class _FeedbackAnimationWrapperState extends State<_FeedbackAnimationWrapper>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _opacity;
+  late final Animation<Offset> _offset;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 250),
+    );
+    _opacity = CurvedAnimation(parent: _controller, curve: Curves.easeOut);
+    _offset = Tween<Offset>(
+      begin: const Offset(0, -0.08),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
+
+    _controller.forward();
+
+    final stayDuration = widget.duration - const Duration(milliseconds: 250);
+    Future.delayed(stayDuration > Duration.zero ? stayDuration : Duration.zero, () {
+      if (mounted) {
+        _controller.reverse().then((_) {
+          if (mounted) widget.onRemove();
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: _opacity,
+      child: SlideTransition(position: _offset, child: widget.child),
+    );
+  }
 }
 
 class AppFeedbackSurface extends StatelessWidget {

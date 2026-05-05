@@ -46,7 +46,6 @@ PageRouteBuilder<T> buildAppOverlayRoute<T>({
   return PageRouteBuilder<T>(
     settings: settings,
     opaque: false,
-    barrierDismissible: false,
     barrierColor: Colors.transparent,
     transitionDuration: duration,
     reverseTransitionDuration: reverseDuration,

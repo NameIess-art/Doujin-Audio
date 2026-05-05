@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:collection';
 import 'dart:io';
 import 'dart:math';
-import 'dart:ui';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -121,7 +120,8 @@ class _LibraryTabState extends State<LibraryTab>
         if (!provider.isScanning) break;
         processedFolders++;
         provider.setScanProgress(
-          currentFolder: '[$processedFolders/$totalFolders] ${path.basename(folderPath)}',
+          currentFolder:
+              '[$processedFolders/$totalFolders] ${path.basename(folderPath)}',
         );
         final nativeTracks = await _scanFolderViaNative(folderPath);
         if (nativeTracks != null) {
@@ -144,7 +144,8 @@ class _LibraryTabState extends State<LibraryTab>
           totalAdded += added;
           provider.setScanProgress(
             foundCount: provider.scanFoundCount + added,
-            duplicateCount: provider.scanDuplicateCount + (toAdd.length - added),
+            duplicateCount:
+                provider.scanDuplicateCount + (toAdd.length - added),
           );
         } else {
           totalAdded += await _importFolderIncrementally(folderPath, provider);
@@ -283,7 +284,8 @@ class _LibraryTabState extends State<LibraryTab>
         if (!provider.isScanning) break;
         processedFolders++;
         provider.setScanProgress(
-          currentFolder: '[$processedFolders/$totalFolders] ${path.basename(folderPath)}',
+          currentFolder:
+              '[$processedFolders/$totalFolders] ${path.basename(folderPath)}',
         );
         final nativeTracks = await _scanFolderViaNative(folderPath);
         if (nativeTracks != null) {
@@ -307,7 +309,8 @@ class _LibraryTabState extends State<LibraryTab>
           added += folderAdded;
           provider.setScanProgress(
             foundCount: provider.scanFoundCount + folderAdded,
-            duplicateCount: provider.scanDuplicateCount + (toAdd.length - folderAdded),
+            duplicateCount:
+                provider.scanDuplicateCount + (toAdd.length - folderAdded),
           );
         } else {
           added += await _importFolderIncrementally(folderPath, provider);
@@ -338,7 +341,6 @@ class _LibraryTabState extends State<LibraryTab>
     final result = await FilePicker.platform.pickFiles(
       allowMultiple: true,
       withReadStream: true,
-      type: FileType.any,
       dialogTitle: i18n.tr('choose_audio_files'),
     );
     if (result == null) return;
@@ -636,9 +638,7 @@ class _LibraryTabState extends State<LibraryTab>
 
   void _showSnack(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-      ..clearSnackBars()
-      ..showSnackBar(SnackBar(content: Text(message)));
+    showAppSnackBar(context, message);
   }
 
   List<LibraryNode> _filterTreeCached(List<LibraryNode> tree, String query) {
@@ -688,7 +688,11 @@ class _LibraryTabState extends State<LibraryTab>
     return count;
   }
 
-  Widget _buildSearchBar(AppLanguageProvider i18n, int matchCount, int totalCount) {
+  Widget _buildSearchBar(
+    AppLanguageProvider i18n,
+    int matchCount,
+    int totalCount,
+  ) {
     final cs = Theme.of(context).colorScheme;
     final hasText = _searchController.text.isNotEmpty;
     return Padding(
@@ -700,7 +704,9 @@ class _LibraryTabState extends State<LibraryTab>
             height: 34,
             child: TextField(
               controller: _searchController,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 13),
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(fontSize: 13),
               decoration: InputDecoration(
                 filled: true,
                 fillColor: cs.surfaceContainerHigh,
@@ -749,10 +755,13 @@ class _LibraryTabState extends State<LibraryTab>
               ),
               onChanged: (value) {
                 _searchDebounceTimer?.cancel();
-                _searchDebounceTimer = Timer(const Duration(milliseconds: 220), () {
-                  if (!mounted) return;
-                  setState(() => _searchQuery = value.trim());
-                });
+                _searchDebounceTimer = Timer(
+                  const Duration(milliseconds: 220),
+                  () {
+                    if (!mounted) return;
+                    setState(() => _searchQuery = value.trim());
+                  },
+                );
               },
             ),
           ),
@@ -895,6 +904,7 @@ class _LibraryTabState extends State<LibraryTab>
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final i18n = context.watch<AppLanguageProvider>();
     final provider = context.read<AudioProvider>();
     final rawTree = context.select<AudioProvider, List<LibraryNode>>(
@@ -904,10 +914,18 @@ class _LibraryTabState extends State<LibraryTab>
       (p) => p.libraryTrackCount,
     );
     final isScanning = context.select<AudioProvider, bool>((p) => p.isScanning);
-    final scanFolder = context.select<AudioProvider, String>((p) => p.scanCurrentFolder);
-    final scanFound = context.select<AudioProvider, int>((p) => p.scanFoundCount);
-    final scanDup = context.select<AudioProvider, int>((p) => p.scanDuplicateCount);
-    final scanFail = context.select<AudioProvider, int>((p) => p.scanFailureCount);
+    final scanFolder = context.select<AudioProvider, String>(
+      (p) => p.scanCurrentFolder,
+    );
+    final scanFound = context.select<AudioProvider, int>(
+      (p) => p.scanFoundCount,
+    );
+    final scanDup = context.select<AudioProvider, int>(
+      (p) => p.scanDuplicateCount,
+    );
+    final scanFail = context.select<AudioProvider, int>(
+      (p) => p.scanFailureCount,
+    );
     final tree = _filterTreeCached(rawTree, _searchQuery);
     final matchCount = _countTrackNodes(tree);
     final bottomInset = MobileOverlayInset.of(context);
@@ -965,7 +983,6 @@ class _LibraryTabState extends State<LibraryTab>
                       cacheExtent: 720,
                       keyboardDismissBehavior:
                           ScrollViewKeyboardDismissBehavior.onDrag,
-                      buildDefaultDragHandles: true,
                       onReorder: (oldIndex, newIndex) {
                         if (_searchQuery.isNotEmpty) return;
                         provider.reorderLibraryNodes(oldIndex, newIndex);
@@ -1630,7 +1647,6 @@ class _LibraryMetaChip extends StatelessWidget {
         border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.7)),
       ),
       child: Row(
-        mainAxisSize: MainAxisSize.max,
         children: [
           Icon(
             icon,

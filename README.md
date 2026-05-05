@@ -18,7 +18,7 @@
 
 ## 当前版本
 
-- 版本号：`1.1.0+4100`
+- 版本号：`1.1.0+6100`
 - GitHub Release：[v1.1.0](https://github.com/NameIess-art/AudioPlayer/releases/tag/v1.1.0)
 
 ## 技术栈

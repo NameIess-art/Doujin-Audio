@@ -4,6 +4,7 @@ import 'dart:math';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:path/path.dart' as path;
@@ -143,7 +144,6 @@ class _PlaylistTabState extends State<PlaylistTab> {
                 cacheExtent: 720,
                 keyboardDismissBehavior:
                     ScrollViewKeyboardDismissBehavior.onDrag,
-                buildDefaultDragHandles: true,
                 onReorder: provider.reorderSessions,
                 itemCount: sessions.length,
                 itemBuilder: (context, index) {
@@ -181,7 +181,7 @@ class _PlaylistTabState extends State<PlaylistTab> {
                 children: [
                   if (timerDuration != null)
                     _TimerCountdownCapsule(
-                      remaining: timerRemaining ?? timerDuration!,
+                      remaining: timerRemaining ?? timerDuration,
                       active: timerActive,
                       onTap: widget.onTimerTap,
                     )
@@ -216,7 +216,6 @@ class _PlaylistTabState extends State<PlaylistTab> {
                 ],
               ),
             ),
-            bottomSpacing: 10,
             padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
           ),
         ),
@@ -385,7 +384,7 @@ class _SessionListCardState extends State<_SessionListCard> {
           removeTooltip: i18n.tr('remove_audio'),
           onRemove: () => _confirmRemoveSession(context),
           child: SizedBox(
-            height: 88,
+            height: 96,
             child: Material(
               color: Colors.transparent,
               child: Card(
@@ -409,7 +408,7 @@ class _SessionListCardState extends State<_SessionListCard> {
                       widget.onOpen();
                     },
                     child: Padding(
-                      padding: const EdgeInsets.fromLTRB(12, 8, 10, 8),
+                      padding: const EdgeInsets.fromLTRB(12, 7, 10, 6),
                       child: Row(
                         children: [
                           _SessionCoverThumbnail(
@@ -446,7 +445,7 @@ class _SessionListCardState extends State<_SessionListCard> {
                                         height: 1.12,
                                       ),
                                 ),
-                                const SizedBox(height: 6),
+                                const SizedBox(height: 4),
                                 SizedBox(
                                   width: double.infinity,
                                   child: _SessionMetaChip(
@@ -484,7 +483,6 @@ class _SessionListCardState extends State<_SessionListCard> {
                             icon: _SwitcherSlot(
                               width: 22,
                               height: 22,
-                              duration: const Duration(milliseconds: 150),
                               child: Icon(
                                 isPlaying
                                     ? Icons.pause_rounded
@@ -586,7 +584,7 @@ class _SessionDetailPageState extends State<SessionDetailPage>
     if (shouldDismiss) {
       await _animateDismissToEnd(velocity: velocity);
       if (mounted) {
-        navigator.maybePop();
+        await navigator.maybePop();
       }
       return;
     }
@@ -600,7 +598,6 @@ class _SessionDetailPageState extends State<SessionDetailPage>
     return _dismissController.animateTo(
       1,
       duration: Duration(milliseconds: durationMs.round().clamp(180, 340)),
-      curve: Curves.linear,
     );
   }
 
@@ -713,16 +710,16 @@ class _SessionDetailPageState extends State<SessionDetailPage>
       child: AnimatedBuilder(
         animation: animatedListenable,
         builder: (context, child) {
-          final enterProgress = Curves.easeOutQuart.transform(
+          final enterProgress = Curves.easeOutCubic.transform(
             (routeAnimation?.value ?? 1).clamp(0.0, 1.0),
           );
-          final dismissProgress = Curves.easeOutQuart.transform(
+          final dismissProgress = Curves.easeOutCubic.transform(
             _dismissController.value.clamp(0.0, 1.0),
           );
           final dragDistance =
               MediaQuery.sizeOf(context).height * dismissProgress;
-          final enterOffset = (1 - enterProgress) * 50;
-          final backdropProgress = (enterProgress * pow(1 - dismissProgress, 6))
+          final enterOffset = (1 - enterProgress) * 60;
+          final backdropProgress = (enterProgress * pow(1 - dismissProgress, 3))
               .clamp(0.0, 1.0);
 
           return Stack(
@@ -786,7 +783,7 @@ class _SessionDetailPageState extends State<SessionDetailPage>
               onClose: () async {
                 await _animateDismissToEnd();
                 if (context.mounted) {
-                  Navigator.of(context).maybePop();
+                  await Navigator.of(context).maybePop();
                 }
               },
             ),
@@ -1001,7 +998,6 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Expanded(
               child: Text(
@@ -1048,92 +1044,140 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
         const SizedBox(height: 12),
         SizedBox(
           height: 84,
-          child: Row(
-            children: [
-              _ExpandableLoopOptions(session: session, provider: provider),
-              const Spacer(),
-              IconButton(
-                onPressed: session.isLoading
-                    ? null
-                    : () {
-                        HapticFeedback.lightImpact();
-                        provider.seekSessionToPrev(session.id);
-                      },
-                icon: Icon(
-                  Icons.skip_previous_rounded,
-                  size: 44,
-                  color: cs.onSurface,
-                ),
-              ),
-              const SizedBox(width: 12),
-              IconButton(
-                onPressed: session.isLoading
-                    ? null
-                    : () {
-                        HapticFeedback.mediumImpact();
-                        provider.toggleSessionPlayPause(session.id);
-                      },
-                iconSize: 64,
-                icon: _SwitcherSlot(
-                  width: 64,
-                  height: 64,
-                  duration: const Duration(milliseconds: 150),
-                  child: session.isLoading
-                      ? SizedBox(
-                          key: const ValueKey<String>('loading'),
-                          width: 32,
-                          height: 32,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 3,
-                            color: cs.onSurface,
-                          ),
-                        )
-                      : Icon(
-                          session.state.playing
-                              ? Icons.pause_rounded
-                              : Icons.play_arrow_rounded,
-                          key: ValueKey<IconData>(
-                            session.state.playing
-                                ? Icons.pause_rounded
-                                : Icons.play_arrow_rounded,
-                          ),
-                          size: 64,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final compact = constraints.maxWidth < 390;
+              final gap = compact ? 4.0 : 8.0;
+              final skipIconSize = compact ? 38.0 : 44.0;
+              final playIconSize = compact ? 56.0 : 64.0;
+              final loadingSize = compact ? 28.0 : 32.0;
+
+              return Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  _ExpandableLoopOptions(
+                    session: session,
+                    provider: provider,
+                    compact: compact,
+                  ),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        constraints: BoxConstraints.tightFor(
+                          width: compact ? 42 : 48,
+                          height: compact ? 42 : 48,
+                        ),
+                        padding: EdgeInsets.zero,
+                        onPressed: session.isLoading
+                            ? null
+                            : () {
+                                HapticFeedback.lightImpact();
+                                provider.seekSessionToPrev(session.id);
+                              },
+                        icon: Icon(
+                          Icons.skip_previous_rounded,
+                          size: skipIconSize,
                           color: cs.onSurface,
                         ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              IconButton(
-                onPressed: session.isLoading
-                    ? null
-                    : () {
-                        HapticFeedback.lightImpact();
-                        provider.seekSessionToNext(session.id);
-                      },
-                icon: Icon(
-                  Icons.skip_next_rounded,
-                  size: 44,
-                  color: cs.onSurface,
-                ),
-              ),
-              const Spacer(),
-              _SessionVolumeButton(session: session, provider: provider),
-              const SizedBox(width: 12),
-              IconButton(
-                onPressed: hasSiblings
-                    ? () {
-                        HapticFeedback.selectionClick();
-                        _showTrackSwitcher(context);
-                      }
-                    : null,
-                tooltip: context.read<AppLanguageProvider>().tr('switch_audio'),
-                icon: Icon(
-                  Icons.queue_music_rounded,
-                  size: 24,
-                  color: cs.onSurface,
-                ),
-              ),
-            ],
+                      ),
+                      SizedBox(width: gap),
+                      IconButton(
+                        constraints: BoxConstraints.tightFor(
+                          width: compact ? 58 : 68,
+                          height: compact ? 58 : 68,
+                        ),
+                        padding: EdgeInsets.zero,
+                        onPressed: session.isLoading
+                            ? null
+                            : () {
+                                HapticFeedback.mediumImpact();
+                                provider.toggleSessionPlayPause(session.id);
+                              },
+                        iconSize: playIconSize,
+                        icon: _SwitcherSlot(
+                          width: playIconSize,
+                          height: playIconSize,
+                          child: session.isLoading
+                              ? SizedBox(
+                                  key: const ValueKey<String>('loading'),
+                                  width: loadingSize,
+                                  height: loadingSize,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 3,
+                                    color: cs.onSurface,
+                                  ),
+                                )
+                              : Icon(
+                                  session.state.playing
+                                      ? Icons.pause_rounded
+                                      : Icons.play_arrow_rounded,
+                                  key: ValueKey<IconData>(
+                                    session.state.playing
+                                        ? Icons.pause_rounded
+                                        : Icons.play_arrow_rounded,
+                                  ),
+                                  size: playIconSize,
+                                  color: cs.onSurface,
+                                ),
+                        ),
+                      ),
+                      SizedBox(width: gap),
+                      IconButton(
+                        constraints: BoxConstraints.tightFor(
+                          width: compact ? 42 : 48,
+                          height: compact ? 42 : 48,
+                        ),
+                        padding: EdgeInsets.zero,
+                        onPressed: session.isLoading
+                            ? null
+                            : () {
+                                HapticFeedback.lightImpact();
+                                provider.seekSessionToNext(session.id);
+                              },
+                        icon: Icon(
+                          Icons.skip_next_rounded,
+                          size: skipIconSize,
+                          color: cs.onSurface,
+                        ),
+                      ),
+                    ],
+                  ),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _SessionVolumeButton(
+                        session: session,
+                        provider: provider,
+                        compact: compact,
+                      ),
+                      SizedBox(width: compact ? 0 : 4),
+                      IconButton(
+                        constraints: BoxConstraints.tightFor(
+                          width: compact ? 40 : 48,
+                          height: compact ? 40 : 48,
+                        ),
+                        padding: EdgeInsets.zero,
+                        onPressed: hasSiblings
+                            ? () {
+                                HapticFeedback.selectionClick();
+                                _showTrackSwitcher(context);
+                              }
+                            : null,
+                        tooltip: context.read<AppLanguageProvider>().tr(
+                          'switch_audio',
+                        ),
+                        icon: Icon(
+                          Icons.queue_music_rounded,
+                          size: compact ? 22 : 24,
+                          color: cs.onSurface,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              );
+            },
           ),
         ),
         const SizedBox(height: 16),
@@ -1154,13 +1198,17 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      builder: (ctx) => ListView.builder(
-        shrinkWrap: true,
-        padding: const EdgeInsets.only(top: 16, bottom: 24),
-        cacheExtent: 480,
-        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-        itemCount: siblings.length,
-        itemBuilder: (_, i) {
+      builder: (ctx) => ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(ctx).height * 0.5,
+        ),
+        child: ListView.builder(
+          shrinkWrap: true,
+          padding: const EdgeInsets.only(top: 8, bottom: 24),
+          cacheExtent: 480,
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          itemCount: siblings.length,
+          itemBuilder: (_, i) {
           final track = siblings[i];
           final isCurrent = track.path == widget.session.currentTrackPath;
           return ListTile(
@@ -1188,7 +1236,7 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
           );
         },
       ),
-    );
+    ));
   }
 }
 
@@ -1268,7 +1316,6 @@ class _SessionHeroArtwork extends StatelessWidget {
                       File(coverPath),
                       fit: BoxFit.cover,
                       gaplessPlayback: true,
-                      filterQuality: FilterQuality.medium,
                       cacheWidth: cacheWidth,
                       cacheHeight: cacheHeight,
                       errorBuilder: (_, _, _) => fallback(),
@@ -1368,9 +1415,8 @@ class _SessionMetaChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
+      padding: EdgeInsets.zero,
       child: Row(
-        mainAxisSize: MainAxisSize.max,
         children: [
           Icon(
             icon,
@@ -1496,10 +1542,15 @@ class _LoopModeButton extends StatelessWidget {
 }
 
 class _ExpandableLoopOptions extends StatefulWidget {
-  const _ExpandableLoopOptions({required this.session, required this.provider});
+  const _ExpandableLoopOptions({
+    required this.session,
+    required this.provider,
+    this.compact = false,
+  });
 
   final PlaybackSession session;
   final AudioProvider provider;
+  final bool compact;
 
   @override
   State<_ExpandableLoopOptions> createState() => _ExpandableLoopOptionsState();
@@ -1570,8 +1621,8 @@ class _ExpandableLoopOptionsState extends State<_ExpandableLoopOptions>
     super.initState();
     _expandController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 320),
-      reverseDuration: const Duration(milliseconds: 220),
+      duration: const Duration(milliseconds: 360),
+      reverseDuration: const Duration(milliseconds: 260),
     );
   }
 
@@ -1696,7 +1747,7 @@ class _ExpandableLoopOptionsState extends State<_ExpandableLoopOptions>
                   final progress = Interval(
                     start,
                     end,
-                    curve: Curves.easeOutBack,
+                    curve: Curves.easeOutCubic,
                   ).transform(_expandController.value).clamp(0.0, 1.0);
                   return Opacity(
                     opacity: progress,
@@ -1716,66 +1767,72 @@ class _ExpandableLoopOptionsState extends State<_ExpandableLoopOptions>
 
                 return Opacity(
                   opacity: 0.4 + (containerProgress * 0.6),
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: cs.surfaceContainerHigh.withValues(alpha: 0.96),
-                      borderRadius: BorderRadius.circular(999),
-                      border: Border.all(
-                        color: cs.outlineVariant.withValues(alpha: 0.92),
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: cs.shadow.withValues(alpha: 0.18),
-                          blurRadius: 16,
-                          offset: const Offset(0, 10),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(999),
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: cs.surfaceContainerHigh.withValues(alpha: 0.38),
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(
+                            color: cs.outlineVariant.withValues(alpha: 0.92),
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: cs.shadow.withValues(alpha: 0.18),
+                              blurRadius: 16,
+                              offset: const Offset(0, 10),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 2,
-                        vertical: 4,
-                      ),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          animatedBubble(
-                            icon: Icons.repeat_one_rounded,
-                            active: _singleActive,
-                            onPressed: _toggleSingleLoop,
-                            start: 0.16,
-                            end: 0.58,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 2,
+                            vertical: 4,
                           ),
-                          const SizedBox(height: 4),
-                          animatedBubble(
-                            icon: _orderIcon,
-                            active: _shuffleButtonHighlighted,
-                            onPressed: _toggleShuffleLoop,
-                            start: 0.28,
-                            end: 0.74,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              animatedBubble(
+                                icon: Icons.repeat_one_rounded,
+                                active: _singleActive,
+                                onPressed: _toggleSingleLoop,
+                                start: 0.16,
+                                end: 0.58,
+                              ),
+                              const SizedBox(height: 4),
+                              animatedBubble(
+                                icon: _orderIcon,
+                                active: _shuffleButtonHighlighted,
+                                onPressed: _toggleShuffleLoop,
+                                start: 0.28,
+                                end: 0.74,
+                              ),
+                              const SizedBox(height: 4),
+                              animatedBubble(
+                                icon: _scopeIcon,
+                                active: _scopeButtonHighlighted,
+                                onPressed: _toggleCrossFolderLoop,
+                                start: 0.4,
+                                end: 0.9,
+                              ),
+                              const SizedBox(height: 4),
+                              _LoopModeButton(
+                                iconWidget: _singleActive
+                                    ? Icon(
+                                        Icons.repeat_one_rounded,
+                                        key: const ValueKey<String>('single_main'),
+                                        size: 18,
+                                        color: cs.primary,
+                                      )
+                                    : _collapsedCompositeIcon(context),
+                                active: true,
+                                onPressed: _toggleExpanded,
+                              ),
+                            ],
                           ),
-                          const SizedBox(height: 4),
-                          animatedBubble(
-                            icon: _scopeIcon,
-                            active: _scopeButtonHighlighted,
-                            onPressed: _toggleCrossFolderLoop,
-                            start: 0.4,
-                            end: 0.9,
-                          ),
-                          const SizedBox(height: 4),
-                          _LoopModeButton(
-                            iconWidget: _singleActive
-                                ? Icon(
-                                    Icons.repeat_one_rounded,
-                                    key: const ValueKey<String>('single_main'),
-                                    size: 18,
-                                    color: cs.primary,
-                                  )
-                                : _collapsedCompositeIcon(context),
-                            active: true,
-                            onPressed: _toggleExpanded,
-                          ),
-                        ],
+                        ),
                       ),
                     ),
                   ),
@@ -1801,14 +1858,13 @@ class _ExpandableLoopOptionsState extends State<_ExpandableLoopOptions>
     return CompositedTransformTarget(
       link: _anchorLink,
       child: SizedBox(
-        width: 44,
-        height: 82,
+        width: widget.compact ? 40 : 44,
+        height: widget.compact ? 74 : 82,
         child: IgnorePointer(
           ignoring: _expanded,
           child: Opacity(
             opacity: _expanded ? 0 : 1,
             child: Align(
-              alignment: Alignment.center,
               child: _LoopModeButton(
                 iconWidget: _singleActive
                     ? Icon(
@@ -1843,9 +1899,48 @@ class _ProgressBar extends StatefulWidget {
   State<_ProgressBar> createState() => _ProgressBarState();
 }
 
-class _ProgressBarState extends State<_ProgressBar> {
-  double? _dragValueMs;
+class _ProgressBarState extends State<_ProgressBar> with SingleTickerProviderStateMixin {
+  late final Ticker _ticker;
+  Duration _lastReportedPosition = Duration.zero;
+  DateTime _lastReportTime = DateTime.now();
   bool _isDragging = false;
+  double? _dragValueMs;
+
+  @override
+  void initState() {
+    super.initState();
+    _ticker = createTicker(_onTick);
+    _ticker.start();
+  }
+
+  @override
+  void dispose() {
+    _ticker.dispose();
+    super.dispose();
+  }
+
+  void _onTick(Duration elapsed) {
+    if (_isDragging) return;
+    if (mounted) setState(() {});
+  }
+
+  Duration _getSmoothPosition(Duration streamPosition, bool isPlaying) {
+    if (!isPlaying) {
+      _lastReportedPosition = streamPosition;
+      _lastReportTime = DateTime.now();
+      return streamPosition;
+    }
+
+    final now = DateTime.now();
+    if (streamPosition != _lastReportedPosition) {
+      _lastReportedPosition = streamPosition;
+      _lastReportTime = now;
+      return streamPosition;
+    }
+
+    final diff = now.difference(_lastReportTime);
+    return streamPosition + diff;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1864,12 +1959,15 @@ class _ProgressBarState extends State<_ProgressBar> {
               builder: (context, bufferedSnapshot) {
                 final hasKnownDuration = duration != null;
                 final effectiveDuration = duration ?? Duration.zero;
-                var position = snapshot.data ?? Duration.zero;
+                final buffered = bufferedSnapshot.data ?? Duration.zero;
+                final isPlaying = widget.session.state.playing;
+                var position = _getSmoothPosition(
+                  snapshot.data ?? Duration.zero,
+                  isPlaying,
+                );
                 if (hasKnownDuration && position > effectiveDuration) {
                   position = effectiveDuration;
                 }
-
-                final buffered = bufferedSnapshot.data ?? Duration.zero;
                 final durationMs = hasKnownDuration
                     ? max(1, effectiveDuration.inMilliseconds)
                     : max(
@@ -1891,12 +1989,18 @@ class _ProgressBarState extends State<_ProgressBar> {
                             : buffered.inMilliseconds)
                         .clamp(0, durationMs)
                         .toDouble();
-                final shownPosition = Duration(
-                  milliseconds: sliderValue.round().clamp(0, durationMs),
-                );
-                final remaining = hasKnownDuration
-                    ? (effectiveDuration - shownPosition)
-                    : Duration.zero;
+                final shownSeconds = hasKnownDuration
+                    ? (sliderValue ~/ 1000).clamp(
+                        0,
+                        effectiveDuration.inSeconds,
+                      )
+                    : (sliderValue ~/ 1000);
+                final remainingSeconds = hasKnownDuration
+                    ? (effectiveDuration.inSeconds - shownSeconds).clamp(
+                        0,
+                        effectiveDuration.inSeconds,
+                      )
+                    : 0;
                 final canSeek =
                     hasKnownDuration && effectiveDuration.inMilliseconds > 0;
                 final cs = Theme.of(context).colorScheme;
@@ -1908,7 +2012,6 @@ class _ProgressBarState extends State<_ProgressBar> {
                         trackHeight: 2.2,
                         thumbShape: const RoundSliderThumbShape(
                           enabledThumbRadius: 6,
-                          elevation: 1,
                         ),
                         overlayShape: const RoundSliderOverlayShape(
                           overlayRadius: 12,
@@ -1921,7 +2024,6 @@ class _ProgressBarState extends State<_ProgressBar> {
                         overlayColor: cs.onSurface.withValues(alpha: 0.12),
                       ),
                       child: Slider(
-                        min: 0,
                         max: maxMillis,
                         value: sliderValue,
                         secondaryTrackValue: bufferedValue,
@@ -1961,10 +2063,10 @@ class _ProgressBarState extends State<_ProgressBar> {
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          _TimecodeLabel(text: _fmt(shownPosition)),
+                          _TimecodeLabel(text: _fmtSeconds(shownSeconds)),
                           _TimecodeLabel(
                             text: hasKnownDuration
-                                ? '-${_fmt(remaining.isNegative ? Duration.zero : remaining)}'
+                                ? '-${_fmtSeconds(remainingSeconds)}'
                                 : '--:--',
                             alignEnd: true,
                           ),
@@ -1981,10 +2083,11 @@ class _ProgressBarState extends State<_ProgressBar> {
     );
   }
 
-  String _fmt(Duration d) {
-    final h = d.inHours;
-    final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
-    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+  String _fmtSeconds(int totalSeconds) {
+    final clamped = totalSeconds < 0 ? 0 : totalSeconds;
+    final h = clamped ~/ 3600;
+    final m = (clamped ~/ 60).remainder(60).toString().padLeft(2, '0');
+    final s = clamped.remainder(60).toString().padLeft(2, '0');
     if (h > 0) return '${h.toString().padLeft(2, '0')}:$m:$s';
     return '$m:$s';
   }
@@ -2139,8 +2242,6 @@ class _SessionVolumeSliderState extends State<_SessionVolumeSlider> {
             ),
             child: Slider(
               value: volume,
-              min: 0,
-              max: 1,
               onChangeStart: (value) {
                 HapticFeedback.selectionClick();
                 setState(() {
@@ -2197,10 +2298,15 @@ class _SessionVolumeSliderState extends State<_SessionVolumeSlider> {
 }
 
 class _SessionVolumeButton extends StatefulWidget {
-  const _SessionVolumeButton({required this.session, required this.provider});
+  const _SessionVolumeButton({
+    required this.session,
+    required this.provider,
+    this.compact = false,
+  });
 
   final PlaybackSession session;
   final AudioProvider provider;
+  final bool compact;
 
   @override
   State<_SessionVolumeButton> createState() => _SessionVolumeButtonState();
@@ -2253,8 +2359,13 @@ class _SessionVolumeButtonState extends State<_SessionVolumeButton> {
     return CompositedTransformTarget(
       link: _link,
       child: IconButton(
+        constraints: BoxConstraints.tightFor(
+          width: widget.compact ? 40 : 48,
+          height: widget.compact ? 40 : 48,
+        ),
+        padding: EdgeInsets.zero,
         onPressed: _toggleVolume,
-        icon: Icon(icon, size: 20, color: cs.onSurface),
+        icon: Icon(icon, size: widget.compact ? 19 : 20, color: cs.onSurface),
       ),
     );
   }
@@ -2350,7 +2461,6 @@ class _VerticalVolumeSliderState extends State<_VerticalVolumeSlider> {
                               widget.session.id,
                               v,
                               persist: false,
-                              notify: true,
                             );
                           },
                           onChangeEnd: (v) {
@@ -2358,7 +2468,6 @@ class _VerticalVolumeSliderState extends State<_VerticalVolumeSlider> {
                             widget.provider.setSessionVolume(
                               widget.session.id,
                               v,
-                              persist: true,
                             );
                           },
                         ),
@@ -2413,9 +2522,7 @@ class _TimerCountdownCapsule extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(999),
-            border: Border.all(
-              color: cs.primary.withValues(alpha: 0.3),
-            ),
+            border: Border.all(color: cs.primary.withValues(alpha: 0.3)),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -2424,8 +2531,8 @@ class _TimerCountdownCapsule extends StatelessWidget {
                 active
                     ? Icons.timer_rounded
                     : hasRemaining
-                        ? Icons.timer_rounded
-                        : Icons.alarm_off_rounded,
+                    ? Icons.timer_rounded
+                    : Icons.alarm_off_rounded,
                 size: 14,
                 color: cs.onPrimaryContainer,
               ),

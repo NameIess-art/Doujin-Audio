@@ -67,8 +67,11 @@ class AppDatabase {
     final db = await database;
     final batch = db.batch();
     for (final track in tracks) {
-      batch.insert('tracks', _trackToRow(track),
-          conflictAlgorithm: ConflictAlgorithm.replace);
+      batch.insert(
+        'tracks',
+        _trackToRow(track),
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
     }
     await batch.commit(noResult: true);
   }
@@ -108,20 +111,20 @@ class AppDatabase {
   // ---- Internals ----
 
   static Map<String, dynamic> _trackToRow(MusicTrack t) => {
-        'path': t.path,
-        'display_name': t.displayName,
-        'group_key': t.groupKey,
-        'group_title': t.groupTitle,
-        'group_subtitle': t.groupSubtitle,
-        'is_single': t.isSingle ? 1 : 0,
-      };
+    'path': t.path,
+    'display_name': t.displayName,
+    'group_key': t.groupKey,
+    'group_title': t.groupTitle,
+    'group_subtitle': t.groupSubtitle,
+    'is_single': t.isSingle ? 1 : 0,
+  };
 
   static MusicTrack _trackFromRow(Map<String, dynamic> row) => MusicTrack(
-        path: row['path'] as String,
-        displayName: row['display_name'] as String,
-        groupKey: row['group_key'] as String,
-        groupTitle: row['group_title'] as String,
-        groupSubtitle: row['group_subtitle'] as String,
-        isSingle: (row['is_single'] as int) == 1,
-      );
+    path: row['path'] as String,
+    displayName: row['display_name'] as String,
+    groupKey: row['group_key'] as String,
+    groupTitle: row['group_title'] as String,
+    groupSubtitle: row['group_subtitle'] as String,
+    isSingle: (row['is_single'] as int) == 1,
+  );
 }

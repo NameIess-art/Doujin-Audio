@@ -30,8 +30,15 @@ class SwipeRevealCard extends StatefulWidget {
 
 class _SwipeRevealCardState extends State<SwipeRevealCard> {
   static const double _actionWidth = 72;
+  static const double _revealStartThreshold = 18;
+  static const double _verticalRejectThreshold = 12;
 
   double _revealedWidth = 0;
+  double _dragStartRevealedWidth = 0;
+  double _dragDx = 0;
+  double _dragDy = 0;
+  bool _dragAccepted = false;
+  bool _dragRejected = false;
 
   bool get _isOpen => _revealedWidth > (_actionWidth * 0.5);
 
@@ -50,36 +57,78 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
     });
   }
 
+  void _handleHorizontalDragStart(DragStartDetails details) {
+    _dragStartRevealedWidth = _revealedWidth;
+    _dragDx = 0;
+    _dragDy = 0;
+    _dragAccepted = _revealedWidth > 0;
+    _dragRejected = false;
+  }
+
   void _handleHorizontalDragUpdate(DragUpdateDetails details) {
-    // If vertical movement dominates, ignore the swipe (anti-accidental-touch)
-    if (details.delta.dy.abs() > details.delta.dx.abs() * 1.5 && _revealedWidth < 10) {
+    _dragDx += details.delta.dx;
+    _dragDy += details.delta.dy;
+
+    if (_dragRejected) {
       return;
     }
-    if (_revealedWidth > 0 && details.delta.dy.abs() > 8) {
+
+    final horizontalDistance = _dragDx.abs();
+    final verticalDistance = _dragDy.abs();
+
+    if (!_dragAccepted) {
+      if (verticalDistance > _verticalRejectThreshold &&
+          verticalDistance > horizontalDistance * 1.15) {
+        _dragRejected = true;
+        return;
+      }
+      final isIntentionalLeftSwipe =
+          _dragDx < 0 &&
+          horizontalDistance >= _revealStartThreshold &&
+          horizontalDistance > verticalDistance * 1.45;
+      if (!isIntentionalLeftSwipe) {
+        return;
+      }
+      _dragAccepted = true;
+      HapticFeedback.selectionClick();
+      widget.onWillReveal?.call();
+    }
+
+    if (_dragStartRevealedWidth > 0 && verticalDistance > 18) {
       _closePane();
+      _dragRejected = true;
       return;
     }
-    final nextWidth = (_revealedWidth - details.delta.dx).clamp(
+
+    final nextWidth = (_dragStartRevealedWidth - _dragDx).clamp(
       0.0,
       _actionWidth,
     );
     if (nextWidth == _revealedWidth) return;
-    if (_revealedWidth == 0 && nextWidth > 0) {
-      HapticFeedback.selectionClick();
-      widget.onWillReveal?.call();
-    }
     setState(() {
       _revealedWidth = nextWidth;
     });
   }
 
   void _handleHorizontalDragEnd(DragEndDetails details) {
+    if (_dragRejected || !_dragAccepted) {
+      _dragAccepted = false;
+      _dragRejected = false;
+      if (_dragStartRevealedWidth == 0 && _revealedWidth != 0) {
+        setState(() {
+          _revealedWidth = 0;
+        });
+      }
+      return;
+    }
     final velocity = details.primaryVelocity ?? 0;
     final shouldOpen =
-        velocity < -180 || (velocity.abs() < 180 && _revealedWidth > 44);
+        velocity < -360 || (velocity.abs() < 220 && _revealedWidth > 48);
     setState(() {
       _revealedWidth = shouldOpen ? _actionWidth : 0;
     });
+    _dragAccepted = false;
+    _dragRejected = false;
   }
 
   @override
@@ -97,8 +146,13 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
         padding: widget.margin,
         child: GestureDetector(
           behavior: HitTestBehavior.translucent,
+          onHorizontalDragStart: _handleHorizontalDragStart,
           onHorizontalDragUpdate: _handleHorizontalDragUpdate,
           onHorizontalDragEnd: _handleHorizontalDragEnd,
+          onHorizontalDragCancel: () {
+            _dragAccepted = false;
+            _dragRejected = false;
+          },
           child: Stack(
             children: [
               Positioned.fill(

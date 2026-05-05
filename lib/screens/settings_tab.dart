@@ -94,7 +94,6 @@ class _SettingsTabState extends State<SettingsTab> with WidgetsBindingObserver {
       showAppSnackBar(
         context,
         i18n.tr('temp_cache_none'),
-        tone: AppFeedbackTone.info,
         icon: Icons.info_outline_rounded,
       );
     }
@@ -323,11 +322,13 @@ class _SettingsTabState extends State<SettingsTab> with WidgetsBindingObserver {
     final i18n = context.watch<AppLanguageProvider>();
     final themeProvider = context.watch<ThemeProvider>();
     final audioProvider = context.read<AudioProvider>();
-    context.select<AudioProvider, int>((p) => Object.hash(
-      p.multiThreadPlaybackEnabled,
-      p.notificationsEnabled,
-      p.showPlaybackCard,
-    ));
+    context.select<AudioProvider, int>(
+      (p) => Object.hash(
+        p.multiThreadPlaybackEnabled,
+        p.notificationsEnabled,
+        p.showPlaybackCard,
+      ),
+    );
     final bottomInset = MobileOverlayInset.of(context);
     final cs = Theme.of(context).colorScheme;
     final descStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -406,14 +407,19 @@ class _SettingsTabState extends State<SettingsTab> with WidgetsBindingObserver {
                               value: lang,
                               child: Text(
                                 i18n.languageName(lang),
-                                style: const TextStyle(fontWeight: FontWeight.w700),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                ),
                               ),
                             ),
                           )
                           .toList(),
                     ),
                   ),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
                 ),
                 const SizedBox(height: 20),
                 _SectionHeader(title: i18n.tr('section_playback')),
@@ -537,9 +543,17 @@ class _SettingsTabState extends State<SettingsTab> with WidgetsBindingObserver {
                       color: cs.onTertiaryContainer,
                     ),
                   ),
-                  trailing: Icon(Icons.chevron_right_rounded, color: cs.onSurfaceVariant),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  trailing: Icon(
+                    Icons.chevron_right_rounded,
+                    color: cs.onSurfaceVariant,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
                 ),
                 const SizedBox(height: 24),
                 const Divider(),
@@ -565,7 +579,10 @@ class _SettingsTabState extends State<SettingsTab> with WidgetsBindingObserver {
                       color: cs.onSecondaryContainer,
                     ),
                   ),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
                 ),
                 const SizedBox(height: 8),
                 _UpdateSettingsTile(
@@ -626,7 +643,6 @@ class _UpdateSettingsTile extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
         child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Container(
               width: 38,

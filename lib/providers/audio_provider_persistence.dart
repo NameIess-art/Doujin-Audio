@@ -25,7 +25,9 @@ extension AudioProviderPersistence on AudioProvider {
         _rebuildLibraryIndexes();
         _notifyListeners();
       }
-    } catch (e) { debugPrint('AudioProvider persistence error: $e'); }
+    } catch (e) {
+      debugPrint('AudioProvider persistence error: $e');
+    }
   }
 
   Future<void> _loadGroupOrder() async {
@@ -40,14 +42,18 @@ extension AudioProviderPersistence on AudioProvider {
       _groupOrderSet
         ..clear()
         ..addAll(list);
-    } catch (e) { debugPrint('AudioProvider persistence error: $e'); }
+    } catch (e) {
+      debugPrint('AudioProvider persistence error: $e');
+    }
   }
 
   Future<void> _saveGroupOrder() async {
     try {
       final prefs = await _prefs;
       await prefs.setString(_kGroupOrderKey, json.encode(_groupOrder));
-    } catch (e) { debugPrint('AudioProvider persistence error: $e'); }
+    } catch (e) {
+      debugPrint('AudioProvider persistence error: $e');
+    }
   }
 
   Future<void> _loadLibraryNodeOrder() async {
@@ -59,7 +65,9 @@ extension AudioProviderPersistence on AudioProvider {
       _libraryNodeOrder
         ..clear()
         ..addAll(list);
-    } catch (e) { debugPrint('AudioProvider persistence error: $e'); }
+    } catch (e) {
+      debugPrint('AudioProvider persistence error: $e');
+    }
   }
 
   Future<void> _saveLibraryNodeOrder() async {
@@ -69,7 +77,9 @@ extension AudioProviderPersistence on AudioProvider {
         _kLibraryNodeOrderKey,
         json.encode(_libraryNodeOrder),
       );
-    } catch (e) { debugPrint('AudioProvider persistence error: $e'); }
+    } catch (e) {
+      debugPrint('AudioProvider persistence error: $e');
+    }
   }
 
   Future<void> _loadSessionOrder() async {
@@ -82,14 +92,18 @@ extension AudioProviderPersistence on AudioProvider {
         ..clear()
         ..addAll(list);
       _markActiveSessionsDirty();
-    } catch (e) { debugPrint('AudioProvider persistence error: $e'); }
+    } catch (e) {
+      debugPrint('AudioProvider persistence error: $e');
+    }
   }
 
   Future<void> _saveSessionOrder() async {
     try {
       final prefs = await _prefs;
       await prefs.setString(_kSessionOrderKey, json.encode(_sessionOrder));
-    } catch (e) { debugPrint('AudioProvider persistence error: $e'); }
+    } catch (e) {
+      debugPrint('AudioProvider persistence error: $e');
+    }
   }
 
   void _scheduleSaveSessionOrder({
@@ -175,17 +189,16 @@ extension AudioProviderPersistence on AudioProvider {
           final uri = track.path.startsWith('content://')
               ? Uri.parse(track.path)
               : Uri.file(track.path);
-          final prepareResult = await NativePlaybackBridge.instance.prepareSession(
-            sessionId: session.id,
-            uri: uri,
-            title: track.displayName,
-            subtitle: track.groupTitle,
-            artUri: null,
-            startPosition: restoredPosition,
-            volume: volume,
-            repeatOne: loopMode == SessionLoopMode.single,
-            autoPlay: false,
-          );
+          final prepareResult = await NativePlaybackBridge.instance
+              .prepareSession(
+                sessionId: session.id,
+                uri: uri,
+                title: track.displayName,
+                subtitle: track.groupTitle,
+                startPosition: restoredPosition,
+                volume: volume,
+                repeatOne: loopMode == SessionLoopMode.single,
+              );
           if ((prepareResult['ok'] as bool?) != true) {
             continue;
           }
@@ -196,7 +209,9 @@ extension AudioProviderPersistence on AudioProvider {
             position: restoredPosition,
             syncNotification: false,
           );
-        } catch (e) { debugPrint('AudioProvider persistence error: $e'); }
+        } catch (e) {
+          debugPrint('AudioProvider persistence error: $e');
+        }
       }
 
       final validOrdered = _sessionOrder
@@ -222,12 +237,16 @@ extension AudioProviderPersistence on AudioProvider {
           _handleNativePlaybackSnapshot(NativePlaybackSnapshot.fromMap(raw));
         }
       } else if (snapshotValue is Map) {
-        _handleNativePlaybackSnapshot(NativePlaybackSnapshot.fromMap(snapshotValue));
+        _handleNativePlaybackSnapshot(
+          NativePlaybackSnapshot.fromMap(snapshotValue),
+        );
       }
 
       _syncNotificationState();
       if (_sessions.isNotEmpty) _notifyListeners();
-    } catch (e) { debugPrint('AudioProvider persistence error: $e'); }
+    } catch (e) {
+      debugPrint('AudioProvider persistence error: $e');
+    }
   }
 
   Future<void> _saveSessionState() async {
@@ -257,7 +276,9 @@ extension AudioProviderPersistence on AudioProvider {
             .toList(),
       );
       await prefs.setString(_kSessionsKey, encoded);
-    } catch (e) { debugPrint('AudioProvider persistence error: $e'); }
+    } catch (e) {
+      debugPrint('AudioProvider persistence error: $e');
+    }
   }
 
   void _scheduleSaveSessionState({
@@ -283,11 +304,11 @@ extension AudioProviderPersistence on AudioProvider {
       final map = json.decode(raw) as Map<String, dynamic>;
       _multiThreadPlaybackEnabled =
           map['multiThreadPlaybackEnabled'] as bool? ?? false;
-      _notificationsEnabled =
-          map['notificationsEnabled'] as bool? ?? true;
-      _showPlaybackCard =
-          map['showPlaybackCard'] as bool? ?? true;
-    } catch (e) { debugPrint('AudioProvider persistence error: $e'); }
+      _notificationsEnabled = map['notificationsEnabled'] as bool? ?? true;
+      _showPlaybackCard = map['showPlaybackCard'] as bool? ?? true;
+    } catch (e) {
+      debugPrint('AudioProvider persistence error: $e');
+    }
   }
 
   Future<void> _savePlaybackSettings() async {
@@ -299,7 +320,9 @@ extension AudioProviderPersistence on AudioProvider {
         'showPlaybackCard': _showPlaybackCard,
       });
       await prefs.setString(_kPlaybackSettingsKey, encoded);
-    } catch (e) { debugPrint('AudioProvider persistence error: $e'); }
+    } catch (e) {
+      debugPrint('AudioProvider persistence error: $e');
+    }
   }
 
   Future<void> _loadWatchedFolders() async {
@@ -311,14 +334,18 @@ extension AudioProviderPersistence on AudioProvider {
       _watchedFolders
         ..clear()
         ..addAll(list);
-    } catch (e) { debugPrint('AudioProvider persistence error: $e'); }
+    } catch (e) {
+      debugPrint('AudioProvider persistence error: $e');
+    }
   }
 
   Future<void> _saveWatchedFolders() async {
     try {
       final prefs = await _prefs;
       await prefs.setString(_kWatchedFoldersKey, json.encode(_watchedFolders));
-    } catch (e) { debugPrint('AudioProvider persistence error: $e'); }
+    } catch (e) {
+      debugPrint('AudioProvider persistence error: $e');
+    }
   }
 
   Future<void> _loadWatchedLibraries() async {
@@ -330,7 +357,9 @@ extension AudioProviderPersistence on AudioProvider {
       _watchedLibraries
         ..clear()
         ..addAll(list);
-    } catch (e) { debugPrint('AudioProvider persistence error: $e'); }
+    } catch (e) {
+      debugPrint('AudioProvider persistence error: $e');
+    }
   }
 
   Future<void> _saveWatchedLibraries() async {
@@ -340,7 +369,9 @@ extension AudioProviderPersistence on AudioProvider {
         _kWatchedLibrariesKey,
         json.encode(_watchedLibraries),
       );
-    } catch (e) { debugPrint('AudioProvider persistence error: $e'); }
+    } catch (e) {
+      debugPrint('AudioProvider persistence error: $e');
+    }
   }
 
   Future<void> _loadTimerSettings() async {
@@ -362,7 +393,9 @@ extension AudioProviderPersistence on AudioProvider {
       if (draftDurationMs != null && draftDurationMs > 0) {
         _timerDraftDuration = Duration(milliseconds: draftDurationMs);
       }
-    } catch (e) { debugPrint('AudioProvider persistence error: $e'); }
+    } catch (e) {
+      debugPrint('AudioProvider persistence error: $e');
+    }
   }
 
   Future<void> _saveTimerSettings() async {
@@ -376,7 +409,9 @@ extension AudioProviderPersistence on AudioProvider {
         'timerDraftDurationMs': _timerDraftDuration.inMilliseconds,
       });
       await prefs.setString(_kTimerSettingsKey, encoded);
-    } catch (e) { debugPrint('AudioProvider persistence error: $e'); }
+    } catch (e) {
+      debugPrint('AudioProvider persistence error: $e');
+    }
   }
 
   void setTimerDraft(TimerMode mode, Duration duration) {
@@ -486,7 +521,9 @@ extension AudioProviderPersistence on AudioProvider {
 
       _syncNotificationState();
       _notifyListeners();
-    } catch (e) { debugPrint('AudioProvider persistence error: $e'); }
+    } catch (e) {
+      debugPrint('AudioProvider persistence error: $e');
+    }
   }
 
   Future<void> _saveTimerRuntime() async {
@@ -507,7 +544,9 @@ extension AudioProviderPersistence on AudioProvider {
         'pausedByTimerPaths': _pausedByTimerPaths,
       });
       await prefs.setString(_kTimerRuntimeKey, encoded);
-    } catch (e) { debugPrint('AudioProvider persistence error: $e'); }
+    } catch (e) {
+      debugPrint('AudioProvider persistence error: $e');
+    }
   }
 
   Future<void> _loadConverterSettings() async {
@@ -528,7 +567,9 @@ extension AudioProviderPersistence on AudioProvider {
           AudioProvider.converterBitrates.contains(savedBitrate)) {
         _converterBitrate = savedBitrate;
       }
-    } catch (e) { debugPrint('AudioProvider persistence error: $e'); }
+    } catch (e) {
+      debugPrint('AudioProvider persistence error: $e');
+    }
   }
 
   Future<void> _saveConverterSettings() async {
@@ -539,7 +580,9 @@ extension AudioProviderPersistence on AudioProvider {
         'bitrate': _converterBitrate,
       });
       await prefs.setString(_kConverterSettingsKey, encoded);
-    } catch (e) { debugPrint('AudioProvider persistence error: $e'); }
+    } catch (e) {
+      debugPrint('AudioProvider persistence error: $e');
+    }
   }
 
   void setConverterSettings({String? format, String? bitrate}) {

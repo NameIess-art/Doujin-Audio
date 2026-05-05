@@ -13,8 +13,12 @@ void main() {
     final themeProvider = ThemeProvider();
     final languageProvider = AppLanguageProvider();
     final notificationHandler = PlaybackNotificationHandler();
-    final notificationService = PlaybackNotificationService(notificationHandler);
-    final audioProvider = AudioProvider(notificationService: notificationService);
+    final notificationService = PlaybackNotificationService(
+      notificationHandler,
+    );
+    final audioProvider = AudioProvider.test(
+      notificationService: notificationService,
+    );
 
     await tester.pumpWidget(
       MultiProvider(

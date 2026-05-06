@@ -30,8 +30,12 @@ class SwipeRevealCard extends StatefulWidget {
 
 class _SwipeRevealCardState extends State<SwipeRevealCard> {
   static const double _actionWidth = 72;
-  static const double _revealStartThreshold = 18;
-  static const double _verticalRejectThreshold = 12;
+  static const double _revealStartThreshold = 32;
+  static const double _verticalRejectThreshold = 8;
+  static const double _acceptSlopeRatio = 2.2;
+  static const double _rejectSlopeRatio = 1.35;
+  static const double _minOpenVelocity = 560;
+  static const double _minOpenDistance = 44;
 
   double _revealedWidth = 0;
   double _dragStartRevealedWidth = 0;
@@ -78,20 +82,32 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
 
     if (!_dragAccepted) {
       if (verticalDistance > _verticalRejectThreshold &&
-          verticalDistance > horizontalDistance * 1.15) {
+          verticalDistance >= horizontalDistance * _rejectSlopeRatio) {
         _dragRejected = true;
         return;
       }
       final isIntentionalLeftSwipe =
           _dragDx < 0 &&
           horizontalDistance >= _revealStartThreshold &&
-          horizontalDistance > verticalDistance * 1.45;
+          horizontalDistance > verticalDistance * _acceptSlopeRatio;
       if (!isIntentionalLeftSwipe) {
         return;
       }
       _dragAccepted = true;
       HapticFeedback.selectionClick();
       widget.onWillReveal?.call();
+    }
+
+    // Post-acceptance: if the gesture veers too vertical, revoke acceptance.
+    if (_dragAccepted &&
+        _dragStartRevealedWidth == 0 &&
+        verticalDistance > horizontalDistance * _rejectSlopeRatio) {
+      _dragAccepted = false;
+      _dragRejected = true;
+      setState(() {
+        _revealedWidth = 0;
+      });
+      return;
     }
 
     if (_dragStartRevealedWidth > 0 && verticalDistance > 18) {
@@ -122,8 +138,11 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
       return;
     }
     final velocity = details.primaryVelocity ?? 0;
+    final distanceMet = _revealedWidth >= _minOpenDistance;
+    final velocityMet = velocity <= -_minOpenVelocity;
+    final fullyRevealed = _revealedWidth >= _actionWidth * 0.88;
     final shouldOpen =
-        velocity < -360 || (velocity.abs() < 220 && _revealedWidth > 48);
+        (distanceMet && velocityMet) || fullyRevealed;
     setState(() {
       _revealedWidth = shouldOpen ? _actionWidth : 0;
     });
@@ -136,10 +155,6 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
     final i18n = context.watch<AppLanguageProvider>();
     final cs = Theme.of(context).colorScheme;
     final revealProgress = (_revealedWidth / _actionWidth).clamp(0.0, 1.0);
-    final cardBorderRadius = widget.shape is RoundedRectangleBorder
-        ? (widget.shape as RoundedRectangleBorder).borderRadius
-        : BorderRadius.zero;
-
     return TapRegion(
       onTapOutside: (_) => _closePane(),
       child: Padding(
@@ -273,7 +288,19 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                     child: child,
                   );
                 },
-                child: IgnorePointer(ignoring: _isOpen, child: widget.child),
+                child: ClipPath(
+                  clipper: ShapeBorderClipper(shape: widget.shape),
+                  child: DecoratedBox(
+                    decoration: ShapeDecoration(
+                      color: cs.surface,
+                      shape: widget.shape,
+                    ),
+                    child: IgnorePointer(
+                      ignoring: _isOpen,
+                      child: widget.child,
+                    ),
+                  ),
+                ),
               ),
               if (_isOpen)
                 Positioned.fill(
@@ -281,19 +308,6 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                   child: GestureDetector(
                     behavior: HitTestBehavior.translucent,
                     onTap: _closePane,
-                  ),
-                ),
-              if (_revealedWidth > 0)
-                Positioned.fill(
-                  child: IgnorePointer(
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        borderRadius: cardBorderRadius,
-                        border: Border.all(
-                          color: cs.outlineVariant.withValues(alpha: 0.18),
-                        ),
-                      ),
-                    ),
                   ),
                 ),
             ],

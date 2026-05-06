@@ -13,9 +13,11 @@ import '../i18n/app_language_provider.dart';
 import '../providers/audio_provider.dart';
 import '../services/subtitle_parser.dart';
 import '../widgets/app_feedback.dart';
+import '../widgets/async_cover_image.dart';
 import '../widgets/app_transitions.dart';
 import '../widgets/confirm_action_dialog.dart';
 import '../widgets/mobile_overlay_inset.dart';
+import '../widgets/reorderable_hold_drag_listener.dart';
 import '../widgets/swipe_reveal_card.dart';
 import '../widgets/top_page_header.dart';
 
@@ -54,9 +56,13 @@ class PlaylistTab extends StatefulWidget {
   State<PlaylistTab> createState() => _PlaylistTabState();
 }
 
-class _PlaylistTabState extends State<PlaylistTab> {
+class _PlaylistTabState extends State<PlaylistTab>
+    with AutomaticKeepAliveClientMixin {
   final GlobalKey _headerKey = GlobalKey();
   double _headerHeight = 90;
+
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   void initState() {
@@ -107,6 +113,7 @@ class _PlaylistTabState extends State<PlaylistTab> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final i18n = context.watch<AppLanguageProvider>();
     final provider = context.read<AudioProvider>();
     final bottomInset = MobileOverlayInset.of(context);
@@ -149,6 +156,7 @@ class _PlaylistTabState extends State<PlaylistTab> {
                   bottomInset,
                 ),
                 cacheExtent: 720,
+                buildDefaultDragHandles: false,
                 keyboardDismissBehavior:
                     ScrollViewKeyboardDismissBehavior.onDrag,
                 onReorder: provider.reorderSessions,
@@ -158,14 +166,12 @@ class _PlaylistTabState extends State<PlaylistTab> {
                 itemCount: sessions.length,
                 itemBuilder: (context, index) {
                   final session = sessions[index];
-                  final track = provider.trackByPath(session.currentTrackPath);
-                  return ReorderableDelayedDragStartListener(
+                  return ReorderableHoldDragStartListener(
                     key: ValueKey(session.id),
                     index: index,
                     child: _SessionListCard(
                       session: session,
                       provider: provider,
-                      coverPathFuture: _coverFutureForTrack(provider, track),
                       onOpen: () => _openSessionDetail(context, session.id),
                     ),
                   );
@@ -180,7 +186,6 @@ class _PlaylistTabState extends State<PlaylistTab> {
             icon: Icons.graphic_eq_rounded,
             title: i18n.tr('playback_sessions'),
             subtitle: sessionSummary,
-            subtitleMaxLines: 1,
             subtitleFontSize: 11,
             fitSubtitleToWidth: true,
             trailing: SizedBox(

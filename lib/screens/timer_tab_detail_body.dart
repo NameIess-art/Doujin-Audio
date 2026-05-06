@@ -74,18 +74,9 @@ extension _TimerTabDetailBody on _TimerTabState {
             const SizedBox(height: 8),
             DecoratedBox(
               decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    cs.surface.withValues(alpha: 0.9),
-                    cs.surfaceContainerHigh.withValues(alpha: 0.82),
-                  ],
-                ),
+                color: cs.surfaceContainerHigh,
                 borderRadius: BorderRadius.circular(18),
-                border: Border.all(
-                  color: cs.outlineVariant.withValues(alpha: 0.72),
-                ),
+                border: Border.all(color: cs.outlineVariant),
               ),
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(10, 8, 8, 8),
@@ -95,9 +86,7 @@ extension _TimerTabDetailBody on _TimerTabState {
                       width: 30,
                       height: 30,
                       decoration: BoxDecoration(
-                        color: cs.surfaceContainerHighest.withValues(
-                          alpha: 0.72,
-                        ),
+                        color: cs.surfaceContainerHighest,
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Icon(
@@ -139,11 +128,9 @@ extension _TimerTabDetailBody on _TimerTabState {
                   borderRadius: BorderRadius.circular(16),
                   child: Ink(
                     decoration: BoxDecoration(
-                      color: cs.surfaceContainerHighest.withValues(alpha: 0.54),
+                      color: cs.surfaceContainerHighest,
                       borderRadius: BorderRadius.circular(16),
-                      border: Border.all(
-                        color: cs.outlineVariant.withValues(alpha: 0.56),
-                      ),
+                      border: Border.all(color: cs.outlineVariant),
                     ),
                     child: Padding(
                       padding: const EdgeInsets.symmetric(
@@ -192,9 +179,11 @@ extension _TimerTabDetailBody on _TimerTabState {
                 icon: const Icon(Icons.stop_circle_outlined),
                 label: Text(i18n.tr('cancel_timer')),
                 style: OutlinedButton.styleFrom(
+                  elevation: 0,
+                  shadowColor: Colors.transparent,
                   minimumSize: const Size.fromHeight(48),
                   foregroundColor: cs.error,
-                  side: BorderSide(color: cs.error.withValues(alpha: 0.52)),
+                  side: BorderSide(color: cs.error),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(18),
                   ),

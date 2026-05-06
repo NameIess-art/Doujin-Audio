@@ -76,6 +76,8 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
         final resolvedPath = scannedPath.startsWith('content://')
             ? scannedPath
             : path.normalize(scannedPath);
+        final scannedAtMs = map['scannedAtMs'] as num?;
+        final modifiedAtMs = map['modifiedAtMs'] as num?;
 
         scanned.add(
           _ScannedTrack(
@@ -85,6 +87,13 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
             groupSubtitle: groupSubtitle,
             isSingle: false,
             displayName: displayName?.isEmpty ?? true ? null : displayName,
+            scannedAt: scannedAtMs == null
+                ? null
+                : DateTime.fromMillisecondsSinceEpoch(scannedAtMs.toInt()),
+            fileSizeBytes: (map['fileSizeBytes'] as num?)?.toInt(),
+            modifiedAt: modifiedAtMs == null
+                ? null
+                : DateTime.fromMillisecondsSinceEpoch(modifiedAtMs.toInt()),
           ),
         );
       }
@@ -185,6 +194,9 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
 
           final parentFolder = path.dirname(absolutePath);
           final folderName = path.basename(parentFolder);
+          final fileStat = await entity.stat().catchError(
+            (_) => FileStat.statSync(absolutePath),
+          );
 
           batch.add(
             MusicTrack(
@@ -194,6 +206,9 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
               groupTitle: folderName.isEmpty ? parentFolder : folderName,
               groupSubtitle: parentFolder,
               isSingle: false,
+              scannedAt: DateTime.now(),
+              fileSizeBytes: fileStat.size,
+              modifiedAt: fileStat.modified,
             ),
           );
           added++;
@@ -225,6 +240,21 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
     final mimeType = lookupMimeType(filePath);
     if (mimeType == null) return true;
     return mimeType.startsWith('audio/') || mimeType == 'application/ogg';
+  }
+
+  MusicTrack _trackFromScanned(_ScannedTrack track) {
+    return MusicTrack(
+      path: track.path,
+      displayName:
+          track.displayName ?? path.basenameWithoutExtension(track.path),
+      groupKey: track.groupKey,
+      groupTitle: track.groupTitle,
+      groupSubtitle: track.groupSubtitle,
+      isSingle: track.isSingle,
+      scannedAt: track.scannedAt ?? DateTime.now(),
+      fileSizeBytes: track.fileSizeBytes,
+      modifiedAt: track.modifiedAt,
+    );
   }
 
   Future<bool> _ensureReadPermission() async {

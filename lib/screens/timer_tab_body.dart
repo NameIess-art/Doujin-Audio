@@ -26,20 +26,10 @@ extension _TimerTabBody on _TimerTabState {
       });
     }
     final cs = Theme.of(context).colorScheme;
-    final timerConfigured = provider.timerDuration != null;
+    final timerConfigured = provider.timerConfigured;
     final timerActive = provider.timerActive;
-    final timerExpired =
-        timerConfigured &&
-        !timerActive &&
-        provider.timerRemaining != null &&
-        provider.timerRemaining! <= Duration.zero;
-    final timerWaitingTrigger =
-        timerConfigured &&
-        !timerActive &&
-        !timerExpired &&
-        provider.timerMode == TimerMode.trigger &&
-        provider.timerRemaining != null &&
-        provider.timerRemaining! > Duration.zero;
+    final timerExpired = provider.timerExpired;
+    final timerWaitingTrigger = provider.timerWaitingTrigger;
     final summaryDuration =
         provider.timerRemaining ?? provider.timerDuration ?? _pickedDuration;
     final summaryMode = provider.timerMode ?? _selectedMode;
@@ -110,7 +100,7 @@ extension _TimerTabBody on _TimerTabState {
               compact: compactMode,
               onChanged: (mode) {
                 HapticFeedback.selectionClick();
-                final timerConfigured = provider.timerDuration != null;
+                final timerConfigured = provider.timerConfigured;
                 if (timerConfigured && provider.timerMode != mode) {
                   provider.configureTimer(mode, _pickedDuration);
                   if (mode == TimerMode.manual) {
@@ -146,6 +136,8 @@ extension _TimerTabBody on _TimerTabState {
                     : i18n.tr('confirm_wait_playback'),
               ),
               style: FilledButton.styleFrom(
+                elevation: 0,
+                shadowColor: Colors.transparent,
                 minimumSize: Size.fromHeight(compactMode ? 50 : 56),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(18),
@@ -278,10 +270,10 @@ extension _TimerTabBody on _TimerTabState {
                       icon: const Icon(Icons.cancel_outlined),
                       label: Text(i18n.tr('cancel_timer')),
                       style: OutlinedButton.styleFrom(
+                        elevation: 0,
+                        shadowColor: Colors.transparent,
                         foregroundColor: cs.error,
-                        side: BorderSide(
-                          color: cs.error.withValues(alpha: 0.6),
-                        ),
+                        side: BorderSide(color: cs.error),
                       ),
                     ),
                     const SizedBox(height: 14),

@@ -31,54 +31,28 @@ class _ModeSelector extends StatelessWidget {
           Feedback.forTap(context);
           onChanged(mode);
         },
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 220),
-          curve: Curves.easeOutCubic,
+        child: Container(
           margin: EdgeInsets.only(bottom: compact ? 6 : 8),
           padding: EdgeInsets.symmetric(
             horizontal: compact ? 12 : 14,
             vertical: compact ? 10 : 12,
           ),
           decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: selected
-                  ? [
-                      cs.primaryContainer.withValues(alpha: 0.96),
-                      cs.primaryContainer.withValues(alpha: 0.72),
-                    ]
-                  : [
-                      cs.surface.withValues(alpha: 0.94),
-                      cs.surfaceContainerHigh.withValues(alpha: 0.84),
-                    ],
-            ),
+            color: selected ? cs.primaryContainer : cs.surfaceContainerHigh,
             borderRadius: BorderRadius.circular(18),
             border: Border.all(
-              color: selected
-                  ? cs.primary.withValues(alpha: 0.6)
-                  : cs.outlineVariant.withValues(alpha: 0.8),
+              color: selected ? cs.primary : cs.outlineVariant,
               width: 1.2,
             ),
-            boxShadow: [
-              BoxShadow(
-                color: cs.shadow.withValues(alpha: selected ? 0.12 : 0.05),
-                blurRadius: selected ? 18 : 12,
-                offset: const Offset(0, 8),
-              ),
-            ],
           ),
           child: Row(
             children: [
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 150),
+              Container(
                 width: compact ? 22 : 24,
                 height: compact ? 22 : 24,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: selected
-                      ? cs.primary.withValues(alpha: 0.14)
-                      : Colors.transparent,
+                  color: selected ? cs.primaryContainer : Colors.transparent,
                   border: Border.all(
                     color: selected ? cs.primary : cs.outline,
                     width: selected ? 7 : 2,
@@ -91,8 +65,8 @@ class _ModeSelector extends StatelessWidget {
                 height: compact ? 30 : 34,
                 decoration: BoxDecoration(
                   color: selected
-                      ? cs.primary.withValues(alpha: 0.12)
-                      : cs.surfaceContainerHighest.withValues(alpha: 0.58),
+                      ? cs.primaryContainer
+                      : cs.surfaceContainerHighest,
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Icon(
@@ -164,22 +138,11 @@ class _TimerPanelCard extends StatelessWidget {
     return DecoratedBox(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(24),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            cs.surface.withValues(alpha: 0.94),
-            cs.surfaceContainerHigh.withValues(alpha: 0.86),
-          ],
+        color: cs.surfaceContainerHigh,
+        border: Border.all(
+          color: accentColor == null ? cs.outlineVariant : accent,
+          width: 1.2,
         ),
-        border: Border.all(color: accent.withValues(alpha: 0.18), width: 1.2),
-        boxShadow: [
-          BoxShadow(
-            color: cs.shadow.withValues(alpha: 0.08),
-            blurRadius: 20,
-            offset: const Offset(0, 10),
-          ),
-        ],
       ),
       child: child,
     );
@@ -205,8 +168,7 @@ class _TimerSummaryChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final fg = foregroundColor ?? cs.onSurfaceVariant;
-    final bg =
-        backgroundColor ?? cs.surfaceContainerHighest.withValues(alpha: 0.64);
+    final bg = backgroundColor ?? cs.surfaceContainerHighest;
 
     return Container(
       padding: EdgeInsets.symmetric(
@@ -216,7 +178,7 @@ class _TimerSummaryChip extends StatelessWidget {
       decoration: BoxDecoration(
         color: bg,
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: fg.withValues(alpha: 0.12)),
+        border: Border.all(color: cs.outlineVariant),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -263,7 +225,7 @@ class _TimerSectionTitle extends StatelessWidget {
           width: 40,
           height: 40,
           decoration: BoxDecoration(
-            color: cs.primaryContainer.withValues(alpha: 0.9),
+            color: cs.primaryContainer,
             borderRadius: BorderRadius.circular(14),
           ),
           child: Icon(icon, color: cs.onPrimaryContainer, size: 20),

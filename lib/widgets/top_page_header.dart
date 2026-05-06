@@ -12,7 +12,7 @@ class TopPageHeader extends StatelessWidget {
     this.trailing,
     this.titleSuffix,
     this.subtitle,
-    this.subtitleMaxLines = 2,
+    this.subtitleMaxLines = 1,
     this.subtitleFontSize,
     this.fitSubtitleToWidth = false,
     this.padding = const EdgeInsets.fromLTRB(24, 6, 20, 0),
@@ -110,7 +110,7 @@ class TopPageHeader extends StatelessWidget {
     final headerWidget = Container(
       padding: EdgeInsets.only(top: topPadding),
       decoration: BoxDecoration(
-        color: cs.surface.withValues(alpha: isTransitioning ? 0.94 : 0.68),
+        color: cs.surface.withValues(alpha: isTransitioning ? 0.78 : 0.68),
         border: Border(
           bottom: BorderSide(
             color: cs.outlineVariant.withValues(alpha: 0.15),
@@ -124,10 +124,6 @@ class TopPageHeader extends StatelessWidget {
         children: [headerContent, ?additionalChild],
       ),
     );
-
-    if (isTransitioning) {
-      return ClipRect(child: headerWidget);
-    }
 
     return ClipRect(
       child: BackdropFilter(

@@ -12,6 +12,7 @@ class NativePlaybackSnapshot {
     required this.position,
     required this.bufferedPosition,
     required this.volume,
+    required this.channelSwapEnabled,
     this.uri,
     this.title,
     this.subtitle,
@@ -32,6 +33,7 @@ class NativePlaybackSnapshot {
   final Duration bufferedPosition;
   final Duration? duration;
   final double volume;
+  final bool channelSwapEnabled;
   final String? error;
 
   factory NativePlaybackSnapshot.fromMap(Map<dynamic, dynamic> map) {
@@ -54,6 +56,7 @@ class NativePlaybackSnapshot {
           ? null
           : Duration(milliseconds: (map['durationMs'] as num).round()),
       volume: (map['volume'] as num?)?.toDouble() ?? 1.0,
+      channelSwapEnabled: map['channelSwap'] as bool? ?? false,
       error: map['error'] as String?,
     );
   }
@@ -176,6 +179,13 @@ class NativePlaybackBridge {
     return _invoke('setRepeatOne', {
       'sessionId': sessionId,
       'repeatOne': repeatOne,
+    });
+  }
+
+  Future<Map<dynamic, dynamic>> setChannelSwap(String sessionId, bool enabled) {
+    return _invoke('setChannelSwap', {
+      'sessionId': sessionId,
+      'enabled': enabled,
     });
   }
 

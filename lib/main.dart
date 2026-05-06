@@ -8,12 +8,16 @@ import 'package:provider/provider.dart';
 import 'i18n/app_language_provider.dart';
 import 'providers/audio_provider.dart';
 import 'screens/main_screen.dart';
+import 'services/app_database.dart';
 import 'services/playback_notification_handler.dart';
 import 'services/playback_notification_service.dart';
 import 'theme/theme_provider.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await SystemChrome.setPreferredOrientations(
+    AppOrientationPolicy.current.allowedOrientations,
+  );
   await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
@@ -36,6 +40,7 @@ Future<void> main() async {
     ),
   );
   final notificationService = PlaybackNotificationService(audioHandler);
+  await AppDatabase.instance.database;
 
   runApp(
     MultiProvider(
@@ -50,6 +55,19 @@ Future<void> main() async {
       child: const MusicPlayerApp(),
     ),
   );
+}
+
+class AppOrientationPolicy {
+  const AppOrientationPolicy._(this.allowedOrientations);
+
+  static const portrait = AppOrientationPolicy._([
+    DeviceOrientation.portraitUp,
+  ]);
+
+  // Swap this policy when landscape playback detail UI is added.
+  static const current = portrait;
+
+  final List<DeviceOrientation> allowedOrientations;
 }
 
 class MusicPlayerApp extends StatelessWidget {

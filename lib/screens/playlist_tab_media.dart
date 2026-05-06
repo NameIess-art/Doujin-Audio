@@ -18,9 +18,8 @@ class _SessionHeroArtwork extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final availableWidth = max(1.0, MediaQuery.sizeOf(context).width - 32);
     final dpr = min(MediaQuery.devicePixelRatioOf(context), 2.0);
-    final cacheWidth = max(1, (availableWidth * dpr).round());
+    final cacheWidth = (height * 1.25 * dpr).round();
 
     Widget fallback() {
       return DecoratedBox(
@@ -46,10 +45,10 @@ class _SessionHeroArtwork extends StatelessWidget {
 
     return Center(
       child: Container(
-        width: height,
+        width: height * 1.25,
         height: height,
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(28),
+          borderRadius: BorderRadius.circular(24),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.35),
@@ -59,23 +58,26 @@ class _SessionHeroArtwork extends StatelessWidget {
           ],
         ),
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(28),
+          borderRadius: BorderRadius.circular(24),
           child: Stack(
             fit: StackFit.expand,
             children: [
-              FutureBuilder<String?>(
+              AsyncCoverImage(
                 future: coverPathFuture,
-                builder: (context, snapshot) {
-                  final coverPath = snapshot.data;
-                  if (coverPath == null || coverPath.isEmpty) {
-                    return fallback();
-                  }
+                fallbackBuilder: (_) => fallback(),
+                loadingBuilder: (_) => PulsingPlaceholder(
+                  borderRadius: BorderRadius.circular(24),
+                  child: fallback(),
+                ),
+                imageBuilder: (context, coverPath) {
                   return RepaintBoundary(
-                    child: Image.file(
-                      File(coverPath),
-                      fit: BoxFit.cover,
+                    child: Image(
+                      image: resizeFileImageIfNeeded(
+                        path: coverPath,
+                        cacheWidth: cacheWidth,
+                      ),
+                      fit: BoxFit.contain,
                       gaplessPlayback: true,
-                      cacheWidth: cacheWidth,
                       errorBuilder: (_, _, _) => fallback(),
                     ),
                   );
@@ -144,16 +146,22 @@ class _SessionCoverThumbnail extends StatelessWidget {
       height: 72,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(14),
-        child: FutureBuilder<String?>(
+        child: AsyncCoverImage(
           future: coverPathFuture,
-          builder: (context, snapshot) {
-            final coverPath = snapshot.data;
-            if (coverPath == null || coverPath.isEmpty) {
-              return fallback();
-            }
-            return Image.file(
-              File(coverPath),
-              fit: BoxFit.cover,
+          fallbackBuilder: (_) => fallback(),
+          loadingBuilder: (_) => PulsingPlaceholder(
+            borderRadius: BorderRadius.circular(14),
+            child: fallback(),
+          ),
+          imageBuilder: (context, coverPath) {
+            final dpr = MediaQuery.devicePixelRatioOf(context);
+            return Image(
+              image: resizeFileImageIfNeeded(
+                path: coverPath,
+                cacheWidth: (90 * dpr).round(),
+              ),
+              fit: BoxFit.contain,
+              gaplessPlayback: true,
               errorBuilder: (_, _, _) => fallback(),
             );
           },

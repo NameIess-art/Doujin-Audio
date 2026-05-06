@@ -137,6 +137,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     unawaited(_consumePendingNotificationSession());
     final provider = context.read<AudioProvider>();
     provider.resyncNotificationsAfterResume();
+    provider.retryOverdueAutoResume();
     if (!_notificationSettingsOpened) {
       return;
     }

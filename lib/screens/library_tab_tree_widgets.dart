@@ -34,21 +34,19 @@ class _FolderNodeWidgetState extends State<_FolderNodeWidget> {
   final ExpansibleController _expansionController = ExpansibleController();
   bool _expanded = false;
 
-  Future<void> _confirmRemoveFolder(
+  Future<void> _removeFolder(
     BuildContext context,
     AudioProvider provider,
   ) async {
     final i18n = context.read<AppLanguageProvider>();
-    final confirmed = await showConfirmActionDialog(
-      context: context,
-      title: i18n.tr('remove_folder'),
-      message: i18n.tr('remove_folder_confirm', {'name': widget.folder.name}),
-      cancelLabel: i18n.tr('cancel'),
-      confirmLabel: i18n.tr('remove'),
-      icon: Icons.delete_outline_rounded,
-    );
-    if (confirmed == true && context.mounted) {
-      await provider.removeFolderFromLibrary(widget.folder.path);
+    await provider.removeFolderFromLibrary(widget.folder.path);
+    if (context.mounted) {
+      showAppSnackBar(
+        context,
+        i18n.tr('folder_removed'),
+        tone: AppFeedbackTone.destructive,
+        icon: Icons.delete_outline_rounded,
+      );
     }
   }
 
@@ -83,7 +81,7 @@ class _FolderNodeWidgetState extends State<_FolderNodeWidget> {
       shape: cardShape,
       actionLabel: i18n.tr('remove'),
       removeTooltip: i18n.tr('remove_audio_folder'),
-      onRemove: () => _confirmRemoveFolder(context, provider),
+      onRemove: () => _removeFolder(context, provider),
       onWillReveal: _expansionController.collapse,
       child: Card(
         margin: EdgeInsets.zero,
@@ -109,7 +107,7 @@ class _FolderNodeWidgetState extends State<_FolderNodeWidget> {
             collapsedShape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(14),
             ),
-            tilePadding: EdgeInsets.fromLTRB(isRootFolder ? 12 : 10, 2, 10, 2),
+            tilePadding: EdgeInsets.fromLTRB(isRootFolder ? 12 : 10, 2, 4, 2),
             childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
             title: Row(
               children: [
@@ -183,25 +181,36 @@ class _FolderNodeWidgetState extends State<_FolderNodeWidget> {
               ],
             ),
             trailing: SizedBox(
-              width: 78,
+              width: 62,
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                  IconButton.filledTonal(
+                  IconButton(
                     onPressed: () => _playFolder(context, provider),
                     visualDensity: VisualDensity.compact,
                     tooltip: i18n.tr('play'),
-                    icon: const Icon(Icons.play_arrow_rounded, size: 20),
+                    style: IconButton.styleFrom(
+                      foregroundColor: cs.primary,
+                      minimumSize: const Size(40, 44),
+                      maximumSize: const Size(40, 44),
+                      padding: EdgeInsets.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    icon: const Icon(Icons.add_rounded, size: 24),
                   ),
-                  const SizedBox(width: 4),
-                  IgnorePointer(
-                    child: AnimatedRotation(
-                      turns: _expanded ? 0.5 : 0,
-                      duration: const Duration(milliseconds: 180),
-                      curve: Curves.easeOutCubic,
-                      child: Icon(
-                        Icons.expand_more_rounded,
-                        color: cs.onSurfaceVariant,
+                  const SizedBox(width: 2),
+                  Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: IgnorePointer(
+                      child: AnimatedRotation(
+                        turns: _expanded ? 0.5 : 0,
+                        duration: const Duration(milliseconds: 180),
+                        curve: Curves.easeOutCubic,
+                        child: Icon(
+                          Icons.expand_more_rounded,
+                          color: cs.onSurfaceVariant,
+                          size: 22,
+                        ),
                       ),
                     ),
                   ),
@@ -233,22 +242,20 @@ class _TrackNodeWidget extends StatelessWidget {
 
   final TrackNode trackNode;
 
-  Future<void> _confirmRemoveTrack(
+  Future<void> _removeTrack(
     BuildContext context,
     AudioProvider provider,
     MusicTrack track,
   ) async {
     final i18n = context.read<AppLanguageProvider>();
-    final confirmed = await showConfirmActionDialog(
-      context: context,
-      title: i18n.tr('remove_audio'),
-      message: track.displayName,
-      cancelLabel: i18n.tr('cancel'),
-      confirmLabel: i18n.tr('remove'),
-      icon: Icons.delete_outline_rounded,
-    );
-    if (confirmed == true && context.mounted) {
-      await provider.removeTrackFromLibrary(track.path);
+    await provider.removeTrackFromLibrary(track.path);
+    if (context.mounted) {
+      showAppSnackBar(
+        context,
+        i18n.tr('audio_removed'),
+        tone: AppFeedbackTone.destructive,
+        icon: Icons.delete_outline_rounded,
+      );
     }
   }
 
@@ -262,15 +269,94 @@ class _TrackNodeWidget extends StatelessWidget {
       (value) => value.isTrackActive(track.path),
     );
     final cardShape = RoundedRectangleBorder(
+      side: track.isSingle
+          ? BorderSide(color: cs.outlineVariant)
+          : BorderSide.none,
       borderRadius: BorderRadius.circular(14),
     );
+
+    if (track.isSingle) {
+      return SwipeRevealCard(
+        margin: const EdgeInsets.only(bottom: 6),
+        shape: cardShape,
+        actionLabel: i18n.tr('remove'),
+        removeTooltip: i18n.tr('remove_audio'),
+        onRemove: () => _removeTrack(context, provider, track),
+        child: Card(
+          margin: EdgeInsets.zero,
+          clipBehavior: Clip.antiAlias,
+          shape: cardShape,
+          color: isAlreadyPlaying
+              ? Color.alphaBlend(
+                  cs.primaryContainer.withValues(alpha: 0.40),
+                  cs.surface,
+                )
+              : cs.surface,
+          child: SizedBox(
+            height: 70,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 7, 6, 7),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          track.displayName,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(
+                                fontWeight: FontWeight.w900,
+                                fontSize: 14,
+                                height: 1.06,
+                              ),
+                        ),
+                        const SizedBox(height: 5),
+                        SizedBox(
+                          width: double.infinity,
+                          child: _LibraryMetaChip(
+                            icon: Icons.upload_file_rounded,
+                            text: i18n.tr('file_added'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () {
+                      Feedback.forTap(context);
+                      unawaited(provider.spawnSession(track));
+                      _showSessionCreatedSnack(
+                        context,
+                        i18n.tr('session_created', {'name': track.displayName}),
+                      );
+                    },
+                    style: IconButton.styleFrom(
+                      foregroundColor: cs.primary,
+                      minimumSize: const Size(40, 44),
+                      maximumSize: const Size(40, 44),
+                      padding: EdgeInsets.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    icon: const Icon(Icons.add_rounded, size: 24),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
 
     return SwipeRevealCard(
       margin: const EdgeInsets.only(bottom: 2),
       shape: cardShape,
       actionLabel: i18n.tr('remove'),
       removeTooltip: i18n.tr('remove_audio'),
-      onRemove: () => _confirmRemoveTrack(context, provider, track),
+      onRemove: () => _removeTrack(context, provider, track),
       child: Card(
         margin: EdgeInsets.zero,
         clipBehavior: Clip.antiAlias,
@@ -284,7 +370,7 @@ class _TrackNodeWidget extends StatelessWidget {
         child: SizedBox(
           height: 54,
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 5, 10, 5),
+            padding: const EdgeInsets.fromLTRB(12, 5, 6, 5),
             child: Row(
               children: [
                 Expanded(
@@ -299,8 +385,7 @@ class _TrackNodeWidget extends StatelessWidget {
                     ),
                   ),
                 ),
-                const SizedBox(width: 10),
-                IconButton.filledTonal(
+                IconButton(
                   onPressed: () {
                     Feedback.forTap(context);
                     unawaited(provider.spawnSession(track));
@@ -309,12 +394,14 @@ class _TrackNodeWidget extends StatelessWidget {
                       i18n.tr('session_created', {'name': track.displayName}),
                     );
                   },
-                  icon: Icon(
-                    isAlreadyPlaying
-                        ? Icons.playlist_add_rounded
-                        : Icons.play_arrow_rounded,
-                    size: 20,
+                  style: IconButton.styleFrom(
+                    foregroundColor: cs.primary,
+                    minimumSize: const Size(40, 44),
+                    maximumSize: const Size(40, 44),
+                    padding: EdgeInsets.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
+                  icon: const Icon(Icons.add_rounded, size: 24),
                 ),
               ],
             ),
@@ -367,18 +454,22 @@ class _LibraryCoverThumbnail extends StatelessWidget {
         padding: EdgeInsets.zero,
         child: ClipRRect(
           borderRadius: BorderRadius.circular(12),
-          child: FutureBuilder<String?>(
+          child: AsyncCoverImage(
             future: coverPathFuture,
-            builder: (context, snapshot) {
-              final coverPath = snapshot.data;
-              if (coverPath == null || coverPath.isEmpty) {
-                return fallback();
-              }
+            fallbackBuilder: (_) => fallback(),
+            loadingBuilder: (_) => PulsingPlaceholder(
+              borderRadius: BorderRadius.circular(12),
+              child: fallback(),
+            ),
+            imageBuilder: (context, coverPath) {
               final dpr = MediaQuery.devicePixelRatioOf(context);
-              return Image.file(
-                File(coverPath),
-                fit: BoxFit.cover,
-                cacheWidth: (82 * dpr).round(),
+              return Image(
+                image: resizeFileImageIfNeeded(
+                  path: coverPath,
+                  cacheWidth: (82 * dpr).round(),
+                ),
+                fit: BoxFit.contain,
+                gaplessPlayback: true,
                 errorBuilder: (_, _, _) => fallback(),
               );
             },

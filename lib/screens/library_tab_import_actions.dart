@@ -38,19 +38,7 @@ extension _LibraryTabImportActions on _LibraryTabState {
         );
         final nativeTracks = await _scanFolderViaNative(folderPath);
         if (nativeTracks != null) {
-          final toAdd = nativeTracks
-              .map(
-                (t) => MusicTrack(
-                  path: t.path,
-                  displayName:
-                      t.displayName ?? path.basenameWithoutExtension(t.path),
-                  groupKey: t.groupKey,
-                  groupTitle: t.groupTitle,
-                  groupSubtitle: t.groupSubtitle,
-                  isSingle: t.isSingle,
-                ),
-              )
-              .toList();
+          final toAdd = nativeTracks.map(_trackFromScanned).toList();
           final before = provider.library.length;
           provider.addTracks(toAdd, notify: false);
           final added = provider.library.length - before;
@@ -141,19 +129,7 @@ extension _LibraryTabImportActions on _LibraryTabState {
       provider.setScanProgress(currentFolder: path.basename(folderPath));
       final nativeTracks = await _scanFolderViaNative(folderPath);
       if (nativeTracks != null) {
-        final toAdd = nativeTracks
-            .map(
-              (t) => MusicTrack(
-                path: t.path,
-                displayName:
-                    t.displayName ?? path.basenameWithoutExtension(t.path),
-                groupKey: t.groupKey,
-                groupTitle: t.groupTitle,
-                groupSubtitle: t.groupSubtitle,
-                isSingle: t.isSingle,
-              ),
-            )
-            .toList();
+        final toAdd = nativeTracks.map(_trackFromScanned).toList();
 
         final beforeCount = provider.library.length;
         provider.addTracks(toAdd, notify: false);
@@ -202,19 +178,7 @@ extension _LibraryTabImportActions on _LibraryTabState {
         );
         final nativeTracks = await _scanFolderViaNative(folderPath);
         if (nativeTracks != null) {
-          final toAdd = nativeTracks
-              .map(
-                (t) => MusicTrack(
-                  path: t.path,
-                  displayName:
-                      t.displayName ?? path.basenameWithoutExtension(t.path),
-                  groupKey: t.groupKey,
-                  groupTitle: t.groupTitle,
-                  groupSubtitle: t.groupSubtitle,
-                  isSingle: t.isSingle,
-                ),
-              )
-              .toList();
+          final toAdd = nativeTracks.map(_trackFromScanned).toList();
 
           final beforeCount = provider.library.length;
           provider.addTracks(toAdd, notify: false);
@@ -282,19 +246,27 @@ extension _LibraryTabImportActions on _LibraryTabState {
         }
       }
 
-      final candidates = resolvedPaths
-          .where(_isSupportedAudioFile)
-          .map(
-            (p) => MusicTrack(
-              path: p,
-              displayName: path.basenameWithoutExtension(p),
-              groupKey: '__single_files__',
-              groupTitle: i18n.tr('imported_files'),
-              groupSubtitle: i18n.tr('manually_selected_files'),
-              isSingle: true,
-            ),
-          )
-          .toList();
+      final candidates = <MusicTrack>[];
+      for (final p in resolvedPaths.where(_isSupportedAudioFile)) {
+        final file = File(p);
+        FileStat? fileStat;
+        try {
+          fileStat = await file.stat();
+        } catch (_) {}
+        candidates.add(
+          MusicTrack(
+            path: p,
+            displayName: path.basenameWithoutExtension(p),
+            groupKey: '__single_files__',
+            groupTitle: i18n.tr('imported_files'),
+            groupSubtitle: i18n.tr('manually_selected_files'),
+            isSingle: true,
+            scannedAt: DateTime.now(),
+            fileSizeBytes: fileStat?.size,
+            modifiedAt: fileStat?.modified,
+          ),
+        );
+      }
 
       if (mounted) {
         final provider = context.read<AudioProvider>();

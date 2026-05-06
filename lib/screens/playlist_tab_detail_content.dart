@@ -90,7 +90,11 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
           ),
         ),
         const SizedBox(height: 8),
-        _SessionSubtitlePanel(session: session, provider: provider),
+        _SessionSubtitlePanel(
+          key: ValueKey('${session.id}:${session.currentTrackPath}'),
+          session: session,
+          provider: provider,
+        ),
         const Spacer(),
         _ProgressBar(
           key: ValueKey(session.id),
@@ -102,8 +106,8 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
           height: 84,
           child: LayoutBuilder(
             builder: (context, constraints) {
-              final compact = constraints.maxWidth < 390;
-              final gap = compact ? 4.0 : 8.0;
+              final compact = constraints.maxWidth < 400;
+              final gap = compact ? 2.0 : 8.0;
               final skipIconSize = compact ? 38.0 : 44.0;
               final playIconSize = compact ? 56.0 : 64.0;
               final loadingSize = compact ? 28.0 : 32.0;
@@ -128,7 +132,7 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
                         onPressed: session.isLoading
                             ? null
                             : () {
-                                HapticFeedback.lightImpact();
+                                HapticFeedback.selectionClick();
                                 provider.seekSessionToPrev(session.id);
                               },
                         icon: Icon(
@@ -151,12 +155,23 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
                                 provider.toggleSessionPlayPause(session.id);
                               },
                         iconSize: playIconSize,
-                        icon: _SwitcherSlot(
-                          width: playIconSize,
-                          height: playIconSize,
+                        icon: AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 150),
+                          switchInCurve: Curves.easeOutCubic,
+                          switchOutCurve: Curves.easeInCubic,
+                          transitionBuilder: (child, animation) {
+                            return FadeTransition(
+                              opacity: animation,
+                              child: ScaleTransition(
+                                scale: Tween<double>(begin: 0.92, end: 1)
+                                    .animate(animation),
+                                child: child,
+                              ),
+                            );
+                          },
                           child: session.isLoading
                               ? SizedBox(
-                                  key: const ValueKey<String>('loading'),
+                                  key: const ValueKey('loading'),
                                   width: loadingSize,
                                   height: loadingSize,
                                   child: CircularProgressIndicator(
@@ -168,11 +183,7 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
                                   session.state.playing
                                       ? Icons.pause_rounded
                                       : Icons.play_arrow_rounded,
-                                  key: ValueKey<IconData>(
-                                    session.state.playing
-                                        ? Icons.pause_rounded
-                                        : Icons.play_arrow_rounded,
-                                  ),
+                                  key: ValueKey(session.state.playing),
                                   size: playIconSize,
                                   color: cs.onSurface,
                                 ),
@@ -188,7 +199,7 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
                         onPressed: session.isLoading
                             ? null
                             : () {
-                                HapticFeedback.lightImpact();
+                                HapticFeedback.selectionClick();
                                 provider.seekSessionToNext(session.id);
                               },
                         icon: Icon(

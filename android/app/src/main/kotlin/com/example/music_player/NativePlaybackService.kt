@@ -15,6 +15,9 @@ import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.DefaultRenderersFactory
+import androidx.media3.exoplayer.audio.ChannelMappingAudioProcessor
+import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import java.util.concurrent.ConcurrentHashMap
@@ -28,6 +31,7 @@ class NativePlaybackService : MediaSessionService() {
         private const val PLAYBACK_GROUP_KEY = "com.example.music_player.PLAYBACK_GROUP"
         private const val FOREGROUND_NOTIFICATION_ID = 11_225
         private const val FOREGROUND_WATCHDOG_INTERVAL_MS = 4 * 60 * 1000L
+        private const val STATE_PERSISTENCE_INTERVAL_MS = 60 * 1000L
 
         @Volatile
         private var instance: NativePlaybackService? = null
@@ -39,6 +43,19 @@ class NativePlaybackService : MediaSessionService() {
         var notificationsDismissed = false
 
         fun controller(): NativePlaybackService? = instance
+
+        fun ensureStarted(context: Context): NativePlaybackService? {
+            controller()?.let { return it }
+            val intent = Intent(context.applicationContext, NativePlaybackService::class.java).apply {
+                action = ACTION_START
+            }
+            return try {
+                context.applicationContext.startService(intent)
+                controller()
+            } catch (_: Exception) {
+                controller()
+            }
+        }
     }
 
     private val sessions = linkedMapOf<String, NativePlaybackSession>()
@@ -48,6 +65,7 @@ class NativePlaybackService : MediaSessionService() {
     private var focusedSessionId: String? = null
     private var tickerScheduled = false
     private var foregroundWatchdogScheduled = false
+    private var statePersistenceScheduled = false
     private var playbackSuspended = false
     private var wakeLock: PowerManager.WakeLock? = null
     private val positionTicker = object : Runnable {
@@ -68,6 +86,16 @@ class NativePlaybackService : MediaSessionService() {
                 return
             }
             mainHandler.postDelayed(this, FOREGROUND_WATCHDOG_INTERVAL_MS)
+        }
+    }
+    private val statePersistenceTicker = object : Runnable {
+        override fun run() {
+            persistSessionState()
+            if (sessions.isEmpty()) {
+                statePersistenceScheduled = false
+                return
+            }
+            mainHandler.postDelayed(this, STATE_PERSISTENCE_INTERVAL_MS)
         }
     }
 
@@ -99,6 +127,7 @@ class NativePlaybackService : MediaSessionService() {
     override fun onDestroy() {
         stateListeners.clear()
         mainHandler.removeCallbacks(positionTicker)
+        stopStatePersistenceTicker()
         stopForegroundWatchdog()
         tickerScheduled = false
         mediaSession?.release()
@@ -140,9 +169,7 @@ class NativePlaybackService : MediaSessionService() {
             playbackSuspended = false
         }
 
-        val nativeSession = sessions.getOrPut(sessionId) {
-            NativePlaybackSession(sessionId, createPlayer(sessionId))
-        }
+        val nativeSession = sessions.getOrPut(sessionId) { NativePlaybackSession(sessionId) }
         return try {
             nativeSession.configure(
                 uri = uri,
@@ -157,6 +184,8 @@ class NativePlaybackService : MediaSessionService() {
             focusSession(sessionId)
             publishSessionState(sessionId)
             ensureTicker()
+            persistSessionState()
+            ensureStatePersistenceTicker()
             syncForegroundState()
             okResult(nativeSession.snapshot())
         } catch (e: Exception) {
@@ -179,6 +208,8 @@ class NativePlaybackService : MediaSessionService() {
         session.player.play()
         publishSessionState(sessionId)
         ensureTicker()
+        persistSessionState()
+        ensureStatePersistenceTicker()
         syncForegroundState()
         return okResult(session.snapshot())
     }
@@ -187,6 +218,7 @@ class NativePlaybackService : MediaSessionService() {
         val session = sessions[sessionId] ?: return errorResult("Unknown session.")
         session.player.pause()
         publishSessionState(sessionId)
+        persistSessionState()
         syncForegroundState()
         return okResult(session.snapshot())
     }
@@ -196,6 +228,7 @@ class NativePlaybackService : MediaSessionService() {
         session.player.stop()
         session.player.clearMediaItems()
         publishSessionState(sessionId)
+        persistSessionState()
         syncForegroundState()
         return okResult(session.snapshot())
     }
@@ -204,12 +237,14 @@ class NativePlaybackService : MediaSessionService() {
         val session = sessions[sessionId] ?: return errorResult("Unknown session.")
         session.player.seekTo(positionMs.coerceAtLeast(0L))
         publishSessionState(sessionId)
+        persistSessionState()
         return okResult(session.snapshot())
     }
 
     fun setVolume(sessionId: String, volume: Float): Map<String, Any?> {
         val session = sessions[sessionId] ?: return errorResult("Unknown session.")
         session.player.volume = volume.coerceIn(0f, 1f)
+        persistSessionState()
         return okResult(session.snapshot())
     }
 
@@ -220,6 +255,7 @@ class NativePlaybackService : MediaSessionService() {
         } else {
             Player.REPEAT_MODE_OFF
         }
+        persistSessionState()
         return okResult(session.snapshot())
     }
 
@@ -232,9 +268,14 @@ class NativePlaybackService : MediaSessionService() {
         }
         if (sessions.isEmpty()) {
             stopForegroundWatchdog()
+            stopStatePersistenceTicker()
+            NativePlaybackStateStore.clearSessions(this)
+            NativePlaybackStateStore.clearPausedSessionIds(this)
+            NativePlaybackStateStore.clearTimerCandidateSessionIds(this)
             stopPlaybackForeground(removeNotification = true)
             stopSelf()
         } else {
+            persistSessionState()
             syncForegroundState()
         }
         return okResult(null)
@@ -244,6 +285,7 @@ class NativePlaybackService : MediaSessionService() {
         notificationsDismissed = true
         sessions.values.forEach { it.player.pause() }
         publishAllSessionStates()
+        persistSessionState()
         stopForegroundWatchdog()
         mediaSession?.release()
         mediaSession = null
@@ -259,15 +301,21 @@ class NativePlaybackService : MediaSessionService() {
         focusedSessionId = null
         updateMediaSessionPlayer()
         stopForegroundWatchdog()
+        stopStatePersistenceTicker()
+        NativePlaybackStateStore.clearSessions(this)
+        NativePlaybackStateStore.clearPausedSessionIds(this)
+        NativePlaybackStateStore.clearTimerCandidateSessionIds(this)
         stopPlaybackForeground(removeNotification = true)
         stopSelf()
         return okResult(null)
     }
 
     fun snapshot(): Map<String, Any?> {
-        return mapOf(
-            "sessions" to sessions.values.map { it.snapshot() },
-            "focusedSessionId" to focusedSessionId
+        return okResult(
+            mapOf(
+                "sessions" to sessions.values.map { it.snapshot() },
+                "focusedSessionId" to focusedSessionId
+            )
         )
     }
 
@@ -301,12 +349,75 @@ class NativePlaybackService : MediaSessionService() {
         return okResult(null)
     }
 
-    private fun createPlayer(sessionId: String): ExoPlayer {
-        return ExoPlayer.Builder(this).build().also { player ->
+    fun pausePlayingSessionsForTimer(): List<String> {
+        val pausedSessionIds = sessions.values
+            .filter { it.player.isPlaying || it.player.playWhenReady }
+            .map { it.sessionId }
+        if (pausedSessionIds.isEmpty()) {
+            syncForegroundState()
+            return emptyList()
+        }
+        pausedSessionIds.forEach { sessionId ->
+            sessions[sessionId]?.player?.pause()
+        }
+        publishAllSessionStates()
+        persistSessionState()
+        syncForegroundState()
+        return pausedSessionIds
+    }
+
+    fun resumeSessionsForTimer(sessionIds: List<String>): List<String> {
+        if (sessionIds.isEmpty()) return emptyList()
+        restorePersistedSessionsForTimer(sessionIds)
+        notificationsDismissed = false
+        playbackSuspended = false
+        val resumedSessionIds = mutableListOf<String>()
+        sessionIds.forEach { sessionId ->
+            val session = sessions[sessionId] ?: return@forEach
+            focusSession(sessionId)
+            session.player.play()
+            resumedSessionIds += sessionId
+        }
+        if (resumedSessionIds.isNotEmpty()) {
+            ensureTicker()
+            ensureStatePersistenceTicker()
+            publishAllSessionStates()
+            persistSessionState()
+        }
+        syncForegroundState()
+        return resumedSessionIds
+    }
+
+    fun setChannelSwap(sessionId: String, enabled: Boolean): Map<String, Any?> {
+        val session = sessions[sessionId] ?: return errorResult("Unknown session.")
+        session.channelSwapEnabled = enabled
+        session.applyChannelMap()
+        session.reprepareCurrentMediaItem()
+        publishSessionState(sessionId)
+        persistSessionState()
+        syncForegroundState()
+        return okResult(session.snapshot())
+    }
+
+    private fun createPlayer(sessionId: String, audioProcessor: ChannelMappingAudioProcessor): ExoPlayer {
+        val renderersFactory = object : DefaultRenderersFactory(this) {
+            override fun buildAudioSink(
+                context: Context,
+                enableFloatOutput: Boolean,
+                enableAudioTrackPlaybackParams: Boolean
+            ) = DefaultAudioSink.Builder(context)
+                .setAudioProcessors(arrayOf(audioProcessor))
+                .setEnableFloatOutput(enableFloatOutput)
+                .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
+                .build()
+        }
+
+        return ExoPlayer.Builder(this, renderersFactory).build().also { player ->
             player.setWakeMode(C.WAKE_MODE_LOCAL)
             player.addListener(object : Player.Listener {
                 override fun onPlaybackStateChanged(playbackState: Int) {
                     publishSessionState(sessionId)
+                    persistSessionState()
                     syncForegroundState()
                 }
 
@@ -316,16 +427,19 @@ class NativePlaybackService : MediaSessionService() {
 
                 override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
                     publishSessionState(sessionId)
+                    persistSessionState()
                     syncForegroundState()
                 }
 
                 override fun onIsPlayingChanged(isPlaying: Boolean) {
                     publishSessionState(sessionId)
+                    persistSessionState()
                     syncForegroundState()
                 }
 
                 override fun onPlayerError(error: PlaybackException) {
                     publishSessionState(sessionId)
+                    persistSessionState()
                     syncForegroundState()
                 }
             })
@@ -378,9 +492,11 @@ class NativePlaybackService : MediaSessionService() {
             acquireWakeLock()
             startPlaybackForeground()
             ensureForegroundWatchdog()
+            ensureStatePersistenceTicker()
         } else {
             releaseWakeLock()
             stopForegroundWatchdog()
+            persistSessionState()
             stopPlaybackForeground(removeNotification = sessions.isEmpty())
         }
     }
@@ -409,6 +525,61 @@ class NativePlaybackService : MediaSessionService() {
         if (!foregroundWatchdogScheduled) return
         mainHandler.removeCallbacks(foregroundWatchdog)
         foregroundWatchdogScheduled = false
+    }
+
+    private fun ensureStatePersistenceTicker() {
+        if (statePersistenceScheduled) return
+        if (sessions.isEmpty()) return
+        statePersistenceScheduled = true
+        mainHandler.postDelayed(statePersistenceTicker, STATE_PERSISTENCE_INTERVAL_MS)
+    }
+
+    private fun stopStatePersistenceTicker() {
+        if (!statePersistenceScheduled) return
+        mainHandler.removeCallbacks(statePersistenceTicker)
+        statePersistenceScheduled = false
+    }
+
+    private fun persistSessionState() {
+        if (sessions.isEmpty()) {
+            NativePlaybackStateStore.clearSessions(this)
+            return
+        }
+        NativePlaybackStateStore.saveSessions(
+            this,
+            sessions.values.map { it.storedSnapshot() }
+        )
+    }
+
+    private fun restorePersistedSessionsForTimer(sessionIds: List<String>) {
+        val missingSessionIds = sessionIds.filterNot { sessions.containsKey(it) }.toSet()
+        if (missingSessionIds.isEmpty()) return
+        NativePlaybackStateStore.loadSessions(this)
+            .filter { it.sessionId in missingSessionIds }
+            .forEach { stored ->
+                val nativeSession = sessions.getOrPut(stored.sessionId) {
+                    NativePlaybackSession(stored.sessionId)
+                }
+                try {
+                    nativeSession.channelSwapEnabled = stored.channelSwapEnabled
+                    nativeSession.configure(
+                        uri = stored.uri,
+                        title = stored.title,
+                        subtitle = stored.subtitle,
+                        artUri = stored.artUri,
+                        startPositionMs = stored.positionMs,
+                        volume = stored.volume,
+                        repeatOne = stored.repeatOne,
+                        autoPlay = false
+                    )
+                    focusSession(stored.sessionId)
+                    publishSessionState(stored.sessionId)
+                } catch (_: Exception) {
+                    sessions.remove(stored.sessionId)
+                    nativeSession.release()
+                }
+            }
+        persistSessionState()
     }
 
     private fun acquireWakeLock() {
@@ -486,13 +657,15 @@ class NativePlaybackService : MediaSessionService() {
     }
 
     private inner class NativePlaybackSession(
-        val sessionId: String,
-        val player: ExoPlayer
+        val sessionId: String
     ) {
+        private val channelMappingAudioProcessor = ChannelMappingAudioProcessor()
+        val player: ExoPlayer = createPlayer(sessionId, channelMappingAudioProcessor)
         var uri: String? = null
         var title: String = "Audio"
         var subtitle: String? = null
         var artUri: String? = null
+        var channelSwapEnabled: Boolean = false
 
         fun configure(
             uri: String,
@@ -508,6 +681,7 @@ class NativePlaybackService : MediaSessionService() {
             this.title = title
             this.subtitle = subtitle
             this.artUri = artUri
+            applyChannelMap()
 
             val metadataBuilder = MediaMetadata.Builder()
                 .setTitle(title)
@@ -533,6 +707,34 @@ class NativePlaybackService : MediaSessionService() {
             player.prepare()
         }
 
+        fun applyChannelMap() {
+            channelMappingAudioProcessor.setChannelMap(
+                if (channelSwapEnabled) {
+                    intArrayOf(1, 0)
+                } else {
+                    intArrayOf(0, 1)
+                }
+            )
+        }
+
+        fun reprepareCurrentMediaItem() {
+            val currentUri = uri ?: return
+            val currentPositionMs = player.currentPosition.coerceAtLeast(0L)
+            val shouldResume = player.playWhenReady || player.isPlaying
+            val currentVolume = player.volume
+            val repeatOne = player.repeatMode == Player.REPEAT_MODE_ONE
+            configure(
+                uri = currentUri,
+                title = title,
+                subtitle = subtitle,
+                artUri = artUri,
+                startPositionMs = currentPositionMs,
+                volume = currentVolume,
+                repeatOne = repeatOne,
+                autoPlay = shouldResume
+            )
+        }
+
         fun snapshot(): Map<String, Any?> {
             return mapOf(
                 "sessionId" to sessionId,
@@ -547,7 +749,24 @@ class NativePlaybackService : MediaSessionService() {
                 "durationMs" to durationOrNull(player.duration),
                 "bufferedPositionMs" to player.bufferedPosition.coerceAtLeast(0L),
                 "volume" to player.volume.toDouble(),
+                "channelSwap" to channelSwapEnabled,
                 "error" to player.playerError?.message
+            )
+        }
+
+        fun storedSnapshot(): StoredNativePlaybackSession {
+            return StoredNativePlaybackSession(
+                sessionId = sessionId,
+                uri = uri.orEmpty(),
+                title = title,
+                subtitle = subtitle,
+                artUri = artUri,
+                positionMs = player.currentPosition.coerceAtLeast(0L),
+                volume = player.volume,
+                repeatOne = player.repeatMode == Player.REPEAT_MODE_ONE,
+                channelSwapEnabled = channelSwapEnabled,
+                playing = player.isPlaying,
+                playWhenReady = player.playWhenReady
             )
         }
 

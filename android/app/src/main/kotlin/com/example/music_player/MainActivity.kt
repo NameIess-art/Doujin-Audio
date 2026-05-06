@@ -158,6 +158,16 @@ class MainActivity : AudioServiceActivity() {
                     "openBackgroundRunSettings" -> {
                         result.success(openBackgroundRunSettings())
                     }
+                    "syncPlaybackTimerAlarms" -> {
+                        val timerEndsAtMs = call.argument<Long>("timerEndsAtMs")
+                        val autoResumeAtMs = call.argument<Long>("autoResumeAtMs")
+                        PlaybackTimerAlarmScheduler.sync(
+                            applicationContext,
+                            timerEndsAtMs = timerEndsAtMs,
+                            autoResumeAtMs = autoResumeAtMs
+                        )
+                        result.success(null)
+                    }
                     else -> result.notImplemented()
                 }
             }
@@ -301,7 +311,10 @@ class MainActivity : AudioServiceActivity() {
                                         "title" to track.title,
                                         "groupKey" to track.groupKey,
                                         "groupTitle" to track.groupTitle,
-                                        "groupSubtitle" to track.groupSubtitle
+                                        "groupSubtitle" to track.groupSubtitle,
+                                        "scannedAtMs" to track.scannedAtMs,
+                                        "fileSizeBytes" to track.fileSizeBytes,
+                                        "modifiedAtMs" to track.modifiedAtMs
                                     )
                                 }
                                 runOnUiThread { result.success(data) }
@@ -770,7 +783,10 @@ class MainActivity : AudioServiceActivity() {
         val title: String,
         val groupKey: String,
         val groupTitle: String,
-        val groupSubtitle: String
+        val groupSubtitle: String,
+        val scannedAtMs: Long = System.currentTimeMillis(),
+        val fileSizeBytes: Long? = null,
+        val modifiedAtMs: Long? = null
     )
 
     private fun scanFolder(folder: String): List<ScannedTrack> {
@@ -943,7 +959,9 @@ class MainActivity : AudioServiceActivity() {
                         title = title,
                         groupKey = groupKey,
                         groupTitle = groupTitle.ifBlank { rootName },
-                        groupSubtitle = groupSubtitle
+                        groupSubtitle = groupSubtitle,
+                        fileSizeBytes = child.length().takeIf { it >= 0 },
+                        modifiedAtMs = child.lastModified().takeIf { it > 0 }
                     )
                 )
             }
@@ -981,7 +999,9 @@ class MainActivity : AudioServiceActivity() {
                         title = title,
                         groupKey = parentPath,
                         groupTitle = parentName,
-                        groupSubtitle = parentPath
+                        groupSubtitle = parentPath,
+                        fileSizeBytes = child.length().takeIf { it >= 0 },
+                        modifiedAtMs = child.lastModified().takeIf { it > 0 }
                     )
                 )
             }
@@ -997,7 +1017,9 @@ class MainActivity : AudioServiceActivity() {
         val projection = mutableListOf(
             MediaStore.Audio.Media._ID,
             MediaStore.Audio.Media.DISPLAY_NAME,
-            MediaStore.Audio.Media.RELATIVE_PATH
+            MediaStore.Audio.Media.RELATIVE_PATH,
+            MediaStore.Audio.Media.SIZE,
+            MediaStore.Audio.Media.DATE_MODIFIED
         )
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
             projection.add(MediaStore.Audio.Media.DATA)
@@ -1031,6 +1053,9 @@ class MainActivity : AudioServiceActivity() {
                 cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME)
             val relativeIndex =
                 cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.RELATIVE_PATH)
+            val sizeIndex = cursor.getColumnIndex(MediaStore.Audio.Media.SIZE)
+            val dateModifiedIndex =
+                cursor.getColumnIndex(MediaStore.Audio.Media.DATE_MODIFIED)
             val dataIndex = if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
                 cursor.getColumnIndex(MediaStore.Audio.Media.DATA)
             } else {
@@ -1047,6 +1072,12 @@ class MainActivity : AudioServiceActivity() {
                 val title = displayName.substringBeforeLast('.', displayName)
                 val fullPath = if (dataIndex >= 0) cursor.getString(dataIndex) else null
                 val contentPath = ContentUris.withAppendedId(audioUri, id).toString()
+                val fileSizeBytes = if (sizeIndex >= 0) cursor.getLong(sizeIndex) else null
+                val modifiedAtMs = if (dateModifiedIndex >= 0) {
+                    cursor.getLong(dateModifiedIndex).takeIf { it > 0 }?.times(1000L)
+                } else {
+                    null
+                }
 
                 val groupTitle = relative.substringAfterLast('/', missingDelimiterValue = relative)
                     .ifBlank { relPrefix.trimEnd('/').substringAfterLast('/') }
@@ -1061,7 +1092,9 @@ class MainActivity : AudioServiceActivity() {
                         title = title,
                         groupKey = groupKey,
                         groupTitle = groupTitle.ifBlank { "Folder" },
-                        groupSubtitle = groupSubtitle
+                        groupSubtitle = groupSubtitle,
+                        fileSizeBytes = fileSizeBytes,
+                        modifiedAtMs = modifiedAtMs
                     )
                 )
             }

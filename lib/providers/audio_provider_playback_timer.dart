@@ -1,6 +1,41 @@
 part of 'audio_provider.dart';
 
 extension AudioProviderPlaybackTimer on AudioProvider {
+  DateTime? _plannedAutoResumeForTimerEnd(DateTime? timerEndsAt) {
+    if (!_autoResumeEnabled || timerEndsAt == null) return null;
+    return _timerRuntimeCalculator.nextClockTime(
+      now: timerEndsAt,
+      hour: _autoResumeHour,
+      minute: _autoResumeMinute,
+    );
+  }
+
+  Future<void> _syncNativeTimerAlarms() async {
+    try {
+      final timerEndsAtMs = _timerActive
+          ? _timerEndsAt?.millisecondsSinceEpoch
+          : null;
+      final autoResumeAtMs = (() {
+        if (_autoResumeAt != null && _pausedByTimerPaths.isNotEmpty) {
+          return _autoResumeAt!.millisecondsSinceEpoch;
+        }
+        final plannedAutoResume = _plannedAutoResumeForTimerEnd(_timerEndsAt);
+        if (_timerActive && plannedAutoResume != null) {
+          return plannedAutoResume.millisecondsSinceEpoch;
+        }
+        return null;
+      })();
+      await AudioProvider._powerChannel.invokeMethod<void>(
+        'syncPlaybackTimerAlarms',
+        {'timerEndsAtMs': timerEndsAtMs, 'autoResumeAtMs': autoResumeAtMs},
+      );
+    } on MissingPluginException {
+      // Non-Android platforms don't expose this channel.
+    } catch (e) {
+      debugPrint('AudioProvider._syncNativeTimerAlarms error: $e');
+    }
+  }
+
   void configureTimer(TimerMode mode, Duration duration) {
     _timerDraftMode = mode;
     _timerDraftDuration = duration > Duration.zero
@@ -21,6 +56,7 @@ extension AudioProviderPlaybackTimer on AudioProvider {
     _notifyListeners();
     unawaited(_saveTimerSettings());
     unawaited(_saveTimerRuntime());
+    unawaited(_syncNativeTimerAlarms());
   }
 
   void startCountdown() {
@@ -38,6 +74,7 @@ extension AudioProviderPlaybackTimer on AudioProvider {
     _syncKeepCpuAwake();
     _notifyListeners();
     unawaited(_saveTimerRuntime());
+    unawaited(_syncNativeTimerAlarms());
   }
 
   void cancelTimer() {
@@ -45,6 +82,7 @@ extension AudioProviderPlaybackTimer on AudioProvider {
     _syncKeepCpuAwake();
     _notifyListeners();
     unawaited(_saveTimerRuntime());
+    unawaited(_syncNativeTimerAlarms());
   }
 
   void _cancelTimerInternal() {
@@ -59,6 +97,7 @@ extension AudioProviderPlaybackTimer on AudioProvider {
     _timerWaitingForPlayback = false;
     _syncKeepCpuAwake();
     unawaited(_saveTimerRuntime());
+    unawaited(_syncNativeTimerAlarms());
   }
 
   void _onTimerExpired() {
@@ -91,12 +130,11 @@ extension AudioProviderPlaybackTimer on AudioProvider {
     }
     _syncKeepCpuAwake();
     unawaited(_saveTimerRuntime());
+    unawaited(_syncNativeTimerAlarms());
   }
 
   void _onAutoResume() {
     _autoResumeTimer = null;
-    _autoResumeAt = null;
-    unawaited(_saveTimerRuntime());
     unawaited(_resumeTimerPausedSessions());
   }
 
@@ -106,7 +144,13 @@ extension AudioProviderPlaybackTimer on AudioProvider {
 
   Future<void> _resumeTimerPausedSessions() async {
     final activated = await _activateAudioSessionForPlayback();
-    if (!activated) return;
+    if (!activated) {
+      _syncKeepCpuAwake();
+      _notifyListeners();
+      await _saveTimerRuntime();
+      await _syncNativeTimerAlarms();
+      return;
+    }
 
     final resumableSessions = _sessions.values
         .where((s) => _pausedByTimerPaths.contains(s.currentTrackPath))
@@ -117,6 +161,7 @@ extension AudioProviderPlaybackTimer on AudioProvider {
       _syncKeepCpuAwake();
       _notifyListeners();
       await _saveTimerRuntime();
+      await _syncNativeTimerAlarms();
       return;
     }
 
@@ -129,6 +174,20 @@ extension AudioProviderPlaybackTimer on AudioProvider {
     _syncKeepCpuAwake();
     _notifyListeners();
     await _saveTimerRuntime();
+    await _syncNativeTimerAlarms();
+  }
+
+  void retryOverdueAutoResume() {
+    final autoResumeAt = _autoResumeAt;
+    if (autoResumeAt == null || _pausedByTimerPaths.isEmpty) return;
+    if (autoResumeAt.isAfter(DateTime.now())) {
+      _scheduleAutoResumeTimer(autoResumeAt);
+      _syncKeepCpuAwake();
+      unawaited(_saveTimerRuntime());
+      unawaited(_syncNativeTimerAlarms());
+      return;
+    }
+    _onAutoResume();
   }
 
   void setAutoResume(bool enabled, int hour, int minute) {
@@ -146,6 +205,7 @@ extension AudioProviderPlaybackTimer on AudioProvider {
     _notifyListeners();
     unawaited(_saveTimerSettings());
     unawaited(_saveTimerRuntime());
+    unawaited(_syncNativeTimerAlarms());
   }
 
   DateTime _nextClockTime(int hour, int minute) {

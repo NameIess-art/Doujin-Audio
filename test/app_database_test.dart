@@ -25,7 +25,7 @@ void main() {
   test(
     'saveAllTracks and loadAllTracks round-trip the music library',
     () async {
-      const tracks = <MusicTrack>[
+      final tracks = <MusicTrack>[
         MusicTrack(
           path: '/library/a.mp3',
           displayName: 'A',
@@ -33,8 +33,17 @@ void main() {
           groupTitle: 'Library',
           groupSubtitle: '2 tracks',
           isSingle: false,
+          scannedAt: DateTime.fromMillisecondsSinceEpoch(1000),
+          fileSizeBytes: 1024,
+          modifiedAt: DateTime.fromMillisecondsSinceEpoch(2000),
+          lastPlayedPosition: const Duration(seconds: 12),
+          lastPlayedAt: DateTime.fromMillisecondsSinceEpoch(3000),
+          isFavorite: true,
+          tags: <String>['asmr', 'sleep'],
+          coverCachePath: '/cache/cover.jpg',
+          lyricsPath: '/lyrics/a.lrc',
         ),
-        MusicTrack(
+        const MusicTrack(
           path: 'content://media/external/audio/media/42',
           displayName: 'Content Track',
           groupKey: 'content://media',
@@ -53,6 +62,31 @@ void main() {
       ]);
     },
   );
+
+  test('track metadata columns persist scan and library metadata', () async {
+    final track = MusicTrack(
+      path: '/library/meta.flac',
+      displayName: 'Meta',
+      groupKey: '/library',
+      groupTitle: 'Library',
+      groupSubtitle: '1 track',
+      isSingle: false,
+      scannedAt: DateTime.fromMillisecondsSinceEpoch(4000),
+      fileSizeBytes: 4096,
+      modifiedAt: DateTime.fromMillisecondsSinceEpoch(5000),
+      lastPlayedPosition: const Duration(minutes: 5),
+      lastPlayedAt: DateTime.fromMillisecondsSinceEpoch(6000),
+      isFavorite: true,
+      tags: const <String>['focus'],
+      coverCachePath: '/cache/meta.png',
+      lyricsPath: '/lyrics/meta.srt',
+    );
+
+    await appDatabase.insertTracks([track]);
+
+    final loaded = await appDatabase.loadAllTracks();
+    expect(loaded.single.toJson(), track.toJson());
+  });
 
   test(
     'insertTracks replaces existing rows and deleteTracks removes by path',

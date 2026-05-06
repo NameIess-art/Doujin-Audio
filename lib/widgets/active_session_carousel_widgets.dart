@@ -20,128 +20,157 @@ class _ActiveSessionCard extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     const cardRadius = 20.0;
 
-    return StreamBuilder<PlayerState>(
-      stream: session.stateStream,
-      initialData: session.state,
-      builder: (context, stateSnapshot) {
-        final playerState = stateSnapshot.data ?? session.state;
-        final isPlaying = playerState.playing;
-        final currentTrack = provider.trackByPath(session.currentTrackPath);
-        final displayName =
-            currentTrack?.displayName ??
-            path.basenameWithoutExtension(session.currentTrackPath);
-
-        return Semantics(
-          button: true,
-          label: displayName,
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(cardRadius),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
-              child: Material(
-                color: Colors.transparent,
-                child: InkWell(
+    final view = context
+        .select<
+          AudioProvider,
+          ({bool playing, bool loading, String trackPath})
+        >((value) {
+          final currentSession = value.sessionById(session.id) ?? session;
+          return (
+            playing: currentSession.state.playing,
+            loading: currentSession.isLoading,
+            trackPath: currentSession.currentTrackPath,
+          );
+        });
+    final isPlaying = view.playing;
+    final currentTrack = provider.trackByPath(view.trackPath);
+    final displayName =
+        currentTrack?.displayName ??
+        path.basenameWithoutExtension(view.trackPath);
+    return Semantics(
+      button: true,
+      label: displayName,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(cardRadius),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(cardRadius),
+              onTap: onOpen,
+              child: Ink(
+                height: 74,
+                decoration: BoxDecoration(
+                  color:
+                      (isDark ? cs.surfaceBright : cs.surfaceContainerHighest)
+                          .withValues(alpha: isDark ? 0.55 : 0.75),
                   borderRadius: BorderRadius.circular(cardRadius),
-                  onTap: onOpen,
-                  child: Ink(
-                    height: 74,
-                    decoration: BoxDecoration(
-                      color:
-                          (isDark
-                                  ? cs.surfaceBright
-                                  : cs.surfaceContainerHighest)
-                              .withValues(alpha: isDark ? 0.55 : 0.75),
-                      borderRadius: BorderRadius.circular(cardRadius),
-                      boxShadow: [
-                        BoxShadow(
-                          color: cs.shadow.withValues(
-                            alpha: isPlaying ? 0.16 : 0.10,
-                          ),
-                          blurRadius: isPlaying ? 22 : 16,
-                          offset: const Offset(0, 10),
-                        ),
-                      ],
+                  boxShadow: [
+                    BoxShadow(
+                      color: cs.shadow.withValues(
+                        alpha: isPlaying ? 0.16 : 0.10,
+                      ),
+                      blurRadius: isPlaying ? 22 : 16,
+                      offset: const Offset(0, 10),
                     ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(10, 6, 8, 4),
-                          child: Row(
-                            children: [
-                              _ActiveSessionCover(
-                                coverPathFuture: coverPathFuture,
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: _ActiveSessionTitleSubtitle(
-                                  session: session,
-                                  provider: provider,
-                                  displayName: displayName,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              IconButton.filledTonal(
-                                onPressed: session.isLoading
-                                    ? null
-                                    : () {
-                                        HapticFeedback.mediumImpact();
-                                        provider.toggleSessionPlayPause(
-                                          session.id,
-                                        );
-                                      },
-                                style: IconButton.styleFrom(
-                                  minimumSize: const Size(48, 48),
-                                  maximumSize: const Size(48, 48),
-                                  backgroundColor: isPlaying
-                                      ? cs.primaryContainer
-                                      : cs.surfaceContainerLow,
-                                  foregroundColor: isPlaying
-                                      ? cs.onPrimaryContainer
-                                      : cs.onSurface,
-                                  shape: const CircleBorder(),
-                                  side: BorderSide(
-                                    color: isPlaying
-                                        ? cs.primary.withValues(alpha: 0.24)
-                                        : cs.outlineVariant.withValues(
-                                            alpha: 0.72,
-                                          ),
-                                  ),
-                                ),
-                                icon: _CarouselSwitcherSlot(
-                                  width: 22,
-                                  height: 22,
-                                  child: Icon(
-                                    isPlaying
-                                        ? Icons.pause_rounded
-                                        : Icons.play_arrow_rounded,
-                                    key: ValueKey<IconData>(
-                                      isPlaying
-                                          ? Icons.pause_rounded
-                                          : Icons.play_arrow_rounded,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
+                  ],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(10, 6, 8, 4),
+                      child: Row(
+                        children: [
+                          _ActiveSessionCover(coverPathFuture: coverPathFuture),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _ActiveSessionTitleSubtitle(
+                              key: ValueKey('${session.id}:${view.trackPath}'),
+                              session: session,
+                              provider: provider,
+                              displayName: displayName,
+                            ),
                           ),
-                        ),
-                        _ActiveSessionProgressStrip(session: session),
-                      ],
+                          const SizedBox(width: 8),
+                          _ActiveSessionPlayPauseButton(
+                            isPlaying: isPlaying,
+                            enabled: !view.loading,
+                            onPressed: () {
+                              HapticFeedback.mediumImpact();
+                              provider.toggleSessionPlayPause(session.id);
+                            },
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
+                    _ActiveSessionProgressStrip(session: session),
+                  ],
                 ),
               ),
             ),
           ),
-        );
-      },
+        ),
+      ),
+    );
+  }
+}
+
+class _ActiveSessionPlayPauseButton extends StatelessWidget {
+  const _ActiveSessionPlayPauseButton({
+    required this.isPlaying,
+    required this.enabled,
+    required this.onPressed,
+  });
+
+  final bool isPlaying;
+  final bool enabled;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Material(
+      color: Colors.transparent,
+      shape: const CircleBorder(),
+      clipBehavior: Clip.antiAlias,
+      child: InkResponse(
+        onTap: enabled ? onPressed : null,
+        containedInkWell: true,
+        radius: 24,
+        customBorder: const CircleBorder(),
+        child: SizedBox.square(
+          dimension: 48,
+          child: Center(
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 180),
+              switchInCurve: Curves.easeOutCubic,
+              switchOutCurve: Curves.easeInCubic,
+              transitionBuilder: (child, animation) {
+                return FadeTransition(
+                  opacity: animation,
+                  child: ScaleTransition(
+                    scale: Tween<double>(
+                      begin: 0.92,
+                      end: 1,
+                    ).animate(animation),
+                    child: child,
+                  ),
+                );
+              },
+              child: Transform.translate(
+                key: ValueKey(isPlaying),
+                // Keep pause geometrically centered with the pressed circle;
+                // the play triangle gets a small optical nudge only.
+                offset: isPlaying ? Offset.zero : const Offset(1, 0),
+                child: Icon(
+                  isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                  size: 36,
+                  color: isPlaying ? cs.primary : cs.onSurface,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
 
 class _ActiveSessionTitleSubtitle extends StatefulWidget {
   const _ActiveSessionTitleSubtitle({
+    super.key,
     required this.session,
     required this.provider,
     required this.displayName,
@@ -195,6 +224,10 @@ class _ActiveSessionTitleSubtitleState
   void _loadSubtitleTrack() {
     final trackPath = widget.session.currentTrackPath;
     _loadedPath = trackPath;
+    setState(() {
+      _subtitleTrack = null;
+      _subtitleText = null;
+    });
     widget.provider.subtitleTrackForPath(trackPath).then((track) {
       if (!mounted || _loadedPath != trackPath) return;
       _subtitleTrack = track;
@@ -250,20 +283,62 @@ class _ActiveSessionTitleSubtitleState
   }
 }
 
-class _ActiveSessionProgressStrip extends StatelessWidget {
+class _ActiveSessionProgressStrip extends StatefulWidget {
   const _ActiveSessionProgressStrip({required this.session});
 
   final PlaybackSession session;
 
   @override
+  State<_ActiveSessionProgressStrip> createState() =>
+      _ActiveSessionProgressStripState();
+}
+
+class _ActiveSessionProgressStripState
+    extends State<_ActiveSessionProgressStrip> {
+  StreamSubscription<Duration?>? _durationSub;
+  Duration? _duration;
+
+  @override
+  void initState() {
+    super.initState();
+    _duration = widget.session.duration;
+    _bindDuration();
+  }
+
+  @override
+  void didUpdateWidget(covariant _ActiveSessionProgressStrip oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.session == widget.session) return;
+    unawaited(_durationSub?.cancel());
+    _duration = widget.session.duration;
+    _bindDuration();
+  }
+
+  @override
+  void dispose() {
+    unawaited(_durationSub?.cancel());
+    super.dispose();
+  }
+
+  void _bindDuration() {
+    _durationSub = widget.session.durationStream.listen((duration) {
+      if (duration == null && _duration != null) return;
+      if (_duration == duration) return;
+      setState(() {
+        _duration = duration;
+      });
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     return StreamBuilder<Duration>(
-      stream: session.positionStream,
-      initialData: session.position,
+      stream: widget.session.positionStream,
+      initialData: widget.session.position,
       builder: (context, posSnapshot) {
-        final pos = posSnapshot.data ?? session.position;
-        final dur = session.duration;
+        final pos = posSnapshot.data ?? widget.session.position;
+        final dur = _duration;
         if (dur == null || dur.inMilliseconds <= 0) {
           return const SizedBox(height: 3);
         }
@@ -363,70 +438,27 @@ class _ActiveSessionCover extends StatelessWidget {
       height: 58,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(14),
-        child: FutureBuilder<String?>(
+        child: AsyncCoverImage(
           future: coverPathFuture,
-          builder: (context, snapshot) {
-            final coverPath = snapshot.data;
-            if (coverPath == null || coverPath.isEmpty) {
-              return fallback();
-            }
-            return Image.file(
-              File(coverPath),
-              fit: BoxFit.cover,
+          fallbackBuilder: (_) => fallback(),
+          loadingBuilder: (_) => PulsingPlaceholder(
+            borderRadius: BorderRadius.circular(14),
+            child: fallback(),
+          ),
+          imageBuilder: (context, coverPath) {
+            final dpr = MediaQuery.devicePixelRatioOf(context);
+            return Image(
+              image: resizeFileImageIfNeeded(
+                path: coverPath,
+                cacheWidth: (58 * dpr).round(),
+              ),
+              fit: BoxFit.contain,
+              gaplessPlayback: true,
               errorBuilder: (_, _, _) => fallback(),
             );
           },
         ),
       ),
-    );
-  }
-}
-
-class _CarouselSwitcherSlot extends StatelessWidget {
-  const _CarouselSwitcherSlot({
-    required this.child,
-    required this.width,
-    required this.height,
-  });
-
-  final Widget child;
-  final double width;
-  final double height;
-  final Duration duration = const Duration(milliseconds: 180);
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedSwitcher(
-      duration: duration,
-      switchInCurve: Curves.easeOutCubic,
-      switchOutCurve: Curves.easeInCubic,
-      layoutBuilder: (currentChild, previousChildren) {
-        return SizedBox(
-          width: width,
-          height: height,
-          child: Center(
-            child:
-                currentChild ??
-                (previousChildren.isNotEmpty
-                    ? previousChildren.last
-                    : const SizedBox.shrink()),
-          ),
-        );
-      },
-      transitionBuilder: (child, animation) {
-        final opacity = CurvedAnimation(
-          parent: animation,
-          curve: Curves.easeOutCubic,
-        );
-        return FadeTransition(
-          opacity: opacity,
-          child: ScaleTransition(
-            scale: Tween<double>(begin: 0.92, end: 1).animate(opacity),
-            child: child,
-          ),
-        );
-      },
-      child: child,
     );
   }
 }

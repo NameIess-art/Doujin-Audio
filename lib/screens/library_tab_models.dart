@@ -8,6 +8,9 @@ class _ScannedTrack {
     required this.groupSubtitle,
     required this.isSingle,
     this.displayName,
+    this.scannedAt,
+    this.fileSizeBytes,
+    this.modifiedAt,
   });
 
   final String path;
@@ -16,4 +19,7 @@ class _ScannedTrack {
   final String groupSubtitle;
   final bool isSingle;
   final String? displayName;
+  final DateTime? scannedAt;
+  final int? fileSizeBytes;
+  final DateTime? modifiedAt;
 }

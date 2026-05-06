@@ -44,6 +44,7 @@ void main() {
           bufferedPosition: Duration(seconds: 20),
           duration: Duration(minutes: 3),
           volume: 0.42,
+          channelSwapEnabled: false,
         ),
       );
       await Future<void>.delayed(Duration.zero);

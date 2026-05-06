@@ -147,6 +147,7 @@ extension AudioProviderPersistenceTimer on AudioProvider {
       }
 
       _syncNotificationState();
+      await _syncNativeTimerAlarms();
       _notifyListeners();
     } catch (e) {
       debugPrint('AudioProvider persistence error: $e');

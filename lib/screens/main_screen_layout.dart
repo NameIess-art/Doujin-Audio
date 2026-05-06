@@ -41,6 +41,8 @@ extension _MainScreenLayout on _MainScreenState {
 
     return NotificationListener<ScrollNotification>(
       onNotification: (notification) {
+        // Only respond to page-level scroll (depth 0), not nested list scrolls.
+        if (notification.depth != 0) return false;
         if (notification is ScrollStartNotification) {
           context.read<AudioProvider>().setPageTransitioning(true);
         } else if (notification is ScrollEndNotification) {
@@ -53,7 +55,9 @@ extension _MainScreenLayout on _MainScreenState {
         itemCount: _pages.length,
         physics: const SnapScrollPhysics(parent: ClampingScrollPhysics()),
         onPageChanged: (index) {
-          if (_pendingTargetIndex != null && index != _pendingTargetIndex) return;
+          if (_pendingTargetIndex != null && index != _pendingTargetIndex) {
+            return;
+          }
           _pendingTargetIndex = null;
           if (_currentIndex == index) return;
           _setLocalState(() {

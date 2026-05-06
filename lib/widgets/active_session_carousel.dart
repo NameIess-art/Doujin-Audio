@@ -1,10 +1,8 @@
 import 'dart:async';
-import 'dart:io';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:just_audio/just_audio.dart';
 import 'package:path/path.dart' as path;
 import 'package:provider/provider.dart';
 
@@ -12,6 +10,7 @@ import '../i18n/app_language_provider.dart';
 import '../providers/audio_provider.dart';
 import '../services/subtitle_parser.dart';
 import '../screens/playlist_tab.dart';
+import 'async_cover_image.dart';
 import 'snap_scroll_physics.dart';
 
 part 'active_session_carousel_widgets.dart';
@@ -62,7 +61,7 @@ class _ActiveSessionCarouselState extends State<ActiveSessionCarousel> {
   @override
   void initState() {
     super.initState();
-    _pageController = PageController(viewportFraction: 0.9);
+    _pageController = PageController(viewportFraction: 0.90);
     _pageController.addListener(_handlePageTick);
   }
 
@@ -79,7 +78,7 @@ class _ActiveSessionCarouselState extends State<ActiveSessionCarousel> {
       ..dispose();
     _pageController = PageController(
       initialPage: currentPage,
-      viewportFraction: 0.9,
+      viewportFraction: 0.90,
     );
     _pageController.addListener(_handlePageTick);
   }
@@ -144,7 +143,6 @@ class _ActiveSessionCarouselState extends State<ActiveSessionCarousel> {
       height: 88,
       child: PageView.builder(
         controller: _pageController,
-        clipBehavior: Clip.none,
         pageSnapping: false,
         physics: sessions.length == 1
             ? const NeverScrollableScrollPhysics()
@@ -155,7 +153,8 @@ class _ActiveSessionCarouselState extends State<ActiveSessionCarousel> {
           final pageDelta = index - _page;
           final selectedness = (1 - pageDelta.abs()).clamp(0.0, 1.0);
           final scale = lerpDouble(0.972, 1.0, selectedness) ?? 1.0;
-          final translateX = pageDelta * 5;
+          const translateX =
+              0.0; // Remove push-away translation to keep edges visible
           final translateY = lerpDouble(4, 0, selectedness) ?? 0;
           final track = provider.trackByPath(session.currentTrackPath);
 

@@ -15,6 +15,9 @@ class _SessionDetailPageState extends State<SessionDetailPage>
   late String _currentSessionId;
   String? _lastPrecachingCoverKey;
   double _horizontalDragDelta = 0;
+  int _horizontalSwitchDirection = 1;
+  Future<String?>? _coverPathFuture;
+  String? _lastTrackPath;
 
   @override
   void initState() {
@@ -55,7 +58,7 @@ class _SessionDetailPageState extends State<SessionDetailPage>
           await precacheImage(
             ResizeImage.resizeIfNeeded(
               cacheWidth,
-              cacheHeight,
+              null,
               FileImage(File(coverPath)),
             ),
             context,
@@ -71,7 +74,7 @@ class _SessionDetailPageState extends State<SessionDetailPage>
   ) async {
     final navigator = Navigator.of(context);
     final velocity = details.primaryVelocity ?? 0;
-    final shouldDismiss = _dismissController.value > 0.15 || velocity > 800;
+    final shouldDismiss = _dismissController.value > 0.25 || velocity > 800;
     if (shouldDismiss) {
       await _animateDismissToEnd(velocity: velocity);
       if (mounted) {
@@ -115,6 +118,7 @@ class _SessionDetailPageState extends State<SessionDetailPage>
     if (nextIndex == currentIndex) return;
     HapticFeedback.selectionClick();
     setState(() {
+      _horizontalSwitchDirection = offset.sign == 0 ? 1 : offset.sign;
       _currentSessionId = sessions[nextIndex].id;
       _horizontalDragDelta = 0;
     });
@@ -125,8 +129,8 @@ class _SessionDetailPageState extends State<SessionDetailPage>
     AudioProvider provider,
   ) {
     final velocity = details.primaryVelocity ?? 0;
-    final shouldGoPrevious = _horizontalDragDelta > 56 || velocity > 520;
-    final shouldGoNext = _horizontalDragDelta < -56 || velocity < -520;
+    final shouldGoPrevious = _horizontalDragDelta > 72 || velocity > 520;
+    final shouldGoNext = _horizontalDragDelta < -72 || velocity < -520;
     _horizontalDragDelta = 0;
     if (shouldGoPrevious) {
       _changeSessionByOffset(provider, -1);
@@ -152,6 +156,7 @@ class _SessionDetailPageState extends State<SessionDetailPage>
             ProcessingState? processingState,
             SessionLoopMode? loopMode,
             double? volume,
+            bool? channelSwapEnabled,
           })
         >((provider) {
           final sessions = provider.activeSessions;
@@ -169,6 +174,7 @@ class _SessionDetailPageState extends State<SessionDetailPage>
             processingState: session?.state.processingState,
             loopMode: session?.loopMode,
             volume: session?.volume,
+            channelSwapEnabled: session?.channelSwapEnabled,
           );
         });
     final provider = context.read<AudioProvider>();
@@ -188,8 +194,13 @@ class _SessionDetailPageState extends State<SessionDetailPage>
       return const Scaffold(body: SizedBox.shrink());
     }
 
-    final track = provider.trackByPath(session.currentTrackPath);
-    final coverPathFuture = _coverFutureForTrack(provider, track);
+    final trackPath = session.currentTrackPath;
+    if (_lastTrackPath != trackPath) {
+      _lastTrackPath = trackPath;
+      final track = provider.trackByPath(trackPath);
+      _coverPathFuture = _coverFutureForTrack(provider, track);
+    }
+    final coverPathFuture = _coverPathFuture!;
     _primeCoverArtwork(coverPathFuture);
     final routeAnimation = ModalRoute.of(context)?.animation;
     final animatedListenable = routeAnimation == null
@@ -224,7 +235,9 @@ class _SessionDetailPageState extends State<SessionDetailPage>
               ),
               Positioned.fill(
                 child: IgnorePointer(
-                  child: _SessionDetailBackdrop(progress: backdropProgress),
+                  child: RepaintBoundary(
+                    child: _SessionDetailBackdrop(progress: backdropProgress),
+                  ),
                 ),
               ),
               Opacity(
@@ -244,30 +257,34 @@ class _SessionDetailPageState extends State<SessionDetailPage>
           );
         },
         child: RepaintBoundary(
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onHorizontalDragUpdate: (details) {
-              _horizontalDragDelta += details.primaryDelta ?? 0;
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 260),
+            switchInCurve: Curves.easeOutCubic,
+            switchOutCurve: Curves.easeInCubic,
+            layoutBuilder: (currentChild, previousChildren) {
+              return Stack(
+                fit: StackFit.expand,
+                children: [...previousChildren, ?currentChild],
+              );
             },
-            onHorizontalDragEnd: (details) =>
-                _handleHorizontalDragEnd(details, provider),
-            onHorizontalDragCancel: () {
-              _horizontalDragDelta = 0;
-            },
-            onVerticalDragUpdate: (details) {
-              final screenHeight = MediaQuery.sizeOf(context).height;
-              if (screenHeight <= 0) return;
-              final nextValue =
-                  _dismissController.value +
-                  (((details.primaryDelta ?? 0) / screenHeight) * 0.92);
-              _dismissController.value = nextValue.clamp(0.0, 1.0);
-            },
-            onVerticalDragEnd: (details) =>
-                _handleVerticalDragEnd(details, context),
-            onVerticalDragCancel: () {
-              _animateDismissBack();
+            transitionBuilder: (child, animation) {
+              final isIncoming =
+                  child.key == ValueKey<String>(_currentSessionId);
+              final direction = _horizontalSwitchDirection.toDouble();
+              final begin = Offset(isIncoming ? 0.08 * direction : 0, 0);
+              return FadeTransition(
+                opacity: animation,
+                child: SlideTransition(
+                  position: Tween<Offset>(
+                    begin: begin,
+                    end: Offset.zero,
+                  ).animate(animation),
+                  child: child,
+                ),
+              );
             },
             child: _SessionDetailScaffold(
+              key: ValueKey<String>(_currentSessionId),
               session: session,
               provider: provider,
               coverPathFuture: coverPathFuture,
@@ -276,6 +293,27 @@ class _SessionDetailPageState extends State<SessionDetailPage>
                 if (context.mounted) {
                   await Navigator.of(context).maybePop();
                 }
+              },
+              onHorizontalDragUpdate: (details) {
+                _horizontalDragDelta += details.primaryDelta ?? 0;
+              },
+              onHorizontalDragEnd: (details) =>
+                  _handleHorizontalDragEnd(details, provider),
+              onHorizontalDragCancel: () {
+                _horizontalDragDelta = 0;
+              },
+              onVerticalDragUpdate: (details) {
+                final screenHeight = MediaQuery.sizeOf(context).height;
+                if (screenHeight <= 0) return;
+                final nextValue =
+                    _dismissController.value +
+                    (((details.primaryDelta ?? 0) / screenHeight) * 0.92);
+                _dismissController.value = nextValue.clamp(0.0, 1.0);
+              },
+              onVerticalDragEnd: (details) =>
+                  _handleVerticalDragEnd(details, context),
+              onVerticalDragCancel: () {
+                _animateDismissBack();
               },
             ),
           ),
@@ -301,24 +339,30 @@ class _SessionDetailBackdrop extends StatelessWidget {
     return Stack(
       fit: StackFit.expand,
       children: [
-        DecoratedBox(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                cs.surface.withValues(alpha: 0.08 * gradientAlpha),
-                cs.scrim.withValues(alpha: 0.08 * gradientAlpha),
-                cs.scrim.withValues(alpha: 0.14 * gradientAlpha),
-              ],
+        Opacity(
+          opacity: gradientAlpha,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  cs.surface.withValues(alpha: 0.08),
+                  cs.scrim.withValues(alpha: 0.08),
+                  cs.scrim.withValues(alpha: 0.14),
+                ],
+              ),
             ),
           ),
         ),
-        if (blurSigma > 0)
-          ClipRect(
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: blurSigma, sigmaY: blurSigma),
-              child: const SizedBox.expand(),
+        if (progress > 0)
+          Opacity(
+            opacity: progress,
+            child: ClipRect(
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+                child: const SizedBox.expand(),
+              ),
             ),
           ),
       ],
@@ -328,16 +372,29 @@ class _SessionDetailBackdrop extends StatelessWidget {
 
 class _SessionDetailScaffold extends StatelessWidget {
   const _SessionDetailScaffold({
+    super.key,
     required this.session,
     required this.provider,
     required this.coverPathFuture,
     required this.onClose,
+    this.onHorizontalDragUpdate,
+    this.onHorizontalDragEnd,
+    this.onHorizontalDragCancel,
+    this.onVerticalDragUpdate,
+    this.onVerticalDragEnd,
+    this.onVerticalDragCancel,
   });
 
   final PlaybackSession session;
   final AudioProvider provider;
   final Future<String?> coverPathFuture;
   final VoidCallback onClose;
+  final void Function(DragUpdateDetails)? onHorizontalDragUpdate;
+  final void Function(DragEndDetails)? onHorizontalDragEnd;
+  final VoidCallback? onHorizontalDragCancel;
+  final void Function(DragUpdateDetails)? onVerticalDragUpdate;
+  final void Function(DragEndDetails)? onVerticalDragEnd;
+  final VoidCallback? onVerticalDragCancel;
 
   @override
   Widget build(BuildContext context) {
@@ -350,26 +407,32 @@ class _SessionDetailScaffold extends StatelessWidget {
         children: [
           // Dynamic Blurred Background
           Positioned.fill(
-            child: FutureBuilder<String?>(
+            child: AsyncCoverImage(
               future: coverPathFuture,
-              builder: (context, snapshot) {
-                final path = snapshot.data;
-                if (path == null || path.isEmpty) {
-                  return ColoredBox(color: cs.surfaceDim);
-                }
-                return Image.file(
-                  File(path),
+              fallbackBuilder: (_) => ColoredBox(color: cs.surfaceDim),
+              imageBuilder: (context, coverPath) {
+                final mediaSize = MediaQuery.sizeOf(context);
+                final dpr = MediaQuery.devicePixelRatioOf(context);
+                return Image(
+                  image: resizeFileImageIfNeeded(
+                    path: coverPath,
+                    cacheWidth: (mediaSize.width * dpr).round(),
+                  ),
                   fit: BoxFit.cover,
+                  gaplessPlayback: true,
                   color: cs.surface.withValues(alpha: 0.45),
                   colorBlendMode: BlendMode.darken,
+                  errorBuilder: (_, _, _) => ColoredBox(color: cs.surfaceDim),
                 );
               },
             ),
           ),
           Positioned.fill(
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 45, sigmaY: 45),
-              child: const SizedBox.expand(),
+            child: RepaintBoundary(
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 45, sigmaY: 45),
+                child: const SizedBox.expand(),
+              ),
             ),
           ),
           // Content
@@ -378,7 +441,7 @@ class _SessionDetailScaffold extends StatelessWidget {
               builder: (context, constraints) {
                 return Column(
                   children: [
-                    // Top Bar
+                    // Top Bar — outside drag GestureDetector so taps work
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 8),
                       child: Row(
@@ -392,35 +455,136 @@ class _SessionDetailScaffold extends StatelessWidget {
                             ),
                           ),
                           const Spacer(),
+                          if (session.channelSwapEnabled) ...[
+                            Icon(
+                              Icons.swap_horiz_rounded,
+                              color: cs.onSurface,
+                              size: 20,
+                            ),
+                            const SizedBox(width: 8),
+                          ],
+                          PopupMenuButton<String>(
+                            onSelected: (value) {
+                              if (value != 'channel_swap') return;
+                              Feedback.forTap(context);
+                              unawaited(
+                                provider.setSessionChannelSwap(
+                                  session.id,
+                                  !session.channelSwapEnabled,
+                                ),
+                              );
+                            },
+                            tooltip: MaterialLocalizations.of(
+                              context,
+                            ).moreButtonTooltip,
+                            offset: const Offset(0, 6),
+                            position: PopupMenuPosition.under,
+                            elevation: 6,
+                            shadowColor: cs.shadow.withValues(alpha: 0.18),
+                            color: cs.surfaceContainerHigh,
+                            shape: const RoundedRectangleBorder(
+                              borderRadius: BorderRadius.all(
+                                Radius.circular(16),
+                              ),
+                            ),
+                            popUpAnimationStyle: const AnimationStyle(
+                              duration: Duration(milliseconds: 260),
+                              reverseDuration: Duration(milliseconds: 180),
+                              curve: Curves.easeOutCubic,
+                              reverseCurve: Curves.easeInCubic,
+                            ),
+                            itemBuilder: (context) => [
+                              PopupMenuItem<String>(
+                                value: 'channel_swap',
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 12,
+                                ),
+                                height: 44,
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      session.channelSwapEnabled
+                                          ? Icons.check_rounded
+                                          : Icons.swap_horiz_rounded,
+                                      size: 20,
+                                      color: cs.onSurface,
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Text(
+                                      context.read<AppLanguageProvider>().tr(
+                                        'channel_swap',
+                                      ),
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodyMedium
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                            icon: Icon(
+                              Icons.more_horiz_rounded,
+                              color: cs.onSurface,
+                              size: 28,
+                            ),
+                          ),
                         ],
                       ),
                     ),
-                    // Large Artwork
+                    // Content area — wrapped in GestureDetector for drag-to-dismiss / session switching
                     Expanded(
-                      flex: 6,
-                      child: Center(
-                        child: RepaintBoundary(
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 32),
-                            child: _SessionHeroArtwork(
-                              height: constraints.maxHeight * 0.48,
-                              coverPathFuture: coverPathFuture,
-                              title: '',
-                              folderName: '',
-                              isPlaying: session.state.playing,
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onHorizontalDragUpdate: onHorizontalDragUpdate,
+                        onHorizontalDragEnd: onHorizontalDragEnd,
+                        onHorizontalDragCancel: onHorizontalDragCancel,
+                        onVerticalDragUpdate: onVerticalDragUpdate,
+                        onVerticalDragEnd: onVerticalDragEnd,
+                        onVerticalDragCancel: onVerticalDragCancel,
+                        child: Column(
+                          children: [
+                            // Large Artwork
+                            Expanded(
+                              flex: 6,
+                              child: Center(
+                                child: RepaintBoundary(
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 32,
+                                    ),
+                                    child: _SessionHeroArtwork(
+                                      height: constraints.maxHeight * 0.48,
+                                      coverPathFuture: coverPathFuture,
+                                      title: '',
+                                      folderName: '',
+                                      isPlaying: session.state.playing,
+                                    ),
+                                  ),
+                                ),
+                              ),
                             ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    // Detail Content
-                    Expanded(
-                      flex: 5,
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(28, 0, 28, 16),
-                        child: _SessionDetailContent(
-                          session: session,
-                          provider: provider,
+                            // Detail Content
+                            Expanded(
+                              flex: 5,
+                              child: Padding(
+                                padding: const EdgeInsets.fromLTRB(
+                                  28,
+                                  0,
+                                  28,
+                                  16,
+                                ),
+                                child: _SessionDetailContent(
+                                  session: session,
+                                  provider: provider,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),

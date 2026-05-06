@@ -83,6 +83,7 @@ void main() {
           bufferedPosition: Duration(seconds: 10),
           duration: Duration(minutes: 2),
           volume: 0.8,
+          channelSwapEnabled: false,
         ),
       );
       await Future<void>.delayed(Duration.zero);

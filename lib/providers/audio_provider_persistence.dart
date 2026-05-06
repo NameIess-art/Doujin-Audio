@@ -138,8 +138,30 @@ extension AudioProviderPersistence on AudioProvider {
       await _enforceSingleThreadPlayback();
     }
     await _loadTimerRuntime();
+    _warmLibraryAndSessionCaches();
     _syncKeepCpuAwake();
     _notifyListeners();
+  }
+
+  void _warmLibraryAndSessionCaches() {
+    final tree = libraryTree;
+    var warmedFolders = 0;
+    for (final node in tree) {
+      if (node is! FolderNode || node.path.startsWith('content://')) continue;
+      unawaited(coverPathFutureForFolder(node.path));
+      warmedFolders++;
+      if (warmedFolders >= 24) break;
+    }
+
+    var warmedSessions = 0;
+    for (final session in activeSessions) {
+      final trackPath = session.currentTrackPath;
+      _ensureSubtitleTrackLoaded(trackPath);
+      final track = trackByPath(trackPath);
+      unawaited(coverPathFutureForTrack(track));
+      warmedSessions++;
+      if (warmedSessions >= 12) break;
+    }
   }
 
   Future<void> _loadPlaybackSettings() async {
@@ -152,6 +174,7 @@ extension AudioProviderPersistence on AudioProvider {
           map['multiThreadPlaybackEnabled'] as bool? ?? false;
       _notificationsEnabled = map['notificationsEnabled'] as bool? ?? true;
       _showPlaybackCard = map['showPlaybackCard'] as bool? ?? true;
+      _autoPlayAddedSessions = map['autoPlayAddedSessions'] as bool? ?? true;
     } catch (e) {
       debugPrint('AudioProvider persistence error: $e');
     }
@@ -164,6 +187,7 @@ extension AudioProviderPersistence on AudioProvider {
         'multiThreadPlaybackEnabled': _multiThreadPlaybackEnabled,
         'notificationsEnabled': _notificationsEnabled,
         'showPlaybackCard': _showPlaybackCard,
+        'autoPlayAddedSessions': _autoPlayAddedSessions,
       });
       await prefs.setString(_kPlaybackSettingsKey, encoded);
     } catch (e) {
@@ -309,6 +333,13 @@ extension AudioProviderPersistence on AudioProvider {
   Future<void> setShowPlaybackCard(bool show) async {
     if (_showPlaybackCard == show) return;
     _showPlaybackCard = show;
+    _notifyListeners();
+    unawaited(_savePlaybackSettings());
+  }
+
+  Future<void> setAutoPlayAddedSessions(bool enabled) async {
+    if (_autoPlayAddedSessions == enabled) return;
+    _autoPlayAddedSessions = enabled;
     _notifyListeners();
     unawaited(_savePlaybackSettings());
   }

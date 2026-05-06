@@ -14,8 +14,9 @@ import 'package:provider/provider.dart';
 import '../i18n/app_language_provider.dart';
 import '../providers/audio_provider.dart';
 import '../widgets/app_feedback.dart';
-import '../widgets/confirm_action_dialog.dart';
+import '../widgets/async_cover_image.dart';
 import '../widgets/mobile_overlay_inset.dart';
+import '../widgets/reorderable_hold_drag_listener.dart';
 import '../widgets/swipe_reveal_card.dart';
 import '../widgets/top_page_header.dart';
 import 'video_converter_tab.dart';
@@ -105,6 +106,12 @@ class _LibraryTabState extends State<LibraryTab>
     final audioCount = context.select<AudioProvider, int>(
       (p) => p.libraryTrackCount,
     );
+    final watchedFolderCount = context.select<AudioProvider, int>(
+      (p) => p.watchedFolderCount,
+    );
+    final watchedLibraryCount = context.select<AudioProvider, int>(
+      (p) => p.watchedLibraryCount,
+    );
     final isScanning = context.select<AudioProvider, bool>((p) => p.isScanning);
     final scanFolder = context.select<AudioProvider, String>(
       (p) => p.scanCurrentFolder,
@@ -125,6 +132,11 @@ class _LibraryTabState extends State<LibraryTab>
     const double searchBarFullHeight = 44.0;
     final topTotalHeight = _headerHeight + 4;
     final hasLibrary = rawTree.isNotEmpty;
+    final showLibrarySkeleton =
+        !hasLibrary &&
+        _searchQuery.isEmpty &&
+        isScanning &&
+        (watchedFolderCount > 0 || watchedLibraryCount > 0);
     final canReorder = _searchQuery.isEmpty;
 
     Widget dynamicSearchBar() {
@@ -142,19 +154,21 @@ class _LibraryTabState extends State<LibraryTab>
       );
     }
 
+    final headerContentHeight = topTotalHeight + searchBarFullHeight;
+
     return Stack(
       children: [
-        // 1. Content Layer (Scrolls behind header)
+        // List content starts at top:0, padded so it scrolls behind the header
+        // for the BackdropFilter frosted-glass effect.
         Positioned.fill(
           child: tree.isEmpty
-              ? (_searchQuery.isNotEmpty
-                    ? Center(
-                        child: Padding(
-                          padding: EdgeInsets.only(top: topTotalHeight),
+              ? Padding(
+                  padding: EdgeInsets.only(top: headerContentHeight),
+                  child: _searchQuery.isNotEmpty
+                      ? Center(
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              // No search bar here anymore, it's in the fixed header
                               const SizedBox(height: 24),
                               Text(
                                 hasLibrary
@@ -169,41 +183,36 @@ class _LibraryTabState extends State<LibraryTab>
                               ),
                             ],
                           ),
+                        )
+                      : showLibrarySkeleton
+                      ? _LibraryLoadingSkeleton(
+                          bottomInset: bottomInset,
+                          topInset: headerContentHeight,
+                        )
+                      : _LibraryEmptyState(
+                          onImportLibrary: _addLibrary,
+                          onImportFolder: _addFolder,
+                          onImportFile: _addFiles,
+                          bottomInset: bottomInset,
                         ),
-                      )
-                    : Column(
-                        children: [
-                          SizedBox(
-                            height: topTotalHeight + searchBarFullHeight,
-                          ),
-                          Expanded(
-                            child: _LibraryEmptyState(
-                              onImportLibrary: _addLibrary,
-                              onImportFolder: _addFolder,
-                              onImportFile: _addFiles,
-                              bottomInset: bottomInset,
-                            ),
-                          ),
-                        ],
-                      ))
+                )
               : RefreshIndicator(
                   onRefresh: () => _refreshWatchedFolders(),
-                  displacement: topTotalHeight + 10,
+                  edgeOffset: headerContentHeight,
+                  displacement: 16,
+                  triggerMode: RefreshIndicatorTriggerMode.anywhere,
                   child: canReorder
                       ? ReorderableListView.builder(
                           scrollController: _scrollController,
                           padding: EdgeInsets.fromLTRB(
                             16,
-                            topTotalHeight,
+                            headerContentHeight,
                             16,
                             bottomInset,
                           ),
-                          header: const Padding(
-                            padding: EdgeInsets.only(bottom: 10),
-                            child: SizedBox(height: searchBarFullHeight),
-                          ),
                           cacheExtent: 720,
                           buildDefaultDragHandles: false,
+                          autoScrollerVelocityScalar: 24,
                           keyboardDismissBehavior:
                               ScrollViewKeyboardDismissBehavior.onDrag,
                           onReorder: provider.reorderLibraryNodes,
@@ -214,7 +223,7 @@ class _LibraryTabState extends State<LibraryTab>
                           itemCount: tree.length,
                           itemBuilder: (context, index) {
                             final node = tree[index];
-                            return ReorderableDelayedDragStartListener(
+                            return ReorderableHoldDragStartListener(
                               key: ValueKey(node.path),
                               index: index,
                               child: RepaintBoundary(
@@ -227,23 +236,15 @@ class _LibraryTabState extends State<LibraryTab>
                           controller: _scrollController,
                           padding: EdgeInsets.fromLTRB(
                             16,
-                            topTotalHeight,
+                            headerContentHeight,
                             16,
                             bottomInset,
                           ),
                           cacheExtent: 960,
                           keyboardDismissBehavior:
                               ScrollViewKeyboardDismissBehavior.onDrag,
-                          itemCount: tree.length + 1,
-                          itemBuilder: (context, index) {
-                            if (index == 0) {
-                              return const Padding(
-                                padding: EdgeInsets.only(bottom: 10),
-                                child: SizedBox(height: searchBarFullHeight),
-                              );
-                            }
-                            return buildLibraryItem(context, index - 1);
-                          },
+                          itemCount: tree.length,
+                          itemBuilder: buildLibraryItem,
                         ),
                 ),
         ),
@@ -251,7 +252,7 @@ class _LibraryTabState extends State<LibraryTab>
         // Scan progress card
         if (isScanning)
           Positioned(
-            top: _headerHeight + 10,
+            top: headerContentHeight + 10,
             left: 12,
             right: 12,
             child: _buildScanProgressCard(
@@ -264,7 +265,7 @@ class _LibraryTabState extends State<LibraryTab>
             ),
           ),
 
-        // 2. Header Layer (Frosted Glass via TopPageHeader)
+        // Header — frosted glass overlay on top of the scrolling list
         Positioned(
           top: 0,
           left: 0,
@@ -383,6 +384,53 @@ class _CollapsingSearchBar extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+class _LibraryLoadingSkeleton extends StatelessWidget {
+  const _LibraryLoadingSkeleton({
+    required this.bottomInset,
+    required this.topInset,
+  });
+
+  final double bottomInset;
+  final double topInset;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
+    Widget block({
+      required double height,
+      double radius = 14,
+      EdgeInsets margin = EdgeInsets.zero,
+    }) {
+      return Padding(
+        padding: margin,
+        child: PulsingPlaceholder(
+          borderRadius: BorderRadius.circular(radius),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: cs.surfaceContainerHigh,
+              borderRadius: BorderRadius.circular(radius),
+            ),
+            child: SizedBox(height: height),
+          ),
+        ),
+      );
+    }
+
+    return ListView(
+      physics: const NeverScrollableScrollPhysics(),
+      padding: EdgeInsets.fromLTRB(16, topInset, 16, bottomInset),
+      children: [
+        block(height: 82, margin: const EdgeInsets.only(bottom: 8)),
+        block(height: 70, margin: const EdgeInsets.only(bottom: 8)),
+        block(height: 54, margin: const EdgeInsets.only(bottom: 6)),
+        block(height: 54, margin: const EdgeInsets.only(bottom: 6)),
+        block(height: 62, margin: const EdgeInsets.only(bottom: 8)),
+      ],
     );
   }
 }

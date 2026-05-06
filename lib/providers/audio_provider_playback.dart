@@ -32,6 +32,7 @@ extension AudioProviderPlayback on AudioProvider {
     if (clearPausedSessions) {
       _pausedByTimerPaths.clear();
     }
+    unawaited(_syncNativeTimerAlarms());
   }
 
   Future<void> toggleSessionPlayPause(String sessionId) async {
@@ -110,6 +111,23 @@ extension AudioProviderPlayback on AudioProvider {
       mode == SessionLoopMode.single,
     );
     _syncNotificationState();
+    _notifyListeners();
+    _scheduleSaveSessionState();
+  }
+
+  Future<void> setSessionChannelSwap(String sessionId, bool enabled) async {
+    final session = _sessions[sessionId];
+    if (session == null) return;
+    if (session.channelSwapEnabled == enabled) return;
+    session.channelSwapEnabled = enabled;
+    final response = await NativePlaybackBridge.instance.setChannelSwap(
+      session.id,
+      enabled,
+    );
+    final value = response['value'];
+    if (value is Map) {
+      session.applyNativeSnapshot(NativePlaybackSnapshot.fromMap(value));
+    }
     _notifyListeners();
     _scheduleSaveSessionState();
   }

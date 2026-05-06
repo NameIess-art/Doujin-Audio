@@ -1,12 +1,16 @@
 part of 'audio_provider.dart';
 
 extension AudioProviderPlaybackSessions on AudioProvider {
-  Future<void> spawnSession(MusicTrack track) async {
+  Future<void> spawnSession(MusicTrack track, {bool? autoPlay}) async {
     final session = _createSessionForTrack(track);
     _registerSession(session);
     _scheduleSessionPersistence();
     unawaited(
-      _enqueueSessionPreparation(session, nextPath: track.path, autoPlay: true),
+      _enqueueSessionPreparation(
+        session,
+        nextPath: track.path,
+        autoPlay: autoPlay ?? _autoPlayAddedSessions,
+      ),
     );
   }
 
@@ -188,6 +192,8 @@ extension AudioProviderPlaybackSessions on AudioProvider {
       } else {
         session.setOptimisticPosition(Duration.zero);
       }
+      _markActiveSessionsDirty();
+      _notifyListeners();
 
       if (isNewTrack) {
         final title =

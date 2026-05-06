@@ -27,6 +27,7 @@ class PlaybackSession {
   SessionLoopMode loopMode;
   SessionLoopMode nonSingleLoopMode;
   double volume;
+  bool channelSwapEnabled = false;
   bool isLoading = false;
   bool isPlaybackStarting = false;
   int loadGeneration = 0;
@@ -83,6 +84,7 @@ class PlaybackSession {
     if ((volume - snapshot.volume).abs() >= 0.001) {
       volume = snapshot.volume;
     }
+    channelSwapEnabled = snapshot.channelSwapEnabled;
     if (snapshot.uri != null) {
       loadedPath = currentTrackPath;
     }

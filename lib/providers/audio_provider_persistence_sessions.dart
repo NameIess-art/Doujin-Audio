@@ -3,29 +3,41 @@ part of 'audio_provider.dart';
 extension AudioProviderPersistenceSessions on AudioProvider {
   Future<void> _loadSessions() async {
     try {
-      final prefs = await _prefs;
-      final raw = prefs.getString(_kSessionsKey);
-      if (raw == null || raw.isEmpty) return;
-      final list = json.decode(raw) as List<dynamic>;
+      final db = AppDatabase.instance;
+      var persistedSessions = await db.loadAllSessions();
+
+      if (persistedSessions.isEmpty) {
+        final prefs = await _prefs;
+        final raw = prefs.getString(_kSessionsKey);
+        final migrated = AppDatabase.tryMigrateSessionsFromJson(raw);
+        if (migrated != null && migrated.isNotEmpty) {
+          await db.saveAllSessions(migrated);
+          await prefs.remove(_kSessionsKey);
+          persistedSessions = migrated;
+        }
+      }
+
+      if (persistedSessions.isEmpty) return;
 
       final restoredIds = <String>[];
-      for (final item in list.whereType<Map<String, dynamic>>()) {
-        final trackPath = item['path'] as String?;
-        if (trackPath == null) continue;
+      for (final item in persistedSessions) {
+        final trackPath = item.trackPath;
         final track = trackByPath(trackPath);
         if (track == null) continue;
 
-        final loopModeIndex =
-            item['loopMode'] as int? ?? SessionLoopMode.folderSequential.index;
+        final loopModeIndex = item.loopModeIndex;
         final loopMode = SessionLoopMode
             .values[loopModeIndex.clamp(0, SessionLoopMode.values.length - 1)];
-        final volume = (item['volume'] as num?)?.toDouble() ?? 1.0;
-        final restoredPositionMs = (item['positionMs'] as num?)?.toInt() ?? 0;
+        final volume = item.volume;
+        final restoredPositionMs = item.positionMs;
         final restoredPosition = Duration(
           milliseconds: max(0, restoredPositionMs),
         );
 
-        final restoredSessionId = item['id'] as String? ?? _nextSessionId();
+        final restoredSessionId = item.id;
+        final createdAt = item.createdAtMs == null
+            ? DateTime.now()
+            : DateTime.fromMillisecondsSinceEpoch(item.createdAtMs!);
         final session = PlaybackSession(
           id: restoredSessionId,
           currentTrackPath: track.path,
@@ -34,11 +46,12 @@ extension AudioProviderPersistenceSessions on AudioProvider {
               ? SessionLoopMode.folderSequential
               : loopMode,
           volume: volume,
-          createdAt: DateTime.now(),
+          createdAt: createdAt,
           state: PlayerState(false, ProcessingState.idle),
         );
         session.lastKnownPosition = restoredPosition;
         session.lastPersistedPositionBucket = restoredPosition.inSeconds ~/ 5;
+        session.channelSwapEnabled = item.channelSwapEnabled;
         _sessions[session.id] = session;
         _markActiveSessionsDirty();
         _bindSessionListeners(session);
@@ -60,6 +73,12 @@ extension AudioProviderPersistenceSessions on AudioProvider {
               );
           if ((prepareResult['ok'] as bool?) != true) {
             continue;
+          }
+          if (item.channelSwapEnabled) {
+            await NativePlaybackBridge.instance.setChannelSwap(
+              session.id,
+              item.channelSwapEnabled,
+            );
           }
           session.loadedPath = track.path;
           _ensureSubtitleTrackLoaded(track.path);
@@ -91,14 +110,17 @@ extension AudioProviderPersistenceSessions on AudioProvider {
 
       final snapshotResponse = await NativePlaybackBridge.instance.snapshot();
       final snapshotValue = snapshotResponse['value'];
-      if (snapshotValue is List) {
-        for (final raw in snapshotValue.whereType<Map<dynamic, dynamic>>()) {
-          _handleNativePlaybackSnapshot(NativePlaybackSnapshot.fromMap(raw));
+      if (snapshotValue is Map) {
+        final rawSessions = snapshotValue['sessions'];
+        if (rawSessions is List) {
+          for (final raw in rawSessions.whereType<Map<dynamic, dynamic>>()) {
+            _handleNativePlaybackSnapshot(NativePlaybackSnapshot.fromMap(raw));
+          }
+        } else if (snapshotValue['sessionId'] != null) {
+          _handleNativePlaybackSnapshot(
+            NativePlaybackSnapshot.fromMap(snapshotValue),
+          );
         }
-      } else if (snapshotValue is Map) {
-        _handleNativePlaybackSnapshot(
-          NativePlaybackSnapshot.fromMap(snapshotValue),
-        );
       }
 
       _syncNotificationState();
@@ -110,31 +132,39 @@ extension AudioProviderPersistenceSessions on AudioProvider {
 
   Future<void> _saveSessionState() async {
     try {
-      final prefs = await _prefs;
       final ordered = _sessionOrder
           .map((id) => _sessions[id])
           .whereType<PlaybackSession>()
           .toList();
-      final encoded = json.encode(
-        ordered
-            .map(
-              (s) => {
-                'id': s.id,
-                'path': s.currentTrackPath,
-                'loopMode': s.loopMode.index,
-                'volume': s.volume,
-                'positionMs': max(
-                  0,
-                  max(
-                    s.position.inMilliseconds,
-                    s.lastKnownPosition.inMilliseconds,
-                  ),
+      final payload = ordered
+          .asMap()
+          .entries
+          .map(
+            (entry) => PersistedSession(
+              id: entry.value.id,
+              trackPath: entry.value.currentTrackPath,
+              loopModeIndex: entry.value.loopMode.index,
+              volume: entry.value.volume,
+              positionMs: max(
+                0,
+                max(
+                  entry.value.position.inMilliseconds,
+                  entry.value.lastKnownPosition.inMilliseconds,
                 ),
-              },
-            )
-            .toList(),
-      );
-      await prefs.setString(_kSessionsKey, encoded);
+              ),
+              channelSwapEnabled: entry.value.channelSwapEnabled,
+              createdAtMs: entry.value.createdAt.millisecondsSinceEpoch,
+              updatedAtMs: DateTime.now().millisecondsSinceEpoch,
+              lastPlayedAtMs: entry.value.state.playing
+                  ? DateTime.now().millisecondsSinceEpoch
+                  : null,
+              sortOrder: entry.key,
+            ),
+          )
+          .toList(growable: false);
+      await AppDatabase.instance.saveAllSessions(payload);
+      final prefs = await _prefs;
+      await prefs.remove(_kSessionsKey);
     } catch (e) {
       debugPrint('AudioProvider persistence error: $e');
     }

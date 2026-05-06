@@ -51,7 +51,11 @@ class _CountdownCard extends StatelessWidget {
                     width: 48,
                     height: 48,
                     decoration: BoxDecoration(
-                      color: accent.withValues(alpha: 0.12),
+                      color: timerExpired
+                          ? cs.errorContainer
+                          : waitingTrigger
+                          ? cs.surfaceContainerHighest
+                          : cs.primaryContainer,
                       borderRadius: BorderRadius.circular(16),
                     ),
                     child: Icon(
@@ -101,7 +105,7 @@ class _CountdownCard extends StatelessWidget {
                           'count': provider.pausedByTimerPaths.length,
                         }),
                         foregroundColor: cs.onErrorContainer,
-                        backgroundColor: cs.error.withValues(alpha: 0.08),
+                        backgroundColor: cs.errorContainer,
                         compact: compact,
                       ),
                     if (provider.autoResumeEnabled)
@@ -112,7 +116,7 @@ class _CountdownCard extends StatelessWidget {
                               '${provider.autoResumeHour.toString().padLeft(2, '0')}:${provider.autoResumeMinute.toString().padLeft(2, '0')}',
                         }),
                         foregroundColor: cs.onErrorContainer,
-                        backgroundColor: cs.error.withValues(alpha: 0.08),
+                        backgroundColor: cs.errorContainer,
                         compact: compact,
                       ),
                   ];
@@ -185,30 +189,12 @@ class _DurationPicker extends StatelessWidget {
             width: pickerWidth.clamp(84.0, 132.0).toDouble(),
             child: Column(
               children: [
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 180),
-                  curve: Curves.easeOutCubic,
+                Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10),
                   decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        cs.surface.withValues(alpha: 0.92),
-                        cs.surfaceContainerHigh.withValues(alpha: 0.86),
-                      ],
-                    ),
+                    color: cs.surfaceContainerHigh,
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: cs.outlineVariant.withValues(alpha: 0.8),
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: cs.shadow.withValues(alpha: 0.06),
-                        blurRadius: 16,
-                        offset: const Offset(0, 8),
-                      ),
-                    ],
+                    border: Border.all(color: cs.outlineVariant),
                   ),
                   child: DropdownButtonHideUnderline(
                     child: DropdownButton<int>(

@@ -38,6 +38,10 @@ class NativePlaybackBridge(
                 call.requiredString("sessionId"),
                 call.argument<Boolean>("repeatOne") ?: false
             ) ?: mapOf("ok" to false, "error" to "Native playback service is not ready.")
+            "setChannelSwap" -> service?.setChannelSwap(
+                call.requiredString("sessionId"),
+                call.argument<Boolean>("enabled") ?: false
+            ) ?: mapOf("ok" to false, "error" to "Native playback service is not ready.")
             "removeSession" -> service?.removeSession(call.requiredString("sessionId"))
                 ?: mapOf("ok" to false, "error" to "Native playback service is not ready.")
             "pauseAll" -> service?.pauseAll()
@@ -75,23 +79,13 @@ class NativePlaybackBridge(
     }
 
     private fun ensureService(): NativePlaybackService? {
-        val existing = NativePlaybackService.controller()
-        if (existing != null) return existing
-        val intent = Intent(context, NativePlaybackService::class.java).apply {
-            action = NativePlaybackService.ACTION_START
-        }
-        return try {
-            context.startService(intent)
-            NativePlaybackService.controller().also { service ->
-                if (service == null) {
-                    mainHandler.postDelayed(
-                        { attachEventListenerIfNeeded(NativePlaybackService.controller()) },
-                        80L
-                    )
-                }
+        return NativePlaybackService.ensureStarted(context).also { service ->
+            if (service == null) {
+                mainHandler.postDelayed(
+                    { attachEventListenerIfNeeded(NativePlaybackService.controller()) },
+                    80L
+                )
             }
-        } catch (_: Exception) {
-            NativePlaybackService.controller()
         }
     }
 

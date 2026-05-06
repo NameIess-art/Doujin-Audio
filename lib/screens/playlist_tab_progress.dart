@@ -91,6 +91,7 @@ class _ProgressBarState extends State<_ProgressBar> {
       });
     });
     _durationSub = widget.session.durationStream.listen((duration) {
+      if (duration == null && _duration != null) return;
       if (_duration == duration) return;
       setState(() {
         _duration = duration;
@@ -269,7 +270,11 @@ class _ProgressBarState extends State<_ProgressBar> {
 }
 
 class _SessionSubtitlePanel extends StatefulWidget {
-  const _SessionSubtitlePanel({required this.session, required this.provider});
+  const _SessionSubtitlePanel({
+    super.key,
+    required this.session,
+    required this.provider,
+  });
 
   final PlaybackSession session;
   final AudioProvider provider;
@@ -316,6 +321,10 @@ class _SessionSubtitlePanelState extends State<_SessionSubtitlePanel> {
   void _loadSubtitleTrack() {
     final trackPath = widget.session.currentTrackPath;
     _loadedPath = trackPath;
+    setState(() {
+      _subtitleTrack = null;
+      _subtitleText = null;
+    });
     widget.provider.subtitleTrackForPath(trackPath).then((track) {
       if (!mounted || _loadedPath != trackPath) return;
       _subtitleTrack = track;

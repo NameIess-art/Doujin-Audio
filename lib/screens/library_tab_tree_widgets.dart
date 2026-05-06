@@ -467,7 +467,6 @@ class _LibraryCoverThumbnail extends StatelessWidget {
                 image: resizeFileImageIfNeeded(
                   path: coverPath,
                   cacheWidth: (82 * dpr).round(),
-                  cacheHeight: (66 * dpr).round(),
                 ),
                 fit: BoxFit.cover,
                 gaplessPlayback: true,

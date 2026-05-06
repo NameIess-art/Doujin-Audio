@@ -121,17 +121,15 @@ class _ActiveSessionPlayPauseButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    return Material(
-      color: Colors.transparent,
-      shape: const CircleBorder(),
-      clipBehavior: Clip.antiAlias,
-      child: InkResponse(
-        onTap: enabled ? onPressed : null,
-        containedInkWell: true,
-        radius: 24,
-        customBorder: const CircleBorder(),
-        child: SizedBox.square(
-          dimension: 48,
+    return SizedBox.square(
+      dimension: 48,
+      child: Material(
+        color: Colors.transparent,
+        child: InkResponse(
+          onTap: enabled ? onPressed : null,
+          containedInkWell: true,
+          radius: 24,
+          customBorder: const CircleBorder(),
           child: Center(
             child: AnimatedSwitcher(
               duration: const Duration(milliseconds: 180),
@@ -151,8 +149,6 @@ class _ActiveSessionPlayPauseButton extends StatelessWidget {
               },
               child: Transform.translate(
                 key: ValueKey(isPlaying),
-                // Keep pause geometrically centered with the pressed circle;
-                // the play triangle gets a small optical nudge only.
                 offset: isPlaying ? Offset.zero : const Offset(1, 0),
                 child: Icon(
                   isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
@@ -451,7 +447,6 @@ class _ActiveSessionCover extends StatelessWidget {
               image: resizeFileImageIfNeeded(
                 path: coverPath,
                 cacheWidth: (58 * dpr).round(),
-                cacheHeight: (58 * dpr).round(),
               ),
               fit: BoxFit.cover,
               gaplessPlayback: true,

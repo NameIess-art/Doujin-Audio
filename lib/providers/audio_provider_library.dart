@@ -81,12 +81,47 @@ extension AudioProviderLibrary on AudioProvider {
     if (_isScanning == scanning) return;
     _isScanning = scanning;
     if (scanning) {
+      _scanProgressNotifyTimer?.cancel();
+      _scanProgressNotifyTimer = null;
       _scanCurrentFolder = '';
       _scanFoundCount = 0;
       _scanDuplicateCount = 0;
       _scanFailureCount = 0;
+    } else {
+      _scanProgressNotifyTimer?.cancel();
+      _scanProgressNotifyTimer = null;
     }
     _notifyListeners();
+  }
+
+  void beginLibraryBatch() {
+    _libraryBatchDepth++;
+  }
+
+  Future<void> endLibraryBatch({bool notify = true}) async {
+    if (_libraryBatchDepth <= 0) return;
+    _libraryBatchDepth--;
+    if (_libraryBatchDepth > 0 || !_libraryBatchChanged) return;
+
+    final tracksToPersist = List<MusicTrack>.from(_libraryBatchPersistTracks);
+    final didChangeGroupOrder = _libraryBatchChangedGroupOrder;
+    _libraryBatchChanged = false;
+    _libraryBatchChangedGroupOrder = false;
+    _libraryBatchPersistTracks.clear();
+
+    _clearResolvedCoverPaths();
+    _rebuildLibraryIndexes();
+    _syncLibraryNodeOrder(persist: false);
+    if (notify) {
+      _notifyListeners();
+    }
+    if (tracksToPersist.isNotEmpty) {
+      await AppDatabase.instance.insertTracks(tracksToPersist);
+    }
+    if (didChangeGroupOrder) {
+      await _saveGroupOrder();
+    }
+    await _saveLibraryNodeOrder();
   }
 
   void addTracks(
@@ -112,6 +147,16 @@ extension AudioProviderLibrary on AudioProvider {
     }
 
     if (toAdd.isNotEmpty) {
+      if (_libraryBatchDepth > 0) {
+        _libraryBatchChanged = true;
+        if (persist) {
+          _libraryBatchPersistTracks.addAll(toAdd);
+        }
+        if (didChangeGroupOrder) {
+          _libraryBatchChangedGroupOrder = true;
+        }
+        return;
+      }
       _clearResolvedCoverPaths();
       _rebuildLibraryIndexes();
       _syncLibraryNodeOrder(persist: false);

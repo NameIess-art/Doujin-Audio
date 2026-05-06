@@ -43,6 +43,7 @@ part 'audio_provider_persistence_sessions.dart';
 part 'audio_provider_persistence_timer.dart';
 part 'audio_provider_state.dart';
 part 'audio_provider_native_bridge.dart';
+part 'audio_provider_controllers.dart';
 
 const _kLibraryKey = 'library_v1';
 const _kSessionsKey = 'sessions_v1';
@@ -165,8 +166,14 @@ class AudioProvider with ChangeNotifier {
   bool _libraryTreeDirty = true;
   List<LibraryNode> _cachedLibraryTree = const <LibraryNode>[];
   int _cachedLibraryLeafFolderCount = 0;
+  int _libraryBatchDepth = 0;
+  bool _libraryBatchChanged = false;
+  bool _libraryBatchChangedGroupOrder = false;
+  final List<MusicTrack> _libraryBatchPersistTracks = [];
   Timer? _saveSessionStateTimer;
   Timer? _saveSessionOrderTimer;
+  Timer? _scanProgressNotifyTimer;
+  Timer? _cacheWarmupTimer;
   Future<void> _sessionPreparationQueue = Future<void>.value();
   Timer? _notificationActionRefreshTimer;
   Timer? _notificationActionGuardTimeout;
@@ -180,8 +187,14 @@ class AudioProvider with ChangeNotifier {
   Timer? _autoResumeTimer;
   DateTime? _autoResumeAt;
 
+  late final LibraryController libraryController;
+  late final PlaybackSessionController playbackSessionController;
+  late final TimerController timerController;
+  late final NotificationCoordinator notificationCoordinator;
+
   AudioProvider({required PlaybackNotificationService notificationService})
     : _notificationService = notificationService {
+    _initializeControllers();
     NativePlaybackBridge.instance.startListening();
     _nativePlaybackSubscription = NativePlaybackBridge.instance.snapshots
         .listen(_handleNativePlaybackSnapshot);
@@ -191,7 +204,16 @@ class AudioProvider with ChangeNotifier {
 
   @visibleForTesting
   AudioProvider.test({required PlaybackNotificationService notificationService})
-    : _notificationService = notificationService;
+    : _notificationService = notificationService {
+    _initializeControllers();
+  }
+
+  void _initializeControllers() {
+    libraryController = LibraryController._(this);
+    playbackSessionController = PlaybackSessionController._(this);
+    timerController = TimerController._(this);
+    notificationCoordinator = NotificationCoordinator._(this);
+  }
 
   @override
   void dispose() {
@@ -199,6 +221,8 @@ class AudioProvider with ChangeNotifier {
     _autoResumeTimer?.cancel();
     _saveSessionStateTimer?.cancel();
     _saveSessionOrderTimer?.cancel();
+    _scanProgressNotifyTimer?.cancel();
+    _cacheWarmupTimer?.cancel();
     _notificationProgressRefreshTimer?.cancel();
     _unifiedNotificationSyncTimer?.cancel();
     _notificationActionRefreshTimer?.cancel();

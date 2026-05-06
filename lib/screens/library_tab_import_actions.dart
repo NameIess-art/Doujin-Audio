@@ -16,6 +16,7 @@ extension _LibraryTabImportActions on _LibraryTabState {
 
     if (!mounted) return;
     provider.setScanning(true);
+    provider.beginLibraryBatch();
     var totalAdded = 0;
     try {
       final foldersToRefresh = LinkedHashSet<String>.from(watchedFolders);
@@ -53,8 +54,9 @@ extension _LibraryTabImportActions on _LibraryTabState {
         }
       }
     } finally {
+      await provider.endLibraryBatch();
+      provider.setScanning(false);
       if (mounted) {
-        provider.setScanning(false);
         if (!silent || totalAdded > 0) {
           _showSnack(
             totalAdded > 0
@@ -122,6 +124,7 @@ extension _LibraryTabImportActions on _LibraryTabState {
     final provider = context.read<AudioProvider>();
     if (!mounted) return;
     provider.setScanning(true);
+    provider.beginLibraryBatch();
 
     var added = 0;
 
@@ -142,9 +145,10 @@ extension _LibraryTabImportActions on _LibraryTabState {
         added = await _importFolderIncrementally(folderPath, provider);
       }
     } finally {
+      await provider.endLibraryBatch();
+      provider.addWatchedFolder(folderPath, notify: false);
+      provider.setScanning(false);
       if (mounted) {
-        provider.addWatchedFolder(folderPath, notify: false);
-        provider.setScanning(false);
         _showSnack(i18n.tr('import_done_added', {'count': added}));
       }
     }
@@ -164,6 +168,7 @@ extension _LibraryTabImportActions on _LibraryTabState {
     if (uniqueFolderPaths.isEmpty || !mounted) return;
 
     provider.setScanning(true);
+    provider.beginLibraryBatch();
     var added = 0;
     final totalFolders = uniqueFolderPaths.length;
     var processedFolders = 0;
@@ -197,8 +202,9 @@ extension _LibraryTabImportActions on _LibraryTabState {
         provider.addWatchedFolder(folderPath, notify: false);
       }
     } finally {
+      await provider.endLibraryBatch();
+      provider.setScanning(false);
       if (mounted) {
-        provider.setScanning(false);
         _showSnack(
           completionMessageBuilder?.call(added, uniqueFolderPaths.length) ??
               i18n.tr('import_done_added', {'count': added}),
@@ -223,7 +229,9 @@ extension _LibraryTabImportActions on _LibraryTabState {
     if (result == null) return;
 
     if (!mounted) return;
-    context.read<AudioProvider>().setScanning(true);
+    final provider = context.read<AudioProvider>();
+    provider.setScanning(true);
+    provider.beginLibraryBatch();
 
     try {
       final resolvedPaths = <String>[];
@@ -269,16 +277,14 @@ extension _LibraryTabImportActions on _LibraryTabState {
       }
 
       if (mounted) {
-        final provider = context.read<AudioProvider>();
         final beforeCount = provider.library.length;
         provider.addTracks(candidates, notify: false);
         final added = provider.library.length - beforeCount;
         _showSnack(i18n.tr('import_done_added', {'count': added}));
       }
     } finally {
-      if (mounted) {
-        context.read<AudioProvider>().setScanning(false);
-      }
+      await provider.endLibraryBatch();
+      provider.setScanning(false);
     }
   }
 }

@@ -201,7 +201,7 @@ const Map<AppLanguage, Map<String, String>> _localizedValues = {
     'bitrate_used': 'MP3 / AAC / OGG 输出会使用该码率。',
     'bitrate_not_used': '{format} 使用格式内置编码参数，码率设置不生效。',
     'about': '关于',
-    'app_version': '本地音乐播放器 v1.1.12',
+    'app_version': '本地音乐播放器 v1.1.13',
     'app_desc': '支持并发会话与高保真音频播放。',
     'language': '语言',
     'language_subtitle': '切换界面语言',
@@ -395,7 +395,7 @@ const Map<AppLanguage, Map<String, String>> _localizedValues = {
     'bitrate_used': 'MP3 / AAC / OGG 出力でこのビットレートを使用します。',
     'bitrate_not_used': '{format} は形式内蔵のエンコードを使うため、ビットレート設定は無効です。',
     'about': '情報',
-    'app_version': 'ローカル音楽プレーヤー v1.1.12',
+    'app_version': 'ローカル音楽プレーヤー v1.1.13',
     'app_desc': '並行セッションと高音質再生に対応。',
     'language': '言語',
     'language_subtitle': '表示言語を切り替え',
@@ -610,7 +610,7 @@ const Map<AppLanguage, Map<String, String>> _localizedValues = {
     'bitrate_not_used':
         '{format} uses built-in encoding parameters. Bitrate setting is ignored.',
     'about': 'About',
-    'app_version': 'Local Music Player v1.1.12',
+    'app_version': 'Local Music Player v1.1.13',
     'app_desc':
         'Supports concurrent sessions and high-fidelity audio playback.',
     'language': 'Language',

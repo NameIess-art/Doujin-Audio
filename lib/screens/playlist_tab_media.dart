@@ -75,8 +75,9 @@ class _SessionHeroArtwork extends StatelessWidget {
                       image: resizeFileImageIfNeeded(
                         path: coverPath,
                         cacheWidth: cacheWidth,
+                        cacheHeight: (height * dpr).round(),
                       ),
-                      fit: BoxFit.contain,
+                      fit: BoxFit.cover,
                       gaplessPlayback: true,
                       errorBuilder: (_, _, _) => fallback(),
                     ),
@@ -159,8 +160,9 @@ class _SessionCoverThumbnail extends StatelessWidget {
               image: resizeFileImageIfNeeded(
                 path: coverPath,
                 cacheWidth: (90 * dpr).round(),
+                cacheHeight: (72 * dpr).round(),
               ),
-              fit: BoxFit.contain,
+              fit: BoxFit.cover,
               gaplessPlayback: true,
               errorBuilder: (_, _, _) => fallback(),
             );

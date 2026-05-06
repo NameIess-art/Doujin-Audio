@@ -138,9 +138,18 @@ extension AudioProviderPersistence on AudioProvider {
       await _enforceSingleThreadPlayback();
     }
     await _loadTimerRuntime();
-    _warmLibraryAndSessionCaches();
+    _scheduleLibraryAndSessionCacheWarmup();
     _syncKeepCpuAwake();
     _notifyListeners();
+  }
+
+  void _scheduleLibraryAndSessionCacheWarmup() {
+    _cacheWarmupTimer?.cancel();
+    _cacheWarmupTimer = Timer(const Duration(seconds: 2), () {
+      _cacheWarmupTimer = null;
+      if (_isScanning) return;
+      _warmLibraryAndSessionCaches();
+    });
   }
 
   void _warmLibraryAndSessionCaches() {
@@ -150,7 +159,7 @@ extension AudioProviderPersistence on AudioProvider {
       if (node is! FolderNode || node.path.startsWith('content://')) continue;
       unawaited(coverPathFutureForFolder(node.path));
       warmedFolders++;
-      if (warmedFolders >= 24) break;
+      if (warmedFolders >= 6) break;
     }
 
     var warmedSessions = 0;
@@ -160,7 +169,7 @@ extension AudioProviderPersistence on AudioProvider {
       final track = trackByPath(trackPath);
       unawaited(coverPathFutureForTrack(track));
       warmedSessions++;
-      if (warmedSessions >= 12) break;
+      if (warmedSessions >= 4) break;
     }
   }
 

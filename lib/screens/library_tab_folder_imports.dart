@@ -150,6 +150,9 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
     final pendingDirs = Queue<Directory>()..add(folder);
     final batch = <MusicTrack>[];
     const batchSize = 350;
+    final baseFoundCount = provider.scanFoundCount;
+    final baseDuplicateCount = provider.scanDuplicateCount;
+    final baseFailureCount = provider.scanFailureCount;
     var added = 0;
     var duplicates = 0;
     var failures = 0;
@@ -169,9 +172,9 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
       if (dirsProcessed % 8 == 0) {
         provider.setScanProgress(
           currentFolder: path.basename(currentDir.path),
-          foundCount: provider.scanFoundCount + added,
-          duplicateCount: provider.scanDuplicateCount + duplicates,
-          failureCount: provider.scanFailureCount + failures,
+          foundCount: baseFoundCount + added,
+          duplicateCount: baseDuplicateCount + duplicates,
+          failureCount: baseFailureCount + failures,
         );
       }
 
@@ -225,9 +228,9 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
     }
     provider.addTracks(batch, notify: false);
     provider.setScanProgress(
-      foundCount: provider.scanFoundCount + added,
-      duplicateCount: provider.scanDuplicateCount + duplicates,
-      failureCount: provider.scanFailureCount + failures,
+      foundCount: baseFoundCount + added,
+      duplicateCount: baseDuplicateCount + duplicates,
+      failureCount: baseFailureCount + failures,
     );
     return added;
   }

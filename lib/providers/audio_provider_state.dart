@@ -92,16 +92,43 @@ extension AudioProviderState on AudioProvider {
     int? duplicateCount,
     int? failureCount,
   }) {
+    var changed = false;
+    final nextFolder = currentFolder ?? _scanCurrentFolder;
+    final nextFoundCount = foundCount ?? _scanFoundCount;
+    final nextDuplicateCount = duplicateCount ?? _scanDuplicateCount;
+    final nextFailureCount = failureCount ?? _scanFailureCount;
+    changed =
+        nextFolder != _scanCurrentFolder ||
+        nextFoundCount != _scanFoundCount ||
+        nextDuplicateCount != _scanDuplicateCount ||
+        nextFailureCount != _scanFailureCount;
+    if (!changed) return;
     if (currentFolder != null) _scanCurrentFolder = currentFolder;
     if (foundCount != null) _scanFoundCount = foundCount;
     if (duplicateCount != null) _scanDuplicateCount = duplicateCount;
     if (failureCount != null) _scanFailureCount = failureCount;
-    _notifyListeners();
+    _scheduleScanProgressNotify();
+  }
+
+  void _scheduleScanProgressNotify() {
+    if (!_isScanning) {
+      _notifyListeners();
+      return;
+    }
+    if (_scanProgressNotifyTimer != null) return;
+    _scanProgressNotifyTimer = Timer(const Duration(milliseconds: 160), () {
+      _scanProgressNotifyTimer = null;
+      if (_isScanning) {
+        _notifyListeners();
+      }
+    });
   }
 
   void cancelScan() {
     if (!_isScanning) return;
     _isScanning = false;
+    _scanProgressNotifyTimer?.cancel();
+    _scanProgressNotifyTimer = null;
     _notifyListeners();
   }
 

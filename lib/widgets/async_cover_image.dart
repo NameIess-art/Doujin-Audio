@@ -2,42 +2,20 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
-class PulsingPlaceholder extends StatefulWidget {
+class PulsingPlaceholder extends StatelessWidget {
   const PulsingPlaceholder({super.key, required this.child, this.borderRadius});
 
   final Widget child;
   final BorderRadius? borderRadius;
 
   @override
-  State<PulsingPlaceholder> createState() => _PulsingPlaceholderState();
-}
-
-class _PulsingPlaceholderState extends State<PulsingPlaceholder>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 1150),
-  )..repeat(reverse: true);
-
-  late final Animation<double> _opacity = Tween<double>(
-    begin: 0.55,
-    end: 0.95,
-  ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    Widget child = FadeTransition(opacity: _opacity, child: widget.child);
-    final radius = widget.borderRadius;
+    Widget result = child;
+    final radius = borderRadius;
     if (radius != null) {
-      child = ClipRRect(borderRadius: radius, child: child);
+      result = ClipRRect(borderRadius: radius, child: result);
     }
-    return child;
+    return result;
   }
 }
 

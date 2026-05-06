@@ -451,8 +451,9 @@ class _ActiveSessionCover extends StatelessWidget {
               image: resizeFileImageIfNeeded(
                 path: coverPath,
                 cacheWidth: (58 * dpr).round(),
+                cacheHeight: (58 * dpr).round(),
               ),
-              fit: BoxFit.contain,
+              fit: BoxFit.cover,
               gaplessPlayback: true,
               errorBuilder: (_, _, _) => fallback(),
             );

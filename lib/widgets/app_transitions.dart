@@ -4,8 +4,8 @@ PageRouteBuilder<T> buildAppPageRoute<T>({
   required Widget child,
   RouteSettings? settings,
   Offset beginOffset = const Offset(0, 0.032),
-  Duration duration = const Duration(milliseconds: 340),
-  Duration reverseDuration = const Duration(milliseconds: 260),
+  Duration duration = const Duration(milliseconds: 260),
+  Duration reverseDuration = const Duration(milliseconds: 200),
 }) {
   return PageRouteBuilder<T>(
     settings: settings,
@@ -40,8 +40,8 @@ PageRouteBuilder<T> buildAppOverlayRoute<T>({
   required Widget child,
   RouteSettings? settings,
   Offset beginOffset = const Offset(0, 0.024),
-  Duration duration = const Duration(milliseconds: 300),
-  Duration reverseDuration = const Duration(milliseconds: 220),
+  Duration duration = const Duration(milliseconds: 220),
+  Duration reverseDuration = const Duration(milliseconds: 160),
 }) {
   return PageRouteBuilder<T>(
     settings: settings,

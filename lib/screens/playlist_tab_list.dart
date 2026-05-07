@@ -1,16 +1,17 @@
 part of 'playlist_tab.dart';
 
 class _SessionsEmptyState extends StatelessWidget {
-  const _SessionsEmptyState({required this.bottomInset});
+  const _SessionsEmptyState({required this.bottomInset, this.topInset = 16});
 
   final double bottomInset;
+  final double topInset;
 
   @override
   Widget build(BuildContext context) {
     final i18n = context.watch<AppLanguageProvider>();
     final cs = Theme.of(context).colorScheme;
     return ListView(
-      padding: EdgeInsets.fromLTRB(24, 16, 24, bottomInset),
+      padding: EdgeInsets.fromLTRB(24, topInset, 24, bottomInset),
       physics: const BouncingScrollPhysics(),
       children: [
         Card(
@@ -171,7 +172,9 @@ class _SessionListCardState extends State<_SessionListCard> {
             margin: EdgeInsets.zero,
             clipBehavior: Clip.antiAlias,
             shape: cardShape,
-            color: isPlaying ? cs.surfaceContainerHigh : cs.surfaceContainerHigh,
+            color: isPlaying
+                ? cs.surfaceContainerHigh
+                : cs.surfaceContainerHigh,
             elevation: 0,
             shadowColor: Colors.transparent,
             child: Container(
@@ -179,133 +182,138 @@ class _SessionListCardState extends State<_SessionListCard> {
                 borderRadius: BorderRadius.circular(14),
                 border: isPlaying
                     ? Border.all(
-                      color: cs.primary.withValues(alpha: 0.25),
-                      width: 1.2,
-                    )
+                        color: cs.primary.withValues(alpha: 0.25),
+                        width: 1.2,
+                      )
                     : Border.all(
-                      color: cs.outlineVariant.withValues(alpha: 0.15),
-                      width: 0.5,
-                    ),
+                        color: cs.outlineVariant.withValues(alpha: 0.15),
+                        width: 0.5,
+                      ),
                 gradient: isPlaying
                     ? LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        cs.primaryContainer.withValues(alpha: 0.3),
-                        cs.surfaceContainerHigh,
-                        cs.surfaceContainerHigh,
-                      ],
-                    )
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          cs.primaryContainer.withValues(alpha: 0.3),
+                          cs.surfaceContainerHigh,
+                          cs.surfaceContainerHigh,
+                        ],
+                      )
                     : null,
               ),
               child: Semantics(
-              button: true,
-              label: displayName,
-              child: InkWell(
-                onTap: () {
-                  HapticFeedback.lightImpact();
-                  widget.onOpen();
-                },
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 7, 10, 6),
-                  child: Row(
-                    children: [
-                      _SessionCoverThumbnail(
-                        coverPathFuture: _coverPathFuture!,
-                        title: displayName,
-                      ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              folderName,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context).textTheme.bodySmall
-                                  ?.copyWith(
-                                    color: cs.onSurfaceVariant,
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 12,
+                button: true,
+                label: displayName,
+                child: InkWell(
+                  onTap: () {
+                    HapticFeedback.lightImpact();
+                    widget.onOpen();
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 7, 10, 6),
+                    child: Row(
+                      children: [
+                        _SessionCoverThumbnail(
+                          coverPathFuture: _coverPathFuture!,
+                          title: displayName,
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                folderName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(
+                                      color: cs.onSurfaceVariant,
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 12,
+                                    ),
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                displayName,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context).textTheme.titleMedium
+                                    ?.copyWith(
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: 14,
+                                      height: 1.12,
+                                    ),
+                              ),
+                              const SizedBox(height: 4),
+                              SizedBox(
+                                width: double.infinity,
+                                child: _SessionMetaChip(
+                                  icon: Icons.repeat_rounded,
+                                  text: _loopModeSummary(
+                                    context,
+                                    sessionView.loopMode,
                                   ),
-                            ),
-                            const SizedBox(height: 3),
-                            Text(
-                              displayName,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context).textTheme.titleMedium
-                                  ?.copyWith(
-                                    fontWeight: FontWeight.w900,
-                                    fontSize: 14,
-                                    height: 1.12,
-                                  ),
-                            ),
-                            const SizedBox(height: 4),
-                            SizedBox(
-                              width: double.infinity,
-                              child: _SessionMetaChip(
-                                icon: Icons.repeat_rounded,
-                                text: _loopModeSummary(
-                                  context,
-                                  sessionView.loopMode,
                                 ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 10),
-                      IconButton(
-                        onPressed: sessionView.isLoading
-                            ? null
-                            : () {
-                                Feedback.forTap(context);
-                                provider.toggleSessionPlayPause(session.id);
-                              },
-                        style: IconButton.styleFrom(
-                          foregroundColor: isPlaying
-                              ? cs.primary
-                              : cs.onSurface,
-                          minimumSize: const Size(44, 44),
-                          maximumSize: const Size(44, 44),
-                          padding: EdgeInsets.zero,
-                        ),
-                        icon: AnimatedSwitcher(
-                          duration: const Duration(milliseconds: 150),
-                          switchInCurve: Curves.easeOutCubic,
-                          switchOutCurve: Curves.easeInCubic,
-                          transitionBuilder: (child, animation) {
-                            return FadeTransition(
-                              opacity: animation,
-                              child: ScaleTransition(
-                                scale: Tween<double>(begin: 0.92, end: 1)
-                                    .animate(animation),
-                                child: child,
-                              ),
-                            );
-                          },
-                          child: sessionView.isLoading
-                              ? SizedBox(
-                                  key: const ValueKey('loading'),
-                                  width: 26,
-                                  height: 26,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2.5,
-                                    color: isPlaying ? cs.primary : cs.onSurface,
-                                  ),
-                                )
-                              : Icon(
-                                  isPlaying
-                                      ? Icons.pause_rounded
-                                      : Icons.play_arrow_rounded,
-                                  key: ValueKey(isPlaying),
-                                  size: 26,
+                        const SizedBox(width: 10),
+                        IconButton(
+                          onPressed: sessionView.isLoading
+                              ? null
+                              : () {
+                                  Feedback.forTap(context);
+                                  provider.toggleSessionPlayPause(session.id);
+                                },
+                          style: IconButton.styleFrom(
+                            foregroundColor: isPlaying
+                                ? cs.primary
+                                : cs.onSurface,
+                            minimumSize: const Size(44, 44),
+                            maximumSize: const Size(44, 44),
+                            padding: EdgeInsets.zero,
+                          ),
+                          icon: AnimatedSwitcher(
+                            duration: const Duration(milliseconds: 150),
+                            switchInCurve: Curves.easeOutCubic,
+                            switchOutCurve: Curves.easeInCubic,
+                            transitionBuilder: (child, animation) {
+                              return FadeTransition(
+                                opacity: animation,
+                                child: ScaleTransition(
+                                  scale: Tween<double>(
+                                    begin: 0.92,
+                                    end: 1,
+                                  ).animate(animation),
+                                  child: child,
                                 ),
+                              );
+                            },
+                            child: sessionView.isLoading
+                                ? SizedBox(
+                                    key: const ValueKey('loading'),
+                                    width: 26,
+                                    height: 26,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2.5,
+                                      color: isPlaying
+                                          ? cs.primary
+                                          : cs.onSurface,
+                                    ),
+                                  )
+                                : Icon(
+                                    isPlaying
+                                        ? Icons.pause_rounded
+                                        : Icons.play_arrow_rounded,
+                                    key: ValueKey(isPlaying),
+                                    size: 26,
+                                  ),
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -313,7 +321,6 @@ class _SessionListCardState extends State<_SessionListCard> {
           ),
         ),
       ),
-    ),
-  );
+    );
   }
 }

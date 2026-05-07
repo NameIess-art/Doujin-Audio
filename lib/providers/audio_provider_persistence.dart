@@ -117,27 +117,43 @@ extension AudioProviderPersistence on AudioProvider {
   }
 
   Future<void> _loadData() async {
+    // Phase 1: Load library (foundation — everything else depends on it).
     await _loadLibrary();
-    await _loadGroupOrder();
-    await _loadWatchedFolders();
-    await _loadWatchedLibraries();
-    await _loadLibraryNodeOrder();
+
+    // Phase 2: Load all independent SharedPreferences settings in parallel.
+    await Future.wait<void>([
+      _loadGroupOrder(),
+      _loadWatchedFolders(),
+      _loadWatchedLibraries(),
+      _loadLibraryExclusions(),
+      _loadLibraryNodeOrder(),
+      _loadSessionOrder(),
+      _loadPlaybackSettings(),
+      _loadConverterSettings(),
+      _loadTimerSettings(),
+    ]);
+
+    // Phase 3: In-memory syncs that depend on library + loaded order data.
     _syncGroupOrderFromLibrary();
     _syncLibraryNodeOrder(persist: false);
     _markLibraryStructureDirty();
-    await _loadSessionOrder();
-    await _loadPlaybackSettings();
-    await _loadConverterSettings();
-    await _loadTimerSettings();
+
+    // Phase 4: Notification state + first UI update.
     if (!_notificationsEnabled) {
       await NativePlaybackBridge.instance.setForegroundEnabled(false);
     }
     _notifyListeners();
+
+    // Phase 5: Load sessions (heavy — native calls per session).
     await _loadSessions();
+
+    // Phase 6: Post-session operations (sequenced to avoid timer/session races).
     if (!_multiThreadPlaybackEnabled) {
       await _enforceSingleThreadPlayback();
     }
     await _loadTimerRuntime();
+
+    // Phase 7: Deferred warmup, keep-alive sync, final UI update.
     _scheduleLibraryAndSessionCacheWarmup();
     _syncKeepCpuAwake();
     _notifyListeners();
@@ -251,6 +267,53 @@ extension AudioProviderPersistence on AudioProvider {
     } catch (e) {
       debugPrint('AudioProvider persistence error: $e');
     }
+  }
+
+  Future<void> _loadLibraryExclusions() async {
+    try {
+      final prefs = await _prefs;
+      final raw = prefs.getString(_kLibraryExclusionsKey);
+      if (raw == null || raw.isEmpty) return;
+      final data = json.decode(raw) as Map<String, dynamic>;
+      _decodeExclusionMap(data['folders'], _excludedLibraryFolders);
+      _decodeExclusionMap(data['tracks'], _excludedLibraryTracks);
+    } catch (e) {
+      debugPrint('AudioProvider persistence error: $e');
+    }
+  }
+
+  Future<void> _saveLibraryExclusions() async {
+    try {
+      final prefs = await _prefs;
+      final encoded = json.encode({
+        'folders': _encodeExclusionMap(_excludedLibraryFolders),
+        'tracks': _encodeExclusionMap(_excludedLibraryTracks),
+      });
+      await prefs.setString(_kLibraryExclusionsKey, encoded);
+    } catch (e) {
+      debugPrint('AudioProvider persistence error: $e');
+    }
+  }
+
+  void _decodeExclusionMap(Object? raw, Map<String, Set<String>> target) {
+    target.clear();
+    if (raw is! Map) return;
+    for (final entry in raw.entries) {
+      final libraryPath = entry.key?.toString();
+      final values = entry.value;
+      if (libraryPath == null || values is! List) continue;
+      target[path.normalize(libraryPath)] = values
+          .map((value) => path.normalize(value.toString()))
+          .where((value) => value.isNotEmpty)
+          .toSet();
+    }
+  }
+
+  Map<String, List<String>> _encodeExclusionMap(Map<String, Set<String>> map) {
+    return map.map(
+      (libraryPath, values) =>
+          MapEntry(libraryPath, values.toList(growable: false)..sort()),
+    );
   }
 
   Future<void> _loadConverterSettings() async {

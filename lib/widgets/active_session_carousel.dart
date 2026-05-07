@@ -55,8 +55,9 @@ class ActiveSessionCarousel extends StatefulWidget {
 class _ActiveSessionCarouselState extends State<ActiveSessionCarousel> {
   final Map<String, Future<String?>> _coverFutures = {};
   late PageController _pageController;
+  final ValueNotifier<double> _pageNotifier = ValueNotifier<double>(0);
 
-  double _page = 0;
+  double get _page => _pageNotifier.value;
 
   @override
   void initState() {
@@ -88,17 +89,17 @@ class _ActiveSessionCarouselState extends State<ActiveSessionCarousel> {
     _pageController
       ..removeListener(_handlePageTick)
       ..dispose();
+    _pageNotifier.dispose();
     super.dispose();
   }
 
   void _handlePageTick() {
+    final current = _pageNotifier.value;
     final nextPage = _pageController.hasClients
-        ? (_pageController.page ?? _page)
-        : _page;
-    if ((nextPage - _page).abs() < 0.001) return;
-    setState(() {
-      _page = nextPage;
-    });
+        ? (_pageController.page ?? current)
+        : current;
+    if ((nextPage - current).abs() < 0.001) return;
+    _pageNotifier.value = nextPage;
   }
 
   void _openSessionDetail(BuildContext context, PlaybackSession session) {
@@ -119,9 +120,7 @@ class _ActiveSessionCarouselState extends State<ActiveSessionCarousel> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_pageController.hasClients) return;
       _pageController.jumpToPage(maxPage);
-      setState(() {
-        _page = maxPage.toDouble();
-      });
+      _pageNotifier.value = maxPage.toDouble();
     });
   }
 
@@ -141,42 +140,46 @@ class _ActiveSessionCarouselState extends State<ActiveSessionCarousel> {
 
     return SizedBox(
       height: 88,
-      child: PageView.builder(
-        controller: _pageController,
-        pageSnapping: false,
-        physics: sessions.length == 1
-            ? const NeverScrollableScrollPhysics()
-            : const SnapScrollPhysics(parent: BouncingScrollPhysics()),
-        itemCount: sessions.length,
-        itemBuilder: (context, index) {
-          final session = sessions[index];
-          final pageDelta = index - _page;
-          final selectedness = (1 - pageDelta.abs()).clamp(0.0, 1.0);
-          final scale = lerpDouble(0.972, 1.0, selectedness) ?? 1.0;
-          const translateX =
-              0.0; // Remove push-away translation to keep edges visible
-          final translateY = lerpDouble(4, 0, selectedness) ?? 0;
-          final track = provider.trackByPath(session.currentTrackPath);
+      child: ListenableBuilder(
+        listenable: _pageNotifier,
+        builder: (context, _) {
+          return PageView.builder(
+            controller: _pageController,
+            pageSnapping: false,
+            physics: sessions.length == 1
+                ? const NeverScrollableScrollPhysics()
+                : const SnapScrollPhysics(parent: BouncingScrollPhysics()),
+            itemCount: sessions.length,
+            itemBuilder: (context, index) {
+              final session = sessions[index];
+              final pageDelta = index - _pageNotifier.value;
+              final selectedness = (1 - pageDelta.abs()).clamp(0.0, 1.0);
+              final scale = lerpDouble(0.972, 1.0, selectedness) ?? 1.0;
+              const translateX = 0.0;
+              final translateY = lerpDouble(4, 0, selectedness) ?? 0;
+              final track = provider.trackByPath(session.currentTrackPath);
 
-          return Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 2),
-            child: Transform.translate(
-              offset: Offset(translateX, translateY),
-              child: Transform.scale(
-                scale: scale,
-                child: _ActiveSessionCard(
-                  session: session,
-                  track: track,
-                  provider: provider,
-                  coverPathFuture: _sessionCoverFutureForTrack(
-                    _coverFutures,
-                    provider,
-                    track,
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 2),
+                child: Transform.translate(
+                  offset: Offset(translateX, translateY),
+                  child: Transform.scale(
+                    scale: scale,
+                    child: _ActiveSessionCard(
+                      session: session,
+                      track: track,
+                      provider: provider,
+                      coverPathFuture: _sessionCoverFutureForTrack(
+                        _coverFutures,
+                        provider,
+                        track,
+                      ),
+                      onOpen: () => _openSessionDetail(context, session),
+                    ),
                   ),
-                  onOpen: () => _openSessionDetail(context, session),
                 ),
-              ),
-            ),
+              );
+            },
           );
         },
       ),

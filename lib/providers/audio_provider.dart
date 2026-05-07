@@ -52,6 +52,7 @@ const _kLibraryNodeOrderKey = 'library_node_order_v1';
 const _kSessionOrderKey = 'session_order_v1';
 const _kWatchedFoldersKey = 'watched_folders_v1';
 const _kWatchedLibrariesKey = 'watched_libraries_v1';
+const _kLibraryExclusionsKey = 'library_exclusions_v1';
 const _kTimerSettingsKey = 'timer_settings_v1';
 const _kTimerRuntimeKey = 'timer_runtime_v1';
 const _kConverterSettingsKey = 'converter_settings_v1';
@@ -115,6 +116,8 @@ class AudioProvider with ChangeNotifier {
   final List<String> _sessionOrder = [];
   final List<String> _watchedFolders = [];
   final List<String> _watchedLibraries = [];
+  final Map<String, Set<String>> _excludedLibraryFolders = {};
+  final Map<String, Set<String>> _excludedLibraryTracks = {};
 
   String _converterFormat = 'mp3';
   String _converterBitrate = '320k';
@@ -139,6 +142,7 @@ class AudioProvider with ChangeNotifier {
 
   int _sessionSeed = 0;
   bool _isScanning = false;
+  bool _isBackgroundScanning = false;
   String _scanCurrentFolder = '';
   int _scanFoundCount = 0;
   int _scanDuplicateCount = 0;

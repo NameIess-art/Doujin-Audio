@@ -34,6 +34,10 @@ extension _LibraryTabUiHelpers on _LibraryTabState {
                         onPressed: () {
                           _searchController.clear();
                           _searchDebounceTimer?.cancel();
+                          context.read<AudioProvider>().setPageTransitioning(
+                            false,
+                          );
+                          _jumpLibraryListToTop();
                           _setLocalState(() => _searchQuery = '');
                         },
                         color: cs.onSurfaceVariant,
@@ -72,9 +76,12 @@ extension _LibraryTabUiHelpers on _LibraryTabState {
                   const Duration(milliseconds: 220),
                   () {
                     if (!mounted) return;
+                    context.read<AudioProvider>().setPageTransitioning(false);
+                    _jumpLibraryListToTop();
                     _setLocalState(() => _searchQuery = value.trim());
                   },
                 );
+                _setLocalState(() {});
               },
             ),
           ),

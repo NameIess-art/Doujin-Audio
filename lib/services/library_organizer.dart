@@ -115,7 +115,6 @@ class LibraryOrganizer {
       currentNode.children.add(TrackNode(track));
     }
 
-    final topLevel = <LibraryNode>[];
     var leafFolderCount = 0;
     final topLevelOrderIndex = <String, int>{
       for (var i = 0; i < nodeOrder.length; i++) nodeOrder[i]: i,
@@ -125,8 +124,20 @@ class LibraryOrganizer {
     for (final root in roots) {
       _sortFolder(root);
       _cacheFolderTreeMetrics(root);
-      leafFolderCount += root.leafFolderCount;
-      topLevel.add(root);
+    }
+
+    // Prune empty folders (those with 0 totalTrackCount)
+    for (final root in roots) {
+      _pruneEmptyFolders(root);
+      _cacheFolderTreeMetrics(root);
+    }
+
+    final topLevel = <LibraryNode>[];
+    for (final root in roots) {
+      if (root.totalTrackCount > 0) {
+        leafFolderCount += root.leafFolderCount;
+        topLevel.add(root);
+      }
     }
 
     topLevel.addAll(singleFiles);
@@ -145,6 +156,16 @@ class LibraryOrganizer {
       tree: List<LibraryNode>.unmodifiable(topLevel),
       leafFolderCount: leafFolderCount,
     );
+  }
+
+  void _pruneEmptyFolders(FolderNode folder) {
+    folder.children.removeWhere((child) {
+      if (child is FolderNode) {
+        _pruneEmptyFolders(child);
+        return child.totalTrackCount == 0;
+      }
+      return false;
+    });
   }
 
   void _sortFolder(FolderNode folder) {

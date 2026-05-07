@@ -81,6 +81,7 @@ extension AudioProviderState on AudioProvider {
   }
 
   bool get isScanning => _isScanning;
+  bool get isBackgroundScanning => _isBackgroundScanning;
   String get scanCurrentFolder => _scanCurrentFolder;
   int get scanFoundCount => _scanFoundCount;
   int get scanDuplicateCount => _scanDuplicateCount;

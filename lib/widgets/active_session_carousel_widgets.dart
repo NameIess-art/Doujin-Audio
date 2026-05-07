@@ -43,7 +43,7 @@ class _ActiveSessionCard extends StatelessWidget {
       child: ClipRRect(
         borderRadius: BorderRadius.circular(cardRadius),
         child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+          filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
           child: Material(
             color: Colors.transparent,
             child: InkWell(
@@ -59,10 +59,19 @@ class _ActiveSessionCard extends StatelessWidget {
                   boxShadow: [
                     BoxShadow(
                       color: cs.shadow.withValues(
-                        alpha: isPlaying ? 0.16 : 0.10,
+                        alpha: isPlaying ? 0.26 : 0.18,
                       ),
-                      blurRadius: isPlaying ? 22 : 16,
-                      offset: const Offset(0, 10),
+                      blurRadius: isPlaying ? 34 : 26,
+                      spreadRadius: -7,
+                      offset: const Offset(0, 18),
+                    ),
+                    BoxShadow(
+                      color: cs.primary.withValues(
+                        alpha: isPlaying ? 0.08 : 0.04,
+                      ),
+                      blurRadius: 18,
+                      spreadRadius: -10,
+                      offset: const Offset(0, 8),
                     ),
                   ],
                 ),

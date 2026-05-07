@@ -20,6 +20,7 @@ import '../widgets/mobile_overlay_inset.dart';
 import '../widgets/reorderable_hold_drag_listener.dart';
 import '../widgets/swipe_reveal_card.dart';
 import '../widgets/top_page_header.dart';
+import '../widgets/unified_popup_menu.dart';
 
 part 'playlist_tab_list.dart';
 part 'playlist_tab_detail.dart';
@@ -117,25 +118,41 @@ class _PlaylistTabState extends State<PlaylistTab>
     final i18n = context.watch<AppLanguageProvider>();
     final provider = context.read<AudioProvider>();
     final bottomInset = MobileOverlayInset.of(context);
-    final sessions = context.select<AudioProvider, List<PlaybackSession>>(
-      (value) => value.activeSessions,
-    );
-    final playingCount = context.select<AudioProvider, int>(
-      (value) => value.playingSessionCount,
-    );
+    final sessionInfo = context
+        .select<
+          AudioProvider,
+          ({List<PlaybackSession> sessions, int playingCount})
+        >(
+          (value) => (
+            sessions: value.activeSessions,
+            playingCount: value.playingSessionCount,
+          ),
+        );
+    final sessions = sessionInfo.sessions;
+    final playingCount = sessionInfo.playingCount;
     final sessionSummary =
         '${i18n.tr('sessions_count', {'count': sessions.length})} · '
         '${i18n.tr('playing_count', {'count': playingCount})}';
-    final timerDuration = context.select<AudioProvider, Duration?>(
-      (value) => value.timerDuration,
-    );
-    final timerRemaining = context.select<AudioProvider, Duration?>(
-      (value) => value.timerRemaining,
-    );
-    final timerActive = context.select<AudioProvider, bool>(
-      (value) => value.timerActive,
-    );
+    final timerInfo = context
+        .select<
+          AudioProvider,
+          ({Duration? duration, Duration? remaining, bool active})
+        >(
+          (value) => (
+            duration: value.timerDuration,
+            remaining: value.timerRemaining,
+            active: value.timerActive,
+          ),
+        );
+    final timerDuration = timerInfo.duration;
+    final timerRemaining = timerInfo.remaining;
+    final timerActive = timerInfo.active;
     final topTotalHeight = _headerHeight + 4;
+    final listBottomInset = bottomInset + 96;
+    final viewportHeight = MediaQuery.sizeOf(context).height;
+    final listCacheExtent = (topTotalHeight + listBottomInset + 320)
+        .clamp(viewportHeight * 1.6, viewportHeight * 2.4)
+        .toDouble();
 
     return Stack(
       children: [
@@ -144,7 +161,10 @@ class _PlaylistTabState extends State<PlaylistTab>
                 children: [
                   SizedBox(height: topTotalHeight),
                   Expanded(
-                    child: _SessionsEmptyState(bottomInset: bottomInset),
+                    child: _SessionsEmptyState(
+                      bottomInset: listBottomInset,
+                      topInset: 0,
+                    ),
                   ),
                 ],
               )
@@ -153,14 +173,16 @@ class _PlaylistTabState extends State<PlaylistTab>
                   16,
                   topTotalHeight,
                   16,
-                  bottomInset,
+                  listBottomInset,
                 ),
-                cacheExtent: 720,
+                cacheExtent: listCacheExtent,
+                clipBehavior: Clip.none,
                 buildDefaultDragHandles: false,
                 keyboardDismissBehavior:
                     ScrollViewKeyboardDismissBehavior.onDrag,
                 onReorder: provider.reorderSessions,
-                onReorderStart: (index) => HapticFeedback.heavyImpact(),
+                onReorderStart: (index) =>
+                    unawaited(HapticFeedback.heavyImpact()),
                 proxyDecorator: (child, index, animation) =>
                     _buildReorderProxy(context, child, animation),
                 itemCount: sessions.length,
@@ -169,10 +191,12 @@ class _PlaylistTabState extends State<PlaylistTab>
                   return ReorderableHoldDragStartListener(
                     key: ValueKey(session.id),
                     index: index,
-                    child: _SessionListCard(
-                      session: session,
-                      provider: provider,
-                      onOpen: () => _openSessionDetail(context, session.id),
+                    child: RepaintBoundary(
+                      child: _SessionListCard(
+                        session: session,
+                        provider: provider,
+                        onOpen: () => _openSessionDetail(context, session.id),
+                      ),
                     ),
                   );
                 },

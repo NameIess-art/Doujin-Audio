@@ -15,10 +15,12 @@ import '../i18n/app_language_provider.dart';
 import '../providers/audio_provider.dart';
 import '../widgets/app_feedback.dart';
 import '../widgets/async_cover_image.dart';
+import '../widgets/confirm_action_dialog.dart';
 import '../widgets/mobile_overlay_inset.dart';
 import '../widgets/reorderable_hold_drag_listener.dart';
 import '../widgets/swipe_reveal_card.dart';
 import '../widgets/top_page_header.dart';
+import '../widgets/unified_popup_menu.dart';
 import 'video_converter_tab.dart';
 
 part 'library_tab_import_actions.dart';
@@ -27,6 +29,7 @@ part 'library_tab_ui_helpers.dart';
 part 'library_tab_empty_scan.dart';
 part 'library_tab_tree_widgets.dart';
 part 'library_tab_models.dart';
+part 'library_tab_edit.dart';
 
 class LibraryTab extends StatefulWidget {
   const LibraryTab({super.key});
@@ -50,7 +53,10 @@ class _LibraryTabState extends State<LibraryTab>
   List<LibraryNode>? _cachedFilteredTree;
   List<LibraryNode>? _cachedFilterRawTree;
   String _cachedFilterQuery = '';
+  bool _refreshTriggeredInCurrentScroll = false;
 
+  final GlobalKey<RefreshIndicatorState> _refreshIndicatorKey =
+      GlobalKey<RefreshIndicatorState>();
   final GlobalKey _headerKey = GlobalKey();
   double _headerHeight = 72;
 
@@ -58,11 +64,49 @@ class _LibraryTabState extends State<LibraryTab>
 
   void _setLocalState(VoidCallback fn) => setState(fn);
 
+  void _jumpLibraryListToTop() {
+    if (_scrollController.positions.length != 1) return;
+    _scrollController.jumpTo(0);
+  }
+
   Future<void> _openVideoConverterPage() async {
     if (!mounted) return;
     await Navigator.of(
       context,
     ).push(MaterialPageRoute(builder: (_) => const VideoConverterTab()));
+  }
+
+  Future<void> _openLibraryEditPage(String libraryPath) async {
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => LibraryEditPage(libraryPath: libraryPath),
+      ),
+    );
+  }
+
+  Future<void> _confirmRemoveLibrary(String libraryPath) async {
+    final i18n = context.read<AppLanguageProvider>();
+    final confirmed = await showConfirmActionDialog(
+      context: context,
+      title: i18n.tr('remove_library'),
+      message: i18n.tr('remove_library_confirm', {
+        'name': path.basename(libraryPath),
+      }),
+      cancelLabel: i18n.tr('cancel'),
+      confirmLabel: i18n.tr('remove'),
+      icon: Icons.library_music_rounded,
+    );
+    if (!confirmed || !mounted) return;
+    await context.read<AudioProvider>().removeLibrary(libraryPath);
+    if (mounted) {
+      showAppSnackBar(
+        context,
+        i18n.tr('library_removed'),
+        tone: AppFeedbackTone.destructive,
+        icon: Icons.delete_outline_rounded,
+      );
+    }
   }
 
   @override
@@ -100,49 +144,82 @@ class _LibraryTabState extends State<LibraryTab>
     super.build(context);
     final i18n = context.watch<AppLanguageProvider>();
     final provider = context.read<AudioProvider>();
-    final rawTree = context.select<AudioProvider, List<LibraryNode>>(
-      (p) => p.libraryTree,
-    );
-    final audioCount = context.select<AudioProvider, int>(
-      (p) => p.libraryTrackCount,
-    );
-    final watchedFolderCount = context.select<AudioProvider, int>(
-      (p) => p.watchedFolderCount,
-    );
-    final watchedLibraryCount = context.select<AudioProvider, int>(
-      (p) => p.watchedLibraryCount,
-    );
-    final isScanning = context.select<AudioProvider, bool>((p) => p.isScanning);
-    final scanFolder = context.select<AudioProvider, String>(
-      (p) => p.scanCurrentFolder,
-    );
-    final scanFound = context.select<AudioProvider, int>(
-      (p) => p.scanFoundCount,
-    );
-    final scanDup = context.select<AudioProvider, int>(
-      (p) => p.scanDuplicateCount,
-    );
-    final scanFail = context.select<AudioProvider, int>(
-      (p) => p.scanFailureCount,
-    );
+    final libraryInfo = context
+        .select<
+          AudioProvider,
+          ({
+            List<LibraryNode> tree,
+            int trackCount,
+            int watchedFolderCount,
+            int watchedLibraryCount,
+            List<String> watchedLibraries,
+          })
+        >(
+          (p) => (
+            tree: p.libraryTree,
+            trackCount: p.libraryTrackCount,
+            watchedFolderCount: p.watchedFolderCount,
+            watchedLibraryCount: p.watchedLibraryCount,
+            watchedLibraries: p.watchedLibraries,
+          ),
+        );
+    final rawTree = libraryInfo.tree;
+    final audioCount = libraryInfo.trackCount;
+    final watchedFolderCount = libraryInfo.watchedFolderCount;
+    final watchedLibraryCount = libraryInfo.watchedLibraryCount;
+    final watchedLibraries = libraryInfo.watchedLibraries;
+    final scanState = context
+        .select<
+          AudioProvider,
+          ({
+            bool isScanning,
+            bool isBackgroundScanning,
+            String scanFolder,
+            int scanFound,
+            int scanDup,
+            int scanFail,
+          })
+        >(
+          (p) => (
+            isScanning: p.isScanning,
+            isBackgroundScanning: p.isBackgroundScanning,
+            scanFolder: p.scanCurrentFolder,
+            scanFound: p.scanFoundCount,
+            scanDup: p.scanDuplicateCount,
+            scanFail: p.scanFailureCount,
+          ),
+        );
+    final isScanning = scanState.isScanning;
+    final isBackgroundScanning = scanState.isBackgroundScanning;
+    final scanFolder = scanState.scanFolder;
+    final scanFound = scanState.scanFound;
+    final scanDup = scanState.scanDup;
+    final scanFail = scanState.scanFail;
     final tree = _filterTreeCached(rawTree, _searchQuery);
     final matchCount = _countTrackNodes(tree);
     final bottomInset = MobileOverlayInset.of(context);
 
     const double searchBarFullHeight = 44.0;
     final topTotalHeight = _headerHeight + 4;
+    final headerContentHeight = topTotalHeight + searchBarFullHeight;
+    final listBottomInset = bottomInset + 96;
+    final viewportHeight = MediaQuery.sizeOf(context).height;
+    final listCacheExtent = (headerContentHeight + listBottomInset + 320)
+        .clamp(viewportHeight * 1.6, viewportHeight * 2.4)
+        .toDouble();
     final hasLibrary = rawTree.isNotEmpty;
     final showLibrarySkeleton =
         !hasLibrary &&
         _searchQuery.isEmpty &&
         isScanning &&
         (watchedFolderCount > 0 || watchedLibraryCount > 0);
-    final canReorder = _searchQuery.isEmpty;
+    final canPullRefresh = watchedFolderCount > 0 || watchedLibraryCount > 0;
 
     Widget dynamicSearchBar() {
       return _CollapsingSearchBar(
         controller: _scrollController,
         height: searchBarFullHeight,
+        pinned: _searchQuery.isNotEmpty || _searchController.text.isNotEmpty,
         child: _buildSearchBar(i18n, matchCount, audioCount),
       );
     }
@@ -150,207 +227,276 @@ class _LibraryTabState extends State<LibraryTab>
     Widget buildLibraryItem(BuildContext context, int index) {
       final node = tree[index];
       return RepaintBoundary(
-        child: _LibraryTreeItem(key: ValueKey(node.path), node: node),
+        child: _searchQuery.isNotEmpty
+            ? _LibraryTreeItem(
+                key: ValueKey(node.path),
+                node: node,
+                initiallyExpanded: true,
+                searchQuery: _searchQuery,
+              )
+            : _LibraryTreeItem(key: ValueKey(node.path), node: node),
       );
     }
 
-    final headerContentHeight = topTotalHeight + searchBarFullHeight;
-
-    return Stack(
-      children: [
-        // List content starts at top:0, padded so it scrolls behind the header
-        // for the BackdropFilter frosted-glass effect.
-        Positioned.fill(
-          child: tree.isEmpty
-              ? Padding(
-                  padding: EdgeInsets.only(top: headerContentHeight),
-                  child: _searchQuery.isNotEmpty
-                      ? Center(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const SizedBox(height: 24),
-                              Text(
-                                hasLibrary
-                                    ? i18n.tr('no_search_results')
-                                    : i18n.tr('no_audio_files'),
-                                style: Theme.of(context).textTheme.bodyLarge
-                                    ?.copyWith(
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.onSurfaceVariant,
-                                    ),
-                              ),
-                            ],
-                          ),
-                        )
-                      : showLibrarySkeleton
-                      ? _LibraryLoadingSkeleton(
-                          bottomInset: bottomInset,
-                          topInset: headerContentHeight,
-                        )
-                      : _LibraryEmptyState(
-                          onImportLibrary: _addLibrary,
-                          onImportFolder: _addFolder,
-                          onImportFile: _addFiles,
-                          bottomInset: bottomInset,
-                        ),
-                )
-              : RefreshIndicator(
-                  onRefresh: () => _refreshWatchedFolders(),
-                  edgeOffset: headerContentHeight,
-                  displacement: 16,
-                  triggerMode: RefreshIndicatorTriggerMode.anywhere,
-                  child: canReorder
-                      ? ReorderableListView.builder(
-                          scrollController: _scrollController,
-                          padding: EdgeInsets.fromLTRB(
-                            16,
-                            headerContentHeight,
-                            16,
-                            bottomInset,
-                          ),
-                          cacheExtent: 720,
-                          buildDefaultDragHandles: false,
-                          autoScrollerVelocityScalar: 24,
-                          keyboardDismissBehavior:
-                              ScrollViewKeyboardDismissBehavior.onDrag,
-                          onReorder: provider.reorderLibraryNodes,
-                          onReorderStart: (index) =>
-                              HapticFeedback.heavyImpact(),
-                          proxyDecorator: (child, index, animation) =>
-                              _buildReorderProxy(context, child, animation),
-                          itemCount: tree.length,
-                          itemBuilder: (context, index) {
-                            final node = tree[index];
-                            return ReorderableHoldDragStartListener(
-                              key: ValueKey(node.path),
-                              index: index,
-                              child: RepaintBoundary(
-                                child: _LibraryTreeItem(node: node),
-                              ),
-                            );
-                          },
-                        )
-                      : ListView.builder(
-                          controller: _scrollController,
-                          padding: EdgeInsets.fromLTRB(
-                            16,
-                            headerContentHeight,
-                            16,
-                            bottomInset,
-                          ),
-                          cacheExtent: 960,
-                          keyboardDismissBehavior:
-                              ScrollViewKeyboardDismissBehavior.onDrag,
-                          itemCount: tree.length,
-                          itemBuilder: buildLibraryItem,
-                        ),
-                ),
-        ),
-
-        // Scan progress card
-        if (isScanning)
-          Positioned(
-            top: headerContentHeight + 10,
-            left: 12,
-            right: 12,
-            child: _buildScanProgressCard(
-              i18n,
-              provider,
-              scanFolder,
-              scanFound,
-              scanDup,
-              scanFail,
-            ),
+    Widget emptyListBody() {
+      if (_searchQuery.isNotEmpty) {
+        return ListView(
+          physics: const AlwaysScrollableScrollPhysics(
+            parent: BouncingScrollPhysics(),
           ),
-
-        // Header — frosted glass overlay on top of the scrolling list
-        Positioned(
-          top: 0,
-          left: 0,
-          right: 0,
-          child: TopPageHeader(
-            key: _headerKey,
-            icon: Icons.library_music_rounded,
-            title: i18n.tr('music_library'),
-            titleSuffix: Text(
-              i18n.tr('audio_count', {'count': audioCount}),
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            trailing: SizedBox(
-              width: 52,
-              height: 44,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  PopupMenuButton<int>(
-                    icon: const Icon(Icons.add_circle_outline_rounded),
-                    tooltip: i18n.tr('more_actions'),
-                    onSelected: (value) {
-                      if (value == 0) _addFolder();
-                      if (value == 1) _addLibrary();
-                      if (value == 2) _addFiles();
-                      if (value == 3) _openVideoConverterPage();
-                    },
-                    itemBuilder: (context) => [
-                      PopupMenuItem(
-                        value: 0,
-                        child: Row(
-                          children: [
-                            const Icon(
-                              Icons.create_new_folder_rounded,
-                              size: 20,
-                            ),
-                            const SizedBox(width: 12),
-                            Text(i18n.tr('import_folder')),
-                          ],
-                        ),
-                      ),
-                      PopupMenuItem(
-                        value: 1,
-                        child: Row(
-                          children: [
-                            const Icon(Icons.library_add_rounded, size: 20),
-                            const SizedBox(width: 12),
-                            Text(i18n.tr('choose_library')),
-                          ],
-                        ),
-                      ),
-                      PopupMenuItem(
-                        value: 2,
-                        child: Row(
-                          children: [
-                            const Icon(Icons.upload_file_rounded, size: 20),
-                            const SizedBox(width: 12),
-                            Text(i18n.tr('import_file')),
-                          ],
-                        ),
-                      ),
-                      PopupMenuItem(
-                        value: 3,
-                        child: Row(
-                          children: [
-                            const Icon(Icons.video_library_rounded, size: 20),
-                            const SizedBox(width: 12),
-                            Text(i18n.tr('video_to_audio')),
-                          ],
-                        ),
-                      ),
-                    ],
+          padding: EdgeInsets.fromLTRB(
+            16,
+            headerContentHeight,
+            16,
+            listBottomInset,
+          ),
+          children: [
+            SizedBox(
+              height: 260,
+              child: Center(
+                child: Text(
+                  hasLibrary
+                      ? i18n.tr('no_search_results')
+                      : i18n.tr('no_audio_files'),
+                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
-                ],
+                ),
               ),
             ),
-            bottomSpacing: 4,
-            padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
-            additionalChild: dynamicSearchBar(),
+          ],
+        );
+      }
+      if (showLibrarySkeleton) {
+        return _LibraryLoadingSkeleton(
+          bottomInset: listBottomInset,
+          topInset: headerContentHeight,
+        );
+      }
+      return _LibraryEmptyState(
+        onImportLibrary: _addLibrary,
+        onImportFolder: _addFolder,
+        onImportFile: _addFiles,
+        bottomInset: listBottomInset,
+        topInset: headerContentHeight,
+        physics: canPullRefresh
+            ? const AlwaysScrollableScrollPhysics(
+                parent: BouncingScrollPhysics(),
+              )
+            : const BouncingScrollPhysics(),
+      );
+    }
+
+    Widget refreshableEmptyBody() {
+      final body = emptyListBody();
+      if (!canPullRefresh) return body;
+      return RefreshIndicator(
+        key: _refreshIndicatorKey,
+        onRefresh: () async {
+          unawaited(HapticFeedback.mediumImpact());
+          await _refreshWatchedFolders();
+        },
+        edgeOffset: headerContentHeight,
+        displacement: 32,
+        triggerMode: RefreshIndicatorTriggerMode.anywhere,
+        child: body,
+      );
+    }
+
+    return NotificationListener<ScrollNotification>(
+      onNotification: (notification) {
+        if (notification is ScrollUpdateNotification &&
+            notification.dragDetails != null &&
+            notification.metrics.pixels < -55 &&
+            !_refreshTriggeredInCurrentScroll &&
+            canPullRefresh &&
+            !isScanning &&
+            _searchQuery.isEmpty) {
+          _refreshTriggeredInCurrentScroll = true;
+          _refreshIndicatorKey.currentState?.show();
+        } else if (notification is ScrollEndNotification) {
+          _refreshTriggeredInCurrentScroll = false;
+        }
+        return false;
+      },
+      child: Stack(
+        children: [
+          // List content starts at top:0, padded so it scrolls behind the header
+          // for the BackdropFilter frosted-glass effect.
+          Positioned.fill(
+            child: tree.isEmpty
+                ? refreshableEmptyBody()
+                : _searchQuery.isNotEmpty
+                ? ListView.builder(
+                    key: const ValueKey('search_results_list'),
+                    padding: EdgeInsets.fromLTRB(
+                      16,
+                      headerContentHeight,
+                      16,
+                      listBottomInset,
+                    ),
+                    cacheExtent: listCacheExtent,
+                    clipBehavior: Clip.none,
+                    physics: const AlwaysScrollableScrollPhysics(
+                      parent: BouncingScrollPhysics(),
+                    ),
+                    keyboardDismissBehavior:
+                        ScrollViewKeyboardDismissBehavior.onDrag,
+                    itemCount: tree.length,
+                    itemBuilder: buildLibraryItem,
+                  )
+                : RefreshIndicator(
+                    key: _refreshIndicatorKey,
+                    onRefresh: () async {
+                      unawaited(HapticFeedback.mediumImpact());
+                      await _refreshWatchedFolders();
+                    },
+                    edgeOffset: headerContentHeight,
+                    displacement: 32,
+                    triggerMode: RefreshIndicatorTriggerMode.anywhere,
+                    child: ReorderableListView.builder(
+                      scrollController: _scrollController,
+                      clipBehavior: Clip.none,
+                      padding: EdgeInsets.fromLTRB(
+                        16,
+                        headerContentHeight,
+                        16,
+                        listBottomInset,
+                      ),
+                      cacheExtent: listCacheExtent,
+                      physics: canPullRefresh
+                          ? const AlwaysScrollableScrollPhysics(
+                              parent: BouncingScrollPhysics(),
+                            )
+                          : null,
+                      buildDefaultDragHandles: false,
+                      autoScrollerVelocityScalar: 40,
+                      keyboardDismissBehavior:
+                          ScrollViewKeyboardDismissBehavior.onDrag,
+                      onReorder: provider.reorderLibraryNodes,
+                      onReorderStart: (index) =>
+                          unawaited(HapticFeedback.heavyImpact()),
+                      proxyDecorator: (child, index, animation) =>
+                          _buildReorderProxy(context, child, animation),
+                      itemCount: tree.length,
+                      itemBuilder: (context, index) {
+                        final node = tree[index];
+                        return ReorderableHoldDragStartListener(
+                          key: ValueKey(node.path),
+                          index: index,
+                          child: RepaintBoundary(
+                            child: _LibraryTreeItem(node: node),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
           ),
-        ),
-      ],
+
+          // Scan progress card
+          if (isScanning && !isBackgroundScanning)
+            Positioned(
+              top: headerContentHeight + 10,
+              left: 12,
+              right: 12,
+              child: _buildScanProgressCard(
+                i18n,
+                provider,
+                scanFolder,
+                scanFound,
+                scanDup,
+                scanFail,
+              ),
+            ),
+
+          // Header — frosted glass overlay on top of the scrolling list
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: TopPageHeader(
+              key: _headerKey,
+              icon: Icons.library_music_rounded,
+              title: i18n.tr('music_library'),
+              titleSuffix: Text(
+                i18n.tr('audio_count', {'count': audioCount}),
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              trailing: SizedBox(
+                width: watchedLibraries.isEmpty ? 52 : 104,
+                height: 44,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    if (watchedLibraries.isNotEmpty)
+                      UnifiedPopupMenuButton<String>(
+                        icon: Icons.edit_note_rounded,
+                        tooltip: i18n.tr('edit_library'),
+                        menuWidth: 280,
+                        entries: watchedLibraries
+                            .map(
+                              (libraryPath) => UnifiedMenuEntry<String>.action(
+                                value: libraryPath,
+                                icon: Icons.folder_copy_rounded,
+                                label: path.basename(libraryPath),
+                                trailingValue: libraryPath,
+                                trailing: Icon(
+                                  Icons.delete_outline_rounded,
+                                  size: 20,
+                                  color: Theme.of(context).colorScheme.error,
+                                ),
+                              ),
+                            )
+                            .toList(growable: false),
+                        onSelected: _openLibraryEditPage,
+                        onTrailingSelected: _confirmRemoveLibrary,
+                      ),
+                    UnifiedPopupMenuButton<int>(
+                      icon: Icons.add_circle_outline_rounded,
+                      tooltip: i18n.tr('more_actions'),
+                      entries: [
+                        UnifiedMenuEntry<int>.action(
+                          value: 0,
+                          icon: Icons.create_new_folder_rounded,
+                          label: i18n.tr('import_folder'),
+                        ),
+                        UnifiedMenuEntry<int>.action(
+                          value: 1,
+                          icon: Icons.library_add_rounded,
+                          label: i18n.tr('choose_library'),
+                        ),
+                        UnifiedMenuEntry<int>.action(
+                          value: 2,
+                          icon: Icons.upload_file_rounded,
+                          label: i18n.tr('import_file'),
+                        ),
+                        const UnifiedMenuEntry<int>.divider(),
+                        UnifiedMenuEntry<int>.action(
+                          value: 3,
+                          icon: Icons.video_library_rounded,
+                          label: i18n.tr('video_to_audio'),
+                        ),
+                      ],
+                      onSelected: (value) {
+                        if (value == 0) _addFolder();
+                        if (value == 1) _addLibrary();
+                        if (value == 2) _addFiles();
+                        if (value == 3) _openVideoConverterPage();
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              bottomSpacing: 4,
+              padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+              additionalChild: dynamicSearchBar(),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -359,11 +505,13 @@ class _CollapsingSearchBar extends StatelessWidget {
   const _CollapsingSearchBar({
     required this.controller,
     required this.height,
+    required this.pinned,
     required this.child,
   });
 
   final ScrollController controller;
   final double height;
+  final bool pinned;
   final Widget child;
 
   @override
@@ -372,8 +520,10 @@ class _CollapsingSearchBar extends StatelessWidget {
       animation: controller,
       child: child,
       builder: (context, child) {
-        final offset = controller.hasClients ? controller.offset : 0.0;
-        final hidden = offset.clamp(0.0, height);
+        final offset = controller.positions.length == 1
+            ? controller.positions.single.pixels
+            : 0.0;
+        final hidden = pinned ? 0.0 : offset.clamp(0.0, height);
         return SizedBox(
           height: height - hidden,
           child: ClipRect(

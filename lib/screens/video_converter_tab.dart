@@ -195,93 +195,94 @@ class _VideoConverterTabState extends State<VideoConverterTab> {
                 onTap: _isConverting ? null : _pickOutputDirectory,
               ),
               const SizedBox(height: 12),
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(14),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.tune_rounded,
-                            color: Theme.of(context).colorScheme.primary,
+              Padding(
+                padding: const EdgeInsets.fromLTRB(2, 4, 2, 0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.tune_rounded,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          i18n.tr('transcode_defaults'),
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(fontWeight: FontWeight.w800),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _SelectField(
+                            label: i18n.tr('format'),
+                            value: selectedFormat,
+                            items: AudioProvider.converterFormats,
+                            displayBuilder: (item) => item.toUpperCase(),
+                            onChanged: (value) {
+                              if (value != null) {
+                                provider.setConverterSettings(format: value);
+                              }
+                            },
                           ),
-                          const SizedBox(width: 8),
-                          Text(
-                            i18n.tr('transcode_defaults'),
-                            style: Theme.of(context).textTheme.titleMedium
-                                ?.copyWith(fontWeight: FontWeight.w800),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _SelectField(
+                            label: i18n.tr('bitrate'),
+                            value: selectedBitrate,
+                            items: AudioProvider.converterBitrates,
+                            displayBuilder: (item) => item,
+                            enabled: bitrateEnabled,
+                            onChanged: (value) {
+                              if (value != null) {
+                                provider.setConverterSettings(bitrate: value);
+                              }
+                            },
                           ),
-                        ],
-                      ),
-                      const SizedBox(height: 14),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _SelectField(
-                              label: i18n.tr('format'),
-                              value: selectedFormat,
-                              items: AudioProvider.converterFormats,
-                              displayBuilder: (item) => item.toUpperCase(),
-                              onChanged: (value) {
-                                if (value != null) {
-                                  provider.setConverterSettings(format: value);
-                                }
-                              },
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: _SelectField(
-                              label: i18n.tr('bitrate'),
-                              value: selectedBitrate,
-                              items: AudioProvider.converterBitrates,
-                              displayBuilder: (item) => item,
-                              enabled: bitrateEnabled,
-                              onChanged: (value) {
-                                if (value != null) {
-                                  provider.setConverterSettings(bitrate: value);
-                                }
-                              },
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 10),
-                      Text(
-                        bitrateEnabled
-                            ? i18n.tr('bitrate_used')
-                            : i18n.tr('bitrate_not_used', {
-                                'format': selectedFormat.toUpperCase(),
-                              }),
-                        style: descStyle,
-                      ),
-                    ],
-                  ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      bitrateEnabled
+                          ? i18n.tr('bitrate_used')
+                          : i18n.tr('bitrate_not_used', {
+                              'format': selectedFormat.toUpperCase(),
+                            }),
+                      style: descStyle,
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 12),
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(14),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.tune_rounded,
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          i18n.tr('current_params', {
-                            'value':
-                                '${selectedFormat.toUpperCase()} · ${selectedFormat == 'wav' || selectedFormat == 'flac' ? i18n.tr('format_auto_encode') : selectedBitrate}',
-                          }),
-                          style: Theme.of(context).textTheme.bodyMedium,
+              const SizedBox.shrink(),
+              Visibility(
+                visible: false,
+                child: Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.tune_rounded,
+                          color: Theme.of(context).colorScheme.primary,
                         ),
-                      ),
-                    ],
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            i18n.tr('current_params', {
+                              'value':
+                                  '${selectedFormat.toUpperCase()} · ${selectedFormat == 'wav' || selectedFormat == 'flac' ? i18n.tr('format_auto_encode') : selectedBitrate}',
+                            }),
+                            style: Theme.of(context).textTheme.bodyMedium,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),

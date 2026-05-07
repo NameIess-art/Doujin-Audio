@@ -207,7 +207,7 @@ class _FloatingGlassPanel extends StatelessWidget {
     return ClipRRect(
       borderRadius: BorderRadius.circular(radius),
       child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
         child: DecoratedBox(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(radius),
@@ -220,8 +220,15 @@ class _FloatingGlassPanel extends StatelessWidget {
             boxShadow: [
               BoxShadow(
                 color: cs.shadow.withValues(alpha: shadowOpacity),
-                blurRadius: 26,
-                offset: const Offset(0, 14),
+                blurRadius: 34,
+                spreadRadius: -6,
+                offset: const Offset(0, 18),
+              ),
+              BoxShadow(
+                color: cs.primary.withValues(alpha: isDark ? 0.08 : 0.05),
+                blurRadius: 18,
+                spreadRadius: -10,
+                offset: const Offset(0, 8),
               ),
             ],
           ),

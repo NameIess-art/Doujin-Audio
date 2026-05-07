@@ -24,7 +24,7 @@ Future<bool> showConfirmActionDialog({
       final resolvedConfirmColor = confirmColor ?? cs.error;
 
       return BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
         child: SafeArea(
           child: Center(
             child: Padding(

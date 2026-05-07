@@ -229,7 +229,7 @@ class _ExpandableLoopOptionsState extends State<_ExpandableLoopOptions>
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(999),
                     child: BackdropFilter(
-                      filter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
+                      filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
                       child: DecoratedBox(
                         decoration: BoxDecoration(
                           color: cs.surfaceContainerHigh.withValues(
@@ -325,8 +325,10 @@ class _ExpandableLoopOptionsState extends State<_ExpandableLoopOptions>
         height: widget.compact ? 74 : 82,
         child: IgnorePointer(
           ignoring: _expanded,
-          child: Opacity(
-            opacity: _expanded ? 0 : 1,
+          child: Visibility(
+            visible: !_expanded,
+            maintainAnimation: true,
+            maintainState: true,
             child: Align(
               child: _LoopModeButton(
                 iconWidget: _singleActive

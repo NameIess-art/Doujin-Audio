@@ -1,7 +1,7 @@
 name: music_player
 description: Android local audio player for multi-session ASMR and voice library playback.
 publish_to: 'none'
-version: 1.1.14+10114
+version: 1.1.15+10115
 
 environment:
   sdk: ^3.11.1

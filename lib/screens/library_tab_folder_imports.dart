@@ -139,9 +139,75 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
     return childFolders;
   }
 
+  Future<List<String>> _listImmediateAudioFiles(String folderPath) async {
+    final directory = Directory(folderPath);
+    if (!await directory.exists()) return const <String>[];
+
+    final audioFiles = <String>[];
+    try {
+      await for (final entity in directory.list(followLinks: false)) {
+        if (entity is! File) continue;
+        final normalizedPath = path.normalize(entity.path);
+        if (_isSupportedAudioFile(normalizedPath)) {
+          audioFiles.add(normalizedPath);
+        }
+      }
+    } catch (_) {
+      return const <String>[];
+    }
+
+    audioFiles.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    return audioFiles;
+  }
+
+  Future<int> _importLibraryRootAudioFiles(
+    String libraryRoot,
+    AudioProvider provider,
+    AppLanguageProvider i18n,
+  ) async {
+    final nativeTracks = await _scanFolderViaNative(libraryRoot);
+    final candidates = nativeTracks == null
+        ? await _singleTracksFromImmediateFiles(libraryRoot, provider, i18n)
+        : nativeTracks
+              .where((track) => _trackIsDirectlyInFolder(libraryRoot, track))
+              .where(
+                (track) =>
+                    !provider.isLibraryPathExcluded(libraryRoot, track.path),
+              )
+              .map((track) => _singleTrackFromScanned(track, i18n))
+              .toList(growable: false);
+
+    if (candidates.isEmpty) return 0;
+    final beforeCount = provider.library.length;
+    provider.addOrReplaceTracks(candidates, notify: false);
+    return provider.library.length - beforeCount;
+  }
+
+  Future<List<MusicTrack>> _singleTracksFromImmediateFiles(
+    String libraryRoot,
+    AudioProvider provider,
+    AppLanguageProvider i18n,
+  ) async {
+    final rootAudioFiles = await _listImmediateAudioFiles(libraryRoot);
+    final tracks = <MusicTrack>[];
+    for (final filePath in rootAudioFiles) {
+      if (provider.isLibraryPathExcluded(libraryRoot, filePath)) continue;
+      tracks.add(await _singleTrackFromFilePath(filePath, i18n));
+    }
+    return tracks;
+  }
+
+  bool _trackIsDirectlyInFolder(String folderPath, _ScannedTrack track) {
+    final normalizedFolderPath = path.normalize(folderPath);
+    final normalizedGroupKey = path.normalize(track.groupKey);
+    return path.equals(normalizedGroupKey, normalizedFolderPath) ||
+        track.groupKey == folderPath;
+  }
+
   Future<int> _importFolderIncrementally(
     String folderPath,
     AudioProvider provider,
+    String? libraryRoot,
   ) async {
     final folder = Directory(folderPath);
     if (!await folder.exists()) return 0;
@@ -189,6 +255,10 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
 
           final absolutePath = path.normalize(entity.path);
           if (!_isSupportedAudioFile(absolutePath)) continue;
+          if (libraryRoot != null &&
+              provider.isLibraryPathExcluded(libraryRoot, absolutePath)) {
+            continue;
+          }
           if (existingPaths.contains(absolutePath)) {
             duplicates++;
             continue;
@@ -260,6 +330,58 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
     );
   }
 
+  MusicTrack _singleTrackFromScanned(
+    _ScannedTrack track,
+    AppLanguageProvider i18n,
+  ) {
+    return MusicTrack(
+      path: track.path,
+      displayName:
+          track.displayName ?? path.basenameWithoutExtension(track.path),
+      groupKey: '__single_files__',
+      groupTitle: i18n.tr('imported_files'),
+      groupSubtitle: i18n.tr('manually_selected_files'),
+      isSingle: true,
+      scannedAt: track.scannedAt ?? DateTime.now(),
+      fileSizeBytes: track.fileSizeBytes,
+      modifiedAt: track.modifiedAt,
+    );
+  }
+
+  Future<MusicTrack> _singleTrackFromFilePath(
+    String filePath,
+    AppLanguageProvider i18n,
+  ) async {
+    FileStat? fileStat;
+    try {
+      fileStat = await File(filePath).stat();
+    } catch (_) {}
+    return MusicTrack(
+      path: filePath,
+      displayName: path.basenameWithoutExtension(filePath),
+      groupKey: '__single_files__',
+      groupTitle: i18n.tr('imported_files'),
+      groupSubtitle: i18n.tr('manually_selected_files'),
+      isSingle: true,
+      scannedAt: DateTime.now(),
+      fileSizeBytes: fileStat?.size,
+      modifiedAt: fileStat?.modified,
+    );
+  }
+
+  List<_ScannedTrack> _filterExcludedScannedTracks(
+    AudioProvider provider,
+    String? libraryRoot,
+    List<_ScannedTrack> tracks,
+  ) {
+    if (libraryRoot == null) return tracks;
+    return tracks
+        .where(
+          (track) => !provider.isLibraryPathExcluded(libraryRoot, track.path),
+        )
+        .toList(growable: false);
+  }
+
   Future<bool> _ensureReadPermission() async {
     if (!Platform.isAndroid) return true;
     final manageStatus = await Permission.manageExternalStorage.request();
@@ -281,7 +403,11 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
     }
     _cachedFilterRawTree = tree;
     _cachedFilterQuery = query;
-    _cachedFilteredTree = _filterTree(tree, query);
+    try {
+      _cachedFilteredTree = _filterTree(tree, query);
+    } catch (_) {
+      _cachedFilteredTree = const <LibraryNode>[];
+    }
     return _cachedFilteredTree!;
   }
 
@@ -291,23 +417,37 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
     final result = <LibraryNode>[];
 
     for (final node in tree) {
-      final nameMatch = node.name.toLowerCase().contains(lowerQuery);
       if (node is FolderNode) {
-        if (nameMatch) {
-          result.add(node);
-        } else {
-          final filtered = _filterTree(node.children, query);
-          if (filtered.isNotEmpty) {
-            final copy = FolderNode(node.name, node.path, depth: node.depth);
-            copy.children.addAll(filtered);
-            result.add(copy);
+        final nameMatch = node.name.toLowerCase().contains(lowerQuery);
+        final filteredChildren = _filterTree(node.children, query);
+
+        if (nameMatch || filteredChildren.isNotEmpty) {
+          final newNode = FolderNode(node.name, node.path, depth: node.depth);
+          if (nameMatch) {
+            newNode.children.addAll(node.children);
+          } else {
+            newNode.children.addAll(filteredChildren);
           }
+          result.add(newNode);
         }
       } else if (node is TrackNode) {
-        if (nameMatch) result.add(node);
+        if (_trackMatchesQuery(node.track, lowerQuery)) {
+          result.add(node);
+        }
       }
     }
     return result;
+  }
+
+  bool _trackMatchesQuery(MusicTrack track, String lowerQuery) {
+    return track.displayName.toLowerCase().contains(lowerQuery) ||
+        path
+            .basenameWithoutExtension(track.path)
+            .toLowerCase()
+            .contains(lowerQuery) ||
+        track.groupTitle.toLowerCase().contains(lowerQuery) ||
+        track.groupSubtitle.toLowerCase().contains(lowerQuery) ||
+        track.path.toLowerCase().contains(lowerQuery);
   }
 
   int _countTrackNodes(List<LibraryNode> nodes) {

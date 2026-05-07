@@ -36,20 +36,24 @@ class _LibraryEmptyState extends StatelessWidget {
     required this.onImportFolder,
     required this.onImportFile,
     required this.bottomInset,
+    this.topInset = 16,
+    this.physics,
   });
 
   final VoidCallback onImportLibrary;
   final VoidCallback onImportFolder;
   final VoidCallback onImportFile;
   final double bottomInset;
+  final double topInset;
+  final ScrollPhysics? physics;
 
   @override
   Widget build(BuildContext context) {
     final i18n = context.watch<AppLanguageProvider>();
     final cs = Theme.of(context).colorScheme;
     return ListView(
-      padding: EdgeInsets.fromLTRB(24, 16, 24, bottomInset),
-      physics: const BouncingScrollPhysics(),
+      padding: EdgeInsets.fromLTRB(24, topInset, 24, bottomInset),
+      physics: physics ?? const BouncingScrollPhysics(),
       children: [
         Card(
           child: Padding(

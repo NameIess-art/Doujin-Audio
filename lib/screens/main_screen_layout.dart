@@ -30,18 +30,22 @@ extension _MainScreenLayout on _MainScreenState {
                     ),
                     child: ClipRRect(
                       borderRadius: radius,
-                      child: RepaintBoundary(child: _pages[index]),
+                      child: RepaintBoundary(
+                        child: _pageBuilders[index](),
+                      ),
                     ),
                   ),
                 ),
               )
-            : RepaintBoundary(child: _pages[index]),
+            : RepaintBoundary(child: _pageBuilders[index]()),
       );
     }
 
     return NotificationListener<ScrollNotification>(
       onNotification: (notification) {
-        // Only respond to page-level scroll (depth 0), not nested list scrolls.
+        // Only respond to horizontal PageView movement. Vertical library/search
+        // scrolling must never leave the app in a "transitioning" visual state.
+        if (notification.metrics.axis != Axis.horizontal) return false;
         if (notification.depth != 0) return false;
         if (notification is ScrollStartNotification) {
           context.read<AudioProvider>().setPageTransitioning(true);
@@ -52,7 +56,7 @@ extension _MainScreenLayout on _MainScreenState {
       },
       child: PageView.builder(
         controller: _pageController,
-        itemCount: _pages.length,
+        itemCount: _pageBuilders.length,
         physics: const SnapScrollPhysics(parent: ClampingScrollPhysics()),
         onPageChanged: (index) {
           if (_pendingTargetIndex != null && index != _pendingTargetIndex) {
@@ -65,26 +69,7 @@ extension _MainScreenLayout on _MainScreenState {
           });
         },
         itemBuilder: (context, index) {
-          return AnimatedBuilder(
-            animation: _pageController,
-            builder: (context, child) {
-              double pageOffset = 0;
-              if (_pageController.hasClients &&
-                  _pageController.position.haveDimensions) {
-                pageOffset =
-                    ((_pageController.page ?? _currentIndex.toDouble()) - index)
-                        .toDouble();
-              } else {
-                pageOffset = (_currentIndex - index).toDouble();
-              }
-              final clampedOffset = pageOffset.clamp(-1.0, 1.0).toDouble();
-              // Simplify opacity animation for smoother transitions
-              final opacity = 1.0 - (clampedOffset.abs() * 0.05);
-
-              return Opacity(opacity: opacity.clamp(0.0, 1.0), child: child);
-            },
-            child: pageShell(index),
-          );
+          return pageShell(index);
         },
       ),
     );
@@ -259,10 +244,10 @@ extension _MainScreenLayout on _MainScreenState {
                 child: _FloatingGlassPanel(
                   padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
                   borderOpacity: 0.12,
-                  shadowOpacity: 0.08,
+                  shadowOpacity: 0.18,
                   showTopHighlight: false,
-                  primaryFillOpacity: 0.75,
-                  secondaryFillOpacity: 0.65,
+                  primaryFillOpacity: 0.82,
+                  secondaryFillOpacity: 0.70,
                   child: _buildBottomBar(context),
                 ),
               ),

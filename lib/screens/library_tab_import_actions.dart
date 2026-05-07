@@ -15,14 +15,29 @@ extension _LibraryTabImportActions on _LibraryTabState {
     }
 
     if (!mounted) return;
-    provider.setScanning(true);
+    provider.setScanning(true, background: true);
     provider.beginLibraryBatch();
     var totalAdded = 0;
     try {
       final foldersToRefresh = LinkedHashSet<String>.from(watchedFolders);
       for (final libraryRoot in watchedLibraries) {
+        foldersToRefresh.removeWhere(
+          (folderPath) => path.equals(
+            path.normalize(folderPath),
+            path.normalize(libraryRoot),
+          ),
+        );
+        provider.removeWatchedFolder(libraryRoot, notify: false);
+        totalAdded += await _importLibraryRootAudioFiles(
+          libraryRoot,
+          provider,
+          i18n,
+        );
         final childFolders = await _listImmediateChildFolders(libraryRoot);
         for (final childFolder in childFolders) {
+          if (provider.isLibraryPathExcluded(libraryRoot, childFolder)) {
+            continue;
+          }
           foldersToRefresh.add(childFolder);
           provider.addWatchedFolder(childFolder, notify: false);
         }
@@ -37,9 +52,20 @@ extension _LibraryTabImportActions on _LibraryTabState {
           currentFolder:
               '[$processedFolders/$totalFolders] ${path.basename(folderPath)}',
         );
+        final libraryRoot = watchedLibraries.firstWhere(
+          (root) =>
+              path.equals(path.normalize(folderPath), path.normalize(root)) ||
+              path.isWithin(path.normalize(root), path.normalize(folderPath)),
+          orElse: () => '',
+        );
+        final effectiveLibraryRoot = libraryRoot.isEmpty ? null : libraryRoot;
         final nativeTracks = await _scanFolderViaNative(folderPath);
         if (nativeTracks != null) {
-          final toAdd = nativeTracks.map(_trackFromScanned).toList();
+          final toAdd = _filterExcludedScannedTracks(
+            provider,
+            effectiveLibraryRoot,
+            nativeTracks,
+          ).map(_trackFromScanned).toList();
           final before = provider.library.length;
           provider.addTracks(toAdd, notify: false);
           final added = provider.library.length - before;
@@ -50,7 +76,11 @@ extension _LibraryTabImportActions on _LibraryTabState {
                 provider.scanDuplicateCount + (toAdd.length - added),
           );
         } else {
-          totalAdded += await _importFolderIncrementally(folderPath, provider);
+          totalAdded += await _importFolderIncrementally(
+            folderPath,
+            provider,
+            effectiveLibraryRoot,
+          );
         }
       }
     } finally {
@@ -97,10 +127,7 @@ extension _LibraryTabImportActions on _LibraryTabState {
     if (folderPath == null || folderPath.isEmpty) return;
 
     final childFolders = await _listImmediateChildFolders(folderPath);
-    if (childFolders.isEmpty) {
-      _showSnack(i18n.tr('no_child_folder_found'));
-      return;
-    }
+    final importTargets = childFolders;
 
     if (mounted) {
       context.read<AudioProvider>().addWatchedLibrary(
@@ -109,7 +136,9 @@ extension _LibraryTabImportActions on _LibraryTabState {
       );
     }
     await _addFoldersFromPaths(
-      childFolders,
+      importTargets,
+      beforeFolderImport: (provider) =>
+          _importLibraryRootAudioFiles(folderPath, provider, i18n),
       completionMessageBuilder: (trackCount, folderCount) {
         return i18n.tr('import_library_done', {
           'count': trackCount,
@@ -142,7 +171,7 @@ extension _LibraryTabImportActions on _LibraryTabState {
           duplicateCount: toAdd.length - added,
         );
       } else {
-        added = await _importFolderIncrementally(folderPath, provider);
+        added = await _importFolderIncrementally(folderPath, provider, null);
       }
     } finally {
       await provider.endLibraryBatch();
@@ -156,6 +185,7 @@ extension _LibraryTabImportActions on _LibraryTabState {
 
   Future<void> _addFoldersFromPaths(
     List<String> folderPaths, {
+    Future<int> Function(AudioProvider provider)? beforeFolderImport,
     String Function(int trackCount, int folderCount)? completionMessageBuilder,
   }) async {
     final i18n = context.read<AppLanguageProvider>();
@@ -165,7 +195,8 @@ extension _LibraryTabImportActions on _LibraryTabState {
           .map((folderPath) => folderPath.trim())
           .where((folderPath) => folderPath.isNotEmpty),
     ).toList(growable: false);
-    if (uniqueFolderPaths.isEmpty || !mounted) return;
+    if (uniqueFolderPaths.isEmpty && beforeFolderImport == null) return;
+    if (!mounted) return;
 
     provider.setScanning(true);
     provider.beginLibraryBatch();
@@ -174,6 +205,9 @@ extension _LibraryTabImportActions on _LibraryTabState {
     var processedFolders = 0;
 
     try {
+      if (beforeFolderImport != null) {
+        added += await beforeFolderImport(provider);
+      }
       for (final folderPath in uniqueFolderPaths) {
         if (!provider.isScanning) break;
         processedFolders++;
@@ -183,7 +217,11 @@ extension _LibraryTabImportActions on _LibraryTabState {
         );
         final nativeTracks = await _scanFolderViaNative(folderPath);
         if (nativeTracks != null) {
-          final toAdd = nativeTracks.map(_trackFromScanned).toList();
+          final toAdd = _filterExcludedScannedTracks(
+            provider,
+            null,
+            nativeTracks,
+          ).map(_trackFromScanned).toList();
 
           final beforeCount = provider.library.length;
           provider.addTracks(toAdd, notify: false);
@@ -195,7 +233,7 @@ extension _LibraryTabImportActions on _LibraryTabState {
                 provider.scanDuplicateCount + (toAdd.length - folderAdded),
           );
         } else {
-          added += await _importFolderIncrementally(folderPath, provider);
+          added += await _importFolderIncrementally(folderPath, provider, null);
         }
 
         if (!mounted) return;
@@ -215,11 +253,6 @@ extension _LibraryTabImportActions on _LibraryTabState {
 
   Future<void> _addFiles() async {
     final i18n = context.read<AppLanguageProvider>();
-    final permissionGranted = await _ensureReadPermission();
-    if (!permissionGranted) {
-      _showSnack(i18n.tr('need_storage_permission_import_audio'));
-      return;
-    }
 
     final result = await FilePicker.platform.pickFiles(
       allowMultiple: true,

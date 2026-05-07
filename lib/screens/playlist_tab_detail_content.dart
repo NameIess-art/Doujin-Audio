@@ -163,8 +163,10 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
                             return FadeTransition(
                               opacity: animation,
                               child: ScaleTransition(
-                                scale: Tween<double>(begin: 0.92, end: 1)
-                                    .animate(animation),
+                                scale: Tween<double>(
+                                  begin: 0.92,
+                                  end: 1,
+                                ).animate(animation),
                                 child: child,
                               ),
                             );

@@ -77,9 +77,203 @@ extension AudioProviderLibrary on AudioProvider {
     }
   }
 
-  void setScanning(bool scanning) {
-    if (_isScanning == scanning) return;
+  Future<void> removeLibrary(String libraryPath) async {
+    final normalizedLibraryPath = path.normalize(libraryPath);
+    final childFolders = _watchedFolders
+        .where(
+          (folderPath) => _isPathWithinOrEqual(
+            path.normalize(folderPath),
+            normalizedLibraryPath,
+          ),
+        )
+        .toList(growable: false);
+    for (final folderPath in childFolders) {
+      await removeFolderFromLibrary(folderPath);
+    }
+    _watchedLibraries.removeWhere(
+      (pathValue) =>
+          path.equals(path.normalize(pathValue), normalizedLibraryPath),
+    );
+    _excludedLibraryFolders.remove(normalizedLibraryPath);
+    _excludedLibraryTracks.remove(normalizedLibraryPath);
+    _syncLibraryNodeOrder(persist: false);
+    _markLibraryStructureDirty();
+    _notifyListeners();
+    unawaited(_saveWatchedLibraries());
+    unawaited(_saveLibraryExclusions());
+  }
+
+  List<String> childFoldersForLibrary(String libraryPath) {
+    final normalizedLibraryPath = path.normalize(libraryPath);
+    return _watchedFolders
+        .where(
+          (folderPath) => _isPathWithinOrEqual(
+            path.normalize(folderPath),
+            normalizedLibraryPath,
+          ),
+        )
+        .toList(growable: false)
+      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+  }
+
+  List<String> excludedFoldersForLibrary(String libraryPath) {
+    return (_excludedLibraryFolders[path.normalize(libraryPath)] ??
+            const <String>{})
+        .toList(growable: false)
+      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+  }
+
+  List<String> excludedTracksForLibrary(String libraryPath) {
+    return (_excludedLibraryTracks[path.normalize(libraryPath)] ??
+            const <String>{})
+        .toList(growable: false)
+      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+  }
+
+  bool isLibraryPathExcluded(String libraryPath, String entityPath) {
+    final normalizedLibraryPath = path.normalize(libraryPath);
+    final normalizedPath = path.normalize(entityPath);
+    if (_excludedLibraryTracks[normalizedLibraryPath]?.contains(
+          normalizedPath,
+        ) ??
+        false) {
+      return true;
+    }
+    final folders = _excludedLibraryFolders[normalizedLibraryPath];
+    if (folders == null) return false;
+    return folders.any(
+      (folderPath) => _isPathWithinOrEqual(normalizedPath, folderPath),
+    );
+  }
+
+  bool isLibraryFolderExplicitlyExcluded(
+    String libraryPath,
+    String folderPath,
+  ) {
+    return _excludedLibraryFolders[path.normalize(libraryPath)]?.contains(
+          path.normalize(folderPath),
+        ) ??
+        false;
+  }
+
+  bool isLibraryTrackExplicitlyExcluded(String libraryPath, String trackPath) {
+    return _excludedLibraryTracks[path.normalize(libraryPath)]?.contains(
+          path.normalize(trackPath),
+        ) ??
+        false;
+  }
+
+  void setLibraryFolderExcluded(
+    String libraryPath,
+    String folderPath,
+    bool excluded,
+  ) {
+    final normalizedLibraryPath = path.normalize(libraryPath);
+    final normalizedFolderPath = path.normalize(folderPath);
+    final folders = _excludedLibraryFolders.putIfAbsent(
+      normalizedLibraryPath,
+      () => <String>{},
+    );
+    final changed = excluded
+        ? folders.add(normalizedFolderPath)
+        : folders.remove(normalizedFolderPath);
+    if (!changed) return;
+    if (excluded) {
+      _removeTracksWhere(
+        (track) => _isPathWithinOrEqual(track.path, normalizedFolderPath),
+      );
+    }
+    _notifyListeners();
+    unawaited(_saveLibraryExclusions());
+  }
+
+  void setLibraryTrackExcluded(
+    String libraryPath,
+    String trackPath,
+    bool excluded,
+  ) {
+    final normalizedLibraryPath = path.normalize(libraryPath);
+    final normalizedTrackPath = path.normalize(trackPath);
+    final tracks = _excludedLibraryTracks.putIfAbsent(
+      normalizedLibraryPath,
+      () => <String>{},
+    );
+    final changed = excluded
+        ? tracks.add(normalizedTrackPath)
+        : tracks.remove(normalizedTrackPath);
+    if (!changed) return;
+    if (excluded) {
+      _removeTracksWhere(
+        (track) => path.equals(track.path, normalizedTrackPath),
+      );
+    } else {
+      _restoreExcludedTrack(normalizedTrackPath);
+    }
+    _notifyListeners();
+    unawaited(_saveLibraryExclusions());
+  }
+
+  void _restoreExcludedTrack(String trackPath) {
+    if (_libraryByPath.containsKey(trackPath)) return;
+    final isContentUri = trackPath.startsWith('content://');
+    FileStat? fileStat;
+    if (!isContentUri) {
+      try {
+        final file = File(trackPath);
+        if (!file.existsSync()) return;
+        fileStat = file.statSync();
+      } catch (_) {
+        return;
+      }
+    }
+
+    final parentFolder = path.dirname(trackPath);
+    final folderName = path.basename(parentFolder);
+    addTracks([
+      MusicTrack(
+        path: trackPath,
+        displayName: path.basenameWithoutExtension(trackPath),
+        groupKey: parentFolder,
+        groupTitle: folderName.isEmpty ? parentFolder : folderName,
+        groupSubtitle: parentFolder,
+        isSingle: false,
+        scannedAt: DateTime.now(),
+        fileSizeBytes: fileStat?.size,
+        modifiedAt: fileStat?.modified,
+      ),
+    ], notify: false);
+  }
+
+  void _removeTracksWhere(bool Function(MusicTrack track) test) {
+    final removedPaths = _library
+        .where(test)
+        .map((track) => track.path)
+        .toList(growable: false);
+    if (removedPaths.isEmpty) return;
+    final removedSet = removedPaths.toSet();
+    final sessionsToRemove = _sessions.values
+        .where((session) => removedSet.contains(session.currentTrackPath))
+        .map((session) => session.id)
+        .toList(growable: false);
+    _library.removeWhere((track) => removedSet.contains(track.path));
+    for (final trackPath in removedPaths) {
+      _libraryByPath.remove(trackPath);
+    }
+    _rebuildLibraryIndexes();
+    _syncLibraryNodeOrder(persist: false);
+    if (sessionsToRemove.isNotEmpty) {
+      unawaited(
+        _removeSessions(sessionsToRemove, persist: false, notify: false),
+      );
+    }
+    unawaited(AppDatabase.instance.deleteTracks(removedPaths));
+    unawaited(_saveLibraryNodeOrder());
+  }
+
+  void setScanning(bool scanning, {bool background = false}) {
+    if (_isScanning == scanning && _isBackgroundScanning == background) return;
     _isScanning = scanning;
+    _isBackgroundScanning = background;
     if (scanning) {
       _scanProgressNotifyTimer?.cancel();
       _scanProgressNotifyTimer = null;
@@ -111,6 +305,7 @@ extension AudioProviderLibrary on AudioProvider {
 
     _clearResolvedCoverPaths();
     _rebuildLibraryIndexes();
+    _syncGroupOrderFromLibrary();
     _syncLibraryNodeOrder(persist: false);
     if (notify) {
       _notifyListeners();
@@ -170,6 +365,71 @@ extension AudioProviderLibrary on AudioProvider {
         }
         _saveLibraryNodeOrder();
       }
+    }
+  }
+
+  void addOrReplaceTracks(
+    List<MusicTrack> tracks, {
+    bool notify = true,
+    bool persist = true,
+  }) {
+    if (tracks.isEmpty) return;
+
+    var changed = false;
+    var didChangeGroupOrder = false;
+    var didReplaceGroup = false;
+    final tracksToPersist = <MusicTrack>[];
+
+    for (final track in tracks) {
+      final existing = _libraryByPath[track.path];
+      if (existing == track) continue;
+      if (existing != null && existing.groupKey != track.groupKey) {
+        didReplaceGroup = true;
+      }
+      if (existing == null) {
+        _library.add(track);
+      } else {
+        final index = _library.indexWhere((item) => item.path == track.path);
+        if (index >= 0) {
+          _library[index] = track;
+        } else {
+          _library.add(track);
+        }
+      }
+      _libraryByPath[track.path] = track;
+      tracksToPersist.add(track);
+      changed = true;
+      if (_groupOrderSet.add(track.groupKey)) {
+        _groupOrder.add(track.groupKey);
+        didChangeGroupOrder = true;
+      }
+    }
+
+    if (!changed) return;
+    if (_libraryBatchDepth > 0) {
+      _libraryBatchChanged = true;
+      if (persist) {
+        _libraryBatchPersistTracks.addAll(tracksToPersist);
+      }
+      if (didChangeGroupOrder || didReplaceGroup) {
+        _libraryBatchChangedGroupOrder = true;
+      }
+      return;
+    }
+
+    _clearResolvedCoverPaths();
+    _rebuildLibraryIndexes();
+    _syncGroupOrderFromLibrary();
+    _syncLibraryNodeOrder(persist: false);
+    if (notify) {
+      _notifyListeners();
+    }
+    if (persist) {
+      unawaited(AppDatabase.instance.insertTracks(tracksToPersist));
+      if (didChangeGroupOrder || didReplaceGroup) {
+        _saveGroupOrder();
+      }
+      _saveLibraryNodeOrder();
     }
   }
 

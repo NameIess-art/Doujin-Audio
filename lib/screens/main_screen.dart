@@ -33,8 +33,8 @@ class MainScreen extends StatefulWidget {
 }
 
 class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
-  static const Duration _pageTransitionDuration = Duration(milliseconds: 380);
-  static const Curve _pageTransitionCurve = Curves.easeOutQuart;
+  static const Duration _pageTransitionDuration = Duration(milliseconds: 240);
+  static const Curve _pageTransitionCurve = Curves.easeOutCubic;
   static const double _desktopBreakpoint = 980;
   static const double _mobileDockContentGap = 4;
   static const String _backgroundKeepAliveInitializedKey =
@@ -57,6 +57,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   bool _notificationSettingsDialogVisible = false;
   bool _notificationSettingsOpened = false;
   bool _timerOverlayPrimed = false;
+  bool _needsMeasurement = true;
   Timer? _notificationSessionNavigationTimer;
   String? _pendingNotificationSessionId;
   String? _lastOpenedNotificationSessionId;
@@ -64,7 +65,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
   int? _pendingTargetIndex;
 
-  late final List<Widget> _pages;
+  late final List<Widget Function()> _pageBuilders;
 
   void _setLocalState(VoidCallback fn) => setState(fn);
 
@@ -89,10 +90,10 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
-    _pages = [
-      const LibraryTab(),
-      PlaylistTab(onTimerTap: _openTimerFromPlaylist),
-      const SettingsTab(),
+    _pageBuilders = [
+      () => const LibraryTab(),
+      () => PlaylistTab(onTimerTap: _openTimerFromPlaylist),
+      () => const SettingsTab(),
     ];
     _pageController = PageController();
     WidgetsBinding.instance.addObserver(this);
@@ -122,6 +123,11 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     _notificationsChannel.setMethodCallHandler(null);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  @override
+  void didChangeMetrics() {
+    _needsMeasurement = true;
   }
 
   @override
@@ -155,11 +161,17 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       _currentIndex = index;
     });
     if (!_pageController.hasClients) return;
-    _pageController.animateToPage(
-      index,
-      duration: _pageTransitionDuration,
-      curve: _pageTransitionCurve,
-    );
+    context.read<AudioProvider>().setPageTransitioning(true);
+    _pageController
+        .animateToPage(
+          index,
+          duration: _pageTransitionDuration,
+          curve: _pageTransitionCurve,
+        )
+        .whenComplete(() {
+          if (!mounted) return;
+          context.read<AudioProvider>().setPageTransitioning(false);
+        });
   }
 
   @override
@@ -229,7 +241,10 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         ? 0.0
         : _mobileContentInset(hasNowPlaying: hasNowPlaying);
 
-    WidgetsBinding.instance.addPostFrameCallback((_) => _measureBottomDock());
+    if (_needsMeasurement) {
+      _needsMeasurement = false;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _measureBottomDock());
+    }
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: overlayStyle,
@@ -271,9 +286,11 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                           colors: [Colors.transparent, Colors.white],
                           stops: [0, 0.45],
                         ).createShader(bounds),
-                        child: BackdropFilter(
-                          filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-                          child: const SizedBox.expand(),
+                        child: RepaintBoundary(
+                          child: BackdropFilter(
+                            filter: ImageFilter.blur(sigmaX: 7, sigmaY: 7),
+                            child: const SizedBox.expand(),
+                          ),
                         ),
                       ),
                     ),

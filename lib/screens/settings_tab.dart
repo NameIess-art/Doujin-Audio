@@ -23,7 +23,8 @@ class SettingsTab extends StatefulWidget {
   State<SettingsTab> createState() => _SettingsTabState();
 }
 
-class _SettingsTabState extends State<SettingsTab> with WidgetsBindingObserver {
+class _SettingsTabState extends State<SettingsTab>
+    with WidgetsBindingObserver, AutomaticKeepAliveClientMixin {
   static const MethodChannel _powerChannel = MethodChannel(
     'music_player/power',
   );
@@ -36,6 +37,9 @@ class _SettingsTabState extends State<SettingsTab> with WidgetsBindingObserver {
 
   final GlobalKey _headerKey = GlobalKey();
   double _headerHeight = 62;
+
+  @override
+  bool get wantKeepAlive => true;
 
   void _setLocalState(VoidCallback fn) => setState(fn);
 
@@ -79,17 +83,27 @@ class _SettingsTabState extends State<SettingsTab> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final i18n = context.watch<AppLanguageProvider>();
     final themeProvider = context.watch<ThemeProvider>();
     final audioProvider = context.read<AudioProvider>();
-    context.select<AudioProvider, int>(
-      (p) => Object.hash(
-        p.multiThreadPlaybackEnabled,
-        p.notificationsEnabled,
-        p.showPlaybackCard,
-        p.autoPlayAddedSessions,
-      ),
-    );
+    final playbackSettings = context
+        .select<
+          AudioProvider,
+          ({
+            bool multiThreadPlaybackEnabled,
+            bool notificationsEnabled,
+            bool showPlaybackCard,
+            bool autoPlayAddedSessions,
+          })
+        >(
+          (p) => (
+            multiThreadPlaybackEnabled: p.multiThreadPlaybackEnabled,
+            notificationsEnabled: p.notificationsEnabled,
+            showPlaybackCard: p.showPlaybackCard,
+            autoPlayAddedSessions: p.autoPlayAddedSessions,
+          ),
+        );
     final bottomInset = MobileOverlayInset.of(context);
     final cs = Theme.of(context).colorScheme;
     final descStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -187,7 +201,7 @@ class _SettingsTabState extends State<SettingsTab> with WidgetsBindingObserver {
                   ),
                   const SizedBox(height: 2),
                   SwitchListTile(
-                    value: audioProvider.showPlaybackCard,
+                    value: playbackSettings.showPlaybackCard,
                     onChanged: audioProvider.setShowPlaybackCard,
                     title: Text(i18n.tr('show_playback_card')),
                     subtitle: Text(
@@ -215,7 +229,7 @@ class _SettingsTabState extends State<SettingsTab> with WidgetsBindingObserver {
                   _SectionHeader(title: i18n.tr('section_playback')),
                   const SizedBox(height: 2),
                   SwitchListTile(
-                    value: audioProvider.multiThreadPlaybackEnabled,
+                    value: playbackSettings.multiThreadPlaybackEnabled,
                     onChanged: audioProvider.setMultiThreadPlaybackEnabled,
                     title: Text(i18n.tr('multi_thread_playback')),
                     subtitle: Text(
@@ -241,7 +255,7 @@ class _SettingsTabState extends State<SettingsTab> with WidgetsBindingObserver {
                   ),
                   const SizedBox(height: 2),
                   SwitchListTile(
-                    value: audioProvider.autoPlayAddedSessions,
+                    value: playbackSettings.autoPlayAddedSessions,
                     onChanged: audioProvider.setAutoPlayAddedSessions,
                     title: Text(i18n.tr('auto_play_added_sessions')),
                     subtitle: Text(
@@ -269,7 +283,7 @@ class _SettingsTabState extends State<SettingsTab> with WidgetsBindingObserver {
                   _SectionHeader(title: i18n.tr('section_notification')),
                   const SizedBox(height: 2),
                   SwitchListTile(
-                    value: audioProvider.notificationsEnabled,
+                    value: playbackSettings.notificationsEnabled,
                     onChanged: audioProvider.setNotificationsEnabled,
                     title: Text(i18n.tr('notification_bar')),
                     subtitle: Text(

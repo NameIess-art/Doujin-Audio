@@ -152,7 +152,11 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   }
 
   void _switchPage(int index, {bool withFeedback = true}) {
-    if (index == _currentIndex) return;
+    final provider = context.read<AudioProvider>();
+    if (index == _currentIndex) {
+      provider.triggerScrollToTop(index);
+      return;
+    }
     if (withFeedback) {
       Feedback.forTap(context);
     }
@@ -161,7 +165,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       _currentIndex = index;
     });
     if (!_pageController.hasClients) return;
-    context.read<AudioProvider>().setPageTransitioning(true);
+    provider.setPageTransitioning(true);
+    provider.triggerScrollToTop(index);
     _pageController
         .animateToPage(
           index,
@@ -170,7 +175,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         )
         .whenComplete(() {
           if (!mounted) return;
-          context.read<AudioProvider>().setPageTransitioning(false);
+          provider.setPageTransitioning(false);
         });
   }
 

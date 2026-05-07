@@ -148,6 +148,8 @@ class AudioProvider with ChangeNotifier {
   int _scanDuplicateCount = 0;
   int _scanFailureCount = 0;
   bool _isPageTransitioning = false;
+  final ValueNotifier<int?> _scrollToTopTabNotifier = ValueNotifier<int?>(null);
+  ValueListenable<int?> get scrollToTopTabListenable => _scrollToTopTabNotifier;
   final Random _random = Random();
 
   TimerMode? _timerMode;
@@ -195,6 +197,16 @@ class AudioProvider with ChangeNotifier {
   late final PlaybackSessionController playbackSessionController;
   late final TimerController timerController;
   late final NotificationCoordinator notificationCoordinator;
+
+  void triggerScrollToTop(int index) {
+    _scrollToTopTabNotifier.value = index;
+    // Reset to null in the next frame so it can be triggered again with the same index
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollToTopTabNotifier.value != null) {
+        _scrollToTopTabNotifier.value = null;
+      }
+    });
+  }
 
   AudioProvider({required PlaybackNotificationService notificationService})
     : _notificationService = notificationService {

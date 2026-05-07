@@ -152,8 +152,8 @@ class _SessionDetailPageState extends State<SessionDetailPage>
     AudioProvider provider,
   ) {
     final velocity = details.primaryVelocity ?? 0;
-    final shouldGoPrevious = _horizontalDragDelta > 72 || velocity > 520;
-    final shouldGoNext = _horizontalDragDelta < -72 || velocity < -520;
+    final shouldGoPrevious = _horizontalDragDelta > 48 || velocity > 400;
+    final shouldGoNext = _horizontalDragDelta < -48 || velocity < -400;
     _horizontalDragDelta = 0;
     if (shouldGoPrevious) {
       _changeSessionByOffset(provider, -1);
@@ -291,13 +291,14 @@ class _SessionDetailPageState extends State<SessionDetailPage>
               final opacity = lerpDouble(0.84, 1, switchProgress) ?? 1;
               return Opacity(
                 opacity: opacity,
-                child: SlideTransition(position: _slideAnimation, child: child),
+                child: child,
               );
             },
             child: _SessionDetailScaffold(
               session: session,
               provider: provider,
               coverPathFuture: coverPathFuture,
+              slideAnimation: _slideAnimation,
               onClose: () async {
                 await _animateDismissToEnd();
                 if (context.mounted) {
@@ -378,10 +379,23 @@ class _SessionDetailBackdrop extends StatelessWidget {
 }
 
 class _SessionDetailScaffold extends StatelessWidget {
+  final PlaybackSession session;
+  final AudioProvider provider;
+  final Future<String?> coverPathFuture;
+  final Animation<Offset> slideAnimation;
+  final VoidCallback onClose;
+  final void Function(DragUpdateDetails)? onHorizontalDragUpdate;
+  final void Function(DragEndDetails)? onHorizontalDragEnd;
+  final VoidCallback? onHorizontalDragCancel;
+  final void Function(DragUpdateDetails)? onVerticalDragUpdate;
+  final void Function(DragEndDetails)? onVerticalDragEnd;
+  final VoidCallback? onVerticalDragCancel;
+
   const _SessionDetailScaffold({
     required this.session,
     required this.provider,
     required this.coverPathFuture,
+    required this.slideAnimation,
     required this.onClose,
     this.onHorizontalDragUpdate,
     this.onHorizontalDragEnd,
@@ -390,17 +404,6 @@ class _SessionDetailScaffold extends StatelessWidget {
     this.onVerticalDragEnd,
     this.onVerticalDragCancel,
   });
-
-  final PlaybackSession session;
-  final AudioProvider provider;
-  final Future<String?> coverPathFuture;
-  final VoidCallback onClose;
-  final void Function(DragUpdateDetails)? onHorizontalDragUpdate;
-  final void Function(DragEndDetails)? onHorizontalDragEnd;
-  final VoidCallback? onHorizontalDragCancel;
-  final void Function(DragUpdateDetails)? onVerticalDragUpdate;
-  final void Function(DragEndDetails)? onVerticalDragEnd;
-  final VoidCallback? onVerticalDragCancel;
 
   @override
   Widget build(BuildContext context) {
@@ -445,8 +448,10 @@ class _SessionDetailScaffold extends StatelessWidget {
           SafeArea(
             child: LayoutBuilder(
               builder: (context, constraints) {
-                return Column(
-                  children: [
+                return SlideTransition(
+                  position: slideAnimation,
+                  child: Column(
+                    children: [
                     // Top Bar — outside drag GestureDetector so taps work
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -552,10 +557,11 @@ class _SessionDetailScaffold extends StatelessWidget {
                       ),
                     ),
                   ],
-                );
-              },
-            ),
+                ),
+              );
+            },
           ),
+        ),
         ],
       ),
     );

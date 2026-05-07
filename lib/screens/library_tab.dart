@@ -64,10 +64,7 @@ class _LibraryTabState extends State<LibraryTab>
 
   void _setLocalState(VoidCallback fn) => setState(fn);
 
-  void _jumpLibraryListToTop() {
-    if (_scrollController.positions.length != 1) return;
-    _scrollController.jumpTo(0);
-  }
+
 
   Future<void> _openVideoConverterPage() async {
     if (!mounted) return;
@@ -116,10 +113,30 @@ class _LibraryTabState extends State<LibraryTab>
       if (mounted) {
         _refreshWatchedFolders(silent: true);
         _measureHeader();
+        context.read<AudioProvider>().scrollToTopTabListenable.addListener(
+          _handleScrollToTopSignal,
+        );
       }
     });
   }
 
+  void _handleScrollToTopSignal() {
+    if (!mounted) return;
+    final index = context.read<AudioProvider>().scrollToTopTabListenable.value;
+    if (index == 0) {
+      // 0 is LibraryTab
+      _jumpLibraryListToTop();
+    }
+  }
+
+  void _jumpLibraryListToTop() {
+    if (!_scrollController.hasClients) return;
+    _scrollController.animateTo(
+      0,
+      duration: const Duration(milliseconds: 350),
+      curve: Curves.easeOutCubic,
+    );
+  }
   void _measureHeader() {
     final box = _headerKey.currentContext?.findRenderObject() as RenderBox?;
     if (box != null && mounted) {
@@ -133,6 +150,9 @@ class _LibraryTabState extends State<LibraryTab>
 
   @override
   void dispose() {
+    context.read<AudioProvider>().scrollToTopTabListenable.removeListener(
+      _handleScrollToTopSignal,
+    );
     _searchDebounceTimer?.cancel();
     _searchController.dispose();
     _scrollController.dispose();
@@ -307,12 +327,13 @@ class _LibraryTabState extends State<LibraryTab>
       onNotification: (notification) {
         if (notification is ScrollUpdateNotification &&
             notification.dragDetails != null &&
-            notification.metrics.pixels < -55 &&
+            notification.metrics.pixels < -68 &&
             !_refreshTriggeredInCurrentScroll &&
             canPullRefresh &&
             !isScanning &&
             _searchQuery.isEmpty) {
           _refreshTriggeredInCurrentScroll = true;
+          unawaited(HapticFeedback.mediumImpact());
           _refreshIndicatorKey.currentState?.show();
         } else if (notification is ScrollEndNotification) {
           _refreshTriggeredInCurrentScroll = false;
@@ -329,6 +350,7 @@ class _LibraryTabState extends State<LibraryTab>
                 : _searchQuery.isNotEmpty
                 ? ListView.builder(
                     key: const ValueKey('search_results_list'),
+                    controller: _scrollController,
                     padding: EdgeInsets.fromLTRB(
                       16,
                       headerContentHeight,

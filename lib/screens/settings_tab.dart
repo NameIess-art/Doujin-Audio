@@ -37,6 +37,7 @@ class _SettingsTabState extends State<SettingsTab>
 
   final GlobalKey _headerKey = GlobalKey();
   double _headerHeight = 62;
+  final ScrollController _scrollController = ScrollController();
 
   @override
   bool get wantKeepAlive => true;
@@ -58,11 +59,40 @@ class _SettingsTabState extends State<SettingsTab>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _backgroundRunAllowedFuture = _isIgnoringBatteryOptimizations();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _measureHeader());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _measureHeader();
+        context.read<AudioProvider>().scrollToTopTabListenable.addListener(
+          _handleScrollToTopSignal,
+        );
+      }
+    });
+  }
+
+  void _handleScrollToTopSignal() {
+    if (!mounted) return;
+    final index = context.read<AudioProvider>().scrollToTopTabListenable.value;
+    if (index == 2) {
+      // 2 is SettingsTab
+      _jumpSettingsToTop();
+    }
+  }
+
+  void _jumpSettingsToTop() {
+    if (!_scrollController.hasClients) return;
+    _scrollController.animateTo(
+      0,
+      duration: const Duration(milliseconds: 350),
+      curve: Curves.easeOutCubic,
+    );
   }
 
   @override
   void dispose() {
+    context.read<AudioProvider>().scrollToTopTabListenable.removeListener(
+      _handleScrollToTopSignal,
+    );
+    _scrollController.dispose();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -117,6 +147,7 @@ class _SettingsTabState extends State<SettingsTab>
     return Stack(
       children: [
         ListView(
+          controller: _scrollController,
           padding: EdgeInsets.fromLTRB(16, topTotalHeight, 16, bottomInset),
           children: [
             ListTileTheme.merge(

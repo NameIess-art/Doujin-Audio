@@ -55,6 +55,7 @@ extension _MainScreenLayout on _MainScreenState {
       child: PageView.builder(
         controller: _pageController,
         itemCount: _pageBuilders.length,
+        clipBehavior: Clip.none,
         physics: const SnapScrollPhysics(parent: ClampingScrollPhysics()),
         onPageChanged: (index) {
           if (_pendingTargetIndex != null && index != _pendingTargetIndex) {
@@ -368,10 +369,9 @@ extension _MainScreenLayout on _MainScreenState {
   double _mobileContentInset({required bool hasNowPlaying}) {
     if (_measuredDockContent > 0) {
       final systemBottom = MediaQuery.of(context).padding.bottom;
-      return (systemBottom +
-              _measuredDockContent +
-              8 -
-              _MainScreenState._mobileDockContentGap)
+      // Use the actual measured height of the dock content + its bottom margin
+      // to ensure the scrollable content is flush with its top edge.
+      return (max(systemBottom, 6.0) + _measuredDockContent)
           .clamp(0.0, double.infinity);
     }
     final systemBottom = MediaQuery.of(context).padding.bottom;

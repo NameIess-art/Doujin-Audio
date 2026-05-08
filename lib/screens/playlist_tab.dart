@@ -172,60 +172,59 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     final timerRemaining = timerState.remaining;
     final timerActive = timerState.active;
     final topTotalHeight = _headerHeight + 4;
-    final listBottomInset = bottomInset + 96;
+    final listBottomInset = bottomInset + 8;
     final viewportHeight = MediaQuery.sizeOf(context).height;
-    final listCacheExtent = (topTotalHeight + listBottomInset + 320)
-        .clamp(viewportHeight * 1.6, viewportHeight * 2.4)
+    // Massive cacheExtent to ensure items are pre-rendered far outside the viewport.
+    final listCacheExtent = (topTotalHeight + listBottomInset + 1200)
+        .clamp(viewportHeight * 3.0, viewportHeight * 5.0)
         .toDouble();
 
     return Stack(
       children: [
-        sessions.isEmpty
-            ? Column(
-                children: [
-                  SizedBox(height: topTotalHeight),
-                  Expanded(
-                    child: _SessionsEmptyState(
-                      bottomInset: listBottomInset,
-                      topInset: 0,
-                    ),
-                  ),
-                ],
-              )
-            : ReorderableListView.builder(
-                scrollController: _scrollController,
-                padding: EdgeInsets.fromLTRB(
-                  16,
-                  topTotalHeight,
-                  16,
-                  listBottomInset,
-                ),
-                cacheExtent: listCacheExtent,
-                clipBehavior: Clip.none,
-                buildDefaultDragHandles: false,
-                keyboardDismissBehavior:
-                    ScrollViewKeyboardDismissBehavior.onDrag,
-                onReorder: provider.reorderSessions,
-                onReorderStart: (index) =>
-                    unawaited(HapticFeedback.heavyImpact()),
-                proxyDecorator: (child, index, animation) =>
-                    _buildReorderProxy(context, child, animation),
-                itemCount: sessions.length,
-                itemBuilder: (context, index) {
-                  final session = sessions[index];
-                  return ReorderableHoldDragStartListener(
-                    key: ValueKey(session.id),
-                    index: index,
-                    child: RepaintBoundary(
-                      child: _SessionListCard(
-                        session: session,
-                        provider: provider,
-                        onOpen: () => _openSessionDetail(context, session.id),
+        // Restricted viewport for reorder trigger.
+        // We expand the Positioned by 80px to pre-render items under the glass, 
+        // so we add 80px to the internal padding to keep the content visually in place.
+        Positioned(
+          top: _headerHeight - 80,
+          bottom: bottomInset - 80,
+          left: 0,
+          right: 0,
+          child: sessions.isEmpty
+              ? _SessionsEmptyState(
+                  bottomInset: 80 + 8,
+                  topInset: 80 + 4,
+                )
+              : ReorderableListView.builder(
+                  scrollController: _scrollController,
+                  // Expand internal padding by 80px to match the expanded Positioned bounds.
+                  padding: const EdgeInsets.fromLTRB(16, 80 + 4, 16, 80 + 8),
+                  cacheExtent: listCacheExtent,
+                  clipBehavior: Clip.none,
+                  buildDefaultDragHandles: false,
+                  keyboardDismissBehavior:
+                      ScrollViewKeyboardDismissBehavior.onDrag,
+                  onReorder: provider.reorderSessions,
+                  onReorderStart: (index) =>
+                      unawaited(HapticFeedback.heavyImpact()),
+                  proxyDecorator: (child, index, animation) =>
+                      _buildReorderProxy(context, child, animation),
+                  itemCount: sessions.length,
+                  itemBuilder: (context, index) {
+                    final session = sessions[index];
+                    return ReorderableHoldDragStartListener(
+                      key: ValueKey(session.id),
+                      index: index,
+                      child: RepaintBoundary(
+                        child: _SessionListCard(
+                          session: session,
+                          provider: provider,
+                          onOpen: () => _openSessionDetail(context, session.id),
+                        ),
                       ),
-                    ),
-                  );
-                },
-              ),
+                    );
+                  },
+                ),
+        ),
         Positioned(
           top: 0,
           left: 0,

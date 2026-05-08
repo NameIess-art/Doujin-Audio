@@ -186,10 +186,12 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     const double searchBarFullHeight = 44.0;
     final topTotalHeight = _headerHeight + 4;
     final headerContentHeight = topTotalHeight + searchBarFullHeight;
-    final listBottomInset = bottomInset + 96;
+    // Remove the extra 96px to make content flush with the bottom dock.
+    final listBottomInset = bottomInset + 8;
     final viewportHeight = MediaQuery.sizeOf(context).height;
-    final listCacheExtent = (headerContentHeight + listBottomInset + 320)
-        .clamp(viewportHeight * 1.6, viewportHeight * 2.4)
+    // Massive cacheExtent to ensure items are pre-rendered far outside the viewport.
+    final listCacheExtent = (headerContentHeight + listBottomInset + 1200)
+        .clamp(viewportHeight * 3.0, viewportHeight * 5.0)
         .toDouble();
     final hasLibrary = rawTree.isNotEmpty;
     final showLibrarySkeleton =
@@ -223,6 +225,12 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     }
 
     Widget emptyListBody() {
+      // Padding adjustment for restricted Positioned viewport.
+      // We expand the Positioned by 80px to pre-render items under the glass, 
+      // so we add 80px to the internal padding to keep the content visually in place.
+      final relativeTop = 80 + 4 + searchBarFullHeight;
+      const double relativeBottom = 80 + 8;
+
       if (_searchQuery.isNotEmpty) {
         return ListView(
           physics: const AlwaysScrollableScrollPhysics(
@@ -230,9 +238,9 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
           ),
           padding: EdgeInsets.fromLTRB(
             16,
-            headerContentHeight,
+            relativeTop,
             16,
-            listBottomInset,
+            relativeBottom,
           ),
           children: [
             SizedBox(
@@ -253,16 +261,16 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
       }
       if (showLibrarySkeleton) {
         return _LibraryLoadingSkeleton(
-          bottomInset: listBottomInset,
-          topInset: headerContentHeight,
+          bottomInset: relativeBottom,
+          topInset: relativeTop,
         );
       }
       return _LibraryEmptyState(
         onImportLibrary: _addLibrary,
         onImportFolder: _addFolder,
         onImportFile: _addFiles,
-        bottomInset: listBottomInset,
-        topInset: headerContentHeight,
+        bottomInset: relativeBottom,
+        topInset: relativeTop,
         physics: canPullRefresh
             ? const AlwaysScrollableScrollPhysics(
                 parent: BouncingScrollPhysics(),
@@ -280,7 +288,8 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
           unawaited(HapticFeedback.mediumImpact());
           await _refreshWatchedFolders();
         },
-        edgeOffset: headerContentHeight,
+        // Adjust edgeOffset because RefreshIndicator is now inside the restricted Positioned.
+        edgeOffset: 80 + 4 + searchBarFullHeight,
         displacement: 32,
         triggerMode: RefreshIndicatorTriggerMode.anywhere,
         child: body,
@@ -308,19 +317,22 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         children: [
           // List content starts at top:0, padded so it scrolls behind the header
           // for the BackdropFilter frosted-glass effect.
-          Positioned.fill(
+          // The main list container. We use Positioned to restrict the bounds of the 
+          // ReorderableListView so that the drag-to-scroll trigger area is at the 
+          // content area edges (below header, above dock).
+          Positioned(
+            top: _headerHeight - 80,
+            bottom: bottomInset - 80,
+            left: 0,
+            right: 0,
             child: tree.isEmpty
                 ? refreshableEmptyBody()
                 : _searchQuery.isNotEmpty
                 ? ListView.builder(
                     key: const ValueKey('search_results_list'),
                     controller: _scrollController,
-                    padding: EdgeInsets.fromLTRB(
-                      16,
-                      headerContentHeight,
-                      16,
-                      listBottomInset,
-                    ),
+                    // Expand internal padding by 80px to match the expanded Positioned bounds.
+                    padding: EdgeInsets.fromLTRB(16, 80 + 4 + searchBarFullHeight, 16, 80 + 8),
                     cacheExtent: listCacheExtent,
                     clipBehavior: Clip.none,
                     physics: const AlwaysScrollableScrollPhysics(
@@ -337,18 +349,16 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                       unawaited(HapticFeedback.mediumImpact());
                       await _refreshWatchedFolders();
                     },
-                    edgeOffset: headerContentHeight,
+                    // Adjust edgeOffset because RefreshIndicator is now inside the restricted Positioned.
+                    edgeOffset: 80 + 4 + searchBarFullHeight,
                     displacement: 32,
                     triggerMode: RefreshIndicatorTriggerMode.anywhere,
                     child: ReorderableListView.builder(
                       scrollController: _scrollController,
+                      // Clip.none allows items to be visible when scrolled into the 
+                      // "empty" space above/below the restricted Positioned area.
                       clipBehavior: Clip.none,
-                      padding: EdgeInsets.fromLTRB(
-                        16,
-                        headerContentHeight,
-                        16,
-                        listBottomInset,
-                      ),
+                      padding: EdgeInsets.fromLTRB(16, 80 + 4 + searchBarFullHeight, 16, 80 + 8),
                       cacheExtent: listCacheExtent,
                       physics: canPullRefresh
                           ? const AlwaysScrollableScrollPhysics(

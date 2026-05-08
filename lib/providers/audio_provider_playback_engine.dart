@@ -1,24 +1,38 @@
 part of 'audio_provider.dart';
 
 extension AudioProviderPlaybackEngine on AudioProvider {
+  bool _isSessionCommandCurrent(
+    PlaybackSession session,
+    PlaybackCommandToken token,
+  ) {
+    return _sessions.containsKey(session.id) &&
+        session.playbackCommandGeneration == token.generation &&
+        token.isCurrent;
+  }
+
   Future<void> _startSessionPlayback(
     PlaybackSession session, {
     required bool shouldStartTriggerCountdown,
   }) async {
     if (!_sessions.containsKey(session.id)) return;
     final generation = ++session.playbackCommandGeneration;
+    final token = _playbackCommandRunner.start(
+      sessionId: session.id,
+      generation: generation,
+      isCurrent: () =>
+          _sessions.containsKey(session.id) &&
+          session.playbackCommandGeneration == generation,
+    );
     _notificationsDismissedWhilePaused = false;
-    unawaited(NativePlaybackBridge.instance.undismissNotifications());
+    unawaited(_nativePlaybackRepository.undismissNotifications());
     if (!_multiThreadPlaybackEnabled) {
       await _enforceSingleThreadPlayback(preferredSessionId: session.id);
     }
-    if (!_sessions.containsKey(session.id) ||
-        session.playbackCommandGeneration != generation) {
+    if (!_isSessionCommandCurrent(session, token)) {
       return;
     }
     final activated = await _activateAudioSessionForPlayback();
-    if (!_sessions.containsKey(session.id) ||
-        session.playbackCommandGeneration != generation) {
+    if (!_isSessionCommandCurrent(session, token)) {
       return;
     }
     if (!activated) {
@@ -39,12 +53,11 @@ extension AudioProviderPlaybackEngine on AudioProvider {
     );
 
     try {
-      final playResult = await NativePlaybackBridge.instance.play(session.id);
-      if (!_sessions.containsKey(session.id) ||
-          session.playbackCommandGeneration != generation) {
+      final playResult = await _nativePlaybackRepository.play(session.id);
+      if (!_isSessionCommandCurrent(session, token)) {
         return;
       }
-      if ((playResult['ok'] as bool?) != true) {
+      if (!playResult.isOk) {
         session.isPlaybackStarting = false;
         session.setOptimisticState(
           playing: false,
@@ -63,8 +76,7 @@ extension AudioProviderPlaybackEngine on AudioProvider {
         );
       }
     } catch (e) {
-      if (_sessions.containsKey(session.id) &&
-          session.playbackCommandGeneration == generation) {
+      if (_isSessionCommandCurrent(session, token)) {
         session.isPlaybackStarting = false;
         session.setOptimisticState(
           playing: false,
@@ -76,8 +88,7 @@ extension AudioProviderPlaybackEngine on AudioProvider {
       debugPrint('AudioProvider._startSessionPlayback error: $e');
     }
 
-    if (!_sessions.containsKey(session.id) ||
-        session.playbackCommandGeneration != generation) {
+    if (!_isSessionCommandCurrent(session, token)) {
       return;
     }
     _syncKeepCpuAwake();
@@ -113,7 +124,7 @@ extension AudioProviderPlaybackEngine on AudioProvider {
 
     await Future.wait(
       _sessions.values.map(
-        (session) => NativePlaybackBridge.instance.pause(session.id),
+        (session) => _nativePlaybackRepository.pause(session.id),
       ),
     );
     for (final session in _sessions.values) {
@@ -150,7 +161,7 @@ extension AudioProviderPlaybackEngine on AudioProvider {
     await Future.wait(
       sessionsToPause.map((session) {
         session.setOptimisticState(playing: false);
-        return NativePlaybackBridge.instance.pause(session.id);
+        return _nativePlaybackRepository.pause(session.id);
       }),
     );
     _notificationFocusSessionId = keepSessionId;
@@ -205,7 +216,7 @@ extension AudioProviderPlaybackEngine on AudioProvider {
 
     if (nextPath == session.currentTrackPath) {
       try {
-        await NativePlaybackBridge.instance.seek(session.id, Duration.zero);
+        await _nativePlaybackRepository.seek(session.id, Duration.zero);
         if (!_sessions.containsKey(session.id) ||
             session.playbackCommandGeneration != completionGeneration) {
           return;

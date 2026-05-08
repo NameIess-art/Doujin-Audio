@@ -3,164 +3,92 @@ part of 'audio_provider.dart';
 extension AudioProviderLibrary on AudioProvider {
   static const LibraryOrganizer _libraryOrganizer = LibraryOrganizer();
 
-  List<String> _currentLibraryTopLevelNodeIds() {
-    return _libraryOrganizer.topLevelNodeIds(_library, _watchedFolders);
-  }
-
   void _syncLibraryNodeOrder({bool persist = true}) {
-    final validNodeIds = _currentLibraryTopLevelNodeIds();
-    final validNodeIdSet = validNodeIds.toSet();
-    var changed = false;
-    final previousLength = _libraryNodeOrder.length;
-    _libraryNodeOrder.removeWhere((id) => !validNodeIdSet.contains(id));
-    if (_libraryNodeOrder.length != previousLength) {
-      changed = true;
-    }
-
-    for (final nodeId in validNodeIds) {
-      if (_libraryNodeOrder.contains(nodeId)) continue;
-      _libraryNodeOrder.add(nodeId);
-      changed = true;
-    }
-
-    if (changed && persist) {
-      unawaited(_saveLibraryNodeOrder());
-    }
+    _libraryService.syncLibraryNodeOrder(
+      persist: persist,
+      onPersist: () => unawaited(_saveLibraryNodeOrder()),
+    );
   }
 
   void reorderLibraryNodes(int oldIndex, int newIndex) {
-    final currentIds = buildLibraryTree().map((node) => node.path).toList();
-    if (oldIndex < 0 || oldIndex >= currentIds.length) return;
-    if (newIndex < 0 || newIndex > currentIds.length) return;
-    if (newIndex > oldIndex) newIndex -= 1;
-    final movedId = currentIds.removeAt(oldIndex);
-    currentIds.insert(newIndex, movedId);
-    _libraryNodeOrder
-      ..clear()
-      ..addAll(currentIds);
-    _markLibraryStructureDirty();
+    _libraryService.reorderLibraryNodes(
+      oldIndex,
+      newIndex,
+      currentTree: buildLibraryTree(),
+      onPersist: () => unawaited(_saveLibraryNodeOrder()),
+    );
     _notifyListeners();
-    unawaited(_saveLibraryNodeOrder());
   }
 
   void addWatchedFolder(String folderPath, {bool notify = true}) {
-    if (!_watchedFolders.contains(folderPath)) {
-      _watchedFolders.add(folderPath);
-      _syncLibraryNodeOrder();
-      _markLibraryStructureDirty();
-      if (notify) _notifyListeners();
-      unawaited(_saveWatchedFolders());
-    }
+    final changed = _libraryService.addWatchedFolder(
+      folderPath,
+      onPersist: () => unawaited(_saveWatchedFolders()),
+    );
+    if (changed && notify) _notifyListeners();
   }
 
   void addWatchedLibrary(String folderPath, {bool notify = true}) {
-    if (!_watchedLibraries.contains(folderPath)) {
-      _watchedLibraries.add(folderPath);
-      if (notify) _notifyListeners();
-      unawaited(_saveWatchedLibraries());
-    }
+    final changed = _libraryService.addWatchedLibrary(
+      folderPath,
+      onPersist: () => unawaited(_saveWatchedLibraries()),
+    );
+    if (changed && notify) _notifyListeners();
   }
 
   void removeWatchedFolder(String folderPath, {bool notify = true}) {
-    if (_watchedFolders.remove(folderPath)) {
-      _syncLibraryNodeOrder();
-      _markLibraryStructureDirty();
-      if (notify) _notifyListeners();
-      unawaited(_saveWatchedFolders());
-    }
+    final changed = _libraryService.removeWatchedFolder(
+      folderPath,
+      onPersist: () => unawaited(_saveWatchedFolders()),
+    );
+    if (changed && notify) _notifyListeners();
   }
 
   void removeWatchedLibrary(String folderPath, {bool notify = true}) {
-    if (_watchedLibraries.remove(folderPath)) {
-      if (notify) _notifyListeners();
-      unawaited(_saveWatchedLibraries());
-    }
+    final changed = _libraryService.removeWatchedLibrary(
+      folderPath,
+      onPersist: () => unawaited(_saveWatchedLibraries()),
+    );
+    if (changed && notify) _notifyListeners();
   }
 
   Future<void> removeLibrary(String libraryPath) async {
-    final normalizedLibraryPath = path.normalize(libraryPath);
-    final childFolders = _watchedFolders
-        .where(
-          (folderPath) => _isPathWithinOrEqual(
-            path.normalize(folderPath),
-            normalizedLibraryPath,
-          ),
-        )
-        .toList(growable: false);
-    for (final folderPath in childFolders) {
-      await removeFolderFromLibrary(folderPath);
-    }
-    _watchedLibraries.removeWhere(
-      (pathValue) =>
-          path.equals(path.normalize(pathValue), normalizedLibraryPath),
+    await _libraryService.removeLibrary(
+      libraryPath,
+      removeFolder: removeFolderFromLibrary,
+      onSaveWatchedLibraries: () => unawaited(_saveWatchedLibraries()),
+      onSaveLibraryExclusions: () => unawaited(_saveLibraryExclusions()),
     );
-    _excludedLibraryFolders.remove(normalizedLibraryPath);
-    _excludedLibraryTracks.remove(normalizedLibraryPath);
-    _syncLibraryNodeOrder(persist: false);
-    _markLibraryStructureDirty();
     _notifyListeners();
-    unawaited(_saveWatchedLibraries());
-    unawaited(_saveLibraryExclusions());
   }
 
-  List<String> childFoldersForLibrary(String libraryPath) {
-    final normalizedLibraryPath = path.normalize(libraryPath);
-    return _watchedFolders
-        .where(
-          (folderPath) => _isPathWithinOrEqual(
-            path.normalize(folderPath),
-            normalizedLibraryPath,
-          ),
-        )
-        .toList(growable: false)
-      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
-  }
+  List<String> childFoldersForLibrary(String libraryPath) =>
+      _libraryService.childFoldersForLibrary(libraryPath);
 
-  List<String> excludedFoldersForLibrary(String libraryPath) {
-    return (_excludedLibraryFolders[path.normalize(libraryPath)] ??
-            const <String>{})
-        .toList(growable: false)
-      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
-  }
+  List<String> excludedFoldersForLibrary(String libraryPath) =>
+      _libraryService.excludedFoldersForLibrary(libraryPath);
 
-  List<String> excludedTracksForLibrary(String libraryPath) {
-    return (_excludedLibraryTracks[path.normalize(libraryPath)] ??
-            const <String>{})
-        .toList(growable: false)
-      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
-  }
+  List<String> excludedTracksForLibrary(String libraryPath) =>
+      _libraryService.excludedTracksForLibrary(libraryPath);
 
-  bool isLibraryPathExcluded(String libraryPath, String entityPath) {
-    final normalizedLibraryPath = path.normalize(libraryPath);
-    final normalizedPath = path.normalize(entityPath);
-    if (_excludedLibraryTracks[normalizedLibraryPath]?.contains(
-          normalizedPath,
-        ) ??
-        false) {
-      return true;
-    }
-    final folders = _excludedLibraryFolders[normalizedLibraryPath];
-    if (folders == null) return false;
-    return folders.any(
-      (folderPath) => _isPathWithinOrEqual(normalizedPath, folderPath),
-    );
-  }
+  bool isLibraryPathExcluded(String libraryPath, String entityPath) =>
+      _libraryService.isLibraryPathExcluded(libraryPath, entityPath);
 
   bool isLibraryFolderExplicitlyExcluded(
     String libraryPath,
     String folderPath,
   ) {
-    return _excludedLibraryFolders[path.normalize(libraryPath)]?.contains(
-          path.normalize(folderPath),
-        ) ??
-        false;
+    return _libraryService.isLibraryFolderExplicitlyExcluded(
+      libraryPath,
+      folderPath,
+    );
   }
 
   bool isLibraryTrackExplicitlyExcluded(String libraryPath, String trackPath) {
-    return _excludedLibraryTracks[path.normalize(libraryPath)]?.contains(
-          path.normalize(trackPath),
-        ) ??
-        false;
+    return _libraryService.isLibraryTrackExplicitlyExcluded(
+      libraryPath,
+      trackPath,
+    );
   }
 
   void setLibraryFolderExcluded(
@@ -168,15 +96,13 @@ extension AudioProviderLibrary on AudioProvider {
     String folderPath,
     bool excluded,
   ) {
-    final normalizedLibraryPath = path.normalize(libraryPath);
     final normalizedFolderPath = path.normalize(folderPath);
-    final folders = _excludedLibraryFolders.putIfAbsent(
-      normalizedLibraryPath,
-      () => <String>{},
+    final changed = _libraryService.setLibraryFolderExcluded(
+      libraryPath,
+      folderPath,
+      excluded,
+      onPersist: () => unawaited(_saveLibraryExclusions()),
     );
-    final changed = excluded
-        ? folders.add(normalizedFolderPath)
-        : folders.remove(normalizedFolderPath);
     if (!changed) return;
     if (excluded) {
       _removeTracksWhere(
@@ -184,7 +110,6 @@ extension AudioProviderLibrary on AudioProvider {
       );
     }
     _notifyListeners();
-    unawaited(_saveLibraryExclusions());
   }
 
   void setLibraryTrackExcluded(
@@ -192,15 +117,13 @@ extension AudioProviderLibrary on AudioProvider {
     String trackPath,
     bool excluded,
   ) {
-    final normalizedLibraryPath = path.normalize(libraryPath);
     final normalizedTrackPath = path.normalize(trackPath);
-    final tracks = _excludedLibraryTracks.putIfAbsent(
-      normalizedLibraryPath,
-      () => <String>{},
+    final changed = _libraryService.setLibraryTrackExcluded(
+      libraryPath,
+      trackPath,
+      excluded,
+      onPersist: () => unawaited(_saveLibraryExclusions()),
     );
-    final changed = excluded
-        ? tracks.add(normalizedTrackPath)
-        : tracks.remove(normalizedTrackPath);
     if (!changed) return;
     if (excluded) {
       _removeTracksWhere(
@@ -210,7 +133,6 @@ extension AudioProviderLibrary on AudioProvider {
       _restoreExcludedTrack(normalizedTrackPath);
     }
     _notifyListeners();
-    unawaited(_saveLibraryExclusions());
   }
 
   void _restoreExcludedTrack(String trackPath) {
@@ -266,7 +188,7 @@ extension AudioProviderLibrary on AudioProvider {
         _removeSessions(sessionsToRemove, persist: false, notify: false),
       );
     }
-    unawaited(AppDatabase.instance.deleteTracks(removedPaths));
+    unawaited(_audioDatabaseRepository.deleteTracks(removedPaths));
     unawaited(_saveLibraryNodeOrder());
   }
 
@@ -311,7 +233,7 @@ extension AudioProviderLibrary on AudioProvider {
       _notifyListeners();
     }
     if (tracksToPersist.isNotEmpty) {
-      await AppDatabase.instance.insertTracks(tracksToPersist);
+      await _audioDatabaseRepository.upsertTracks(tracksToPersist);
     }
     if (didChangeGroupOrder) {
       await _saveGroupOrder();
@@ -359,7 +281,7 @@ extension AudioProviderLibrary on AudioProvider {
         _notifyListeners();
       }
       if (persist) {
-        unawaited(AppDatabase.instance.insertTracks(toAdd));
+        unawaited(_audioDatabaseRepository.upsertTracks(toAdd));
         if (didChangeGroupOrder) {
           _saveGroupOrder();
         }
@@ -425,7 +347,7 @@ extension AudioProviderLibrary on AudioProvider {
       _notifyListeners();
     }
     if (persist) {
-      unawaited(AppDatabase.instance.insertTracks(tracksToPersist));
+      unawaited(_audioDatabaseRepository.upsertTracks(tracksToPersist));
       if (didChangeGroupOrder || didReplaceGroup) {
         _saveGroupOrder();
       }
@@ -456,18 +378,26 @@ extension AudioProviderLibrary on AudioProvider {
     _rebuildLibraryIndexes();
     _syncLibraryNodeOrder(persist: false);
     _notifyListeners();
-    unawaited(AppDatabase.instance.deleteTracks([trackPath]));
+    unawaited(_audioDatabaseRepository.deleteTracks([trackPath]));
     unawaited(_saveGroupOrder());
     unawaited(_saveLibraryNodeOrder());
   }
 
   Future<void> removeFolderFromLibrary(String folderPath) async {
     _clearResolvedCoverPaths();
+    final normalizedFolderPath = PathMatcher.normalize(folderPath);
     final trackPaths = _library
-        .where((track) => track.path.startsWith(folderPath))
+        .where(
+          (track) =>
+              PathMatcher.isWithinOrEqual(track.path, normalizedFolderPath),
+        )
         .map((track) => track.path)
         .toSet();
-    if (trackPaths.isEmpty && !_watchedFolders.contains(folderPath)) {
+    if (trackPaths.isEmpty &&
+        !_watchedFolders.any(
+          (watchedFolder) =>
+              PathMatcher.equalsNormalized(watchedFolder, normalizedFolderPath),
+        )) {
       return;
     }
 
@@ -479,24 +409,32 @@ extension AudioProviderLibrary on AudioProvider {
       await _removeSessions(sessionsToRemove, persist: false, notify: false);
     }
 
-    _library.removeWhere((track) => track.path.startsWith(folderPath));
+    _library.removeWhere(
+      (track) => PathMatcher.isWithinOrEqual(track.path, normalizedFolderPath),
+    );
     for (final trackPath in trackPaths) {
       _libraryByPath.remove(trackPath);
     }
-    _groupOrder.removeWhere((key) => key.startsWith(folderPath));
+    _groupOrder.removeWhere(
+      (key) => PathMatcher.isWithinOrEqual(key, normalizedFolderPath),
+    );
     _groupOrderSet
       ..clear()
       ..addAll(_groupOrder);
 
-    if (_watchedFolders.contains(folderPath)) {
-      _watchedFolders.remove(folderPath);
+    final watchedFoldersBeforeRemoval = _watchedFolders.length;
+    _watchedFolders.removeWhere(
+      (watchedFolder) =>
+          PathMatcher.equalsNormalized(watchedFolder, normalizedFolderPath),
+    );
+    if (_watchedFolders.length != watchedFoldersBeforeRemoval) {
       unawaited(_saveWatchedFolders());
     }
 
     _rebuildLibraryIndexes();
     _syncLibraryNodeOrder(persist: false);
     _notifyListeners();
-    unawaited(AppDatabase.instance.deleteTracks(trackPaths.toList()));
+    unawaited(_audioDatabaseRepository.deleteTracks(trackPaths.toList()));
     unawaited(_saveGroupOrder());
     unawaited(_saveLibraryNodeOrder());
   }
@@ -515,15 +453,17 @@ extension AudioProviderLibrary on AudioProvider {
     );
   }
 
-  MusicTrack? trackByPath(String trackPath) => _libraryByPath[trackPath];
+  MusicTrack? trackByPath(String trackPath) =>
+      _libraryService.trackByPath(trackPath);
 
-  PlaybackSession? sessionById(String sessionId) => _sessions[sessionId];
+  PlaybackSession? sessionById(String sessionId) =>
+      _playbackService.sessionById(sessionId);
 
   String? sessionTrackPath(String sessionId) =>
-      _sessions[sessionId]?.currentTrackPath;
+      _playbackService.sessionById(sessionId)?.currentTrackPath;
 
   bool isTrackActive(String trackPath) =>
-      _sessions.values.any((session) => session.currentTrackPath == trackPath);
+      _playbackService.isTrackActive(trackPath);
 
   List<MusicTrack> tracksInSameGroup(String trackPath) {
     final track = trackByPath(trackPath);

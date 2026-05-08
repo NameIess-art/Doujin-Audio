@@ -103,6 +103,12 @@ flutter run
 flutter build apk --release --split-per-abi
 ```
 
+## audio_service fork notes
+
+- The project currently uses `dependency_overrides` to point `audio_service` at `third_party/audio_service`.
+- Fork-specific customization notes live in `third_party/audio_service/CUSTOMIZATION.md`.
+- Keep that document updated with the upstream tag or commit we forked from, the files changed locally, and the reason each patch still exists.
+
 ## 发行说明 v1.1.15
 
 - 优化页面打开与切换加载速度：并行化启动数据加载、延迟构建非当前页、降低 BackdropFilter GPU 开销并压缩重建范围。

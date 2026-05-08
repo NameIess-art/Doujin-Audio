@@ -3,6 +3,9 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
+import 'native_result.dart';
+import 'platform_channels.dart';
+
 class NativePlaybackSnapshot {
   const NativePlaybackSnapshot({
     required this.sessionId,
@@ -62,16 +65,39 @@ class NativePlaybackSnapshot {
   }
 }
 
+class NativePlaybackBundleSnapshot {
+  const NativePlaybackBundleSnapshot({
+    required this.sessions,
+    this.focusedSessionId,
+  });
+
+  final List<NativePlaybackSnapshot> sessions;
+  final String? focusedSessionId;
+
+  factory NativePlaybackBundleSnapshot.fromMap(Map<dynamic, dynamic> map) {
+    final rawSessions = map['sessions'];
+    return NativePlaybackBundleSnapshot(
+      sessions: rawSessions is List
+          ? rawSessions
+                .whereType<Map<dynamic, dynamic>>()
+                .map(NativePlaybackSnapshot.fromMap)
+                .toList(growable: false)
+          : const <NativePlaybackSnapshot>[],
+      focusedSessionId: map['focusedSessionId'] as String?,
+    );
+  }
+}
+
 class NativePlaybackBridge {
   NativePlaybackBridge._();
 
   static final NativePlaybackBridge instance = NativePlaybackBridge._();
 
   static const MethodChannel _methods = MethodChannel(
-    'music_player/native_playback',
+    NativePlaybackChannel.name,
   );
   static const EventChannel _events = EventChannel(
-    'music_player/native_playback/events',
+    NativePlaybackChannel.eventName,
   );
 
   final StreamController<NativePlaybackSnapshot> _snapshotController =
@@ -127,7 +153,7 @@ class NativePlaybackBridge {
     _eventSubscription = null;
   }
 
-  Future<Map<dynamic, dynamic>> prepareSession({
+  Future<NativeResult<NativePlaybackSnapshot>> prepareSession({
     required String sessionId,
     required Uri uri,
     required String title,
@@ -138,7 +164,7 @@ class NativePlaybackBridge {
     bool repeatOne = false,
     bool autoPlay = false,
   }) {
-    return _invoke('prepareSession', {
+    return _invokeSnapshot(NativePlaybackMethod.prepareSession, {
       'sessionId': sessionId,
       'uri': uri.toString(),
       'title': title,
@@ -152,72 +178,100 @@ class NativePlaybackBridge {
     });
   }
 
-  Future<Map<dynamic, dynamic>> play(String sessionId) {
-    return _invoke('play', {'sessionId': sessionId});
+  Future<NativeResult<NativePlaybackSnapshot>> play(String sessionId) {
+    return _invokeSnapshot(NativePlaybackMethod.play, {'sessionId': sessionId});
   }
 
-  Future<Map<dynamic, dynamic>> pause(String sessionId) {
-    return _invoke('pause', {'sessionId': sessionId});
+  Future<NativeResult<NativePlaybackSnapshot>> pause(String sessionId) {
+    return _invokeSnapshot(NativePlaybackMethod.pause, {
+      'sessionId': sessionId,
+    });
   }
 
-  Future<Map<dynamic, dynamic>> stop(String sessionId) {
-    return _invoke('stop', {'sessionId': sessionId});
+  Future<NativeResult<NativePlaybackSnapshot>> stop(String sessionId) {
+    return _invokeSnapshot(NativePlaybackMethod.stop, {'sessionId': sessionId});
   }
 
-  Future<Map<dynamic, dynamic>> seek(String sessionId, Duration position) {
-    return _invoke('seek', {
+  Future<NativeResult<NativePlaybackSnapshot>> seek(
+    String sessionId,
+    Duration position,
+  ) {
+    return _invokeSnapshot(NativePlaybackMethod.seek, {
       'sessionId': sessionId,
       'positionMs': position.inMilliseconds,
     });
   }
 
-  Future<Map<dynamic, dynamic>> setVolume(String sessionId, double volume) {
-    return _invoke('setVolume', {'sessionId': sessionId, 'volume': volume});
+  Future<NativeResult<NativePlaybackSnapshot>> setVolume(
+    String sessionId,
+    double volume,
+  ) {
+    return _invokeSnapshot(NativePlaybackMethod.setVolume, {
+      'sessionId': sessionId,
+      'volume': volume,
+    });
   }
 
-  Future<Map<dynamic, dynamic>> setRepeatOne(String sessionId, bool repeatOne) {
-    return _invoke('setRepeatOne', {
+  Future<NativeResult<NativePlaybackSnapshot>> setRepeatOne(
+    String sessionId,
+    bool repeatOne,
+  ) {
+    return _invokeSnapshot(NativePlaybackMethod.setRepeatOne, {
       'sessionId': sessionId,
       'repeatOne': repeatOne,
     });
   }
 
-  Future<Map<dynamic, dynamic>> setChannelSwap(String sessionId, bool enabled) {
-    return _invoke('setChannelSwap', {
+  Future<NativeResult<NativePlaybackSnapshot>> setChannelSwap(
+    String sessionId,
+    bool enabled,
+  ) {
+    return _invokeSnapshot(NativePlaybackMethod.setChannelSwap, {
       'sessionId': sessionId,
       'enabled': enabled,
     });
   }
 
-  Future<Map<dynamic, dynamic>> removeSession(String sessionId) {
-    return _invoke('removeSession', {'sessionId': sessionId});
+  Future<NativeResult<void>> removeSession(String sessionId) {
+    return _invokeVoid(NativePlaybackMethod.removeSession, {
+      'sessionId': sessionId,
+    });
   }
 
-  Future<Map<dynamic, dynamic>> pauseAll() {
-    return _invoke('pauseAll');
+  Future<NativeResult<void>> pauseAll() {
+    return _invokeVoid(NativePlaybackMethod.pauseAll);
   }
 
-  Future<Map<dynamic, dynamic>> clearAll() {
-    return _invoke('clearAll');
+  Future<NativeResult<void>> clearAll() {
+    return _invokeVoid(NativePlaybackMethod.clearAll);
   }
 
-  Future<Map<dynamic, dynamic>> setForegroundEnabled(bool enabled) {
-    return _invoke('setForegroundEnabled', {'enabled': enabled});
+  Future<NativeResult<void>> setForegroundEnabled(bool enabled) {
+    return _invokeVoid(NativePlaybackMethod.setForegroundEnabled, {
+      'enabled': enabled,
+    });
   }
 
-  Future<Map<dynamic, dynamic>> dismissNotifications() {
-    return _invoke('dismissNotifications');
+  Future<NativeResult<void>> dismissNotifications() {
+    return _invokeVoid(NativePlaybackMethod.dismissNotifications);
   }
 
-  Future<Map<dynamic, dynamic>> undismissNotifications() {
-    return _invoke('undismissNotifications');
+  Future<NativeResult<void>> undismissNotifications() {
+    return _invokeVoid(NativePlaybackMethod.undismissNotifications);
   }
 
-  Future<Map<dynamic, dynamic>> snapshot() {
-    return _invoke('snapshot');
+  Future<NativeResult<NativePlaybackBundleSnapshot>> snapshot() {
+    return _invokeValue(
+      NativePlaybackMethod.snapshot,
+      (value) => value is Map
+          ? NativePlaybackBundleSnapshot.fromMap(value)
+          : const NativePlaybackBundleSnapshot(
+              sessions: <NativePlaybackSnapshot>[],
+            ),
+    );
   }
 
-  Future<Map<dynamic, dynamic>> _invoke(
+  Future<Map<dynamic, dynamic>> _invokeRaw(
     String method, [
     Map<String, Object?>? arguments,
   ]) async {
@@ -226,5 +280,50 @@ class NativePlaybackBridge {
       arguments,
     );
     return result ?? const <dynamic, dynamic>{};
+  }
+
+  Future<NativeResult<void>> _invokeVoid(
+    String method, [
+    Map<String, Object?>? arguments,
+  ]) async {
+    final result = await _invokeValue<Object?>(method, (_) => null, arguments);
+    return switch (result) {
+      NativeSuccess<Object?>() => const NativeSuccess<void>(),
+      NativeFailure<Object?>(message: final message) => NativeFailure<void>(
+        message,
+      ),
+    };
+  }
+
+  Future<NativeResult<NativePlaybackSnapshot>> _invokeSnapshot(
+    String method, [
+    Map<String, Object?>? arguments,
+  ]) async {
+    return _invokeValue<NativePlaybackSnapshot>(method, (value) {
+      if (value is Map) return NativePlaybackSnapshot.fromMap(value);
+      return null;
+    }, arguments);
+  }
+
+  Future<NativeResult<T>> _invokeValue<T>(
+    String method,
+    T? Function(Object? value) decode, [
+    Map<String, Object?>? arguments,
+  ]) async {
+    try {
+      final raw = await _invokeRaw(method, arguments);
+      final ok = raw['ok'] as bool? ?? false;
+      if (!ok) {
+        final message =
+            raw['error'] as String? ??
+            'Native playback call failed: $method returned no error message.';
+        return NativeFailure<T>(message);
+      }
+      return NativeSuccess<T>(decode(raw['value']));
+    } on PlatformException catch (error) {
+      return NativeFailure<T>(error.message ?? error.code);
+    } catch (error) {
+      return NativeFailure<T>(error.toString());
+    }
   }
 }

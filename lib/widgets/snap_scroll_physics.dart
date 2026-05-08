@@ -38,8 +38,9 @@ class SnapScrollPhysics extends PageScrollPhysics {
       return super.createBallisticSimulation(position, velocity);
     }
 
-    final double viewportFraction =
-        (position is PageMetrics) ? position.viewportFraction : 1.0;
+    final double viewportFraction = (position is PageMetrics)
+        ? position.viewportFraction
+        : 1.0;
     final double pageExtent = position.viewportDimension * viewportFraction;
 
     final tolerance = toleranceFor(position);

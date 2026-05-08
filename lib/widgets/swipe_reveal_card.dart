@@ -141,8 +141,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
     final distanceMet = _revealedWidth >= _minOpenDistance;
     final velocityMet = velocity <= -_minOpenVelocity;
     final fullyRevealed = _revealedWidth >= _actionWidth * 0.88;
-    final shouldOpen =
-        (distanceMet && velocityMet) || fullyRevealed;
+    final shouldOpen = (distanceMet && velocityMet) || fullyRevealed;
     setState(() {
       _revealedWidth = shouldOpen ? _actionWidth : 0;
     });

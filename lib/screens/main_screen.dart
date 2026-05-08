@@ -4,12 +4,15 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 
 import '../i18n/app_language_provider.dart';
 import '../providers/audio_provider.dart';
+import '../providers/audio_provider_riverpod.dart';
 import '../services/app_preferences.dart';
+import '../services/audio_state_services.dart';
 import 'library_tab.dart';
 import 'playlist_tab.dart';
 import 'settings_tab.dart';
@@ -25,14 +28,15 @@ part 'main_screen_layout.dart';
 part 'main_screen_widgets.dart';
 part 'main_screen_timer_scrim.dart';
 
-class MainScreen extends StatefulWidget {
+class MainScreen extends ConsumerStatefulWidget {
   const MainScreen({super.key});
 
   @override
-  State<MainScreen> createState() => _MainScreenState();
+  ConsumerState<MainScreen> createState() => _MainScreenState();
 }
 
-class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
+class _MainScreenState extends ConsumerState<MainScreen>
+    with WidgetsBindingObserver {
   static const Duration _pageTransitionDuration = Duration(milliseconds: 240);
   static const Curve _pageTransitionCurve = Curves.easeOutCubic;
   static const double _desktopBreakpoint = 980;
@@ -106,7 +110,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
   void _openTimerFromPlaylist() {
     if (!mounted) return;
-    final provider = context.read<AudioProvider>();
+    final provider = ref.read(audioProviderFacadeProvider);
     final timerState = _TimerPresentation(
       duration: provider.timerDuration,
       remaining: provider.timerRemaining,
@@ -133,7 +137,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.paused) {
-      final provider = context.read<AudioProvider>();
+      final provider = ref.read(audioProviderFacadeProvider);
       provider.syncKeepAliveBeforeBackground();
       return;
     }
@@ -141,7 +145,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       return;
     }
     unawaited(_consumePendingNotificationSession());
-    final provider = context.read<AudioProvider>();
+    final provider = ref.read(audioProviderFacadeProvider);
     provider.resyncNotificationsAfterResume();
     provider.retryOverdueAutoResume();
     if (!_notificationSettingsOpened) {
@@ -152,7 +156,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   }
 
   void _switchPage(int index, {bool withFeedback = true}) {
-    final provider = context.read<AudioProvider>();
+    final provider = ref.read(audioProviderFacadeProvider);
     if (index == _currentIndex) {
       provider.triggerScrollToTop(index);
       return;
@@ -204,24 +208,24 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
             systemStatusBarContrastEnforced: false,
             systemNavigationBarContrastEnforced: false,
           );
-    final overlaySessions = context
-        .select<AudioProvider, List<PlaybackSession>>((provider) {
-          final sessions = provider.activeSessions;
-          if (provider.multiThreadPlaybackEnabled || sessions.isEmpty) {
-            return sessions.toList(growable: false);
-          }
-          final retainedSession = sessions.firstWhere(
-            (session) => session.state.playing || session.isLoading,
-            orElse: () => sessions.first,
-          );
-          return <PlaybackSession>[retainedSession];
-        });
-    final activeSessionCount = context.select<AudioProvider, int>(
-      (provider) => provider.activeSessions.length,
-    );
-    final showCard = context.select<AudioProvider, bool>(
-      (provider) => provider.showPlaybackCard,
-    );
+    final playbackState =
+        ref.watch(playbackStateProvider).valueOrNull ??
+        const PlaybackStateSliceData();
+    final settingsState =
+        ref.watch(settingsStateProvider).valueOrNull ?? const SettingsState();
+    final overlaySessions = (() {
+      final sessions = playbackState.activeSessions;
+      if (playbackState.multiThreadPlaybackEnabled || sessions.isEmpty) {
+        return sessions;
+      }
+      final retainedSession = sessions.firstWhere(
+        (session) => session.state.playing || session.isLoading,
+        orElse: () => sessions.first,
+      );
+      return <PlaybackSession>[retainedSession];
+    })();
+    final activeSessionCount = playbackState.activeSessions.length;
+    final showCard = settingsState.showPlaybackCard;
     final visibleSessions = showCard ? overlaySessions : <PlaybackSession>[];
     final hasNowPlaying = visibleSessions.isNotEmpty;
     if (activeSessionCount > 0 &&
@@ -232,13 +236,14 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         _ensureNotificationPermission();
       });
     }
-    final timerState = context.select<AudioProvider, _TimerPresentation>(
-      (provider) => _TimerPresentation(
-        duration: provider.timerDuration,
-        remaining: provider.timerRemaining,
-        active: provider.timerActive,
-        mode: provider.timerMode,
-      ),
+    final timerSlice =
+        ref.watch(timerStateProvider).valueOrNull ??
+        const TimerStateSliceData();
+    final timerState = _TimerPresentation(
+      duration: timerSlice.duration,
+      remaining: timerSlice.remaining,
+      active: timerSlice.active,
+      mode: timerSlice.mode,
     );
     final width = MediaQuery.sizeOf(context).width;
     final isDesktop = width >= _desktopBreakpoint;

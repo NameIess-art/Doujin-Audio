@@ -291,7 +291,7 @@ class _FolderNodeWidgetState extends State<_FolderNodeWidget> {
   }
 }
 
-class _TrackNodeWidget extends StatelessWidget {
+class _TrackNodeWidget extends ConsumerWidget {
   const _TrackNodeWidget({required this.trackNode, this.searchQuery = ''});
 
   final TrackNode trackNode;
@@ -315,14 +315,13 @@ class _TrackNodeWidget extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final i18n = context.watch<AppLanguageProvider>();
-    final provider = context.read<AudioProvider>();
+    final provider = ref.read(audioProviderFacadeProvider);
     final cs = Theme.of(context).colorScheme;
     final track = trackNode.track;
-    final isAlreadyPlaying = context.select<AudioProvider, bool>(
-      (value) => value.isTrackActive(track.path),
-    );
+    ref.watch(playbackStateProvider);
+    final isAlreadyPlaying = provider.isTrackActive(track.path);
     final cardShape = RoundedRectangleBorder(
       side: track.isSingle
           ? BorderSide(color: cs.outlineVariant)

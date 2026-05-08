@@ -6,10 +6,11 @@ import 'package:flutter/services.dart';
 
 import 'native_playback_bridge.dart';
 import 'playback_notification_handler.dart';
+import 'platform_channels.dart';
 
 class PlaybackNotificationService {
   static const MethodChannel _notificationsChannel = MethodChannel(
-    'music_player/notifications',
+    NotificationsChannel.name,
   );
 
   final PlaybackNotificationHandler _handler;
@@ -80,7 +81,10 @@ class PlaybackNotificationService {
     if (!_enabled) return;
     try {
       await _notificationsChannel
-          .invokeMethod<void>('syncUnifiedPlaybackNotifications', payload)
+          .invokeMethod<void>(
+            NotificationsMethod.syncUnifiedPlaybackNotifications,
+            payload,
+          )
           .timeout(
             const Duration(seconds: 5),
             onTimeout: () => debugPrint(
@@ -99,7 +103,9 @@ class PlaybackNotificationService {
   Future<void> _clearUnifiedNotifications() async {
     try {
       await _notificationsChannel
-          .invokeMethod<void>('clearUnifiedPlaybackNotifications')
+          .invokeMethod<void>(
+            NotificationsMethod.clearUnifiedPlaybackNotifications,
+          )
           .timeout(
             const Duration(seconds: 5),
             onTimeout: () => debugPrint(

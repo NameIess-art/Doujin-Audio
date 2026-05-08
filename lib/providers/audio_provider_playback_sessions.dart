@@ -33,11 +33,9 @@ extension AudioProviderPlaybackSessions on AudioProvider {
   }
 
   void _registerSession(PlaybackSession session) {
-    _sessions[session.id] = session;
+    _playbackService.registerSession(session);
     _notificationsDismissedWhilePaused = false;
     _notificationFocusSessionId = session.id;
-    _sessionOrder.insert(0, session.id);
-    _markActiveSessionsDirty();
     _bindSessionListeners(session);
     _syncKeepCpuAwake();
     _syncNotificationState();
@@ -49,12 +47,10 @@ extension AudioProviderPlaybackSessions on AudioProvider {
     required String nextPath,
     required bool autoPlay,
   }) {
-    _sessionPreparationQueue = _sessionPreparationQueue.catchError((_) {}).then(
-      (_) async {
-        if (!_sessions.containsKey(session.id)) return;
-        await _prepareAndPlay(session, nextPath: nextPath, autoPlay: autoPlay);
-      },
-    );
+    _playbackService.enqueueSessionPreparation(() async {
+      if (!_sessions.containsKey(session.id)) return;
+      await _prepareAndPlay(session, nextPath: nextPath, autoPlay: autoPlay);
+    });
     return _sessionPreparationQueue;
   }
 
@@ -63,8 +59,8 @@ extension AudioProviderPlaybackSessions on AudioProvider {
       if (!_sessions.containsKey(session.id)) return;
 
       final previousState =
-          session._previousStateBeforeLastStateEvent ?? session.state;
-      session._previousStateBeforeLastStateEvent = null;
+          session.previousStateBeforeLastStateEvent ?? session.state;
+      session.previousStateBeforeLastStateEvent = null;
       final previousPlaying = previousState.playing;
       final previousProcessing = previousState.processingState;
       session.state = state;
@@ -179,7 +175,7 @@ extension AudioProviderPlaybackSessions on AudioProvider {
         syncNotification: false,
       );
 
-      final uri = nextPath.startsWith('content://')
+      final uri = PathMatcher.isContentUri(nextPath)
           ? Uri.parse(nextPath)
           : Uri.file(nextPath);
 
@@ -212,7 +208,7 @@ extension AudioProviderPlaybackSessions on AudioProvider {
               return;
             }
           }
-          final result = await NativePlaybackBridge.instance.prepareSession(
+          final result = await _nativePlaybackRepository.prepareSession(
             sessionId: session.id,
             uri: uri,
             title: title,
@@ -225,19 +221,19 @@ extension AudioProviderPlaybackSessions on AudioProvider {
               session.loadGeneration != generation) {
             return;
           }
-          if ((result['ok'] as bool?) == true) {
+          if (result.isOk) {
             ok = true;
             break;
           }
           debugPrint(
             'AudioProvider._prepareAndPlay: attempt ${attempt + 1} failed: '
-            '${result['error'] ?? "unknown error"}.',
+            '${result.errorOrNull ?? "unknown error"}.',
           );
         }
         if (!ok) return;
         session.loadedPath = nextPath;
       } else {
-        await NativePlaybackBridge.instance.seek(session.id, Duration.zero);
+        await _nativePlaybackRepository.seek(session.id, Duration.zero);
         if (!_sessions.containsKey(session.id) ||
             session.loadGeneration != generation) {
           return;

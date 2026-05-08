@@ -1,12 +1,18 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart' show ProviderScope;
 import 'package:music_player/main.dart';
 import 'package:music_player/i18n/app_language_provider.dart';
 import 'package:music_player/providers/audio_provider.dart';
+import 'package:music_player/providers/audio_provider_riverpod.dart';
 import 'package:music_player/screens/main_screen.dart';
+import 'package:music_player/services/audio_database_repository.dart';
+import 'package:music_player/services/audio_state_services.dart';
+import 'package:music_player/services/native_playback_repository.dart';
+import 'package:music_player/services/playback_command_runner.dart';
 import 'package:music_player/services/playback_notification_handler.dart';
 import 'package:music_player/services/playback_notification_service.dart';
 import 'package:music_player/theme/theme_provider.dart';
-import 'package:provider/provider.dart';
+import 'package:provider/provider.dart' as legacy_provider;
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -20,18 +26,48 @@ void main() {
     final notificationService = PlaybackNotificationService(
       notificationHandler,
     );
+    final audioDatabaseRepository = AudioDatabaseRepository();
+    final nativePlaybackRepository = NativePlaybackRepository();
+    const playbackCommandRunner = PlaybackCommandRunner();
+    final libraryService = LibraryService();
+    final playbackService = PlaybackSessionService();
+    final timerService = TimerService();
+    final notificationCoordinatorService = NotificationCoordinatorService();
+    final settingsRepository = SettingsRepository();
     final audioProvider = AudioProvider.test(
       notificationService: notificationService,
+      audioDatabaseRepository: audioDatabaseRepository,
+      nativePlaybackRepository: nativePlaybackRepository,
+      libraryService: libraryService,
+      playbackService: playbackService,
+      timerService: timerService,
+      notificationStateService: notificationCoordinatorService,
+      settingsRepository: settingsRepository,
     );
 
     await tester.pumpWidget(
-      MultiProvider(
-        providers: [
-          ChangeNotifierProvider.value(value: themeProvider),
-          ChangeNotifierProvider.value(value: languageProvider),
-          ChangeNotifierProvider.value(value: audioProvider),
-        ],
-        child: const MusicPlayerApp(),
+      ProviderScope(
+        overrides: createAudioProviderOverrides(
+          audioProvider: audioProvider,
+          audioDatabaseRepository: audioDatabaseRepository,
+          nativePlaybackRepository: nativePlaybackRepository,
+          playbackCommandRunner: playbackCommandRunner,
+          libraryService: libraryService,
+          playbackService: playbackService,
+          timerService: timerService,
+          notificationCoordinatorService: notificationCoordinatorService,
+          settingsRepository: settingsRepository,
+        ),
+        child: legacy_provider.MultiProvider(
+          providers: [
+            legacy_provider.ChangeNotifierProvider.value(value: themeProvider),
+            legacy_provider.ChangeNotifierProvider.value(
+              value: languageProvider,
+            ),
+            legacy_provider.ChangeNotifierProvider.value(value: audioProvider),
+          ],
+          child: const MusicPlayerApp(),
+        ),
       ),
     );
     await tester.pumpAndSettle();

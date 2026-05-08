@@ -1,15 +1,15 @@
 part of 'library_tab.dart';
 
-class LibraryEditPage extends StatefulWidget {
+class LibraryEditPage extends ConsumerStatefulWidget {
   const LibraryEditPage({super.key, required this.libraryPath});
 
   final String libraryPath;
 
   @override
-  State<LibraryEditPage> createState() => _LibraryEditPageState();
+  ConsumerState<LibraryEditPage> createState() => _LibraryEditPageState();
 }
 
-class _LibraryEditPageState extends State<LibraryEditPage> {
+class _LibraryEditPageState extends ConsumerState<LibraryEditPage> {
   final TextEditingController _searchController = TextEditingController();
   List<String> _diskAudioFilePaths = const <String>[];
   Timer? _searchDebounceTimer;
@@ -102,7 +102,9 @@ class _LibraryEditPageState extends State<LibraryEditPage> {
       icon: Icons.library_music_rounded,
     );
     if (!confirmed || !context.mounted) return;
-    await context.read<AudioProvider>().removeLibrary(widget.libraryPath);
+    await ref
+        .read(audioProviderFacadeProvider)
+        .removeLibrary(widget.libraryPath);
     if (context.mounted) {
       showAppSnackBar(
         context,
@@ -116,14 +118,15 @@ class _LibraryEditPageState extends State<LibraryEditPage> {
 
   @override
   Widget build(BuildContext context) {
+    ref.watch(libraryStateProvider);
     final i18n = context.watch<AppLanguageProvider>();
-    final provider = context.watch<AudioProvider>();
+    final libraryService = ref.read(libraryServiceProvider);
     final cs = Theme.of(context).colorScheme;
-    final excludedTracks = provider.excludedTracksForLibrary(
+    final excludedTracks = libraryService.excludedTracksForLibrary(
       widget.libraryPath,
     );
     final cacheKey = Object.hash(
-      provider.library,
+      libraryService.library,
       _diskAudioFilePaths,
       excludedTracks,
       _searchQuery,
@@ -133,7 +136,7 @@ class _LibraryEditPageState extends State<LibraryEditPage> {
       _cachedEditTree = _filterEditTree(
         _buildEditTree(
           _collectLibraryEditTrackPaths(
-            provider,
+            libraryService,
             _diskAudioFilePaths,
             excludedTracks,
           ),
@@ -294,12 +297,12 @@ class _LibraryEditPageState extends State<LibraryEditPage> {
   }
 
   List<String> _collectLibraryEditTrackPaths(
-    AudioProvider provider,
+    LibraryService libraryService,
     List<String> diskAudioFilePaths,
     List<String> excludedTracks,
   ) {
     final tracks = <String>{
-      for (final track in provider.library)
+      for (final track in libraryService.library)
         if (_trackBelongsToLibrary(track.path)) path.normalize(track.path),
       for (final trackPath in diskAudioFilePaths)
         if (_trackBelongsToLibrary(trackPath)) path.normalize(trackPath),
@@ -420,7 +423,7 @@ class _LibraryEditPageState extends State<LibraryEditPage> {
   }
 
   bool _trackPathMatchesQuery(String trackPath, String normalizedQuery) {
-    final track = context.read<AudioProvider>().trackByPath(trackPath);
+    final track = ref.read(libraryServiceProvider).trackByPath(trackPath);
     return path
             .basenameWithoutExtension(trackPath)
             .toLowerCase()
@@ -433,19 +436,19 @@ class _LibraryEditPageState extends State<LibraryEditPage> {
 
   int _includedEditTrackCount(
     _LibraryEditFolderTreeNode folder,
-    AudioProvider provider,
+    LibraryService libraryService,
   ) {
     var count = 0;
     for (final child in folder.children) {
       if (child is _LibraryEditTrackTreeNode) {
-        if (!provider.isLibraryPathExcluded(
+        if (!libraryService.isLibraryPathExcluded(
           widget.libraryPath,
           child.trackPath,
         )) {
           count++;
         }
       } else if (child is _LibraryEditFolderTreeNode) {
-        count += _includedEditTrackCount(child, provider);
+        count += _includedEditTrackCount(child, libraryService);
       }
     }
     return count;
@@ -494,7 +497,7 @@ class _LibraryEditTrackTreeNode extends _LibraryEditTreeNode {
   String get pathValue => trackPath;
 }
 
-class _LibraryEditTreeNodeWidget extends StatelessWidget {
+class _LibraryEditTreeNodeWidget extends ConsumerWidget {
   const _LibraryEditTreeNodeWidget({
     super.key,
     required this.libraryPath,
@@ -507,7 +510,9 @@ class _LibraryEditTreeNodeWidget extends StatelessWidget {
   final bool initiallyExpanded;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(libraryStateProvider);
+    final libraryService = ref.read(libraryServiceProvider);
     if (node is _LibraryEditFolderTreeNode) {
       return _LibraryEditFolderTreeTile(
         libraryPath: libraryPath,
@@ -517,22 +522,26 @@ class _LibraryEditTreeNodeWidget extends StatelessWidget {
     }
     if (node is _LibraryEditTrackTreeNode) {
       final track = node as _LibraryEditTrackTreeNode;
-      final provider = context.watch<AudioProvider>();
+      final explicitExcluded = libraryService.isLibraryTrackExplicitlyExcluded(
+        libraryPath,
+        track.trackPath,
+      );
+      final muted = libraryService.isLibraryPathExcluded(
+        libraryPath,
+        track.trackPath,
+      );
       return _LibraryEditTrackTile(
         libraryPath: libraryPath,
         trackPath: track.trackPath,
-        explicitExcluded: provider.isLibraryTrackExplicitlyExcluded(
-          libraryPath,
-          track.trackPath,
-        ),
-        muted: provider.isLibraryPathExcluded(libraryPath, track.trackPath),
+        explicitExcluded: explicitExcluded,
+        muted: muted,
       );
     }
     return const SizedBox.shrink();
   }
 }
 
-class _LibraryEditFolderTreeTile extends StatefulWidget {
+class _LibraryEditFolderTreeTile extends ConsumerStatefulWidget {
   const _LibraryEditFolderTreeTile({
     required this.libraryPath,
     required this.folder,
@@ -544,12 +553,12 @@ class _LibraryEditFolderTreeTile extends StatefulWidget {
   final bool initiallyExpanded;
 
   @override
-  State<_LibraryEditFolderTreeTile> createState() =>
+  ConsumerState<_LibraryEditFolderTreeTile> createState() =>
       _LibraryEditFolderTreeTileState();
 }
 
 class _LibraryEditFolderTreeTileState
-    extends State<_LibraryEditFolderTreeTile> {
+    extends ConsumerState<_LibraryEditFolderTreeTile> {
   final ExpansibleController _expansionController = ExpansibleController();
   late bool _expanded = widget.initiallyExpanded;
 
@@ -566,21 +575,23 @@ class _LibraryEditFolderTreeTileState
 
   @override
   Widget build(BuildContext context) {
+    ref.watch(libraryStateProvider);
     final i18n = context.watch<AppLanguageProvider>();
-    final provider = context.watch<AudioProvider>();
+    final libraryService = ref.read(libraryServiceProvider);
+    final audioProvider = ref.read(audioProviderFacadeProvider);
     final cs = Theme.of(context).colorScheme;
     final editState = context.findAncestorStateOfType<_LibraryEditPageState>();
     final folderPath = widget.folder.folderPath;
-    final explicitExcluded = provider.isLibraryFolderExplicitlyExcluded(
+    final explicitExcluded = libraryService.isLibraryFolderExplicitlyExcluded(
       widget.libraryPath,
       folderPath,
     );
-    final muted = provider.isLibraryPathExcluded(
+    final muted = libraryService.isLibraryPathExcluded(
       widget.libraryPath,
       folderPath,
     );
     final includedCount =
-        editState?._includedEditTrackCount(widget.folder, provider) ?? 0;
+        editState?._includedEditTrackCount(widget.folder, libraryService) ?? 0;
     final isRootFolder = widget.folder.depth == 0;
 
     final content = Theme(
@@ -626,7 +637,7 @@ class _LibraryEditFolderTreeTileState
                 child: TextButton.icon(
                   style: muted ? _libraryMutedButtonStyle(cs) : null,
                   onPressed: () {
-                    context.read<AudioProvider>().setLibraryFolderExcluded(
+                    audioProvider.setLibraryFolderExcluded(
                       widget.libraryPath,
                       folderPath,
                       !explicitExcluded,
@@ -698,7 +709,7 @@ class _LibraryEditFolderTreeTileState
   }
 }
 
-class _LibraryEditTrackTile extends StatelessWidget {
+class _LibraryEditTrackTile extends ConsumerWidget {
   const _LibraryEditTrackTile({
     required this.libraryPath,
     required this.trackPath,
@@ -712,15 +723,17 @@ class _LibraryEditTrackTile extends StatelessWidget {
   final bool? muted;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(libraryStateProvider);
     final i18n = context.watch<AppLanguageProvider>();
-    final provider = context.read<AudioProvider>();
+    final libraryService = ref.read(libraryServiceProvider);
+    final provider = ref.read(audioProviderFacadeProvider);
     final cs = Theme.of(context).colorScheme;
-    final track = provider.trackByPath(trackPath);
+    final track = libraryService.trackByPath(trackPath);
     final title =
         track?.displayName ?? path.basenameWithoutExtension(trackPath);
     final isMuted =
-        muted ?? provider.isLibraryPathExcluded(libraryPath, trackPath);
+        muted ?? libraryService.isLibraryPathExcluded(libraryPath, trackPath);
 
     return ListTile(
       dense: true,

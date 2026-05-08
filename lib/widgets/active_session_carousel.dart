@@ -3,11 +3,13 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as path;
 import 'package:provider/provider.dart';
 
 import '../i18n/app_language_provider.dart';
 import '../providers/audio_provider.dart';
+import '../providers/audio_provider_riverpod.dart';
 import '../services/subtitle_parser.dart';
 import '../screens/playlist_tab.dart';
 import 'async_cover_image.dart';
@@ -32,7 +34,7 @@ Future<String?> _sessionCoverFutureForTrack(
   );
 }
 
-class ActiveSessionCarousel extends StatefulWidget {
+class ActiveSessionCarousel extends ConsumerStatefulWidget {
   const ActiveSessionCarousel({
     super.key,
     this.sessions,
@@ -49,10 +51,11 @@ class ActiveSessionCarousel extends StatefulWidget {
   final bool compactForFab;
 
   @override
-  State<ActiveSessionCarousel> createState() => _ActiveSessionCarouselState();
+  ConsumerState<ActiveSessionCarousel> createState() =>
+      _ActiveSessionCarouselState();
 }
 
-class _ActiveSessionCarouselState extends State<ActiveSessionCarousel> {
+class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
   final Map<String, Future<String?>> _coverFutures = {};
   late PageController _pageController;
   final ValueNotifier<double> _pageNotifier = ValueNotifier<double>(0);
@@ -126,12 +129,12 @@ class _ActiveSessionCarouselState extends State<ActiveSessionCarousel> {
 
   @override
   Widget build(BuildContext context) {
-    final provider = widget.provider ?? context.read<AudioProvider>();
+    final AudioProvider provider =
+        widget.provider ?? ref.read(audioProviderFacadeProvider);
     final sessions =
         widget.sessions ??
-        context.select<AudioProvider, List<PlaybackSession>>(
-          (value) => value.activeSessions,
-        );
+        (ref.watch(playbackStateProvider).valueOrNull?.activeSessions ??
+            const <PlaybackSession>[]);
     if (sessions.isEmpty) {
       return const SizedBox.shrink();
     }

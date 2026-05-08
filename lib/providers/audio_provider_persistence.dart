@@ -3,7 +3,7 @@ part of 'audio_provider.dart';
 extension AudioProviderPersistence on AudioProvider {
   Future<void> _loadLibrary() async {
     try {
-      final db = AppDatabase.instance;
+      final db = _audioDatabaseRepository;
       var tracks = await db.loadAllTracks();
       if (tracks.isNotEmpty) {
         _library.addAll(tracks);
@@ -140,7 +140,7 @@ extension AudioProviderPersistence on AudioProvider {
 
     // Phase 4: Notification state + first UI update.
     if (!_notificationsEnabled) {
-      await NativePlaybackBridge.instance.setForegroundEnabled(false);
+      await _nativePlaybackRepository.setForegroundEnabled(false);
     }
     _notifyListeners();
 
@@ -392,9 +392,9 @@ extension AudioProviderPersistence on AudioProvider {
     _notifyListeners();
     await _notificationService.setEnabled(enabled);
     if (enabled) {
-      await NativePlaybackBridge.instance.undismissNotifications();
+      await _nativePlaybackRepository.undismissNotifications();
     } else {
-      await NativePlaybackBridge.instance.dismissNotifications();
+      await _nativePlaybackRepository.dismissNotifications();
     }
     _syncKeepCpuAwake();
     _syncNotificationState(immediateUnifiedSync: true);

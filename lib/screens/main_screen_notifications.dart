@@ -122,7 +122,7 @@ extension _MainScreenNotifications on _MainScreenState {
       return;
     }
     _notificationPermissionCheckDone = true;
-    final provider = context.read<AudioProvider>();
+    final provider = ref.read(audioProviderFacadeProvider);
 
     var enabled = await _areNotificationsEnabled();
     if (enabled) return;
@@ -168,7 +168,7 @@ extension _MainScreenNotifications on _MainScreenState {
 
   Future<void> _handleNotificationSettingsReturn() async {
     if (!mounted || !Platform.isAndroid) return;
-    final audioProvider = context.read<AudioProvider>();
+    final audioProvider = ref.read(audioProviderFacadeProvider);
     final enabled = await _areNotificationsEnabled();
     if (!mounted || !enabled) return;
     audioProvider.refreshNotificationState();
@@ -226,8 +226,8 @@ extension _MainScreenNotifications on _MainScreenState {
     if (!mounted) return;
     final sessionId = _pendingNotificationSessionId;
     if (sessionId == null || sessionId.isEmpty) return;
-    final provider = context.read<AudioProvider>();
-    if (provider.sessionById(sessionId) == null) {
+    final playbackService = ref.read(playbackSessionServiceProvider);
+    if (playbackService.sessionById(sessionId) == null) {
       _notificationSessionNavigationTimer?.cancel();
       _notificationSessionNavigationTimer = Timer(
         const Duration(milliseconds: 240),

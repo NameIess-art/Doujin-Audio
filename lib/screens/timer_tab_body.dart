@@ -3,21 +3,22 @@ part of 'timer_tab.dart';
 extension _TimerTabBody on _TimerTabState {
   Widget _buildTimerTab(BuildContext context) {
     final i18n = context.watch<AppLanguageProvider>();
-    final provider = context.read<AudioProvider>();
+    final provider = ref.read(audioProviderFacadeProvider);
+    final timerSlice =
+        ref.watch(timerStateProvider).valueOrNull ??
+        const TimerStateSliceData();
     // Rebuild only on timer/auto-resume state changes, not playback/persistence events.
-    final timerHash = context.select<AudioProvider, int>(
-      (p) => Object.hash(
-        p.timerMode,
-        p.timerDuration,
-        p.timerActive,
-        p.timerRemaining,
-        p.timerDraftMode,
-        p.timerDraftDuration,
-        p.autoResumeEnabled,
-        p.autoResumeHour,
-        p.autoResumeMinute,
-        p.pausedByTimerPaths.length,
-      ),
+    final timerHash = Object.hash(
+      timerSlice.mode,
+      timerSlice.duration,
+      timerSlice.active,
+      timerSlice.remaining,
+      timerSlice.draftMode,
+      timerSlice.draftDuration,
+      timerSlice.autoResumeEnabled,
+      timerSlice.autoResumeHour,
+      timerSlice.autoResumeMinute,
+      timerSlice.pausedByTimerPaths.length,
     );
     if (_lastTimerHash != timerHash) {
       _lastTimerHash = timerHash;
@@ -26,13 +27,23 @@ extension _TimerTabBody on _TimerTabState {
       });
     }
     final cs = Theme.of(context).colorScheme;
-    final timerConfigured = provider.timerConfigured;
-    final timerActive = provider.timerActive;
-    final timerExpired = provider.timerExpired;
-    final timerWaitingTrigger = provider.timerWaitingTrigger;
+    final timerConfigured = timerSlice.duration != null;
+    final timerActive = timerSlice.active;
+    final timerExpired =
+        timerConfigured &&
+        !timerSlice.active &&
+        timerSlice.remaining != null &&
+        timerSlice.remaining! <= Duration.zero;
+    final timerWaitingTrigger =
+        timerConfigured &&
+        !timerExpired &&
+        !timerSlice.active &&
+        timerSlice.mode == TimerMode.trigger &&
+        timerSlice.remaining != null &&
+        timerSlice.remaining! > Duration.zero;
     final summaryDuration =
-        provider.timerRemaining ?? provider.timerDuration ?? _pickedDuration;
-    final summaryMode = provider.timerMode ?? _selectedMode;
+        timerSlice.remaining ?? timerSlice.duration ?? _pickedDuration;
+    final summaryMode = timerSlice.mode ?? _selectedMode;
     final draftModeTitle = _modeTitle(i18n, summaryMode);
     final showCompactOnly = widget.compactOnly;
     final showCompactDetail =
@@ -42,8 +53,8 @@ extension _TimerTabBody on _TimerTabState {
       final picked = await showTimePicker(
         context: context,
         initialTime: TimeOfDay(
-          hour: provider.autoResumeHour,
-          minute: provider.autoResumeMinute,
+          hour: timerSlice.autoResumeHour,
+          minute: timerSlice.autoResumeMinute,
         ),
         helpText: i18n.tr('choose_auto_resume_time'),
         builder: (ctx, child) => MediaQuery(
@@ -53,7 +64,7 @@ extension _TimerTabBody on _TimerTabState {
       );
       if (picked != null) {
         provider.setAutoResume(
-          provider.autoResumeEnabled,
+          timerSlice.autoResumeEnabled,
           picked.hour,
           picked.minute,
         );
@@ -100,8 +111,7 @@ extension _TimerTabBody on _TimerTabState {
               compact: compactMode,
               onChanged: (mode) {
                 HapticFeedback.selectionClick();
-                final timerConfigured = provider.timerConfigured;
-                if (timerConfigured && provider.timerMode != mode) {
+                if (timerConfigured && timerSlice.mode != mode) {
                   provider.configureTimer(mode, _pickedDuration);
                   if (mode == TimerMode.manual) {
                     provider.startCountdown();
@@ -289,28 +299,28 @@ extension _TimerTabBody on _TimerTabState {
                               title: Text(i18n.tr('auto_resume_after_timer')),
                               subtitle: Text(i18n.tr('auto_resume_subtitle')),
                               secondary: const Icon(Icons.restore_rounded),
-                              value: provider.autoResumeEnabled,
+                              value: timerSlice.autoResumeEnabled,
                               onChanged: (val) {
                                 HapticFeedback.selectionClick();
                                 provider.setAutoResume(
                                   val,
-                                  provider.autoResumeHour,
-                                  provider.autoResumeMinute,
+                                  timerSlice.autoResumeHour,
+                                  timerSlice.autoResumeMinute,
                                 );
                               },
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(16),
                               ),
                             ),
-                            if (provider.autoResumeEnabled) ...[
+                            if (timerSlice.autoResumeEnabled) ...[
                               const Divider(height: 1),
                               ListTile(
                                 leading: const Icon(Icons.alarm_rounded),
                                 title: Text(
                                   i18n.tr('resume_time', {
                                     'time': _fmtClockTime(
-                                      provider.autoResumeHour,
-                                      provider.autoResumeMinute,
+                                      timerSlice.autoResumeHour,
+                                      timerSlice.autoResumeMinute,
                                     ),
                                   }),
                                   style: const TextStyle(
@@ -328,8 +338,8 @@ extension _TimerTabBody on _TimerTabState {
                                   final picked = await showTimePicker(
                                     context: context,
                                     initialTime: TimeOfDay(
-                                      hour: provider.autoResumeHour,
-                                      minute: provider.autoResumeMinute,
+                                      hour: timerSlice.autoResumeHour,
+                                      minute: timerSlice.autoResumeMinute,
                                     ),
                                     helpText: i18n.tr(
                                       'choose_auto_resume_time',
@@ -343,7 +353,7 @@ extension _TimerTabBody on _TimerTabState {
                                   );
                                   if (picked != null) {
                                     provider.setAutoResume(
-                                      provider.autoResumeEnabled,
+                                      timerSlice.autoResumeEnabled,
                                       picked.hour,
                                       picked.minute,
                                     );

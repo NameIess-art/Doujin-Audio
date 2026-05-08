@@ -3,7 +3,7 @@ part of 'audio_provider.dart';
 extension AudioProviderPersistenceSessions on AudioProvider {
   Future<void> _loadSessions() async {
     try {
-      final db = AppDatabase.instance;
+      final db = _audioDatabaseRepository;
       var persistedSessions = await db.loadAllSessions();
 
       if (persistedSessions.isEmpty) {
@@ -61,21 +61,20 @@ extension AudioProviderPersistenceSessions on AudioProvider {
           final uri = track.path.startsWith('content://')
               ? Uri.parse(track.path)
               : Uri.file(track.path);
-          final prepareResult = await NativePlaybackBridge.instance
-              .prepareSession(
-                sessionId: session.id,
-                uri: uri,
-                title: track.displayName,
-                subtitle: track.groupTitle,
-                startPosition: restoredPosition,
-                volume: volume,
-                repeatOne: loopMode == SessionLoopMode.single,
-              );
-          if ((prepareResult['ok'] as bool?) != true) {
+          final prepareResult = await _nativePlaybackRepository.prepareSession(
+            sessionId: session.id,
+            uri: uri,
+            title: track.displayName,
+            subtitle: track.groupTitle,
+            startPosition: restoredPosition,
+            volume: volume,
+            repeatOne: loopMode == SessionLoopMode.single,
+          );
+          if (!prepareResult.isOk) {
             continue;
           }
           if (item.channelSwapEnabled) {
-            await NativePlaybackBridge.instance.setChannelSwap(
+            await _nativePlaybackRepository.setChannelSwap(
               session.id,
               item.channelSwapEnabled,
             );
@@ -108,18 +107,11 @@ extension AudioProviderPersistenceSessions on AudioProvider {
           ? restoredIds.first
           : null;
 
-      final snapshotResponse = await NativePlaybackBridge.instance.snapshot();
-      final snapshotValue = snapshotResponse['value'];
-      if (snapshotValue is Map) {
-        final rawSessions = snapshotValue['sessions'];
-        if (rawSessions is List) {
-          for (final raw in rawSessions.whereType<Map<dynamic, dynamic>>()) {
-            _handleNativePlaybackSnapshot(NativePlaybackSnapshot.fromMap(raw));
-          }
-        } else if (snapshotValue['sessionId'] != null) {
-          _handleNativePlaybackSnapshot(
-            NativePlaybackSnapshot.fromMap(snapshotValue),
-          );
+      final snapshotResponse = await _nativePlaybackRepository.snapshot();
+      final snapshotValue = snapshotResponse.valueOrNull;
+      if (snapshotValue != null) {
+        for (final snapshot in snapshotValue.sessions) {
+          _handleNativePlaybackSnapshot(snapshot);
         }
       }
 
@@ -162,7 +154,7 @@ extension AudioProviderPersistenceSessions on AudioProvider {
             ),
           )
           .toList(growable: false);
-      await AppDatabase.instance.saveAllSessions(payload);
+      await _audioDatabaseRepository.saveAllSessions(payload);
       final prefs = await _prefs;
       await prefs.remove(_kSessionsKey);
     } catch (e) {

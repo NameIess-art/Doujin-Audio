@@ -5,25 +5,28 @@ import 'package:ffmpeg_kit_flutter_new_audio/ffprobe_kit.dart';
 import 'package:ffmpeg_kit_flutter_new_audio/return_code.dart';
 import 'package:ffmpeg_kit_flutter_new_audio/statistics.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as path;
 import 'package:provider/provider.dart';
 
 import '../i18n/app_language_provider.dart';
 import '../providers/audio_provider.dart';
+import '../providers/audio_provider_riverpod.dart';
+import '../services/audio_state_services.dart';
 import '../services/video_conversion_plan.dart';
 import '../widgets/app_feedback.dart';
 import '../widgets/top_page_header.dart';
 
 part 'video_converter_tab_widgets.dart';
 
-class VideoConverterTab extends StatefulWidget {
+class VideoConverterTab extends ConsumerStatefulWidget {
   const VideoConverterTab({super.key});
 
   @override
-  State<VideoConverterTab> createState() => _VideoConverterTabState();
+  ConsumerState<VideoConverterTab> createState() => _VideoConverterTabState();
 }
 
-class _VideoConverterTabState extends State<VideoConverterTab> {
+class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
   String? _selectedVideoPath;
   String? _outputDirectoryPath;
   bool _isConverting = false;
@@ -155,13 +158,11 @@ class _VideoConverterTabState extends State<VideoConverterTab> {
   @override
   Widget build(BuildContext context) {
     final i18n = context.watch<AppLanguageProvider>();
-    final provider = context.read<AudioProvider>();
-    final selectedFormat = context.select<AudioProvider, String>(
-      (p) => p.converterFormat,
-    );
-    final selectedBitrate = context.select<AudioProvider, String>(
-      (p) => p.converterBitrate,
-    );
+    final provider = ref.read(audioProviderFacadeProvider);
+    final settingsState =
+        ref.watch(settingsStateProvider).valueOrNull ?? const SettingsState();
+    final selectedFormat = settingsState.converterFormat;
+    final selectedBitrate = settingsState.converterBitrate;
     final bitrateEnabled = selectedFormat != 'wav' && selectedFormat != 'flac';
     final descStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
       fontSize: 11,

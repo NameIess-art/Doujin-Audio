@@ -32,6 +32,7 @@ class NativePlaybackService : MediaSessionService() {
         private const val FOREGROUND_NOTIFICATION_ID = 11_225
         private const val FOREGROUND_WATCHDOG_INTERVAL_MS = 4 * 60 * 1000L
         private const val STATE_PERSISTENCE_INTERVAL_MS = 60 * 1000L
+        private const val STATE_PERSISTENCE_DEBOUNCE_MS = 800L
 
         @Volatile
         private var instance: NativePlaybackService? = null
@@ -68,6 +69,7 @@ class NativePlaybackService : MediaSessionService() {
     private var statePersistenceScheduled = false
     private var playbackSuspended = false
     private var wakeLock: PowerManager.WakeLock? = null
+    private var pendingPersistScheduled = false
     private val positionTicker = object : Runnable {
         override fun run() {
             if (stateListeners.isEmpty() || sessions.isEmpty()) {
@@ -90,13 +92,17 @@ class NativePlaybackService : MediaSessionService() {
     }
     private val statePersistenceTicker = object : Runnable {
         override fun run() {
-            persistSessionState()
+            persistSessionStateNow()
             if (sessions.isEmpty()) {
                 statePersistenceScheduled = false
                 return
             }
             mainHandler.postDelayed(this, STATE_PERSISTENCE_INTERVAL_MS)
         }
+    }
+    private val persistSessionStateRunnable = Runnable {
+        pendingPersistScheduled = false
+        persistSessionStateNow()
     }
 
     override fun onCreate() {
@@ -128,6 +134,7 @@ class NativePlaybackService : MediaSessionService() {
         stateListeners.clear()
         mainHandler.removeCallbacks(positionTicker)
         stopStatePersistenceTicker()
+        cancelScheduledPersistSessionState()
         stopForegroundWatchdog()
         tickerScheduled = false
         mediaSession?.release()
@@ -184,7 +191,7 @@ class NativePlaybackService : MediaSessionService() {
             focusSession(sessionId)
             publishSessionState(sessionId)
             ensureTicker()
-            persistSessionState()
+            persistSessionStateNow()
             ensureStatePersistenceTicker()
             syncForegroundState()
             okResult(nativeSession.snapshot())
@@ -208,7 +215,7 @@ class NativePlaybackService : MediaSessionService() {
         session.player.play()
         publishSessionState(sessionId)
         ensureTicker()
-        persistSessionState()
+        persistSessionStateNow()
         ensureStatePersistenceTicker()
         syncForegroundState()
         return okResult(session.snapshot())
@@ -218,7 +225,7 @@ class NativePlaybackService : MediaSessionService() {
         val session = sessions[sessionId] ?: return errorResult("Unknown session.")
         session.player.pause()
         publishSessionState(sessionId)
-        persistSessionState()
+        persistSessionStateNow()
         syncForegroundState()
         return okResult(session.snapshot())
     }
@@ -228,7 +235,7 @@ class NativePlaybackService : MediaSessionService() {
         session.player.stop()
         session.player.clearMediaItems()
         publishSessionState(sessionId)
-        persistSessionState()
+        persistSessionStateNow()
         syncForegroundState()
         return okResult(session.snapshot())
     }
@@ -237,14 +244,14 @@ class NativePlaybackService : MediaSessionService() {
         val session = sessions[sessionId] ?: return errorResult("Unknown session.")
         session.player.seekTo(positionMs.coerceAtLeast(0L))
         publishSessionState(sessionId)
-        persistSessionState()
+        schedulePersistSessionState()
         return okResult(session.snapshot())
     }
 
     fun setVolume(sessionId: String, volume: Float): Map<String, Any?> {
         val session = sessions[sessionId] ?: return errorResult("Unknown session.")
         session.player.volume = volume.coerceIn(0f, 1f)
-        persistSessionState()
+        schedulePersistSessionState()
         return okResult(session.snapshot())
     }
 
@@ -255,7 +262,7 @@ class NativePlaybackService : MediaSessionService() {
         } else {
             Player.REPEAT_MODE_OFF
         }
-        persistSessionState()
+        schedulePersistSessionState()
         return okResult(session.snapshot())
     }
 
@@ -269,13 +276,14 @@ class NativePlaybackService : MediaSessionService() {
         if (sessions.isEmpty()) {
             stopForegroundWatchdog()
             stopStatePersistenceTicker()
+            cancelScheduledPersistSessionState()
             NativePlaybackStateStore.clearSessions(this)
             NativePlaybackStateStore.clearPausedSessionIds(this)
             NativePlaybackStateStore.clearTimerCandidateSessionIds(this)
             stopPlaybackForeground(removeNotification = true)
             stopSelf()
         } else {
-            persistSessionState()
+            persistSessionStateNow()
             syncForegroundState()
         }
         return okResult(null)
@@ -285,7 +293,7 @@ class NativePlaybackService : MediaSessionService() {
         notificationsDismissed = true
         sessions.values.forEach { it.player.pause() }
         publishAllSessionStates()
-        persistSessionState()
+        persistSessionStateNow()
         stopForegroundWatchdog()
         mediaSession?.release()
         mediaSession = null
@@ -302,6 +310,7 @@ class NativePlaybackService : MediaSessionService() {
         updateMediaSessionPlayer()
         stopForegroundWatchdog()
         stopStatePersistenceTicker()
+        cancelScheduledPersistSessionState()
         NativePlaybackStateStore.clearSessions(this)
         NativePlaybackStateStore.clearPausedSessionIds(this)
         NativePlaybackStateStore.clearTimerCandidateSessionIds(this)
@@ -361,7 +370,7 @@ class NativePlaybackService : MediaSessionService() {
             sessions[sessionId]?.player?.pause()
         }
         publishAllSessionStates()
-        persistSessionState()
+        persistSessionStateNow()
         syncForegroundState()
         return pausedSessionIds
     }
@@ -382,7 +391,7 @@ class NativePlaybackService : MediaSessionService() {
             ensureTicker()
             ensureStatePersistenceTicker()
             publishAllSessionStates()
-            persistSessionState()
+            persistSessionStateNow()
         }
         syncForegroundState()
         return resumedSessionIds
@@ -394,7 +403,7 @@ class NativePlaybackService : MediaSessionService() {
         session.applyChannelMap()
         session.reprepareCurrentMediaItem()
         publishSessionState(sessionId)
-        persistSessionState()
+        schedulePersistSessionState()
         syncForegroundState()
         return okResult(session.snapshot())
     }
@@ -417,7 +426,7 @@ class NativePlaybackService : MediaSessionService() {
             player.addListener(object : Player.Listener {
                 override fun onPlaybackStateChanged(playbackState: Int) {
                     publishSessionState(sessionId)
-                    persistSessionState()
+                    schedulePersistSessionState()
                     syncForegroundState()
                 }
 
@@ -427,19 +436,19 @@ class NativePlaybackService : MediaSessionService() {
 
                 override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
                     publishSessionState(sessionId)
-                    persistSessionState()
+                    schedulePersistSessionState()
                     syncForegroundState()
                 }
 
                 override fun onIsPlayingChanged(isPlaying: Boolean) {
                     publishSessionState(sessionId)
-                    persistSessionState()
+                    schedulePersistSessionState()
                     syncForegroundState()
                 }
 
                 override fun onPlayerError(error: PlaybackException) {
                     publishSessionState(sessionId)
-                    persistSessionState()
+                    persistSessionStateNow()
                     syncForegroundState()
                 }
             })
@@ -496,7 +505,7 @@ class NativePlaybackService : MediaSessionService() {
         } else {
             releaseWakeLock()
             stopForegroundWatchdog()
-            persistSessionState()
+            persistSessionStateNow()
             stopPlaybackForeground(removeNotification = sessions.isEmpty())
         }
     }
@@ -540,7 +549,23 @@ class NativePlaybackService : MediaSessionService() {
         statePersistenceScheduled = false
     }
 
-    private fun persistSessionState() {
+    private fun schedulePersistSessionState() {
+        mainHandler.removeCallbacks(persistSessionStateRunnable)
+        pendingPersistScheduled = true
+        mainHandler.postDelayed(
+            persistSessionStateRunnable,
+            STATE_PERSISTENCE_DEBOUNCE_MS
+        )
+    }
+
+    private fun cancelScheduledPersistSessionState() {
+        if (!pendingPersistScheduled) return
+        mainHandler.removeCallbacks(persistSessionStateRunnable)
+        pendingPersistScheduled = false
+    }
+
+    private fun persistSessionStateNow() {
+        cancelScheduledPersistSessionState()
         if (sessions.isEmpty()) {
             NativePlaybackStateStore.clearSessions(this)
             return
@@ -579,7 +604,7 @@ class NativePlaybackService : MediaSessionService() {
                     nativeSession.release()
                 }
             }
-        persistSessionState()
+        persistSessionStateNow()
     }
 
     private fun acquireWakeLock() {

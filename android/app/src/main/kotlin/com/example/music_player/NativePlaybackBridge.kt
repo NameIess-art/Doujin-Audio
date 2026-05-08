@@ -8,6 +8,24 @@ import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 
+object NativePlaybackMethods {
+    const val PREPARE_SESSION = "prepareSession"
+    const val PLAY = "play"
+    const val PAUSE = "pause"
+    const val STOP = "stop"
+    const val SEEK = "seek"
+    const val SET_VOLUME = "setVolume"
+    const val SET_REPEAT_ONE = "setRepeatOne"
+    const val SET_CHANNEL_SWAP = "setChannelSwap"
+    const val REMOVE_SESSION = "removeSession"
+    const val PAUSE_ALL = "pauseAll"
+    const val CLEAR_ALL = "clearAll"
+    const val SET_FOREGROUND_ENABLED = "setForegroundEnabled"
+    const val DISMISS_NOTIFICATIONS = "dismissNotifications"
+    const val UNDISMISS_NOTIFICATIONS = "undismissNotifications"
+    const val SNAPSHOT = "snapshot"
+}
+
 class NativePlaybackBridge(
     private val context: Context
 ) : MethodChannel.MethodCallHandler, EventChannel.StreamHandler {
@@ -18,44 +36,44 @@ class NativePlaybackBridge(
         val service = ensureService()
         attachEventListenerIfNeeded(service)
         val response = when (call.method) {
-            "prepareSession" -> service?.prepareSession(call.argumentsMap())
+            NativePlaybackMethods.PREPARE_SESSION -> service?.prepareSession(call.argumentsMap())
                 ?: mapOf("ok" to false, "error" to "Native playback service is not ready.")
-            "play" -> service?.play(call.requiredString("sessionId"))
+            NativePlaybackMethods.PLAY -> service?.play(call.requiredString("sessionId"))
                 ?: mapOf("ok" to false, "error" to "Native playback service is not ready.")
-            "pause" -> service?.pause(call.requiredString("sessionId"))
+            NativePlaybackMethods.PAUSE -> service?.pause(call.requiredString("sessionId"))
                 ?: mapOf("ok" to false, "error" to "Native playback service is not ready.")
-            "stop" -> service?.stop(call.requiredString("sessionId"))
+            NativePlaybackMethods.STOP -> service?.stop(call.requiredString("sessionId"))
                 ?: mapOf("ok" to false, "error" to "Native playback service is not ready.")
-            "seek" -> service?.seek(
+            NativePlaybackMethods.SEEK -> service?.seek(
                 call.requiredString("sessionId"),
                 call.requiredLong("positionMs")
             ) ?: mapOf("ok" to false, "error" to "Native playback service is not ready.")
-            "setVolume" -> service?.setVolume(
+            NativePlaybackMethods.SET_VOLUME -> service?.setVolume(
                 call.requiredString("sessionId"),
                 call.requiredDouble("volume").toFloat()
             ) ?: mapOf("ok" to false, "error" to "Native playback service is not ready.")
-            "setRepeatOne" -> service?.setRepeatOne(
+            NativePlaybackMethods.SET_REPEAT_ONE -> service?.setRepeatOne(
                 call.requiredString("sessionId"),
                 call.argument<Boolean>("repeatOne") ?: false
             ) ?: mapOf("ok" to false, "error" to "Native playback service is not ready.")
-            "setChannelSwap" -> service?.setChannelSwap(
+            NativePlaybackMethods.SET_CHANNEL_SWAP -> service?.setChannelSwap(
                 call.requiredString("sessionId"),
                 call.argument<Boolean>("enabled") ?: false
             ) ?: mapOf("ok" to false, "error" to "Native playback service is not ready.")
-            "removeSession" -> service?.removeSession(call.requiredString("sessionId"))
+            NativePlaybackMethods.REMOVE_SESSION -> service?.removeSession(call.requiredString("sessionId"))
                 ?: mapOf("ok" to false, "error" to "Native playback service is not ready.")
-            "pauseAll" -> service?.pauseAll()
+            NativePlaybackMethods.PAUSE_ALL -> service?.pauseAll()
                 ?: mapOf("ok" to false, "error" to "Native playback service is not ready.")
-            "clearAll" -> service?.clearAll()
+            NativePlaybackMethods.CLEAR_ALL -> service?.clearAll()
                 ?: mapOf("ok" to true, "value" to null)
-            "setForegroundEnabled" -> service?.setForegroundEnabled(
+            NativePlaybackMethods.SET_FOREGROUND_ENABLED -> service?.setForegroundEnabled(
                 call.argument<Boolean>("enabled") ?: true
             ) ?: mapOf("ok" to false, "error" to "Native playback service is not ready.")
-            "dismissNotifications" -> service?.dismissNotifications()
+            NativePlaybackMethods.DISMISS_NOTIFICATIONS -> service?.dismissNotifications()
                 ?: mapOf("ok" to false, "error" to "Native playback service is not ready.")
-            "undismissNotifications" -> service?.undismissNotifications()
+            NativePlaybackMethods.UNDISMISS_NOTIFICATIONS -> service?.undismissNotifications()
                 ?: mapOf("ok" to false, "error" to "Native playback service is not ready.")
-            "snapshot" -> service?.snapshot()
+            NativePlaybackMethods.SNAPSHOT -> service?.snapshot()
                 ?: mapOf("sessions" to emptyList<Map<String, Any?>>())
             else -> {
                 result.notImplemented()

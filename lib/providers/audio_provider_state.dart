@@ -56,29 +56,9 @@ extension AudioProviderState on AudioProvider {
     return _cachedLibraryLeafFolderCount;
   }
 
-  int get playingSessionCount =>
-      _sessions.values.where((session) => session.state.playing).length;
+  int get playingSessionCount => _playbackService.playingSessionCount;
 
-  List<PlaybackSession> get activeSessions {
-    if (_activeSessionsDirty) {
-      final result = <PlaybackSession>[];
-      final orderSet = _sessionOrder.toSet();
-      for (final id in _sessionOrder) {
-        final session = _sessions[id];
-        if (session != null) {
-          result.add(session);
-        }
-      }
-      for (final session in _sessions.values) {
-        if (!orderSet.contains(session.id)) {
-          result.add(session);
-        }
-      }
-      _activeSessionsCache = List<PlaybackSession>.unmodifiable(result);
-      _activeSessionsDirty = false;
-    }
-    return _activeSessionsCache;
-  }
+  List<PlaybackSession> get activeSessions => _playbackService.activeSessions;
 
   bool get isScanning => _isScanning;
   bool get isBackgroundScanning => _isBackgroundScanning;
@@ -142,11 +122,12 @@ extension AudioProviderState on AudioProvider {
 
 extension AudioProviderCoreState on AudioProvider {
   void _markActiveSessionsDirty() {
-    _activeSessionsDirty = true;
+    _playbackService.markActiveSessionsDirty();
   }
 
   void _markLibraryStructureDirty() {
     _libraryTreeDirty = true;
+    _libraryService.markStructureChanged();
   }
 
   void _rebuildLibraryIndexes() {

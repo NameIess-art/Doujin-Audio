@@ -3,7 +3,9 @@ import 'dart:collection';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:mime/mime.dart';
 import 'package:path/path.dart' as path;
@@ -13,6 +15,8 @@ import 'package:provider/provider.dart';
 
 import '../i18n/app_language_provider.dart';
 import '../providers/audio_provider.dart';
+import '../providers/audio_provider_riverpod.dart';
+import '../services/audio_state_services.dart';
 import '../widgets/app_feedback.dart';
 import '../widgets/async_cover_image.dart';
 import '../widgets/confirm_action_dialog.dart';
@@ -31,14 +35,14 @@ part 'library_tab_tree_widgets.dart';
 part 'library_tab_models.dart';
 part 'library_tab_edit.dart';
 
-class LibraryTab extends StatefulWidget {
+class LibraryTab extends ConsumerStatefulWidget {
   const LibraryTab({super.key});
 
   @override
-  State<LibraryTab> createState() => _LibraryTabState();
+  ConsumerState<LibraryTab> createState() => _LibraryTabState();
 }
 
-class _LibraryTabState extends State<LibraryTab>
+class _LibraryTabState extends ConsumerState<LibraryTab>
     with AutomaticKeepAliveClientMixin {
   static const MethodChannel _fileCacheChannel = MethodChannel(
     'music_player/file_cache',
@@ -61,10 +65,9 @@ class _LibraryTabState extends State<LibraryTab>
   double _headerHeight = 72;
 
   final ScrollController _scrollController = ScrollController();
+  ValueListenable<int?>? _scrollToTopTabListenable;
 
   void _setLocalState(VoidCallback fn) => setState(fn);
-
-
 
   Future<void> _openVideoConverterPage() async {
     if (!mounted) return;
@@ -95,7 +98,7 @@ class _LibraryTabState extends State<LibraryTab>
       icon: Icons.library_music_rounded,
     );
     if (!confirmed || !mounted) return;
-    await context.read<AudioProvider>().removeLibrary(libraryPath);
+    await ref.read(audioProviderFacadeProvider).removeLibrary(libraryPath);
     if (mounted) {
       showAppSnackBar(
         context,
@@ -113,16 +116,17 @@ class _LibraryTabState extends State<LibraryTab>
       if (mounted) {
         _refreshWatchedFolders(silent: true);
         _measureHeader();
-        context.read<AudioProvider>().scrollToTopTabListenable.addListener(
-          _handleScrollToTopSignal,
-        );
+        _scrollToTopTabListenable = ref
+            .read(audioProviderFacadeProvider)
+            .scrollToTopTabListenable;
+        _scrollToTopTabListenable?.addListener(_handleScrollToTopSignal);
       }
     });
   }
 
   void _handleScrollToTopSignal() {
     if (!mounted) return;
-    final index = context.read<AudioProvider>().scrollToTopTabListenable.value;
+    final index = _scrollToTopTabListenable?.value;
     if (index == 0) {
       // 0 is LibraryTab
       _jumpLibraryListToTop();
@@ -137,6 +141,7 @@ class _LibraryTabState extends State<LibraryTab>
       curve: Curves.easeOutCubic,
     );
   }
+
   void _measureHeader() {
     final box = _headerKey.currentContext?.findRenderObject() as RenderBox?;
     if (box != null && mounted) {
@@ -150,9 +155,7 @@ class _LibraryTabState extends State<LibraryTab>
 
   @override
   void dispose() {
-    context.read<AudioProvider>().scrollToTopTabListenable.removeListener(
-      _handleScrollToTopSignal,
-    );
+    _scrollToTopTabListenable?.removeListener(_handleScrollToTopSignal);
     _searchDebounceTimer?.cancel();
     _searchController.dispose();
     _scrollController.dispose();
@@ -163,58 +166,19 @@ class _LibraryTabState extends State<LibraryTab>
   Widget build(BuildContext context) {
     super.build(context);
     final i18n = context.watch<AppLanguageProvider>();
-    final provider = context.read<AudioProvider>();
-    final libraryInfo = context
-        .select<
-          AudioProvider,
-          ({
-            List<LibraryNode> tree,
-            int trackCount,
-            int watchedFolderCount,
-            int watchedLibraryCount,
-            List<String> watchedLibraries,
-          })
-        >(
-          (p) => (
-            tree: p.libraryTree,
-            trackCount: p.libraryTrackCount,
-            watchedFolderCount: p.watchedFolderCount,
-            watchedLibraryCount: p.watchedLibraryCount,
-            watchedLibraries: p.watchedLibraries,
-          ),
-        );
-    final rawTree = libraryInfo.tree;
-    final audioCount = libraryInfo.trackCount;
-    final watchedFolderCount = libraryInfo.watchedFolderCount;
-    final watchedLibraryCount = libraryInfo.watchedLibraryCount;
-    final watchedLibraries = libraryInfo.watchedLibraries;
-    final scanState = context
-        .select<
-          AudioProvider,
-          ({
-            bool isScanning,
-            bool isBackgroundScanning,
-            String scanFolder,
-            int scanFound,
-            int scanDup,
-            int scanFail,
-          })
-        >(
-          (p) => (
-            isScanning: p.isScanning,
-            isBackgroundScanning: p.isBackgroundScanning,
-            scanFolder: p.scanCurrentFolder,
-            scanFound: p.scanFoundCount,
-            scanDup: p.scanDuplicateCount,
-            scanFail: p.scanFailureCount,
-          ),
-        );
-    final isScanning = scanState.isScanning;
-    final isBackgroundScanning = scanState.isBackgroundScanning;
-    final scanFolder = scanState.scanFolder;
-    final scanFound = scanState.scanFound;
-    final scanDup = scanState.scanDup;
-    final scanFail = scanState.scanFail;
+    ref.watch(libraryStateProvider);
+    final provider = ref.read(audioProviderFacadeProvider);
+    final rawTree = provider.libraryTree;
+    final audioCount = provider.libraryTrackCount;
+    final watchedFolderCount = provider.watchedFolderCount;
+    final watchedLibraryCount = provider.watchedLibraryCount;
+    final watchedLibraries = provider.watchedLibraries;
+    final isScanning = provider.isScanning;
+    final isBackgroundScanning = provider.isBackgroundScanning;
+    final scanFolder = provider.scanCurrentFolder;
+    final scanFound = provider.scanFoundCount;
+    final scanDup = provider.scanDuplicateCount;
+    final scanFail = provider.scanFailureCount;
     final tree = _filterTreeCached(rawTree, _searchQuery);
     final matchCount = _countTrackNodes(tree);
     final bottomInset = MobileOverlayInset.of(context);

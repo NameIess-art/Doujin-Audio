@@ -3,10 +3,13 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:provider/provider.dart';
 
 import '../i18n/app_language_provider.dart';
 import '../providers/audio_provider.dart';
+import '../providers/audio_provider_riverpod.dart';
+import '../services/audio_state_services.dart';
 import '../widgets/top_page_header.dart';
 
 part 'timer_tab_body.dart';
@@ -14,7 +17,7 @@ part 'timer_tab_detail_body.dart';
 part 'timer_tab_widgets.dart';
 part 'timer_tab_countdown_widgets.dart';
 
-class TimerTab extends StatefulWidget {
+class TimerTab extends ConsumerStatefulWidget {
   const TimerTab({
     super.key,
     this.showHeader = true,
@@ -29,10 +32,10 @@ class TimerTab extends StatefulWidget {
   final bool initialCompactDetail;
 
   @override
-  State<TimerTab> createState() => _TimerTabState();
+  ConsumerState<TimerTab> createState() => _TimerTabState();
 }
 
-class _TimerTabState extends State<TimerTab> {
+class _TimerTabState extends ConsumerState<TimerTab> {
   int _hours = 0;
   int _minutes = 30;
   int _seconds = 0;

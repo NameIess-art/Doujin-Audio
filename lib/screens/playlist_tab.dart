@@ -3,14 +3,18 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:ui';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:path/path.dart' as path;
 import 'package:provider/provider.dart';
 
 import '../i18n/app_language_provider.dart';
 import '../providers/audio_provider.dart';
+import '../providers/audio_provider_riverpod.dart';
+import '../services/audio_state_services.dart';
 import '../services/subtitle_parser.dart';
 import '../widgets/app_feedback.dart';
 import '../widgets/async_cover_image.dart';
@@ -48,20 +52,21 @@ PageRoute<void> buildSessionDetailRoute({required String sessionId}) {
   );
 }
 
-class PlaylistTab extends StatefulWidget {
+class PlaylistTab extends ConsumerStatefulWidget {
   const PlaylistTab({super.key, this.onTimerTap});
 
   final VoidCallback? onTimerTap;
 
   @override
-  State<PlaylistTab> createState() => _PlaylistTabState();
+  ConsumerState<PlaylistTab> createState() => _PlaylistTabState();
 }
 
-class _PlaylistTabState extends State<PlaylistTab>
+class _PlaylistTabState extends ConsumerState<PlaylistTab>
     with AutomaticKeepAliveClientMixin {
   final GlobalKey _headerKey = GlobalKey();
   double _headerHeight = 90;
   final ScrollController _scrollController = ScrollController();
+  ValueListenable<int?>? _scrollToTopListenable;
 
   @override
   bool get wantKeepAlive => true;
@@ -72,16 +77,17 @@ class _PlaylistTabState extends State<PlaylistTab>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _measureHeader();
-        context.read<AudioProvider>().scrollToTopTabListenable.addListener(
-          _handleScrollToTopSignal,
-        );
+        _scrollToTopListenable = ref
+            .read(audioProviderFacadeProvider)
+            .scrollToTopTabListenable;
+        _scrollToTopListenable?.addListener(_handleScrollToTopSignal);
       }
     });
   }
 
   void _handleScrollToTopSignal() {
     if (!mounted) return;
-    final index = context.read<AudioProvider>().scrollToTopTabListenable.value;
+    final index = _scrollToTopListenable?.value;
     if (index == 1) {
       // 1 is PlaylistTab
       _jumpPlaylistToTop();
@@ -140,9 +146,7 @@ class _PlaylistTabState extends State<PlaylistTab>
 
   @override
   void dispose() {
-    context.read<AudioProvider>().scrollToTopTabListenable.removeListener(
-      _handleScrollToTopSignal,
-    );
+    _scrollToTopListenable?.removeListener(_handleScrollToTopSignal);
     _scrollController.dispose();
     super.dispose();
   }
@@ -151,37 +155,22 @@ class _PlaylistTabState extends State<PlaylistTab>
   Widget build(BuildContext context) {
     super.build(context);
     final i18n = context.watch<AppLanguageProvider>();
-    final provider = context.read<AudioProvider>();
+    final provider = ref.read(audioProviderFacadeProvider);
     final bottomInset = MobileOverlayInset.of(context);
-    final sessionInfo = context
-        .select<
-          AudioProvider,
-          ({List<PlaybackSession> sessions, int playingCount})
-        >(
-          (value) => (
-            sessions: value.activeSessions,
-            playingCount: value.playingSessionCount,
-          ),
-        );
-    final sessions = sessionInfo.sessions;
-    final playingCount = sessionInfo.playingCount;
+    final playbackState =
+        ref.watch(playbackStateProvider).valueOrNull ??
+        const PlaybackStateSliceData();
+    final sessions = playbackState.activeSessions;
+    final playingCount = playbackState.playingSessionCount;
     final sessionSummary =
         '${i18n.tr('sessions_count', {'count': sessions.length})} · '
         '${i18n.tr('playing_count', {'count': playingCount})}';
-    final timerInfo = context
-        .select<
-          AudioProvider,
-          ({Duration? duration, Duration? remaining, bool active})
-        >(
-          (value) => (
-            duration: value.timerDuration,
-            remaining: value.timerRemaining,
-            active: value.timerActive,
-          ),
-        );
-    final timerDuration = timerInfo.duration;
-    final timerRemaining = timerInfo.remaining;
-    final timerActive = timerInfo.active;
+    final timerState =
+        ref.watch(timerStateProvider).valueOrNull ??
+        const TimerStateSliceData();
+    final timerDuration = timerState.duration;
+    final timerRemaining = timerState.remaining;
+    final timerActive = timerState.active;
     final topTotalHeight = _headerHeight + 4;
     final listBottomInset = bottomInset + 96;
     final viewportHeight = MediaQuery.sizeOf(context).height;

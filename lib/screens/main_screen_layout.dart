@@ -30,9 +30,7 @@ extension _MainScreenLayout on _MainScreenState {
                     ),
                     child: ClipRRect(
                       borderRadius: radius,
-                      child: RepaintBoundary(
-                        child: _pageBuilders[index](),
-                      ),
+                      child: RepaintBoundary(child: _pageBuilders[index]()),
                     ),
                   ),
                 ),
@@ -48,9 +46,9 @@ extension _MainScreenLayout on _MainScreenState {
         if (notification.metrics.axis != Axis.horizontal) return false;
         if (notification.depth != 0) return false;
         if (notification is ScrollStartNotification) {
-          context.read<AudioProvider>().setPageTransitioning(true);
+          ref.read(audioProviderFacadeProvider).setPageTransitioning(true);
         } else if (notification is ScrollEndNotification) {
-          context.read<AudioProvider>().setPageTransitioning(false);
+          ref.read(audioProviderFacadeProvider).setPageTransitioning(false);
         }
         return false;
       },
@@ -230,7 +228,7 @@ extension _MainScreenLayout on _MainScreenState {
               if (overlaySessions.isNotEmpty)
                 ActiveSessionCarousel(
                   sessions: overlaySessions,
-                  provider: context.read<AudioProvider>(),
+                  provider: ref.read(audioProviderFacadeProvider),
                   i18n: i18n,
                   onOpenSession: (sessionId) {
                     Navigator.of(

@@ -141,4 +141,48 @@ void main() {
     expect(migrated!.single.path, '/legacy/a.mp3');
     expect(AppDatabase.tryMigrateFromJson('{bad json'), isNull);
   });
+
+  test('scan generation helpers keep only the current scan snapshot', () async {
+    const first = MusicTrack(
+      path: '/library/first.mp3',
+      displayName: 'First',
+      groupKey: '/library',
+      groupTitle: 'Library',
+      groupSubtitle: '1 track',
+      isSingle: false,
+    );
+    const second = MusicTrack(
+      path: '/library/second.mp3',
+      displayName: 'Second',
+      groupKey: '/library',
+      groupTitle: 'Library',
+      groupSubtitle: '1 track',
+      isSingle: false,
+    );
+
+    final generationOne = await appDatabase.nextScanGeneration();
+    await appDatabase.markTracksScanned([first], generation: generationOne);
+
+    final generationTwo = await appDatabase.nextScanGeneration();
+    await appDatabase.markTracksScanned([second], generation: generationTwo);
+    await appDatabase.deleteTracksMissingFromGeneration(generationTwo);
+
+    final loaded = await appDatabase.loadAllTracks();
+    expect(loaded, hasLength(1));
+    expect(loaded.single.path, second.path);
+  });
+
+  test('schema creates track indexes for query-heavy columns', () async {
+    final indexes = await db.rawQuery('PRAGMA index_list(tracks)');
+    final indexNames = indexes
+        .map((row) => row['name'] as String?)
+        .whereType<String>()
+        .toSet();
+
+    expect(indexNames, contains('idx_tracks_group_key'));
+    expect(indexNames, contains('idx_tracks_display_name'));
+    expect(indexNames, contains('idx_tracks_last_played_at'));
+    expect(indexNames, contains('idx_tracks_favorite'));
+    expect(indexNames, contains('idx_tracks_scan_generation'));
+  });
 }

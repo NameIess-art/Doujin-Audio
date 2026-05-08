@@ -27,7 +27,7 @@ class AppDatabase {
     final dbPath = await getDatabasesPath();
     final db = await openDatabase(
       p.join(dbPath, 'audio_player.db'),
-      version: 4,
+      version: 5,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -51,9 +51,11 @@ class AppDatabase {
         is_favorite INTEGER NOT NULL DEFAULT 0,
         tags_json TEXT NOT NULL DEFAULT '[]',
         cover_cache_path TEXT,
-        lyrics_path TEXT
+        lyrics_path TEXT,
+        scan_generation INTEGER NOT NULL DEFAULT 0
       )
     ''');
+    await _createTrackIndexes(db);
     await db.execute('''
       CREATE TABLE sessions (
         id TEXT PRIMARY KEY,
@@ -122,6 +124,15 @@ class AppDatabase {
       await _addColumnIfMissing(db, 'sessions', 'updated_at_ms', 'INTEGER');
       await _addColumnIfMissing(db, 'sessions', 'last_played_at_ms', 'INTEGER');
     }
+    if (oldVersion < 5) {
+      await _addColumnIfMissing(
+        db,
+        'tracks',
+        'scan_generation',
+        'INTEGER NOT NULL DEFAULT 0',
+      );
+    }
+    await _createTrackIndexes(db);
   }
 
   @visibleForTesting
@@ -137,6 +148,24 @@ class AppDatabase {
     final exists = columns.any((row) => row['name'] == column);
     if (exists) return;
     await db.execute('ALTER TABLE $table ADD COLUMN $column $definition');
+  }
+
+  static Future<void> _createTrackIndexes(Database db) async {
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_tracks_group_key ON tracks(group_key)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_tracks_display_name ON tracks(display_name)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_tracks_last_played_at ON tracks(last_played_at_ms)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_tracks_favorite ON tracks(is_favorite)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_tracks_scan_generation ON tracks(scan_generation)',
+    );
   }
 
   // ---- Tracks ----
@@ -161,16 +190,47 @@ class AppDatabase {
   }
 
   Future<void> insertTracks(List<MusicTrack> tracks) async {
+    await upsertTracks(tracks);
+  }
+
+  Future<void> upsertTracks(
+    List<MusicTrack> tracks, {
+    int? scanGeneration,
+  }) async {
     final db = await database;
     final batch = db.batch();
     for (final track in tracks) {
       batch.insert(
         'tracks',
-        _trackToRow(track),
+        _trackToRow(track, scanGeneration: scanGeneration),
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
     }
     await batch.commit(noResult: true);
+  }
+
+  Future<int> nextScanGeneration() async {
+    final db = await database;
+    final rows = await db.rawQuery(
+      'SELECT COALESCE(MAX(scan_generation), 0) + 1 AS next_generation FROM tracks',
+    );
+    return (rows.first['next_generation'] as num?)?.toInt() ?? 1;
+  }
+
+  Future<void> markTracksScanned(
+    List<MusicTrack> tracks, {
+    required int generation,
+  }) {
+    return upsertTracks(tracks, scanGeneration: generation);
+  }
+
+  Future<void> deleteTracksMissingFromGeneration(int generation) async {
+    final db = await database;
+    await db.delete(
+      'tracks',
+      where: 'scan_generation != ?',
+      whereArgs: [generation],
+    );
   }
 
   Future<void> deleteTracks(List<String> paths) async {
@@ -259,7 +319,10 @@ class AppDatabase {
 
   // ---- Internals ----
 
-  static Map<String, dynamic> _trackToRow(MusicTrack t) => {
+  static Map<String, dynamic> _trackToRow(
+    MusicTrack t, {
+    int? scanGeneration,
+  }) => {
     'path': t.path,
     'display_name': t.displayName,
     'group_key': t.groupKey,
@@ -275,6 +338,7 @@ class AppDatabase {
     'tags_json': json.encode(t.tags),
     'cover_cache_path': t.coverCachePath,
     'lyrics_path': t.lyricsPath,
+    'scan_generation': scanGeneration ?? 0,
   };
 
   static MusicTrack _trackFromRow(Map<String, dynamic> row) => MusicTrack(

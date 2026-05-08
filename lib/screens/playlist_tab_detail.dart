@@ -1,15 +1,15 @@
 part of 'playlist_tab.dart';
 
-class SessionDetailPage extends StatefulWidget {
+class SessionDetailPage extends ConsumerStatefulWidget {
   const SessionDetailPage({super.key, required this.sessionId});
 
   final String sessionId;
 
   @override
-  State<SessionDetailPage> createState() => _SessionDetailPageState();
+  ConsumerState<SessionDetailPage> createState() => _SessionDetailPageState();
 }
 
-class _SessionDetailPageState extends State<SessionDetailPage>
+class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
     with SingleTickerProviderStateMixin {
   late final AnimationController _dismissController;
   late final AnimationController _slideController;
@@ -166,43 +166,16 @@ class _SessionDetailPageState extends State<SessionDetailPage>
 
   @override
   Widget build(BuildContext context) {
-    final selection = context
-        .select<
-          AudioProvider,
-          ({
-            PlaybackSession? session,
-            String? fallbackSessionId,
-            String? trackPath,
-            bool? loading,
-            bool? playing,
-            ProcessingState? processingState,
-            SessionLoopMode? loopMode,
-            double? volume,
-            bool? channelSwapEnabled,
-          })
-        >((provider) {
-          final sessions = provider.activeSessions;
-          final session = sessions.cast<PlaybackSession?>().firstWhere(
-            (candidate) => candidate?.id == _currentSessionId,
-            orElse: () => null,
-          );
-          return (
-            session: session,
-            fallbackSessionId: sessions.isEmpty ? null : sessions.first.id,
-            trackPath: session?.currentTrackPath,
-            loading: session?.isLoading,
-            playing: session?.state.playing,
-            processingState: session?.state.processingState,
-            loopMode: session?.loopMode,
-            volume: session?.volume,
-            channelSwapEnabled: session?.channelSwapEnabled,
-          );
-        });
-    final provider = context.read<AudioProvider>();
-    final session = selection.session;
+    ref.watch(playbackStateProvider);
+    final provider = ref.read(audioProviderFacadeProvider);
+    final sessions = provider.activeSessions;
+    final session = sessions.cast<PlaybackSession?>().firstWhere(
+      (candidate) => candidate?.id == _currentSessionId,
+      orElse: () => null,
+    );
 
     if (session == null) {
-      final fallbackSessionId = selection.fallbackSessionId;
+      final fallbackSessionId = sessions.isEmpty ? null : sessions.first.id;
       if (fallbackSessionId == null) {
         return const Scaffold(body: SizedBox.shrink());
       }
@@ -289,10 +262,7 @@ class _SessionDetailPageState extends State<SessionDetailPage>
                 _slideController.value.clamp(0.0, 1.0),
               );
               final opacity = lerpDouble(0.84, 1, switchProgress) ?? 1;
-              return Opacity(
-                opacity: opacity,
-                child: child,
-              );
+              return Opacity(opacity: opacity, child: child);
             },
             child: _SessionDetailScaffold(
               session: session,
@@ -452,116 +422,116 @@ class _SessionDetailScaffold extends StatelessWidget {
                   position: slideAnimation,
                   child: Column(
                     children: [
-                    // Top Bar — outside drag GestureDetector so taps work
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      child: Row(
-                        children: [
-                          IconButton(
-                            onPressed: onClose,
-                            icon: Icon(
-                              Icons.keyboard_arrow_down_rounded,
-                              color: cs.onSurface,
-                              size: 32,
-                            ),
-                          ),
-                          const Spacer(),
-                          if (session.channelSwapEnabled) ...[
-                            Icon(
-                              Icons.swap_horiz_rounded,
-                              color: cs.onSurface,
-                              size: 20,
-                            ),
-                            const SizedBox(width: 8),
-                          ],
-                          UnifiedPopupMenuButton<String>(
-                            icon: Icons.more_horiz_rounded,
-                            tooltip: MaterialLocalizations.of(
-                              context,
-                            ).moreButtonTooltip,
-                            entries: [
-                              UnifiedMenuEntry<String>.action(
-                                value: 'channel_swap',
-                                icon: session.channelSwapEnabled
-                                    ? Icons.check_rounded
-                                    : Icons.swap_horiz_rounded,
-                                label: context.read<AppLanguageProvider>().tr(
-                                  'channel_swap',
-                                ),
-                              ),
-                            ],
-                            onSelected: (value) {
-                              if (value != 'channel_swap') return;
-                              Feedback.forTap(context);
-                              unawaited(
-                                provider.setSessionChannelSwap(
-                                  session.id,
-                                  !session.channelSwapEnabled,
-                                ),
-                              );
-                            },
-                          ),
-                        ],
-                      ),
-                    ),
-                    // Content area — wrapped in GestureDetector for drag-to-dismiss / session switching
-                    Expanded(
-                      child: GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onHorizontalDragUpdate: onHorizontalDragUpdate,
-                        onHorizontalDragEnd: onHorizontalDragEnd,
-                        onHorizontalDragCancel: onHorizontalDragCancel,
-                        onVerticalDragUpdate: onVerticalDragUpdate,
-                        onVerticalDragEnd: onVerticalDragEnd,
-                        onVerticalDragCancel: onVerticalDragCancel,
-                        child: Column(
+                      // Top Bar — outside drag GestureDetector so taps work
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        child: Row(
                           children: [
-                            // Large Artwork
-                            Expanded(
-                              flex: 6,
-                              child: Center(
-                                child: RepaintBoundary(
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 32,
-                                    ),
-                                    child: _SessionHeroArtwork(
-                                      height: constraints.maxHeight * 0.48,
-                                      coverPathFuture: coverPathFuture,
-                                      title: '',
-                                      folderName: '',
-                                      isPlaying: session.state.playing,
-                                    ),
+                            IconButton(
+                              onPressed: onClose,
+                              icon: Icon(
+                                Icons.keyboard_arrow_down_rounded,
+                                color: cs.onSurface,
+                                size: 32,
+                              ),
+                            ),
+                            const Spacer(),
+                            if (session.channelSwapEnabled) ...[
+                              Icon(
+                                Icons.swap_horiz_rounded,
+                                color: cs.onSurface,
+                                size: 20,
+                              ),
+                              const SizedBox(width: 8),
+                            ],
+                            UnifiedPopupMenuButton<String>(
+                              icon: Icons.more_horiz_rounded,
+                              tooltip: MaterialLocalizations.of(
+                                context,
+                              ).moreButtonTooltip,
+                              entries: [
+                                UnifiedMenuEntry<String>.action(
+                                  value: 'channel_swap',
+                                  icon: session.channelSwapEnabled
+                                      ? Icons.check_rounded
+                                      : Icons.swap_horiz_rounded,
+                                  label: context.read<AppLanguageProvider>().tr(
+                                    'channel_swap',
                                   ),
                                 ),
-                              ),
-                            ),
-                            // Detail Content
-                            Expanded(
-                              flex: 5,
-                              child: Padding(
-                                padding: const EdgeInsets.fromLTRB(
-                                  28,
-                                  0,
-                                  28,
-                                  16,
-                                ),
-                                child: _SessionDetailContent(
-                                  session: session,
-                                  provider: provider,
-                                ),
-                              ),
+                              ],
+                              onSelected: (value) {
+                                if (value != 'channel_swap') return;
+                                Feedback.forTap(context);
+                                unawaited(
+                                  provider.setSessionChannelSwap(
+                                    session.id,
+                                    !session.channelSwapEnabled,
+                                  ),
+                                );
+                              },
                             ),
                           ],
                         ),
                       ),
-                    ),
-                  ],
-                ),
-              );
-            },
+                      // Content area — wrapped in GestureDetector for drag-to-dismiss / session switching
+                      Expanded(
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onHorizontalDragUpdate: onHorizontalDragUpdate,
+                          onHorizontalDragEnd: onHorizontalDragEnd,
+                          onHorizontalDragCancel: onHorizontalDragCancel,
+                          onVerticalDragUpdate: onVerticalDragUpdate,
+                          onVerticalDragEnd: onVerticalDragEnd,
+                          onVerticalDragCancel: onVerticalDragCancel,
+                          child: Column(
+                            children: [
+                              // Large Artwork
+                              Expanded(
+                                flex: 6,
+                                child: Center(
+                                  child: RepaintBoundary(
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 32,
+                                      ),
+                                      child: _SessionHeroArtwork(
+                                        height: constraints.maxHeight * 0.48,
+                                        coverPathFuture: coverPathFuture,
+                                        title: '',
+                                        folderName: '',
+                                        isPlaying: session.state.playing,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              // Detail Content
+                              Expanded(
+                                flex: 5,
+                                child: Padding(
+                                  padding: const EdgeInsets.fromLTRB(
+                                    28,
+                                    0,
+                                    28,
+                                    16,
+                                  ),
+                                  child: _SessionDetailContent(
+                                    session: session,
+                                    provider: provider,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
           ),
-        ),
         ],
       ),
     );

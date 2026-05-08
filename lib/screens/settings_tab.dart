@@ -1,13 +1,17 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as path;
 import 'package:provider/provider.dart';
 
 import '../i18n/app_language_provider.dart';
 import '../providers/audio_provider.dart';
+import '../providers/audio_provider_riverpod.dart';
 import '../services/app_update_service.dart';
+import '../services/audio_state_services.dart';
 import '../theme/theme_provider.dart';
 import '../widgets/app_feedback.dart';
 import '../widgets/mobile_overlay_inset.dart';
@@ -16,14 +20,14 @@ import '../widgets/top_page_header.dart';
 part 'settings_tab_actions.dart';
 part 'settings_tab_widgets.dart';
 
-class SettingsTab extends StatefulWidget {
+class SettingsTab extends ConsumerStatefulWidget {
   const SettingsTab({super.key});
 
   @override
-  State<SettingsTab> createState() => _SettingsTabState();
+  ConsumerState<SettingsTab> createState() => _SettingsTabState();
 }
 
-class _SettingsTabState extends State<SettingsTab>
+class _SettingsTabState extends ConsumerState<SettingsTab>
     with WidgetsBindingObserver, AutomaticKeepAliveClientMixin {
   static const MethodChannel _powerChannel = MethodChannel(
     'music_player/power',
@@ -38,6 +42,7 @@ class _SettingsTabState extends State<SettingsTab>
   final GlobalKey _headerKey = GlobalKey();
   double _headerHeight = 62;
   final ScrollController _scrollController = ScrollController();
+  ValueListenable<int?>? _scrollToTopListenable;
 
   @override
   bool get wantKeepAlive => true;
@@ -62,16 +67,17 @@ class _SettingsTabState extends State<SettingsTab>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _measureHeader();
-        context.read<AudioProvider>().scrollToTopTabListenable.addListener(
-          _handleScrollToTopSignal,
-        );
+        _scrollToTopListenable = ref
+            .read(audioProviderFacadeProvider)
+            .scrollToTopTabListenable;
+        _scrollToTopListenable?.addListener(_handleScrollToTopSignal);
       }
     });
   }
 
   void _handleScrollToTopSignal() {
     if (!mounted) return;
-    final index = context.read<AudioProvider>().scrollToTopTabListenable.value;
+    final index = _scrollToTopListenable?.value;
     if (index == 2) {
       // 2 is SettingsTab
       _jumpSettingsToTop();
@@ -89,9 +95,7 @@ class _SettingsTabState extends State<SettingsTab>
 
   @override
   void dispose() {
-    context.read<AudioProvider>().scrollToTopTabListenable.removeListener(
-      _handleScrollToTopSignal,
-    );
+    _scrollToTopListenable?.removeListener(_handleScrollToTopSignal);
     _scrollController.dispose();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
@@ -116,24 +120,9 @@ class _SettingsTabState extends State<SettingsTab>
     super.build(context);
     final i18n = context.watch<AppLanguageProvider>();
     final themeProvider = context.watch<ThemeProvider>();
-    final audioProvider = context.read<AudioProvider>();
-    final playbackSettings = context
-        .select<
-          AudioProvider,
-          ({
-            bool multiThreadPlaybackEnabled,
-            bool notificationsEnabled,
-            bool showPlaybackCard,
-            bool autoPlayAddedSessions,
-          })
-        >(
-          (p) => (
-            multiThreadPlaybackEnabled: p.multiThreadPlaybackEnabled,
-            notificationsEnabled: p.notificationsEnabled,
-            showPlaybackCard: p.showPlaybackCard,
-            autoPlayAddedSessions: p.autoPlayAddedSessions,
-          ),
-        );
+    final audioProvider = ref.read(audioProviderFacadeProvider);
+    final playbackSettings =
+        ref.watch(settingsStateProvider).valueOrNull ?? const SettingsState();
     final bottomInset = MobileOverlayInset.of(context);
     final cs = Theme.of(context).colorScheme;
     final descStyle = Theme.of(context).textTheme.bodySmall?.copyWith(

@@ -117,7 +117,7 @@ extension AudioProviderPlaybackTimer on AudioProvider {
       );
 
     for (final session in _sessions.values) {
-      unawaited(NativePlaybackBridge.instance.pause(session.id));
+      unawaited(_nativePlaybackRepository.pause(session.id));
       session.setOptimisticState(playing: false);
     }
 

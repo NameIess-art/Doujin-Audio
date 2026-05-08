@@ -36,12 +36,12 @@ extension AudioProviderPlayback on AudioProvider {
   }
 
   Future<void> toggleSessionPlayPause(String sessionId) async {
-    final session = _sessions[sessionId];
+    final session = _playbackService.sessionById(sessionId);
     if (session == null || session.isLoading) return;
 
     if (session.state.playing) {
       session.isPlaybackStarting = false;
-      await NativePlaybackBridge.instance.pause(session.id);
+      await _nativePlaybackRepository.pause(session.id);
       session.setOptimisticState(playing: false);
     } else if (session.state.processingState == ProcessingState.completed ||
         session.state.processingState == ProcessingState.idle) {
@@ -60,28 +60,19 @@ extension AudioProviderPlayback on AudioProvider {
     bool persist = true,
     bool notify = true,
   }) async {
-    final removedSessions = <PlaybackSession>[];
-    var removedAny = false;
+    final removedSessions = _playbackService.removeSessions(sessionIds);
+    if (removedSessions.isEmpty) return;
 
-    for (final sessionId in LinkedHashSet<String>.from(sessionIds)) {
-      final session = _sessions.remove(sessionId);
-      if (session == null) continue;
-      removedAny = true;
+    for (final session in removedSessions) {
       session.isPlaybackStarting = false;
-      removedSessions.add(session);
-      _clearNotificationSubtitleForSession(sessionId);
-      if (_notificationFocusSessionId == sessionId) {
+      _clearNotificationSubtitleForSession(session.id);
+      if (_notificationFocusSessionId == session.id) {
         _notificationFocusSessionId = null;
       }
-      _sessionOrder.remove(sessionId);
     }
-
-    if (!removedAny) return;
-
-    _markActiveSessionsDirty();
     await Future.wait(
       removedSessions.map((session) async {
-        await NativePlaybackBridge.instance.removeSession(session.id);
+        await _nativePlaybackRepository.removeSession(session.id);
         session.dispose();
       }),
     );
@@ -106,7 +97,7 @@ extension AudioProviderPlayback on AudioProvider {
     if (mode != SessionLoopMode.single) {
       session.nonSingleLoopMode = mode;
     }
-    await NativePlaybackBridge.instance.setRepeatOne(
+    await _nativePlaybackRepository.setRepeatOne(
       session.id,
       mode == SessionLoopMode.single,
     );
@@ -120,13 +111,13 @@ extension AudioProviderPlayback on AudioProvider {
     if (session == null) return;
     if (session.channelSwapEnabled == enabled) return;
     session.channelSwapEnabled = enabled;
-    final response = await NativePlaybackBridge.instance.setChannelSwap(
+    final response = await _nativePlaybackRepository.setChannelSwap(
       session.id,
       enabled,
     );
-    final value = response['value'];
-    if (value is Map) {
-      session.applyNativeSnapshot(NativePlaybackSnapshot.fromMap(value));
+    final value = response.valueOrNull;
+    if (value != null) {
+      session.applyNativeSnapshot(value);
     }
     _notifyListeners();
     _scheduleSaveSessionState();
@@ -199,7 +190,7 @@ extension AudioProviderPlayback on AudioProvider {
       return;
     }
     session.volume = nextVolume;
-    await NativePlaybackBridge.instance.setVolume(session.id, session.volume);
+    await _nativePlaybackRepository.setVolume(session.id, session.volume);
     if (notify) {
       _notifyListeners();
     }
@@ -211,7 +202,7 @@ extension AudioProviderPlayback on AudioProvider {
   Future<void> seekSession(String sessionId, Duration position) async {
     final session = _sessions[sessionId];
     if (session != null) {
-      await NativePlaybackBridge.instance.seek(session.id, position);
+      await _nativePlaybackRepository.seek(session.id, position);
       session.setOptimisticPosition(position);
       session.lastPersistedPositionBucket = position.inSeconds ~/ 5;
       _refreshNotificationSubtitleForSession(
@@ -243,7 +234,7 @@ extension AudioProviderPlayback on AudioProvider {
     final session = _sessions[sessionId];
     if (session == null || session.isLoading) return;
     if (session.position.inSeconds > 3) {
-      await NativePlaybackBridge.instance.seek(session.id, Duration.zero);
+      await _nativePlaybackRepository.seek(session.id, Duration.zero);
       session.setOptimisticPosition(Duration.zero);
       session.lastPersistedPositionBucket = 0;
       _refreshNotificationSubtitleForSession(
@@ -261,7 +252,7 @@ extension AudioProviderPlayback on AudioProvider {
   }
 
   Future<void> pauseAllSessions() async {
-    await NativePlaybackBridge.instance.pauseAll();
+    await _nativePlaybackRepository.pauseAll();
     for (final session in _sessions.values) {
       session.setOptimisticState(playing: false);
       session.isLoading = false;

@@ -257,37 +257,11 @@ class _SubtitleWindowSettingsSheet extends StatelessWidget {
     ColorScheme cs,
     ValueChanged<double> onChanged,
   ) {
-    return Row(
-      children: [
-        SizedBox(
-          width: 20,
-          child: Text(label, style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w700,
-            color: cs.onSurfaceVariant,
-          )),
-        ),
-        Expanded(
-          child: Slider(
-            value: value.toDouble(),
-            min: 0,
-            max: 255,
-            divisions: 255,
-            onChanged: onChanged,
-          ),
-        ),
-        SizedBox(
-          width: 30,
-          child: Text(
-            value.toString(),
-            textAlign: TextAlign.right,
-            style: TextStyle(
-              fontSize: 12,
-              color: cs.onSurfaceVariant,
-            ),
-          ),
-        ),
-      ],
+    return _RgbSliderRow(
+      label: label,
+      value: value,
+      cs: cs,
+      onChanged: onChanged,
     );
   }
 
@@ -492,6 +466,116 @@ class _SubtitleWindowSettingsSheet extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+class _RgbSliderRow extends StatefulWidget {
+  const _RgbSliderRow({
+    required this.label,
+    required this.value,
+    required this.cs,
+    required this.onChanged,
+  });
+
+  final String label;
+  final int value;
+  final ColorScheme cs;
+  final ValueChanged<double> onChanged;
+
+  @override
+  State<_RgbSliderRow> createState() => _RgbSliderRowState();
+}
+
+class _RgbSliderRowState extends State<_RgbSliderRow> {
+  late final TextEditingController _controller;
+  bool _editing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.value.toString());
+  }
+
+  @override
+  void didUpdateWidget(covariant _RgbSliderRow oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!_editing && widget.value != oldWidget.value) {
+      _controller.text = widget.value.toString();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    _editing = false;
+    final parsed = int.tryParse(_controller.text);
+    if (parsed != null) {
+      widget.onChanged(parsed.clamp(0, 255).toDouble());
+    } else {
+      _controller.text = widget.value.toString();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        SizedBox(
+          width: 20,
+          child: Text(
+            widget.label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: widget.cs.onSurfaceVariant,
+            ),
+          ),
+        ),
+        Expanded(
+          child: Slider(
+            value: widget.value.toDouble(),
+            min: 0,
+            max: 255,
+            divisions: 255,
+            onChanged: widget.onChanged,
+          ),
+        ),
+        SizedBox(
+          width: 36,
+          child: TextField(
+            controller: _controller,
+            keyboardType: TextInputType.number,
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 11, color: widget.cs.onSurface),
+            decoration: InputDecoration(
+              isDense: true,
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 2,
+                vertical: 4,
+              ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(6),
+                borderSide: BorderSide(
+                  color: widget.cs.outlineVariant.withValues(alpha: 0.5),
+                ),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(6),
+                borderSide: BorderSide(color: widget.cs.primary, width: 1.5),
+              ),
+            ),
+            onTap: () => _editing = true,
+            onSubmitted: (_) => _submit(),
+            onEditingComplete: _submit,
+            onTapOutside: (_) => _submit(),
+          ),
+        ),
+      ],
     );
   }
 }

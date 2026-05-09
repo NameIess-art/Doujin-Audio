@@ -59,6 +59,7 @@ extension AudioProviderLibrary on AudioProvider {
       onSaveWatchedLibraries: () => unawaited(_saveWatchedLibraries()),
       onSaveLibraryExclusions: () => unawaited(_saveLibraryExclusions()),
     );
+    await removeFolderFromLibrary(libraryPath);
     _notifyListeners();
   }
 

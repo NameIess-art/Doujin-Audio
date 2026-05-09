@@ -332,10 +332,10 @@ class _SessionListCardState extends State<_SessionListCard> {
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
                                       if (showSub)
-                                        Icon(Icons.subtitles_rounded, size: 10, color: cs.onSurface.withValues(alpha: 0.35)),
+                                        Icon(Icons.subtitles_rounded, size: 10, color: cs.primary),
                                       if (showSub && session.channelSwapEnabled) const SizedBox(width: 2),
                                       if (session.channelSwapEnabled)
-                                        Icon(Icons.swap_horiz_rounded, size: 10, color: cs.onSurface.withValues(alpha: 0.35)),
+                                        Icon(Icons.swap_horiz_rounded, size: 10, color: cs.primary),
                                     ],
                                   ),
                                 );

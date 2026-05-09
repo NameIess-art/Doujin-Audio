@@ -23,7 +23,7 @@ Future<String?> _sessionCoverFutureForTrack(
   AudioProvider provider,
   MusicTrack? track,
 ) {
-  if (track == null) {
+  if (track == null || track.isSingle) {
     return Future<String?>.value();
   }
   final cacheKey = track.path.startsWith('content://')

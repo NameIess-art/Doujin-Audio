@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/playback_session.dart';
@@ -36,6 +37,7 @@ class _FloatingSubtitleWindowState
   String? _loadedPath;
   PlaybackSession? _currentSession;
   double? _dragY;
+  bool _snapHapticFired = false;
 
   @override
   void initState() {
@@ -217,6 +219,7 @@ class _FloatingSubtitleWindowState
           behavior: HitTestBehavior.translucent,
           onPanStart: (_) {
             _dragY = top;
+            _snapHapticFired = false;
           },
           onPanUpdate: (details) {
             setState(() {
@@ -227,9 +230,15 @@ class _FloatingSubtitleWindowState
               if (defaultTop != null) {
                 final dist = (newY - defaultTop).abs();
                 if (dist < 20) {
+                  if (!_snapHapticFired) {
+                    _snapHapticFired = true;
+                    HapticFeedback.selectionClick();
+                  }
                   // Magnetic pull toward default
                   final pull = (1 - dist / 20) * 0.5;
                   newY = newY + (defaultTop - newY) * pull;
+                } else {
+                  _snapHapticFired = false;
                 }
               }
               _dragY = newY.clamp(40.0, screenHeight - 100.0);

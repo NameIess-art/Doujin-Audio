@@ -27,6 +27,7 @@ import '../widgets/reorderable_hold_drag_listener.dart';
 import '../widgets/swipe_reveal_card.dart';
 import '../widgets/top_page_header.dart';
 import '../widgets/unified_popup_menu.dart';
+import '../widgets/waterfall_flow_stagger.dart';
 import 'video_converter_tab.dart';
 
 part 'library_tab_import_actions.dart';
@@ -184,6 +185,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     final scanFail = provider.scanFailureCount;
     final tree = _filterTreeCached(rawTree, _searchQuery);
     final matchCount = _countTrackNodes(tree);
+    final isInitialized = ref.watch(libraryStateProvider).value?.isInitialized ?? false;
     final bottomInset = MobileOverlayInset.of(context);
 
     const double searchBarFullHeight = 44.0;
@@ -218,7 +220,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         return const SizedBox.shrink(key: ValueKey('bottom_spacing_search'));
       }
       final node = tree[index];
-      return RepaintBoundary(
+      final item = RepaintBoundary(
         child: _searchQuery.isNotEmpty
             ? _LibraryTreeItem(
                 key: ValueKey(node.path),
@@ -228,14 +230,20 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
               )
             : _LibraryTreeItem(key: ValueKey(node.path), node: node),
       );
+
+      return WaterfallFlowStagger(
+        key: ValueKey('stagger_${node.path}'),
+        index: index,
+        child: item,
+      );
     }
 
     Widget emptyListBody() {
       // Padding adjustment for restricted Positioned viewport.
       // We expand the Positioned by 80px to pre-render items under the glass,
       // so we add 80px to the internal padding to keep the content visually in place.
-      final relativeTop = 80 + 4 + searchBarFullHeight;
-      final relativeBottom = 8.0;
+      final relativeTop = 150 + 4 + searchBarFullHeight;
+      final relativeBottom = 350.0;
 
       if (_searchQuery.isNotEmpty) {
         return ListView(
@@ -295,7 +303,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
           await _refreshWatchedFolders();
         },
         // Adjust edgeOffset because RefreshIndicator is now inside the restricted Positioned.
-        edgeOffset: 80 + 4 + searchBarFullHeight,
+        edgeOffset: 150 + 4 + searchBarFullHeight,
         displacement: 32,
         triggerMode: RefreshIndicatorTriggerMode.anywhere,
         child: body,
@@ -320,21 +328,24 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         return false;
       },
       child: Stack(
+        clipBehavior: Clip.none,
         children: [
           // Viewport restricted to content area so drag-to-reorder auto-scroll
           // triggers at content edges rather than screen edges.
           ContentBoundReorderArea(
             headerHeight: _headerHeight,
             bottomInset: listBottomInset,
-            topExpansion: 0,
-            bottomExpansion: 0,
-            child: tree.isEmpty
+            topExpansion: 150,
+            bottomExpansion: 350,
+            child: !isInitialized
+                ? const SizedBox.shrink()
+                : tree.isEmpty
                 ? refreshableEmptyBody()
                 : _searchQuery.isNotEmpty
                 ? ListView.builder(
                     key: const ValueKey('search_results_list'),
                     controller: _scrollController,
-                    padding: EdgeInsets.fromLTRB(16, 4 + searchBarFullHeight, 16, 0),
+                    padding: EdgeInsets.fromLTRB(16, 4 + searchBarFullHeight + 150, 16, 350),
                     cacheExtent: listCacheExtent,
                     clipBehavior: Clip.none,
                     physics: const AlwaysScrollableScrollPhysics(
@@ -351,7 +362,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                       unawaited(HapticFeedback.mediumImpact());
                       await _refreshWatchedFolders();
                     },
-                    edgeOffset: 4 + searchBarFullHeight,
+                    edgeOffset: 150 + 4 + searchBarFullHeight,
                     displacement: 32,
                     triggerMode: RefreshIndicatorTriggerMode.anywhere,
                     child: ReorderAutoScroller(
@@ -362,7 +373,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                         // Clip.none allows items to be visible when scrolled into the
                         // "empty" space above/below the restricted Positioned area.
                         clipBehavior: Clip.none,
-                        padding: EdgeInsets.fromLTRB(16, 4 + searchBarFullHeight, 16, 0),
+                        padding: EdgeInsets.fromLTRB(16, 4 + searchBarFullHeight + 150, 16, 350),
                         cacheExtent: listCacheExtent,
                         physics: canPullRefresh
                             ? const AlwaysScrollableScrollPhysics(
@@ -388,11 +399,15 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                             return const SizedBox.shrink(key: ValueKey('bottom_spacing'));
                           }
                           final node = tree[index];
-                          return ReorderableHoldDragStartListener(
-                            key: ValueKey(node.path),
+                          return WaterfallFlowStagger(
+                            key: ValueKey('stagger_${node.path}'),
                             index: index,
-                            child: RepaintBoundary(
-                              child: _LibraryTreeItem(node: node),
+                            child: ReorderableHoldDragStartListener(
+                              key: ValueKey(node.path),
+                              index: index,
+                              child: RepaintBoundary(
+                                child: _LibraryTreeItem(node: node),
+                              ),
                             ),
                           );
                         },
@@ -426,6 +441,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
               key: _headerKey,
               icon: Icons.library_music_rounded,
               title: i18n.tr('music_library'),
+              isLoading: !isInitialized,
               titleSuffix: Text(
                 i18n.tr('audio_count', {'count': audioCount}),
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(

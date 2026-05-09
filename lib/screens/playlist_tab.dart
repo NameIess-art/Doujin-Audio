@@ -30,6 +30,7 @@ import '../widgets/reorderable_hold_drag_listener.dart';
 import '../widgets/swipe_reveal_card.dart';
 import '../widgets/top_page_header.dart';
 import '../widgets/unified_popup_menu.dart';
+import '../widgets/waterfall_flow_stagger.dart';
 
 part 'playlist_tab_list.dart';
 part 'playlist_tab_detail.dart';
@@ -177,6 +178,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     final timerDuration = timerState.duration;
     final timerRemaining = timerState.remaining;
     final timerActive = timerState.active;
+    final isInitialized = playbackState.isInitialized;
     final topTotalHeight = _headerHeight + 4;
     final listBottomInset = bottomInset;
     final viewportHeight = MediaQuery.sizeOf(context).height;
@@ -186,22 +188,25 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
         .toDouble();
 
     return Stack(
+      clipBehavior: Clip.none,
       children: [
         // Viewport restricted to content area so drag-to-reorder auto-scroll
         // triggers at content edges rather than screen edges.
         ContentBoundReorderArea(
           headerHeight: _headerHeight,
           bottomInset: listBottomInset,
-          topExpansion: 0,
-          bottomExpansion: 0,
-          child: sessions.isEmpty
-              ? _SessionsEmptyState(bottomInset: 0, topInset: 4)
+          topExpansion: 150,
+          bottomExpansion: 350,
+          child: !isInitialized
+              ? const SizedBox.shrink()
+              : sessions.isEmpty
+              ? _SessionsEmptyState(bottomInset: 350, topInset: 150 + 4)
               : ReorderAutoScroller(
                   scrollController: _scrollController,
                   isDragging: _isReordering,
                   child: ReorderableListView.builder(
                     scrollController: _scrollController,
-                    padding: EdgeInsets.fromLTRB(16, 4, 16, 0),
+                    padding: EdgeInsets.fromLTRB(16, 4 + 150, 16, 350),
                     cacheExtent: listCacheExtent,
                     clipBehavior: Clip.none,
                     buildDefaultDragHandles: false,
@@ -223,14 +228,18 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                         return const SizedBox.shrink(key: ValueKey('bottom_spacing'));
                       }
                       final session = sessions[index];
-                      return ReorderableHoldDragStartListener(
-                        key: ValueKey(session.id),
+                      return WaterfallFlowStagger(
+                        key: ValueKey('stagger_${session.id}'),
                         index: index,
-                        child: RepaintBoundary(
-                          child: _SessionListCard(
-                            session: session,
-                            provider: provider,
-                            onOpen: () => _openSessionDetail(context, session.id),
+                        child: ReorderableHoldDragStartListener(
+                          key: ValueKey(session.id),
+                          index: index,
+                          child: RepaintBoundary(
+                            child: _SessionListCard(
+                              session: session,
+                              provider: provider,
+                              onOpen: () => _openSessionDetail(context, session.id),
+                            ),
                           ),
                         ),
                       );
@@ -246,6 +255,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
             key: _headerKey,
             icon: Icons.graphic_eq_rounded,
             title: i18n.tr('playback_sessions'),
+            isLoading: !isInitialized,
             subtitle: sessionSummary,
             subtitleFontSize: 11,
             fitSubtitleToWidth: true,

@@ -51,6 +51,7 @@ class LibraryState {
     this.scanDuplicateCount = 0,
     this.scanFailureCount = 0,
     this.structureRevision = 0,
+    this.isInitialized = false,
   });
 
   final int libraryTrackCount;
@@ -63,6 +64,7 @@ class LibraryState {
   final int scanDuplicateCount;
   final int scanFailureCount;
   final int structureRevision;
+  final bool isInitialized;
 
   @override
   bool operator ==(Object other) {
@@ -76,7 +78,8 @@ class LibraryState {
         other.scanFoundCount == scanFoundCount &&
         other.scanDuplicateCount == scanDuplicateCount &&
         other.scanFailureCount == scanFailureCount &&
-        other.structureRevision == structureRevision;
+        other.structureRevision == structureRevision &&
+        other.isInitialized == isInitialized;
   }
 
   @override
@@ -91,6 +94,7 @@ class LibraryState {
     scanDuplicateCount,
     scanFailureCount,
     structureRevision,
+    isInitialized,
   );
 }
 
@@ -102,6 +106,7 @@ class PlaybackStateSliceData {
     this.focusedSessionId,
     this.multiThreadPlaybackEnabled = false,
     this.sessionStateVersion = 0,
+    this.isInitialized = false,
   });
 
   final List<PlaybackSession> activeSessions;
@@ -109,6 +114,7 @@ class PlaybackStateSliceData {
   final String? focusedSessionId;
   final bool multiThreadPlaybackEnabled;
   final int sessionStateVersion;
+  final bool isInitialized;
 
   @override
   bool operator ==(Object other) {
@@ -117,7 +123,8 @@ class PlaybackStateSliceData {
         listEquals(other.activeSessions, activeSessions) &&
         other.playingSessionCount == playingSessionCount &&
         other.focusedSessionId == focusedSessionId &&
-        other.multiThreadPlaybackEnabled == multiThreadPlaybackEnabled;
+        other.multiThreadPlaybackEnabled == multiThreadPlaybackEnabled &&
+        other.isInitialized == isInitialized;
   }
 
   @override
@@ -127,6 +134,7 @@ class PlaybackStateSliceData {
     playingSessionCount,
     focusedSessionId,
     multiThreadPlaybackEnabled,
+    isInitialized,
   );
 }
 
@@ -143,6 +151,7 @@ class TimerStateSliceData {
     this.autoResumeHour = 7,
     this.autoResumeMinute = 0,
     this.pausedByTimerPaths = const <String>[],
+    this.isInitialized = false,
   });
 
   final TimerMode? mode;
@@ -155,6 +164,7 @@ class TimerStateSliceData {
   final int autoResumeHour;
   final int autoResumeMinute;
   final List<String> pausedByTimerPaths;
+  final bool isInitialized;
 
   @override
   bool operator ==(Object other) {
@@ -168,7 +178,8 @@ class TimerStateSliceData {
         other.autoResumeEnabled == autoResumeEnabled &&
         other.autoResumeHour == autoResumeHour &&
         other.autoResumeMinute == autoResumeMinute &&
-        listEquals(other.pausedByTimerPaths, pausedByTimerPaths);
+        listEquals(other.pausedByTimerPaths, pausedByTimerPaths) &&
+        other.isInitialized == isInitialized;
   }
 
   @override
@@ -183,6 +194,7 @@ class TimerStateSliceData {
     autoResumeHour,
     autoResumeMinute,
     Object.hashAll(pausedByTimerPaths),
+    isInitialized,
   );
 }
 
@@ -531,7 +543,7 @@ class LibraryService {
         path.isWithin(parentPath, childPath);
   }
 
-  void syncSlice() {
+  void syncSlice({required bool isInitialized}) {
     slice.update(
       LibraryState(
         libraryTrackCount: library.length,
@@ -544,6 +556,7 @@ class LibraryService {
         scanDuplicateCount: scanDuplicateCount,
         scanFailureCount: scanFailureCount,
         structureRevision: structureRevision,
+        isInitialized: isInitialized,
       ),
     );
   }
@@ -649,6 +662,7 @@ class PlaybackSessionService {
     required int playingSessionCount,
     required String? focusedSessionId,
     required bool multiThreadPlaybackEnabled,
+    required bool isInitialized,
   }) {
     slice.update(
       PlaybackStateSliceData(
@@ -657,6 +671,7 @@ class PlaybackSessionService {
         focusedSessionId: focusedSessionId,
         multiThreadPlaybackEnabled: multiThreadPlaybackEnabled,
         sessionStateVersion: sessionStateVersion,
+        isInitialized: isInitialized,
       ),
     );
   }
@@ -684,7 +699,7 @@ class TimerService {
   final AudioStateSlice<TimerStateSliceData> slice =
       AudioStateSlice<TimerStateSliceData>(const TimerStateSliceData());
 
-  void syncSlice() {
+  void syncSlice({required bool isInitialized}) {
     slice.update(
       TimerStateSliceData(
         mode: timerMode,
@@ -697,6 +712,7 @@ class TimerService {
         autoResumeHour: autoResumeHour,
         autoResumeMinute: autoResumeMinute,
         pausedByTimerPaths: UnmodifiableListView<String>(pausedByTimerPaths),
+        isInitialized: isInitialized,
       ),
     );
   }

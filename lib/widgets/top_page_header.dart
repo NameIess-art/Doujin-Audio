@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/audio_provider.dart';
+import '../i18n/app_language_provider.dart';
 
 class TopPageHeader extends StatelessWidget {
   const TopPageHeader({
@@ -19,6 +20,7 @@ class TopPageHeader extends StatelessWidget {
     this.bottomSpacing = 10,
     this.useSafeAreaTop = true,
     this.additionalChild,
+    this.isLoading = false,
   });
 
   final IconData? icon;
@@ -33,10 +35,12 @@ class TopPageHeader extends StatelessWidget {
   final double bottomSpacing;
   final bool useSafeAreaTop;
   final Widget? additionalChild;
+  final bool isLoading;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final i18n = context.watch<AppLanguageProvider>();
     final isTransitioning = context.select<AudioProvider, bool>(
       (p) => p.isPageTransitioning,
     );
@@ -51,7 +55,7 @@ class TopPageHeader extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  title,
+                  isLoading ? i18n.tr('loading_dot') : title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.headlineMedium?.copyWith(

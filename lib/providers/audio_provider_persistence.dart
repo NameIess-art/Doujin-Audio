@@ -117,46 +117,51 @@ extension AudioProviderPersistence on AudioProvider {
   }
 
   Future<void> _loadData() async {
-    // Phase 1: Load library (foundation — everything else depends on it).
-    await _loadLibrary();
+    try {
+      // Phase 1: Load library (foundation — everything else depends on it).
+      await _loadLibrary();
 
-    // Phase 2: Load all independent SharedPreferences settings in parallel.
-    await Future.wait<void>([
-      _loadGroupOrder(),
-      _loadWatchedFolders(),
-      _loadWatchedLibraries(),
-      _loadLibraryExclusions(),
-      _loadLibraryNodeOrder(),
-      _loadSessionOrder(),
-      _loadPlaybackSettings(),
-      _loadConverterSettings(),
-      _loadTimerSettings(),
-    ]);
+      // Phase 2: Load all independent SharedPreferences settings in parallel.
+      await Future.wait<void>([
+        _loadGroupOrder(),
+        _loadWatchedFolders(),
+        _loadWatchedLibraries(),
+        _loadLibraryExclusions(),
+        _loadLibraryNodeOrder(),
+        _loadSessionOrder(),
+        _loadPlaybackSettings(),
+        _loadConverterSettings(),
+        _loadTimerSettings(),
+      ]);
 
-    // Phase 3: In-memory syncs that depend on library + loaded order data.
-    _syncGroupOrderFromLibrary();
-    _syncLibraryNodeOrder(persist: false);
-    _markLibraryStructureDirty();
+      // Phase 3: In-memory syncs that depend on library + loaded order data.
+      _syncGroupOrderFromLibrary();
+      _syncLibraryNodeOrder(persist: false);
+      _markLibraryStructureDirty();
 
-    // Phase 4: Notification state + first UI update.
-    if (!_notificationsEnabled) {
-      await _nativePlaybackRepository.setForegroundEnabled(false);
+      // Phase 4: Notification state + first UI update.
+      if (!_notificationsEnabled) {
+        await _nativePlaybackRepository.setForegroundEnabled(false);
+      }
+      _notifyListeners();
+
+      // Phase 5: Load sessions (heavy — native calls per session).
+      await _loadSessions();
+
+      // Phase 6: Post-session operations (sequenced to avoid timer/session races).
+      if (!_multiThreadPlaybackEnabled) {
+        await _enforceSingleThreadPlayback();
+      }
+      await _loadTimerRuntime();
+    } catch (e) {
+      debugPrint('Critical error during AudioProvider _loadData: $e');
+    } finally {
+      // Phase 7: Deferred warmup, keep-alive sync, final UI update.
+      _scheduleLibraryAndSessionCacheWarmup();
+      _syncKeepCpuAwake();
+      _isInitialized = true;
+      _notifyListeners();
     }
-    _notifyListeners();
-
-    // Phase 5: Load sessions (heavy — native calls per session).
-    await _loadSessions();
-
-    // Phase 6: Post-session operations (sequenced to avoid timer/session races).
-    if (!_multiThreadPlaybackEnabled) {
-      await _enforceSingleThreadPlayback();
-    }
-    await _loadTimerRuntime();
-
-    // Phase 7: Deferred warmup, keep-alive sync, final UI update.
-    _scheduleLibraryAndSessionCacheWarmup();
-    _syncKeepCpuAwake();
-    _notifyListeners();
   }
 
   void _scheduleLibraryAndSessionCacheWarmup() {

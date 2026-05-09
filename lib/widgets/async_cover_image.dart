@@ -39,6 +39,7 @@ class AsyncCoverImage extends StatefulWidget {
 
 class _AsyncCoverImageState extends State<AsyncCoverImage> {
   String? _resolvedPath;
+  bool _isResolved = false;
   int _token = 0;
 
   @override
@@ -57,33 +58,39 @@ class _AsyncCoverImageState extends State<AsyncCoverImage> {
 
   void _bindFuture(Future<String?> future) {
     final token = ++_token;
+    setState(() {
+      _isResolved = false;
+    });
     future
         .then((path) {
           if (!mounted || token != _token) return;
-          if (_resolvedPath == path) return;
           setState(() {
             _resolvedPath = path;
+            _isResolved = true;
           });
         })
         .catchError((_) {
           if (!mounted || token != _token) return;
-          if (_resolvedPath == null) return;
           setState(() {
             _resolvedPath = null;
+            _isResolved = true;
           });
         });
   }
 
   @override
   Widget build(BuildContext context) {
-    final path = _resolvedPath;
-    if (path != null && path.isNotEmpty) {
-      return widget.imageBuilder(context, path);
+    if (_resolvedPath != null && _resolvedPath!.isNotEmpty) {
+      return widget.imageBuilder(context, _resolvedPath!);
     }
-    final loadingBuilder = widget.loadingBuilder;
-    if (loadingBuilder != null) {
-      return loadingBuilder(context);
+    
+    if (!_isResolved) {
+      final loadingBuilder = widget.loadingBuilder;
+      if (loadingBuilder != null) {
+        return loadingBuilder(context);
+      }
     }
+
     return widget.fallbackBuilder(context);
   }
 }

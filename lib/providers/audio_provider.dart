@@ -113,6 +113,7 @@ class AudioProvider with ChangeNotifier {
   ];
 
   int _sessionSeed = 0;
+  bool _isInitialized = false;
   final ValueNotifier<int?> _scrollToTopTabNotifier = ValueNotifier<int?>(null);
   ValueListenable<int?> get scrollToTopTabListenable => _scrollToTopTabNotifier;
   final ValueNotifier<String?> _carouselSnapNotifier = ValueNotifier<String?>(null);
@@ -568,14 +569,15 @@ class AudioProvider with ChangeNotifier {
       _notificationStateService.slice.stream;
 
   void _syncAllStateSlices() {
-    _libraryService.syncSlice();
+    _libraryService.syncSlice(isInitialized: _isInitialized);
     _playbackService.syncSlice(
       activeSessions: activeSessions,
       playingSessionCount: playingSessionCount,
       focusedSessionId: _notificationFocusSessionId,
       multiThreadPlaybackEnabled: _multiThreadPlaybackEnabled,
+      isInitialized: _isInitialized,
     );
-    _timerService.syncSlice();
+    _timerService.syncSlice(isInitialized: _isInitialized);
     _settingsRepository.syncSlice();
     _notificationStateService.syncSlice(
       activeQueueLength: activeSessions.length,

@@ -70,9 +70,17 @@ class _SessionHeroArtwork extends StatelessWidget {
                   AsyncCoverImage(
                     future: coverPathFuture,
                     fallbackBuilder: (_) => fallback(),
-                    loadingBuilder: (_) => PulsingPlaceholder(
-                      borderRadius: BorderRadius.circular(24),
-                      child: fallback(),
+                    loadingBuilder: (_) => Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        fallback(),
+                        Center(
+                          child: CircularProgressIndicator(
+                            strokeWidth: 3,
+                            color: cs.onPrimaryContainer.withValues(alpha: 0.65),
+                          ),
+                        ),
+                      ],
                     ),
                     imageBuilder: (context, coverPath) {
                       return RepaintBoundary(
@@ -156,9 +164,21 @@ class _SessionCoverThumbnail extends StatelessWidget {
         child: AsyncCoverImage(
           future: coverPathFuture,
           fallbackBuilder: (_) => fallback(),
-          loadingBuilder: (_) => PulsingPlaceholder(
-            borderRadius: BorderRadius.circular(14),
-            child: fallback(),
+          loadingBuilder: (_) => Stack(
+            fit: StackFit.expand,
+            children: [
+              fallback(),
+              Center(
+                child: SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: cs.onPrimaryContainer.withValues(alpha: 0.65),
+                  ),
+                ),
+              ),
+            ],
           ),
           imageBuilder: (context, coverPath) {
             final dpr = MediaQuery.devicePixelRatioOf(context);

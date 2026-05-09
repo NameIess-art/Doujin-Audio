@@ -416,5 +416,10 @@ flutter build apk --release --split-per-abi
 
 ## 发行说明 v0.8.0
 
-- 优化页面打开与切换加载速度：并行化启动数据加载、延迟构建非当前页、降低 BackdropFilter GPU 开销并压缩重建范围。
-- 同步版本、README 和 Release 信息到 `0.8.0+800`，发布 arm64-v8a、armeabi-v7a、x86_64 三个 APK。
+- 品牌重塑：应用显示名统一为 Nameless Audio，仓库更名为 nameless-audio，Android applicationId 变更为 com.nameless.audio。
+- 自定义封面选择：详情页长按封面进入选择模式，左右滑动浏览图片，松手确认，所有位置即时刷新。
+- 音量上限统一：全链路（UI 滑块/输入框/Native 层/警告提示）统一为 0–200%。
+- Release 签名配置：通过 key.properties 条件化加载 release keystore。
+- 修复 NativePlaybackService.configure() 音量上限与 setVolume() 不一致的问题。
+- 补全 MIT 许可证与隐私说明。
+- 发布 arm64-v8a、armeabi-v7a、x86_64 三个 APK。

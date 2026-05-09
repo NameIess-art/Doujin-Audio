@@ -25,6 +25,7 @@ import '../widgets/app_transitions.dart';
 import '../widgets/confirm_action_dialog.dart';
 import '../widgets/content_bound_reorder_area.dart';
 import '../widgets/mobile_overlay_inset.dart';
+import '../widgets/reorder_auto_scroller.dart';
 import '../widgets/reorderable_hold_drag_listener.dart';
 import '../widgets/swipe_reveal_card.dart';
 import '../widgets/top_page_header.dart';
@@ -71,6 +72,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
   double _headerHeight = 90;
   final ScrollController _scrollController = ScrollController();
   ValueListenable<int?>? _scrollToTopListenable;
+  bool _isReordering = false;
 
   @override
   bool get wantKeepAlive => true;
@@ -176,7 +178,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     final timerRemaining = timerState.remaining;
     final timerActive = timerState.active;
     final topTotalHeight = _headerHeight + 4;
-    final listBottomInset = bottomInset + 8;
+    final listBottomInset = bottomInset;
     final viewportHeight = MediaQuery.sizeOf(context).height;
     // Massive cacheExtent to ensure items are pre-rendered far outside the viewport.
     final listCacheExtent = (topTotalHeight + listBottomInset + 1200)
@@ -190,42 +192,50 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
         ContentBoundReorderArea(
           headerHeight: _headerHeight,
           bottomInset: listBottomInset,
+          topExpansion: 0,
+          bottomExpansion: 0,
           child: sessions.isEmpty
               ? _SessionsEmptyState(bottomInset: 0, topInset: 4)
-              : ReorderableListView.builder(
+              : ReorderAutoScroller(
                   scrollController: _scrollController,
-                  padding: EdgeInsets.fromLTRB(16, 4, 16, 8),
-                  cacheExtent: listCacheExtent,
-                  clipBehavior: Clip.none,
-                  buildDefaultDragHandles: false,
-                  keyboardDismissBehavior:
-                      ScrollViewKeyboardDismissBehavior.onDrag,
-                  onReorder: provider.reorderSessions,
-                  onReorderStart: (index) =>
-                      unawaited(HapticFeedback.heavyImpact()),
-                  proxyDecorator: (child, index, animation) =>
-                      _buildReorderProxy(context, child, animation),
-                  itemCount: sessions.length + 1,
-                  itemBuilder: (context, index) {
-                    if (index == sessions.length) {
-                      return const SizedBox(
-                        key: ValueKey('bottom_spacing'),
-                        height: 12,
-                      );
-                    }
-                    final session = sessions[index];
-                    return ReorderableHoldDragStartListener(
-                      key: ValueKey(session.id),
-                      index: index,
-                      child: RepaintBoundary(
-                        child: _SessionListCard(
-                          session: session,
-                          provider: provider,
-                          onOpen: () => _openSessionDetail(context, session.id),
+                  isDragging: _isReordering,
+                  child: ReorderableListView.builder(
+                    scrollController: _scrollController,
+                    padding: EdgeInsets.fromLTRB(16, 4, 16, 0),
+                    cacheExtent: listCacheExtent,
+                    clipBehavior: Clip.none,
+                    buildDefaultDragHandles: false,
+                    keyboardDismissBehavior:
+                        ScrollViewKeyboardDismissBehavior.onDrag,
+                    onReorder: (oldIndex, newIndex) {
+                      setState(() => _isReordering = false);
+                      provider.reorderSessions(oldIndex, newIndex);
+                    },
+                    onReorderStart: (index) {
+                      setState(() => _isReordering = true);
+                      unawaited(HapticFeedback.heavyImpact());
+                    },
+                    proxyDecorator: (child, index, animation) =>
+                        _buildReorderProxy(context, child, animation),
+                    itemCount: sessions.length + 1,
+                    itemBuilder: (context, index) {
+                      if (index == sessions.length) {
+                        return const SizedBox.shrink(key: ValueKey('bottom_spacing'));
+                      }
+                      final session = sessions[index];
+                      return ReorderableHoldDragStartListener(
+                        key: ValueKey(session.id),
+                        index: index,
+                        child: RepaintBoundary(
+                          child: _SessionListCard(
+                            session: session,
+                            provider: provider,
+                            onOpen: () => _openSessionDetail(context, session.id),
+                          ),
                         ),
-                      ),
-                    );
-                  },
+                      );
+                    },
+                  ),
                 ),
         ),
         Positioned(

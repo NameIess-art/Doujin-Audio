@@ -22,6 +22,7 @@ import '../widgets/async_cover_image.dart';
 import '../widgets/confirm_action_dialog.dart';
 import '../widgets/content_bound_reorder_area.dart';
 import '../widgets/mobile_overlay_inset.dart';
+import '../widgets/reorder_auto_scroller.dart';
 import '../widgets/reorderable_hold_drag_listener.dart';
 import '../widgets/swipe_reveal_card.dart';
 import '../widgets/top_page_header.dart';
@@ -59,6 +60,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   List<LibraryNode>? _cachedFilterRawTree;
   String _cachedFilterQuery = '';
   bool _refreshTriggeredInCurrentScroll = false;
+  bool _isReordering = false;
 
   final GlobalKey<RefreshIndicatorState> _refreshIndicatorKey =
       GlobalKey<RefreshIndicatorState>();
@@ -188,7 +190,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     final topTotalHeight = _headerHeight + 4;
     final headerContentHeight = topTotalHeight + searchBarFullHeight;
     // Remove the extra 96px to make content flush with the bottom dock.
-    final listBottomInset = bottomInset + 8;
+    final listBottomInset = bottomInset;
     final viewportHeight = MediaQuery.sizeOf(context).height;
     // Massive cacheExtent to ensure items are pre-rendered far outside the viewport.
     final listCacheExtent = (headerContentHeight + listBottomInset + 1200)
@@ -213,10 +215,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
 
     Widget buildLibraryItem(BuildContext context, int index) {
       if (index == tree.length) {
-        return const SizedBox(
-          key: ValueKey('bottom_spacing_search'),
-          height: 12,
-        );
+        return const SizedBox.shrink(key: ValueKey('bottom_spacing_search'));
       }
       final node = tree[index];
       return RepaintBoundary(
@@ -236,7 +235,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
       // We expand the Positioned by 80px to pre-render items under the glass,
       // so we add 80px to the internal padding to keep the content visually in place.
       final relativeTop = 80 + 4 + searchBarFullHeight;
-      final relativeBottom = MobileOverlayInset.of(context) + 8;
+      final relativeBottom = 8.0;
 
       if (_searchQuery.isNotEmpty) {
         return ListView(
@@ -327,13 +326,15 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
           ContentBoundReorderArea(
             headerHeight: _headerHeight,
             bottomInset: listBottomInset,
+            topExpansion: 0,
+            bottomExpansion: 0,
             child: tree.isEmpty
                 ? refreshableEmptyBody()
                 : _searchQuery.isNotEmpty
                 ? ListView.builder(
                     key: const ValueKey('search_results_list'),
                     controller: _scrollController,
-                    padding: EdgeInsets.fromLTRB(16, 4 + searchBarFullHeight, 16, 8),
+                    padding: EdgeInsets.fromLTRB(16, 4 + searchBarFullHeight, 16, 0),
                     cacheExtent: listCacheExtent,
                     clipBehavior: Clip.none,
                     physics: const AlwaysScrollableScrollPhysics(
@@ -353,44 +354,49 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                     edgeOffset: 4 + searchBarFullHeight,
                     displacement: 32,
                     triggerMode: RefreshIndicatorTriggerMode.anywhere,
-                    child: ReorderableListView.builder(
+                    child: ReorderAutoScroller(
                       scrollController: _scrollController,
-                      // Clip.none allows items to be visible when scrolled into the
-                      // "empty" space above/below the restricted Positioned area.
-                      clipBehavior: Clip.none,
-                      padding: EdgeInsets.fromLTRB(16, 4 + searchBarFullHeight, 16, 8),
-                      cacheExtent: listCacheExtent,
-                      physics: canPullRefresh
-                          ? const AlwaysScrollableScrollPhysics(
-                              parent: BouncingScrollPhysics(),
-                            )
-                          : null,
-                      buildDefaultDragHandles: false,
-                      autoScrollerVelocityScalar: 40,
-                      keyboardDismissBehavior:
-                          ScrollViewKeyboardDismissBehavior.onDrag,
-                      onReorder: provider.reorderLibraryNodes,
-                      onReorderStart: (index) =>
-                          unawaited(HapticFeedback.heavyImpact()),
-                      proxyDecorator: (child, index, animation) =>
-                          _buildReorderProxy(context, child, animation),
-                      itemCount: tree.length + 1,
-                      itemBuilder: (context, index) {
-                        if (index == tree.length) {
-                          return const SizedBox(
-                            key: ValueKey('bottom_spacing'),
-                            height: 12,
+                      isDragging: _isReordering,
+                      child: ReorderableListView.builder(
+                        scrollController: _scrollController,
+                        // Clip.none allows items to be visible when scrolled into the
+                        // "empty" space above/below the restricted Positioned area.
+                        clipBehavior: Clip.none,
+                        padding: EdgeInsets.fromLTRB(16, 4 + searchBarFullHeight, 16, 0),
+                        cacheExtent: listCacheExtent,
+                        physics: canPullRefresh
+                            ? const AlwaysScrollableScrollPhysics(
+                                parent: BouncingScrollPhysics(),
+                              )
+                            : null,
+                        buildDefaultDragHandles: false,
+                        keyboardDismissBehavior:
+                            ScrollViewKeyboardDismissBehavior.onDrag,
+                        onReorder: (oldIndex, newIndex) {
+                          setState(() => _isReordering = false);
+                          provider.reorderLibraryNodes(oldIndex, newIndex);
+                        },
+                        onReorderStart: (index) {
+                          setState(() => _isReordering = true);
+                          unawaited(HapticFeedback.heavyImpact());
+                        },
+                        proxyDecorator: (child, index, animation) =>
+                            _buildReorderProxy(context, child, animation),
+                        itemCount: tree.length + 1,
+                        itemBuilder: (context, index) {
+                          if (index == tree.length) {
+                            return const SizedBox.shrink(key: ValueKey('bottom_spacing'));
+                          }
+                          final node = tree[index];
+                          return ReorderableHoldDragStartListener(
+                            key: ValueKey(node.path),
+                            index: index,
+                            child: RepaintBoundary(
+                              child: _LibraryTreeItem(node: node),
+                            ),
                           );
-                        }
-                        final node = tree[index];
-                        return ReorderableHoldDragStartListener(
-                          key: ValueKey(node.path),
-                          index: index,
-                          child: RepaintBoundary(
-                            child: _LibraryTreeItem(node: node),
-                          ),
-                        );
-                      },
+                        },
+                      ),
                     ),
                   ),
           ),

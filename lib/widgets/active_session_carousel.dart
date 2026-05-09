@@ -60,6 +60,7 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
   final Map<String, Future<String?>> _coverFutures = {};
   late PageController _pageController;
   final ValueNotifier<double> _pageNotifier = ValueNotifier<double>(0);
+  String? _lastCarouselSnapSessionId;
 
   double get _page => _pageNotifier.value;
 
@@ -68,6 +69,12 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
     super.initState();
     _pageController = PageController(viewportFraction: 0.90);
     _pageController.addListener(_handlePageTick);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        final provider = ref.read(audioProviderFacadeProvider);
+        provider.carouselSnapListenable.addListener(_handleCarouselSnap);
+      }
+    });
   }
 
   @override
@@ -90,6 +97,9 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
 
   @override
   void dispose() {
+    ref.read(audioProviderFacadeProvider).carouselSnapListenable.removeListener(
+      _handleCarouselSnap,
+    );
     _pageController
       ..removeListener(_handlePageTick)
       ..dispose();
@@ -104,6 +114,25 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
         : current;
     if ((nextPage - current).abs() < 0.001) return;
     _pageNotifier.value = nextPage;
+  }
+
+  void _handleCarouselSnap() {
+    final sessionId = ref.read(audioProviderFacadeProvider)
+        .carouselSnapListenable
+        .value;
+    if (sessionId == null || sessionId == _lastCarouselSnapSessionId) return;
+    _lastCarouselSnapSessionId = sessionId;
+    final sessions =
+        widget.sessions ??
+        (ref.read(playbackStateProvider).valueOrNull?.activeSessions ??
+            const <PlaybackSession>[]);
+    final targetIndex = sessions.indexWhere((s) => s.id == sessionId);
+    if (targetIndex < 0 || !_pageController.hasClients) return;
+    _pageController.animateToPage(
+      targetIndex,
+      duration: const Duration(milliseconds: 350),
+      curve: Curves.easeOutCubic,
+    );
   }
 
   void _openSessionDetail(BuildContext context, PlaybackSession session) {

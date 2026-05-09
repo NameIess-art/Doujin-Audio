@@ -65,19 +65,48 @@ class _FolderNodeWidgetState extends State<_FolderNodeWidget> {
     }
   }
 
+  String? _findParentLibraryPath(AudioProvider provider) {
+    final normalizedPath = path.normalize(widget.folder.path);
+    for (final libraryPath in provider.watchedLibraries) {
+      final normalizedLibraryPath = path.normalize(libraryPath);
+      if (path.equals(normalizedPath, normalizedLibraryPath) ||
+          path.isWithin(normalizedLibraryPath, normalizedPath)) {
+        return normalizedLibraryPath;
+      }
+    }
+    return null;
+  }
+
   Future<void> _removeFolder(
     BuildContext context,
     AudioProvider provider,
   ) async {
     final i18n = context.read<AppLanguageProvider>();
-    await provider.removeFolderFromLibrary(widget.folder.path);
-    if (context.mounted) {
-      showAppSnackBar(
-        context,
-        i18n.tr('folder_removed'),
-        tone: AppFeedbackTone.destructive,
-        icon: Icons.delete_outline_rounded,
+    final libraryPath = _findParentLibraryPath(provider);
+    if (libraryPath != null) {
+      provider.setLibraryFolderExcluded(
+        libraryPath,
+        widget.folder.path,
+        true,
       );
+      if (context.mounted) {
+        showAppSnackBar(
+          context,
+          i18n.tr('folder_excluded'),
+          tone: AppFeedbackTone.warning,
+          icon: Icons.block_rounded,
+        );
+      }
+    } else {
+      await provider.removeFolderFromLibrary(widget.folder.path);
+      if (context.mounted) {
+        showAppSnackBar(
+          context,
+          i18n.tr('folder_removed'),
+          tone: AppFeedbackTone.destructive,
+          icon: Icons.delete_outline_rounded,
+        );
+      }
     }
   }
 
@@ -303,14 +332,40 @@ class _TrackNodeWidget extends ConsumerWidget {
     MusicTrack track,
   ) async {
     final i18n = context.read<AppLanguageProvider>();
-    await provider.removeTrackFromLibrary(track.path);
-    if (context.mounted) {
-      showAppSnackBar(
-        context,
-        i18n.tr('audio_removed'),
-        tone: AppFeedbackTone.destructive,
-        icon: Icons.delete_outline_rounded,
+    final normalizedTrackPath = path.normalize(track.path);
+    String? parentLibraryPath;
+    for (final libraryPath in provider.watchedLibraries) {
+      final normalizedLibraryPath = path.normalize(libraryPath);
+      if (path.equals(normalizedTrackPath, normalizedLibraryPath) ||
+          path.isWithin(normalizedLibraryPath, normalizedTrackPath)) {
+        parentLibraryPath = normalizedLibraryPath;
+        break;
+      }
+    }
+    if (parentLibraryPath != null) {
+      provider.setLibraryTrackExcluded(
+        parentLibraryPath,
+        track.path,
+        true,
       );
+      if (context.mounted) {
+        showAppSnackBar(
+          context,
+          i18n.tr('audio_excluded'),
+          tone: AppFeedbackTone.warning,
+          icon: Icons.block_rounded,
+        );
+      }
+    } else {
+      await provider.removeTrackFromLibrary(track.path);
+      if (context.mounted) {
+        showAppSnackBar(
+          context,
+          i18n.tr('audio_removed'),
+          tone: AppFeedbackTone.destructive,
+          icon: Icons.delete_outline_rounded,
+        );
+      }
     }
   }
 

@@ -29,6 +29,8 @@ class ContentBoundReorderArea extends StatelessWidget {
     required this.headerHeight,
     required this.bottomInset,
     required this.child,
+    this.topExpansion = 0,
+    this.bottomExpansion = 0,
   });
 
   /// The Y-coordinate of the content area top — typically the bottom edge of
@@ -41,13 +43,21 @@ class ContentBoundReorderArea extends StatelessWidget {
   /// The list viewport ends here, so drag auto-scroll triggers above this line.
   final double bottomInset;
 
+  /// Extra space to extend the viewport upward, allowing auto-scroll to trigger
+  /// before the dragged item reaches the visible content boundary.
+  final double topExpansion;
+
+  /// Extra space to extend the viewport downward, allowing auto-scroll to trigger
+  /// before the dragged item reaches the visible content boundary.
+  final double bottomExpansion;
+
   final Widget child;
 
   @override
   Widget build(BuildContext context) {
     return Positioned(
-      top: headerHeight,
-      bottom: bottomInset,
+      top: headerHeight - topExpansion,
+      bottom: bottomInset - bottomExpansion,
       left: 0,
       right: 0,
       child: child,

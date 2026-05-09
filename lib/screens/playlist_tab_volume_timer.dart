@@ -55,11 +55,96 @@ class _SessionVolumeSliderState extends State<_SessionVolumeSlider> {
     super.dispose();
   }
 
+  void _showVolumeInputDialog() {
+    final i18n = context.read<AppLanguageProvider>();
+    final cs = Theme.of(context).colorScheme;
+    final controller = TextEditingController(
+      text: '${((_dragVolume ?? widget.session.volume) * 100).round()}',
+    );
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(i18n.tr('volume')),
+        content: TextField(
+          controller: controller,
+          keyboardType: TextInputType.number,
+          autofocus: true,
+          decoration: InputDecoration(
+            hintText: '0-200',
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+          onSubmitted: (text) {
+            _applyVolumeInput(text, ctx, i18n, cs);
+          },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text(i18n.tr('cancel')),
+          ),
+          FilledButton(
+            onPressed: () {
+              _applyVolumeInput(controller.text, ctx, i18n, cs);
+            },
+            child: Text(i18n.tr('confirm')),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _applyVolumeInput(
+    String text,
+    BuildContext dialogContext,
+    AppLanguageProvider i18n,
+    ColorScheme cs,
+  ) {
+    final parsed = int.tryParse(text.trim());
+    if (parsed == null || parsed < 0 || parsed > 200) {
+      return;
+    }
+    if (parsed > 100) {
+      Navigator.of(dialogContext).pop();
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          icon: Icon(Icons.warning_amber_rounded, color: cs.error, size: 32),
+          title: Text(i18n.tr('volume_warning_title')),
+          content: Text(i18n.tr('volume_warning_message')),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: Text(i18n.tr('cancel')),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                setState(() => _dragVolume = parsed / 100);
+                widget.provider.setSessionVolume(
+                  widget.session.id,
+                  parsed / 100,
+                );
+              },
+              child: Text(i18n.tr('confirm')),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+    Navigator.of(dialogContext).pop();
+    setState(() => _dragVolume = parsed / 100);
+    widget.provider.setSessionVolume(widget.session.id, parsed / 100);
+  }
+
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final volume = (_dragVolume ?? widget.session.volume).clamp(0.0, 1.0);
+    final volume = (_dragVolume ?? widget.session.volume).clamp(0.0, 2.0);
     final volumePercent = (volume * 100).round();
+    final isBoosted = volume > 1.0;
 
     return Row(
       children: [
@@ -79,9 +164,10 @@ class _SessionVolumeSliderState extends State<_SessionVolumeSlider> {
                 : Icons.volume_up_rounded,
             key: ValueKey<int>((volume * 10).round()),
             size: 20,
-            color: cs.onSurfaceVariant,
+            color: isBoosted ? cs.primary : cs.onSurfaceVariant,
           ),
         ),
+        const SizedBox(width: 4),
         Expanded(
           child: SliderTheme(
             data: Theme.of(context).sliderTheme.copyWith(
@@ -90,7 +176,7 @@ class _SessionVolumeSliderState extends State<_SessionVolumeSlider> {
               overlayShape: const RoundSliderOverlayShape(overlayRadius: 16),
             ),
             child: Slider(
-              value: volume,
+              value: volume.clamp(0.0, 1.0),
               onChangeStart: (value) {
                 HapticFeedback.selectionClick();
                 setState(() {
@@ -130,13 +216,19 @@ class _SessionVolumeSliderState extends State<_SessionVolumeSlider> {
                 child: child,
               ),
             ),
-            child: Text(
-              '$volumePercent%',
-              key: ValueKey<int>(volumePercent),
-              textAlign: TextAlign.end,
-              style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                color: cs.onSurfaceVariant,
-                fontWeight: FontWeight.w700,
+            child: GestureDetector(
+              onTap: _showVolumeInputDialog,
+              child: Text(
+                '$volumePercent%',
+                key: ValueKey<int>(volumePercent),
+                textAlign: TextAlign.end,
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                  color: isBoosted ? cs.primary : cs.onSurfaceVariant,
+                  fontWeight: FontWeight.w700,
+                  decoration: TextDecoration.underline,
+                  decorationColor: (isBoosted ? cs.primary : cs.onSurfaceVariant)
+                      .withValues(alpha: 0.3),
+                ),
               ),
             ),
           ),
@@ -240,10 +332,97 @@ class _VerticalVolumeSlider extends StatefulWidget {
 class _VerticalVolumeSliderState extends State<_VerticalVolumeSlider> {
   double? _dragVolume;
 
+  void _showVolumeInputDialog() {
+    final i18n = context.read<AppLanguageProvider>();
+    final cs = Theme.of(context).colorScheme;
+    final controller = TextEditingController(
+      text: '${((_dragVolume ?? widget.session.volume) * 100).round()}',
+    );
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(i18n.tr('volume')),
+        content: TextField(
+          controller: controller,
+          keyboardType: TextInputType.number,
+          autofocus: true,
+          decoration: InputDecoration(
+            hintText: '0-200',
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+          onSubmitted: (text) {
+            _applyVolumeInput(text, ctx, i18n, cs);
+          },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text(i18n.tr('cancel')),
+          ),
+          FilledButton(
+            onPressed: () {
+              _applyVolumeInput(controller.text, ctx, i18n, cs);
+            },
+            child: Text(i18n.tr('confirm')),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _applyVolumeInput(
+    String text,
+    BuildContext dialogContext,
+    AppLanguageProvider i18n,
+    ColorScheme cs,
+  ) {
+    final parsed = int.tryParse(text.trim());
+    if (parsed == null || parsed < 0 || parsed > 200) {
+      return;
+    }
+    if (parsed > 100) {
+      Navigator.of(dialogContext).pop();
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          icon: Icon(Icons.warning_amber_rounded, color: cs.error, size: 32),
+          title: Text(i18n.tr('volume_warning_title')),
+          content: Text(i18n.tr('volume_warning_message')),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: Text(i18n.tr('cancel')),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                widget.onClose();
+                setState(() => _dragVolume = parsed / 100);
+                widget.provider.setSessionVolume(
+                  widget.session.id,
+                  parsed / 100,
+                );
+              },
+              child: Text(i18n.tr('confirm')),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+    Navigator.of(dialogContext).pop();
+    widget.onClose();
+    setState(() => _dragVolume = parsed / 100);
+    widget.provider.setSessionVolume(widget.session.id, parsed / 100);
+  }
+
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final volume = (_dragVolume ?? widget.session.volume).clamp(0.0, 1.0);
+    final volume = (_dragVolume ?? widget.session.volume).clamp(0.0, 2.0);
+    final isBoosted = volume > 1.0;
 
     return Stack(
       children: [
@@ -263,7 +442,7 @@ class _VerticalVolumeSliderState extends State<_VerticalVolumeSlider> {
             color: Colors.transparent,
             child: Container(
               width: 44,
-              height: 180,
+              height: 220,
               decoration: BoxDecoration(
                 color: cs.surfaceContainerHigh.withValues(alpha: 0.95),
                 borderRadius: BorderRadius.circular(22),
@@ -281,11 +460,18 @@ class _VerticalVolumeSliderState extends State<_VerticalVolumeSlider> {
               padding: const EdgeInsets.symmetric(vertical: 12),
               child: Column(
                 children: [
-                  Text(
-                    '${(volume * 100).round()}%',
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      fontWeight: FontWeight.w900,
-                      fontSize: 10,
+                  GestureDetector(
+                    onTap: _showVolumeInputDialog,
+                    child: Text(
+                      '${(volume * 100).round()}%',
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        fontWeight: FontWeight.w900,
+                        fontSize: 10,
+                        color: isBoosted ? cs.primary : null,
+                        decoration: TextDecoration.underline,
+                        decorationColor: (isBoosted ? cs.primary : cs.onSurface)
+                            .withValues(alpha: 0.3),
+                      ),
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -303,7 +489,9 @@ class _VerticalVolumeSliderState extends State<_VerticalVolumeSlider> {
                           ),
                         ),
                         child: Slider(
-                          value: volume,
+                          value: volume.clamp(0.0, 1.0),
+                          min: 0,
+                          max: 1.0,
                           onChanged: (v) {
                             setState(() => _dragVolume = v);
                             widget.provider.setSessionVolume(

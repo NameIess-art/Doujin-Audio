@@ -115,6 +115,12 @@ class AudioProvider with ChangeNotifier {
   int _sessionSeed = 0;
   final ValueNotifier<int?> _scrollToTopTabNotifier = ValueNotifier<int?>(null);
   ValueListenable<int?> get scrollToTopTabListenable => _scrollToTopTabNotifier;
+  final ValueNotifier<String?> _carouselSnapNotifier = ValueNotifier<String?>(null);
+  ValueListenable<String?> get carouselSnapListenable => _carouselSnapNotifier;
+
+  void requestCarouselSnapTo(String sessionId) {
+    _carouselSnapNotifier.value = sessionId;
+  }
   final Random _random = Random();
 
   StreamSubscription<NativePlaybackSnapshot>? _nativePlaybackSubscription;

@@ -150,14 +150,14 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
       children: [
         Positioned(
           top: _headerHeight - 80,
-          bottom: 0,
+          bottom: bottomInset,
           left: 0,
           right: 0,
           child: ListView(
             controller: _scrollController,
             // Flush with bottom dock. Offset top padding since Positioned already shifts it.
             // Expand internal padding by 80px to match the expanded Positioned bounds.
-            padding: EdgeInsets.fromLTRB(16, 80 + 4, 16, bottomInset + 8),
+            padding: const EdgeInsets.fromLTRB(16, 80 + 4, 16, 0),
             clipBehavior: Clip.none,
             children: [
               ListTileTheme.merge(
@@ -479,7 +479,6 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                   ],
                 ),
               ),
-              const SizedBox(height: 12),
             ],
           ),
         ),

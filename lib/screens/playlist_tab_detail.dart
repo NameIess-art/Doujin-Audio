@@ -92,6 +92,9 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
     final shouldDismiss = _dismissController.value > 0.25 || velocity > 800;
     if (shouldDismiss) {
       _saveSubtitlePositionBeforeDismiss();
+      ref.read(audioProviderFacadeProvider).requestCarouselSnapTo(
+        _currentSessionId,
+      );
       await _animateDismissToEnd(velocity: velocity);
       if (mounted) {
         await navigator.maybePop();
@@ -296,6 +299,9 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
               slideAnimation: _slideAnimation,
               onClose: () async {
                 _saveSubtitlePositionBeforeDismiss();
+                ref.read(audioProviderFacadeProvider).requestCarouselSnapTo(
+                  _currentSessionId,
+                );
                 await _animateDismissToEnd();
                 if (context.mounted) {
                   await Navigator.of(context).maybePop();

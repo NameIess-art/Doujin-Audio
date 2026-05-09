@@ -64,6 +64,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
   bool _notificationSettingsOpened = false;
   bool _timerOverlayPrimed = false;
   bool _needsMeasurement = true;
+  bool? _lastShowCard;
   Timer? _notificationSessionNavigationTimer;
   String? _pendingNotificationSessionId;
   String? _lastOpenedNotificationSessionId;
@@ -229,6 +230,10 @@ class _MainScreenState extends ConsumerState<MainScreen>
     final activeSessionCount = playbackState.activeSessions.length;
     final showCard = settingsState.showPlaybackCard;
     final visibleSessions = showCard ? overlaySessions : <PlaybackSession>[];
+    if (_lastShowCard != showCard) {
+      _lastShowCard = showCard;
+      _needsMeasurement = true;
+    }
     final subtitleSessions = overlaySessions;
     final hasNowPlaying = visibleSessions.isNotEmpty;
     if (activeSessionCount > 0 &&

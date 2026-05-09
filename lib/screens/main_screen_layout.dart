@@ -367,11 +367,21 @@ extension _MainScreenLayout on _MainScreenState {
   }
 
   double _mobileContentInset({required bool hasNowPlaying}) {
-    if (_measuredDockContent > 0) {
+    // If we just toggled the card, the render box size is still stale.
+    // Use predicted values for one frame until post-frame measurement completes.
+    if (_needsMeasurement) {
       final systemBottom = MediaQuery.of(context).padding.bottom;
-      // Use the actual measured height of the dock content + its bottom margin
-      // to ensure the scrollable content is flush with its top edge.
-      return (max(systemBottom, 6.0) + _measuredDockContent).clamp(
+      if (hasNowPlaying) return systemBottom + 158;
+      return systemBottom + 64;
+    }
+
+    // Read the content column render box live so it stays accurate when the
+    // playback card appears or disappears without a metrics change.
+    final contentBox =
+        _dockContentKey.currentContext?.findRenderObject() as RenderBox?;
+    if (contentBox != null && contentBox.hasSize) {
+      final systemBottom = MediaQuery.of(context).padding.bottom;
+      return (max(systemBottom, 6.0) + contentBox.size.height).clamp(
         0.0,
         double.infinity,
       );

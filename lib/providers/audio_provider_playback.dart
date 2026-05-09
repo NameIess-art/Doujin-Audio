@@ -184,7 +184,7 @@ extension AudioProviderPlayback on AudioProvider {
   }) async {
     final session = _sessions[sessionId];
     if (session == null) return;
-    final nextVolume = volume.clamp(0.0, 1.0);
+    final nextVolume = volume.clamp(0.0, 2.0);
     if ((session.volume - nextVolume).abs() < 0.001) {
       if (persist) {
         _scheduleSaveSessionState();

@@ -286,11 +286,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
           child: AnimatedBuilder(
             animation: _slideController,
             builder: (context, child) {
-              final switchProgress = Curves.easeOutCubic.transform(
-                _slideController.value.clamp(0.0, 1.0),
-              );
-              final opacity = lerpDouble(0.84, 1, switchProgress) ?? 1;
-              return Opacity(opacity: opacity, child: child);
+              return child!;
             },
             child: _SessionDetailScaffold(
               session: session,
@@ -307,6 +303,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
                   await Navigator.of(context).maybePop();
                 }
               },
+              switchAnimation: _slideController,
               onHorizontalDragUpdate: (details) {
                 _horizontalDragDelta += details.primaryDelta ?? 0;
               },
@@ -400,6 +397,7 @@ class _SessionDetailScaffold extends ConsumerStatefulWidget {
   final void Function(DragEndDetails)? onVerticalDragEnd;
   final VoidCallback? onVerticalDragCancel;
   final void Function(double)? onSubtitleAnchorComputed;
+  final Animation<double> switchAnimation;
 
   const _SessionDetailScaffold({
     required this.session,
@@ -407,6 +405,7 @@ class _SessionDetailScaffold extends ConsumerStatefulWidget {
     required this.coverPathFuture,
     required this.slideAnimation,
     required this.onClose,
+    required this.switchAnimation,
     this.onHorizontalDragUpdate,
     this.onHorizontalDragEnd,
     this.onHorizontalDragCancel,
@@ -518,8 +517,21 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold> 
           SafeArea(
             child: LayoutBuilder(
               builder: (context, constraints) {
-                return SlideTransition(
-                  position: slideAnimation,
+                return AnimatedBuilder(
+                  animation: Listenable.merge([slideAnimation, widget.switchAnimation]),
+                  builder: (context, child) {
+                    final switchProgress = Curves.easeOutCubic.transform(
+                      widget.switchAnimation.value.clamp(0.0, 1.0),
+                    );
+                    final opacity = lerpDouble(0.88, 1.0, switchProgress) ?? 1;
+                    return Opacity(
+                      opacity: opacity,
+                      child: SlideTransition(
+                        position: slideAnimation,
+                        child: child,
+                      ),
+                    );
+                  },
                   child: Column(
                     children: [
                       // Top Bar — outside drag GestureDetector so taps work

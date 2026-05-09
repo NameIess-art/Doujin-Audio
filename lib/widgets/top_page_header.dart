@@ -131,7 +131,7 @@ class TopPageHeader extends StatelessWidget {
 
     return ClipRect(
       child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 7, sigmaY: 7),
+        filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
         child: headerWidget,
       ),
     );

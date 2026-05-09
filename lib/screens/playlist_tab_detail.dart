@@ -19,6 +19,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
   double _horizontalDragDelta = 0;
   Future<String?>? _coverPathFuture;
   String? _lastTrackPath;
+  int _lastCoverGeneration = -1;
   double? _subtitleDefaultTop;
 
   @override
@@ -51,7 +52,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
   void _primeCoverArtwork(Future<String?> coverPathFuture) {
     final mediaSize = MediaQuery.sizeOf(context);
     final heroHeight = min(250.0, max(180.0, mediaSize.height * 0.28));
-    final dpr = min(MediaQuery.devicePixelRatioOf(context), 2.0);
+    final dpr = MediaQuery.devicePixelRatioOf(context);
     final cacheWidth = (mediaSize.width * dpr).round();
     final cacheHeight = (heroHeight * dpr).round();
     final precacheKey = '$_currentSessionId:$cacheWidth:$cacheHeight';
@@ -207,8 +208,10 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
     }
 
     final trackPath = session.currentTrackPath;
-    if (_lastTrackPath != trackPath) {
+    final currentCoverGen = provider.coverGeneration;
+    if (_lastTrackPath != trackPath || _lastCoverGeneration != currentCoverGen) {
       _lastTrackPath = trackPath;
+      _lastCoverGeneration = currentCoverGen;
       final track = provider.trackByPath(trackPath);
       _coverPathFuture = _coverFutureForTrack(provider, track);
     }
@@ -672,6 +675,7 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold> 
                                     title: '',
                                     folderName: '',
                                     isPlaying: session.state.playing,
+                                    trackPath: session.currentTrackPath,
                                   ),
                                 ),
                               ),

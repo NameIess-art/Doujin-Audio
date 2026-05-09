@@ -50,6 +50,7 @@ part 'audio_provider_persistence_timer.dart';
 part 'audio_provider_state.dart';
 part 'audio_provider_native_bridge.dart';
 part 'audio_provider_controllers.dart';
+part 'audio_provider_library_covers.dart';
 
 const _kLibraryKey = 'library_v1';
 const _kSessionsKey = 'sessions_v1';
@@ -582,5 +583,18 @@ class AudioProvider with ChangeNotifier {
     _notificationStateService.syncSlice(
       activeQueueLength: activeSessions.length,
     );
+  }
+
+  int _coverGeneration = 0;
+
+  int get coverGeneration => _coverGeneration;
+
+  void _clearResolvedCoverPaths() {
+    _coverGeneration++;
+    _coverPathFutures.clear();
+    _resolvedCoverPaths.clear();
+    _notificationCoverPathFutures.clear();
+    _resolvedNotificationCoverPaths.clear();
+    _notificationCoverSearchMisses.clear();
   }
 }

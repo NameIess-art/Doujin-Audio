@@ -166,7 +166,7 @@ class PlaybackKeepAliveService : Service() {
             this,
             if (usesUnifiedPlaybackNotification) UNIFIED_CHANNEL_ID else CHANNEL_ID
         )
-            .setContentTitle("AudioPlayer")
+            .setContentTitle("Nameless Audio")
             .setSmallIcon(android.R.drawable.ic_media_play)
             .setOngoing(true)
             .setOnlyAlertOnce(true)

@@ -1,12 +1,13 @@
 part of 'playlist_tab.dart';
 
-class _SessionHeroArtwork extends StatelessWidget {
+class _SessionHeroArtwork extends ConsumerStatefulWidget {
   const _SessionHeroArtwork({
     required this.height,
     required this.coverPathFuture,
     required this.title,
     required this.folderName,
     required this.isPlaying,
+    required this.trackPath,
   });
 
   final double height;
@@ -14,11 +15,96 @@ class _SessionHeroArtwork extends StatelessWidget {
   final String title;
   final String folderName;
   final bool isPlaying;
+  final String trackPath;
+
+  @override
+  ConsumerState<_SessionHeroArtwork> createState() => _SessionHeroArtworkState();
+}
+
+class _SessionHeroArtworkState extends ConsumerState<_SessionHeroArtwork> {
+  bool _isSelecting = false;
+  List<String> _candidateImages = [];
+  int _currentIndex = -1;
+  int _selectionStartIndex = 0;
+  double _startX = 0;
+  bool _isLoadingImages = false;
+
+  Future<void> _startSelection(Offset localPosition) async {
+    setState(() {
+      _isLoadingImages = true;
+      _isSelecting = true;
+      _startX = localPosition.dx;
+    });
+
+    unawaited(HapticFeedback.heavyImpact());
+
+    // Resolve current cover path in parallel with discovering images
+    final currentCoverPath = await widget.coverPathFuture;
+    final images = await ref
+        .read(audioProviderFacadeProvider)
+        .discoverImagesInRoot(widget.trackPath);
+
+    if (!mounted) return;
+
+    // Find current cover in the candidate list to pre-select it
+    int startIdx = 0;
+    if (currentCoverPath != null && images.isNotEmpty) {
+      final found = images.indexOf(currentCoverPath);
+      if (found >= 0) startIdx = found;
+    }
+
+    setState(() {
+      _candidateImages = images;
+      _isLoadingImages = false;
+      if (images.isNotEmpty) {
+        _currentIndex = startIdx;
+        _selectionStartIndex = startIdx;
+      }
+    });
+  }
+
+  void _updateSelection(Offset localPosition) {
+    if (_candidateImages.isEmpty) return;
+
+    final deltaX = localPosition.dx - _startX;
+    const pixelsPerImage = 60.0;
+    final indexOffset = (deltaX / pixelsPerImage).round();
+
+    int nextIndex =
+        (_selectionStartIndex + indexOffset) % _candidateImages.length;
+    if (nextIndex < 0) nextIndex += _candidateImages.length;
+
+    if (nextIndex != _currentIndex) {
+      setState(() {
+        _currentIndex = nextIndex;
+      });
+      unawaited(HapticFeedback.selectionClick());
+    }
+  }
+
+  Future<void> _confirmSelection() async {
+    final provider = ref.read(audioProviderFacadeProvider);
+    if (_currentIndex >= 0 && _currentIndex < _candidateImages.length) {
+      await provider.setTrackManualCover(
+        widget.trackPath,
+        _candidateImages[_currentIndex],
+      );
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _isSelecting = false;
+      _candidateImages = [];
+      _currentIndex = -1;
+    });
+
+    unawaited(HapticFeedback.mediumImpact());
+  }
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final dpr = min(MediaQuery.devicePixelRatioOf(context), 2.0);
+    final dpr = MediaQuery.devicePixelRatioOf(context);
 
     Widget fallback() {
       return DecoratedBox(
@@ -45,73 +131,146 @@ class _SessionHeroArtwork extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final displayWidth = constraints.maxWidth;
-        final displayHeight = min(height, constraints.maxHeight);
-        final cacheW = (min(displayWidth, displayHeight * 4 / 3) * dpr).round();
+        final cacheW = (displayWidth * dpr).round();
 
-        return ConstrainedBox(
-          constraints: BoxConstraints(maxHeight: height),
-          child: Container(
-            width: displayWidth,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(24),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.35),
-                  blurRadius: 40,
-                  offset: const Offset(0, 16),
-                ),
-              ],
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(24),
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  AsyncCoverImage(
-                    future: coverPathFuture,
-                    fallbackBuilder: (_) => fallback(),
-                    loadingBuilder: (_) => Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        fallback(),
-                        Center(
-                          child: CircularProgressIndicator(
-                            strokeWidth: 3,
-                            color: cs.onPrimaryContainer.withValues(alpha: 0.65),
-                          ),
-                        ),
-                      ],
-                    ),
-                    imageBuilder: (context, coverPath) {
-                      return RepaintBoundary(
-                        child: Image(
-                          image: resizeFileImageIfNeeded(
-                            path: coverPath,
-                            cacheWidth: cacheW,
-                          ),
-                          fit: BoxFit.cover,
-                          gaplessPlayback: true,
-                          errorBuilder: (_, _, _) => fallback(),
-                        ),
-                      );
-                    },
-                  ),
-                  Positioned.fill(
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [
-                            Colors.black.withValues(alpha: 0.1),
-                            Colors.transparent,
-                            Colors.black.withValues(alpha: 0.2),
-                          ],
-                        ),
-                      ),
-                    ),
+        return GestureDetector(
+          onLongPressStart: (details) => _startSelection(details.localPosition),
+          onLongPressMoveUpdate: (details) => _updateSelection(details.localPosition),
+          onLongPressEnd: (_) => _confirmSelection(),
+          onLongPressCancel: () {
+            setState(() {
+              _isSelecting = false;
+              _candidateImages = [];
+              _currentIndex = -1;
+            });
+          },
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: widget.height),
+            child: Container(
+              width: displayWidth,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(24),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.35),
+                    blurRadius: 40,
+                    offset: const Offset(0, 16),
                   ),
                 ],
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(24),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    // Main Artwork
+                    AsyncCoverImage(
+                      future: widget.coverPathFuture,
+                      fallbackBuilder: (_) => fallback(),
+                      loadingBuilder: (_) => Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          fallback(),
+                          Center(
+                            child: CircularProgressIndicator(
+                              strokeWidth: 3,
+                              color: cs.onPrimaryContainer.withValues(alpha: 0.65),
+                            ),
+                          ),
+                        ],
+                      ),
+                      imageBuilder: (context, coverPath) {
+                        return RepaintBoundary(
+                          child: Image(
+                            image: resizeFileImageIfNeeded(
+                              path: coverPath,
+                              cacheWidth: cacheW,
+                            ),
+                            fit: BoxFit.cover,
+                            gaplessPlayback: true,
+                            errorBuilder: (_, _, _) => fallback(),
+                          ),
+                        );
+                      },
+                    ),
+                    
+                    // Selection Overlay
+                    if (_isSelecting)
+                      Positioned.fill(
+                        child: AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 250),
+                          transitionBuilder: (child, animation) {
+                            return FadeTransition(
+                              opacity: animation,
+                              child: ScaleTransition(
+                                scale: Tween<double>(begin: 0.92, end: 1.0).animate(
+                                  CurvedAnimation(parent: animation, curve: Curves.easeOutBack),
+                                ),
+                                child: child,
+                              ),
+                            );
+                          },
+                          child: _isLoadingImages 
+                            ? Container(
+                                key: const ValueKey('loading'),
+                                color: Colors.black54,
+                                child: const Center(child: CircularProgressIndicator()),
+                              )
+                            : Container(
+                                key: ValueKey(_currentIndex),
+                                color: Colors.black87,
+                                child: _currentIndex >= 0 && _currentIndex < _candidateImages.length
+                                  ? Stack(
+                                      fit: StackFit.expand,
+                                      children: [
+                                        Image.file(
+                                          File(_candidateImages[_currentIndex]),
+                                          fit: BoxFit.contain,
+                                        ),
+                                        Positioned(
+                                          bottom: 16,
+                                          left: 0,
+                                          right: 0,
+                                          child: Center(
+                                            child: Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                              decoration: BoxDecoration(
+                                                color: Colors.black54,
+                                                borderRadius: BorderRadius.circular(20),
+                                              ),
+                                              child: Text(
+                                                '${_currentIndex + 1} / ${_candidateImages.length}',
+                                                style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    )
+                                  : const Center(child: Icon(Icons.image_not_supported_rounded, color: Colors.white54, size: 48)),
+                              ),
+                        ),
+                      ),
+
+                    // Standard Gradient Overlay
+                    if (!_isSelecting)
+                      Positioned.fill(
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [
+                                Colors.black.withValues(alpha: 0.1),
+                                Colors.transparent,
+                                Colors.black.withValues(alpha: 0.2),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
               ),
             ),
           ),

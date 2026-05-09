@@ -27,7 +27,7 @@ class AppDatabase {
     final dbPath = await getDatabasesPath();
     final db = await openDatabase(
       p.join(dbPath, 'audio_player.db'),
-      version: 5,
+      version: 6,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -52,6 +52,7 @@ class AppDatabase {
         tags_json TEXT NOT NULL DEFAULT '[]',
         cover_cache_path TEXT,
         lyrics_path TEXT,
+        manual_cover_path TEXT,
         scan_generation INTEGER NOT NULL DEFAULT 0
       )
     ''');
@@ -131,6 +132,9 @@ class AppDatabase {
         'scan_generation',
         'INTEGER NOT NULL DEFAULT 0',
       );
+    }
+    if (oldVersion < 6) {
+      await _addColumnIfMissing(db, 'tracks', 'manual_cover_path', 'TEXT');
     }
     await _createTrackIndexes(db);
   }
@@ -338,6 +342,7 @@ class AppDatabase {
     'tags_json': json.encode(t.tags),
     'cover_cache_path': t.coverCachePath,
     'lyrics_path': t.lyricsPath,
+    'manual_cover_path': t.manualCoverPath,
     'scan_generation': scanGeneration ?? 0,
   };
 
@@ -359,6 +364,7 @@ class AppDatabase {
     tags: _decodeTags(row['tags_json']),
     coverCachePath: row['cover_cache_path'] as String?,
     lyricsPath: row['lyrics_path'] as String?,
+    manualCoverPath: row['manual_cover_path'] as String?,
   );
 
   static Map<String, dynamic> _sessionToRow(

@@ -470,7 +470,7 @@ class NativePlaybackService : MediaSessionService() {
         val player = sessions[focusedSessionId]?.player ?: return null
         if (!player.playWhenReady && !player.isPlaying) return null
         return MediaSession.Builder(this, player)
-            .setId("AudioPlayer")
+            .setId("Nameless Audio")
             .build()
             .also { mediaSession = it }
     }

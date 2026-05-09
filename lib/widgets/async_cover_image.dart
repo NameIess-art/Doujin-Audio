@@ -80,18 +80,38 @@ class _AsyncCoverImageState extends State<AsyncCoverImage> {
 
   @override
   Widget build(BuildContext context) {
+    Widget content;
     if (_resolvedPath != null && _resolvedPath!.isNotEmpty) {
-      return widget.imageBuilder(context, _resolvedPath!);
-    }
-    
-    if (!_isResolved) {
+      content = widget.imageBuilder(context, _resolvedPath!);
+    } else if (!_isResolved) {
       final loadingBuilder = widget.loadingBuilder;
-      if (loadingBuilder != null) {
-        return loadingBuilder(context);
-      }
+      content = loadingBuilder != null
+          ? loadingBuilder(context)
+          : widget.fallbackBuilder(context);
+    } else {
+      content = widget.fallbackBuilder(context);
     }
 
-    return widget.fallbackBuilder(context);
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 400),
+      switchInCurve: Curves.easeOutCubic,
+      switchOutCurve: Curves.easeInCubic,
+      transitionBuilder: (child, animation) {
+        return FadeTransition(
+          opacity: animation,
+          child: ScaleTransition(
+            scale: Tween<double>(begin: 0.95, end: 1.0).animate(
+              CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
+            ),
+            child: child,
+          ),
+        );
+      },
+      child: SizedBox.expand(
+        key: ValueKey('$_resolvedPath$_isResolved'),
+        child: content,
+      ),
+    );
   }
 }
 

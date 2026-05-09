@@ -15,6 +15,7 @@ class MusicTrack {
     this.tags = const <String>[],
     this.coverCachePath,
     this.lyricsPath,
+    this.manualCoverPath,
   });
 
   final String path;
@@ -32,6 +33,7 @@ class MusicTrack {
   final List<String> tags;
   final String? coverCachePath;
   final String? lyricsPath;
+  final String? manualCoverPath;
 
   Map<String, dynamic> toJson() => {
     'path': path,
@@ -49,6 +51,7 @@ class MusicTrack {
     'tags': tags,
     'coverCachePath': coverCachePath,
     'lyricsPath': lyricsPath,
+    'manualCoverPath': manualCoverPath,
   };
 
   factory MusicTrack.fromJson(Map<String, dynamic> json) => MusicTrack(
@@ -71,6 +74,7 @@ class MusicTrack {
         .toList(growable: false),
     coverCachePath: json['coverCachePath'] as String?,
     lyricsPath: json['lyricsPath'] as String?,
+    manualCoverPath: json['manualCoverPath'] as String?,
   );
 }
 

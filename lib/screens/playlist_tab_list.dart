@@ -75,6 +75,7 @@ class _SessionListCard extends StatefulWidget {
 class _SessionListCardState extends State<_SessionListCard> {
   Future<String?>? _coverPathFuture;
   String? _lastTrackPath;
+  int _lastCoverGeneration = -1;
 
   @override
   void initState() {
@@ -90,8 +91,10 @@ class _SessionListCardState extends State<_SessionListCard> {
 
   void _updateFutureIfNeeded() {
     final trackPath = widget.session.currentTrackPath;
-    if (_lastTrackPath != trackPath) {
+    final currentGen = widget.provider.coverGeneration;
+    if (_lastTrackPath != trackPath || _lastCoverGeneration != currentGen) {
       _lastTrackPath = trackPath;
+      _lastCoverGeneration = currentGen;
       final track = widget.provider.trackByPath(trackPath);
       _coverPathFuture = _coverFutureForTrack(widget.provider, track);
     }

@@ -163,9 +163,7 @@ class _FolderNodeWidgetState extends State<_FolderNodeWidget> {
           children: [
             if (isRootFolder) ...[
               _LibraryCoverThumbnail(
-                coverPathFuture: provider.coverPathFutureForFolder(
-                  widget.folder.path,
-                ),
+                folderPath: widget.folder.path,
                 title: widget.folder.name,
               ),
               const SizedBox(width: 14),
@@ -518,17 +516,22 @@ class _TrackNodeWidget extends ConsumerWidget {
   }
 }
 
-class _LibraryCoverThumbnail extends StatelessWidget {
+class _LibraryCoverThumbnail extends ConsumerWidget {
   const _LibraryCoverThumbnail({
-    required this.coverPathFuture,
+    required this.folderPath,
     required this.title,
   });
 
-  final Future<String?> coverPathFuture;
+  final String folderPath;
   final String title;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Watch coverGeneration to force rebuild when any cover art is updated globally
+    ref.watch(audioProviderFacadeProvider.select((p) => p.coverGeneration));
+    
+    final provider = ref.read(audioProviderFacadeProvider);
+    final coverPathFuture = provider.coverPathFutureForFolder(folderPath);
     final cs = Theme.of(context).colorScheme;
 
     Widget fallback() {

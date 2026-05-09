@@ -107,7 +107,7 @@ extension AudioProviderLibrary on AudioProvider {
     if (!changed) return;
     if (excluded) {
       _removeTracksWhere(
-        (track) => _isPathWithinOrEqual(track.path, normalizedFolderPath),
+        (track) => PathMatcher.isWithinOrEqual(track.path, normalizedFolderPath),
       );
     }
     _notifyListeners();

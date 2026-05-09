@@ -84,6 +84,10 @@ extension AudioProviderNotificationCovers on AudioProvider {
     if (coverSearchKey == null) {
       return Future<String?>.value();
     }
+    if (track?.manualCoverPath != null) {
+      return Future<String?>.value(track!.manualCoverPath);
+    }
+
     if (_resolvedNotificationCoverPaths.containsKey(coverSearchKey)) {
       return Future<String?>.value(
         _resolvedNotificationCoverPaths[coverSearchKey],
@@ -153,7 +157,7 @@ extension AudioProviderNotificationCovers on AudioProvider {
         continue;
       }
       final normalizedRoot = path.normalize(watchedFolder);
-      if (!_isPathWithinOrEqual(coverSearchKey, normalizedRoot)) {
+      if (!PathMatcher.isWithinOrEqual(coverSearchKey, normalizedRoot)) {
         continue;
       }
 
@@ -170,29 +174,36 @@ extension AudioProviderNotificationCovers on AudioProvider {
     return directories;
   }
 
-  bool _isPathWithinOrEqual(String pathValue, String rootPath) {
-    return path.equals(pathValue, rootPath) ||
-        path.isWithin(rootPath, pathValue);
-  }
 
   Future<String?> _resolveCoverPathForFolder(String folderPath) {
-    if (_resolvedCoverPaths.containsKey(folderPath)) {
-      return Future<String?>.value(_resolvedCoverPaths[folderPath]);
+    final normalizedFolderPath = path.normalize(folderPath);
+    // Priority: Check if any track in this folder or its sub-folders has a manual cover override.
+    // We search the entire library to ensure root folders correctly reflect sub-folder overrides.
+    for (final track in _library) {
+      if (track.manualCoverPath != null) {
+        if (PathMatcher.isWithinOrEqual(track.path, normalizedFolderPath)) {
+          return Future<String?>.value(track.manualCoverPath);
+        }
+      }
     }
 
-    return _coverPathFutures.putIfAbsent(folderPath, () async {
-      final coverPath = await _findNotificationCoverPath(folderPath);
+    if (_resolvedCoverPaths.containsKey(normalizedFolderPath)) {
+      return Future<String?>.value(_resolvedCoverPaths[normalizedFolderPath]);
+    }
+    
+    return _coverPathFutures.putIfAbsent(normalizedFolderPath, () async {
+      final coverPath = await _findNotificationCoverPath(normalizedFolderPath);
       unawaited(
-        _coverPathFutures.remove(folderPath) ?? Future<String?>.value(),
+        _coverPathFutures.remove(normalizedFolderPath) ?? Future<String?>.value(),
       );
-
-      final previous = _resolvedCoverPaths[folderPath];
-      _resolvedCoverPaths[folderPath] = coverPath;
-
+      
+      final previous = _resolvedCoverPaths[normalizedFolderPath];
+      _resolvedCoverPaths[normalizedFolderPath] = coverPath;
+      
       if (previous != coverPath) {
         _notifyListeners();
       }
-
+      
       return coverPath;
     });
   }
@@ -264,11 +275,4 @@ extension AudioProviderNotificationCovers on AudioProvider {
     return null;
   }
 
-  void _clearResolvedCoverPaths() {
-    _coverPathFutures.clear();
-    _resolvedCoverPaths.clear();
-    _notificationCoverPathFutures.clear();
-    _resolvedNotificationCoverPaths.clear();
-    _notificationCoverSearchMisses.clear();
-  }
 }

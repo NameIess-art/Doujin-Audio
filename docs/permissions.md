@@ -1,6 +1,6 @@
 # Android Permissions
 
-AudioPlayer uses Android permissions for local media playback, library scanning, notifications, app updates, and background reliability.
+Nameless Audio uses Android permissions for local media playback, library scanning, notifications, app updates, and background reliability.
 
 ## Media and Storage
 

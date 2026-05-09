@@ -19,20 +19,13 @@ import 'snap_scroll_physics.dart';
 part 'active_session_carousel_widgets.dart';
 
 Future<String?> _sessionCoverFutureForTrack(
-  Map<String, Future<String?>> cache,
   AudioProvider provider,
   MusicTrack? track,
 ) {
   if (track == null || track.isSingle) {
     return Future<String?>.value();
   }
-  final cacheKey = track.path.startsWith('content://')
-      ? 'content:${track.groupKey.isNotEmpty ? track.groupKey : track.path}'
-      : path.normalize(path.dirname(track.path));
-  return cache.putIfAbsent(
-    cacheKey,
-    () => provider.coverPathFutureForTrack(track),
-  );
+  return provider.coverPathFutureForTrack(track);
 }
 
 class ActiveSessionCarousel extends ConsumerStatefulWidget {
@@ -57,10 +50,10 @@ class ActiveSessionCarousel extends ConsumerStatefulWidget {
 }
 
 class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
-  final Map<String, Future<String?>> _coverFutures = {};
   late PageController _pageController;
   final ValueNotifier<double> _pageNotifier = ValueNotifier<double>(0);
   String? _lastCarouselSnapSessionId;
+  int _lastCoverGeneration = -1;
 
   double get _page => _pageNotifier.value;
 
@@ -73,8 +66,18 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
       if (mounted) {
         final provider = ref.read(audioProviderFacadeProvider);
         provider.carouselSnapListenable.addListener(_handleCarouselSnap);
+        provider.addListener(_handleCoverChange);
       }
     });
+  }
+
+  void _handleCoverChange() {
+    if (!mounted) return;
+    final newGen = ref.read(audioProviderFacadeProvider).coverGeneration;
+    if (_lastCoverGeneration != newGen) {
+      _lastCoverGeneration = newGen;
+      setState(() {});
+    }
   }
 
   @override
@@ -97,9 +100,11 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
 
   @override
   void dispose() {
-    ref.read(audioProviderFacadeProvider).carouselSnapListenable.removeListener(
+    final provider = ref.read(audioProviderFacadeProvider);
+    provider.carouselSnapListenable.removeListener(
       _handleCarouselSnap,
     );
+    provider.removeListener(_handleCoverChange);
     _pageController
       ..removeListener(_handlePageTick)
       ..dispose();
@@ -203,7 +208,6 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
                       track: track,
                       provider: provider,
                       coverPathFuture: _sessionCoverFutureForTrack(
-                        _coverFutures,
                         provider,
                         track,
                       ),

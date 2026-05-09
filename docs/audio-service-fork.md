@@ -1,6 +1,6 @@
 # audio_service Fork
 
-AudioPlayer uses a local `audio_service` dependency override:
+Nameless Audio uses a local `audio_service` dependency override:
 
 ```yaml
 dependency_overrides:

@@ -53,7 +53,7 @@ class AppUpdateService {
   AppUpdateService._();
 
   static const String owner = 'NameIess-art';
-  static const String repo = 'AudioPlayer';
+  static const String repo = 'nameless-audio';
   static const String latestReleaseApi =
       'https://api.github.com/repos/$owner/$repo/releases/latest';
   static const MethodChannel _channel = MethodChannel('music_player/update');
@@ -67,7 +67,7 @@ class AppUpdateService {
         HttpHeaders.acceptHeader,
         'application/vnd.github+json',
       );
-      request.headers.set(HttpHeaders.userAgentHeader, 'AudioPlayer updater');
+      request.headers.set(HttpHeaders.userAgentHeader, 'Nameless Audio updater');
       final response = await request.close();
       final body = await response.transform(utf8.decoder).join();
       if (response.statusCode < 200 || response.statusCode >= 300) {
@@ -94,7 +94,7 @@ class AppUpdateService {
         latestVersionName: latestVersionName,
         tagName: tagName,
         releaseName: data['name'] as String?,
-        assetName: apkAsset['name'] as String? ?? 'AudioPlayer-$tagName.apk',
+        assetName: apkAsset['name'] as String? ?? 'NamelessAudio-$tagName.apk',
         assetUrl: assetUrl,
         releaseUrl:
             data['html_url'] as String? ??
@@ -140,7 +140,7 @@ class AppUpdateService {
     final client = HttpClient();
     try {
       final request = await client.getUrl(Uri.parse(info.assetUrl));
-      request.headers.set(HttpHeaders.userAgentHeader, 'AudioPlayer updater');
+      request.headers.set(HttpHeaders.userAgentHeader, 'Nameless Audio updater');
       final response = await request.close();
       if (response.statusCode < 200 || response.statusCode >= 300) {
         throw const HttpException('APK download failed.');
@@ -256,7 +256,7 @@ class AppUpdateService {
 
   static String _safeFileName(String value) {
     final cleaned = value.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_').trim();
-    if (cleaned.isEmpty) return 'AudioPlayer-update.apk';
+    if (cleaned.isEmpty) return 'NamelessAudio-update.apk';
     return cleaned.endsWith('.apk') ? cleaned : '$cleaned.apk';
   }
 }

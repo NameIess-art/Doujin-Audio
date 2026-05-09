@@ -254,7 +254,9 @@ class _MainScreenState extends ConsumerState<MainScreen>
       mode: timerSlice.mode,
     );
     final width = MediaQuery.sizeOf(context).width;
+    final height = MediaQuery.sizeOf(context).height;
     final isDesktop = width >= _desktopBreakpoint;
+    final isSmallWindow = width < 450 || height < 400;
     final mobileContentInset = isDesktop
         ? 0.0
         : _mobileContentInset(hasNowPlaying: hasNowPlaying);
@@ -306,7 +308,10 @@ class _MainScreenState extends ConsumerState<MainScreen>
                         ).createShader(bounds),
                         child: RepaintBoundary(
                           child: BackdropFilter(
-                            filter: ImageFilter.blur(sigmaX: 7, sigmaY: 7),
+                            filter: ImageFilter.blur(
+                              sigmaX: isSmallWindow ? 4.0 : 7.0,
+                              sigmaY: isSmallWindow ? 4.0 : 7.0,
+                            ),
                             child: const SizedBox.expand(),
                           ),
                         ),

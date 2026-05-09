@@ -44,6 +44,8 @@ class TopPageHeader extends StatelessWidget {
     final isTransitioning = context.select<AudioProvider, bool>(
       (p) => p.isPageTransitioning,
     );
+    final screenSize = MediaQuery.sizeOf(context);
+    final isSmallWindow = screenSize.width < 450 || screenSize.height < 400;
     final topPadding = useSafeAreaTop ? MediaQuery.paddingOf(context).top : 0.0;
 
     final headerContent = Padding(
@@ -129,9 +131,14 @@ class TopPageHeader extends StatelessWidget {
       ),
     );
 
+    final blurSigma = isTransitioning ? 0.0 : (isSmallWindow ? 7.0 : 14.0);
+
+    if (blurSigma <= 0) {
+      return headerWidget;
+    }
     return ClipRect(
       child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+        filter: ImageFilter.blur(sigmaX: blurSigma, sigmaY: blurSigma),
         child: headerWidget,
       ),
     );

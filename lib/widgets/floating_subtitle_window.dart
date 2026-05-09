@@ -209,6 +209,8 @@ class _FloatingSubtitleWindowState
     // Ensure it's within bounds
     top = top.clamp(40.0, screenHeight - 100.0);
 
+    final isSmallWindow = screenWidth < 450 || screenHeight < 400;
+
     return Positioned(
       top: top,
       left: 0,
@@ -271,15 +273,22 @@ class _FloatingSubtitleWindowState
           },
           child: ClipRect(
             child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: settings.backgroundBlur, sigmaY: settings.backgroundBlur),
+              filter: ImageFilter.blur(
+                sigmaX: isSmallWindow 
+                    ? settings.backgroundBlur.clamp(0.0, 4.0) 
+                    : settings.backgroundBlur, 
+                sigmaY: isSmallWindow 
+                    ? settings.backgroundBlur.clamp(0.0, 4.0) 
+                    : settings.backgroundBlur,
+              ),
               child: Container(
                 constraints: const BoxConstraints(minHeight: 32),
                 width: double.infinity,
                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
                 decoration: BoxDecoration(
                   color: settings.backgroundColor != null
-                      ? settings.backgroundColor!.withValues(alpha: settings.backgroundOpacity)
-                      : Theme.of(context).colorScheme.surface.withValues(alpha: settings.backgroundOpacity),
+                      ? settings.backgroundColor!.withValues(alpha: isSmallWindow ? settings.backgroundOpacity.clamp(0.85, 1.0) : settings.backgroundOpacity)
+                      : Theme.of(context).colorScheme.surface.withValues(alpha: isSmallWindow ? settings.backgroundOpacity.clamp(0.85, 1.0) : settings.backgroundOpacity),
                   border: Border(
                     top: BorderSide(
                       color: Colors.white.withValues(alpha: 0.08 * settings.borderDepth * 2),
@@ -291,34 +300,38 @@ class _FloatingSubtitleWindowState
                     ),
                   ),
                 ),
-                child: Center(
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(maxWidth: screenWidth * 0.8),
-                    child: Text(
-                      _subtitleText ?? '',
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        color: settings.fontColor ??
-                            Theme.of(context).colorScheme.onSurface,
-                        fontWeight: FontWeight.w700,
-                        fontSize: settings.fontSize,
-                        fontFamily:
-                            settings.fontFamily.isEmpty
-                                ? null
-                                : settings.fontFamily,
-                        shadows: [
-                          Shadow(
-                            color: Colors.black.withValues(alpha: 0.5),
-                            blurRadius: 4,
-                            offset: const Offset(0, 1),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
+                child: _buildSubtitleContent(context, settings, screenWidth),
               ),
             ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSubtitleContent(BuildContext context, SubtitleSettingsState settings, double screenWidth) {
+    return Center(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: screenWidth * 0.8),
+        child: Text(
+          _subtitleText ?? '',
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+            color: settings.fontColor ??
+                Theme.of(context).colorScheme.onSurface,
+            fontWeight: FontWeight.w700,
+            fontSize: settings.fontSize,
+            fontFamily:
+                settings.fontFamily.isEmpty
+                    ? null
+                    : settings.fontFamily,
+            shadows: [
+              Shadow(
+                color: Colors.black.withValues(alpha: 0.5),
+                blurRadius: 4,
+                offset: const Offset(0, 1),
+              ),
+            ],
           ),
         ),
       ),

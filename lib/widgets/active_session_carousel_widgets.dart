@@ -37,13 +37,18 @@ class _ActiveSessionCard extends StatelessWidget {
     final displayName =
         currentTrack?.displayName ??
         path.basenameWithoutExtension(view.trackPath);
+    final screenSize = MediaQuery.sizeOf(context);
+    final isSmallWindow = screenSize.width < 450 || screenSize.height < 400;
+
+    final blurSigma = isSmallWindow ? 4.0 : 8.0;
+
     return Semantics(
       button: true,
       label: displayName,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(cardRadius),
         child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+          filter: ImageFilter.blur(sigmaX: blurSigma, sigmaY: blurSigma),
           child: Material(
             color: Colors.transparent,
             child: InkWell(
@@ -52,9 +57,10 @@ class _ActiveSessionCard extends StatelessWidget {
               child: Ink(
                 height: 74,
                 decoration: BoxDecoration(
-                  color:
-                      (isDark ? cs.surfaceBright : cs.surfaceContainerHighest)
-                          .withValues(alpha: isDark ? 0.55 : 0.75),
+                  color: (isDark ? cs.surfaceBright : cs.surfaceContainerHighest)
+                      .withValues(alpha: isSmallWindow 
+                          ? (isDark ? 0.88 : 0.92) 
+                          : (isDark ? 0.55 : 0.75)),
                   borderRadius: BorderRadius.circular(cardRadius),
                   boxShadow: [
                     BoxShadow(
@@ -75,70 +81,75 @@ class _ActiveSessionCard extends StatelessWidget {
                     ),
                   ],
                 ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(10, 6, 8, 4),
-                      child: Row(
-                        children: [
-                          _ActiveSessionCover(coverPathFuture: coverPathFuture),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: _ActiveSessionTitleSubtitle(
-                              key: ValueKey('${session.id}:${view.trackPath}'),
-                              session: session,
-                              provider: provider,
-                              displayName: displayName,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              _ActiveSessionPlayPauseButton(
-                                isPlaying: isPlaying,
-                                enabled: !view.loading,
-                                onPressed: () {
-                                  HapticFeedback.mediumImpact();
-                                  provider.toggleSessionPlayPause(session.id);
-                                },
-                              ),
-                              Consumer(
-                                builder: (context, ref, child) {
-                                  final settings = ref.watch(subtitleSettingsProvider);
-                                  final showSub = settings.isGlobalEnabled(session.id);
-                                  if (!showSub && !session.channelSwapEnabled) {
-                                    return const SizedBox.shrink();
-                                  }
-                                  return Padding(
-                                    padding: const EdgeInsets.only(top: 1),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        if (showSub)
-                                          Icon(Icons.subtitles_rounded, size: 10, color: cs.primary),
-                                        if (showSub && session.channelSwapEnabled) const SizedBox(width: 2),
-                                        if (session.channelSwapEnabled)
-                                          Icon(Icons.swap_horiz_rounded, size: 10, color: cs.primary),
-                                      ],
-                                    ),
-                                  );
-                                },
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                    _ActiveSessionProgressStrip(session: session),
-                  ],
-                ),
+                child: _buildCardContent(context, cs, isPlaying, view, displayName),
               ),
             ),
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildCardContent(BuildContext context, ColorScheme cs, bool isPlaying, 
+      ({bool playing, bool loading, String trackPath}) view, String displayName) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(10, 6, 8, 4),
+          child: Row(
+            children: [
+              _ActiveSessionCover(coverPathFuture: coverPathFuture),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _ActiveSessionTitleSubtitle(
+                  key: ValueKey('${session.id}:${view.trackPath}'),
+                  session: session,
+                  provider: provider,
+                  displayName: displayName,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _ActiveSessionPlayPauseButton(
+                    isPlaying: isPlaying,
+                    enabled: !view.loading,
+                    onPressed: () {
+                      HapticFeedback.mediumImpact();
+                      provider.toggleSessionPlayPause(session.id);
+                    },
+                  ),
+                  Consumer(
+                    builder: (context, ref, child) {
+                      final settings = ref.watch(subtitleSettingsProvider);
+                      final showSub = settings.isGlobalEnabled(session.id);
+                      if (!showSub && !session.channelSwapEnabled) {
+                        return const SizedBox.shrink();
+                      }
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 1),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (showSub)
+                              Icon(Icons.subtitles_rounded, size: 10, color: cs.primary),
+                            if (showSub && session.channelSwapEnabled) const SizedBox(width: 2),
+                            if (session.channelSwapEnabled)
+                              Icon(Icons.swap_horiz_rounded, size: 10, color: cs.primary),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        _ActiveSessionProgressStrip(session: session),
+      ],
     );
   }
 }

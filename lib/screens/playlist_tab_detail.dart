@@ -19,6 +19,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
   double _horizontalDragDelta = 0;
   Future<String?>? _coverPathFuture;
   String? _lastTrackPath;
+  double? _subtitleDefaultTop;
 
   @override
   void initState() {
@@ -90,6 +91,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
     final velocity = details.primaryVelocity ?? 0;
     final shouldDismiss = _dismissController.value > 0.25 || velocity > 800;
     if (shouldDismiss) {
+      _saveSubtitlePositionBeforeDismiss();
       await _animateDismissToEnd(velocity: velocity);
       if (mounted) {
         await navigator.maybePop();
@@ -102,10 +104,11 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
   Future<void> _animateDismissToEnd({double velocity = 0}) {
     final remaining = (1 - _dismissController.value).clamp(0.0, 1.0);
     final velocityFactor = (velocity.abs() / 2200).clamp(0.0, 1.0);
-    final durationMs = lerpDouble(260, 170, velocityFactor)! * remaining;
+    final durationMs = lerpDouble(300, 200, velocityFactor)! * remaining;
     return _dismissController.animateTo(
       1,
-      duration: Duration(milliseconds: durationMs.round().clamp(150, 280)),
+      duration: Duration(milliseconds: durationMs.round().clamp(180, 320)),
+      curve: Curves.easeOutCubic,
     );
   }
 
@@ -117,6 +120,18 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
       duration: Duration(milliseconds: durationMs.round().clamp(120, 240)),
       curve: Curves.easeOutQuart,
     );
+  }
+
+  void _saveSubtitlePositionBeforeDismiss() {
+    if (_subtitleDefaultTop == null) return;
+    final settings = ref.read(subtitleSettingsProvider);
+    final pos = settings.positions[_currentSessionId];
+    if (pos == null || pos < 0) {
+      ref.read(subtitleSettingsProvider.notifier).updatePosition(
+        _currentSessionId,
+        _subtitleDefaultTop!,
+      );
+    }
   }
 
   void _changeSessionByOffset(AudioProvider provider, int offset) {
@@ -214,7 +229,8 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
           );
           final dragDistance =
               MediaQuery.sizeOf(context).height * dismissProgress;
-          final enterOffset = (1 - enterProgress) * 60;
+          final enterOffset =
+              (1 - enterProgress) * MediaQuery.sizeOf(context).height;
           final backdropCurve = Curves.easeInQuint.transform(dismissProgress);
           final backdropProgress = (enterProgress * (1 - backdropCurve)).clamp(
             0.0,
@@ -251,6 +267,15 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
                   ),
                 ),
               ),
+              if (dismissProgress > 0.03)
+                const SizedBox.shrink()
+              else
+                FloatingSubtitleWindow(
+                  key: ValueKey('subtitle_$_currentSessionId'),
+                  sessionId: _currentSessionId,
+                  isCrossPage: false,
+                  defaultTop: _subtitleDefaultTop,
+                ),
             ],
           );
         },
@@ -270,6 +295,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
               coverPathFuture: coverPathFuture,
               slideAnimation: _slideAnimation,
               onClose: () async {
+                _saveSubtitlePositionBeforeDismiss();
                 await _animateDismissToEnd();
                 if (context.mounted) {
                   await Navigator.of(context).maybePop();
@@ -295,6 +321,13 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
                   _handleVerticalDragEnd(details, context),
               onVerticalDragCancel: () {
                 _animateDismissBack();
+              },
+              onSubtitleAnchorComputed: (top) {
+                if (mounted) {
+                  setState(() {
+                    _subtitleDefaultTop = top;
+                  });
+                }
               },
             ),
           ),
@@ -348,7 +381,7 @@ class _SessionDetailBackdrop extends StatelessWidget {
   }
 }
 
-class _SessionDetailScaffold extends StatelessWidget {
+class _SessionDetailScaffold extends ConsumerStatefulWidget {
   final PlaybackSession session;
   final AudioProvider provider;
   final Future<String?> coverPathFuture;
@@ -360,6 +393,7 @@ class _SessionDetailScaffold extends StatelessWidget {
   final void Function(DragUpdateDetails)? onVerticalDragUpdate;
   final void Function(DragEndDetails)? onVerticalDragEnd;
   final VoidCallback? onVerticalDragCancel;
+  final void Function(double)? onSubtitleAnchorComputed;
 
   const _SessionDetailScaffold({
     required this.session,
@@ -373,10 +407,70 @@ class _SessionDetailScaffold extends StatelessWidget {
     this.onVerticalDragUpdate,
     this.onVerticalDragEnd,
     this.onVerticalDragCancel,
+    this.onSubtitleAnchorComputed,
   });
 
   @override
+  ConsumerState<_SessionDetailScaffold> createState() =>
+      _SessionDetailScaffoldState();
+}
+
+class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold> {
+  final _filenameKey = GlobalKey();
+  final _progressBarKey = GlobalKey();
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _computeSubtitleDefaultTop();
+    });
+    ref.listen(subtitleSettingsProvider, (prev, next) {
+      if (prev?.fontSize != next.fontSize) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _computeSubtitleDefaultTop();
+        });
+      }
+    });
+  }
+
+  void _computeSubtitleDefaultTop() {
+    final filenameCtx = _filenameKey.currentContext;
+    final progressBarCtx = _progressBarKey.currentContext;
+    if (filenameCtx == null || progressBarCtx == null) return;
+    final scaffoldBox = context.findRenderObject() as RenderBox?;
+    if (scaffoldBox == null) return;
+    final filenameBox = filenameCtx.findRenderObject() as RenderBox?;
+    final progressBarBox = progressBarCtx.findRenderObject() as RenderBox?;
+    if (filenameBox == null || progressBarBox == null) return;
+
+    final filenameBottom =
+        filenameBox.localToGlobal(Offset.zero, ancestor: scaffoldBox).dy +
+        filenameBox.size.height;
+    final progressBarTop =
+        progressBarBox.localToGlobal(Offset.zero, ancestor: scaffoldBox).dy;
+    final midpoint = (filenameBottom + progressBarTop) / 2 - 3; // optical center
+
+    if (mounted) {
+      widget.onSubtitleAnchorComputed?.call(midpoint);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final session = widget.session;
+    final provider = widget.provider;
+    final coverPathFuture = widget.coverPathFuture;
+    final slideAnimation = widget.slideAnimation;
+    final onClose = widget.onClose;
+    final onHorizontalDragUpdate = widget.onHorizontalDragUpdate;
+    final onHorizontalDragEnd = widget.onHorizontalDragEnd;
+    final onHorizontalDragCancel = widget.onHorizontalDragCancel;
+    final onVerticalDragUpdate = widget.onVerticalDragUpdate;
+    final onVerticalDragEnd = widget.onVerticalDragEnd;
+    final onVerticalDragCancel = widget.onVerticalDragCancel;
+
+    ref.watch(playbackStateProvider);
     final cs = Theme.of(context).colorScheme;
 
     return Material(
@@ -425,53 +519,115 @@ class _SessionDetailScaffold extends StatelessWidget {
                       // Top Bar — outside drag GestureDetector so taps work
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 8),
-                        child: Row(
-                          children: [
-                            IconButton(
-                              onPressed: onClose,
-                              icon: Icon(
-                                Icons.keyboard_arrow_down_rounded,
-                                color: cs.onSurface,
-                                size: 32,
-                              ),
-                            ),
-                            const Spacer(),
-                            if (session.channelSwapEnabled) ...[
-                              Icon(
-                                Icons.swap_horiz_rounded,
-                                color: cs.onSurface,
-                                size: 20,
-                              ),
-                              const SizedBox(width: 8),
-                            ],
-                            UnifiedPopupMenuButton<String>(
-                              icon: Icons.more_horiz_rounded,
-                              tooltip: MaterialLocalizations.of(
-                                context,
-                              ).moreButtonTooltip,
-                              entries: [
-                                UnifiedMenuEntry<String>.action(
-                                  value: 'channel_swap',
-                                  icon: session.channelSwapEnabled
-                                      ? Icons.check_rounded
-                                      : Icons.swap_horiz_rounded,
-                                  label: context.read<AppLanguageProvider>().tr(
-                                    'channel_swap',
+                        child: Builder(
+                          builder: (context) {
+                            final cachedTrack = provider.getSubtitleTrackSync(
+                              session.currentTrackPath,
+                            );
+                            // Trigger background load if not cached
+                            if (cachedTrack == null) {
+                              unawaited(
+                                provider.subtitleTrackForPath(
+                                  session.currentTrackPath,
+                                ),
+                              );
+                            }
+                            final hasSubtitle = cachedTrack != null;
+                            final settings = ref.watch(
+                              subtitleSettingsProvider,
+                            );
+
+                            return Row(
+                              children: [
+                                IconButton(
+                                  onPressed: onClose,
+                                  icon: Icon(
+                                    Icons.keyboard_arrow_down_rounded,
+                                    color: cs.onSurface,
+                                    size: 32,
                                   ),
                                 ),
-                              ],
-                              onSelected: (value) {
-                                if (value != 'channel_swap') return;
-                                Feedback.forTap(context);
-                                unawaited(
-                                  provider.setSessionChannelSwap(
-                                    session.id,
-                                    !session.channelSwapEnabled,
+                                const Spacer(),
+                                if (hasSubtitle &&
+                                    settings.isShowEnabled(session.id) &&
+                                    settings.isGlobalEnabled(session.id)) ...[
+                                  Icon(
+                                    Icons.subtitles_rounded,
+                                    color: cs.onSurface,
+                                    size: 20,
                                   ),
-                                );
-                              },
-                            ),
-                          ],
+                                  const SizedBox(width: 8),
+                                ],
+                                if (session.channelSwapEnabled) ...[
+                                  Icon(
+                                    Icons.swap_horiz_rounded,
+                                    color: cs.onSurface,
+                                    size: 20,
+                                  ),
+                                  const SizedBox(width: 8),
+                                ],
+                                UnifiedPopupMenuButton<String>(
+                                  icon: Icons.more_horiz_rounded,
+                                  tooltip: MaterialLocalizations.of(
+                                    context,
+                                  ).moreButtonTooltip,
+                                  entries: [
+                                    if (hasSubtitle) ...[
+                                      UnifiedMenuEntry<String>.action(
+                                        value: 'toggle_subtitle',
+                                        icon: settings.isShowEnabled(session.id)
+                                            ? Icons.subtitles_off_rounded
+                                            : Icons.subtitles_rounded,
+                                        label: settings.isShowEnabled(session.id)
+                                            ? context.read<AppLanguageProvider>().tr('turn_off_subtitle')
+                                            : context.read<AppLanguageProvider>().tr('turn_on_subtitle'),
+                                      ),
+                                      if (settings.isShowEnabled(session.id))
+                                        UnifiedMenuEntry<String>.action(
+                                          value: 'toggle_cross_page',
+                                          icon: settings.isGlobalEnabled(session.id)
+                                              ? Icons.check_rounded
+                                              : Icons.layers_rounded,
+                                          label: context.read<AppLanguageProvider>().tr('subtitle_global_display'),
+                                        ),
+                                      const UnifiedMenuEntry<String>.divider(),
+                                    ],
+                                    UnifiedMenuEntry<String>.action(
+                                      value: 'channel_swap',
+                                      icon: session.channelSwapEnabled
+                                          ? Icons.check_rounded
+                                          : Icons.swap_horiz_rounded,
+                                      label: context
+                                          .read<AppLanguageProvider>()
+                                          .tr('channel_swap'),
+                                    ),
+                                  ],
+                                  onSelected: (value) {
+                                    if (value == 'toggle_subtitle') {
+                                      ref
+                                          .read(subtitleSettingsProvider.notifier)
+                                          .toggleShowSubtitles(session.id);
+                                      return;
+                                    }
+                                    if (value == 'toggle_cross_page') {
+                                      ref
+                                          .read(subtitleSettingsProvider.notifier)
+                                          .toggleGlobalSubtitles(session.id);
+                                      return;
+                                    }
+                                    if (value != 'channel_swap') return;
+                                    Feedback.forTap(context);
+                                    unawaited(
+                                      provider.setSessionChannelSwap(
+                                        session.id,
+                                        !session.channelSwapEnabled,
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ],
+                            );
+                          },
                         ),
                       ),
                       // Content area — wrapped in GestureDetector for drag-to-dismiss / session switching
@@ -486,40 +642,35 @@ class _SessionDetailScaffold extends StatelessWidget {
                           onVerticalDragCancel: onVerticalDragCancel,
                           child: Column(
                             children: [
-                              // Large Artwork
+                              // Large Artwork — fills available space
                               Expanded(
-                                flex: 6,
-                                child: Center(
-                                  child: RepaintBoundary(
-                                    child: Padding(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 32,
-                                      ),
-                                      child: _SessionHeroArtwork(
-                                        height: constraints.maxHeight * 0.48,
-                                        coverPathFuture: coverPathFuture,
-                                        title: '',
-                                        folderName: '',
-                                        isPlaying: session.state.playing,
-                                      ),
-                                    ),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 32,
+                                  ),
+                                  child: _SessionHeroArtwork(
+                                    height: constraints.maxHeight,
+                                    coverPathFuture: coverPathFuture,
+                                    title: '',
+                                    folderName: '',
+                                    isPlaying: session.state.playing,
                                   ),
                                 ),
                               ),
-                              // Detail Content
-                              Expanded(
-                                flex: 5,
-                                child: Padding(
-                                  padding: const EdgeInsets.fromLTRB(
-                                    28,
-                                    0,
-                                    28,
-                                    16,
-                                  ),
-                                  child: _SessionDetailContent(
-                                    session: session,
-                                    provider: provider,
-                                  ),
+                              // Detail Content — natural height at bottom
+                              Padding(
+                                padding: const EdgeInsets.fromLTRB(
+                                  28,
+                                  12,
+                                  28,
+                                  8,
+                                ),
+                                child: _SessionDetailContent(
+                                  session: session,
+                                  provider: provider,
+                                  filenameKey: _filenameKey,
+                                  progressBarKey: _progressBarKey,
+                                  subtitleFontSize: ref.watch(subtitleSettingsProvider).fontSize,
                                 ),
                               ),
                             ],

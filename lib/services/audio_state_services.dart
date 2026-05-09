@@ -101,16 +101,19 @@ class PlaybackStateSliceData {
     this.playingSessionCount = 0,
     this.focusedSessionId,
     this.multiThreadPlaybackEnabled = false,
+    this.sessionStateVersion = 0,
   });
 
   final List<PlaybackSession> activeSessions;
   final int playingSessionCount;
   final String? focusedSessionId;
   final bool multiThreadPlaybackEnabled;
+  final int sessionStateVersion;
 
   @override
   bool operator ==(Object other) {
     return other is PlaybackStateSliceData &&
+        other.sessionStateVersion == sessionStateVersion &&
         listEquals(other.activeSessions, activeSessions) &&
         other.playingSessionCount == playingSessionCount &&
         other.focusedSessionId == focusedSessionId &&
@@ -119,6 +122,7 @@ class PlaybackStateSliceData {
 
   @override
   int get hashCode => Object.hash(
+    sessionStateVersion,
     Object.hashAll(activeSessions),
     playingSessionCount,
     focusedSessionId,
@@ -551,6 +555,7 @@ class PlaybackSessionService {
   final Map<String, PlaybackSession> sessions = <String, PlaybackSession>{};
   final List<String> sessionOrder = <String>[];
   bool activeSessionsDirty = true;
+  int sessionStateVersion = 0;
   List<PlaybackSession> activeSessionsCache = const <PlaybackSession>[];
   Future<void> sessionPreparationQueue = Future<void>.value();
   Timer? saveSessionStateTimer;
@@ -584,6 +589,7 @@ class PlaybackSessionService {
 
   void markActiveSessionsDirty() {
     activeSessionsDirty = true;
+    sessionStateVersion++;
   }
 
   PlaybackSession? sessionById(String sessionId) => sessions[sessionId];
@@ -650,6 +656,7 @@ class PlaybackSessionService {
         playingSessionCount: playingSessionCount,
         focusedSessionId: focusedSessionId,
         multiThreadPlaybackEnabled: multiThreadPlaybackEnabled,
+        sessionStateVersion: sessionStateVersion,
       ),
     );
   }

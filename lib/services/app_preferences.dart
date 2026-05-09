@@ -19,6 +19,14 @@ class AppPreferences {
     }
   }
 
+  static Future<List<String>?> getStringList(String key) async {
+    try {
+      return (await _prefs).getStringList(key);
+    } catch (_) {
+      return null;
+    }
+  }
+
   static Future<bool?> getBool(String key) async {
     try {
       return (await _prefs).getBool(key);
@@ -30,6 +38,14 @@ class AppPreferences {
   static Future<bool> setString(String key, String value) async {
     try {
       return await (await _prefs).setString(key, value);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static Future<bool> setStringList(String key, List<String> value) async {
+    try {
+      return await (await _prefs).setStringList(key, value);
     } catch (_) {
       return false;
     }

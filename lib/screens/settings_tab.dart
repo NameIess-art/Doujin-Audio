@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as path;
-import 'package:provider/provider.dart';
+import 'package:provider/provider.dart' hide Consumer;
 
 import '../i18n/app_language_provider.dart';
 import '../providers/audio_provider.dart';
@@ -16,6 +16,7 @@ import '../theme/theme_provider.dart';
 import '../widgets/app_feedback.dart';
 import '../widgets/mobile_overlay_inset.dart';
 import '../widgets/top_page_header.dart';
+import '../providers/subtitle_settings_provider.dart';
 
 part 'settings_tab_actions.dart';
 part 'settings_tab_widgets.dart';
@@ -115,6 +116,18 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
     });
   }
 
+  void _showSubtitleWindowSettings(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (_) => const _SubtitleWindowSettingsSheet(),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     super.build(context);
@@ -137,14 +150,14 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
       children: [
         Positioned(
           top: _headerHeight - 80,
-          bottom: bottomInset - 80,
+          bottom: 0,
           left: 0,
           right: 0,
           child: ListView(
             controller: _scrollController,
             // Flush with bottom dock. Offset top padding since Positioned already shifts it.
             // Expand internal padding by 80px to match the expanded Positioned bounds.
-            padding: const EdgeInsets.fromLTRB(16, 80 + 4, 16, 80 + 8),
+            padding: EdgeInsets.fromLTRB(16, 80 + 4, 16, bottomInset + 8),
             clipBehavior: Clip.none,
             children: [
               ListTileTheme.merge(
@@ -253,12 +266,49 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                         borderRadius: BorderRadius.circular(14),
                       ),
                     ),
+                    const SizedBox(height: 2),
+                    ListTile(
+                      title: Text(i18n.tr('subtitle_window_settings')),
+                      subtitle: Text(
+                        i18n.tr('subtitle_window_settings_subtitle'),
+                        style: descStyle,
+                      ),
+                      leading: Container(
+                        width: 38,
+                        height: 38,
+                        decoration: BoxDecoration(
+                          color: cs.primaryContainer,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Icon(
+                          Icons.subtitles_rounded,
+                          color: cs.onPrimaryContainer,
+                        ),
+                      ),
+                      trailing: Icon(
+                        Icons.chevron_right_rounded,
+                        size: 20,
+                        color: cs.onSurfaceVariant,
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      onTap: () => _showSubtitleWindowSettings(context),
+                    ),
                     const SizedBox(height: 12),
                     _SectionHeader(title: i18n.tr('section_playback')),
                     const SizedBox(height: 2),
                     SwitchListTile(
                       value: playbackSettings.multiThreadPlaybackEnabled,
-                      onChanged: audioProvider.setMultiThreadPlaybackEnabled,
+                      onChanged: (value) {
+                        audioProvider.setMultiThreadPlaybackEnabled(value);
+                        if (!value) {
+                          ref
+                              .read(subtitleSettingsProvider.notifier)
+                              .turnOffAllSubtitles();
+                        }
+                      },
                       title: Text(i18n.tr('multi_thread_playback')),
                       subtitle: Text(
                         i18n.tr('multi_thread_playback_subtitle'),
@@ -342,7 +392,8 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                       subtitle: FutureBuilder<bool>(
                         future: _backgroundRunAllowedFuture,
                         builder: (context, snapshot) {
-                          if (snapshot.connectionState != ConnectionState.done &&
+                          if (snapshot.connectionState !=
+                                  ConnectionState.done &&
                               snapshot.data == null) {
                             return Text(
                               i18n.tr('allow_background_run_checking'),
@@ -428,6 +479,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                   ],
                 ),
               ),
+              const SizedBox(height: 12),
             ],
           ),
         ),

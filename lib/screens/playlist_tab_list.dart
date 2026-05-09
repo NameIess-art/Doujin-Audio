@@ -99,6 +99,9 @@ class _SessionListCardState extends State<_SessionListCard> {
 
   void _confirmRemoveSession(BuildContext context) {
     widget.provider.removeSession(widget.session.id);
+    ProviderScope.containerOf(context)
+        .read(subtitleSettingsProvider.notifier)
+        .resetForSession(widget.session.id);
   }
 
   String _loopModeSummary(BuildContext context, SessionLoopMode mode) {
@@ -148,9 +151,12 @@ class _SessionListCardState extends State<_SessionListCard> {
     final displayName =
         track?.displayName ??
         path.basenameWithoutExtension(sessionView.trackPath);
-    final folderName = (track != null && !track.isSingle)
-        ? track.groupTitle
-        : i18n.tr('imported_files');
+    final rootFolderName = provider.getRootFolderName(sessionView.trackPath);
+    final folderName = rootFolderName.isNotEmpty
+        ? rootFolderName
+        : (track != null && !track.isSingle)
+            ? track.groupTitle
+            : i18n.tr('imported_files');
 
     final isPlaying = sessionView.isPlaying;
     final cardShape = RoundedRectangleBorder(
@@ -222,10 +228,8 @@ class _SessionListCardState extends State<_SessionListCard> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
-                                folderName,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
+                              MarqueeText(
+                                text: folderName,
                                 style: Theme.of(context).textTheme.bodySmall
                                     ?.copyWith(
                                       color: cs.onSurfaceVariant,
@@ -260,57 +264,84 @@ class _SessionListCardState extends State<_SessionListCard> {
                           ),
                         ),
                         const SizedBox(width: 10),
-                        IconButton(
-                          onPressed: sessionView.isLoading
-                              ? null
-                              : () {
-                                  Feedback.forTap(context);
-                                  provider.toggleSessionPlayPause(session.id);
-                                },
-                          style: IconButton.styleFrom(
-                            foregroundColor: isPlaying
-                                ? cs.primary
-                                : cs.onSurface,
-                            minimumSize: const Size(44, 44),
-                            maximumSize: const Size(44, 44),
-                            padding: EdgeInsets.zero,
-                          ),
-                          icon: AnimatedSwitcher(
-                            duration: const Duration(milliseconds: 150),
-                            switchInCurve: Curves.easeOutCubic,
-                            switchOutCurve: Curves.easeInCubic,
-                            transitionBuilder: (child, animation) {
-                              return FadeTransition(
-                                opacity: animation,
-                                child: ScaleTransition(
-                                  scale: Tween<double>(
-                                    begin: 0.92,
-                                    end: 1,
-                                  ).animate(animation),
-                                  child: child,
-                                ),
-                              );
-                            },
-                            child: sessionView.isLoading
-                                ? SizedBox(
-                                    key: const ValueKey('loading'),
-                                    width: 26,
-                                    height: 26,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2.5,
-                                      color: isPlaying
-                                          ? cs.primary
-                                          : cs.onSurface,
+                        Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              onPressed: sessionView.isLoading
+                                  ? null
+                                  : () {
+                                      Feedback.forTap(context);
+                                      provider.toggleSessionPlayPause(session.id);
+                                    },
+                              style: IconButton.styleFrom(
+                                foregroundColor: isPlaying
+                                    ? cs.primary
+                                    : cs.onSurface,
+                                minimumSize: const Size(44, 44),
+                                maximumSize: const Size(44, 44),
+                                padding: EdgeInsets.zero,
+                              ),
+                              icon: AnimatedSwitcher(
+                                duration: const Duration(milliseconds: 150),
+                                switchInCurve: Curves.easeOutCubic,
+                                switchOutCurve: Curves.easeInCubic,
+                                transitionBuilder: (child, animation) {
+                                  return FadeTransition(
+                                    opacity: animation,
+                                    child: ScaleTransition(
+                                      scale: Tween<double>(
+                                        begin: 0.92,
+                                        end: 1,
+                                      ).animate(animation),
+                                      child: child,
                                     ),
-                                  )
-                                : Icon(
-                                    isPlaying
-                                        ? Icons.pause_rounded
-                                        : Icons.play_arrow_rounded,
-                                    key: ValueKey(isPlaying),
-                                    size: 26,
+                                  );
+                                },
+                                child: sessionView.isLoading
+                                    ? SizedBox(
+                                        key: const ValueKey('loading'),
+                                        width: 26,
+                                        height: 26,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2.5,
+                                          color: isPlaying
+                                              ? cs.primary
+                                              : cs.onSurface,
+                                        ),
+                                      )
+                                    : Icon(
+                                        isPlaying
+                                            ? Icons.pause_rounded
+                                            : Icons.play_arrow_rounded,
+                                        key: ValueKey(isPlaying),
+                                        size: 26,
+                                      ),
+                              ),
+                            ),
+                            Consumer(
+                              builder: (context, ref, child) {
+                                final settings = ref.watch(subtitleSettingsProvider);
+                                final showSub = settings.isGlobalEnabled(session.id);
+                                if (!showSub && !session.channelSwapEnabled) {
+                                  return const SizedBox.shrink();
+                                }
+                                return Padding(
+                                  padding: const EdgeInsets.only(top: 1),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      if (showSub)
+                                        Icon(Icons.subtitles_rounded, size: 10, color: cs.onSurface.withValues(alpha: 0.35)),
+                                      if (showSub && session.channelSwapEnabled) const SizedBox(width: 2),
+                                      if (session.channelSwapEnabled)
+                                        Icon(Icons.swap_horiz_rounded, size: 10, color: cs.onSurface.withValues(alpha: 0.35)),
+                                    ],
                                   ),
-                          ),
+                                );
+                              },
+                            ),
+                          ],
                         ),
                       ],
                     ),

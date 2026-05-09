@@ -111,6 +111,8 @@ extension AudioProviderPlayback on AudioProvider {
     if (session == null) return;
     if (session.channelSwapEnabled == enabled) return;
     session.channelSwapEnabled = enabled;
+    _markActiveSessionsDirty();
+    _notifyListeners(); // Optimistic update
     final response = await _nativePlaybackRepository.setChannelSwap(
       session.id,
       enabled,
@@ -118,8 +120,8 @@ extension AudioProviderPlayback on AudioProvider {
     final value = response.valueOrNull;
     if (value != null) {
       session.applyNativeSnapshot(value);
+      _notifyListeners(); // Refresh with native state
     }
-    _notifyListeners();
     _scheduleSaveSessionState();
   }
 

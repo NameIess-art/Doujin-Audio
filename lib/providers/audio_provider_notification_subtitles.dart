@@ -34,6 +34,10 @@ extension AudioProviderNotificationSubtitles on AudioProvider {
     });
   }
 
+  SubtitleTrack? getSubtitleTrackSync(String trackPath) {
+    return _subtitleTracks[trackPath];
+  }
+
   String? subtitleTextForTrackAt(
     String trackPath,
     Duration position, {

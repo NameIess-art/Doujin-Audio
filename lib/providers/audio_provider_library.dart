@@ -470,4 +470,20 @@ extension AudioProviderLibrary on AudioProvider {
     if (track == null) return [];
     return _tracksByGroup[track.groupKey] ?? const <MusicTrack>[];
   }
+
+  String getRootFolderName(String trackPath) {
+    for (final folder in _watchedFolders) {
+      if (PathMatcher.isWithinOrEqual(trackPath, folder)) {
+        final name = path.basename(folder);
+        return name.isEmpty ? folder : name;
+      }
+    }
+    for (final libraryPath in _watchedLibraries) {
+      if (PathMatcher.isWithinOrEqual(trackPath, libraryPath)) {
+        final name = path.basename(libraryPath);
+        return name.isEmpty ? libraryPath : name;
+      }
+    }
+    return '';
+  }
 }

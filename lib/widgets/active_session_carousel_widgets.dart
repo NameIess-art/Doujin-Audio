@@ -93,13 +93,40 @@ class _ActiveSessionCard extends StatelessWidget {
                             ),
                           ),
                           const SizedBox(width: 8),
-                          _ActiveSessionPlayPauseButton(
-                            isPlaying: isPlaying,
-                            enabled: !view.loading,
-                            onPressed: () {
-                              HapticFeedback.mediumImpact();
-                              provider.toggleSessionPlayPause(session.id);
-                            },
+                          Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              _ActiveSessionPlayPauseButton(
+                                isPlaying: isPlaying,
+                                enabled: !view.loading,
+                                onPressed: () {
+                                  HapticFeedback.mediumImpact();
+                                  provider.toggleSessionPlayPause(session.id);
+                                },
+                              ),
+                              Consumer(
+                                builder: (context, ref, child) {
+                                  final settings = ref.watch(subtitleSettingsProvider);
+                                  final showSub = settings.isGlobalEnabled(session.id);
+                                  if (!showSub && !session.channelSwapEnabled) {
+                                    return const SizedBox.shrink();
+                                  }
+                                  return Padding(
+                                    padding: const EdgeInsets.only(top: 1),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        if (showSub)
+                                          Icon(Icons.subtitles_rounded, size: 10, color: cs.onSurface.withValues(alpha: 0.35)),
+                                        if (showSub && session.channelSwapEnabled) const SizedBox(width: 2),
+                                        if (session.channelSwapEnabled)
+                                          Icon(Icons.swap_horiz_rounded, size: 10, color: cs.onSurface.withValues(alpha: 0.35)),
+                                      ],
+                                    ),
+                                  );
+                                },
+                              ),
+                            ],
                           ),
                         ],
                       ),
@@ -211,7 +238,7 @@ class _ActiveSessionTitleSubtitleState
       unawaited(_positionSub?.cancel());
       _bindPosition();
     }
-    if (oldWidget.session.currentTrackPath != widget.session.currentTrackPath) {
+    if (_loadedPath != widget.session.currentTrackPath) {
       _loadSubtitleTrack();
     }
   }

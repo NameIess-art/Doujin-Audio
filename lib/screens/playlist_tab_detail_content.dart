@@ -1,10 +1,19 @@
 part of 'playlist_tab.dart';
 
 class _SessionDetailContent extends StatefulWidget {
-  const _SessionDetailContent({required this.session, required this.provider});
+  const _SessionDetailContent({
+    required this.session,
+    required this.provider,
+    this.filenameKey,
+    this.progressBarKey,
+    this.subtitleFontSize = 16,
+  });
 
   final PlaybackSession session;
   final AudioProvider provider;
+  final GlobalKey? filenameKey;
+  final GlobalKey? progressBarKey;
+  final double subtitleFontSize;
 
   @override
   State<_SessionDetailContent> createState() => _SessionDetailContentState();
@@ -44,8 +53,9 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
     final displayName =
         track?.displayName ??
         path.basenameWithoutExtension(session.currentTrackPath);
-    final folderName = (track != null && !track.isSingle)
-        ? track.groupTitle
+    final rootFolderName = provider.getRootFolderName(session.currentTrackPath);
+    final folderName = rootFolderName.isNotEmpty
+        ? rootFolderName
         : context.read<AppLanguageProvider>().tr('imported_files');
     final hasSiblings =
         provider.tracksInSameGroup(session.currentTrackPath).length > 1;
@@ -56,10 +66,8 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
         Row(
           children: [
             Expanded(
-              child: Text(
-                folderName,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+              child: MarqueeText(
+                text: folderName,
                 style: Theme.of(context).textTheme.labelLarge?.copyWith(
                   color: cs.onSurface.withValues(alpha: 0.8),
                   fontWeight: FontWeight.w700,
@@ -78,178 +86,230 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
           ],
         ),
         const SizedBox(height: 12),
-        Text(
-          displayName,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-            fontWeight: FontWeight.w900,
-            fontSize: 24,
-            color: cs.onSurface,
-            height: 1.1,
+        SizedBox(
+          key: widget.filenameKey,
+          height: 36,
+          child: MarqueeText(
+            text: displayName,
+            pauseDuration: const Duration(seconds: 1),
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+              color: cs.onSurface,
+              fontWeight: FontWeight.w900,
+              letterSpacing: -0.5,
+              height: 1.1,
+            ),
           ),
         ),
         const SizedBox(height: 8),
-        _SessionSubtitlePanel(
-          key: ValueKey('${session.id}:${session.currentTrackPath}'),
-          session: session,
-          provider: provider,
+        const SizedBox(height: 8),
+        SizedBox(height: widget.subtitleFontSize * 3), // scales with font size
+        Container(
+          key: widget.progressBarKey,
+          child: _ProgressBar(
+            key: ValueKey(session.id),
+            session: session,
+            provider: provider,
+          ),
         ),
-        const Spacer(),
-        _ProgressBar(
-          key: ValueKey(session.id),
-          session: session,
-          provider: provider,
-        ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 0),
         SizedBox(
-          height: 84,
+          height: 92,
           child: LayoutBuilder(
             builder: (context, constraints) {
               final compact = constraints.maxWidth < 400;
-              final gap = compact ? 2.0 : 8.0;
-              final skipIconSize = compact ? 38.0 : 44.0;
-              final playIconSize = compact ? 56.0 : 64.0;
-              final loadingSize = compact ? 28.0 : 32.0;
+              final gap = compact ? 8.0 : 16.0;
+              final skipIconSize = compact ? 48.0 : 54.0;
+              final playIconSize = compact ? 76.0 : 86.0;
+              final loadingSize = compact ? 38.0 : 44.0;
 
               return Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  _ExpandableLoopOptions(
-                    session: session,
-                    provider: provider,
-                    compact: compact,
-                  ),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        constraints: BoxConstraints.tightFor(
-                          width: compact ? 42 : 48,
-                          height: compact ? 42 : 48,
-                        ),
-                        padding: EdgeInsets.zero,
-                        onPressed: session.isLoading
-                            ? null
-                            : () {
-                                HapticFeedback.selectionClick();
-                                provider.seekSessionToPrev(session.id);
-                              },
-                        icon: Icon(
-                          Icons.skip_previous_rounded,
-                          size: skipIconSize,
-                          color: cs.onSurface,
-                        ),
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    IconButton(
+                      constraints: BoxConstraints.tightFor(
+                        width: compact ? 56 : 64,
+                        height: compact ? 56 : 64,
                       ),
-                      SizedBox(width: gap),
-                      IconButton(
-                        constraints: BoxConstraints.tightFor(
-                          width: compact ? 58 : 68,
-                          height: compact ? 58 : 68,
-                        ),
-                        padding: EdgeInsets.zero,
-                        onPressed: session.isLoading
-                            ? null
-                            : () {
-                                HapticFeedback.mediumImpact();
-                                provider.toggleSessionPlayPause(session.id);
-                              },
-                        iconSize: playIconSize,
-                        icon: AnimatedSwitcher(
-                          duration: const Duration(milliseconds: 150),
-                          switchInCurve: Curves.easeOutCubic,
-                          switchOutCurve: Curves.easeInCubic,
-                          transitionBuilder: (child, animation) {
-                            return FadeTransition(
-                              opacity: animation,
-                              child: ScaleTransition(
-                                scale: Tween<double>(
-                                  begin: 0.92,
-                                  end: 1,
-                                ).animate(animation),
-                                child: child,
-                              ),
-                            );
-                          },
-                          child: session.isLoading
-                              ? SizedBox(
-                                  key: const ValueKey('loading'),
-                                  width: loadingSize,
-                                  height: loadingSize,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 3,
-                                    color: cs.onSurface,
-                                  ),
-                                )
-                              : Icon(
-                                  session.state.playing
-                                      ? Icons.pause_rounded
-                                      : Icons.play_arrow_rounded,
-                                  key: ValueKey(session.state.playing),
-                                  size: playIconSize,
+                      padding: EdgeInsets.zero,
+                      onPressed: session.isLoading
+                          ? null
+                          : () {
+                              HapticFeedback.selectionClick();
+                              provider.seekSessionToPrev(session.id);
+                            },
+                      icon: Icon(
+                        Icons.skip_previous_rounded,
+                        size: skipIconSize,
+                        color: cs.onSurface,
+                      ),
+                    ),
+                    IconButton(
+                      constraints: BoxConstraints.tightFor(
+                        width: compact ? 56 : 64,
+                        height: compact ? 56 : 64,
+                      ),
+                      padding: EdgeInsets.zero,
+                      onPressed: session.isLoading
+                          ? null
+                          : () {
+                              HapticFeedback.selectionClick();
+                              final newPos =
+                                  session.position - const Duration(seconds: 5);
+                              provider.seekSession(
+                                session.id,
+                                newPos < Duration.zero ? Duration.zero : newPos,
+                              );
+                            },
+                      icon: Icon(
+                        Icons.replay_5_rounded,
+                        size: skipIconSize * 0.8,
+                        color: cs.onSurface,
+                      ),
+                    ),
+                    IconButton(
+                      constraints: BoxConstraints.tightFor(
+                        width: compact ? 80 : 92,
+                        height: compact ? 80 : 92,
+                      ),
+                      padding: EdgeInsets.zero,
+                      onPressed: session.isLoading
+                          ? null
+                          : () {
+                              HapticFeedback.mediumImpact();
+                              provider.toggleSessionPlayPause(session.id);
+                            },
+                      iconSize: playIconSize,
+                      icon: AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 150),
+                        switchInCurve: Curves.easeOutCubic,
+                        switchOutCurve: Curves.easeInCubic,
+                        transitionBuilder: (child, animation) {
+                          return FadeTransition(
+                            opacity: animation,
+                            child: ScaleTransition(
+                              scale: Tween<double>(
+                                begin: 0.92,
+                                end: 1,
+                              ).animate(animation),
+                              child: child,
+                            ),
+                          );
+                        },
+                        child: session.isLoading
+                            ? SizedBox(
+                                key: const ValueKey('loading'),
+                                width: loadingSize,
+                                height: loadingSize,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 3,
                                   color: cs.onSurface,
                                 ),
-                        ),
+                              )
+                            : Icon(
+                                session.state.playing
+                                    ? Icons.pause_rounded
+                                    : Icons.play_arrow_rounded,
+                                key: ValueKey(session.state.playing),
+                                size: playIconSize,
+                                color: cs.onSurface,
+                              ),
                       ),
-                      SizedBox(width: gap),
-                      IconButton(
-                        constraints: BoxConstraints.tightFor(
-                          width: compact ? 42 : 48,
-                          height: compact ? 42 : 48,
-                        ),
-                        padding: EdgeInsets.zero,
-                        onPressed: session.isLoading
-                            ? null
-                            : () {
-                                HapticFeedback.selectionClick();
-                                provider.seekSessionToNext(session.id);
-                              },
-                        icon: Icon(
-                          Icons.skip_next_rounded,
-                          size: skipIconSize,
-                          color: cs.onSurface,
-                        ),
+                    ),
+                    IconButton(
+                      constraints: BoxConstraints.tightFor(
+                        width: compact ? 56 : 64,
+                        height: compact ? 56 : 64,
                       ),
-                    ],
-                  ),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _SessionVolumeButton(
-                        session: session,
-                        provider: provider,
-                        compact: compact,
+                      padding: EdgeInsets.zero,
+                      onPressed: session.isLoading
+                          ? null
+                          : () {
+                              HapticFeedback.selectionClick();
+                              provider.seekSession(
+                                session.id,
+                                session.position + const Duration(seconds: 5),
+                              );
+                            },
+                      icon: Icon(
+                        Icons.forward_5_rounded,
+                        size: skipIconSize * 0.8,
+                        color: cs.onSurface,
                       ),
-                      SizedBox(width: compact ? 0 : 4),
-                      IconButton(
-                        constraints: BoxConstraints.tightFor(
-                          width: compact ? 40 : 48,
-                          height: compact ? 40 : 48,
-                        ),
-                        padding: EdgeInsets.zero,
-                        onPressed: hasSiblings
-                            ? () {
-                                HapticFeedback.selectionClick();
-                                _showTrackSwitcher(context);
-                              }
-                            : null,
-                        tooltip: context.read<AppLanguageProvider>().tr(
-                          'switch_audio',
-                        ),
-                        icon: Icon(
-                          Icons.queue_music_rounded,
-                          size: compact ? 22 : 24,
-                          color: cs.onSurface,
-                        ),
+                    ),
+                    IconButton(
+                      constraints: BoxConstraints.tightFor(
+                        width: compact ? 56 : 64,
+                        height: compact ? 56 : 64,
                       ),
-                    ],
-                  ),
-                ],
-              );
+                      padding: EdgeInsets.zero,
+                      onPressed: session.isLoading
+                          ? null
+                          : () {
+                              HapticFeedback.selectionClick();
+                              provider.seekSessionToNext(session.id);
+                            },
+                      icon: Icon(
+                        Icons.skip_next_rounded,
+                        size: skipIconSize,
+                        color: cs.onSurface,
+                      ),
+                    ),
+                  ],
+                );
             },
           ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 0),
+        Container(
+          decoration: BoxDecoration(
+            color: cs.surfaceContainerHighest.withValues(alpha: 0.35),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: cs.outlineVariant.withValues(alpha: 0.12),
+              width: 0.5,
+            ),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+          child: SizedBox(
+            height: 48,
+            child: Row(
+              children: [
+                _ExpandableLoopOptions(
+                  session: session,
+                  provider: provider,
+                  compact: false,
+                ),
+                const SizedBox(width: 8),
+                IconButton(
+                  constraints: const BoxConstraints.tightFor(
+                    width: 48,
+                    height: 48,
+                  ),
+                  padding: EdgeInsets.zero,
+                  onPressed: hasSiblings
+                      ? () {
+                          HapticFeedback.selectionClick();
+                          _showTrackSwitcher(context);
+                        }
+                      : null,
+                  tooltip: context.read<AppLanguageProvider>().tr('switch_audio'),
+                  icon: Icon(
+                    Icons.queue_music_rounded,
+                    size: 24,
+                    color: cs.onSurface,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: _SessionVolumeSlider(
+                    session: session,
+                    provider: provider,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ],
     );
   }

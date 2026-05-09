@@ -9,17 +9,21 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:path/path.dart' as path;
-import 'package:provider/provider.dart';
+import 'package:provider/provider.dart' hide Consumer;
 
 import '../i18n/app_language_provider.dart';
 import '../providers/audio_provider.dart';
 import '../providers/audio_provider_riverpod.dart';
 import '../services/audio_state_services.dart';
 import '../services/subtitle_parser.dart';
+import '../providers/subtitle_settings_provider.dart';
+import '../widgets/floating_subtitle_window.dart';
+import '../widgets/marquee_text.dart';
 import '../widgets/app_feedback.dart';
 import '../widgets/async_cover_image.dart';
 import '../widgets/app_transitions.dart';
 import '../widgets/confirm_action_dialog.dart';
+import '../widgets/content_bound_reorder_area.dart';
 import '../widgets/mobile_overlay_inset.dart';
 import '../widgets/reorderable_hold_drag_listener.dart';
 import '../widgets/swipe_reveal_card.dart';
@@ -181,23 +185,16 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
 
     return Stack(
       children: [
-        // Restricted viewport for reorder trigger.
-        // We expand the Positioned by 80px to pre-render items under the glass, 
-        // so we add 80px to the internal padding to keep the content visually in place.
-        Positioned(
-          top: _headerHeight - 80,
-          bottom: bottomInset - 80,
-          left: 0,
-          right: 0,
+        // Viewport restricted to content area so drag-to-reorder auto-scroll
+        // triggers at content edges rather than screen edges.
+        ContentBoundReorderArea(
+          headerHeight: _headerHeight,
+          bottomInset: listBottomInset,
           child: sessions.isEmpty
-              ? _SessionsEmptyState(
-                  bottomInset: 80 + 8,
-                  topInset: 80 + 4,
-                )
+              ? _SessionsEmptyState(bottomInset: 0, topInset: 4)
               : ReorderableListView.builder(
                   scrollController: _scrollController,
-                  // Expand internal padding by 80px to match the expanded Positioned bounds.
-                  padding: const EdgeInsets.fromLTRB(16, 80 + 4, 16, 80 + 8),
+                  padding: EdgeInsets.fromLTRB(16, 4, 16, 8),
                   cacheExtent: listCacheExtent,
                   clipBehavior: Clip.none,
                   buildDefaultDragHandles: false,
@@ -208,8 +205,14 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                       unawaited(HapticFeedback.heavyImpact()),
                   proxyDecorator: (child, index, animation) =>
                       _buildReorderProxy(context, child, animation),
-                  itemCount: sessions.length,
+                  itemCount: sessions.length + 1,
                   itemBuilder: (context, index) {
+                    if (index == sessions.length) {
+                      return const SizedBox(
+                        key: ValueKey('bottom_spacing'),
+                        height: 12,
+                      );
+                    }
                     final session = sessions[index];
                     return ReorderableHoldDragStartListener(
                       key: ValueKey(session.id),

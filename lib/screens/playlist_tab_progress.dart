@@ -303,7 +303,7 @@ class _SessionSubtitlePanelState extends State<_SessionSubtitlePanel> {
       unawaited(_positionSub?.cancel());
       _bindPosition();
     }
-    if (oldWidget.session.currentTrackPath != widget.session.currentTrackPath) {
+    if (_loadedPath != widget.session.currentTrackPath) {
       _loadSubtitleTrack();
     }
   }

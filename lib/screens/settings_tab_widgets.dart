@@ -178,3 +178,320 @@ class _SectionHeader extends StatelessWidget {
     );
   }
 }
+
+class _SubtitleWindowSettingsSheet extends StatelessWidget {
+  const _SubtitleWindowSettingsSheet();
+
+  static const _fontFamilies = <String>[
+    '',
+    'monospace',
+    'serif',
+    'sans-serif',
+    'SimSun',
+    'KaiTi',
+    'SimHei',
+  ];
+
+  Widget _buildRgbSliders({
+    required String label,
+    required String resetTooltip,
+    required Color? currentColor,
+    required Color defaultColor,
+    required ValueChanged<Color> onChanged,
+    required VoidCallback onReset,
+    required ColorScheme cs,
+    required TextStyle? labelStyle,
+  }) {
+    final int r = ((currentColor?.r ?? defaultColor.r) * 255).round();
+    final int g = ((currentColor?.g ?? defaultColor.g) * 255).round();
+    final int b = ((currentColor?.b ?? defaultColor.b) * 255).round();
+    final int a = ((currentColor?.a ?? defaultColor.a) * 255).round();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(label, style: labelStyle),
+            ),
+            Container(
+              width: 24,
+              height: 24,
+              decoration: BoxDecoration(
+                color: Color.fromARGB(a, r, g, b),
+                shape: BoxShape.circle,
+                border: Border.all(color: cs.outlineVariant),
+              ),
+            ),
+            if (currentColor != null)
+              IconButton(
+                icon: const Icon(Icons.close_rounded, size: 18),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(
+                  minWidth: 28,
+                  minHeight: 28,
+                ),
+                onPressed: onReset,
+                tooltip: resetTooltip,
+              ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        _buildSlider('R', r, cs, (v) {
+          onChanged(Color.fromARGB(a, v.round(), g, b));
+        }),
+        _buildSlider('G', g, cs, (v) {
+          onChanged(Color.fromARGB(a, r, v.round(), b));
+        }),
+        _buildSlider('B', b, cs, (v) {
+          onChanged(Color.fromARGB(a, r, g, v.round()));
+        }),
+      ],
+    );
+  }
+
+  Widget _buildSlider(
+    String label,
+    int value,
+    ColorScheme cs,
+    ValueChanged<double> onChanged,
+  ) {
+    return Row(
+      children: [
+        SizedBox(
+          width: 20,
+          child: Text(label, style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+            color: cs.onSurfaceVariant,
+          )),
+        ),
+        Expanded(
+          child: Slider(
+            value: value.toDouble(),
+            min: 0,
+            max: 255,
+            divisions: 255,
+            onChanged: onChanged,
+          ),
+        ),
+        SizedBox(
+          width: 30,
+          child: Text(
+            value.toString(),
+            textAlign: TextAlign.right,
+            style: TextStyle(
+              fontSize: 12,
+              color: cs.onSurfaceVariant,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final i18n = context.read<AppLanguageProvider>();
+    final labelStyle = Theme.of(context).textTheme.bodyMedium?.copyWith(
+      fontWeight: FontWeight.w600,
+    );
+
+    return Consumer(
+      builder: (context, ref, child) {
+        final settings = ref.watch(subtitleSettingsProvider);
+        final notifier = ref.read(subtitleSettingsProvider.notifier);
+
+        final currentFontColor = settings.fontColor;
+        final currentBgColor = settings.backgroundColor;
+
+        return ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(context).height * 0.6,
+          ),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(24, 8, 24, 32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Font family
+                Text(i18n.tr('font_setting'), style: labelStyle),
+                const SizedBox(height: 6),
+                InputDecorator(
+                  decoration: InputDecoration(
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
+                      value: settings.fontFamily,
+                      isDense: true,
+                      isExpanded: true,
+                      borderRadius: BorderRadius.circular(12),
+                      items: List.generate(_fontFamilies.length, (i) {
+                        final label = i == 0
+                            ? i18n.tr('system_default')
+                            : _fontFamilies[i];
+                        return DropdownMenuItem(
+                          value: _fontFamilies[i],
+                          child: Text(
+                            label,
+                            style: TextStyle(
+                              fontFamily:
+                                  _fontFamilies[i].isEmpty
+                                      ? null
+                                      : _fontFamilies[i],
+                            ),
+                          ),
+                        );
+                      }),
+                      onChanged: (v) {
+                        if (v != null) notifier.setFontFamily(v);
+                      },
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+
+                // Font size
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(i18n.tr('font_size'), style: labelStyle),
+                    ),
+                    Text(
+                      settings.fontSize.toStringAsFixed(0),
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: cs.onSurfaceVariant,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+                Slider(
+                  value: settings.fontSize,
+                  min: 12,
+                  max: 32,
+                  divisions: 20,
+                  onChanged: (v) => notifier.setFontSize(v),
+                ),
+                const SizedBox(height: 12),
+                const Divider(),
+                const SizedBox(height: 12),
+
+                // Font color RGB
+                _buildRgbSliders(
+                  label: i18n.tr('font_color'),
+                  resetTooltip: i18n.tr('reset_to_default'),
+                  currentColor: currentFontColor,
+                  defaultColor: const Color(0xFFFFFFFF),
+                  cs: cs,
+                  labelStyle: labelStyle,
+                  onChanged: (c) => notifier.setFontColor(c),
+                  onReset: () => notifier.setFontColor(null),
+                ),
+                const SizedBox(height: 12),
+                const Divider(),
+                const SizedBox(height: 12),
+
+                // Background blur
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(i18n.tr('background_blur'), style: labelStyle),
+                    ),
+                    Text(
+                      settings.backgroundBlur.toStringAsFixed(0),
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: cs.onSurfaceVariant,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+                Slider(
+                  value: settings.backgroundBlur,
+                  min: 0,
+                  max: 30,
+                  divisions: 30,
+                  onChanged: (v) => notifier.setBackgroundBlur(v),
+                ),
+
+                // Background opacity
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(i18n.tr('background_opacity'), style: labelStyle),
+                    ),
+                    Text(
+                      ((1.0 - settings.backgroundOpacity) * 100).toStringAsFixed(0),
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: cs.onSurfaceVariant,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+                Slider(
+                  value: 1.0 - settings.backgroundOpacity,
+                  min: 0,
+                  max: 1.0,
+                  divisions: 100,
+                  onChanged: (v) => notifier.setBackgroundOpacity(1.0 - v),
+                ),
+                const SizedBox(height: 4),
+
+                // Background color RGB
+                _buildRgbSliders(
+                  label: i18n.tr('background_color'),
+                  resetTooltip: i18n.tr('reset_to_default'),
+                  currentColor: currentBgColor,
+                  defaultColor: const Color(0xFF000000),
+                  cs: cs,
+                  labelStyle: labelStyle,
+                  onChanged: (c) => notifier.setBackgroundColor(c),
+                  onReset: () => notifier.setBackgroundColor(null),
+                ),
+                const SizedBox(height: 12),
+                const Divider(),
+                const SizedBox(height: 12),
+
+                // Border depth
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(i18n.tr('border_depth'), style: labelStyle),
+                    ),
+                    Text(
+                      (settings.borderDepth * 100).toStringAsFixed(0),
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: cs.onSurfaceVariant,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+                Slider(
+                  value: settings.borderDepth,
+                  min: 0,
+                  max: 1.0,
+                  divisions: 100,
+                  onChanged: (v) => notifier.setBorderDepth(v),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}

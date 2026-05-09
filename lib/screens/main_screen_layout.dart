@@ -371,8 +371,10 @@ extension _MainScreenLayout on _MainScreenState {
       final systemBottom = MediaQuery.of(context).padding.bottom;
       // Use the actual measured height of the dock content + its bottom margin
       // to ensure the scrollable content is flush with its top edge.
-      return (max(systemBottom, 6.0) + _measuredDockContent)
-          .clamp(0.0, double.infinity);
+      return (max(systemBottom, 6.0) + _measuredDockContent).clamp(
+        0.0,
+        double.infinity,
+      );
     }
     final systemBottom = MediaQuery.of(context).padding.bottom;
     if (hasNowPlaying) return systemBottom + 158;

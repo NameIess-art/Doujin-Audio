@@ -19,7 +19,6 @@ class _SessionHeroArtwork extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final dpr = min(MediaQuery.devicePixelRatioOf(context), 2.0);
-    final cacheWidth = (height * 1.25 * dpr).round();
 
     Widget fallback() {
       return DecoratedBox(
@@ -43,65 +42,73 @@ class _SessionHeroArtwork extends StatelessWidget {
       );
     }
 
-    return Center(
-      child: Container(
-        width: height * 1.25,
-        height: height,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(24),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.35),
-              blurRadius: 40,
-              offset: const Offset(0, 16),
-            ),
-          ],
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(24),
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              AsyncCoverImage(
-                future: coverPathFuture,
-                fallbackBuilder: (_) => fallback(),
-                loadingBuilder: (_) => PulsingPlaceholder(
-                  borderRadius: BorderRadius.circular(24),
-                  child: fallback(),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final displayWidth = constraints.maxWidth;
+        final displayHeight = min(height, constraints.maxHeight);
+        final cacheW = (min(displayWidth, displayHeight * 4 / 3) * dpr).round();
+
+        return ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: height),
+          child: Container(
+            width: displayWidth,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.35),
+                  blurRadius: 40,
+                  offset: const Offset(0, 16),
                 ),
-                imageBuilder: (context, coverPath) {
-                  return RepaintBoundary(
-                    child: Image(
-                      image: resizeFileImageIfNeeded(
-                        path: coverPath,
-                        cacheWidth: cacheWidth,
-                      ),
-                      fit: BoxFit.cover,
-                      gaplessPlayback: true,
-                      errorBuilder: (_, _, _) => fallback(),
+              ],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(24),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  AsyncCoverImage(
+                    future: coverPathFuture,
+                    fallbackBuilder: (_) => fallback(),
+                    loadingBuilder: (_) => PulsingPlaceholder(
+                      borderRadius: BorderRadius.circular(24),
+                      child: fallback(),
                     ),
-                  );
-                },
-              ),
-              Positioned.fill(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        Colors.black.withValues(alpha: 0.1),
-                        Colors.transparent,
-                        Colors.black.withValues(alpha: 0.2),
-                      ],
+                    imageBuilder: (context, coverPath) {
+                      return RepaintBoundary(
+                        child: Image(
+                          image: resizeFileImageIfNeeded(
+                            path: coverPath,
+                            cacheWidth: cacheW,
+                          ),
+                          fit: BoxFit.cover,
+                          gaplessPlayback: true,
+                          errorBuilder: (_, _, _) => fallback(),
+                        ),
+                      );
+                    },
+                  ),
+                  Positioned.fill(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Colors.black.withValues(alpha: 0.1),
+                            Colors.transparent,
+                            Colors.black.withValues(alpha: 0.2),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
-                ),
+                ],
               ),
-            ],
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }
@@ -142,7 +149,7 @@ class _SessionCoverThumbnail extends StatelessWidget {
     }
 
     return SizedBox(
-      width: 90,
+      width: 96,
       height: 72,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(14),
@@ -158,7 +165,7 @@ class _SessionCoverThumbnail extends StatelessWidget {
             return Image(
               image: resizeFileImageIfNeeded(
                 path: coverPath,
-                cacheWidth: (90 * dpr).round(),
+                cacheWidth: (96 * dpr).round(),
               ),
               fit: BoxFit.cover,
               gaplessPlayback: true,

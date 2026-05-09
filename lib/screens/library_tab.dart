@@ -20,6 +20,7 @@ import '../services/audio_state_services.dart';
 import '../widgets/app_feedback.dart';
 import '../widgets/async_cover_image.dart';
 import '../widgets/confirm_action_dialog.dart';
+import '../widgets/content_bound_reorder_area.dart';
 import '../widgets/mobile_overlay_inset.dart';
 import '../widgets/reorderable_hold_drag_listener.dart';
 import '../widgets/swipe_reveal_card.dart';
@@ -211,6 +212,12 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     }
 
     Widget buildLibraryItem(BuildContext context, int index) {
+      if (index == tree.length) {
+        return const SizedBox(
+          key: ValueKey('bottom_spacing_search'),
+          height: 12,
+        );
+      }
       final node = tree[index];
       return RepaintBoundary(
         child: _searchQuery.isNotEmpty
@@ -226,10 +233,10 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
 
     Widget emptyListBody() {
       // Padding adjustment for restricted Positioned viewport.
-      // We expand the Positioned by 80px to pre-render items under the glass, 
+      // We expand the Positioned by 80px to pre-render items under the glass,
       // so we add 80px to the internal padding to keep the content visually in place.
       final relativeTop = 80 + 4 + searchBarFullHeight;
-      const double relativeBottom = 80 + 8;
+      final relativeBottom = MobileOverlayInset.of(context) + 8;
 
       if (_searchQuery.isNotEmpty) {
         return ListView(
@@ -240,7 +247,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
             16,
             relativeTop,
             16,
-            relativeBottom,
+            relativeBottom + 12,
           ),
           children: [
             SizedBox(
@@ -315,24 +322,18 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
       },
       child: Stack(
         children: [
-          // List content starts at top:0, padded so it scrolls behind the header
-          // for the BackdropFilter frosted-glass effect.
-          // The main list container. We use Positioned to restrict the bounds of the 
-          // ReorderableListView so that the drag-to-scroll trigger area is at the 
-          // content area edges (below header, above dock).
-          Positioned(
-            top: _headerHeight - 80,
-            bottom: bottomInset - 80,
-            left: 0,
-            right: 0,
+          // Viewport restricted to content area so drag-to-reorder auto-scroll
+          // triggers at content edges rather than screen edges.
+          ContentBoundReorderArea(
+            headerHeight: _headerHeight,
+            bottomInset: listBottomInset,
             child: tree.isEmpty
                 ? refreshableEmptyBody()
                 : _searchQuery.isNotEmpty
                 ? ListView.builder(
                     key: const ValueKey('search_results_list'),
                     controller: _scrollController,
-                    // Expand internal padding by 80px to match the expanded Positioned bounds.
-                    padding: EdgeInsets.fromLTRB(16, 80 + 4 + searchBarFullHeight, 16, 80 + 8),
+                    padding: EdgeInsets.fromLTRB(16, 4 + searchBarFullHeight, 16, 8),
                     cacheExtent: listCacheExtent,
                     clipBehavior: Clip.none,
                     physics: const AlwaysScrollableScrollPhysics(
@@ -340,7 +341,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                     ),
                     keyboardDismissBehavior:
                         ScrollViewKeyboardDismissBehavior.onDrag,
-                    itemCount: tree.length,
+                    itemCount: tree.length + 1,
                     itemBuilder: buildLibraryItem,
                   )
                 : RefreshIndicator(
@@ -349,16 +350,15 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                       unawaited(HapticFeedback.mediumImpact());
                       await _refreshWatchedFolders();
                     },
-                    // Adjust edgeOffset because RefreshIndicator is now inside the restricted Positioned.
-                    edgeOffset: 80 + 4 + searchBarFullHeight,
+                    edgeOffset: 4 + searchBarFullHeight,
                     displacement: 32,
                     triggerMode: RefreshIndicatorTriggerMode.anywhere,
                     child: ReorderableListView.builder(
                       scrollController: _scrollController,
-                      // Clip.none allows items to be visible when scrolled into the 
+                      // Clip.none allows items to be visible when scrolled into the
                       // "empty" space above/below the restricted Positioned area.
                       clipBehavior: Clip.none,
-                      padding: EdgeInsets.fromLTRB(16, 80 + 4 + searchBarFullHeight, 16, 80 + 8),
+                      padding: EdgeInsets.fromLTRB(16, 4 + searchBarFullHeight, 16, 8),
                       cacheExtent: listCacheExtent,
                       physics: canPullRefresh
                           ? const AlwaysScrollableScrollPhysics(
@@ -374,8 +374,14 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                           unawaited(HapticFeedback.heavyImpact()),
                       proxyDecorator: (child, index, animation) =>
                           _buildReorderProxy(context, child, animation),
-                      itemCount: tree.length,
+                      itemCount: tree.length + 1,
                       itemBuilder: (context, index) {
+                        if (index == tree.length) {
+                          return const SizedBox(
+                            key: ValueKey('bottom_spacing'),
+                            height: 12,
+                          );
+                        }
                         final node = tree[index];
                         return ReorderableHoldDragStartListener(
                           key: ValueKey(node.path),

@@ -23,6 +23,7 @@ import '../widgets/app_feedback.dart';
 import '../widgets/confirm_action_dialog.dart';
 import '../widgets/mobile_overlay_inset.dart';
 import '../widgets/snap_scroll_physics.dart';
+import '../widgets/floating_subtitle_window.dart';
 
 part 'main_screen_notifications.dart';
 part 'main_screen_layout.dart';
@@ -228,6 +229,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
     final activeSessionCount = playbackState.activeSessions.length;
     final showCard = settingsState.showPlaybackCard;
     final visibleSessions = showCard ? overlaySessions : <PlaybackSession>[];
+    final subtitleSessions = overlaySessions;
     final hasNowPlaying = visibleSessions.isNotEmpty;
     if (activeSessionCount > 0 &&
         !_notificationPermissionCheckDone &&
@@ -315,6 +317,8 @@ class _MainScreenState extends ConsumerState<MainScreen>
                 ],
               ),
             if (_timerOverlayPrimed) const _ImmediateTimerScrim(),
+            for (final session in subtitleSessions)
+              FloatingSubtitleWindow(key: ValueKey('subtitle_${session.id}'), sessionId: session.id, isCrossPage: true),
           ],
         ),
       ),

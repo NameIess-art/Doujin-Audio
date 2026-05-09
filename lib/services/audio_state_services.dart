@@ -468,6 +468,7 @@ class LibraryService {
         ? folders.add(normalizedFolderPath)
         : folders.remove(normalizedFolderPath);
     if (!changed) return false;
+    markStructureChanged();
     onPersist?.call();
     return true;
   }
@@ -488,6 +489,7 @@ class LibraryService {
         ? tracks.add(normalizedTrackPath)
         : tracks.remove(normalizedTrackPath);
     if (!changed) return false;
+    markStructureChanged();
     onPersist?.call();
     return true;
   }

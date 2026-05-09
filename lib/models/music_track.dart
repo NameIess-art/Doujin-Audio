@@ -16,6 +16,7 @@ class MusicTrack {
     this.coverCachePath,
     this.lyricsPath,
     this.manualCoverPath,
+    this.duration = Duration.zero,
   });
 
   final String path;
@@ -34,6 +35,36 @@ class MusicTrack {
   final String? coverCachePath;
   final String? lyricsPath;
   final String? manualCoverPath;
+  final Duration duration;
+  
+  MusicTrack copyWith({
+    Duration? duration,
+    Duration? lastPlayedPosition,
+    DateTime? lastPlayedAt,
+    bool? isFavorite,
+    List<String>? tags,
+    String? coverCachePath,
+    String? lyricsPath,
+    String? manualCoverPath,
+  }) => MusicTrack(
+    path: path,
+    displayName: displayName,
+    groupKey: groupKey,
+    groupTitle: groupTitle,
+    groupSubtitle: groupSubtitle,
+    isSingle: isSingle,
+    scannedAt: scannedAt,
+    fileSizeBytes: fileSizeBytes,
+    modifiedAt: modifiedAt,
+    lastPlayedPosition: lastPlayedPosition ?? this.lastPlayedPosition,
+    lastPlayedAt: lastPlayedAt ?? this.lastPlayedAt,
+    isFavorite: isFavorite ?? this.isFavorite,
+    tags: tags ?? this.tags,
+    coverCachePath: coverCachePath ?? this.coverCachePath,
+    lyricsPath: lyricsPath ?? this.lyricsPath,
+    manualCoverPath: manualCoverPath ?? this.manualCoverPath,
+    duration: duration ?? this.duration,
+  );
 
   Map<String, dynamic> toJson() => {
     'path': path,
@@ -52,6 +83,7 @@ class MusicTrack {
     'coverCachePath': coverCachePath,
     'lyricsPath': lyricsPath,
     'manualCoverPath': manualCoverPath,
+    'durationMs': duration.inMilliseconds,
   };
 
   factory MusicTrack.fromJson(Map<String, dynamic> json) => MusicTrack(
@@ -75,6 +107,7 @@ class MusicTrack {
     coverCachePath: json['coverCachePath'] as String?,
     lyricsPath: json['lyricsPath'] as String?,
     manualCoverPath: json['manualCoverPath'] as String?,
+    duration: Duration(milliseconds: (json['durationMs'] as num?)?.toInt() ?? 0),
   );
 }
 

@@ -1,4 +1,4 @@
-package com.example.music_player
+package com.nameless.audio
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -15,8 +15,8 @@ import androidx.core.app.ServiceCompat
 
 class PlaybackKeepAliveService : Service() {
     companion object {
-        const val ACTION_START = "com.example.music_player.action.START_KEEP_ALIVE"
-        const val ACTION_STOP = "com.example.music_player.action.STOP_KEEP_ALIVE"
+        const val ACTION_START = "com.nameless.audio.action.START_KEEP_ALIVE"
+        const val ACTION_STOP = "com.nameless.audio.action.STOP_KEEP_ALIVE"
         const val EXTRA_HAS_ACTIVE_PLAYBACK = "has_active_playback"
         const val EXTRA_HAS_ACTIVE_TIMER = "has_active_timer"
         const val EXTRA_USES_UNIFIED_PLAYBACK_NOTIFICATION =
@@ -25,9 +25,9 @@ class PlaybackKeepAliveService : Service() {
             "keep_foreground_service_alive"
 
         private const val CHANNEL_ID = "playback_keep_alive"
-        private const val UNIFIED_CHANNEL_ID = "com.example.music_player.channel.playback"
+        private const val UNIFIED_CHANNEL_ID = "com.nameless.audio.channel.playback"
         private const val CHANNEL_NAME = "Playback"
-        private const val GROUP_KEY = "com.example.music_player.PLAYBACK_GROUP"
+        private const val GROUP_KEY = "com.nameless.audio.PLAYBACK_GROUP"
         private const val NOTIFICATION_ID = 1107
     }
 

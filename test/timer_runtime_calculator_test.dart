@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:music_player/models/playback_mode.dart';
-import 'package:music_player/services/timer_runtime_calculator.dart';
+import 'package:nameless_audio/models/playback_mode.dart';
+import 'package:nameless_audio/services/timer_runtime_calculator.dart';
 
 void main() {
   const calculator = TimerRuntimeCalculator();

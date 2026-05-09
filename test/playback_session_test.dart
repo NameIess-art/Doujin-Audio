@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio/just_audio.dart';
-import 'package:music_player/providers/audio_provider.dart';
-import 'package:music_player/services/native_playback_bridge.dart';
+import 'package:nameless_audio/providers/audio_provider.dart';
+import 'package:nameless_audio/services/native_playback_bridge.dart';
 
 void main() {
   test(

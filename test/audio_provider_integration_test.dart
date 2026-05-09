@@ -1,10 +1,10 @@
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio/just_audio.dart';
-import 'package:music_player/providers/audio_provider.dart';
-import 'package:music_player/services/native_playback_bridge.dart';
-import 'package:music_player/services/playback_notification_handler.dart';
-import 'package:music_player/services/playback_notification_service.dart';
+import 'package:nameless_audio/providers/audio_provider.dart';
+import 'package:nameless_audio/services/native_playback_bridge.dart';
+import 'package:nameless_audio/services/playback_notification_handler.dart';
+import 'package:nameless_audio/services/playback_notification_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {

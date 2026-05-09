@@ -27,7 +27,7 @@ class AppDatabase {
     final dbPath = await getDatabasesPath();
     final db = await openDatabase(
       p.join(dbPath, 'audio_player.db'),
-      version: 6,
+      version: 7,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -53,6 +53,7 @@ class AppDatabase {
         cover_cache_path TEXT,
         lyrics_path TEXT,
         manual_cover_path TEXT,
+        duration_ms INTEGER NOT NULL DEFAULT 0,
         scan_generation INTEGER NOT NULL DEFAULT 0
       )
     ''');
@@ -64,6 +65,7 @@ class AppDatabase {
         loop_mode INTEGER NOT NULL,
         volume REAL NOT NULL,
         position_ms INTEGER NOT NULL DEFAULT 0,
+        duration_ms INTEGER NOT NULL DEFAULT 0,
         channel_swap INTEGER NOT NULL DEFAULT 0,
         created_at_ms INTEGER,
         updated_at_ms INTEGER,
@@ -135,6 +137,20 @@ class AppDatabase {
     }
     if (oldVersion < 6) {
       await _addColumnIfMissing(db, 'tracks', 'manual_cover_path', 'TEXT');
+    }
+    if (oldVersion < 7) {
+      await _addColumnIfMissing(
+        db,
+        'tracks',
+        'duration_ms',
+        'INTEGER NOT NULL DEFAULT 0',
+      );
+      await _addColumnIfMissing(
+        db,
+        'sessions',
+        'duration_ms',
+        'INTEGER NOT NULL DEFAULT 0',
+      );
     }
     await _createTrackIndexes(db);
   }
@@ -307,6 +323,7 @@ class AppDatabase {
             loopModeIndex: (item['loopMode'] as num?)?.toInt() ?? 1,
             volume: (item['volume'] as num?)?.toDouble() ?? 1.0,
             positionMs: (item['positionMs'] as num?)?.toInt() ?? 0,
+            durationMs: (item['durationMs'] as num?)?.toInt() ?? 0,
             channelSwapEnabled: item['channelSwap'] as bool? ?? false,
             createdAtMs: (item['createdAtMs'] as num?)?.toInt(),
             updatedAtMs: (item['updatedAtMs'] as num?)?.toInt(),
@@ -343,6 +360,7 @@ class AppDatabase {
     'cover_cache_path': t.coverCachePath,
     'lyrics_path': t.lyricsPath,
     'manual_cover_path': t.manualCoverPath,
+    'duration_ms': t.duration.inMilliseconds,
     'scan_generation': scanGeneration ?? 0,
   };
 
@@ -365,6 +383,7 @@ class AppDatabase {
     coverCachePath: row['cover_cache_path'] as String?,
     lyricsPath: row['lyrics_path'] as String?,
     manualCoverPath: row['manual_cover_path'] as String?,
+    duration: Duration(milliseconds: (row['duration_ms'] as num?)?.toInt() ?? 0),
   );
 
   static Map<String, dynamic> _sessionToRow(
@@ -376,6 +395,7 @@ class AppDatabase {
     'loop_mode': session.loopModeIndex,
     'volume': session.volume,
     'position_ms': session.positionMs,
+    'duration_ms': session.durationMs,
     'channel_swap': session.channelSwapEnabled ? 1 : 0,
     'created_at_ms': session.createdAtMs,
     'updated_at_ms': session.updatedAtMs,
@@ -390,6 +410,7 @@ class AppDatabase {
         loopModeIndex: row['loop_mode'] as int,
         volume: (row['volume'] as num).toDouble(),
         positionMs: row['position_ms'] as int,
+        durationMs: row['duration_ms'] as int? ?? 0,
         channelSwapEnabled: (row['channel_swap'] as int? ?? 0) == 1,
         createdAtMs: (row['created_at_ms'] as num?)?.toInt(),
         updatedAtMs: (row['updated_at_ms'] as num?)?.toInt(),
@@ -423,6 +444,7 @@ class PersistedSession {
     required this.loopModeIndex,
     required this.volume,
     required this.positionMs,
+    required this.durationMs,
     required this.channelSwapEnabled,
     required this.sortOrder,
     this.createdAtMs,
@@ -435,6 +457,7 @@ class PersistedSession {
   final int loopModeIndex;
   final double volume;
   final int positionMs;
+  final int durationMs;
   final bool channelSwapEnabled;
   final int sortOrder;
   final int? createdAtMs;

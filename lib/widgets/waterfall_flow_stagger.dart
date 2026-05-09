@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 
 class WaterfallFlowStagger extends StatefulWidget {
@@ -20,6 +21,7 @@ class WaterfallFlowStagger extends StatefulWidget {
 
 class _WaterfallFlowStaggerState extends State<WaterfallFlowStagger>
     with SingleTickerProviderStateMixin {
+  Timer? _staggerTimer;
   late AnimationController _controller;
   late Animation<double> _opacity;
   late Animation<Offset> _slide;
@@ -41,8 +43,8 @@ class _WaterfallFlowStaggerState extends State<WaterfallFlowStagger>
     );
 
     // Cap the stagger index to ensure items lower in the list don't wait too long.
-    final staggerIndex = widget.index.clamp(0, 15);
-    Future.delayed(widget.staggerDelay * staggerIndex, () {
+    final staggerIndex = widget.index.clamp(0, 12);
+    _staggerTimer = Timer(widget.staggerDelay * staggerIndex, () {
       if (mounted) {
         _controller.forward();
       }
@@ -51,6 +53,7 @@ class _WaterfallFlowStaggerState extends State<WaterfallFlowStagger>
 
   @override
   void dispose() {
+    _staggerTimer?.cancel();
     _controller.dispose();
     super.dispose();
   }

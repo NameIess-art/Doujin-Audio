@@ -50,45 +50,13 @@ extension AudioProviderPersistenceSessions on AudioProvider {
           state: PlayerState(false, ProcessingState.idle),
         );
         session.lastKnownPosition = restoredPosition;
+        session.setOptimisticDuration(Duration(milliseconds: item.durationMs));
         session.lastPersistedPositionBucket = restoredPosition.inSeconds ~/ 5;
         session.channelSwapEnabled = item.channelSwapEnabled;
         _sessions[session.id] = session;
         _markActiveSessionsDirty();
         _bindSessionListeners(session);
         restoredIds.add(session.id);
-
-        try {
-          final uri = track.path.startsWith('content://')
-              ? Uri.parse(track.path)
-              : Uri.file(track.path);
-          final prepareResult = await _nativePlaybackRepository.prepareSession(
-            sessionId: session.id,
-            uri: uri,
-            title: track.displayName,
-            subtitle: track.groupTitle,
-            startPosition: restoredPosition,
-            volume: volume,
-            repeatOne: loopMode == SessionLoopMode.single,
-          );
-          if (!prepareResult.isOk) {
-            continue;
-          }
-          if (item.channelSwapEnabled) {
-            await _nativePlaybackRepository.setChannelSwap(
-              session.id,
-              item.channelSwapEnabled,
-            );
-          }
-          session.loadedPath = track.path;
-          _ensureSubtitleTrackLoaded(track.path);
-          _refreshNotificationSubtitleForSession(
-            session,
-            position: restoredPosition,
-            syncNotification: false,
-          );
-        } catch (e) {
-          debugPrint('AudioProvider persistence error: $e');
-        }
       }
 
       final validOrdered = _sessionOrder
@@ -101,11 +69,55 @@ extension AudioProviderPersistenceSessions on AudioProvider {
         ..clear()
         ..addAll(validOrdered);
       _markActiveSessionsDirty();
-      _notificationFocusSessionId = _sessionOrder.isNotEmpty
-          ? _sessionOrder.first
-          : restoredIds.isNotEmpty
-          ? restoredIds.first
-          : null;
+      
+      final firstSessionId = _sessionOrder.firstOrNull;
+      _notificationFocusSessionId = firstSessionId;
+
+      for (final id in restoredIds) {
+        final session = _sessions[id];
+        if (session == null) continue;
+
+        // Only prepare the first (focused) session to save memory.
+        // Others will be lazily prepared when the user interacts with them.
+        final shouldPrepareNow = id == firstSessionId;
+        if (!shouldPrepareNow) continue;
+
+        try {
+          final track = trackByPath(session.currentTrackPath);
+          if (track == null) continue;
+
+          final uri = track.path.startsWith('content://')
+              ? Uri.parse(track.path)
+              : Uri.file(track.path);
+          final prepareResult = await _nativePlaybackRepository.prepareSession(
+            sessionId: session.id,
+            uri: uri,
+            title: track.displayName,
+            subtitle: track.groupTitle,
+            startPosition: session.lastKnownPosition,
+            volume: session.volume,
+            repeatOne: session.loopMode == SessionLoopMode.single,
+          );
+          if (!prepareResult.isOk) {
+            continue;
+          }
+          if (session.channelSwapEnabled) {
+            await _nativePlaybackRepository.setChannelSwap(
+              session.id,
+              session.channelSwapEnabled,
+            );
+          }
+          session.loadedPath = track.path;
+          _ensureSubtitleTrackLoaded(track.path);
+          _refreshNotificationSubtitleForSession(
+            session,
+            position: session.lastKnownPosition,
+            syncNotification: false,
+          );
+        } catch (e) {
+          debugPrint('AudioProvider persistence error: $e');
+        }
+      }
 
       final snapshotResponse = await _nativePlaybackRepository.snapshot();
       final snapshotValue = snapshotResponse.valueOrNull;
@@ -144,6 +156,7 @@ extension AudioProviderPersistenceSessions on AudioProvider {
                   entry.value.lastKnownPosition.inMilliseconds,
                 ),
               ),
+              durationMs: entry.value.duration?.inMilliseconds ?? 0,
               channelSwapEnabled: entry.value.channelSwapEnabled,
               createdAtMs: entry.value.createdAt.millisecondsSinceEpoch,
               updatedAtMs: DateTime.now().millisecondsSinceEpoch,

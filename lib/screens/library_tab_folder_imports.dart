@@ -38,7 +38,7 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
 
   Future<Directory> _persistentImportDirectory() async {
     final supportDir = await getApplicationSupportDirectory();
-    return Directory(path.join(supportDir.path, 'music_player_imports'));
+    return Directory(path.join(supportDir.path, 'nameless_audio_imports'));
   }
 
   Future<List<_ScannedTrack>?> _scanFolderViaNative(String folderPath) async {

@@ -68,7 +68,7 @@ class AppLanguageProvider with ChangeNotifier {
 
 const Map<AppLanguage, Map<String, String>> _localizedValues = {
   AppLanguage.zh: {
-    'app_title': '本地音乐播放器',
+    'app_title': 'NL Audio',
     'nav_library': '音频库',
     'nav_sessions': '播放列表',
     'nav_settings': '设置',
@@ -77,7 +77,7 @@ const Map<AppLanguage, Map<String, String>> _localizedValues = {
     'close': '关闭',
     'open_timer_settings': '打开计时器设置',
     'timer_play_plus': '播放 + {time}',
-    'asmr_player': 'Nameless Audio',
+    'asmr_player': 'NL Audio',
     'music_library': '音频库',
     'playback_sessions': '播放列表',
     'settings': '设置',
@@ -204,7 +204,7 @@ const Map<AppLanguage, Map<String, String>> _localizedValues = {
     'bitrate_used': 'MP3 / AAC / OGG 输出会使用该码率。',
     'bitrate_not_used': '{format} 使用格式内置编码参数，码率设置不生效。',
     'about': '关于',
-    'app_version': '本地音乐播放器 v1.1.15',
+    'app_version': 'NL Audio v0.8.0',
     'app_desc': '支持并发会话与高保真音频播放。',
     'language': '语言',
     'language_subtitle': '切换界面语言',
@@ -291,7 +291,7 @@ const Map<AppLanguage, Map<String, String>> _localizedValues = {
     'volume_warning_message': '音量过高会造成失真',
   },
   AppLanguage.ja: {
-    'app_title': 'ローカル音楽プレーヤー',
+    'app_title': 'NL Audio',
     'nav_library': 'ライブラリ',
     'nav_sessions': 'プレイリスト',
     'nav_settings': '設定',
@@ -300,7 +300,7 @@ const Map<AppLanguage, Map<String, String>> _localizedValues = {
     'close': '閉じる',
     'open_timer_settings': 'タイマー設定を開く',
     'timer_play_plus': '再生 + {time}',
-    'asmr_player': 'Nameless Audio',
+    'asmr_player': 'NL Audio',
     'music_library': 'ライブラリ',
     'playback_sessions': 'プレイリスト',
     'settings': '設定',
@@ -427,7 +427,7 @@ const Map<AppLanguage, Map<String, String>> _localizedValues = {
     'bitrate_used': 'MP3 / AAC / OGG 出力でこのビットレートを使用します。',
     'bitrate_not_used': '{format} は形式内蔵のエンコードを使うため、ビットレート設定は無効です。',
     'about': '情報',
-    'app_version': 'ローカル音楽プレーヤー v1.1.15',
+    'app_version': 'NL Audio v0.8.0',
     'app_desc': '並行セッションと高音質再生に対応。',
     'language': '言語',
     'language_subtitle': '表示言語を切り替え',
@@ -515,7 +515,7 @@ const Map<AppLanguage, Map<String, String>> _localizedValues = {
     'volume_warning_message': '音量が高すぎると歪みが発生します',
   },
   AppLanguage.en: {
-    'app_title': 'Local Music Player',
+    'app_title': 'NL Audio',
     'nav_library': 'Library',
     'nav_sessions': 'Playlist',
     'nav_settings': 'Settings',
@@ -524,7 +524,7 @@ const Map<AppLanguage, Map<String, String>> _localizedValues = {
     'close': 'Close',
     'open_timer_settings': 'Open timer settings',
     'timer_play_plus': 'Play + {time}',
-    'asmr_player': 'Nameless Audio',
+    'asmr_player': 'NL Audio',
     'music_library': 'Library',
     'playback_sessions': 'Playlist',
     'settings': 'Settings',
@@ -671,7 +671,7 @@ const Map<AppLanguage, Map<String, String>> _localizedValues = {
     'bitrate_not_used':
         '{format} uses built-in encoding parameters. Bitrate setting is ignored.',
     'about': 'About',
-    'app_version': 'Local Music Player v1.1.15',
+    'app_version': 'NL Audio v0.8.0',
     'app_desc':
         'Supports concurrent sessions and high-fidelity audio playback.',
     'language': 'Language',

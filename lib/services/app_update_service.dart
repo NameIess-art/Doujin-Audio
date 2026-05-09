@@ -56,7 +56,7 @@ class AppUpdateService {
   static const String repo = 'nameless-audio';
   static const String latestReleaseApi =
       'https://api.github.com/repos/$owner/$repo/releases/latest';
-  static const MethodChannel _channel = MethodChannel('music_player/update');
+  static const MethodChannel _channel = MethodChannel('nameless_audio/update');
 
   static Future<AppUpdateInfo> checkLatest() async {
     final currentVersion = await currentAppVersion();
@@ -119,7 +119,7 @@ class AppUpdateService {
       final buildNumber = (raw?['buildNumber'] as num?)?.toInt() ?? 0;
       return AppVersionInfo(versionName: versionName, buildNumber: buildNumber);
     } catch (_) {
-      return const AppVersionInfo(versionName: '1.1.15', buildNumber: 10115);
+      return const AppVersionInfo(versionName: '0.8.0', buildNumber: 800);
     }
   }
 

@@ -31,7 +31,7 @@ class SettingsTab extends ConsumerStatefulWidget {
 class _SettingsTabState extends ConsumerState<SettingsTab>
     with WidgetsBindingObserver, AutomaticKeepAliveClientMixin {
   static const MethodChannel _powerChannel = MethodChannel(
-    'music_player/power',
+    'nameless_audio/power',
   );
 
   bool _checkingUpdate = false;

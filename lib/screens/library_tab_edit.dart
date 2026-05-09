@@ -125,10 +125,14 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage> {
     final excludedTracks = libraryService.excludedTracksForLibrary(
       widget.libraryPath,
     );
+    final excludedFolders = libraryService.excludedFoldersForLibrary(
+      widget.libraryPath,
+    );
     final cacheKey = Object.hash(
       libraryService.library,
       _diskAudioFilePaths,
       excludedTracks,
+      excludedFolders,
       _searchQuery,
     );
     if (_editTreeCacheKey != cacheKey) {

@@ -1,6 +1,6 @@
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:music_player/services/playback_notification_handler.dart';
+import 'package:nameless_audio/services/playback_notification_handler.dart';
 
 void main() {
   test('playFromMediaId forwards notification resume callback', () async {

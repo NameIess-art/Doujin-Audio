@@ -46,10 +46,10 @@ class _MainScreenState extends ConsumerState<MainScreen>
   static const String _backgroundKeepAliveInitializedKey =
       'background_keep_alive_initialized_v2';
   static const MethodChannel _powerChannel = MethodChannel(
-    'music_player/power',
+    'nameless_audio/power',
   );
   static const MethodChannel _notificationsChannel = MethodChannel(
-    'music_player/notifications',
+    'nameless_audio/notifications',
   );
 
   int _currentIndex = 0;

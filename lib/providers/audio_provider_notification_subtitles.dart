@@ -10,6 +10,12 @@ extension AudioProviderNotificationSubtitles on AudioProvider {
       try {
         final subtitleTrack = await loadSubtitleTrackForAudio(trackPath);
         _subtitleTracks[trackPath] = subtitleTrack;
+        
+        // Memory optimization: Simple LRU eviction for subtitle tracks
+        if (_subtitleTracks.length > 20) {
+          final oldestKey = _subtitleTracks.keys.first;
+          _subtitleTracks.remove(oldestKey);
+        }
 
         var shouldRefreshNotification = false;
         for (final session in _sessions.values) {

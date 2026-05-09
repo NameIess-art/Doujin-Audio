@@ -1,8 +1,8 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:music_player/models/music_track.dart';
-import 'package:music_player/services/app_database.dart';
+import 'package:nameless_audio/models/music_track.dart';
+import 'package:nameless_audio/services/app_database.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 void main() {

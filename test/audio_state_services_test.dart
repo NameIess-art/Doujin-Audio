@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio/just_audio.dart';
-import 'package:music_player/models/playback_mode.dart';
-import 'package:music_player/models/playback_session.dart';
-import 'package:music_player/services/audio_state_services.dart';
+import 'package:nameless_audio/models/playback_mode.dart';
+import 'package:nameless_audio/models/playback_session.dart';
+import 'package:nameless_audio/services/audio_state_services.dart';
 
 void main() {
   group('SettingsRepository', () {
@@ -66,7 +66,7 @@ void main() {
         ..autoResumeHour = 8
         ..autoResumeMinute = 30
         ..pausedByTimerPaths.add('/tracks/a.mp3');
-      service.syncSlice();
+      service.syncSlice(isInitialized: true);
 
       expect(
         service.slice.state,
@@ -161,6 +161,7 @@ void main() {
         playingSessionCount: 1,
         focusedSessionId: 'focus',
         multiThreadPlaybackEnabled: true,
+        isInitialized: true,
       );
 
       expect(
@@ -198,7 +199,7 @@ void main() {
         ..scanDuplicateCount = 1
         ..scanFailureCount = 2;
       service.markStructureChanged();
-      service.syncSlice();
+      service.syncSlice(isInitialized: true);
 
       expect(
         service.slice.state,

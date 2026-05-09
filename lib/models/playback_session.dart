@@ -85,7 +85,13 @@ class PlaybackSession {
       _bufferedPositionController.add(bufferedPosition);
     }
     if ((volume - snapshot.volume).abs() >= 0.001) {
-      volume = snapshot.volume;
+      // If we are in boosted range (> 1.0) and native reports exactly 1.0, 
+      // we assume it's a native cap and preserve our boosted value to prevent rebounding.
+      if (volume > 1.0 && (snapshot.volume - 1.0).abs() < 0.001) {
+        // Keep boosted value.
+      } else {
+        volume = snapshot.volume;
+      }
     }
     channelSwapEnabled = snapshot.channelSwapEnabled;
     if (snapshot.uri != null) {
@@ -107,6 +113,12 @@ class PlaybackSession {
   void setOptimisticPosition(Duration position) {
     lastKnownPosition = position;
     _positionController.add(position);
+  }
+
+  void setOptimisticDuration(Duration? nextDuration) {
+    if (duration == nextDuration) return;
+    duration = nextDuration;
+    _durationController.add(duration);
   }
 
   void resetStreamsForNewTrack() {

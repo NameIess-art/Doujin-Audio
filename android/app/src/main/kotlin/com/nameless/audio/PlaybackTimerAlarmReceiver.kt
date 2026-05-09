@@ -1,4 +1,4 @@
-package com.example.music_player
+package com.nameless.audio
 
 import android.app.AlarmManager
 import android.app.PendingIntent
@@ -94,8 +94,8 @@ class PlaybackTimerAlarmReceiver : BroadcastReceiver() {
 }
 
 object PlaybackTimerAlarmScheduler {
-    const val actionTimerExpired = "com.example.music_player.action.TIMER_EXPIRED"
-    const val actionAutoResume = "com.example.music_player.action.AUTO_RESUME"
+    const val actionTimerExpired = "com.nameless.audio.action.TIMER_EXPIRED"
+    const val actionAutoResume = "com.nameless.audio.action.AUTO_RESUME"
 
     private const val timerRequestCode = 32001
     private const val autoResumeRequestCode = 32002
@@ -170,28 +170,32 @@ object PlaybackTimerAlarmScheduler {
         )
         val safeTriggerAtMs = triggerAtMs.coerceAtLeast(System.currentTimeMillis() + 250L)
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
-                alarmManager.canScheduleExactAlarms()
-            ) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            val showIntent = Intent(context, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            }
+            val showPendingIntent = PendingIntent.getActivity(
+                context,
+                requestCode,
+                showIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            val info = AlarmManager.AlarmClockInfo(safeTriggerAtMs, showPendingIntent)
+            alarmManager.setAlarmClock(info, pendingIntent)
+        } else {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 alarmManager.setExactAndAllowWhileIdle(
                     AlarmManager.RTC_WAKEUP,
                     safeTriggerAtMs,
                     pendingIntent
                 )
             } else {
-                alarmManager.setAndAllowWhileIdle(
+                alarmManager.setExact(
                     AlarmManager.RTC_WAKEUP,
                     safeTriggerAtMs,
                     pendingIntent
                 )
             }
-        } else {
-            alarmManager.setExact(
-                AlarmManager.RTC_WAKEUP,
-                safeTriggerAtMs,
-                pendingIntent
-            )
         }
     }
 

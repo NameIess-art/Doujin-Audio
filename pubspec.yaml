@@ -1,7 +1,7 @@
-name: music_player
+name: nameless_audio
 description: Android local audio player for multi-session ASMR and voice library playback.
 publish_to: 'none'
-version: 1.1.15+10115
+version: 0.8.0+800
 
 environment:
   sdk: ^3.11.1

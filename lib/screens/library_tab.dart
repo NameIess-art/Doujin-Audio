@@ -48,7 +48,7 @@ class LibraryTab extends ConsumerStatefulWidget {
 class _LibraryTabState extends ConsumerState<LibraryTab>
     with AutomaticKeepAliveClientMixin {
   static const MethodChannel _fileCacheChannel = MethodChannel(
-    'music_player/file_cache',
+    'nameless_audio/file_cache',
   );
 
   @override
@@ -194,10 +194,9 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     // Remove the extra 96px to make content flush with the bottom dock.
     final listBottomInset = bottomInset;
     final viewportHeight = MediaQuery.sizeOf(context).height;
-    // Massive cacheExtent to ensure items are pre-rendered far outside the viewport.
-    final listCacheExtent = (headerContentHeight + listBottomInset + 1200)
-        .clamp(viewportHeight * 3.0, viewportHeight * 5.0)
-        .toDouble();
+    // Reduced cacheExtent to significantly lower memory footprint and improve
+    // scroll/swipe performance.
+    final listCacheExtent = (headerContentHeight + 400).toDouble();
     final hasLibrary = rawTree.isNotEmpty;
     final showLibrarySkeleton =
         !hasLibrary &&

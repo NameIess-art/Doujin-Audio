@@ -4,7 +4,7 @@ extension _SettingsTabActions on _SettingsTabState {
   Future<void> _clearTempCache(BuildContext context) async {
     final i18n = context.read<AppLanguageProvider>();
     final cacheDir = Directory(
-      path.join(Directory.systemTemp.path, 'music_player_imports'),
+      path.join(Directory.systemTemp.path, 'nameless_audio_imports'),
     );
     if (await cacheDir.exists()) {
       await cacheDir.delete(recursive: true);

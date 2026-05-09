@@ -105,7 +105,7 @@ class _SessionVolumeSliderState extends State<_SessionVolumeSlider> {
     if (parsed == null || parsed < 0 || parsed > 200) {
       return;
     }
-    if (parsed > 100) {
+    if (parsed > 120) {
       Navigator.of(dialogContext).pop();
       showDialog(
         context: context,
@@ -171,12 +171,19 @@ class _SessionVolumeSliderState extends State<_SessionVolumeSlider> {
         Expanded(
           child: SliderTheme(
             data: Theme.of(context).sliderTheme.copyWith(
-              trackHeight: 5,
-              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8.5),
-              overlayShape: const RoundSliderOverlayShape(overlayRadius: 16),
+              trackHeight: 6,
+              thumbShape: const RoundSliderThumbShape(
+                enabledThumbRadius: 10,
+                elevation: 3,
+                pressedElevation: 6,
+              ),
+              overlayShape: const RoundSliderOverlayShape(overlayRadius: 20),
+              activeTrackColor: isBoosted ? cs.primary : null,
             ),
             child: Slider(
-              value: volume.clamp(0.0, 1.0),
+              value: volume,
+              min: 0.0,
+              max: 2.0,
               onChangeStart: (value) {
                 HapticFeedback.selectionClick();
                 setState(() {
@@ -382,7 +389,7 @@ class _VerticalVolumeSliderState extends State<_VerticalVolumeSlider> {
     if (parsed == null || parsed < 0 || parsed > 200) {
       return;
     }
-    if (parsed > 100) {
+    if (parsed > 120) {
       Navigator.of(dialogContext).pop();
       showDialog(
         context: context,
@@ -480,18 +487,20 @@ class _VerticalVolumeSliderState extends State<_VerticalVolumeSlider> {
                       quarterTurns: 3,
                       child: SliderTheme(
                         data: SliderTheme.of(context).copyWith(
-                          trackHeight: 6,
+                          trackHeight: 7,
                           thumbShape: const RoundSliderThumbShape(
-                            enabledThumbRadius: 8,
+                            enabledThumbRadius: 10,
+                            elevation: 4,
                           ),
                           overlayShape: const RoundSliderOverlayShape(
-                            overlayRadius: 14,
+                            overlayRadius: 18,
                           ),
+                          activeTrackColor: isBoosted ? cs.primary : null,
                         ),
                         child: Slider(
-                          value: volume.clamp(0.0, 1.0),
-                          min: 0,
-                          max: 1.0,
+                          value: volume,
+                          min: 0.0,
+                          max: 2.0,
                           onChanged: (v) {
                             setState(() => _dragVolume = v);
                             widget.provider.setSessionVolume(

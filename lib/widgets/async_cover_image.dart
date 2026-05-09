@@ -58,9 +58,8 @@ class _AsyncCoverImageState extends State<AsyncCoverImage> {
 
   void _bindFuture(Future<String?> future) {
     final token = ++_token;
-    setState(() {
-      _isResolved = false;
-    });
+    // Removed immediate _isResolved = false to prevent flickering.
+    // The previous state remains visible until the new future resolves.
     future
         .then((path) {
           if (!mounted || token != _token) return;

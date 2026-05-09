@@ -1,0 +1,11 @@
+# Release keystore configuration — DO NOT commit real secrets.
+# Copy this file to key.properties and fill in your actual values.
+#
+# Generate a keystore:
+#   keytool -genkey -v -keystore ~/upload-keystore.jks -keyalg RSA \
+#     -keysize 2048 -validity 10000 -alias upload
+#
+storeFile=../upload-keystore.jks
+keyAlias=upload
+storePassword=changeit
+keyPassword=changeit

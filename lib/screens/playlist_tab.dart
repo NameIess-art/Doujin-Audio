@@ -182,10 +182,9 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     final topTotalHeight = _headerHeight + 4;
     final listBottomInset = bottomInset;
     final viewportHeight = MediaQuery.sizeOf(context).height;
-    // Massive cacheExtent to ensure items are pre-rendered far outside the viewport.
-    final listCacheExtent = (topTotalHeight + listBottomInset + 1200)
-        .clamp(viewportHeight * 3.0, viewportHeight * 5.0)
-        .toDouble();
+    // Reduced cacheExtent to significantly lower memory footprint and improve
+    // scroll/swipe performance.
+    final listCacheExtent = (topTotalHeight + 400).toDouble();
 
     return Stack(
       clipBehavior: Clip.none,

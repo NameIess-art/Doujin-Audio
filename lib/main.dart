@@ -20,6 +20,11 @@ import 'theme/theme_provider.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // Optimize image cache for mobile memory stability
+  PaintingBinding.instance.imageCache.maximumSizeBytes = 50 * 1024 * 1024; // 50MB
+  PaintingBinding.instance.imageCache.maximumSize = 200; // 200 images
+  
   await SystemChrome.setPreferredOrientations(
     AppOrientationPolicy.current.allowedOrientations,
   );
@@ -39,7 +44,7 @@ Future<void> main() async {
   final audioHandler = await AudioService.init(
     builder: PlaybackNotificationHandler.new,
     config: const AudioServiceConfig(
-      androidNotificationChannelId: 'com.example.music_player.channel.playback',
+      androidNotificationChannelId: 'com.nameless.audio.channel.playback',
       androidNotificationChannelName: 'Playback',
       androidNotificationOngoing: true,
     ),

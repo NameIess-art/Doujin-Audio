@@ -1,4 +1,4 @@
-package com.example.music_player
+package com.nameless.audio
 
 import android.app.Activity
 import android.app.NotificationChannel
@@ -91,15 +91,15 @@ class MainActivity : AudioServiceActivity() {
     companion object {
         const val notificationSessionIdExtra = "notificationSessionId"
         const val openSessionFromNotificationAction =
-            "com.example.music_player.OPEN_SESSION_FROM_NOTIFICATION"
+            "com.nameless.audio.OPEN_SESSION_FROM_NOTIFICATION"
     }
 
-    private val fileCacheChannel = "music_player/file_cache"
-    private val powerChannel = "music_player/power"
-    private val notificationsChannel = "music_player/notifications"
-    private val nativePlaybackMethodsChannel = "music_player/native_playback"
-    private val nativePlaybackEventsChannel = "music_player/native_playback/events"
-    private val updateChannel = "music_player/update"
+    private val fileCacheChannel = "nameless_audio/file_cache"
+    private val powerChannel = "nameless_audio/power"
+    private val notificationsChannel = "nameless_audio/notifications"
+    private val nativePlaybackMethodsChannel = "nameless_audio/native_playback"
+    private val nativePlaybackEventsChannel = "nameless_audio/native_playback/events"
+    private val updateChannel = "nameless_audio/update"
     private val pickAudioSourceRequestCode = 7001
     private var pendingPickAudioResult: MethodChannel.Result? = null
     private var notificationsMethodChannel: MethodChannel? = null
@@ -270,7 +270,7 @@ class MainActivity : AudioServiceActivity() {
                             val extension = name.substringAfterLast('.', "")
                             val safeExt = if (extension.isBlank()) "bin" else extension
 
-                            val outDir = File(filesDir, "music_player_imports")
+                            val outDir = File(filesDir, "nameless_audio_imports")
                             if (!outDir.exists()) {
                                 outDir.mkdirs()
                             }
@@ -1303,7 +1303,7 @@ class MainActivity : AudioServiceActivity() {
             ?.substringAfterLast('.', "")
             ?.ifBlank { "img" }
             ?: "img"
-        val coverDir = File(cacheDir, "music_player_covers")
+        val coverDir = File(cacheDir, "nameless_audio_covers")
         if (!coverDir.exists()) {
             coverDir.mkdirs()
         }

@@ -1,7 +1,7 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:music_player/services/native_playback_bridge.dart';
-import 'package:music_player/services/platform_channels.dart';
+import 'package:nameless_audio/services/native_playback_bridge.dart';
+import 'package:nameless_audio/services/platform_channels.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

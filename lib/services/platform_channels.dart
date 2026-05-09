@@ -8,24 +8,24 @@ library;
 // Channel names
 // ---------------------------------------------------------------------------
 abstract final class NativePlaybackChannel {
-  static const String name = 'music_player/native_playback';
-  static const String eventName = 'music_player/native_playback/events';
+  static const String name = 'nameless_audio/native_playback';
+  static const String eventName = 'nameless_audio/native_playback/events';
 }
 
 abstract final class PowerChannel {
-  static const String name = 'music_player/power';
+  static const String name = 'nameless_audio/power';
 }
 
 abstract final class FileCacheChannel {
-  static const String name = 'music_player/file_cache';
+  static const String name = 'nameless_audio/file_cache';
 }
 
 abstract final class NotificationsChannel {
-  static const String name = 'music_player/notifications';
+  static const String name = 'nameless_audio/notifications';
 }
 
 abstract final class UpdateChannel {
-  static const String name = 'music_player/update';
+  static const String name = 'nameless_audio/update';
 }
 
 // ---------------------------------------------------------------------------

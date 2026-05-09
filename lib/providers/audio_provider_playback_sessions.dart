@@ -122,6 +122,7 @@ extension AudioProviderPlaybackSessions on AudioProvider {
 
     final durationSub = session.durationStream.listen((_) {
       if (!_sessions.containsKey(session.id)) return;
+      _scheduleSaveSessionState(delay: const Duration(milliseconds: 1500));
       if (!_isNotificationFocusedSessionId(session.id)) return;
       _scheduleFocusedNotificationRefresh(session.id, immediate: true);
     });

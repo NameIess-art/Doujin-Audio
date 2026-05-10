@@ -1,6 +1,14 @@
 part of 'audio_provider.dart';
 
 extension AudioProviderPersistenceTimer on AudioProvider {
+  int? _readMillisValue(Object? raw) {
+    return switch (raw) {
+      final int value => value,
+      final num value => value.round(),
+      _ => null,
+    };
+  }
+
   Future<void> _loadTimerSettings() async {
     try {
       final prefs = await _prefs;
@@ -54,6 +62,142 @@ extension AudioProviderPersistenceTimer on AudioProvider {
     unawaited(_saveTimerSettings());
   }
 
+  Future<void> _restoreTimerRuntimeFromMap(
+    Map<dynamic, dynamic> map, {
+    required bool removeLegacyPrefsWhenEmpty,
+    required bool syncNativeAfterRestore,
+  }) async {
+    final now = DateTime.now();
+    final durationMs = _readMillisValue(map['timerDurationMs']);
+    final timerModeIndex = _readMillisValue(map['timerMode']);
+    final waitingForPlayback = map['timerWaitingForPlayback'] as bool? ?? false;
+    final timerEndsAtMs = _readMillisValue(map['timerEndsAtMs']);
+    final autoResumeAtMs = _readMillisValue(map['autoResumeAtMs']);
+    final generation = _readMillisValue(map['generation']) ?? _timerGeneration;
+    final pausedSessionIds =
+        (map['pausedSessionIds'] as List<dynamic>? ??
+                map['pausedByTimerPaths'] as List<dynamic>? ??
+                const [])
+            .whereType<String>()
+            .toList(growable: false);
+
+    final hasPendingTrigger =
+        waitingForPlayback &&
+        durationMs != null &&
+        durationMs > 0 &&
+        timerModeIndex == TimerMode.trigger.index;
+    final hasRunningCountdown =
+        timerEndsAtMs != null &&
+        durationMs != null &&
+        timerEndsAtMs > now.millisecondsSinceEpoch;
+    final hasPostTimerState =
+        autoResumeAtMs != null || pausedSessionIds.isNotEmpty;
+    if (!hasPendingTrigger && !hasRunningCountdown && !hasPostTimerState) {
+      if (removeLegacyPrefsWhenEmpty) {
+        final prefs = await _prefs;
+        await prefs.remove(_kTimerRuntimeKey);
+      }
+      return;
+    }
+
+    _countdownTimer?.cancel();
+    _countdownTimer = null;
+    _autoResumeTimer?.cancel();
+    _autoResumeTimer = null;
+    _timerMode = null;
+    _timerDuration = null;
+    _timerRemaining = null;
+    _timerActive = false;
+    _timerEndsAt = null;
+    _timerWaitingForPlayback = false;
+    _autoResumeAt = null;
+    _timerGeneration = generation;
+    _pausedByTimerSessionIds
+      ..clear()
+      ..addAll(pausedSessionIds);
+
+    if (timerModeIndex != null &&
+        timerModeIndex >= 0 &&
+        timerModeIndex < TimerMode.values.length) {
+      _timerMode = TimerMode.values[timerModeIndex];
+    }
+    if (durationMs != null && durationMs > 0) {
+      _timerDuration = Duration(milliseconds: durationMs);
+    }
+    if (_timerDuration != null && waitingForPlayback) {
+      _timerRemaining = _timerDuration;
+      _timerWaitingForPlayback = true;
+      _timerActive = false;
+    }
+
+    if (timerEndsAtMs != null && _timerDuration != null) {
+      final restoredEndsAt = DateTime.fromMillisecondsSinceEpoch(timerEndsAtMs);
+      if (restoredEndsAt.isAfter(now)) {
+        final activeGeneration = _timerGeneration;
+        _timerEndsAt = restoredEndsAt;
+        _timerActive = true;
+        _timerWaitingForPlayback = false;
+        final remaining = restoredEndsAt.difference(now);
+        _timerRemaining = Duration(
+          seconds: (remaining.inMilliseconds + 999) ~/ 1000,
+        );
+        _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+          if (activeGeneration != _timerGeneration) return;
+          _tickCountdown();
+        });
+      } else {
+        _timerRemaining = Duration.zero;
+      }
+    }
+
+    _autoResumeAt = autoResumeAtMs == null
+        ? null
+        : DateTime.fromMillisecondsSinceEpoch(autoResumeAtMs);
+    if (_autoResumeAt != null) {
+      if (_autoResumeAt!.isAfter(now) && _pausedByTimerSessionIds.isNotEmpty) {
+        _scheduleAutoResumeTimer(_autoResumeAt!);
+      } else if (_pausedByTimerSessionIds.isNotEmpty) {
+        await _resumeTimerPausedSessions();
+        return;
+      } else {
+        _autoResumeAt = null;
+      }
+    }
+
+    if (removeLegacyPrefsWhenEmpty) {
+      await _saveTimerRuntime();
+    }
+    _syncNotificationState();
+    _syncKeepCpuAwake();
+    if (syncNativeAfterRestore) {
+      await _syncNativeTimerAlarms();
+    }
+    _notifyListeners();
+  }
+
+  Future<bool> _loadNativeTimerRuntime() async {
+    try {
+      final map = await AudioProvider._powerChannel
+          .invokeMapMethod<dynamic, dynamic>(
+            PowerMethod.getNativeTimerRuntimeState,
+          );
+      if (map == null || map.isEmpty) {
+        return false;
+      }
+      await _restoreTimerRuntimeFromMap(
+        map,
+        removeLegacyPrefsWhenEmpty: true,
+        syncNativeAfterRestore: false,
+      );
+      return true;
+    } on MissingPluginException {
+      return false;
+    } catch (e) {
+      debugPrint('AudioProvider native timer runtime restore error: $e');
+      return false;
+    }
+  }
+
   Future<void> _loadTimerRuntime() async {
     try {
       final prefs = await _prefs;
@@ -61,97 +205,24 @@ extension AudioProviderPersistenceTimer on AudioProvider {
       if (raw == null || raw.isEmpty) return;
 
       final map = json.decode(raw) as Map<String, dynamic>;
-      final now = DateTime.now();
-      final durationMs = map['timerDurationMs'] as int?;
-      final timerModeIndex = map['timerMode'] as int?;
-      final waitingForPlayback =
-          map['timerWaitingForPlayback'] as bool? ?? false;
-      final timerEndsAtMs = map['timerEndsAtMs'] as int?;
-      final autoResumeAtMs = map['autoResumeAtMs'] as int?;
-      final pausedPaths =
-          (map['pausedByTimerPaths'] as List<dynamic>? ?? const [])
-              .whereType<String>()
-              .toList();
-
-      final hasPendingTrigger =
-          waitingForPlayback &&
-          durationMs != null &&
-          durationMs > 0 &&
-          timerModeIndex == TimerMode.trigger.index;
-      final hasRunningCountdown =
-          timerEndsAtMs != null &&
-          durationMs != null &&
-          timerEndsAtMs > now.millisecondsSinceEpoch;
-      final hasPostTimerState =
-          autoResumeAtMs != null || pausedPaths.isNotEmpty;
-      if (!hasPendingTrigger && !hasRunningCountdown && !hasPostTimerState) {
-        await prefs.remove(_kTimerRuntimeKey);
-        return;
-      }
-
-      _pausedByTimerPaths
-        ..clear()
-        ..addAll(pausedPaths);
-      _autoResumeAt = autoResumeAtMs == null
-          ? null
-          : DateTime.fromMillisecondsSinceEpoch(autoResumeAtMs);
-
-      if (timerModeIndex != null &&
-          timerModeIndex >= 0 &&
-          timerModeIndex < TimerMode.values.length) {
-        _timerMode = TimerMode.values[timerModeIndex];
-      }
-      if (durationMs != null && durationMs > 0) {
-        _timerDuration = Duration(milliseconds: durationMs);
-      }
-
-      if (_timerDuration != null && waitingForPlayback) {
-        _timerRemaining = _timerDuration;
-        _timerWaitingForPlayback = true;
-        _timerActive = false;
-      }
-
-      if (timerEndsAtMs != null && _timerDuration != null) {
-        final restoredEndsAt = DateTime.fromMillisecondsSinceEpoch(
-          timerEndsAtMs,
-        );
-        if (restoredEndsAt.isAfter(now)) {
-          final generation = ++_timerGeneration;
-          _timerEndsAt = restoredEndsAt;
-          _timerActive = true;
-          _timerWaitingForPlayback = false;
-          final remaining = restoredEndsAt.difference(now);
-          _timerRemaining = Duration(
-            seconds: (remaining.inMilliseconds + 999) ~/ 1000,
-          );
-          _countdownTimer?.cancel();
-          _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-            if (generation != _timerGeneration) return;
-            _tickCountdown();
-          });
-        } else {
-          _timerEndsAt = null;
-          _timerActive = false;
-          _timerRemaining = Duration.zero;
-        }
-      }
-
-      if (_autoResumeAt != null) {
-        if (_autoResumeAt!.isAfter(now) && _pausedByTimerPaths.isNotEmpty) {
-          _scheduleAutoResumeTimer(_autoResumeAt!);
-        } else if (_pausedByTimerPaths.isNotEmpty) {
-          await _resumeTimerPausedSessions();
-        } else {
-          _autoResumeAt = null;
-        }
-      }
-
-      _syncNotificationState();
-      await _syncNativeTimerAlarms();
-      _notifyListeners();
+      await _restoreTimerRuntimeFromMap(
+        map,
+        removeLegacyPrefsWhenEmpty: true,
+        syncNativeAfterRestore: true,
+      );
     } catch (e) {
       debugPrint('AudioProvider persistence error: $e');
     }
+  }
+
+  Future<void> loadTimerRuntimeFromSystem() async {
+    final restoredFromNative = await _loadNativeTimerRuntime();
+    if (restoredFromNative) return;
+    await _loadTimerRuntime();
+  }
+
+  Future<void> syncTimerRuntimeFromNative() async {
+    await _loadNativeTimerRuntime();
   }
 
   Future<void> _saveTimerRuntime() async {
@@ -169,7 +240,7 @@ extension AudioProviderPersistenceTimer on AudioProvider {
         'timerWaitingForPlayback': _timerWaitingForPlayback,
         'timerEndsAtMs': _timerEndsAt?.millisecondsSinceEpoch,
         'autoResumeAtMs': _autoResumeAt?.millisecondsSinceEpoch,
-        'pausedByTimerPaths': _pausedByTimerPaths,
+        'pausedSessionIds': _pausedByTimerSessionIds,
       });
       await prefs.setString(_kTimerRuntimeKey, encoded);
     } catch (e) {

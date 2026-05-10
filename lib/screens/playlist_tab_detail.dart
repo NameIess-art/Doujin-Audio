@@ -10,7 +10,7 @@ class SessionDetailPage extends ConsumerStatefulWidget {
 }
 
 class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   late final AnimationController _dismissController;
   late final AnimationController _slideController;
   late Animation<Offset> _slideAnimation;
@@ -55,7 +55,13 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
     final dpr = MediaQuery.devicePixelRatioOf(context);
     final cacheWidth = (mediaSize.width * dpr).round();
     final cacheHeight = (heroHeight * dpr).round();
-    final precacheKey = '$_currentSessionId:$cacheWidth:$cacheHeight';
+    final precacheKey = buildSessionCoverPrecacheKey(
+      sessionId: _currentSessionId,
+      trackPath: _lastTrackPath ?? '',
+      cacheWidth: cacheWidth,
+      cacheHeight: cacheHeight,
+      coverGeneration: _lastCoverGeneration,
+    );
     if (_lastPrecachingCoverKey == precacheKey) {
       return;
     }
@@ -185,16 +191,31 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
 
   @override
   Widget build(BuildContext context) {
-    ref.watch(playbackStateProvider);
-    final provider = ref.read(audioProviderFacadeProvider);
-    final sessions = provider.activeSessions;
-    final session = sessions.cast<PlaybackSession?>().firstWhere(
-      (candidate) => candidate?.id == _currentSessionId,
-      orElse: () => null,
+    final provider = context.read<AudioProvider>();
+    final sessionOrderState = context.select<AudioProvider, SessionOrderState>(
+      (value) => SessionOrderState(
+        sessionIds: value.activeSessions.map((session) => session.id).toList(),
+      ),
     );
+    final detailState = context.select<AudioProvider, SessionDetailViewState?>(
+      (value) {
+        final session = value.sessionById(_currentSessionId);
+        if (session == null) return null;
+        return SessionDetailViewState(
+          sessionId: session.id,
+          trackPath: session.currentTrackPath,
+          isPlaying: session.state.playing,
+          isLoading: session.isLoading,
+          channelSwapEnabled: session.channelSwapEnabled,
+        );
+      },
+    );
+    final session = provider.sessionById(_currentSessionId);
 
-    if (session == null) {
-      final fallbackSessionId = sessions.isEmpty ? null : sessions.first.id;
+    if (session == null || detailState == null) {
+      final fallbackSessionId = sessionOrderState.sessionIds.isEmpty
+          ? null
+          : sessionOrderState.sessionIds.first;
       if (fallbackSessionId == null) {
         return const Scaffold(body: SizedBox.shrink());
       }
@@ -207,12 +228,14 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
       return const Scaffold(body: SizedBox.shrink());
     }
 
-    final trackPath = session.currentTrackPath;
-    final currentCoverGen = provider.coverGeneration;
-    if (_lastTrackPath != trackPath || _lastCoverGeneration != currentCoverGen) {
-      _lastTrackPath = trackPath;
+    final currentCoverGen = context.select<AudioProvider, int>(
+      (value) => value.coverGeneration,
+    );
+    if (_lastTrackPath != detailState.trackPath ||
+        _lastCoverGeneration != currentCoverGen) {
+      _lastTrackPath = detailState.trackPath;
       _lastCoverGeneration = currentCoverGen;
-      final track = provider.trackByPath(trackPath);
+      final track = provider.trackByPath(detailState.trackPath);
       _coverPathFuture = _coverFutureForTrack(provider, track);
     }
     final coverPathFuture = _coverPathFuture!;
@@ -433,13 +456,6 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold> 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _computeSubtitleDefaultTop();
     });
-    ref.listen(subtitleSettingsProvider, (prev, next) {
-      if (prev?.fontSize != next.fontSize) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          _computeSubtitleDefaultTop();
-        });
-      }
-    });
   }
 
   void _computeSubtitleDefaultTop() {
@@ -466,6 +482,13 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold> 
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(subtitleSettingsProvider, (prev, next) {
+      if (prev?.fontSize != next.fontSize) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _computeSubtitleDefaultTop();
+        });
+      }
+    });
     final session = widget.session;
     final provider = widget.provider;
     final coverPathFuture = widget.coverPathFuture;
@@ -478,7 +501,6 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold> 
     final onVerticalDragEnd = widget.onVerticalDragEnd;
     final onVerticalDragCancel = widget.onVerticalDragCancel;
 
-    ref.watch(playbackStateProvider);
     final cs = Theme.of(context).colorScheme;
 
     return Material(
@@ -545,7 +567,7 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold> 
                   },
                   child: Column(
                     children: [
-                      // Top Bar — outside drag GestureDetector so taps work
+                      // Top Bar 鈥?outside drag GestureDetector so taps work
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 8),
                         child: Builder(
@@ -659,7 +681,7 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold> 
                           },
                         ),
                       ),
-                      // Content area — keep session drag gestures on artwork only
+                      // Content area 鈥?keep session drag gestures on artwork only
                       Expanded(
                         child: Column(
                           children: [

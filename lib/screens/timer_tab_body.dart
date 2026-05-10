@@ -18,7 +18,7 @@ extension _TimerTabBody on _TimerTabState {
       timerSlice.autoResumeEnabled,
       timerSlice.autoResumeHour,
       timerSlice.autoResumeMinute,
-      timerSlice.pausedByTimerPaths.length,
+      timerSlice.pausedByTimerSessionIds.length,
     );
     if (_lastTimerHash != timerHash) {
       _lastTimerHash = timerHash;
@@ -300,12 +300,17 @@ extension _TimerTabBody on _TimerTabState {
                               subtitle: Text(i18n.tr('auto_resume_subtitle')),
                               secondary: const Icon(Icons.restore_rounded),
                               value: timerSlice.autoResumeEnabled,
-                              onChanged: (val) {
+                              onChanged: (value) {
                                 HapticFeedback.selectionClick();
-                                provider.setAutoResume(
-                                  val,
-                                  timerSlice.autoResumeHour,
-                                  timerSlice.autoResumeMinute,
+                                unawaited(
+                                  _setAutoResumeWithCapabilityCheck(
+                                    provider,
+                                    enabled: value,
+                                    hour: timerSlice.autoResumeHour,
+                                    minute: timerSlice.autoResumeMinute,
+                                    promptForCapability:
+                                        value && !timerSlice.autoResumeEnabled,
+                                  ),
                                 );
                               },
                               shape: RoundedRectangleBorder(

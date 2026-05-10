@@ -1,6 +1,7 @@
 package com.nameless.audio
 
 import android.app.Activity
+import android.app.AlarmManager
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -158,13 +159,35 @@ class MainActivity : AudioServiceActivity() {
                     "openBackgroundRunSettings" -> {
                         result.success(openBackgroundRunSettings())
                     }
+                    "canScheduleExactAlarms" -> {
+                        result.success(canScheduleExactAlarms())
+                    }
+                    "openExactAlarmSettings" -> {
+                        result.success(openExactAlarmSettings())
+                    }
+                    "getNativeTimerRuntimeState" -> {
+                        result.success(getNativeTimerRuntimeState())
+                    }
                     "syncPlaybackTimerAlarms" -> {
+                        val timerModeIndex = call.argument<Int>("timerMode")
+                        val timerDurationMs =
+                            (call.argument<Number>("timerDurationMs"))?.toLong()
+                        val timerWaitingForPlayback =
+                            call.argument<Boolean>("timerWaitingForPlayback") ?: false
                         val timerEndsAtMs = call.argument<Long>("timerEndsAtMs")
                         val autoResumeAtMs = call.argument<Long>("autoResumeAtMs")
+                        val pausedSessionIds =
+                            call.argument<List<String>>("pausedSessionIds") ?: emptyList()
+                        val generation = call.argument<Int>("generation") ?: 0
                         PlaybackTimerAlarmScheduler.sync(
                             applicationContext,
+                            timerModeIndex = timerModeIndex,
+                            durationMs = timerDurationMs,
+                            waitingForPlayback = timerWaitingForPlayback,
                             timerEndsAtMs = timerEndsAtMs,
-                            autoResumeAtMs = autoResumeAtMs
+                            autoResumeAtMs = autoResumeAtMs,
+                            pausedSessionIds = pausedSessionIds,
+                            generation = generation
                         )
                         result.success(null)
                     }
@@ -645,6 +668,48 @@ class MainActivity : AudioServiceActivity() {
             return true
         }
         return openBatteryOptimizationListSettings() || openApplicationDetailsSettings()
+    }
+
+    private fun canScheduleExactAlarms(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            return true
+        }
+        val alarmManager = getSystemService(AlarmManager::class.java)
+        return try {
+            alarmManager?.canScheduleExactAlarms() == true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun openExactAlarmSettings(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            return openApplicationDetailsSettings()
+        }
+        return try {
+            val intent = Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
+                data = Uri.parse("package:$packageName")
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            startActivity(intent)
+            true
+        } catch (_: Exception) {
+            openApplicationDetailsSettings()
+        }
+    }
+
+    private fun getNativeTimerRuntimeState(): Map<String, Any?>? {
+        val state = NativePlaybackStateStore.loadTimerRuntimeState(applicationContext)
+            ?: return null
+        return mapOf(
+            "timerMode" to state.timerModeIndex,
+            "timerDurationMs" to state.durationMs,
+            "timerWaitingForPlayback" to state.waitingForPlayback,
+            "timerEndsAtMs" to state.timerEndsAtMs,
+            "autoResumeAtMs" to state.autoResumeAtMs,
+            "pausedSessionIds" to state.pausedSessionIds,
+            "generation" to state.generation
+        )
     }
 
     private fun openBatteryOptimizationListSettings(): Boolean {

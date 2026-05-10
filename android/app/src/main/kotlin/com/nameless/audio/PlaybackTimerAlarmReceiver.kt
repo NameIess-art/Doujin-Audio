@@ -19,13 +19,24 @@ class PlaybackTimerAlarmReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent?) {
         val action = intent?.action ?: return
+        val deliveredGeneration = intent.getIntExtra("generation", Int.MIN_VALUE)
         val pendingResult = goAsync()
         val appContext = context.applicationContext
+        val runtimeState = NativePlaybackStateStore.loadTimerRuntimeState(appContext)
+
+        if (runtimeState != null &&
+            deliveredGeneration != Int.MIN_VALUE &&
+            runtimeState.generation != deliveredGeneration
+        ) {
+            pendingResult.finish()
+            return
+        }
 
         PlaybackTimerAlarmScheduler.promoteKeepAliveService(appContext, action)
         deliverToService(
             context = appContext,
             action = action,
+            runtimeState = runtimeState,
             attempt = 0,
             pendingResult = pendingResult
         )
@@ -34,6 +45,7 @@ class PlaybackTimerAlarmReceiver : BroadcastReceiver() {
     private fun deliverToService(
         context: Context,
         action: String,
+        runtimeState: StoredPlaybackTimerRuntimeState?,
         attempt: Int,
         pendingResult: PendingResult
     ) {
@@ -48,6 +60,7 @@ class PlaybackTimerAlarmReceiver : BroadcastReceiver() {
                     deliverToService(
                         context = context,
                         action = action,
+                        runtimeState = runtimeState,
                         attempt = attempt + 1,
                         pendingResult = pendingResult
                     )
@@ -73,10 +86,35 @@ class PlaybackTimerAlarmReceiver : BroadcastReceiver() {
                         context,
                         pausedSessionIds
                     )
+                    val nextState = runtimeState?.copy(
+                        waitingForPlayback = false,
+                        timerEndsAtMs = null,
+                        pausedSessionIds = pausedSessionIds
+                    ) ?: StoredPlaybackTimerRuntimeState(
+                        timerModeIndex = null,
+                        durationMs = null,
+                        waitingForPlayback = false,
+                        timerEndsAtMs = null,
+                        autoResumeAtMs = null,
+                        pausedSessionIds = pausedSessionIds,
+                        generation = 0
+                    )
+                    if (nextState.hasRuntime) {
+                        NativePlaybackStateStore.saveTimerRuntimeState(context, nextState)
+                    } else {
+                        NativePlaybackStateStore.clearTimerRuntimeState(context)
+                    }
+                    PlaybackTimerAlarmScheduler.rescheduleFromStoredState(context)
                 }
                 PlaybackTimerAlarmScheduler.actionAutoResume -> {
-                    val pausedSessionIds =
-                        NativePlaybackStateStore.loadPausedSessionIds(context)
+                    val pausedSessionIds = runtimeState?.pausedSessionIds
+                        ?.ifEmpty {
+                            NativePlaybackStateStore.loadPausedSessionIds(context)
+                        }
+                        ?.ifEmpty {
+                            NativePlaybackStateStore.loadTimerCandidateSessionIds(context)
+                        }
+                        ?: NativePlaybackStateStore.loadPausedSessionIds(context)
                             .ifEmpty {
                                 NativePlaybackStateStore.loadTimerCandidateSessionIds(context)
                             }
@@ -85,6 +123,8 @@ class PlaybackTimerAlarmReceiver : BroadcastReceiver() {
                     }
                     NativePlaybackStateStore.clearPausedSessionIds(context)
                     NativePlaybackStateStore.clearTimerCandidateSessionIds(context)
+                    NativePlaybackStateStore.clearTimerRuntimeState(context)
+                    PlaybackTimerAlarmScheduler.rescheduleFromStoredState(context)
                 }
             }
         } finally {
@@ -99,12 +139,33 @@ object PlaybackTimerAlarmScheduler {
 
     private const val timerRequestCode = 32001
     private const val autoResumeRequestCode = 32002
+    private const val extraGeneration = "generation"
 
     fun sync(
         context: Context,
+        timerModeIndex: Int?,
+        durationMs: Long?,
+        waitingForPlayback: Boolean,
         timerEndsAtMs: Long?,
-        autoResumeAtMs: Long?
+        autoResumeAtMs: Long?,
+        pausedSessionIds: List<String>,
+        generation: Int
     ) {
+        val runtimeState = StoredPlaybackTimerRuntimeState(
+            timerModeIndex = timerModeIndex,
+            durationMs = durationMs,
+            waitingForPlayback = waitingForPlayback,
+            timerEndsAtMs = timerEndsAtMs,
+            autoResumeAtMs = autoResumeAtMs,
+            pausedSessionIds = pausedSessionIds,
+            generation = generation
+        )
+        if (runtimeState.hasRuntime) {
+            NativePlaybackStateStore.saveTimerRuntimeState(context, runtimeState)
+        } else {
+            NativePlaybackStateStore.clearTimerRuntimeState(context)
+        }
+
         if (timerEndsAtMs != null) {
             val timerCandidateSessionIds = NativePlaybackStateStore.loadSessions(context)
                 .filter { it.playing || it.playWhenReady }
@@ -113,7 +174,13 @@ object PlaybackTimerAlarmScheduler {
                 context,
                 timerCandidateSessionIds
             )
-            scheduleAlarm(context, actionTimerExpired, timerRequestCode, timerEndsAtMs)
+            scheduleAlarm(
+                context,
+                actionTimerExpired,
+                timerRequestCode,
+                timerEndsAtMs,
+                generation
+            )
         } else {
             cancelAlarm(context, actionTimerExpired, timerRequestCode)
             if (autoResumeAtMs == null) {
@@ -122,12 +189,55 @@ object PlaybackTimerAlarmScheduler {
         }
 
         if (autoResumeAtMs != null) {
-            scheduleAlarm(context, actionAutoResume, autoResumeRequestCode, autoResumeAtMs)
+            scheduleAlarm(
+                context,
+                actionAutoResume,
+                autoResumeRequestCode,
+                autoResumeAtMs,
+                generation
+            )
         } else {
             cancelAlarm(context, actionAutoResume, autoResumeRequestCode)
             NativePlaybackStateStore.clearPausedSessionIds(context)
-            NativePlaybackStateStore.clearTimerCandidateSessionIds(context)
+            if (timerEndsAtMs == null) {
+                NativePlaybackStateStore.clearTimerCandidateSessionIds(context)
+            }
         }
+        syncKeepAliveService(context, runtimeState)
+    }
+
+    fun rescheduleFromStoredState(context: Context) {
+        val runtimeState = NativePlaybackStateStore.loadTimerRuntimeState(context)
+        if (runtimeState == null || !runtimeState.hasRuntime) {
+            cancelAlarm(context, actionTimerExpired, timerRequestCode)
+            cancelAlarm(context, actionAutoResume, autoResumeRequestCode)
+            NativePlaybackStateStore.clearTimerRuntimeState(context)
+            syncKeepAliveService(context, null)
+            return
+        }
+        if (runtimeState.timerEndsAtMs != null) {
+            scheduleAlarm(
+                context,
+                actionTimerExpired,
+                timerRequestCode,
+                runtimeState.timerEndsAtMs,
+                runtimeState.generation
+            )
+        } else {
+            cancelAlarm(context, actionTimerExpired, timerRequestCode)
+        }
+        if (runtimeState.autoResumeAtMs != null) {
+            scheduleAlarm(
+                context,
+                actionAutoResume,
+                autoResumeRequestCode,
+                runtimeState.autoResumeAtMs,
+                runtimeState.generation
+            )
+        } else {
+            cancelAlarm(context, actionAutoResume, autoResumeRequestCode)
+        }
+        syncKeepAliveService(context, runtimeState)
     }
 
     fun promoteKeepAliveService(context: Context, action: String) {
@@ -158,7 +268,8 @@ object PlaybackTimerAlarmScheduler {
         context: Context,
         action: String,
         requestCode: Int,
-        triggerAtMs: Long
+        triggerAtMs: Long,
+        generation: Int
     ) {
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager
             ?: return
@@ -166,24 +277,29 @@ object PlaybackTimerAlarmScheduler {
             context = context,
             action = action,
             requestCode = requestCode,
+            generation = generation,
             flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         val safeTriggerAtMs = triggerAtMs.coerceAtLeast(System.currentTimeMillis() + 250L)
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            val showIntent = Intent(context, MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            }
-            val showPendingIntent = PendingIntent.getActivity(
-                context,
-                requestCode,
-                showIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-            val info = AlarmManager.AlarmClockInfo(safeTriggerAtMs, showPendingIntent)
-            alarmManager.setAlarmClock(info, pendingIntent)
-        } else {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                !alarmManager.canScheduleExactAlarms()
+            ) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    alarmManager.setAndAllowWhileIdle(
+                        AlarmManager.RTC_WAKEUP,
+                        safeTriggerAtMs,
+                        pendingIntent
+                    )
+                } else {
+                    alarmManager.set(
+                        AlarmManager.RTC_WAKEUP,
+                        safeTriggerAtMs,
+                        pendingIntent
+                    )
+                }
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 alarmManager.setExactAndAllowWhileIdle(
                     AlarmManager.RTC_WAKEUP,
                     safeTriggerAtMs,
@@ -191,6 +307,20 @@ object PlaybackTimerAlarmScheduler {
                 )
             } else {
                 alarmManager.setExact(
+                    AlarmManager.RTC_WAKEUP,
+                    safeTriggerAtMs,
+                    pendingIntent
+                )
+            }
+        } catch (_: SecurityException) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                alarmManager.setAndAllowWhileIdle(
+                    AlarmManager.RTC_WAKEUP,
+                    safeTriggerAtMs,
+                    pendingIntent
+                )
+            } else {
+                alarmManager.set(
                     AlarmManager.RTC_WAKEUP,
                     safeTriggerAtMs,
                     pendingIntent
@@ -220,12 +350,52 @@ object PlaybackTimerAlarmScheduler {
         context: Context,
         action: String,
         requestCode: Int,
+        generation: Int = 0,
         flags: Int
     ): PendingIntent {
         val intent = Intent(context, PlaybackTimerAlarmReceiver::class.java).apply {
             this.action = action
             `package` = context.packageName
+            putExtra(extraGeneration, generation)
         }
         return PendingIntent.getBroadcast(context, requestCode, intent, flags)
+    }
+
+    private fun syncKeepAliveService(
+        context: Context,
+        runtimeState: StoredPlaybackTimerRuntimeState?
+    ) {
+        val shouldKeepAlive = runtimeState?.shouldKeepForegroundServiceAlive == true
+        val serviceIntent = Intent(context, PlaybackKeepAliveService::class.java).apply {
+            action = if (shouldKeepAlive) {
+                PlaybackKeepAliveService.ACTION_START
+            } else {
+                PlaybackKeepAliveService.ACTION_STOP
+            }
+            putExtra(PlaybackKeepAliveService.EXTRA_HAS_ACTIVE_PLAYBACK, false)
+            putExtra(
+                PlaybackKeepAliveService.EXTRA_HAS_ACTIVE_TIMER,
+                runtimeState?.shouldKeepForegroundServiceAlive == true
+            )
+            putExtra(
+                PlaybackKeepAliveService.EXTRA_USES_UNIFIED_PLAYBACK_NOTIFICATION,
+                UnifiedPlaybackNotificationController.activeNotificationCount > 0
+            )
+            putExtra(
+                PlaybackKeepAliveService.EXTRA_KEEP_FOREGROUND_SERVICE_ALIVE,
+                shouldKeepAlive
+            )
+        }
+        try {
+            if (shouldKeepAlive) {
+                ContextCompat.startForegroundService(context, serviceIntent)
+            } else {
+                context.startService(serviceIntent)
+            }
+        } catch (_: Exception) {
+            if (!shouldKeepAlive) {
+                context.stopService(Intent(context, PlaybackKeepAliveService::class.java))
+            }
+        }
     }
 }

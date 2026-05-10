@@ -21,7 +21,7 @@ extension AudioProviderPlaybackKeepAlive on AudioProvider {
   bool get _hasPendingAutoResume =>
       _timerRuntimeCalculator.hasPendingAutoResume(
         autoResumeAt: _autoResumeAt,
-        hasPausedByTimerPaths: _pausedByTimerPaths.isNotEmpty,
+        hasPausedByTimerSessionIds: _pausedByTimerSessionIds.isNotEmpty,
       );
 
   void _syncKeepCpuAwake() {

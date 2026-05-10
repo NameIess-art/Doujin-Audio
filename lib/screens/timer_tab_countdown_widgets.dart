@@ -98,11 +98,11 @@ class _CountdownCard extends StatelessWidget {
               Builder(
                 builder: (context) {
                   final chips = <Widget>[
-                    if (provider.pausedByTimerPaths.isNotEmpty)
+                    if (provider.pausedByTimerSessionIds.isNotEmpty)
                       _TimerSummaryChip(
                         icon: Icons.pause_circle_outline_rounded,
                         text: i18n.tr('paused_audio_count', {
-                          'count': provider.pausedByTimerPaths.length,
+                          'count': provider.pausedByTimerSessionIds.length,
                         }),
                         foregroundColor: cs.onErrorContainer,
                         backgroundColor: cs.errorContainer,

@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 import 'dart:ui';
@@ -14,16 +14,16 @@ import 'package:provider/provider.dart' hide Consumer;
 import '../i18n/app_language_provider.dart';
 import '../providers/audio_provider.dart';
 import '../providers/audio_provider_riverpod.dart';
+import '../providers/subtitle_settings_provider.dart';
 import '../services/audio_state_services.dart';
 import '../services/subtitle_parser.dart';
-import '../providers/subtitle_settings_provider.dart';
-import '../widgets/floating_subtitle_window.dart';
-import '../widgets/marquee_text.dart';
 import '../widgets/app_feedback.dart';
-import '../widgets/async_cover_image.dart';
 import '../widgets/app_transitions.dart';
+import '../widgets/async_cover_image.dart';
 import '../widgets/confirm_action_dialog.dart';
 import '../widgets/content_bound_reorder_area.dart';
+import '../widgets/floating_subtitle_window.dart';
+import '../widgets/marquee_text.dart';
 import '../widgets/mobile_overlay_inset.dart';
 import '../widgets/reorder_auto_scroller.dart';
 import '../widgets/reorderable_hold_drag_listener.dart';
@@ -31,6 +31,7 @@ import '../widgets/swipe_reveal_card.dart';
 import '../widgets/top_page_header.dart';
 import '../widgets/unified_popup_menu.dart';
 import '../widgets/waterfall_flow_stagger.dart';
+import 'screen_view_models.dart';
 
 part 'playlist_tab_list.dart';
 part 'playlist_tab_detail.dart';
@@ -75,7 +76,6 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
   ValueListenable<int?>? _scrollToTopListenable;
   bool _isReordering = false;
 
-
   @override
   bool get wantKeepAlive => true;
 
@@ -83,21 +83,18 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        _measureHeader();
-        _scrollToTopListenable = ref
-            .read(audioProviderFacadeProvider)
-            .scrollToTopTabListenable;
-        _scrollToTopListenable?.addListener(_handleScrollToTopSignal);
-      }
+      if (!mounted) return;
+      _measureHeader();
+      _scrollToTopListenable = ref
+          .read(audioProviderFacadeProvider)
+          .scrollToTopTabListenable;
+      _scrollToTopListenable?.addListener(_handleScrollToTopSignal);
     });
   }
 
   void _handleScrollToTopSignal() {
     if (!mounted) return;
-    final index = _scrollToTopListenable?.value;
-    if (index == 1) {
-      // 1 is PlaylistTab
+    if (_scrollToTopListenable?.value == 1) {
       _jumpPlaylistToTop();
     }
   }
@@ -113,11 +110,10 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
 
   void _measureHeader() {
     final box = _headerKey.currentContext?.findRenderObject() as RenderBox?;
-    if (box != null && mounted) {
-      final h = box.size.height;
-      if (h > 0 && h != _headerHeight) {
-        setState(() => _headerHeight = h);
-      }
+    if (box == null || !mounted) return;
+    final nextHeight = box.size.height;
+    if (nextHeight > 0 && nextHeight != _headerHeight) {
+      setState(() => _headerHeight = nextHeight);
     }
   }
 
@@ -134,18 +130,15 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
       confirmLabel: i18n.tr('clear'),
       icon: Icons.delete_sweep_rounded,
     );
-    if (confirmed == true) {
-      if (!mounted) return;
-      await provider.clearAllSessions();
-      if (mounted) {
-        showAppSnackBar(
-          context,
-          i18n.tr('all_sessions_cleared'),
-          tone: AppFeedbackTone.destructive,
-          icon: Icons.delete_sweep_rounded,
-        );
-      }
-    }
+    if (!confirmed || !mounted) return;
+    await provider.clearAllSessions();
+    if (!mounted || !context.mounted) return;
+    showAppSnackBar(
+      context,
+      i18n.tr('all_sessions_cleared'),
+      tone: AppFeedbackTone.destructive,
+      icon: Icons.delete_sweep_rounded,
+    );
   }
 
   void _openSessionDetail(BuildContext context, String sessionId) {
@@ -165,59 +158,46 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     super.build(context);
     final i18n = context.watch<AppLanguageProvider>();
     final provider = ref.read(audioProviderFacadeProvider);
-    final bottomInset = MobileOverlayInset.of(context);
     final playbackState =
         ref.watch(playbackStateProvider).valueOrNull ??
         const PlaybackStateSliceData();
-    final sessions = playbackState.activeSessions;
-    final playingCount = playbackState.playingSessionCount;
-    final sessionSummary =
-        '${i18n.tr('sessions_count', {'count': sessions.length})} · '
-        '${i18n.tr('playing_count', {'count': playingCount})}';
     final timerState =
         ref.watch(timerStateProvider).valueOrNull ??
         const TimerStateSliceData();
-    final timerDuration = timerState.duration;
-    final timerRemaining = timerState.remaining;
-    final timerActive = timerState.active;
-    final isInitialized = playbackState.isInitialized;
-    final topTotalHeight = _headerHeight + 4;
-    final listBottomInset = bottomInset;
-    final viewportHeight = MediaQuery.sizeOf(context).height;
-    // Reduced cacheExtent to significantly lower memory footprint and improve
-    // scroll/swipe performance.
-    final listCacheExtent = (topTotalHeight + 400).toDouble();
+    final headerState = playlistHeaderStateFromSlices(playbackState, timerState);
+    final listState = context.select<AudioProvider, PlaylistListState>(
+      (value) => PlaylistListState(
+        sessions: value.activeSessions,
+        isInitialized: playbackState.isInitialized,
+      ),
+    );
+    final sessionSummary =
+        '${i18n.tr('sessions_count', {'count': headerState.sessionCount})} · '
+        '${i18n.tr('playing_count', {'count': headerState.playingCount})}';
+    final listBottomInset = MobileOverlayInset.of(context);
+    final listCacheExtent =
+        (_headerHeight + 404).clamp(_headerHeight + 4, 720.0).toDouble();
 
     return Stack(
       clipBehavior: Clip.none,
       children: [
-        // Viewport restricted to content area so drag-to-reorder auto-scroll
-        // triggers at content edges rather than screen edges.
         ContentBoundReorderArea(
           headerHeight: _headerHeight,
           bottomInset: listBottomInset,
           topExpansion: 150,
           bottomExpansion: 350,
-          child: !isInitialized
+          child: !listState.isInitialized
               ? const SizedBox.shrink(key: ValueKey('initializing'))
               : Stack(
                   clipBehavior: Clip.none,
                   children: [
-                    // 1) Empty state (bottom layer). Always rendered when
-                    //    clearing or when sessions are empty so it's visible
-                    //    behind the transparent list as cards slide out.
-                    if (sessions.isEmpty)
+                    if (!listState.hasSessions)
                       _SessionsEmptyState(
                         key: const ValueKey('empty_state'),
                         bottomInset: 100,
                         topInset: _headerHeight + 64,
                       ),
-
-                    // 2) Session list (top layer). The ReorderableListView
-                    //    internally paints an opaque Material using
-                    //    Theme.canvasColor. We override it to transparent so
-                    //    the empty state beneath is visible as cards exit.
-                    if (sessions.isNotEmpty)
+                    if (listState.hasSessions)
                       Theme(
                         data: Theme.of(context).copyWith(
                           canvasColor: Colors.transparent,
@@ -226,12 +206,12 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                           key: const ValueKey('session_list'),
                           scrollController: _scrollController,
                           isDragging: _isReordering,
-                          topTriggerOffset: 150 + 100,
-                          bottomTriggerOffset: 350 + 120,
+                          topTriggerOffset: 250,
+                          bottomTriggerOffset: 470,
                           child: ReorderableListView.builder(
                             scrollController: _scrollController,
                             padding:
-                                const EdgeInsets.fromLTRB(16, 4 + 150, 16, 350),
+                                const EdgeInsets.fromLTRB(16, 154, 16, 350),
                             cacheExtent: listCacheExtent,
                             clipBehavior: Clip.none,
                             buildDefaultDragHandles: false,
@@ -241,20 +221,20 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                               setState(() => _isReordering = false);
                               provider.reorderSessions(oldIndex, newIndex);
                             },
-                            onReorderStart: (index) {
+                            onReorderStart: (_) {
                               setState(() => _isReordering = true);
                               unawaited(HapticFeedback.heavyImpact());
                             },
                             proxyDecorator: (child, index, animation) =>
                                 _buildReorderProxy(context, child, animation),
-                            itemCount: sessions.length + 1,
+                            itemCount: listState.sessions.length + 1,
                             itemBuilder: (context, index) {
-                              if (index == sessions.length) {
+                              if (index == listState.sessions.length) {
                                 return const SizedBox.shrink(
                                   key: ValueKey('bottom_spacing'),
                                 );
                               }
-                              final session = sessions[index];
+                              final session = listState.sessions[index];
                               return WaterfallFlowStagger(
                                 key: ValueKey('stagger_${session.id}'),
                                 index: index,
@@ -265,8 +245,10 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                                     child: _SessionListCard(
                                       session: session,
                                       provider: provider,
-                                      onOpen: () =>
-                                          _openSessionDetail(context, session.id),
+                                      onOpen: () => _openSessionDetail(
+                                        context,
+                                        session.id,
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -286,7 +268,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
             key: _headerKey,
             icon: Icons.graphic_eq_rounded,
             title: i18n.tr('playback_sessions'),
-            isLoading: !isInitialized,
+            isLoading: !listState.isInitialized,
             subtitle: sessionSummary,
             subtitleFontSize: 11,
             fitSubtitleToWidth: true,
@@ -296,10 +278,11 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                  if (timerDuration != null)
+                  if (headerState.hasTimer)
                     _TimerCountdownCapsule(
-                      remaining: timerRemaining ?? timerDuration,
-                      active: timerActive,
+                      remaining:
+                          headerState.timerRemaining ?? headerState.timerDuration!,
+                      active: headerState.timerActive,
                       onTap: widget.onTimerTap,
                     )
                   else
@@ -309,7 +292,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                       tooltip: i18n.tr('timer'),
                     ),
                   IconButton(
-                    onPressed: sessions.isEmpty
+                    onPressed: !listState.hasSessions
                         ? null
                         : () {
                             provider.pauseAllSessions();
@@ -324,7 +307,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                     tooltip: i18n.tr('pause_all_sessions'),
                   ),
                   IconButton(
-                    onPressed: sessions.isEmpty
+                    onPressed: !listState.hasSessions
                         ? null
                         : () => _confirmClearAll(context, provider),
                     icon: const Icon(Icons.delete_sweep_rounded),
@@ -348,9 +331,9 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     return AnimatedBuilder(
       animation: animation,
       builder: (context, child) {
-        final double animValue = Curves.easeInOut.transform(animation.value);
-        final double scale = 1.0 + (0.012 * animValue);
-        final double elevation = 3.0 * animValue;
+        final animValue = Curves.easeInOut.transform(animation.value);
+        final scale = 1.0 + (0.012 * animValue);
+        final elevation = 3.0 * animValue;
 
         return Transform.scale(
           scale: scale,
@@ -368,4 +351,3 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     );
   }
 }
-

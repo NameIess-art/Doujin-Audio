@@ -191,11 +191,33 @@ class _FloatingSubtitleWindowState
       }
     }
 
-    // Ensure it's within bounds
     // Ensure it's within bounds, allowing more freedom near bottom but keeping it visible
     top = top.clamp(40.0, screenHeight - 60.0);
 
     final isSmallWindow = screenWidth < 450 || screenHeight < 400;
+    final isTinyWindow = screenWidth < 300 || screenHeight < 300;
+
+    Widget buildContainer() => Container(
+      constraints: const BoxConstraints(minHeight: 34),
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+      decoration: BoxDecoration(
+        color: settings.backgroundColor != null
+            ? settings.backgroundColor!.withValues(alpha: settings.backgroundOpacity)
+            : Theme.of(context).colorScheme.surface.withValues(alpha: settings.backgroundOpacity),
+        border: Border(
+          top: BorderSide(
+            color: Colors.white.withValues(alpha: 0.1 * settings.borderDepth),
+            width: settings.borderDepth,
+          ),
+          bottom: BorderSide(
+            color: Colors.white.withValues(alpha: 0.1 * settings.borderDepth),
+            width: settings.borderDepth,
+          ),
+        ),
+      ),
+      child: _buildSubtitleContent(context, settings, screenWidth),
+    );
 
     return Positioned(
       top: top,
@@ -267,33 +289,15 @@ class _FloatingSubtitleWindowState
                 });
               },
               child: ClipRect(
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(
-                    sigmaX: settings.backgroundBlur, 
-                    sigmaY: settings.backgroundBlur,
-                  ),
-                  child: Container(
-                    constraints: const BoxConstraints(minHeight: 34),
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: settings.backgroundColor != null
-                          ? settings.backgroundColor!.withValues(alpha: settings.backgroundOpacity)
-                          : Theme.of(context).colorScheme.surface.withValues(alpha: settings.backgroundOpacity),
-                      border: Border(
-                        top: BorderSide(
-                          color: Colors.white.withValues(alpha: 0.1 * settings.borderDepth),
-                          width: settings.borderDepth,
+                child: isTinyWindow
+                    ? buildContainer()
+                    : BackdropFilter(
+                        filter: ImageFilter.blur(
+                          sigmaX: settings.backgroundBlur,
+                          sigmaY: settings.backgroundBlur,
                         ),
-                        bottom: BorderSide(
-                          color: Colors.white.withValues(alpha: 0.1 * settings.borderDepth),
-                          width: settings.borderDepth,
-                        ),
+                        child: buildContainer(),
                       ),
-                    ),
-                    child: _buildSubtitleContent(context, settings, screenWidth),
-                  ),
-                ),
               ),
             ),
           ],

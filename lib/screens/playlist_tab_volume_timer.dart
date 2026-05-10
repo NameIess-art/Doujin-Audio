@@ -41,10 +41,8 @@ class _SessionVolumeSliderState extends State<_SessionVolumeSlider> {
           keyboardType: TextInputType.number,
           autofocus: true,
           decoration: InputDecoration(
-            hintText: '0-200',
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10),
-            ),
+            hintText: i18n.tr('volume_range_hint'),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
           ),
           onSubmitted: (text) {
             _applyVolumeInput(text, ctx, i18n, cs);
@@ -207,8 +205,10 @@ class _SessionVolumeSliderState extends State<_SessionVolumeSlider> {
                   color: isBoosted ? cs.primary : cs.onSurfaceVariant,
                   fontWeight: FontWeight.w700,
                   decoration: TextDecoration.underline,
-                  decorationColor: (isBoosted ? cs.primary : cs.onSurfaceVariant)
-                      .withValues(alpha: 0.3),
+                  decorationColor:
+                      (isBoosted ? cs.primary : cs.onSurfaceVariant).withValues(
+                        alpha: 0.3,
+                      ),
                 ),
               ),
             ),
@@ -328,10 +328,8 @@ class _VerticalVolumeSliderState extends State<_VerticalVolumeSlider> {
           keyboardType: TextInputType.number,
           autofocus: true,
           decoration: InputDecoration(
-            hintText: '0-200',
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10),
-            ),
+            hintText: i18n.tr('volume_range_hint'),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
           ),
           onSubmitted: (text) {
             _applyVolumeInput(text, ctx, i18n, cs);

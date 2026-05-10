@@ -22,7 +22,7 @@ class TimerRuntimeCalculator {
     required bool active,
     required DateTime? endsAt,
     required DateTime? autoResumeAt,
-    required bool hasPausedByTimerPaths,
+    required bool hasPausedByTimerSessionIds,
   }) {
     final hasPendingTrigger =
         mode == TimerMode.trigger && duration != null && waitingForPlayback;
@@ -30,14 +30,14 @@ class TimerRuntimeCalculator {
     return hasPendingTrigger ||
         hasRunningCountdown ||
         autoResumeAt != null ||
-        hasPausedByTimerPaths;
+        hasPausedByTimerSessionIds;
   }
 
   bool hasPendingAutoResume({
     required DateTime? autoResumeAt,
-    required bool hasPausedByTimerPaths,
+    required bool hasPausedByTimerSessionIds,
   }) {
-    return autoResumeAt != null && hasPausedByTimerPaths;
+    return autoResumeAt != null && hasPausedByTimerSessionIds;
   }
 
   DateTime nextClockTime({

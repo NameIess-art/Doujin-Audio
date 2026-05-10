@@ -14,7 +14,7 @@ void main() {
         active: false,
         endsAt: null,
         autoResumeAt: null,
-        hasPausedByTimerPaths: false,
+        hasPausedByTimerSessionIds: false,
       ),
       isTrue,
     );
@@ -27,7 +27,7 @@ void main() {
         active: false,
         endsAt: null,
         autoResumeAt: DateTime(2026, 1, 1, 8),
-        hasPausedByTimerPaths: true,
+        hasPausedByTimerSessionIds: true,
       ),
       isTrue,
     );
@@ -69,11 +69,11 @@ void main() {
     expect(tick.changed, isTrue);
   });
 
-  test('hasPendingAutoResume requires paused paths', () {
+  test('hasPendingAutoResume requires paused session ids', () {
     expect(
       calculator.hasPendingAutoResume(
         autoResumeAt: DateTime(2026, 1, 1, 8),
-        hasPausedByTimerPaths: false,
+        hasPausedByTimerSessionIds: false,
       ),
       isFalse,
     );

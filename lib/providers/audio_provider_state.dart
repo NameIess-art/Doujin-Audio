@@ -23,7 +23,8 @@ extension AudioProviderState on AudioProvider {
   bool get autoResumeEnabled => _autoResumeEnabled;
   int get autoResumeHour => _autoResumeHour;
   int get autoResumeMinute => _autoResumeMinute;
-  List<String> get pausedByTimerPaths => List.unmodifiable(_pausedByTimerPaths);
+  List<String> get pausedByTimerSessionIds =>
+      List.unmodifiable(_pausedByTimerSessionIds);
 
   String get converterFormat => _converterFormat;
   String get converterBitrate => _converterBitrate;

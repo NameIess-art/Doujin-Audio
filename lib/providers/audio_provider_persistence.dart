@@ -152,7 +152,7 @@ extension AudioProviderPersistence on AudioProvider {
       if (!_multiThreadPlaybackEnabled) {
         await _enforceSingleThreadPlayback();
       }
-      await _loadTimerRuntime();
+      await loadTimerRuntimeFromSystem();
     } catch (e) {
       debugPrint('Critical error during AudioProvider _loadData: $e');
     } finally {

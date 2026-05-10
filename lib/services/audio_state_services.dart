@@ -150,7 +150,7 @@ class TimerStateSliceData {
     this.autoResumeEnabled = false,
     this.autoResumeHour = 7,
     this.autoResumeMinute = 0,
-    this.pausedByTimerPaths = const <String>[],
+    this.pausedByTimerSessionIds = const <String>[],
     this.isInitialized = false,
   });
 
@@ -163,7 +163,7 @@ class TimerStateSliceData {
   final bool autoResumeEnabled;
   final int autoResumeHour;
   final int autoResumeMinute;
-  final List<String> pausedByTimerPaths;
+  final List<String> pausedByTimerSessionIds;
   final bool isInitialized;
 
   @override
@@ -178,7 +178,7 @@ class TimerStateSliceData {
         other.autoResumeEnabled == autoResumeEnabled &&
         other.autoResumeHour == autoResumeHour &&
         other.autoResumeMinute == autoResumeMinute &&
-        listEquals(other.pausedByTimerPaths, pausedByTimerPaths) &&
+        listEquals(other.pausedByTimerSessionIds, pausedByTimerSessionIds) &&
         other.isInitialized == isInitialized;
   }
 
@@ -193,7 +193,7 @@ class TimerStateSliceData {
     autoResumeEnabled,
     autoResumeHour,
     autoResumeMinute,
-    Object.hashAll(pausedByTimerPaths),
+    Object.hashAll(pausedByTimerSessionIds),
     isInitialized,
   );
 }
@@ -692,7 +692,7 @@ class TimerService {
   Timer? countdownTimer;
   bool timerWaitingForPlayback = false;
   int timerGeneration = 0;
-  final List<String> pausedByTimerPaths = <String>[];
+  final List<String> pausedByTimerSessionIds = <String>[];
   bool autoResumeEnabled = false;
   int autoResumeHour = 7;
   int autoResumeMinute = 0;
@@ -713,7 +713,9 @@ class TimerService {
         autoResumeEnabled: autoResumeEnabled,
         autoResumeHour: autoResumeHour,
         autoResumeMinute: autoResumeMinute,
-        pausedByTimerPaths: UnmodifiableListView<String>(pausedByTimerPaths),
+        pausedByTimerSessionIds: UnmodifiableListView<String>(
+          pausedByTimerSessionIds,
+        ),
         isInitialized: isInitialized,
       ),
     );

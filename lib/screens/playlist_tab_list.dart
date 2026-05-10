@@ -171,6 +171,9 @@ class _SessionListCardState extends State<_SessionListCard> {
     final cs = Theme.of(context).colorScheme;
     final session = widget.session;
     final provider = widget.provider;
+    final coverGeneration = context.select<AudioProvider, int>(
+      (value) => value.coverGeneration,
+    );
     final sessionView = context
         .select<
           AudioProvider,
@@ -180,6 +183,7 @@ class _SessionListCardState extends State<_SessionListCard> {
             SessionLoopMode loopMode,
             bool isLoading,
             bool isPlaying,
+            bool channelSwapEnabled,
           })
         >((value) {
           final currentSession =
@@ -190,8 +194,13 @@ class _SessionListCardState extends State<_SessionListCard> {
             loopMode: currentSession.loopMode,
             isLoading: currentSession.isLoading,
             isPlaying: currentSession.state.playing,
+            channelSwapEnabled: currentSession.channelSwapEnabled,
           );
         });
+    if (_lastCoverGeneration != coverGeneration) {
+      _lastCoverGeneration = coverGeneration;
+      _updateFutureIfNeeded();
+    }
     final track = sessionView.track;
     final displayName =
         track?.displayName ??
@@ -368,7 +377,8 @@ class _SessionListCardState extends State<_SessionListCard> {
                               builder: (context, ref, child) {
                                 final settings = ref.watch(subtitleSettingsProvider);
                                 final showSub = settings.isGlobalEnabled(session.id);
-                                if (!showSub && !session.channelSwapEnabled) {
+                                if (!showSub &&
+                                    !sessionView.channelSwapEnabled) {
                                   return const SizedBox.shrink();
                                 }
                                 return Padding(
@@ -378,8 +388,10 @@ class _SessionListCardState extends State<_SessionListCard> {
                                     children: [
                                       if (showSub)
                                         Icon(Icons.subtitles_rounded, size: 10, color: cs.primary),
-                                      if (showSub && session.channelSwapEnabled) const SizedBox(width: 2),
-                                      if (session.channelSwapEnabled)
+                                      if (showSub &&
+                                          sessionView.channelSwapEnabled)
+                                        const SizedBox(width: 2),
+                                      if (sessionView.channelSwapEnabled)
                                         Icon(Icons.swap_horiz_rounded, size: 10, color: cs.primary),
                                     ],
                                   ),

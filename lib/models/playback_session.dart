@@ -43,6 +43,7 @@ class PlaybackSession {
   Duration? duration;
   Duration bufferedPosition = Duration.zero;
   double speed = 1.0;
+  double nativeBoostGain = 1.0;
   int lastPersistedPositionBucket = 0;
   PlayerState state;
   PlayerState? previousStateBeforeLastStateEvent;
@@ -85,14 +86,9 @@ class PlaybackSession {
       _bufferedPositionController.add(bufferedPosition);
     }
     if ((volume - snapshot.volume).abs() >= 0.001) {
-      // If we are in boosted range (> 1.0) and native reports exactly 1.0, 
-      // we assume it's a native cap and preserve our boosted value to prevent rebounding.
-      if (volume > 1.0 && (snapshot.volume - 1.0).abs() < 0.001) {
-        // Keep boosted value.
-      } else {
-        volume = snapshot.volume;
-      }
+      volume = snapshot.volume;
     }
+    nativeBoostGain = snapshot.boostGain;
     channelSwapEnabled = snapshot.channelSwapEnabled;
     if (snapshot.uri != null) {
       loadedPath = currentTrackPath;

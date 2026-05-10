@@ -39,6 +39,7 @@ class _ActiveSessionCard extends StatelessWidget {
         path.basenameWithoutExtension(view.trackPath);
     final screenSize = MediaQuery.sizeOf(context);
     final isSmallWindow = screenSize.width < 450 || screenSize.height < 400;
+    final isTinyWindow = screenSize.width < 300 || screenSize.height < 300;
 
     final blurSigma = isSmallWindow ? 4.0 : 8.0;
 
@@ -62,7 +63,7 @@ class _ActiveSessionCard extends StatelessWidget {
                           ? (isDark ? 0.88 : 0.92) 
                           : (isDark ? 0.55 : 0.75)),
                   borderRadius: BorderRadius.circular(cardRadius),
-                  boxShadow: [
+                  boxShadow: isTinyWindow ? null : [
                     BoxShadow(
                       color: cs.shadow.withValues(
                         alpha: isPlaying ? 0.26 : 0.18,

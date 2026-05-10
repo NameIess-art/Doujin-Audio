@@ -28,6 +28,7 @@ import '../widgets/swipe_reveal_card.dart';
 import '../widgets/top_page_header.dart';
 import '../widgets/unified_popup_menu.dart';
 import '../widgets/waterfall_flow_stagger.dart';
+import 'screen_view_models.dart';
 import 'video_converter_tab.dart';
 
 part 'library_tab_import_actions.dart';
@@ -57,9 +58,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
   Timer? _searchDebounceTimer;
-  List<LibraryNode>? _cachedFilteredTree;
-  List<LibraryNode>? _cachedFilterRawTree;
-  String _cachedFilterQuery = '';
+  final LibrarySearchIndex _searchIndex = LibrarySearchIndex();
   bool _refreshTriggeredInCurrentScroll = false;
   bool _isReordering = false;
 
@@ -170,22 +169,42 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   Widget build(BuildContext context) {
     super.build(context);
     final i18n = context.watch<AppLanguageProvider>();
-    ref.watch(libraryStateProvider);
     final provider = ref.read(audioProviderFacadeProvider);
-    final rawTree = provider.libraryTree;
-    final audioCount = provider.libraryTrackCount;
-    final watchedFolderCount = provider.watchedFolderCount;
-    final watchedLibraryCount = provider.watchedLibraryCount;
-    final watchedLibraries = provider.watchedLibraries;
-    final isScanning = provider.isScanning;
-    final isBackgroundScanning = provider.isBackgroundScanning;
-    final scanFolder = provider.scanCurrentFolder;
-    final scanFound = provider.scanFoundCount;
-    final scanDup = provider.scanDuplicateCount;
-    final scanFail = provider.scanFailureCount;
-    final tree = _filterTreeCached(rawTree, _searchQuery);
-    final matchCount = _countTrackNodes(tree);
-    final isInitialized = ref.watch(libraryStateProvider).value?.isInitialized ?? false;
+    final sliceState =
+        ref.watch(libraryStateProvider).valueOrNull ?? const LibraryState();
+    final libraryHeaderState = context.select<AudioProvider, LibraryHeaderState>(
+      (value) => libraryHeaderStateFromSlice(
+        LibraryState(
+          libraryTrackCount: value.libraryTrackCount,
+          watchedFolderCount: value.watchedFolderCount,
+          watchedLibraryCount: value.watchedLibraryCount,
+          isInitialized: sliceState.isInitialized,
+        ),
+      ),
+    );
+    final listState = context.select<AudioProvider, LibraryListState>(
+      (value) => LibraryListState(
+        rawTree: value.libraryTree,
+        watchedLibraries: value.watchedLibraries,
+        watchedFolderCount: value.watchedFolderCount,
+        watchedLibraryCount: value.watchedLibraryCount,
+        isScanning: value.isScanning,
+        isBackgroundScanning: value.isBackgroundScanning,
+        scanCurrentFolder: value.scanCurrentFolder,
+        scanFoundCount: value.scanFoundCount,
+        scanDuplicateCount: value.scanDuplicateCount,
+        scanFailureCount: value.scanFailureCount,
+        structureRevision: sliceState.structureRevision,
+        isInitialized: sliceState.isInitialized,
+      ),
+    );
+    final filteredResult = _searchIndex.resolve(
+      tree: listState.rawTree,
+      query: _searchQuery,
+      structureRevision: listState.structureRevision,
+    );
+    final tree = filteredResult.tree;
+    final matchCount = filteredResult.matchCount;
     final bottomInset = MobileOverlayInset.of(context);
 
     const double searchBarFullHeight = 44.0;
@@ -193,24 +212,29 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     final headerContentHeight = topTotalHeight + searchBarFullHeight;
     // Remove the extra 96px to make content flush with the bottom dock.
     final listBottomInset = bottomInset;
-    final viewportHeight = MediaQuery.sizeOf(context).height;
     // Reduced cacheExtent to significantly lower memory footprint and improve
     // scroll/swipe performance.
-    final listCacheExtent = (headerContentHeight + 400).toDouble();
-    final hasLibrary = rawTree.isNotEmpty;
+    final listCacheExtent = (headerContentHeight + 400)
+        .clamp(headerContentHeight, 720.0)
+        .toDouble();
+    final hasLibrary = listState.hasLibrary;
     final showLibrarySkeleton =
         !hasLibrary &&
         _searchQuery.isEmpty &&
-        isScanning &&
-        (watchedFolderCount > 0 || watchedLibraryCount > 0);
-    final canPullRefresh = watchedFolderCount > 0 || watchedLibraryCount > 0;
+        listState.isScanning &&
+        libraryHeaderState.hasWatchedSources;
+    final canPullRefresh = listState.canPullRefresh;
 
     Widget dynamicSearchBar() {
       return _CollapsingSearchBar(
         controller: _scrollController,
         height: searchBarFullHeight,
         pinned: _searchQuery.isNotEmpty || _searchController.text.isNotEmpty,
-        child: _buildSearchBar(i18n, matchCount, audioCount),
+        child: _buildSearchBar(
+          i18n,
+          matchCount,
+          libraryHeaderState.audioCount,
+        ),
       );
     }
 
@@ -241,15 +265,15 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
       // Padding adjustment for restricted Positioned viewport.
       // We expand the Positioned by 80px to pre-render items under the glass,
       // so we add 80px to the internal padding to keep the content visually in place.
-      final relativeTop = 150 + 4 + searchBarFullHeight;
-      final relativeBottom = 350.0;
+      const relativeTop = 150 + 4 + searchBarFullHeight;
+      const relativeBottom = 350.0;
 
       if (_searchQuery.isNotEmpty) {
         return ListView(
           physics: const AlwaysScrollableScrollPhysics(
             parent: BouncingScrollPhysics(),
           ),
-          padding: EdgeInsets.fromLTRB(
+          padding: const EdgeInsets.fromLTRB(
             16,
             relativeTop,
             16,
@@ -273,7 +297,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         );
       }
       if (showLibrarySkeleton) {
-        return _LibraryLoadingSkeleton(
+        return const _LibraryLoadingSkeleton(
           bottomInset: relativeBottom,
           topInset: relativeTop,
         );
@@ -316,7 +340,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
             notification.metrics.pixels < -68 &&
             !_refreshTriggeredInCurrentScroll &&
             canPullRefresh &&
-            !isScanning &&
+            !listState.isScanning &&
             _searchQuery.isEmpty) {
           _refreshTriggeredInCurrentScroll = true;
           unawaited(HapticFeedback.mediumImpact());
@@ -336,7 +360,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
             bottomInset: listBottomInset,
             topExpansion: 150,
             bottomExpansion: 350,
-            child: !isInitialized
+            child: !listState.isInitialized
                 ? const SizedBox.shrink()
                 : tree.isEmpty
                 ? refreshableEmptyBody()
@@ -344,7 +368,12 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                 ? ListView.builder(
                     key: const ValueKey('search_results_list'),
                     controller: _scrollController,
-                    padding: EdgeInsets.fromLTRB(16, 4 + searchBarFullHeight + 150, 16, 350),
+                    padding: const EdgeInsets.fromLTRB(
+                      16,
+                      4 + searchBarFullHeight + 150,
+                      16,
+                      350,
+                    ),
                     cacheExtent: listCacheExtent,
                     clipBehavior: Clip.none,
                     physics: const AlwaysScrollableScrollPhysics(
@@ -374,7 +403,12 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                         // Clip.none allows items to be visible when scrolled into the
                         // "empty" space above/below the restricted Positioned area.
                         clipBehavior: Clip.none,
-                        padding: EdgeInsets.fromLTRB(16, 4 + searchBarFullHeight + 150, 16, 350),
+                        padding: const EdgeInsets.fromLTRB(
+                          16,
+                          4 + searchBarFullHeight + 150,
+                          16,
+                          350,
+                        ),
                         cacheExtent: listCacheExtent,
                         physics: canPullRefresh
                             ? const AlwaysScrollableScrollPhysics(
@@ -418,7 +452,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
           ),
 
           // Scan progress card
-          if (isScanning && !isBackgroundScanning)
+          if (listState.isScanning && !listState.isBackgroundScanning)
             Positioned(
               top: headerContentHeight + 10,
               left: 12,
@@ -426,10 +460,10 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
               child: _buildScanProgressCard(
                 i18n,
                 provider,
-                scanFolder,
-                scanFound,
-                scanDup,
-                scanFail,
+                listState.scanCurrentFolder,
+                listState.scanFoundCount,
+                listState.scanDuplicateCount,
+                listState.scanFailureCount,
               ),
             ),
 
@@ -442,26 +476,26 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
               key: _headerKey,
               icon: Icons.library_music_rounded,
               title: i18n.tr('music_library'),
-              isLoading: !isInitialized,
+              isLoading: !libraryHeaderState.isInitialized,
               titleSuffix: Text(
-                i18n.tr('audio_count', {'count': audioCount}),
+                i18n.tr('audio_count', {'count': libraryHeaderState.audioCount}),
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                   fontWeight: FontWeight.w600,
                 ),
               ),
               trailing: SizedBox(
-                width: watchedLibraries.isEmpty ? 52 : 104,
+                width: listState.watchedLibraries.isEmpty ? 52 : 104,
                 height: 44,
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
-                    if (watchedLibraries.isNotEmpty)
+                    if (listState.watchedLibraries.isNotEmpty)
                       UnifiedPopupMenuButton<String>(
                         icon: Icons.edit_note_rounded,
                         tooltip: i18n.tr('edit_library'),
                         menuWidth: 280,
-                        entries: watchedLibraries
+                        entries: listState.watchedLibraries
                             .map(
                               (libraryPath) => UnifiedMenuEntry<String>.action(
                                 value: libraryPath,

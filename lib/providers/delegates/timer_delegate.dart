@@ -92,14 +92,14 @@ class TimerDelegate {
       active: _timerActive,
       endsAt: _timerEndsAt,
       autoResumeAt: _autoResumeAt,
-      hasPausedByTimerPaths: _pausedByTimerPaths.isNotEmpty,
+      hasPausedByTimerSessionIds: _pausedByTimerPaths.isNotEmpty,
     );
   }
 
   bool get hasPendingAutoResume {
     return _runtimeCalculator.hasPendingAutoResume(
       autoResumeAt: _autoResumeAt,
-      hasPausedByTimerPaths: _pausedByTimerPaths.isNotEmpty,
+      hasPausedByTimerSessionIds: _pausedByTimerPaths.isNotEmpty,
     );
   }
 

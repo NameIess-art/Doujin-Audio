@@ -65,7 +65,7 @@ void main() {
         ..autoResumeEnabled = true
         ..autoResumeHour = 8
         ..autoResumeMinute = 30
-        ..pausedByTimerPaths.add('/tracks/a.mp3');
+        ..pausedByTimerSessionIds.add('session-a');
       service.syncSlice(isInitialized: true);
 
       expect(
@@ -92,9 +92,9 @@ void main() {
             .having((state) => state.autoResumeHour, 'hour', 8)
             .having((state) => state.autoResumeMinute, 'minute', 30)
             .having(
-              (state) => state.pausedByTimerPaths,
-              'paused paths',
-              orderedEquals(['/tracks/a.mp3']),
+              (state) => state.pausedByTimerSessionIds,
+              'paused session ids',
+              orderedEquals(['session-a']),
             ),
       );
     });

@@ -18,11 +18,33 @@ data class StoredNativePlaybackSession(
     val playWhenReady: Boolean
 )
 
+data class StoredPlaybackTimerRuntimeState(
+    val timerModeIndex: Int?,
+    val durationMs: Long?,
+    val waitingForPlayback: Boolean,
+    val timerEndsAtMs: Long?,
+    val autoResumeAtMs: Long?,
+    val pausedSessionIds: List<String>,
+    val generation: Int
+) {
+    val hasRuntime: Boolean
+        get() = (timerModeIndex != null && durationMs != null && waitingForPlayback) ||
+            timerEndsAtMs != null ||
+            autoResumeAtMs != null ||
+            pausedSessionIds.isNotEmpty()
+
+    val shouldKeepForegroundServiceAlive: Boolean
+        get() = (timerModeIndex != null && durationMs != null && waitingForPlayback) ||
+            timerEndsAtMs != null ||
+            autoResumeAtMs != null
+}
+
 object NativePlaybackStateStore {
     private const val preferencesName = "audio_player_native_playback_state"
     private const val keySessions = "sessions"
     private const val keyPausedSessionIds = "paused_session_ids"
     private const val keyTimerCandidateSessionIds = "timer_candidate_session_ids"
+    private const val keyTimerRuntimeState = "timer_runtime_state_v2"
 
     fun saveSessions(
         context: Context,
@@ -136,9 +158,76 @@ object NativePlaybackStateStore {
             .remove(keyTimerCandidateSessionIds)
             .apply()
     }
+
+    fun saveTimerRuntimeState(
+        context: Context,
+        state: StoredPlaybackTimerRuntimeState
+    ) {
+        if (!state.hasRuntime) {
+            clearTimerRuntimeState(context)
+            return
+        }
+        val encoded = JSONObject()
+            .put("timerModeIndex", state.timerModeIndex)
+            .put("durationMs", state.durationMs)
+            .put("waitingForPlayback", state.waitingForPlayback)
+            .put("timerEndsAtMs", state.timerEndsAtMs)
+            .put("autoResumeAtMs", state.autoResumeAtMs)
+            .put("generation", state.generation)
+            .put("pausedSessionIds", JSONArray(state.pausedSessionIds))
+        context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
+            .edit()
+            .putString(keyTimerRuntimeState, encoded.toString())
+            .apply()
+    }
+
+    fun loadTimerRuntimeState(context: Context): StoredPlaybackTimerRuntimeState? {
+        val raw = context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
+            .getString(keyTimerRuntimeState, null)
+            ?: return null
+        return try {
+            val json = JSONObject(raw)
+            val pausedSessionIds = buildList {
+                val array = json.optJSONArray("pausedSessionIds") ?: JSONArray()
+                for (index in 0 until array.length()) {
+                    array.optString(index)
+                        .takeIf { it.isNotBlank() }
+                        ?.let(::add)
+                }
+            }
+            StoredPlaybackTimerRuntimeState(
+                timerModeIndex = json.optNullableInt("timerModeIndex"),
+                durationMs = json.optNullableLong("durationMs"),
+                waitingForPlayback = json.optBoolean("waitingForPlayback", false),
+                timerEndsAtMs = json.optNullableLong("timerEndsAtMs"),
+                autoResumeAtMs = json.optNullableLong("autoResumeAtMs"),
+                pausedSessionIds = pausedSessionIds,
+                generation = json.optInt("generation", 0)
+            )
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    fun clearTimerRuntimeState(context: Context) {
+        context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
+            .edit()
+            .remove(keyTimerRuntimeState)
+            .apply()
+    }
 }
 
 private fun JSONObject.optNullableString(key: String): String? {
     if (!has(key) || isNull(key)) return null
     return optString(key).takeIf { it.isNotBlank() }
+}
+
+private fun JSONObject.optNullableInt(key: String): Int? {
+    if (!has(key) || isNull(key)) return null
+    return optInt(key)
+}
+
+private fun JSONObject.optNullableLong(key: String): Long? {
+    if (!has(key) || isNull(key)) return null
+    return optLong(key)
 }

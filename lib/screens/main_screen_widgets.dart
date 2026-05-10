@@ -1,43 +1,52 @@
 part of 'main_screen.dart';
 
 class _AmbientBackground extends StatelessWidget {
-  const _AmbientBackground();
+  const _AmbientBackground({this.tinyMode = false});
+
+  final bool tinyMode;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            cs.surface,
-            cs.surfaceContainer.withValues(alpha: 0.94),
-            cs.surfaceContainerLow,
-          ],
-          stops: const [0, 0.5, 1],
+    if (tinyMode) {
+      return DecoratedBox(
+        decoration: BoxDecoration(color: cs.surface),
+      );
+    }
+    return RepaintBoundary(
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              cs.surface,
+              cs.surfaceContainer.withValues(alpha: 0.94),
+              cs.surfaceContainerLow,
+            ],
+            stops: const [0, 0.5, 1],
+          ),
         ),
-      ),
-      child: Stack(
-        children: [
-          Positioned(
-            left: -96,
-            top: -64,
-            child: _GlowOrb(
-              color: cs.primary.withValues(alpha: 0.08),
-              size: 220,
+        child: Stack(
+          children: [
+            Positioned(
+              left: -96,
+              top: -64,
+              child: _GlowOrb(
+                color: cs.primary.withValues(alpha: 0.08),
+                size: 220,
+              ),
             ),
-          ),
-          Positioned(
-            right: -72,
-            bottom: -86,
-            child: _GlowOrb(
-              color: cs.tertiary.withValues(alpha: 0.07),
-              size: 196,
+            Positioned(
+              right: -72,
+              bottom: -86,
+              child: _GlowOrb(
+                color: cs.tertiary.withValues(alpha: 0.07),
+                size: 196,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -186,6 +195,7 @@ class _FloatingGlassPanel extends StatelessWidget {
     this.showTopHighlight = true,
     this.primaryFillOpacity = 0.22,
     this.secondaryFillOpacity = 0.10,
+    this.tinyMode = false,
   });
 
   final Widget child;
@@ -196,6 +206,7 @@ class _FloatingGlassPanel extends StatelessWidget {
   final bool showTopHighlight;
   final double primaryFillOpacity;
   final double secondaryFillOpacity;
+  final bool tinyMode;
 
   @override
   Widget build(BuildContext context) {
@@ -204,58 +215,67 @@ class _FloatingGlassPanel extends StatelessWidget {
     final fillAlpha = isDark ? 0.72 : 0.85;
     final bgColor = isDark ? cs.surfaceBright : cs.surfaceContainerHighest;
 
+    Widget buildPanel() => DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(radius),
+        color: bgColor.withValues(
+          alpha: (primaryFillOpacity * fillAlpha).clamp(0.0, 0.95),
+        ),
+        border: Border.all(
+          color: cs.outlineVariant.withValues(alpha: borderOpacity),
+        ),
+        boxShadow: tinyMode ? null : [
+          BoxShadow(
+            color: cs.shadow.withValues(alpha: shadowOpacity),
+            blurRadius: 34,
+            spreadRadius: -6,
+            offset: const Offset(0, 18),
+          ),
+          BoxShadow(
+            color: cs.primary.withValues(alpha: isDark ? 0.08 : 0.05),
+            blurRadius: 18,
+            spreadRadius: -10,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Stack(
+        children: [
+          if (showTopHighlight && !tinyMode)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.white.withValues(alpha: 0.12),
+                        Colors.white.withValues(alpha: 0),
+                      ],
+                      stops: const [0, 0.24],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          Padding(padding: padding, child: child),
+        ],
+      ),
+    );
+
+    if (tinyMode) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(radius),
+        child: buildPanel(),
+      );
+    }
+
     return ClipRRect(
       borderRadius: BorderRadius.circular(radius),
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(radius),
-            color: bgColor.withValues(
-              alpha: (primaryFillOpacity * fillAlpha).clamp(0.0, 0.95),
-            ),
-            border: Border.all(
-              color: cs.outlineVariant.withValues(alpha: borderOpacity),
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: cs.shadow.withValues(alpha: shadowOpacity),
-                blurRadius: 34,
-                spreadRadius: -6,
-                offset: const Offset(0, 18),
-              ),
-              BoxShadow(
-                color: cs.primary.withValues(alpha: isDark ? 0.08 : 0.05),
-                blurRadius: 18,
-                spreadRadius: -10,
-                offset: const Offset(0, 8),
-              ),
-            ],
-          ),
-          child: Stack(
-            children: [
-              if (showTopHighlight)
-                Positioned.fill(
-                  child: IgnorePointer(
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [
-                            Colors.white.withValues(alpha: 0.12),
-                            Colors.white.withValues(alpha: 0),
-                          ],
-                          stops: const [0, 0.24],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              Padding(padding: padding, child: child),
-            ],
-          ),
-        ),
+        child: buildPanel(),
       ),
     );
   }

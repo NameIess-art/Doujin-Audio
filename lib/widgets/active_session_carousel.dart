@@ -53,7 +53,6 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
   late PageController _pageController;
   final ValueNotifier<double> _pageNotifier = ValueNotifier<double>(0);
   String? _lastCarouselSnapSessionId;
-  int _lastCoverGeneration = -1;
 
   double get _page => _pageNotifier.value;
 
@@ -66,18 +65,8 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
       if (mounted) {
         final provider = ref.read(audioProviderFacadeProvider);
         provider.carouselSnapListenable.addListener(_handleCarouselSnap);
-        provider.addListener(_handleCoverChange);
       }
     });
-  }
-
-  void _handleCoverChange() {
-    if (!mounted) return;
-    final newGen = ref.read(audioProviderFacadeProvider).coverGeneration;
-    if (_lastCoverGeneration != newGen) {
-      _lastCoverGeneration = newGen;
-      setState(() {});
-    }
   }
 
   @override
@@ -104,7 +93,6 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
     provider.carouselSnapListenable.removeListener(
       _handleCarouselSnap,
     );
-    provider.removeListener(_handleCoverChange);
     _pageController
       ..removeListener(_handlePageTick)
       ..dispose();
@@ -164,12 +152,14 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
 
   @override
   Widget build(BuildContext context) {
+    context.select<AudioProvider, int>((value) => value.coverGeneration);
     final AudioProvider provider =
-        widget.provider ?? ref.read(audioProviderFacadeProvider);
+        widget.provider ?? context.read<AudioProvider>();
     final sessions =
         widget.sessions ??
-        (ref.watch(playbackStateProvider).valueOrNull?.activeSessions ??
-            const <PlaybackSession>[]);
+        context.select<AudioProvider, List<PlaybackSession>>(
+          (value) => value.activeSessions,
+        );
     if (sessions.isEmpty) {
       return const SizedBox.shrink();
     }

@@ -12,7 +12,7 @@ extension AudioProviderPlayback on AudioProvider {
       active: _timerActive,
       endsAt: _timerEndsAt,
       autoResumeAt: _autoResumeAt,
-      hasPausedByTimerPaths: _pausedByTimerPaths.isNotEmpty,
+      hasPausedByTimerSessionIds: _pausedByTimerSessionIds.isNotEmpty,
     );
   }
 
@@ -30,7 +30,7 @@ extension AudioProviderPlayback on AudioProvider {
     _autoResumeTimer = null;
     _autoResumeAt = null;
     if (clearPausedSessions) {
-      _pausedByTimerPaths.clear();
+      _pausedByTimerSessionIds.clear();
     }
     unawaited(_syncNativeTimerAlarms());
   }

@@ -10,6 +10,7 @@ import '../i18n/app_language_provider.dart';
 import '../providers/audio_provider.dart';
 import '../providers/audio_provider_riverpod.dart';
 import '../services/audio_state_services.dart';
+import '../services/platform_channels.dart';
 import '../widgets/top_page_header.dart';
 
 part 'timer_tab_body.dart';
@@ -36,6 +37,7 @@ class TimerTab extends ConsumerStatefulWidget {
 }
 
 class _TimerTabState extends ConsumerState<TimerTab> {
+  static const MethodChannel _powerChannel = MethodChannel(PowerChannel.name);
   int _hours = 0;
   int _minutes = 30;
   int _seconds = 0;
@@ -124,6 +126,66 @@ class _TimerTabState extends ConsumerState<TimerTab> {
     return mode == TimerMode.manual
         ? i18n.tr('manual_start_subtitle')
         : i18n.tr('trigger_start_subtitle');
+  }
+
+  Future<bool> _canScheduleExactAlarms() async {
+    try {
+      return await _powerChannel.invokeMethod<bool>(
+            PowerMethod.canScheduleExactAlarms,
+          ) ??
+          true;
+    } on MissingPluginException {
+      return true;
+    } catch (_) {
+      return true;
+    }
+  }
+
+  Future<void> _openExactAlarmSettings() async {
+    try {
+      await _powerChannel.invokeMethod<void>(
+        PowerMethod.openExactAlarmSettings,
+      );
+    } on MissingPluginException {
+      // Non-Android platforms do not expose this channel.
+    } catch (_) {
+      // Best effort only.
+    }
+  }
+
+  Future<void> _setAutoResumeWithCapabilityCheck(
+    AudioProvider provider, {
+    required bool enabled,
+    required int hour,
+    required int minute,
+    required bool promptForCapability,
+  }) async {
+    provider.setAutoResume(enabled, hour, minute);
+    if (!promptForCapability) return;
+    final canScheduleExactAlarms = await _canScheduleExactAlarms();
+    if (canScheduleExactAlarms || !mounted) return;
+    final i18n = context.read<AppLanguageProvider>();
+    final openSettings = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        icon: const Icon(Icons.alarm_on_rounded),
+        title: Text(i18n.tr('exact_alarm_permission_title')),
+        content: Text(i18n.tr('exact_alarm_permission_message')),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text(i18n.tr('later')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(i18n.tr('open_exact_alarm_settings')),
+          ),
+        ],
+      ),
+    );
+    if (openSettings == true) {
+      await _openExactAlarmSettings();
+    }
   }
 
   @override

@@ -16,7 +16,7 @@ extension AudioProviderPlaybackTimer on AudioProvider {
           ? _timerEndsAt?.millisecondsSinceEpoch
           : null;
       final autoResumeAtMs = (() {
-        if (_autoResumeAt != null && _pausedByTimerPaths.isNotEmpty) {
+        if (_autoResumeAt != null && _pausedByTimerSessionIds.isNotEmpty) {
           return _autoResumeAt!.millisecondsSinceEpoch;
         }
         final plannedAutoResume = _plannedAutoResumeForTimerEnd(_timerEndsAt);
@@ -25,10 +25,16 @@ extension AudioProviderPlaybackTimer on AudioProvider {
         }
         return null;
       })();
-      await AudioProvider._powerChannel.invokeMethod<void>(
-        'syncPlaybackTimerAlarms',
-        {'timerEndsAtMs': timerEndsAtMs, 'autoResumeAtMs': autoResumeAtMs},
-      );
+      await AudioProvider._powerChannel
+          .invokeMethod<void>('syncPlaybackTimerAlarms', {
+            'timerMode': _timerMode?.index,
+            'timerDurationMs': _timerDuration?.inMilliseconds,
+            'timerWaitingForPlayback': _timerWaitingForPlayback,
+            'timerEndsAtMs': timerEndsAtMs,
+            'autoResumeAtMs': autoResumeAtMs,
+            'pausedSessionIds': _pausedByTimerSessionIds,
+            'generation': _timerGeneration,
+          });
     } on MissingPluginException {
       // Non-Android platforms don't expose this channel.
     } catch (e) {
@@ -108,13 +114,9 @@ extension AudioProviderPlaybackTimer on AudioProvider {
     _timerEndsAt = null;
     _timerWaitingForPlayback = false;
 
-    _pausedByTimerPaths
+    _pausedByTimerSessionIds
       ..clear()
-      ..addAll(
-        _sessions.values
-            .where((s) => s.state.playing)
-            .map((s) => s.currentTrackPath),
-      );
+      ..addAll(_sessions.values.where((s) => s.state.playing).map((s) => s.id));
 
     for (final session in _sessions.values) {
       unawaited(_nativePlaybackRepository.pause(session.id));
@@ -153,11 +155,11 @@ extension AudioProviderPlaybackTimer on AudioProvider {
     }
 
     final resumableSessions = _sessions.values
-        .where((s) => _pausedByTimerPaths.contains(s.currentTrackPath))
+        .where((s) => _pausedByTimerSessionIds.contains(s.id))
         .toList();
 
     if (resumableSessions.isEmpty) {
-      _pausedByTimerPaths.clear();
+      _pausedByTimerSessionIds.clear();
       _syncKeepCpuAwake();
       _notifyListeners();
       await _saveTimerRuntime();
@@ -168,7 +170,7 @@ extension AudioProviderPlaybackTimer on AudioProvider {
     for (final session in resumableSessions) {
       await _startSessionPlayback(session, shouldStartTriggerCountdown: false);
     }
-    _pausedByTimerPaths.clear();
+    _pausedByTimerSessionIds.clear();
     _autoResumeAt = null;
     _resetTimerAfterAutoResumeSuccess();
     _syncKeepCpuAwake();
@@ -179,7 +181,7 @@ extension AudioProviderPlaybackTimer on AudioProvider {
 
   void retryOverdueAutoResume() {
     final autoResumeAt = _autoResumeAt;
-    if (autoResumeAt == null || _pausedByTimerPaths.isEmpty) return;
+    if (autoResumeAt == null || _pausedByTimerSessionIds.isEmpty) return;
     if (autoResumeAt.isAfter(DateTime.now())) {
       _scheduleAutoResumeTimer(autoResumeAt);
       _syncKeepCpuAwake();
@@ -198,7 +200,7 @@ extension AudioProviderPlaybackTimer on AudioProvider {
       _autoResumeTimer?.cancel();
       _autoResumeTimer = null;
       _autoResumeAt = null;
-    } else if (_pausedByTimerPaths.isNotEmpty) {
+    } else if (_pausedByTimerSessionIds.isNotEmpty) {
       _scheduleAutoResumeTimer(_nextClockTime(hour, minute));
     }
     _syncKeepCpuAwake();

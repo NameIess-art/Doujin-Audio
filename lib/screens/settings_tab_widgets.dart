@@ -212,9 +212,7 @@ class _SubtitleWindowSettingsSheet extends StatelessWidget {
       children: [
         Row(
           children: [
-            Expanded(
-              child: Text(label, style: labelStyle),
-            ),
+            Expanded(child: Text(label, style: labelStyle)),
             Container(
               width: 24,
               height: 24,
@@ -228,10 +226,7 @@ class _SubtitleWindowSettingsSheet extends StatelessWidget {
               IconButton(
                 icon: const Icon(Icons.close_rounded, size: 18),
                 padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(
-                  minWidth: 28,
-                  minHeight: 28,
-                ),
+                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
                 onPressed: onReset,
                 tooltip: resetTooltip,
               ),
@@ -269,9 +264,9 @@ class _SubtitleWindowSettingsSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final i18n = context.read<AppLanguageProvider>();
-    final labelStyle = Theme.of(context).textTheme.bodyMedium?.copyWith(
-      fontWeight: FontWeight.w600,
-    );
+    final labelStyle = Theme.of(
+      context,
+    ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600);
 
     return Consumer(
       builder: (context, ref, child) {
@@ -320,10 +315,9 @@ class _SubtitleWindowSettingsSheet extends StatelessWidget {
                           child: Text(
                             label,
                             style: TextStyle(
-                              fontFamily:
-                                  _fontFamilies[i].isEmpty
-                                      ? null
-                                      : _fontFamilies[i],
+                              fontFamily: _fontFamilies[i].isEmpty
+                                  ? null
+                                  : _fontFamilies[i],
                             ),
                           ),
                         );
@@ -381,7 +375,10 @@ class _SubtitleWindowSettingsSheet extends StatelessWidget {
                 Row(
                   children: [
                     Expanded(
-                      child: Text(i18n.tr('background_blur'), style: labelStyle),
+                      child: Text(
+                        i18n.tr('background_blur'),
+                        style: labelStyle,
+                      ),
                     ),
                     Text(
                       settings.backgroundBlur.toStringAsFixed(0),
@@ -404,7 +401,10 @@ class _SubtitleWindowSettingsSheet extends StatelessWidget {
                 Row(
                   children: [
                     Expanded(
-                      child: Text(i18n.tr('background_transparency') ?? i18n.tr('background_opacity'), style: labelStyle),
+                      child: Text(
+                        i18n.tr('background_transparency'),
+                        style: labelStyle,
+                      ),
                     ),
                     Text(
                       '${((1.0 - settings.backgroundOpacity) * 100).toStringAsFixed(0)}%',

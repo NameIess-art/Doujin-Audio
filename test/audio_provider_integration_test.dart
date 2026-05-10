@@ -83,6 +83,7 @@ void main() {
           bufferedPosition: Duration(seconds: 10),
           duration: Duration(minutes: 2),
           volume: 0.8,
+          boostGain: 1.0,
           channelSwapEnabled: false,
         ),
       );

@@ -373,8 +373,9 @@ class _TrackNodeWidget extends ConsumerWidget {
     final provider = ref.read(audioProviderFacadeProvider);
     final cs = Theme.of(context).colorScheme;
     final track = trackNode.track;
-    ref.watch(playbackStateProvider);
-    final isAlreadyPlaying = provider.isTrackActive(track.path);
+    final isAlreadyPlaying = context.select<AudioProvider, bool>(
+      (value) => value.isTrackActive(track.path),
+    );
     final cardShape = RoundedRectangleBorder(
       side: track.isSingle
           ? BorderSide(color: cs.outlineVariant)
@@ -435,7 +436,7 @@ class _TrackNodeWidget extends ConsumerWidget {
                   IconButton(
                     onPressed: () {
                       Feedback.forTap(context);
-                      unawaited(provider.spawnSession(track));
+                      unawaited(provider.spawnSession(track, autoPlay: true));
                       _showSessionCreatedSnack(
                         context,
                         i18n.tr('session_created', {'name': track.displayName}),
@@ -493,7 +494,7 @@ class _TrackNodeWidget extends ConsumerWidget {
               IconButton(
                 onPressed: () {
                   Feedback.forTap(context);
-                  unawaited(provider.spawnSession(track));
+                  unawaited(provider.spawnSession(track, autoPlay: true));
                   _showSessionCreatedSnack(
                     context,
                     i18n.tr('session_created', {'name': track.displayName}),
@@ -527,10 +528,8 @@ class _LibraryCoverThumbnail extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Watch coverGeneration to force rebuild when any cover art is updated globally
-    ref.watch(audioProviderFacadeProvider.select((p) => p.coverGeneration));
-    
-    final provider = ref.read(audioProviderFacadeProvider);
+    context.select<AudioProvider, int>((value) => value.coverGeneration);
+    final provider = context.read<AudioProvider>();
     final coverPathFuture = provider.coverPathFutureForFolder(folderPath);
     final cs = Theme.of(context).colorScheme;
 

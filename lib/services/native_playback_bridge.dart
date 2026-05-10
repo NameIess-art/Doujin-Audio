@@ -15,6 +15,7 @@ class NativePlaybackSnapshot {
     required this.position,
     required this.bufferedPosition,
     required this.volume,
+    required this.boostGain,
     required this.channelSwapEnabled,
     this.uri,
     this.title,
@@ -36,13 +37,16 @@ class NativePlaybackSnapshot {
   final Duration bufferedPosition;
   final Duration? duration;
   final double volume;
+  final double boostGain;
   final bool channelSwapEnabled;
   final String? error;
 
   factory NativePlaybackSnapshot.fromMap(Map<dynamic, dynamic> map) {
     final sessionId = map['sessionId'] as String?;
     if (sessionId == null || sessionId.trim().isEmpty) {
-      throw const FormatException('Native playback snapshot is missing sessionId.');
+      throw const FormatException(
+        'Native playback snapshot is missing sessionId.',
+      );
     }
     return NativePlaybackSnapshot(
       sessionId: sessionId,
@@ -63,6 +67,7 @@ class NativePlaybackSnapshot {
           ? null
           : Duration(milliseconds: (map['durationMs'] as num).round()),
       volume: (map['volume'] as num?)?.toDouble() ?? 1.0,
+      boostGain: (map['boostGain'] as num?)?.toDouble() ?? 1.0,
       channelSwapEnabled: map['channelSwap'] as bool? ?? false,
       error: map['error'] as String?,
     );
@@ -134,7 +139,9 @@ class NativePlaybackBridge {
           try {
             _controller.add(NativePlaybackSnapshot.fromMap(event));
           } catch (error) {
-            debugPrint('NativePlaybackBridge: dropping invalid snapshot: $error');
+            debugPrint(
+              'NativePlaybackBridge: dropping invalid snapshot: $error',
+            );
           }
         }
       },

@@ -291,6 +291,7 @@ class NativePlaybackService : MediaSessionService() {
             NativePlaybackStateStore.clearSessions(this)
             NativePlaybackStateStore.clearPausedSessionIds(this)
             NativePlaybackStateStore.clearTimerCandidateSessionIds(this)
+            NativePlaybackStateStore.clearTimerRuntimeState(this)
             stopPlaybackForeground(removeNotification = true)
             stopSelf()
         } else {
@@ -325,6 +326,7 @@ class NativePlaybackService : MediaSessionService() {
         NativePlaybackStateStore.clearSessions(this)
         NativePlaybackStateStore.clearPausedSessionIds(this)
         NativePlaybackStateStore.clearTimerCandidateSessionIds(this)
+        NativePlaybackStateStore.clearTimerRuntimeState(this)
         stopPlaybackForeground(removeNotification = true)
         stopSelf()
         return okResult(null)
@@ -851,18 +853,17 @@ class NativePlaybackService : MediaSessionService() {
             val p = _player
             val currentPositionMs = p?.currentPosition?.coerceAtLeast(0L) ?: lastPositionMs
             val shouldResume = p?.let { it.playWhenReady || it.isPlaying } ?: lastPlayWhenReady
-            val currentVolume = p?.volume ?: volume
             val isRepeatOne = (p?.repeatMode == Player.REPEAT_MODE_ONE) || (p == null && repeatOne)
-            
+
             configure(
                 uri = currentUri,
                 title = title,
                 subtitle = subtitle,
                 artUri = artUri,
                 startPositionMs = currentPositionMs,
-                volume = currentVolume,
+                volume = volume,
                 repeatOne = isRepeatOne,
-                autoPlay = shouldResume
+                autoPlay = shouldResume,
             )
         }
 

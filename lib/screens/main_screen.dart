@@ -151,7 +151,11 @@ class _MainScreenState extends ConsumerState<MainScreen>
     unawaited(_consumePendingNotificationSession());
     final provider = ref.read(audioProviderFacadeProvider);
     provider.resyncNotificationsAfterResume();
-    provider.retryOverdueAutoResume();
+    unawaited(
+      provider.syncTimerRuntimeFromNative().then((_) {
+        provider.retryOverdueAutoResume();
+      }),
+    );
     if (!_notificationSettingsOpened) {
       return;
     }
@@ -256,12 +260,13 @@ class _MainScreenState extends ConsumerState<MainScreen>
     );
 
     if (!_isDataReady && (playbackState?.isInitialized ?? false)) {
-      _isDataReady = true; 
+      _isDataReady = true;
     }
     final width = MediaQuery.sizeOf(context).width;
     final height = MediaQuery.sizeOf(context).height;
     final isDesktop = width >= _desktopBreakpoint;
     final isSmallWindow = width < 450 || height < 400;
+    final isTinyWindow = width < 300 || height < 300;
     final mobileContentInset = isDesktop
         ? 0.0
         : _mobileContentInset(hasNowPlaying: hasNowPlaying);
@@ -280,7 +285,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
         body: Stack(
           fit: StackFit.expand,
           children: [
-            const _AmbientBackground(),
+            _AmbientBackground(tinyMode: isTinyWindow),
             if (isDesktop)
               Row(
                 children: [
@@ -312,13 +317,15 @@ class _MainScreenState extends ConsumerState<MainScreen>
                           stops: [0, 0.45],
                         ).createShader(bounds),
                         child: RepaintBoundary(
-                          child: BackdropFilter(
-                            filter: ImageFilter.blur(
-                              sigmaX: isSmallWindow ? 4.0 : 7.0,
-                              sigmaY: isSmallWindow ? 4.0 : 7.0,
-                            ),
-                            child: const SizedBox.expand(),
-                          ),
+                          child: isTinyWindow 
+                              ? const SizedBox.expand() 
+                              : BackdropFilter(
+                                  filter: ImageFilter.blur(
+                                    sigmaX: isSmallWindow ? 4.0 : 7.0,
+                                    sigmaY: isSmallWindow ? 4.0 : 7.0,
+                                  ),
+                                  child: const SizedBox.expand(),
+                                ),
                         ),
                       ),
                     ),
@@ -328,12 +335,17 @@ class _MainScreenState extends ConsumerState<MainScreen>
                     i18n: i18n,
                     timerState: timerState,
                     overlaySessions: visibleSessions,
+                    tinyMode: isTinyWindow,
                   ),
                 ],
               ),
             if (_timerOverlayPrimed) const _ImmediateTimerScrim(),
             for (final session in subtitleSessions)
-              FloatingSubtitleWindow(key: ValueKey('subtitle_${session.id}'), sessionId: session.id, isCrossPage: true),
+              FloatingSubtitleWindow(
+                key: ValueKey('subtitle_${session.id}'),
+                sessionId: session.id,
+                isCrossPage: true,
+              ),
             if (!_bootstrapDone)
               _BootstrapOverlay(
                 visible: !_isDataReady,

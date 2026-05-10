@@ -108,10 +108,15 @@ extension _TimerTabDetailBody on _TimerTabState {
                       value: provider.autoResumeEnabled,
                       onChanged: (value) {
                         HapticFeedback.selectionClick();
-                        provider.setAutoResume(
-                          value,
-                          provider.autoResumeHour,
-                          provider.autoResumeMinute,
+                        unawaited(
+                          _setAutoResumeWithCapabilityCheck(
+                            provider,
+                            enabled: value,
+                            hour: provider.autoResumeHour,
+                            minute: provider.autoResumeMinute,
+                            promptForCapability:
+                                value && !provider.autoResumeEnabled,
+                          ),
                         );
                       },
                     ),

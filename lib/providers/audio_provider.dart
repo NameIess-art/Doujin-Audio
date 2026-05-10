@@ -117,12 +117,15 @@ class AudioProvider with ChangeNotifier {
   bool _isInitialized = false;
   final ValueNotifier<int?> _scrollToTopTabNotifier = ValueNotifier<int?>(null);
   ValueListenable<int?> get scrollToTopTabListenable => _scrollToTopTabNotifier;
-  final ValueNotifier<String?> _carouselSnapNotifier = ValueNotifier<String?>(null);
+  final ValueNotifier<String?> _carouselSnapNotifier = ValueNotifier<String?>(
+    null,
+  );
   ValueListenable<String?> get carouselSnapListenable => _carouselSnapNotifier;
 
   void requestCarouselSnapTo(String sessionId) {
     _carouselSnapNotifier.value = sessionId;
   }
+
   final Random _random = Random();
 
   StreamSubscription<NativePlaybackSnapshot>? _nativePlaybackSubscription;
@@ -387,7 +390,8 @@ class AudioProvider with ChangeNotifier {
 
   int get _timerGeneration => _timerService.timerGeneration;
   set _timerGeneration(int value) => _timerService.timerGeneration = value;
-  List<String> get _pausedByTimerPaths => _timerService.pausedByTimerPaths;
+  List<String> get _pausedByTimerSessionIds =>
+      _timerService.pausedByTimerSessionIds;
   bool get _autoResumeEnabled => _timerService.autoResumeEnabled;
   set _autoResumeEnabled(bool value) => _timerService.autoResumeEnabled = value;
   int get _autoResumeHour => _timerService.autoResumeHour;

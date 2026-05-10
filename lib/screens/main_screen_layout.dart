@@ -213,6 +213,7 @@ extension _MainScreenLayout on _MainScreenState {
     required AppLanguageProvider i18n,
     required _TimerPresentation timerState,
     required List<PlaybackSession> overlaySessions,
+    bool tinyMode = false,
   }) {
     return SafeArea(
       key: _bottomDockKey,
@@ -238,18 +239,20 @@ extension _MainScreenLayout on _MainScreenState {
                   },
                 ),
               if (overlaySessions.isNotEmpty) const SizedBox(height: 6),
-              FractionallySizedBox(
-                widthFactor: 0.9,
-                child: _FloatingGlassPanel(
-                  padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
-                  borderOpacity: 0.12,
-                  shadowOpacity: 0.18,
-                  showTopHighlight: false,
-                  primaryFillOpacity: 0.82,
-                  secondaryFillOpacity: 0.70,
-                  child: _buildBottomBar(context),
+              if (!tinyMode)
+                FractionallySizedBox(
+                  widthFactor: 0.9,
+                  child: _FloatingGlassPanel(
+                    padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
+                    borderOpacity: 0.12,
+                    shadowOpacity: 0.18,
+                    showTopHighlight: false,
+                    primaryFillOpacity: 0.82,
+                    secondaryFillOpacity: 0.70,
+                    tinyMode: tinyMode,
+                    child: _buildBottomBar(context),
+                  ),
                 ),
-              ),
             ],
           ),
         ),

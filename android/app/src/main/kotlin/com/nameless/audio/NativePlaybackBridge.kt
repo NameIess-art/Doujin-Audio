@@ -76,7 +76,10 @@ class NativePlaybackBridge(
                 NativePlaybackMethods.UNDISMISS_NOTIFICATIONS -> service?.undismissNotifications()
                     ?: mapOf("ok" to false, "error" to "Native playback service is not ready.")
                 NativePlaybackMethods.SNAPSHOT -> service?.snapshot()
-                    ?: mapOf("sessions" to emptyList<Map<String, Any?>>())
+                    ?: mapOf(
+                        "ok" to true,
+                        "value" to mapOf("sessions" to emptyList<Map<String, Any?>>())
+                    )
                 else -> {
                     result.notImplemented()
                     return

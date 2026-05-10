@@ -1,6 +1,61 @@
 part of 'settings_tab.dart';
 
 extension _SettingsTabActions on _SettingsTabState {
+  Future<bool> _ensureInstallPermissionThenRun(
+    BuildContext context,
+    Future<void> Function() onGranted,
+  ) {
+    final i18n = context.read<AppLanguageProvider>();
+    return _permissionActionController.ensureGrantedAndRun(
+      context: context,
+      title: i18n.tr('install_permission_title'),
+      message: i18n.tr('install_permission_message'),
+      confirmLabel: i18n.tr('go_settings'),
+      cancelLabel: i18n.tr('cancel'),
+      isGranted: AppUpdateService.canInstallUnknownApps,
+      openSettings: AppUpdateService.openInstallPermissionSettings,
+      onGranted: onGranted,
+    );
+  }
+
+  Future<void> _installDownloadedApk(BuildContext context, File apkFile) async {
+    final i18n = context.read<AppLanguageProvider>();
+    try {
+      final result = await AppUpdateService.installApk(apkFile);
+      if (!context.mounted) return;
+      if (result.needsPermission) {
+        await _ensureInstallPermissionThenRun(
+          context,
+          () => _installDownloadedApk(context, apkFile),
+        );
+        return;
+      }
+      if (!result.ok) {
+        showAppSnackBar(
+          context,
+          result.message ?? i18n.tr('update_install_failed'),
+          tone: AppFeedbackTone.destructive,
+          icon: Icons.error_outline_rounded,
+        );
+        return;
+      }
+      showAppSnackBar(
+        context,
+        i18n.tr('update_ready_install'),
+        tone: AppFeedbackTone.success,
+        icon: Icons.install_mobile_rounded,
+      );
+    } catch (_) {
+      if (!context.mounted) return;
+      showAppSnackBar(
+        context,
+        i18n.tr('update_install_failed'),
+        tone: AppFeedbackTone.destructive,
+        icon: Icons.error_outline_rounded,
+      );
+    }
+  }
+
   Future<void> _clearTempCache(BuildContext context) async {
     final i18n = context.read<AppLanguageProvider>();
     final cacheDir = Directory(
@@ -32,11 +87,35 @@ extension _SettingsTabActions on _SettingsTabState {
     if (!Platform.isAndroid) return true;
     try {
       return await _SettingsTabState._powerChannel.invokeMethod<bool>(
-            'isIgnoringBatteryOptimizations',
+            PowerMethod.isIgnoringBatteryOptimizations,
           ) ??
           false;
     } catch (_) {
       return false;
+    }
+  }
+
+  Future<bool> _canScheduleExactAlarms() async {
+    if (!Platform.isAndroid) return true;
+    try {
+      return await _SettingsTabState._powerChannel.invokeMethod<bool>(
+            PowerMethod.canScheduleExactAlarms,
+          ) ??
+          true;
+    } catch (_) {
+      return true;
+    }
+  }
+
+  Future<bool> _areNotificationsEnabled() async {
+    if (!Platform.isAndroid) return true;
+    try {
+      return await _SettingsTabState._notificationsChannel.invokeMethod<bool>(
+            NotificationsMethod.areNotificationsEnabled,
+          ) ??
+          true;
+    } catch (_) {
+      return true;
     }
   }
 
@@ -45,7 +124,7 @@ extension _SettingsTabActions on _SettingsTabState {
     try {
       final opened =
           await _SettingsTabState._powerChannel.invokeMethod<bool>(
-            'openBackgroundRunSettings',
+            PowerMethod.openBackgroundRunSettings,
           ) ??
           false;
       if (!opened && context.mounted) {
@@ -67,6 +146,78 @@ extension _SettingsTabActions on _SettingsTabState {
         ),
         tone: AppFeedbackTone.warning,
         icon: Icons.settings_applications_rounded,
+      );
+    } finally {
+      Future<void>.delayed(
+        const Duration(milliseconds: 600),
+        _refreshBackgroundRunStatus,
+      );
+    }
+  }
+
+  Future<void> _openExactAlarmSettings(BuildContext context) async {
+    if (!Platform.isAndroid) return;
+    try {
+      final opened =
+          await _SettingsTabState._powerChannel.invokeMethod<bool>(
+            PowerMethod.openExactAlarmSettings,
+          ) ??
+          false;
+      if (!opened && context.mounted) {
+        showAppSnackBar(
+          context,
+          context.read<AppLanguageProvider>().tr(
+            'exact_alarm_settings_open_failed',
+          ),
+          tone: AppFeedbackTone.warning,
+          icon: Icons.alarm_off_rounded,
+        );
+      }
+    } catch (_) {
+      if (!context.mounted) return;
+      showAppSnackBar(
+        context,
+        context.read<AppLanguageProvider>().tr(
+          'exact_alarm_settings_open_failed',
+        ),
+        tone: AppFeedbackTone.warning,
+        icon: Icons.alarm_off_rounded,
+      );
+    } finally {
+      Future<void>.delayed(
+        const Duration(milliseconds: 600),
+        _refreshBackgroundRunStatus,
+      );
+    }
+  }
+
+  Future<void> _openNotificationSettings(BuildContext context) async {
+    if (!Platform.isAndroid) return;
+    try {
+      final opened =
+          await _SettingsTabState._notificationsChannel.invokeMethod<bool>(
+            NotificationsMethod.openNotificationSettings,
+          ) ??
+          false;
+      if (!opened && context.mounted) {
+        showAppSnackBar(
+          context,
+          context.read<AppLanguageProvider>().tr(
+            'notification_settings_open_failed',
+          ),
+          tone: AppFeedbackTone.warning,
+          icon: Icons.notifications_off_rounded,
+        );
+      }
+    } catch (_) {
+      if (!context.mounted) return;
+      showAppSnackBar(
+        context,
+        context.read<AppLanguageProvider>().tr(
+          'notification_settings_open_failed',
+        ),
+        tone: AppFeedbackTone.warning,
+        icon: Icons.notifications_off_rounded,
       );
     } finally {
       Future<void>.delayed(
@@ -158,21 +309,10 @@ extension _SettingsTabActions on _SettingsTabState {
       },
     );
     if (shouldDownload == true && context.mounted) {
-      final canInstallUnknownApps =
-          await AppUpdateService.canInstallUnknownApps();
-      if (!context.mounted) return;
-      if (!canInstallUnknownApps) {
-        await AppUpdateService.openInstallPermissionSettings();
-        if (!context.mounted) return;
-        showAppSnackBar(
-          context,
-          i18n.tr('install_permission_needed'),
-          tone: AppFeedbackTone.warning,
-          icon: Icons.admin_panel_settings_rounded,
-        );
-        return;
-      }
-      await _downloadAndInstallUpdate(context, info);
+      await _ensureInstallPermissionThenRun(
+        context,
+        () => _downloadAndInstallUpdate(context, info),
+      );
     }
   }
 
@@ -210,41 +350,7 @@ extension _SettingsTabActions on _SettingsTabState {
       }
     }
 
-    try {
-      final result = await AppUpdateService.installApk(apkFile);
-      if (!context.mounted) return;
-      if (result.needsPermission) {
-        showAppSnackBar(
-          context,
-          i18n.tr('install_permission_needed'),
-          tone: AppFeedbackTone.warning,
-          icon: Icons.admin_panel_settings_rounded,
-        );
-        return;
-      }
-      if (!result.ok) {
-        showAppSnackBar(
-          context,
-          result.message ?? i18n.tr('update_install_failed'),
-          tone: AppFeedbackTone.destructive,
-          icon: Icons.error_outline_rounded,
-        );
-        return;
-      }
-      showAppSnackBar(
-        context,
-        i18n.tr('update_ready_install'),
-        tone: AppFeedbackTone.success,
-        icon: Icons.install_mobile_rounded,
-      );
-    } catch (_) {
-      if (!context.mounted) return;
-      showAppSnackBar(
-        context,
-        i18n.tr('update_install_failed'),
-        tone: AppFeedbackTone.destructive,
-        icon: Icons.error_outline_rounded,
-      );
-    }
+    if (!context.mounted) return;
+    await _installDownloadedApk(context, apkFile);
   }
 }

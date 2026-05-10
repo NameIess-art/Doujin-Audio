@@ -22,20 +22,24 @@ data class StoredPlaybackTimerRuntimeState(
     val timerModeIndex: Int?,
     val durationMs: Long?,
     val waitingForPlayback: Boolean,
-    val timerEndsAtMs: Long?,
+    val timerEndsAtWallClockMs: Long?,
+    val timerEndsElapsedRealtimeMs: Long?,
+    val autoResumeEnabled: Boolean,
+    val autoResumeHour: Int,
+    val autoResumeMinute: Int,
     val autoResumeAtMs: Long?,
     val pausedSessionIds: List<String>,
     val generation: Int
 ) {
     val hasRuntime: Boolean
         get() = (timerModeIndex != null && durationMs != null && waitingForPlayback) ||
-            timerEndsAtMs != null ||
+            timerEndsAtWallClockMs != null ||
             autoResumeAtMs != null ||
             pausedSessionIds.isNotEmpty()
 
     val shouldKeepForegroundServiceAlive: Boolean
         get() = (timerModeIndex != null && durationMs != null && waitingForPlayback) ||
-            timerEndsAtMs != null ||
+            timerEndsAtWallClockMs != null ||
             autoResumeAtMs != null
 }
 
@@ -44,7 +48,8 @@ object NativePlaybackStateStore {
     private const val keySessions = "sessions"
     private const val keyPausedSessionIds = "paused_session_ids"
     private const val keyTimerCandidateSessionIds = "timer_candidate_session_ids"
-    private const val keyTimerRuntimeState = "timer_runtime_state_v2"
+    private const val keyTimerRuntimeState = "timer_runtime_state_v3"
+    private const val legacyTimerRuntimeState = "timer_runtime_state_v2"
 
     fun saveSessions(
         context: Context,
@@ -171,7 +176,11 @@ object NativePlaybackStateStore {
             .put("timerModeIndex", state.timerModeIndex)
             .put("durationMs", state.durationMs)
             .put("waitingForPlayback", state.waitingForPlayback)
-            .put("timerEndsAtMs", state.timerEndsAtMs)
+            .put("timerEndsAtWallClockMs", state.timerEndsAtWallClockMs)
+            .put("timerEndsElapsedRealtimeMs", state.timerEndsElapsedRealtimeMs)
+            .put("autoResumeEnabled", state.autoResumeEnabled)
+            .put("autoResumeHour", state.autoResumeHour)
+            .put("autoResumeMinute", state.autoResumeMinute)
             .put("autoResumeAtMs", state.autoResumeAtMs)
             .put("generation", state.generation)
             .put("pausedSessionIds", JSONArray(state.pausedSessionIds))
@@ -184,6 +193,8 @@ object NativePlaybackStateStore {
     fun loadTimerRuntimeState(context: Context): StoredPlaybackTimerRuntimeState? {
         val raw = context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
             .getString(keyTimerRuntimeState, null)
+            ?: context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
+                .getString(legacyTimerRuntimeState, null)
             ?: return null
         return try {
             val json = JSONObject(raw)
@@ -199,7 +210,12 @@ object NativePlaybackStateStore {
                 timerModeIndex = json.optNullableInt("timerModeIndex"),
                 durationMs = json.optNullableLong("durationMs"),
                 waitingForPlayback = json.optBoolean("waitingForPlayback", false),
-                timerEndsAtMs = json.optNullableLong("timerEndsAtMs"),
+                timerEndsAtWallClockMs = json.optNullableLong("timerEndsAtWallClockMs")
+                    ?: json.optNullableLong("timerEndsAtMs"),
+                timerEndsElapsedRealtimeMs = json.optNullableLong("timerEndsElapsedRealtimeMs"),
+                autoResumeEnabled = json.optBoolean("autoResumeEnabled", false),
+                autoResumeHour = json.optInt("autoResumeHour", 7),
+                autoResumeMinute = json.optInt("autoResumeMinute", 0),
                 autoResumeAtMs = json.optNullableLong("autoResumeAtMs"),
                 pausedSessionIds = pausedSessionIds,
                 generation = json.optInt("generation", 0)
@@ -213,6 +229,7 @@ object NativePlaybackStateStore {
         context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
             .edit()
             .remove(keyTimerRuntimeState)
+            .remove(legacyTimerRuntimeState)
             .apply()
     }
 }

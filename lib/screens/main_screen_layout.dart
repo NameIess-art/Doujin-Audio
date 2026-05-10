@@ -6,6 +6,10 @@ extension _MainScreenLayout on _MainScreenState {
     final radius = BorderRadius.circular(isDesktop ? 28 : 24);
 
     Widget pageShell(int index) {
+      final page = TickerMode(
+        enabled: index == _currentIndex,
+        child: _pages[index],
+      );
       return Align(
         alignment: Alignment.topCenter,
         child: isDesktop
@@ -30,12 +34,12 @@ extension _MainScreenLayout on _MainScreenState {
                     ),
                     child: ClipRRect(
                       borderRadius: radius,
-                      child: RepaintBoundary(child: _pageBuilders[index]()),
+                      child: RepaintBoundary(child: page),
                     ),
                   ),
                 ),
               )
-            : RepaintBoundary(child: _pageBuilders[index]()),
+            : RepaintBoundary(child: page),
       );
     }
 
@@ -52,9 +56,8 @@ extension _MainScreenLayout on _MainScreenState {
         }
         return false;
       },
-      child: PageView.builder(
+      child: PageView(
         controller: _pageController,
-        itemCount: _pageBuilders.length,
         clipBehavior: Clip.none,
         physics: const SnapScrollPhysics(parent: ClampingScrollPhysics()),
         onPageChanged: (index) {
@@ -66,10 +69,11 @@ extension _MainScreenLayout on _MainScreenState {
           _setLocalState(() {
             _currentIndex = index;
           });
+          ref
+              .read(audioProviderFacadeProvider)
+              .scheduleUiWarmup(currentPageIndex: index);
         },
-        itemBuilder: (context, index) {
-          return pageShell(index);
-        },
+        children: List<Widget>.generate(_pages.length, pageShell),
       ),
     );
   }

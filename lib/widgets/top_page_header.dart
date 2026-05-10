@@ -116,7 +116,7 @@ class TopPageHeader extends StatelessWidget {
     final headerWidget = Container(
       padding: EdgeInsets.only(top: topPadding),
       decoration: BoxDecoration(
-        color: cs.surface.withValues(alpha: isTransitioning ? 0.78 : 0.68),
+        color: cs.surface.withValues(alpha: isTransitioning ? 0.72 : 0.58),
         border: Border(
           bottom: BorderSide(
             color: cs.outlineVariant.withValues(alpha: 0.15),
@@ -131,7 +131,7 @@ class TopPageHeader extends StatelessWidget {
       ),
     );
 
-    final blurSigma = isTransitioning ? 0.0 : (isSmallWindow ? 7.0 : 14.0);
+    final blurSigma = isTransitioning ? 0.0 : (isSmallWindow ? 12.0 : 22.0);
 
     if (blurSigma <= 0) {
       return headerWidget;

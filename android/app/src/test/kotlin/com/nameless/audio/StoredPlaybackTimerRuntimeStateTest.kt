@@ -11,7 +11,11 @@ class StoredPlaybackTimerRuntimeStateTest {
             timerModeIndex = 1,
             durationMs = 30_000L,
             waitingForPlayback = true,
-            timerEndsAtMs = null,
+            timerEndsAtWallClockMs = null,
+            timerEndsElapsedRealtimeMs = null,
+            autoResumeEnabled = true,
+            autoResumeHour = 7,
+            autoResumeMinute = 30,
             autoResumeAtMs = null,
             pausedSessionIds = emptyList(),
             generation = 7

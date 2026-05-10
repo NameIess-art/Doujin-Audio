@@ -66,12 +66,9 @@ class _FolderNodeWidgetState extends State<_FolderNodeWidget> {
   }
 
   String? _findParentLibraryPath(AudioProvider provider) {
-    final normalizedPath = path.normalize(widget.folder.path);
     for (final libraryPath in provider.watchedLibraries) {
-      final normalizedLibraryPath = path.normalize(libraryPath);
-      if (path.equals(normalizedPath, normalizedLibraryPath) ||
-          path.isWithin(normalizedLibraryPath, normalizedPath)) {
-        return normalizedLibraryPath;
+      if (PathMatcher.isWithinOrEqual(widget.folder.path, libraryPath)) {
+        return libraryPath;
       }
     }
     return null;
@@ -84,11 +81,7 @@ class _FolderNodeWidgetState extends State<_FolderNodeWidget> {
     final i18n = context.read<AppLanguageProvider>();
     final libraryPath = _findParentLibraryPath(provider);
     if (libraryPath != null) {
-      provider.setLibraryFolderExcluded(
-        libraryPath,
-        widget.folder.path,
-        true,
-      );
+      provider.setLibraryFolderExcluded(libraryPath, widget.folder.path, true);
       if (context.mounted) {
         showAppSnackBar(
           context,
@@ -135,7 +128,7 @@ class _FolderNodeWidgetState extends State<_FolderNodeWidget> {
     );
     final groupLabel = isRootFolder
         ? ''
-        : path.basename(path.dirname(widget.folder.path));
+        : _displaySourceName(path.dirname(widget.folder.path));
 
     Widget content = Theme(
       data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
@@ -330,22 +323,15 @@ class _TrackNodeWidget extends ConsumerWidget {
     MusicTrack track,
   ) async {
     final i18n = context.read<AppLanguageProvider>();
-    final normalizedTrackPath = path.normalize(track.path);
     String? parentLibraryPath;
     for (final libraryPath in provider.watchedLibraries) {
-      final normalizedLibraryPath = path.normalize(libraryPath);
-      if (path.equals(normalizedTrackPath, normalizedLibraryPath) ||
-          path.isWithin(normalizedLibraryPath, normalizedTrackPath)) {
-        parentLibraryPath = normalizedLibraryPath;
+      if (PathMatcher.isWithinOrEqual(track.path, libraryPath)) {
+        parentLibraryPath = libraryPath;
         break;
       }
     }
     if (parentLibraryPath != null) {
-      provider.setLibraryTrackExcluded(
-        parentLibraryPath,
-        track.path,
-        true,
-      );
+      provider.setLibraryTrackExcluded(parentLibraryPath, track.path, true);
       if (context.mounted) {
         showAppSnackBar(
           context,
@@ -518,10 +504,7 @@ class _TrackNodeWidget extends ConsumerWidget {
 }
 
 class _LibraryCoverThumbnail extends ConsumerWidget {
-  const _LibraryCoverThumbnail({
-    required this.folderPath,
-    required this.title,
-  });
+  const _LibraryCoverThumbnail({required this.folderPath, required this.title});
 
   final String folderPath;
   final String title;

@@ -53,6 +53,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
 
   int _currentIndex = 0;
   late final PageController _pageController;
+  late final List<Widget> _pages;
   final GlobalKey _bottomDockKey = GlobalKey();
   final GlobalKey _dockContentKey = GlobalKey();
   double _measuredBottomInset = 0;
@@ -72,9 +73,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
   DateTime? _lastOpenedNotificationAt;
 
   int? _pendingTargetIndex;
-
-  late final List<Widget Function()> _pageBuilders;
-
   void _setLocalState(VoidCallback fn) => setState(fn);
 
   static const List<_MainDestination> _destinations = [
@@ -98,17 +96,22 @@ class _MainScreenState extends ConsumerState<MainScreen>
   @override
   void initState() {
     super.initState();
-    _pageBuilders = [
-      () => const LibraryTab(),
-      () => PlaylistTab(onTimerTap: _openTimerFromPlaylist),
-      () => const SettingsTab(),
+    _pages = [
+      const LibraryTab(),
+      PlaylistTab(onTimerTap: _openTimerFromPlaylist),
+      const SettingsTab(),
     ];
     _pageController = PageController();
     WidgetsBinding.instance.addObserver(this);
     _notificationsChannel.setMethodCallHandler(_handleNotificationsChannelCall);
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      final provider = ref.read(audioProviderFacadeProvider);
       unawaited(_consumePendingNotificationSession());
       unawaited(_maybeEnableBackgroundKeepAliveOnFirstLaunch());
+      provider.scheduleUiWarmup(
+        currentPageIndex: _currentIndex,
+        immediate: true,
+      );
     });
   }
 
@@ -154,6 +157,10 @@ class _MainScreenState extends ConsumerState<MainScreen>
     unawaited(
       provider.syncTimerRuntimeFromNative().then((_) {
         provider.retryOverdueAutoResume();
+        provider.scheduleUiWarmup(
+          currentPageIndex: _currentIndex,
+          immediate: true,
+        );
       }),
     );
     if (!_notificationSettingsOpened) {
@@ -188,6 +195,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
         .whenComplete(() {
           if (!mounted) return;
           provider.setPageTransitioning(false);
+          provider.scheduleUiWarmup(currentPageIndex: index);
         });
   }
 
@@ -317,8 +325,8 @@ class _MainScreenState extends ConsumerState<MainScreen>
                           stops: [0, 0.45],
                         ).createShader(bounds),
                         child: RepaintBoundary(
-                          child: isTinyWindow 
-                              ? const SizedBox.expand() 
+                          child: isTinyWindow
+                              ? const SizedBox.expand()
                               : BackdropFilter(
                                   filter: ImageFilter.blur(
                                     sigmaX: isSmallWindow ? 4.0 : 7.0,

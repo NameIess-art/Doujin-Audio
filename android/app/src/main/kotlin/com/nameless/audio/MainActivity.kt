@@ -15,6 +15,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
+import android.os.SystemClock
 import android.provider.DocumentsContract
 import android.provider.MediaStore
 import android.provider.OpenableColumns
@@ -103,11 +104,28 @@ class MainActivity : AudioServiceActivity() {
     private val updateChannel = "nameless_audio/update"
     private val subtitleOverlayChannel = "nameless_audio/subtitle_overlay"
     private val pickAudioSourceRequestCode = 7001
-    private var pendingPickAudioResult: MethodChannel.Result? = null
+    private val pickAudioFilesRequestCode = 7002
+    private val pickAudioFolderRequestCode = 7003
+    private var pendingPickAudioRequest: PendingPickAudioRequest? = null
     private var notificationsMethodChannel: MethodChannel? = null
     private var subtitleOverlayService: SubtitleOverlayService? = null
     private var isSubtitleServiceBound = false
     private var pendingNotificationSessionId: String? = null
+    private val audioPickerMimeTypes = arrayOf(
+        "audio/*",
+        "application/ogg",
+        "audio/ogg",
+        "audio/flac",
+        "audio/x-flac",
+        "audio/wav",
+        "audio/x-wav",
+        "audio/mpeg",
+        "audio/mp4",
+        "audio/aac",
+        "audio/x-m4a",
+        "audio/3gpp",
+        "audio/opus"
+    )
     private val blockedExtensions = setOf(
         "vtt", "srt", "ass", "ssa", "lrc", "txt", "md", "json", "xml",
         "jpg", "jpeg", "png", "gif", "webp", "bmp", "heic", "heif",
@@ -171,13 +189,36 @@ class MainActivity : AudioServiceActivity() {
                     "getNativeTimerRuntimeState" -> {
                         result.success(getNativeTimerRuntimeState())
                     }
+                    "executeTimerExpiredNow" -> {
+                        val generation = call.argument<Int>("generation")
+                        PlaybackTimerAlarmScheduler.executeNow(
+                            applicationContext,
+                            PlaybackTimerAlarmScheduler.actionTimerExpired,
+                            generation
+                        )
+                        result.success(true)
+                    }
+                    "executeAutoResumeNow" -> {
+                        val generation = call.argument<Int>("generation")
+                        PlaybackTimerAlarmScheduler.executeNow(
+                            applicationContext,
+                            PlaybackTimerAlarmScheduler.actionAutoResume,
+                            generation
+                        )
+                        result.success(true)
+                    }
                     "syncPlaybackTimerAlarms" -> {
                         val timerModeIndex = call.argument<Int>("timerMode")
                         val timerDurationMs =
                             (call.argument<Number>("timerDurationMs"))?.toLong()
                         val timerWaitingForPlayback =
                             call.argument<Boolean>("timerWaitingForPlayback") ?: false
-                        val timerEndsAtMs = call.argument<Long>("timerEndsAtMs")
+                        val timerEndsAtWallClockMs =
+                            call.argument<Long>("timerEndsAtWallClockMs")
+                        val autoResumeEnabled =
+                            call.argument<Boolean>("autoResumeEnabled") ?: false
+                        val autoResumeHour = call.argument<Int>("autoResumeHour") ?: 7
+                        val autoResumeMinute = call.argument<Int>("autoResumeMinute") ?: 0
                         val autoResumeAtMs = call.argument<Long>("autoResumeAtMs")
                         val pausedSessionIds =
                             call.argument<List<String>>("pausedSessionIds") ?: emptyList()
@@ -187,7 +228,10 @@ class MainActivity : AudioServiceActivity() {
                             timerModeIndex = timerModeIndex,
                             durationMs = timerDurationMs,
                             waitingForPlayback = timerWaitingForPlayback,
-                            timerEndsAtMs = timerEndsAtMs,
+                            timerEndsAtWallClockMs = timerEndsAtWallClockMs,
+                            autoResumeEnabled = autoResumeEnabled,
+                            autoResumeHour = autoResumeHour,
+                            autoResumeMinute = autoResumeMinute,
                             autoResumeAtMs = autoResumeAtMs,
                             pausedSessionIds = pausedSessionIds,
                             generation = generation
@@ -445,48 +489,118 @@ class MainActivity : AudioServiceActivity() {
                     "pickAudioSource" -> {
                         launchPickAudioSource(result)
                     }
+                    "pickAudioFiles" -> {
+                        launchPickAudioFiles(result)
+                    }
+                    "pickAudioFolder" -> {
+                        launchPickAudioFolder(result)
+                    }
                     else -> result.notImplemented()
                 }
             }
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        if (requestCode == pickAudioSourceRequestCode) {
-            handlePickAudioSourceResult(resultCode, data)
+        if (
+            requestCode == pickAudioSourceRequestCode ||
+            requestCode == pickAudioFilesRequestCode ||
+            requestCode == pickAudioFolderRequestCode
+        ) {
+            handlePickAudioSourceResult(requestCode, resultCode, data)
             return
         }
         super.onActivityResult(requestCode, resultCode, data)
     }
 
     private fun launchPickAudioSource(result: MethodChannel.Result) {
-        if (pendingPickAudioResult != null) {
+        if (pendingPickAudioRequest != null) {
             result.error("picker_busy", "Audio picker is already active", null)
             return
         }
         try {
-            val pickFilesIntent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-                addCategory(Intent.CATEGORY_OPENABLE)
-                type = "audio/*"
-                putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
-            }
-            val pickFolderIntent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
+            val pickFilesIntent = buildPickAudioFilesIntent()
+            val pickFolderIntent = buildPickAudioFolderIntent()
             val chooserIntent = Intent(Intent.ACTION_CHOOSER).apply {
                 putExtra(Intent.EXTRA_INTENT, pickFilesIntent)
                 putExtra(Intent.EXTRA_TITLE, "Select audio")
                 putExtra(Intent.EXTRA_INITIAL_INTENTS, arrayOf(pickFolderIntent))
             }
 
-            pendingPickAudioResult = result
+            pendingPickAudioRequest = PendingPickAudioRequest(
+                result = result,
+                mode = PickAudioMode.any
+            )
             startActivityForResult(chooserIntent, pickAudioSourceRequestCode)
         } catch (e: Exception) {
-            pendingPickAudioResult = null
+            pendingPickAudioRequest = null
             result.error("picker_failed", e.message ?: "cannot launch picker", null)
         }
     }
 
-    private fun handlePickAudioSourceResult(resultCode: Int, data: Intent?) {
-        val callback = pendingPickAudioResult ?: return
-        pendingPickAudioResult = null
+    private fun launchPickAudioFiles(result: MethodChannel.Result) {
+        launchAudioPicker(
+            result = result,
+            mode = PickAudioMode.files,
+            requestCode = pickAudioFilesRequestCode,
+            intentBuilder = ::buildPickAudioFilesIntent
+        )
+    }
+
+    private fun launchPickAudioFolder(result: MethodChannel.Result) {
+        launchAudioPicker(
+            result = result,
+            mode = PickAudioMode.folder,
+            requestCode = pickAudioFolderRequestCode,
+            intentBuilder = ::buildPickAudioFolderIntent
+        )
+    }
+
+    private fun launchAudioPicker(
+        result: MethodChannel.Result,
+        mode: PickAudioMode,
+        requestCode: Int,
+        intentBuilder: () -> Intent
+    ) {
+        if (pendingPickAudioRequest != null) {
+            result.error("picker_busy", "Audio picker is already active", null)
+            return
+        }
+        try {
+            pendingPickAudioRequest = PendingPickAudioRequest(result = result, mode = mode)
+            startActivityForResult(intentBuilder(), requestCode)
+        } catch (e: Exception) {
+            pendingPickAudioRequest = null
+            result.error("picker_failed", e.message ?: "cannot launch picker", null)
+        }
+    }
+
+    private fun buildPickAudioFilesIntent(): Intent {
+        return Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+            putExtra(Intent.EXTRA_MIME_TYPES, audioPickerMimeTypes)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+        }
+    }
+
+    private fun buildPickAudioFolderIntent(): Intent {
+        return Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+            addFlags(Intent.FLAG_GRANT_PREFIX_URI_PERMISSION)
+        }
+    }
+
+    private fun handlePickAudioSourceResult(
+        requestCode: Int,
+        resultCode: Int,
+        data: Intent?
+    ) {
+        val pendingRequest = pendingPickAudioRequest ?: return
+        val callback = pendingRequest.result
+        pendingPickAudioRequest = null
 
         if (resultCode != Activity.RESULT_OK || data == null) {
             callback.success(null)
@@ -495,13 +609,23 @@ class MainActivity : AudioServiceActivity() {
 
         val maybeTreeUri = data.data
         if (maybeTreeUri != null && DocumentsContract.isTreeUri(maybeTreeUri)) {
+            if (pendingRequest.mode == PickAudioMode.files) {
+                callback.success(null)
+                return
+            }
             persistReadPermission(maybeTreeUri, data.flags)
             callback.success(
                 hashMapOf(
                     "kind" to "folder",
-                    "path" to maybeTreeUri.toString()
+                    "path" to maybeTreeUri.toString(),
+                    "label" to resolveTreeDisplayName(maybeTreeUri)
                 )
             )
+            return
+        }
+
+        if (pendingRequest.mode == PickAudioMode.folder || requestCode == pickAudioFolderRequestCode) {
+            callback.success(null)
             return
         }
 
@@ -527,6 +651,15 @@ class MainActivity : AudioServiceActivity() {
                 "files" to files
             )
         )
+    }
+
+    private fun resolveTreeDisplayName(uri: Uri): String? {
+        val treeRoot = DocumentFile.fromTreeUri(this, uri)
+        val name = treeRoot?.name?.trim()
+        if (!name.isNullOrBlank()) {
+            return name
+        }
+        return resolveDisplayName(uri)
     }
 
     private fun appendPickedFile(
@@ -576,6 +709,17 @@ class MainActivity : AudioServiceActivity() {
         } catch (_: Exception) {
             null
         }
+    }
+
+    private data class PendingPickAudioRequest(
+        val result: MethodChannel.Result,
+        val mode: PickAudioMode
+    )
+
+    private enum class PickAudioMode {
+        any,
+        files,
+        folder
     }
 
     private fun syncPlaybackKeepAlive(
@@ -756,7 +900,11 @@ class MainActivity : AudioServiceActivity() {
             "timerMode" to state.timerModeIndex,
             "timerDurationMs" to state.durationMs,
             "timerWaitingForPlayback" to state.waitingForPlayback,
-            "timerEndsAtMs" to state.timerEndsAtMs,
+            "timerEndsAtWallClockMs" to state.timerEndsAtWallClockMs,
+            "timerEndsElapsedRealtimeMs" to state.timerEndsElapsedRealtimeMs,
+            "autoResumeEnabled" to state.autoResumeEnabled,
+            "autoResumeHour" to state.autoResumeHour,
+            "autoResumeMinute" to state.autoResumeMinute,
             "autoResumeAtMs" to state.autoResumeAtMs,
             "pausedSessionIds" to state.pausedSessionIds,
             "generation" to state.generation

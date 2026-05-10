@@ -7,7 +7,8 @@ import android.content.Intent
 class PlaybackTimerStateRestoreReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
         PlaybackTimerAlarmScheduler.rescheduleFromStoredState(
-            context.applicationContext
+            context.applicationContext,
+            reasonAction = intent?.action
         )
     }
 }

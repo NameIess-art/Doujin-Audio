@@ -26,6 +26,13 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage> {
   }
 
   Future<void> _loadDiskLibrarySnapshot() async {
+    if (PathMatcher.isContentUri(widget.libraryPath)) {
+      if (!mounted) return;
+      setState(() {
+        _diskAudioFilePaths = const <String>[];
+      });
+      return;
+    }
     final directory = Directory(widget.libraryPath);
     if (!await directory.exists()) return;
     final audioFiles = <String>{};
@@ -46,7 +53,7 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage> {
           if (processedEntities % 200 == 0) {
             await Future<void>.delayed(Duration.zero);
           }
-          final normalizedPath = path.normalize(entity.path);
+          final normalizedPath = PathMatcher.normalize(entity.path);
           if (entity is Directory) {
             pendingDirs.add(entity);
             continue;
@@ -95,7 +102,7 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage> {
       context: context,
       title: i18n.tr('remove_library'),
       message: i18n.tr('remove_library_confirm', {
-        'name': path.basename(widget.libraryPath),
+        'name': _displaySourceName(widget.libraryPath),
       }),
       cancelLabel: i18n.tr('cancel'),
       confirmLabel: i18n.tr('remove'),
@@ -198,7 +205,7 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage> {
               icon: Icons.edit_note_rounded,
               title: i18n.tr('edit_library'),
               titleSuffix: Text(
-                path.basename(widget.libraryPath),
+                _displaySourceName(widget.libraryPath),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
@@ -307,11 +314,12 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage> {
   ) {
     final tracks = <String>{
       for (final track in libraryService.library)
-        if (_trackBelongsToLibrary(track.path)) path.normalize(track.path),
+        if (_trackBelongsToLibrary(track.path))
+          PathMatcher.normalize(track.path),
       for (final trackPath in diskAudioFilePaths)
-        if (_trackBelongsToLibrary(trackPath)) path.normalize(trackPath),
+        if (_trackBelongsToLibrary(trackPath)) PathMatcher.normalize(trackPath),
       for (final trackPath in excludedTracks)
-        if (_trackBelongsToLibrary(trackPath)) path.normalize(trackPath),
+        if (_trackBelongsToLibrary(trackPath)) PathMatcher.normalize(trackPath),
     }.toList(growable: false);
 
     tracks.sort(
@@ -324,14 +332,14 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage> {
   }
 
   List<_LibraryEditTreeNode> _buildEditTree(List<String> trackPaths) {
-    final rootPath = path.normalize(widget.libraryPath);
+    final rootPath = PathMatcher.normalize(widget.libraryPath);
     final folderByPath = <String, _LibraryEditFolderTreeNode>{};
     final roots = <_LibraryEditTreeNode>[];
 
     _LibraryEditFolderTreeNode? ensureFolder(String folderPath) {
-      final normalizedFolderPath = path.normalize(folderPath);
-      if (path.equals(normalizedFolderPath, rootPath) ||
-          !path.isWithin(rootPath, normalizedFolderPath)) {
+      final normalizedFolderPath = PathMatcher.normalize(folderPath);
+      if (PathMatcher.equalsNormalized(normalizedFolderPath, rootPath) ||
+          !PathMatcher.isWithinOrEqual(normalizedFolderPath, rootPath)) {
         return null;
       }
 
@@ -353,7 +361,7 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage> {
     }
 
     for (final trackPath in trackPaths) {
-      final normalizedTrackPath = path.normalize(trackPath);
+      final normalizedTrackPath = PathMatcher.normalize(trackPath);
       if (!_trackBelongsToLibrary(normalizedTrackPath)) continue;
       final trackNode = _LibraryEditTrackTreeNode(normalizedTrackPath);
       final folder = ensureFolder(path.dirname(normalizedTrackPath));
@@ -369,6 +377,10 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage> {
   }
 
   int _relativeFolderDepth(String folderPath) {
+    if (PathMatcher.isContentUri(folderPath) ||
+        PathMatcher.isContentUri(widget.libraryPath)) {
+      return 0;
+    }
     final relative = path.relative(
       path.normalize(folderPath),
       from: path.normalize(widget.libraryPath),
@@ -459,10 +471,7 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage> {
   }
 
   bool _trackBelongsToLibrary(String trackPath) {
-    final normalizedLibraryPath = path.normalize(widget.libraryPath);
-    final normalizedTrackPath = path.normalize(trackPath);
-    return path.equals(normalizedTrackPath, normalizedLibraryPath) ||
-        path.isWithin(normalizedLibraryPath, normalizedTrackPath);
+    return PathMatcher.isWithinOrEqual(trackPath, widget.libraryPath);
   }
 }
 
@@ -483,7 +492,7 @@ class _LibraryEditFolderTreeNode extends _LibraryEditTreeNode {
   final List<_LibraryEditTreeNode> children;
 
   @override
-  String get name => path.basename(folderPath);
+  String get name => _displaySourceName(folderPath);
 
   @override
   String get pathValue => folderPath;
@@ -495,7 +504,7 @@ class _LibraryEditTrackTreeNode extends _LibraryEditTreeNode {
   final String trackPath;
 
   @override
-  String get name => path.basenameWithoutExtension(trackPath);
+  String get name => _displayTrackName(trackPath);
 
   @override
   String get pathValue => trackPath;

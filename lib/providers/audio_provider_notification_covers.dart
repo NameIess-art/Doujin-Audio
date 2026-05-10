@@ -85,12 +85,18 @@ extension AudioProviderNotificationCovers on AudioProvider {
       return Future<String?>.value();
     }
     if (track?.manualCoverPath != null) {
-      return Future<String?>.value(track!.manualCoverPath);
+      return _resolvedNotificationCoverPathFutures.putIfAbsent(
+        coverSearchKey,
+        () => SynchronousFuture<String?>(track!.manualCoverPath),
+      );
     }
 
     if (_resolvedNotificationCoverPaths.containsKey(coverSearchKey)) {
-      return Future<String?>.value(
-        _resolvedNotificationCoverPaths[coverSearchKey],
+      return _resolvedNotificationCoverPathFutures.putIfAbsent(
+        coverSearchKey,
+        () => SynchronousFuture<String?>(
+          _resolvedNotificationCoverPaths[coverSearchKey],
+        ),
       );
     }
 
@@ -116,6 +122,8 @@ extension AudioProviderNotificationCovers on AudioProvider {
       );
       final previous = _resolvedNotificationCoverPaths[coverSearchKey];
       _resolvedNotificationCoverPaths[coverSearchKey] = coverPath;
+      _resolvedNotificationCoverPathFutures[coverSearchKey] =
+          SynchronousFuture<String?>(coverPath);
 
       if (previous != coverPath) {
         final focusedTrack = trackByPath(
@@ -174,12 +182,16 @@ extension AudioProviderNotificationCovers on AudioProvider {
     return directories;
   }
 
-
   Future<String?> _resolveCoverPathForFolder(String folderPath) {
     final normalizedFolderPath = path.normalize(folderPath);
 
     if (_resolvedCoverPaths.containsKey(normalizedFolderPath)) {
-      return Future<String?>.value(_resolvedCoverPaths[normalizedFolderPath]);
+      return _resolvedCoverPathFutures.putIfAbsent(
+        normalizedFolderPath,
+        () => SynchronousFuture<String?>(
+          _resolvedCoverPaths[normalizedFolderPath],
+        ),
+      );
     }
 
     return _coverPathFutures.putIfAbsent(normalizedFolderPath, () async {
@@ -198,11 +210,14 @@ extension AudioProviderNotificationCovers on AudioProvider {
 
       coverPath ??= await _findNotificationCoverPath(normalizedFolderPath);
       unawaited(
-        _coverPathFutures.remove(normalizedFolderPath) ?? Future<String?>.value(),
+        _coverPathFutures.remove(normalizedFolderPath) ??
+            Future<String?>.value(),
       );
 
       final previous = _resolvedCoverPaths[normalizedFolderPath];
       _resolvedCoverPaths[normalizedFolderPath] = coverPath;
+      _resolvedCoverPathFutures[normalizedFolderPath] =
+          SynchronousFuture<String?>(coverPath);
 
       if (previous != coverPath) {
         _notifyListeners();
@@ -284,5 +299,4 @@ extension AudioProviderNotificationCovers on AudioProvider {
     _notificationCoverSearchMisses.add(normalizedFolderPath);
     return null;
   }
-
 }

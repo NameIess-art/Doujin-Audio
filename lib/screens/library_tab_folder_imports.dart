@@ -1,6 +1,64 @@
 part of 'library_tab.dart';
 
 extension _LibraryTabFolderImportActions on _LibraryTabState {
+  Future<String?> _pickAudioFolderViaNative() async {
+    final raw = await _LibraryTabState._fileCacheChannel
+        .invokeMapMethod<String, Object?>(FileCacheMethod.pickAudioFolder);
+    final pathValue = raw?['path']?.toString().trim();
+    if (pathValue == null || pathValue.isEmpty) {
+      return null;
+    }
+    return pathValue;
+  }
+
+  Future<List<_PickedAudioFile>?> _pickAudioFilesViaNative() async {
+    final raw = await _LibraryTabState._fileCacheChannel
+        .invokeMapMethod<String, Object?>(FileCacheMethod.pickAudioFiles);
+    final items = raw?['files'];
+    if (items is! List) {
+      return null;
+    }
+    final files = <_PickedAudioFile>[];
+    for (final item in items) {
+      if (item is! Map) continue;
+      final map = item.cast<Object?, Object?>();
+      final uri = map['uri']?.toString().trim();
+      final name = map['name']?.toString().trim();
+      final audioTypeHint = name == null || name.isEmpty
+          ? (uri ?? '')
+          : path.normalize(name);
+      if (uri == null || uri.isEmpty || !_isSupportedAudioFile(audioTypeHint)) {
+        continue;
+      }
+      files.add(
+        _PickedAudioFile(
+          uri: uri,
+          name: name == null || name.isEmpty ? _displayTrackName(uri) : name,
+        ),
+      );
+    }
+    return files;
+  }
+
+  List<MusicTrack> _tracksFromPickedAudioFiles(
+    List<_PickedAudioFile> files,
+    AppLanguageProvider i18n,
+  ) {
+    return files
+        .map(
+          (file) => MusicTrack(
+            path: file.uri,
+            displayName: path.basenameWithoutExtension(file.name),
+            groupKey: '__single_files__',
+            groupTitle: i18n.tr('imported_files'),
+            groupSubtitle: i18n.tr('manually_selected_files'),
+            isSingle: true,
+            scannedAt: DateTime.now(),
+          ),
+        )
+        .toList(growable: false);
+  }
+
   Future<String?> _cachePickedFile(PlatformFile file, int index) async {
     final stream = file.readStream;
     final identifier = file.identifier;
@@ -198,9 +256,7 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
   }
 
   bool _trackIsDirectlyInFolder(String folderPath, _ScannedTrack track) {
-    final normalizedFolderPath = path.normalize(folderPath);
-    final normalizedGroupKey = path.normalize(track.groupKey);
-    return path.equals(normalizedGroupKey, normalizedFolderPath) ||
+    return PathMatcher.equalsNormalized(track.groupKey, folderPath) ||
         track.groupKey == folderPath;
   }
 
@@ -382,8 +438,16 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
         .toList(growable: false);
   }
 
-  Future<bool> _ensureReadPermission() async {
+  Future<bool> _ensureReadPermissionForSources({
+    required Iterable<String> sources,
+  }) async {
     if (!Platform.isAndroid) return true;
+    final sourceList = sources
+        .where((source) => source.trim().isNotEmpty)
+        .toList(growable: false);
+    if (sourceList.isNotEmpty && sourceList.every(PathMatcher.isContentUri)) {
+      return true;
+    }
     final manageStatus = await Permission.manageExternalStorage.request();
     if (manageStatus.isGranted) return true;
     final statuses = await [Permission.audio, Permission.storage].request();
@@ -396,4 +460,11 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
     if (!mounted) return;
     showAppSnackBar(context, message);
   }
+}
+
+class _PickedAudioFile {
+  const _PickedAudioFile({required this.uri, required this.name});
+
+  final String uri;
+  final String name;
 }

@@ -67,7 +67,10 @@ class AppUpdateService {
         HttpHeaders.acceptHeader,
         'application/vnd.github+json',
       );
-      request.headers.set(HttpHeaders.userAgentHeader, 'Nameless Audio updater');
+      request.headers.set(
+        HttpHeaders.userAgentHeader,
+        'Nameless Audio updater',
+      );
       final response = await request.close();
       final body = await response.transform(utf8.decoder).join();
       if (response.statusCode < 200 || response.statusCode >= 300) {
@@ -119,7 +122,7 @@ class AppUpdateService {
       final buildNumber = (raw?['buildNumber'] as num?)?.toInt() ?? 0;
       return AppVersionInfo(versionName: versionName, buildNumber: buildNumber);
     } catch (_) {
-      return const AppVersionInfo(versionName: '0.8.0', buildNumber: 800);
+      return const AppVersionInfo(versionName: '0.8.1', buildNumber: 801);
     }
   }
 
@@ -140,7 +143,10 @@ class AppUpdateService {
     final client = HttpClient();
     try {
       final request = await client.getUrl(Uri.parse(info.assetUrl));
-      request.headers.set(HttpHeaders.userAgentHeader, 'Nameless Audio updater');
+      request.headers.set(
+        HttpHeaders.userAgentHeader,
+        'Nameless Audio updater',
+      );
       final response = await request.close();
       if (response.statusCode < 200 || response.statusCode >= 300) {
         throw const HttpException('APK download failed.');

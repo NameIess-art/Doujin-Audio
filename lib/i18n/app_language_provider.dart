@@ -177,6 +177,17 @@ const Map<AppLanguage, Map<String, String>> _localizedValues = {
     'allow_background_run_ready': '系统已允许本应用后台运行，息屏播放会更稳定。',
     'allow_background_run_checking': '正在检查后台运行状态...',
     'allow_background_run_open_failed': '无法打开系统后台运行设置，请手动进入应用设置调整。',
+    'notification_permission_status': '通知权限状态',
+    'notification_permission_ready': '通知权限已开启，通知栏与后台控制可正常显示。',
+    'notification_permission_missing': '通知权限未开启，后台控制与状态提醒可能不可用。',
+    'notification_permission_checking': '正在检查通知权限...',
+    'notification_settings_open_failed': '无法打开通知设置，请手动进入系统设置调整。',
+    'open_notification_settings': '打开通知设置',
+    'exact_alarm_permission_status': '精确定时状态',
+    'exact_alarm_permission_ready': '精确定时已可用，长时间后台定时恢复会更稳定。',
+    'exact_alarm_permission_missing': '精确定时未开启，长时间后台后的自动恢复可能不可靠。',
+    'exact_alarm_permission_checking': '正在检查精确定时状态...',
+    'exact_alarm_settings_open_failed': '无法打开精确定时设置，请手动进入系统设置调整。',
     'clear_temp_cache': '清理临时缓存',
     'clear_temp_cache_subtitle': '删除导入过程中生成的临时文件。',
     'temp_cache_cleaned': '临时缓存已清理。',
@@ -198,13 +209,15 @@ const Map<AppLanguage, Map<String, String>> _localizedValues = {
     'update_ready_install': '安装器已打开，请按提示完成更新。',
     'update_install_failed': '无法打开安装器，请稍后重试。',
     'install_permission_needed': '请先允许本应用安装未知来源应用。',
+    'install_permission_title': '允许安装更新',
+    'install_permission_message': '为了继续下载并安装新版本，需要先允许本应用安装未知来源应用。现在前往系统设置开启吗？',
     'transcode_defaults': '转码默认参数',
     'format': '格式',
     'bitrate': '码率',
     'bitrate_used': 'MP3 / AAC / OGG 输出会使用该码率。',
     'bitrate_not_used': '{format} 使用格式内置编码参数，码率设置不生效。',
     'about': '关于',
-    'app_version': 'NL Audio v0.8.0',
+    'app_version': 'NL Audio v0.8.1',
     'app_desc': '支持并发会话与高保真音频播放。',
     'language': '语言',
     'language_subtitle': '切换界面语言',
@@ -285,6 +298,9 @@ const Map<AppLanguage, Map<String, String>> _localizedValues = {
     'turn_on_subtitle': '打开字幕',
     'turn_off_subtitle': '关闭字幕',
     'subtitle_global_display': '字幕全局显示',
+    'overlay_permission_title': '允许悬浮窗显示字幕',
+    'overlay_permission_message':
+        '开启字幕全局显示前，需要先允许本应用显示悬浮窗，这样切到后台或其他页面时字幕才能继续显示。现在前往系统设置开启吗？',
     'border_depth': '边框深度',
     'font_size': '字号',
     'volume': '音量',
@@ -295,6 +311,9 @@ const Map<AppLanguage, Map<String, String>> _localizedValues = {
     'exact_alarm_permission_message':
         '为了让熄屏、后台和长时间后的自动恢复播放更稳定，建议在系统中允许本应用使用精确定时。',
     'open_exact_alarm_settings': '打开精确定时设置',
+    'timer_reliability_checking': '正在检查定时器后台可靠性...',
+    'timer_reliability_ready': '后台与自动恢复条件已满足',
+    'timer_reliability_missing': '建议补全后台与定时权限以提升稳定性',
   },
   AppLanguage.ja: {
     'app_title': 'NL Audio',
@@ -406,6 +425,20 @@ const Map<AppLanguage, Map<String, String>> _localizedValues = {
     'allow_background_run_ready': 'このアプリのバックグラウンド実行は許可されています。画面オフ再生がより安定します。',
     'allow_background_run_checking': 'バックグラウンド実行の状態を確認しています...',
     'allow_background_run_open_failed': 'システム設定を開けませんでした。アプリ設定から手動で変更してください。',
+    'notification_permission_status': '通知権限の状態',
+    'notification_permission_ready': '通知権限は有効です。通知バーとバックグラウンド操作を表示できます。',
+    'notification_permission_missing':
+        '通知権限が無効です。バックグラウンド操作や状態通知が利用できない場合があります。',
+    'notification_permission_checking': '通知権限を確認しています...',
+    'notification_settings_open_failed': '通知設定を開けませんでした。システム設定から手動で変更してください。',
+    'open_notification_settings': '通知設定を開く',
+    'exact_alarm_permission_status': '正確なアラームの状態',
+    'exact_alarm_permission_ready': '正確なアラームは利用可能です。長時間バックグラウンド後の自動再開がより安定します。',
+    'exact_alarm_permission_missing':
+        '正確なアラームが無効です。長時間バックグラウンド後の自動再開が不安定になる場合があります。',
+    'exact_alarm_permission_checking': '正確なアラームの状態を確認しています...',
+    'exact_alarm_settings_open_failed':
+        '正確なアラーム設定を開けませんでした。システム設定から手動で変更してください。',
     'clear_temp_cache': '一時キャッシュを削除',
     'clear_temp_cache_subtitle': '取り込み時に作成された一時ファイルを削除します。',
     'temp_cache_cleaned': '一時キャッシュを削除しました。',
@@ -427,13 +460,16 @@ const Map<AppLanguage, Map<String, String>> _localizedValues = {
     'update_ready_install': 'インストーラーを開きました。画面の指示に従って更新してください。',
     'update_install_failed': 'インストーラーを開けませんでした。後でもう一度お試しください。',
     'install_permission_needed': 'このアプリから不明なアプリをインストールする許可を有効にしてください。',
+    'install_permission_title': 'アップデートのインストールを許可',
+    'install_permission_message':
+        '新しいバージョンのダウンロードとインストールを続けるには、このアプリから不明なアプリをインストールする許可が必要です。今すぐ設定を開きますか？',
     'transcode_defaults': '変換の既定値',
     'format': '形式',
     'bitrate': 'ビットレート',
     'bitrate_used': 'MP3 / AAC / OGG 出力でこのビットレートを使用します。',
     'bitrate_not_used': '{format} は形式内蔵のエンコードを使うため、ビットレート設定は無効です。',
     'about': '情報',
-    'app_version': 'NL Audio v0.8.0',
+    'app_version': 'NL Audio v0.8.1',
     'app_desc': '並行セッションと高音質再生に対応。',
     'language': '言語',
     'language_subtitle': '表示言語を切り替え',
@@ -515,6 +551,9 @@ const Map<AppLanguage, Map<String, String>> _localizedValues = {
     'turn_on_subtitle': '字幕を表示',
     'turn_off_subtitle': '字幕を非表示',
     'subtitle_global_display': '字幕グローバル表示',
+    'overlay_permission_title': '字幕用オーバーレイを許可',
+    'overlay_permission_message':
+        '字幕のグローバル表示を有効にするには、このアプリにオーバーレイ表示を許可する必要があります。これにより、他のページやバックグラウンドでも字幕を表示し続けられます。今すぐ設定を開きますか？',
     'border_depth': '枠線の深さ',
     'font_size': 'フォントサイズ',
     'volume': '音量',
@@ -525,6 +564,9 @@ const Map<AppLanguage, Map<String, String>> _localizedValues = {
     'exact_alarm_permission_message':
         '画面オフ・バックグラウンド・長時間後の自動再開を安定させるため、このアプリに正確なアラームを許可することをおすすめします。',
     'open_exact_alarm_settings': '正確なアラーム設定を開く',
+    'timer_reliability_checking': 'タイマーのバックグラウンド信頼性を確認しています...',
+    'timer_reliability_ready': 'バックグラウンド再開の条件は満たされています',
+    'timer_reliability_missing': '安定性を高めるため、通知とバックグラウンド関連の権限を確認してください',
   },
   AppLanguage.en: {
     'app_title': 'NL Audio',
@@ -649,6 +691,23 @@ const Map<AppLanguage, Map<String, String>> _localizedValues = {
     'allow_background_run_checking': 'Checking background run status...',
     'allow_background_run_open_failed':
         'Could not open background run settings. Please adjust this app manually in system settings.',
+    'notification_permission_status': 'Notification permission',
+    'notification_permission_ready':
+        'Notification permission is enabled, so background controls can stay visible.',
+    'notification_permission_missing':
+        'Notification permission is disabled, so background controls and status updates may be unavailable.',
+    'notification_permission_checking': 'Checking notification permission...',
+    'notification_settings_open_failed':
+        'Could not open notification settings. Please change it manually in system settings.',
+    'open_notification_settings': 'Open notification settings',
+    'exact_alarm_permission_status': 'Exact alarm status',
+    'exact_alarm_permission_ready':
+        'Exact alarms are available, which improves long-running background auto-resume reliability.',
+    'exact_alarm_permission_missing':
+        'Exact alarms are disabled, so auto-resume after long background time may be unreliable.',
+    'exact_alarm_permission_checking': 'Checking exact alarm status...',
+    'exact_alarm_settings_open_failed':
+        'Could not open exact alarm settings. Please change it manually in system settings.',
     'clear_temp_cache': 'Clear temp cache',
     'clear_temp_cache_subtitle':
         'Delete temporary files created during import.',
@@ -676,6 +735,9 @@ const Map<AppLanguage, Map<String, String>> _localizedValues = {
         'Could not open the installer. Please try again later.',
     'install_permission_needed':
         'Please allow this app to install unknown apps first.',
+    'install_permission_title': 'Allow update installs',
+    'install_permission_message':
+        'To keep going with the update download and installation, allow this app to install unknown apps first. Open system settings now?',
     'transcode_defaults': 'Transcode defaults',
     'format': 'Format',
     'bitrate': 'Bitrate',
@@ -683,7 +745,7 @@ const Map<AppLanguage, Map<String, String>> _localizedValues = {
     'bitrate_not_used':
         '{format} uses built-in encoding parameters. Bitrate setting is ignored.',
     'about': 'About',
-    'app_version': 'NL Audio v0.8.0',
+    'app_version': 'NL Audio v0.8.1',
     'app_desc':
         'Supports concurrent sessions and high-fidelity audio playback.',
     'language': 'Language',
@@ -772,6 +834,9 @@ const Map<AppLanguage, Map<String, String>> _localizedValues = {
     'turn_on_subtitle': 'Turn on subtitle',
     'turn_off_subtitle': 'Turn off subtitle',
     'subtitle_global_display': 'Subtitle global display',
+    'overlay_permission_title': 'Allow subtitle overlay',
+    'overlay_permission_message':
+        'Before turning on global subtitle display, allow this app to draw over other apps so subtitles can keep showing across pages and in the background. Open system settings now?',
     'border_depth': 'Border depth',
     'font_size': 'Font size',
     'volume': 'Volume',
@@ -783,5 +848,10 @@ const Map<AppLanguage, Map<String, String>> _localizedValues = {
     'exact_alarm_permission_message':
         'To keep auto-resume reliable after long background or screen-off playback, allow exact alarms for this app in system settings.',
     'open_exact_alarm_settings': 'Open exact alarm settings',
+    'timer_reliability_checking': 'Checking background timer reliability...',
+    'timer_reliability_ready':
+        'Background and auto-resume requirements are satisfied.',
+    'timer_reliability_missing':
+        'Review notification and background permissions to improve timer reliability.',
   },
 };

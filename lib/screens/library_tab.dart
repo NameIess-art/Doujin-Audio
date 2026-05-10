@@ -17,6 +17,8 @@ import '../i18n/app_language_provider.dart';
 import '../providers/audio_provider.dart';
 import '../providers/audio_provider_riverpod.dart';
 import '../services/audio_state_services.dart';
+import '../services/path_matcher.dart';
+import '../services/platform_channels.dart';
 import '../widgets/app_feedback.dart';
 import '../widgets/async_cover_image.dart';
 import '../widgets/confirm_action_dialog.dart';
@@ -38,6 +40,53 @@ part 'library_tab_empty_scan.dart';
 part 'library_tab_tree_widgets.dart';
 part 'library_tab_models.dart';
 part 'library_tab_edit.dart';
+
+String _displaySourceName(String sourcePath) {
+  final trimmed = sourcePath.trim();
+  if (trimmed.isEmpty) return trimmed;
+  if (!PathMatcher.isContentUri(trimmed)) {
+    final name = path.basename(trimmed);
+    return name.isEmpty ? trimmed : name;
+  }
+
+  final uri = Uri.tryParse(trimmed);
+  if (uri != null) {
+    final segments = uri.pathSegments;
+    final treeIndex = segments.indexOf('tree');
+    if (treeIndex >= 0 && treeIndex + 1 < segments.length) {
+      final documentId = Uri.decodeComponent(segments[treeIndex + 1]);
+      final lastPart = documentId.split('/').last;
+      final colonIndex = lastPart.lastIndexOf(':');
+      final treeName = colonIndex >= 0
+          ? lastPart.substring(colonIndex + 1)
+          : lastPart;
+      final normalizedTreeName = treeName.trim();
+      if (normalizedTreeName.isNotEmpty) {
+        return normalizedTreeName;
+      }
+    }
+  }
+
+  final fallback = Uri.decodeComponent(trimmed.split('/').last);
+  return fallback.isEmpty ? trimmed : fallback;
+}
+
+String _displayTrackName(String trackPath) {
+  if (!PathMatcher.isContentUri(trackPath)) {
+    return path.basenameWithoutExtension(trackPath);
+  }
+
+  final uri = Uri.tryParse(trackPath);
+  final lastSegment = uri?.pathSegments.isNotEmpty == true
+      ? uri!.pathSegments.last
+      : trackPath.split('/').last;
+  final decoded = Uri.decodeComponent(lastSegment);
+  final colonIndex = decoded.lastIndexOf(':');
+  final candidate = colonIndex >= 0
+      ? decoded.substring(colonIndex + 1)
+      : decoded;
+  return path.basenameWithoutExtension(candidate);
+}
 
 class LibraryTab extends ConsumerStatefulWidget {
   const LibraryTab({super.key});
@@ -94,7 +143,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
       context: context,
       title: i18n.tr('remove_library'),
       message: i18n.tr('remove_library_confirm', {
-        'name': path.basename(libraryPath),
+        'name': _displaySourceName(libraryPath),
       }),
       cancelLabel: i18n.tr('cancel'),
       confirmLabel: i18n.tr('remove'),
@@ -172,16 +221,17 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     final provider = ref.read(audioProviderFacadeProvider);
     final sliceState =
         ref.watch(libraryStateProvider).valueOrNull ?? const LibraryState();
-    final libraryHeaderState = context.select<AudioProvider, LibraryHeaderState>(
-      (value) => libraryHeaderStateFromSlice(
-        LibraryState(
-          libraryTrackCount: value.libraryTrackCount,
-          watchedFolderCount: value.watchedFolderCount,
-          watchedLibraryCount: value.watchedLibraryCount,
-          isInitialized: sliceState.isInitialized,
-        ),
-      ),
-    );
+    final libraryHeaderState = context
+        .select<AudioProvider, LibraryHeaderState>(
+          (value) => libraryHeaderStateFromSlice(
+            LibraryState(
+              libraryTrackCount: value.libraryTrackCount,
+              watchedFolderCount: value.watchedFolderCount,
+              watchedLibraryCount: value.watchedLibraryCount,
+              isInitialized: sliceState.isInitialized,
+            ),
+          ),
+        );
     final listState = context.select<AudioProvider, LibraryListState>(
       (value) => LibraryListState(
         rawTree: value.libraryTree,
@@ -230,11 +280,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         controller: _scrollController,
         height: searchBarFullHeight,
         pinned: _searchQuery.isNotEmpty || _searchController.text.isNotEmpty,
-        child: _buildSearchBar(
-          i18n,
-          matchCount,
-          libraryHeaderState.audioCount,
-        ),
+        child: _buildSearchBar(i18n, matchCount, libraryHeaderState.audioCount),
       );
     }
 
@@ -431,7 +477,9 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                         itemCount: tree.length + 1,
                         itemBuilder: (context, index) {
                           if (index == tree.length) {
-                            return const SizedBox.shrink(key: ValueKey('bottom_spacing'));
+                            return const SizedBox.shrink(
+                              key: ValueKey('bottom_spacing'),
+                            );
                           }
                           final node = tree[index];
                           return WaterfallFlowStagger(
@@ -478,7 +526,9 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
               title: i18n.tr('music_library'),
               isLoading: !libraryHeaderState.isInitialized,
               titleSuffix: Text(
-                i18n.tr('audio_count', {'count': libraryHeaderState.audioCount}),
+                i18n.tr('audio_count', {
+                  'count': libraryHeaderState.audioCount,
+                }),
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                   fontWeight: FontWeight.w600,
@@ -500,7 +550,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                               (libraryPath) => UnifiedMenuEntry<String>.action(
                                 value: libraryPath,
                                 icon: Icons.folder_copy_rounded,
-                                label: path.basename(libraryPath),
+                                label: _displaySourceName(libraryPath),
                                 trailingValue: libraryPath,
                                 trailing: Icon(
                                   Icons.delete_outline_rounded,

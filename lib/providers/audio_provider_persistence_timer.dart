@@ -71,7 +71,15 @@ extension AudioProviderPersistenceTimer on AudioProvider {
     final durationMs = _readMillisValue(map['timerDurationMs']);
     final timerModeIndex = _readMillisValue(map['timerMode']);
     final waitingForPlayback = map['timerWaitingForPlayback'] as bool? ?? false;
-    final timerEndsAtMs = _readMillisValue(map['timerEndsAtMs']);
+    final timerEndsAtMs =
+        _readMillisValue(map['timerEndsAtWallClockMs']) ??
+        _readMillisValue(map['timerEndsAtMs']);
+    final autoResumeEnabled =
+        map['autoResumeEnabled'] as bool? ?? _autoResumeEnabled;
+    final autoResumeHour =
+        _readMillisValue(map['autoResumeHour']) ?? _autoResumeHour;
+    final autoResumeMinute =
+        _readMillisValue(map['autoResumeMinute']) ?? _autoResumeMinute;
     final autoResumeAtMs = _readMillisValue(map['autoResumeAtMs']);
     final generation = _readMillisValue(map['generation']) ?? _timerGeneration;
     final pausedSessionIds =
@@ -112,6 +120,9 @@ extension AudioProviderPersistenceTimer on AudioProvider {
     _timerWaitingForPlayback = false;
     _autoResumeAt = null;
     _timerGeneration = generation;
+    _autoResumeEnabled = autoResumeEnabled;
+    _autoResumeHour = autoResumeHour;
+    _autoResumeMinute = autoResumeMinute;
     _pausedByTimerSessionIds
       ..clear()
       ..addAll(pausedSessionIds);
@@ -157,7 +168,7 @@ extension AudioProviderPersistenceTimer on AudioProvider {
       if (_autoResumeAt!.isAfter(now) && _pausedByTimerSessionIds.isNotEmpty) {
         _scheduleAutoResumeTimer(_autoResumeAt!);
       } else if (_pausedByTimerSessionIds.isNotEmpty) {
-        await _resumeTimerPausedSessions();
+        await _handleAutoResumeOnPlatform(_timerGeneration);
         return;
       } else {
         _autoResumeAt = null;
@@ -238,9 +249,13 @@ extension AudioProviderPersistenceTimer on AudioProvider {
         'timerMode': _timerMode?.index,
         'timerDurationMs': _timerDuration?.inMilliseconds,
         'timerWaitingForPlayback': _timerWaitingForPlayback,
-        'timerEndsAtMs': _timerEndsAt?.millisecondsSinceEpoch,
+        'timerEndsAtWallClockMs': _timerEndsAt?.millisecondsSinceEpoch,
+        'autoResumeEnabled': _autoResumeEnabled,
+        'autoResumeHour': _autoResumeHour,
+        'autoResumeMinute': _autoResumeMinute,
         'autoResumeAtMs': _autoResumeAt?.millisecondsSinceEpoch,
         'pausedSessionIds': _pausedByTimerSessionIds,
+        'generation': _timerGeneration,
       });
       await prefs.setString(_kTimerRuntimeKey, encoded);
     } catch (e) {

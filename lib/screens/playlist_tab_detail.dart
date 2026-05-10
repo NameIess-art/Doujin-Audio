@@ -21,6 +21,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
   String? _lastTrackPath;
   int _lastCoverGeneration = -1;
   double? _subtitleDefaultTop;
+  final Set<String> _primedAdjacentCoverKeys = <String>{};
 
   @override
   void initState() {
@@ -90,6 +91,52 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
     });
   }
 
+  void _primeAdjacentCoverArtworks(
+    AudioProvider provider,
+    int coverGeneration,
+  ) {
+    final sessions = provider.activeSessions;
+    final currentIndex = sessions.indexWhere((s) => s.id == _currentSessionId);
+    if (currentIndex < 0) return;
+    final dpr = MediaQuery.devicePixelRatioOf(context);
+    final cacheWidth = (96 * dpr).round();
+
+    for (final index in <int>[currentIndex - 1, currentIndex + 1]) {
+      if (index < 0 || index >= sessions.length) continue;
+      final session = sessions[index];
+      final trackPath = session.currentTrackPath;
+      final precacheKey = buildSessionCoverPrecacheKey(
+        sessionId: session.id,
+        trackPath: trackPath,
+        cacheWidth: cacheWidth,
+        cacheHeight: cacheWidth,
+        coverGeneration: coverGeneration,
+      );
+      if (!_primedAdjacentCoverKeys.add(precacheKey)) continue;
+      final track = provider.trackByPath(trackPath);
+      final future = _coverFutureForTrack(provider, track);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        unawaited(
+          Future<void>(() async {
+            final coverPath = await future;
+            if (!mounted || coverPath == null || coverPath.isEmpty) return;
+            try {
+              await precacheImage(
+                ResizeImage.resizeIfNeeded(
+                  cacheWidth,
+                  cacheWidth,
+                  FileImage(File(coverPath)),
+                ),
+                context,
+              );
+            } catch (_) {}
+          }),
+        );
+      });
+    }
+  }
+
   Future<void> _handleVerticalDragEnd(
     DragEndDetails details,
     BuildContext context,
@@ -99,9 +146,9 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
     final shouldDismiss = _dismissController.value > 0.25 || velocity > 800;
     if (shouldDismiss) {
       _saveSubtitlePositionBeforeDismiss();
-      ref.read(audioProviderFacadeProvider).requestCarouselSnapTo(
-        _currentSessionId,
-      );
+      ref
+          .read(audioProviderFacadeProvider)
+          .requestCarouselSnapTo(_currentSessionId);
       await _animateDismissToEnd(velocity: velocity);
       if (mounted) {
         await navigator.maybePop();
@@ -137,10 +184,9 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
     final settings = ref.read(subtitleSettingsProvider);
     final pos = settings.positions[_currentSessionId];
     if (pos == null || pos < 0) {
-      ref.read(subtitleSettingsProvider.notifier).updatePosition(
-        _currentSessionId,
-        _subtitleDefaultTop!,
-      );
+      ref
+          .read(subtitleSettingsProvider.notifier)
+          .updatePosition(_currentSessionId, _subtitleDefaultTop!);
     }
   }
 
@@ -197,19 +243,19 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
         sessionIds: value.activeSessions.map((session) => session.id).toList(),
       ),
     );
-    final detailState = context.select<AudioProvider, SessionDetailViewState?>(
-      (value) {
-        final session = value.sessionById(_currentSessionId);
-        if (session == null) return null;
-        return SessionDetailViewState(
-          sessionId: session.id,
-          trackPath: session.currentTrackPath,
-          isPlaying: session.state.playing,
-          isLoading: session.isLoading,
-          channelSwapEnabled: session.channelSwapEnabled,
-        );
-      },
-    );
+    final detailState = context.select<AudioProvider, SessionDetailViewState?>((
+      value,
+    ) {
+      final session = value.sessionById(_currentSessionId);
+      if (session == null) return null;
+      return SessionDetailViewState(
+        sessionId: session.id,
+        trackPath: session.currentTrackPath,
+        isPlaying: session.state.playing,
+        isLoading: session.isLoading,
+        channelSwapEnabled: session.channelSwapEnabled,
+      );
+    });
     final session = provider.sessionById(_currentSessionId);
 
     if (session == null || detailState == null) {
@@ -240,6 +286,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
     }
     final coverPathFuture = _coverPathFuture!;
     _primeCoverArtwork(coverPathFuture);
+    _primeAdjacentCoverArtworks(provider, currentCoverGen);
     final routeAnimation = ModalRoute.of(context)?.animation;
     final animatedListenable = routeAnimation == null
         ? _dismissController
@@ -321,9 +368,9 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
               slideAnimation: _slideAnimation,
               onClose: () async {
                 _saveSubtitlePositionBeforeDismiss();
-                ref.read(audioProviderFacadeProvider).requestCarouselSnapTo(
-                  _currentSessionId,
-                );
+                ref
+                    .read(audioProviderFacadeProvider)
+                    .requestCarouselSnapTo(_currentSessionId);
                 await _animateDismissToEnd();
                 if (context.mounted) {
                   await Navigator.of(context).maybePop();
@@ -446,16 +493,60 @@ class _SessionDetailScaffold extends ConsumerStatefulWidget {
       _SessionDetailScaffoldState();
 }
 
-class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold> {
+class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
+    with WidgetsBindingObserver {
   final _filenameKey = GlobalKey();
   final _progressBarKey = GlobalKey();
+  final PermissionActionController _permissionActionController =
+      PermissionActionController();
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _computeSubtitleDefaultTop();
     });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _permissionActionController.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_permissionActionController.handleAppResumed());
+    }
+  }
+
+  Future<void> _toggleGlobalSubtitleDisplay(
+    SubtitleSettingsNotifier notifier,
+    SubtitleSettingsState settings,
+    String sessionId,
+  ) async {
+    final isEnabling = !settings.isGlobalEnabled(sessionId);
+    if (!isEnabling) {
+      notifier.toggleGlobalSubtitles(sessionId);
+      return;
+    }
+
+    final i18n = context.read<AppLanguageProvider>();
+    await _permissionActionController.ensureGrantedAndRun(
+      context: context,
+      title: i18n.tr('overlay_permission_title'),
+      message: i18n.tr('overlay_permission_message'),
+      confirmLabel: i18n.tr('go_settings'),
+      cancelLabel: i18n.tr('cancel'),
+      isGranted: SubtitleOverlayController.canDrawOverlays,
+      openSettings: SubtitleOverlayController.openOverlaySettings,
+      onGranted: () async {
+        notifier.toggleGlobalSubtitles(sessionId);
+      },
+    );
   }
 
   void _computeSubtitleDefaultTop() {
@@ -471,9 +562,11 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold> 
     final filenameBottom =
         filenameBox.localToGlobal(Offset.zero, ancestor: scaffoldBox).dy +
         filenameBox.size.height;
-    final progressBarTop =
-        progressBarBox.localToGlobal(Offset.zero, ancestor: scaffoldBox).dy;
-    final midpoint = (filenameBottom + progressBarTop) / 2 - 3; // optical center
+    final progressBarTop = progressBarBox
+        .localToGlobal(Offset.zero, ancestor: scaffoldBox)
+        .dy;
+    final midpoint =
+        (filenameBottom + progressBarTop) / 2 - 3; // optical center
 
     if (mounted) {
       widget.onSubtitleAnchorComputed?.call(midpoint);
@@ -516,228 +609,245 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold> 
         child: Stack(
           fit: StackFit.expand,
           children: [
-          // Dynamic Blurred Background
-          Positioned.fill(
-            child: AsyncCoverImage(
-              future: coverPathFuture,
-              fallbackBuilder: (_) => ColoredBox(color: cs.surfaceDim),
-              imageBuilder: (context, coverPath) {
-                final mediaSize = MediaQuery.sizeOf(context);
-                final dpr = MediaQuery.devicePixelRatioOf(context);
-                return Image(
-                  image: resizeFileImageIfNeeded(
-                    path: coverPath,
-                    cacheWidth: (mediaSize.width * dpr).round(),
-                  ),
-                  fit: BoxFit.cover,
-                  gaplessPlayback: true,
-                  color: cs.surface.withValues(alpha: 0.45),
-                  colorBlendMode: BlendMode.darken,
-                  errorBuilder: (_, _, _) => ColoredBox(color: cs.surfaceDim),
-                );
-              },
-            ),
-          ),
-          Positioned.fill(
-            child: RepaintBoundary(
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-                child: const SizedBox.expand(),
+            // Dynamic Blurred Background
+            Positioned.fill(
+              child: AsyncCoverImage(
+                future: coverPathFuture,
+                fallbackBuilder: (_) => ColoredBox(color: cs.surfaceDim),
+                imageBuilder: (context, coverPath) {
+                  final mediaSize = MediaQuery.sizeOf(context);
+                  final dpr = MediaQuery.devicePixelRatioOf(context);
+                  return Image(
+                    image: resizeFileImageIfNeeded(
+                      path: coverPath,
+                      cacheWidth: (mediaSize.width * dpr).round(),
+                    ),
+                    fit: BoxFit.cover,
+                    gaplessPlayback: true,
+                    color: cs.surface.withValues(alpha: 0.45),
+                    colorBlendMode: BlendMode.darken,
+                    errorBuilder: (_, _, _) => ColoredBox(color: cs.surfaceDim),
+                  );
+                },
               ),
             ),
-          ),
-          // Content
-          SafeArea(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                return AnimatedBuilder(
-                  animation: Listenable.merge([slideAnimation, widget.switchAnimation]),
-                  builder: (context, child) {
-                    final switchProgress = Curves.easeOutCubic.transform(
-                      widget.switchAnimation.value.clamp(0.0, 1.0),
-                    );
-                    final opacity = lerpDouble(0.88, 1.0, switchProgress) ?? 1;
-                    return Opacity(
-                      opacity: opacity,
-                      child: SlideTransition(
-                        position: slideAnimation,
-                        child: child,
-                      ),
-                    );
-                  },
-                  child: Column(
-                    children: [
-                      // Top Bar 鈥?outside drag GestureDetector so taps work
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
-                        child: Builder(
-                          builder: (context) {
-                            final cachedTrack = provider.getSubtitleTrackSync(
-                              session.currentTrackPath,
-                            );
-                            // Trigger background load if not cached
-                            if (cachedTrack == null) {
-                              unawaited(
-                                provider.subtitleTrackForPath(
-                                  session.currentTrackPath,
-                                ),
-                              );
-                            }
-                            final hasSubtitle = cachedTrack != null;
-                            final settings = ref.watch(
-                              subtitleSettingsProvider,
-                            );
-
-                            return Row(
-                              children: [
-                                IconButton(
-                                  onPressed: onClose,
-                                  icon: Icon(
-                                    Icons.keyboard_arrow_down_rounded,
-                                    color: cs.onSurface,
-                                    size: 32,
-                                  ),
-                                ),
-                                const Spacer(),
-                                if (hasSubtitle &&
-                                    settings.isShowEnabled(session.id) &&
-                                    settings.isGlobalEnabled(session.id)) ...[
-                                  Icon(
-                                    Icons.subtitles_rounded,
-                                    color: cs.onSurface,
-                                    size: 20,
-                                  ),
-                                  const SizedBox(width: 8),
-                                ],
-                                if (session.channelSwapEnabled) ...[
-                                  Icon(
-                                    Icons.swap_horiz_rounded,
-                                    color: cs.onSurface,
-                                    size: 20,
-                                  ),
-                                  const SizedBox(width: 8),
-                                ],
-                                UnifiedPopupMenuButton<String>(
-                                  icon: Icons.more_horiz_rounded,
-                                  tooltip: MaterialLocalizations.of(
-                                    context,
-                                  ).moreButtonTooltip,
-                                  entries: [
-                                    if (hasSubtitle) ...[
-                                      UnifiedMenuEntry<String>.action(
-                                        value: 'toggle_subtitle',
-                                        icon: settings.isShowEnabled(session.id)
-                                            ? Icons.subtitles_off_rounded
-                                            : Icons.subtitles_rounded,
-                                        label: settings.isShowEnabled(session.id)
-                                            ? context.read<AppLanguageProvider>().tr('turn_off_subtitle')
-                                            : context.read<AppLanguageProvider>().tr('turn_on_subtitle'),
-                                      ),
-                                      if (settings.isShowEnabled(session.id))
-                                        UnifiedMenuEntry<String>.action(
-                                          value: 'toggle_cross_page',
-                                          icon: settings.isGlobalEnabled(session.id)
-                                              ? Icons.check_rounded
-                                              : Icons.layers_rounded,
-                                          label: context.read<AppLanguageProvider>().tr('subtitle_global_display'),
-                                        ),
-                                      const UnifiedMenuEntry<String>.divider(),
-                                    ],
-                                    UnifiedMenuEntry<String>.action(
-                                      value: 'channel_swap',
-                                      icon: session.channelSwapEnabled
-                                          ? Icons.check_rounded
-                                          : Icons.swap_horiz_rounded,
-                                      label: context
-                                          .read<AppLanguageProvider>()
-                                          .tr('channel_swap'),
-                                    ),
-                                  ],
-                                  onSelected: (value) {
-                                    if (value == 'toggle_subtitle') {
-                                      ref
-                                          .read(subtitleSettingsProvider.notifier)
-                                          .toggleShowSubtitles(session.id);
-                                      return;
-                                    }
-                                    if (value == 'toggle_cross_page') {
-                                      final notifier = ref.read(subtitleSettingsProvider.notifier);
-                                      final isEnabling = !settings.isGlobalEnabled(session.id);
-                                      
-                                      if (isEnabling) {
-                                        SubtitleOverlayController.canDrawOverlays().then((allowed) {
-                                          if (allowed) {
-                                            notifier.toggleGlobalSubtitles(session.id);
-                                          } else {
-                                            SubtitleOverlayController.openOverlaySettings();
-                                          }
-                                        });
-                                      } else {
-                                        notifier.toggleGlobalSubtitles(session.id);
-                                      }
-                                      return;
-                                    }
-                                    if (value != 'channel_swap') return;
-                                    Feedback.forTap(context);
-                                    unawaited(
-                                      provider.setSessionChannelSwap(
-                                        session.id,
-                                        !session.channelSwapEnabled,
-                                      ),
-                                    );
-                                  },
-                                ),
-                              ],
-                            );
-                          },
-                        ),
-                      ),
-                      // Content area 鈥?keep session drag gestures on artwork only
-                      Expanded(
-                        child: Column(
-                          children: [
-                            Expanded(
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 32,
-                                ),
-                                child: _SessionHeroArtwork(
-                                  height: constraints.maxHeight,
-                                  coverPathFuture: coverPathFuture,
-                                  title: '',
-                                  folderName: '',
-                                  isPlaying: session.state.playing,
-                                  trackPath: session.currentTrackPath,
-                                ),
-                              ),
-                            ),
-                            Padding(
-                              padding: const EdgeInsets.fromLTRB(
-                                28,
-                                12,
-                                28,
-                                8,
-                              ),
-                              child: _SessionDetailContent(
-                                session: session,
-                                provider: provider,
-                                filenameKey: _filenameKey,
-                                progressBarKey: _progressBarKey,
-                                subtitleFontSize: ref.watch(subtitleSettingsProvider).fontSize,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              },
+            Positioned.fill(
+              child: RepaintBoundary(
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+                  child: const SizedBox.expand(),
+                ),
+              ),
             ),
-          ),
-        ],
+            // Content
+            SafeArea(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  return AnimatedBuilder(
+                    animation: Listenable.merge([
+                      slideAnimation,
+                      widget.switchAnimation,
+                    ]),
+                    builder: (context, child) {
+                      final switchProgress = Curves.easeOutCubic.transform(
+                        widget.switchAnimation.value.clamp(0.0, 1.0),
+                      );
+                      final opacity =
+                          lerpDouble(0.88, 1.0, switchProgress) ?? 1;
+                      return Opacity(
+                        opacity: opacity,
+                        child: SlideTransition(
+                          position: slideAnimation,
+                          child: child,
+                        ),
+                      );
+                    },
+                    child: Column(
+                      children: [
+                        // Top Bar 鈥?outside drag GestureDetector so taps work
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          child: Builder(
+                            builder: (context) {
+                              final cachedTrack = provider.getSubtitleTrackSync(
+                                session.currentTrackPath,
+                              );
+                              // Trigger background load if not cached
+                              if (cachedTrack == null) {
+                                unawaited(
+                                  provider.subtitleTrackForPath(
+                                    session.currentTrackPath,
+                                  ),
+                                );
+                              }
+                              final hasSubtitle = cachedTrack != null;
+                              final settings = ref.watch(
+                                subtitleSettingsProvider,
+                              );
+
+                              return Row(
+                                children: [
+                                  IconButton(
+                                    onPressed: onClose,
+                                    icon: Icon(
+                                      Icons.keyboard_arrow_down_rounded,
+                                      color: cs.onSurface,
+                                      size: 32,
+                                    ),
+                                  ),
+                                  const Spacer(),
+                                  if (hasSubtitle &&
+                                      settings.isShowEnabled(session.id) &&
+                                      settings.isGlobalEnabled(session.id)) ...[
+                                    Icon(
+                                      Icons.subtitles_rounded,
+                                      color: cs.onSurface,
+                                      size: 20,
+                                    ),
+                                    const SizedBox(width: 8),
+                                  ],
+                                  if (session.channelSwapEnabled) ...[
+                                    Icon(
+                                      Icons.swap_horiz_rounded,
+                                      color: cs.onSurface,
+                                      size: 20,
+                                    ),
+                                    const SizedBox(width: 8),
+                                  ],
+                                  UnifiedPopupMenuButton<String>(
+                                    icon: Icons.more_horiz_rounded,
+                                    tooltip: MaterialLocalizations.of(
+                                      context,
+                                    ).moreButtonTooltip,
+                                    entries: [
+                                      if (hasSubtitle) ...[
+                                        UnifiedMenuEntry<String>.action(
+                                          value: 'toggle_subtitle',
+                                          icon:
+                                              settings.isShowEnabled(session.id)
+                                              ? Icons.subtitles_off_rounded
+                                              : Icons.subtitles_rounded,
+                                          label:
+                                              settings.isShowEnabled(session.id)
+                                              ? context
+                                                    .read<AppLanguageProvider>()
+                                                    .tr('turn_off_subtitle')
+                                              : context
+                                                    .read<AppLanguageProvider>()
+                                                    .tr('turn_on_subtitle'),
+                                        ),
+                                        if (settings.isShowEnabled(session.id))
+                                          UnifiedMenuEntry<String>.action(
+                                            value: 'toggle_cross_page',
+                                            icon:
+                                                settings.isGlobalEnabled(
+                                                  session.id,
+                                                )
+                                                ? Icons.check_rounded
+                                                : Icons.layers_rounded,
+                                            label: context
+                                                .read<AppLanguageProvider>()
+                                                .tr('subtitle_global_display'),
+                                          ),
+                                        const UnifiedMenuEntry<
+                                          String
+                                        >.divider(),
+                                      ],
+                                      UnifiedMenuEntry<String>.action(
+                                        value: 'channel_swap',
+                                        icon: session.channelSwapEnabled
+                                            ? Icons.check_rounded
+                                            : Icons.swap_horiz_rounded,
+                                        label: context
+                                            .read<AppLanguageProvider>()
+                                            .tr('channel_swap'),
+                                      ),
+                                    ],
+                                    onSelected: (value) {
+                                      if (value == 'toggle_subtitle') {
+                                        ref
+                                            .read(
+                                              subtitleSettingsProvider.notifier,
+                                            )
+                                            .toggleShowSubtitles(session.id);
+                                        return;
+                                      }
+                                      if (value == 'toggle_cross_page') {
+                                        final notifier = ref.read(
+                                          subtitleSettingsProvider.notifier,
+                                        );
+                                        unawaited(
+                                          _toggleGlobalSubtitleDisplay(
+                                            notifier,
+                                            settings,
+                                            session.id,
+                                          ),
+                                        );
+                                        return;
+                                      }
+                                      if (value != 'channel_swap') return;
+                                      Feedback.forTap(context);
+                                      unawaited(
+                                        provider.setSessionChannelSwap(
+                                          session.id,
+                                          !session.channelSwapEnabled,
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ],
+                              );
+                            },
+                          ),
+                        ),
+                        // Content area 鈥?keep session drag gestures on artwork only
+                        Expanded(
+                          child: Column(
+                            children: [
+                              Expanded(
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 32,
+                                  ),
+                                  child: _SessionHeroArtwork(
+                                    height: constraints.maxHeight,
+                                    coverPathFuture: coverPathFuture,
+                                    title: '',
+                                    folderName: '',
+                                    isPlaying: session.state.playing,
+                                    trackPath: session.currentTrackPath,
+                                  ),
+                                ),
+                              ),
+                              Padding(
+                                padding: const EdgeInsets.fromLTRB(
+                                  28,
+                                  12,
+                                  28,
+                                  8,
+                                ),
+                                child: _SessionDetailContent(
+                                  session: session,
+                                  provider: provider,
+                                  filenameKey: _filenameKey,
+                                  progressBarKey: _progressBarKey,
+                                  subtitleFontSize: ref
+                                      .watch(subtitleSettingsProvider)
+                                      .fontSize,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
       ),
-    ),
-  );
-}
+    );
+  }
 }

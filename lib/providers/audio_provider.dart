@@ -23,6 +23,7 @@ import '../services/native_playback_repository.dart';
 import '../services/playback_queue_resolver.dart';
 import '../services/platform_channels.dart';
 import '../services/timer_runtime_calculator.dart';
+import '../services/warmup_scheduler.dart';
 
 export '../models/library_node.dart';
 export '../models/music_track.dart';
@@ -51,6 +52,7 @@ part 'audio_provider_state.dart';
 part 'audio_provider_native_bridge.dart';
 part 'audio_provider_controllers.dart';
 part 'audio_provider_library_covers.dart';
+part 'audio_provider_warmup.dart';
 
 const _kLibraryKey = 'library_v1';
 const _kSessionsKey = 'sessions_v1';
@@ -232,6 +234,8 @@ class AudioProvider with ChangeNotifier {
       _notificationStateService.subtitleTrackFutures;
   Map<String, SubtitleTrack?> get _subtitleTracks =>
       _notificationStateService.subtitleTracks;
+  Map<String, Future<SubtitleTrack?>> get _subtitleTrackResultFutures =>
+      _notificationStateService.subtitleTrackResultFutures;
   Map<String, String?> get _notificationSubtitleTexts =>
       _notificationStateService.notificationSubtitleTexts;
   Map<String, String> get _notificationSubtitleTrackPaths =>
@@ -240,10 +244,14 @@ class AudioProvider with ChangeNotifier {
       _notificationStateService.coverPathFutures;
   Map<String, String?> get _resolvedCoverPaths =>
       _notificationStateService.resolvedCoverPaths;
+  Map<String, Future<String?>> get _resolvedCoverPathFutures =>
+      _notificationStateService.resolvedCoverPathFutures;
   Map<String, Future<String?>> get _notificationCoverPathFutures =>
       _notificationStateService.notificationCoverPathFutures;
   Map<String, String?> get _resolvedNotificationCoverPaths =>
       _notificationStateService.resolvedNotificationCoverPaths;
+  Map<String, Future<String?>> get _resolvedNotificationCoverPathFutures =>
+      _notificationStateService.resolvedNotificationCoverPathFutures;
   Set<String> get _notificationCoverSearchMisses =>
       _notificationStateService.notificationCoverSearchMisses;
   String? get _notificationFocusSessionId =>
@@ -301,9 +309,17 @@ class AudioProvider with ChangeNotifier {
     _notificationStateService.notificationsDismissedWhilePaused = value;
   }
 
-  Timer? get _cacheWarmupTimer => _notificationStateService.cacheWarmupTimer;
-  set _cacheWarmupTimer(Timer? value) {
-    _notificationStateService.cacheWarmupTimer = value;
+  Timer? get _deferredWarmupTimer =>
+      _notificationStateService.deferredWarmupTimer;
+  set _deferredWarmupTimer(Timer? value) {
+    _notificationStateService.deferredWarmupTimer = value;
+  }
+
+  WarmupScheduler get _warmupScheduler =>
+      _notificationStateService.warmupScheduler;
+  int get _warmupGeneration => _notificationStateService.warmupGeneration;
+  set _warmupGeneration(int value) {
+    _notificationStateService.warmupGeneration = value;
   }
 
   Timer? get _notificationActionRefreshTimer =>
@@ -525,7 +541,7 @@ class AudioProvider with ChangeNotifier {
     _saveSessionStateTimer?.cancel();
     _saveSessionOrderTimer?.cancel();
     _scanProgressNotifyTimer?.cancel();
-    _cacheWarmupTimer?.cancel();
+    _deferredWarmupTimer?.cancel();
     _notificationProgressRefreshTimer?.cancel();
     _unifiedNotificationSyncTimer?.cancel();
     _notificationActionRefreshTimer?.cancel();
@@ -597,8 +613,10 @@ class AudioProvider with ChangeNotifier {
     _coverGeneration++;
     _coverPathFutures.clear();
     _resolvedCoverPaths.clear();
+    _resolvedCoverPathFutures.clear();
     _notificationCoverPathFutures.clear();
     _resolvedNotificationCoverPaths.clear();
+    _resolvedNotificationCoverPathFutures.clear();
     _notificationCoverSearchMisses.clear();
   }
 }

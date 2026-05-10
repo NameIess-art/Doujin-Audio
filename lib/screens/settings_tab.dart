@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -12,6 +13,8 @@ import '../providers/audio_provider.dart';
 import '../providers/audio_provider_riverpod.dart';
 import '../services/app_update_service.dart';
 import '../services/audio_state_services.dart';
+import '../services/permission_action_controller.dart';
+import '../services/platform_channels.dart';
 import '../theme/theme_provider.dart';
 import '../widgets/app_feedback.dart';
 import '../widgets/mobile_overlay_inset.dart';
@@ -30,8 +33,9 @@ class SettingsTab extends ConsumerStatefulWidget {
 
 class _SettingsTabState extends ConsumerState<SettingsTab>
     with WidgetsBindingObserver, AutomaticKeepAliveClientMixin {
-  static const MethodChannel _powerChannel = MethodChannel(
-    'nameless_audio/power',
+  static const MethodChannel _powerChannel = MethodChannel(PowerChannel.name);
+  static const MethodChannel _notificationsChannel = MethodChannel(
+    NotificationsChannel.name,
   );
 
   bool _checkingUpdate = false;
@@ -39,6 +43,10 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
   double? _downloadProgress;
   AppUpdateInfo? _lastUpdateInfo;
   late Future<bool> _backgroundRunAllowedFuture;
+  late Future<bool> _exactAlarmAllowedFuture;
+  late Future<bool> _notificationsAllowedFuture;
+  final PermissionActionController _permissionActionController =
+      PermissionActionController();
 
   final GlobalKey _headerKey = GlobalKey();
   double _headerHeight = 62;
@@ -65,6 +73,8 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _backgroundRunAllowedFuture = _isIgnoringBatteryOptimizations();
+    _exactAlarmAllowedFuture = _canScheduleExactAlarms();
+    _notificationsAllowedFuture = _areNotificationsEnabled();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _measureHeader();
@@ -98,6 +108,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
   void dispose() {
     _scrollToTopListenable?.removeListener(_handleScrollToTopSignal);
     _scrollController.dispose();
+    _permissionActionController.dispose();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -105,6 +116,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      unawaited(_permissionActionController.handleAppResumed());
       _refreshBackgroundRunStatus();
     }
   }
@@ -113,6 +125,8 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
     if (!mounted) return;
     setState(() {
       _backgroundRunAllowedFuture = _isIgnoringBatteryOptimizations();
+      _exactAlarmAllowedFuture = _canScheduleExactAlarms();
+      _notificationsAllowedFuture = _areNotificationsEnabled();
     });
   }
 
@@ -143,8 +157,6 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
       height: 1.25,
       color: cs.onSurfaceVariant,
     );
-
-    final topTotalHeight = _headerHeight + 4;
 
     return Stack(
       children: [
@@ -384,6 +396,26 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14),
                       ),
+                    ),
+                    const SizedBox(height: 2),
+                    _CapabilitySettingsTile(
+                      title: i18n.tr('notification_permission_status'),
+                      icon: Icons.notifications_rounded,
+                      okFuture: _notificationsAllowedFuture,
+                      okText: i18n.tr('notification_permission_ready'),
+                      missingText: i18n.tr('notification_permission_missing'),
+                      checkingText: i18n.tr('notification_permission_checking'),
+                      onTap: () => _openNotificationSettings(context),
+                    ),
+                    const SizedBox(height: 2),
+                    _CapabilitySettingsTile(
+                      title: i18n.tr('exact_alarm_permission_status'),
+                      icon: Icons.alarm_on_rounded,
+                      okFuture: _exactAlarmAllowedFuture,
+                      okText: i18n.tr('exact_alarm_permission_ready'),
+                      missingText: i18n.tr('exact_alarm_permission_missing'),
+                      checkingText: i18n.tr('exact_alarm_permission_checking'),
+                      onTap: () => _openExactAlarmSettings(context),
                     ),
                     const SizedBox(height: 2),
                     ListTile(

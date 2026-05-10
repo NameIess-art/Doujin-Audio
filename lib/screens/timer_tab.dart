@@ -38,6 +38,9 @@ class TimerTab extends ConsumerStatefulWidget {
 
 class _TimerTabState extends ConsumerState<TimerTab> {
   static const MethodChannel _powerChannel = MethodChannel(PowerChannel.name);
+  static const MethodChannel _notificationsChannel = MethodChannel(
+    NotificationsChannel.name,
+  );
   int _hours = 0;
   int _minutes = 30;
   int _seconds = 0;
@@ -141,6 +144,32 @@ class _TimerTabState extends ConsumerState<TimerTab> {
     }
   }
 
+  Future<bool> _isIgnoringBatteryOptimizations() async {
+    try {
+      return await _powerChannel.invokeMethod<bool>(
+            PowerMethod.isIgnoringBatteryOptimizations,
+          ) ??
+          true;
+    } on MissingPluginException {
+      return true;
+    } catch (_) {
+      return true;
+    }
+  }
+
+  Future<bool> _areNotificationsEnabled() async {
+    try {
+      return await _notificationsChannel.invokeMethod<bool>(
+            NotificationsMethod.areNotificationsEnabled,
+          ) ??
+          true;
+    } on MissingPluginException {
+      return true;
+    } catch (_) {
+      return true;
+    }
+  }
+
   Future<void> _openExactAlarmSettings() async {
     try {
       await _powerChannel.invokeMethod<void>(
@@ -151,6 +180,43 @@ class _TimerTabState extends ConsumerState<TimerTab> {
     } catch (_) {
       // Best effort only.
     }
+  }
+
+  Future<void> _openBackgroundRunSettings() async {
+    try {
+      await _powerChannel.invokeMethod<void>(
+        PowerMethod.openBackgroundRunSettings,
+      );
+    } on MissingPluginException {
+      // Non-Android platforms do not expose this channel.
+    } catch (_) {
+      // Best effort only.
+    }
+  }
+
+  Future<void> _openNotificationSettings() async {
+    try {
+      await _notificationsChannel.invokeMethod<void>(
+        NotificationsMethod.openNotificationSettings,
+      );
+    } on MissingPluginException {
+      // Non-Android platforms do not expose this channel.
+    } catch (_) {
+      // Best effort only.
+    }
+  }
+
+  Future<_TimerReliabilityStatus> _loadReliabilityStatus() async {
+    final results = await Future.wait<bool>([
+      _areNotificationsEnabled(),
+      _canScheduleExactAlarms(),
+      _isIgnoringBatteryOptimizations(),
+    ]);
+    return _TimerReliabilityStatus(
+      notificationsEnabled: results[0],
+      exactAlarmsEnabled: results[1],
+      backgroundRunAllowed: results[2],
+    );
   }
 
   Future<void> _setAutoResumeWithCapabilityCheck(
@@ -190,4 +256,19 @@ class _TimerTabState extends ConsumerState<TimerTab> {
 
   @override
   Widget build(BuildContext context) => _buildTimerTab(context);
+}
+
+class _TimerReliabilityStatus {
+  const _TimerReliabilityStatus({
+    required this.notificationsEnabled,
+    required this.exactAlarmsEnabled,
+    required this.backgroundRunAllowed,
+  });
+
+  final bool notificationsEnabled;
+  final bool exactAlarmsEnabled;
+  final bool backgroundRunAllowed;
+
+  bool get isStronglyReliable =>
+      notificationsEnabled && exactAlarmsEnabled && backgroundRunAllowed;
 }

@@ -85,6 +85,8 @@ abstract final class PowerMethod {
   static const String canScheduleExactAlarms = 'canScheduleExactAlarms';
   static const String openExactAlarmSettings = 'openExactAlarmSettings';
   static const String getNativeTimerRuntimeState = 'getNativeTimerRuntimeState';
+  static const String executeTimerExpiredNow = 'executeTimerExpiredNow';
+  static const String executeAutoResumeNow = 'executeAutoResumeNow';
 }
 
 // ---------------------------------------------------------------------------
@@ -96,6 +98,8 @@ abstract final class FileCacheMethod {
   static const String scanFolder = 'scanFolder';
   static const String listChildFolders = 'listChildFolders';
   static const String pickAudioSource = 'pickAudioSource';
+  static const String pickAudioFiles = 'pickAudioFiles';
+  static const String pickAudioFolder = 'pickAudioFolder';
 }
 
 // ---------------------------------------------------------------------------

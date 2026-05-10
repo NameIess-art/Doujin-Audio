@@ -71,6 +71,117 @@ extension _TimerTabBody on _TimerTabState {
       }
     }
 
+    Widget buildReliabilityCard() {
+      return FutureBuilder<_TimerReliabilityStatus>(
+        future: _loadReliabilityStatus(),
+        builder: (context, snapshot) {
+          final status = snapshot.data;
+          if (snapshot.connectionState != ConnectionState.done &&
+              status == null) {
+            return _TimerPanelCard(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2.2),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(i18n.tr('timer_reliability_checking')),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
+
+          final resolvedStatus =
+              status ??
+              const _TimerReliabilityStatus(
+                notificationsEnabled: true,
+                exactAlarmsEnabled: true,
+                backgroundRunAllowed: true,
+              );
+          final toneColor = resolvedStatus.isStronglyReliable
+              ? cs.primary
+              : cs.error;
+          final summary = resolvedStatus.isStronglyReliable
+              ? i18n.tr('timer_reliability_ready')
+              : i18n.tr('timer_reliability_missing');
+          final detail = [
+            resolvedStatus.notificationsEnabled
+                ? i18n.tr('notification_permission_ready')
+                : i18n.tr('notification_permission_missing'),
+            resolvedStatus.exactAlarmsEnabled
+                ? i18n.tr('exact_alarm_permission_ready')
+                : i18n.tr('exact_alarm_permission_missing'),
+            resolvedStatus.backgroundRunAllowed
+                ? i18n.tr('allow_background_run_ready')
+                : i18n.tr('allow_background_run_subtitle'),
+          ].join('\n');
+
+          return _TimerPanelCard(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.verified_user_rounded, color: toneColor),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          summary,
+                          style: Theme.of(context).textTheme.titleSmall
+                              ?.copyWith(fontWeight: FontWeight.w800),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Text(detail, style: Theme.of(context).textTheme.bodySmall),
+                  if (!resolvedStatus.isStronglyReliable) ...[
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        if (!resolvedStatus.notificationsEnabled)
+                          OutlinedButton(
+                            onPressed: () {
+                              unawaited(_openNotificationSettings());
+                            },
+                            child: Text(i18n.tr('open_notification_settings')),
+                          ),
+                        if (!resolvedStatus.exactAlarmsEnabled)
+                          OutlinedButton(
+                            onPressed: () {
+                              unawaited(_openExactAlarmSettings());
+                            },
+                            child: Text(i18n.tr('open_exact_alarm_settings')),
+                          ),
+                        if (!resolvedStatus.backgroundRunAllowed)
+                          OutlinedButton(
+                            onPressed: () {
+                              unawaited(_openBackgroundRunSettings());
+                            },
+                            child: Text(i18n.tr('allow_background_run')),
+                          ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          );
+        },
+      );
+    }
+
     Widget buildConfiguratorSection({required bool compactMode}) {
       final content = Padding(
         padding: EdgeInsets.all(compactMode ? 14 : 18),
@@ -263,6 +374,11 @@ extension _TimerTabBody on _TimerTabState {
                       fmtDuration: _fmtDuration,
                       cs: cs,
                     ),
+                    const SizedBox(height: 16),
+                  ],
+                  if (!showCompactOnly &&
+                      (timerConfigured || timerSlice.autoResumeEnabled)) ...[
+                    buildReliabilityCard(),
                     const SizedBox(height: 16),
                   ],
                   if (showCompactOnly ||

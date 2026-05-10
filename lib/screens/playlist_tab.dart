@@ -16,6 +16,7 @@ import '../providers/audio_provider.dart';
 import '../providers/audio_provider_riverpod.dart';
 import '../providers/subtitle_settings_provider.dart';
 import '../services/audio_state_services.dart';
+import '../services/permission_action_controller.dart';
 import '../services/subtitle_parser.dart';
 import '../services/subtitle_overlay_controller.dart';
 import '../widgets/app_feedback.dart';
@@ -165,7 +166,10 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     final timerState =
         ref.watch(timerStateProvider).valueOrNull ??
         const TimerStateSliceData();
-    final headerState = playlistHeaderStateFromSlices(playbackState, timerState);
+    final headerState = playlistHeaderStateFromSlices(
+      playbackState,
+      timerState,
+    );
     final listState = context.select<AudioProvider, PlaylistListState>(
       (value) => PlaylistListState(
         sessions: value.activeSessions,
@@ -176,8 +180,9 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
         '${i18n.tr('sessions_count', {'count': headerState.sessionCount})} · '
         '${i18n.tr('playing_count', {'count': headerState.playingCount})}';
     final listBottomInset = MobileOverlayInset.of(context);
-    final listCacheExtent =
-        (_headerHeight + 404).clamp(_headerHeight + 4, 720.0).toDouble();
+    final listCacheExtent = (_headerHeight + 404)
+        .clamp(_headerHeight + 4, 720.0)
+        .toDouble();
 
     return Stack(
       clipBehavior: Clip.none,
@@ -200,9 +205,9 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                       ),
                     if (listState.hasSessions)
                       Theme(
-                        data: Theme.of(context).copyWith(
-                          canvasColor: Colors.transparent,
-                        ),
+                        data: Theme.of(
+                          context,
+                        ).copyWith(canvasColor: Colors.transparent),
                         child: ReorderAutoScroller(
                           key: const ValueKey('session_list'),
                           scrollController: _scrollController,
@@ -211,8 +216,12 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                           bottomTriggerOffset: 470,
                           child: ReorderableListView.builder(
                             scrollController: _scrollController,
-                            padding:
-                                const EdgeInsets.fromLTRB(16, 154, 16, 350),
+                            padding: const EdgeInsets.fromLTRB(
+                              16,
+                              154,
+                              16,
+                              350,
+                            ),
                             cacheExtent: listCacheExtent,
                             clipBehavior: Clip.none,
                             buildDefaultDragHandles: false,
@@ -282,7 +291,8 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                   if (headerState.hasTimer)
                     _TimerCountdownCapsule(
                       remaining:
-                          headerState.timerRemaining ?? headerState.timerDuration!,
+                          headerState.timerRemaining ??
+                          headerState.timerDuration!,
                       active: headerState.timerActive,
                       onTap: widget.onTimerTap,
                     )

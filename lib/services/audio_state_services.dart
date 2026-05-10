@@ -13,6 +13,7 @@ import 'library_organizer.dart';
 import 'native_playback_bridge.dart';
 import 'playback_notification_service.dart';
 import 'subtitle_parser.dart';
+import 'warmup_scheduler.dart';
 
 class AudioStateSlice<T> {
   AudioStateSlice(this._state);
@@ -728,15 +729,21 @@ class NotificationCoordinatorService {
   final Map<String, Future<SubtitleTrack?>> subtitleTrackFutures =
       <String, Future<SubtitleTrack?>>{};
   final Map<String, SubtitleTrack?> subtitleTracks = <String, SubtitleTrack?>{};
+  final Map<String, Future<SubtitleTrack?>> subtitleTrackResultFutures =
+      <String, Future<SubtitleTrack?>>{};
   final Map<String, String?> notificationSubtitleTexts = <String, String?>{};
   final Map<String, String> notificationSubtitleTrackPaths = <String, String>{};
   final Map<String, Future<String?>> coverPathFutures =
       <String, Future<String?>>{};
   final Map<String, String?> resolvedCoverPaths = <String, String?>{};
+  final Map<String, Future<String?>> resolvedCoverPathFutures =
+      <String, Future<String?>>{};
   final Map<String, Future<String?>> notificationCoverPathFutures =
       <String, Future<String?>>{};
   final Map<String, String?> resolvedNotificationCoverPaths =
       <String, String?>{};
+  final Map<String, Future<String?>> resolvedNotificationCoverPathFutures =
+      <String, Future<String?>>{};
   final Set<String> notificationCoverSearchMisses = <String>{};
   String? notificationFocusSessionId;
   String? unifiedNotificationSyncKey;
@@ -748,9 +755,11 @@ class NotificationCoordinatorService {
   bool keepAliveSyncDeferred = false;
   String? queuedNotificationRefreshSessionId;
   bool notificationsDismissedWhilePaused = false;
-  Timer? cacheWarmupTimer;
+  Timer? deferredWarmupTimer;
   Timer? notificationActionRefreshTimer;
   Timer? notificationActionGuardTimeout;
+  final WarmupScheduler warmupScheduler = WarmupScheduler();
+  int warmupGeneration = 0;
   final AudioStateSlice<NotificationState> slice =
       AudioStateSlice<NotificationState>(const NotificationState());
 

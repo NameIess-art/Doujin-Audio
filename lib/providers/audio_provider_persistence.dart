@@ -157,40 +157,10 @@ extension AudioProviderPersistence on AudioProvider {
       debugPrint('Critical error during AudioProvider _loadData: $e');
     } finally {
       // Phase 7: Deferred warmup, keep-alive sync, final UI update.
-      _scheduleLibraryAndSessionCacheWarmup();
+      scheduleUiWarmup(currentPageIndex: 0);
       _syncKeepCpuAwake();
       _isInitialized = true;
       _notifyListeners();
-    }
-  }
-
-  void _scheduleLibraryAndSessionCacheWarmup() {
-    _cacheWarmupTimer?.cancel();
-    _cacheWarmupTimer = Timer(const Duration(seconds: 2), () {
-      _cacheWarmupTimer = null;
-      if (_isScanning) return;
-      _warmLibraryAndSessionCaches();
-    });
-  }
-
-  void _warmLibraryAndSessionCaches() {
-    final tree = libraryTree;
-    var warmedFolders = 0;
-    for (final node in tree) {
-      if (node is! FolderNode || node.path.startsWith('content://')) continue;
-      unawaited(coverPathFutureForFolder(node.path));
-      warmedFolders++;
-      if (warmedFolders >= 6) break;
-    }
-
-    var warmedSessions = 0;
-    for (final session in activeSessions) {
-      final trackPath = session.currentTrackPath;
-      _ensureSubtitleTrackLoaded(trackPath);
-      final track = trackByPath(trackPath);
-      unawaited(coverPathFutureForTrack(track));
-      warmedSessions++;
-      if (warmedSessions >= 4) break;
     }
   }
 

@@ -1,5 +1,57 @@
 part of 'settings_tab.dart';
 
+class _CapabilitySettingsTile extends StatelessWidget {
+  const _CapabilitySettingsTile({
+    required this.title,
+    required this.icon,
+    required this.okFuture,
+    required this.okText,
+    required this.missingText,
+    required this.checkingText,
+    required this.onTap,
+  });
+
+  final String title;
+  final IconData icon;
+  final Future<bool> okFuture;
+  final String okText;
+  final String missingText;
+  final String checkingText;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return ListTile(
+      onTap: onTap,
+      title: Text(title),
+      subtitle: FutureBuilder<bool>(
+        future: okFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState != ConnectionState.done &&
+              snapshot.data == null) {
+            return Text(checkingText);
+          }
+          final ok = snapshot.data == true;
+          return Text(ok ? okText : missingText);
+        },
+      ),
+      leading: Container(
+        width: 38,
+        height: 38,
+        decoration: BoxDecoration(
+          color: cs.secondaryContainer,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Icon(icon, color: cs.onSecondaryContainer),
+      ),
+      trailing: Icon(Icons.chevron_right_rounded, color: cs.onSurfaceVariant),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+    );
+  }
+}
+
 class _UpdateSettingsTile extends StatelessWidget {
   const _UpdateSettingsTile({
     required this.checking,

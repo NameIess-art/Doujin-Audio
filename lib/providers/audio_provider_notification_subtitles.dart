@@ -3,18 +3,24 @@ part of 'audio_provider.dart';
 extension AudioProviderNotificationSubtitles on AudioProvider {
   Future<SubtitleTrack?> subtitleTrackForPath(String trackPath) {
     if (_subtitleTracks.containsKey(trackPath)) {
-      return Future<SubtitleTrack?>.value(_subtitleTracks[trackPath]);
+      return _subtitleTrackResultFutures.putIfAbsent(
+        trackPath,
+        () => SynchronousFuture<SubtitleTrack?>(_subtitleTracks[trackPath]),
+      );
     }
 
     return _subtitleTrackFutures.putIfAbsent(trackPath, () async {
       try {
         final subtitleTrack = await loadSubtitleTrackForAudio(trackPath);
         _subtitleTracks[trackPath] = subtitleTrack;
-        
+        _subtitleTrackResultFutures[trackPath] =
+            SynchronousFuture<SubtitleTrack?>(subtitleTrack);
+
         // Memory optimization: Simple LRU eviction for subtitle tracks
         if (_subtitleTracks.length > 20) {
           final oldestKey = _subtitleTracks.keys.first;
           _subtitleTracks.remove(oldestKey);
+          unawaited(_subtitleTrackResultFutures.remove(oldestKey));
         }
 
         var shouldRefreshNotification = false;
@@ -35,7 +41,7 @@ extension AudioProviderNotificationSubtitles on AudioProvider {
         }
         return subtitleTrack;
       } finally {
-        _subtitleTrackFutures.remove(trackPath)?.ignore();
+        unawaited(_subtitleTrackFutures.remove(trackPath));
       }
     });
   }

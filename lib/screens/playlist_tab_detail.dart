@@ -1,4 +1,4 @@
-part of 'playlist_tab.dart';
+﻿part of 'playlist_tab.dart';
 
 class SessionDetailPage extends ConsumerStatefulWidget {
   const SessionDetailPage({super.key, required this.sessionId});
@@ -302,7 +302,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
                 FloatingSubtitleWindow(
                   key: ValueKey('subtitle_$_currentSessionId'),
                   sessionId: _currentSessionId,
-                  isCrossPage: false,
+
                   defaultTop: _subtitleDefaultTop,
                 ),
             ],

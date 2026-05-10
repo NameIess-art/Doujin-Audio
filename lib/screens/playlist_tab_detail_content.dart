@@ -1,4 +1,4 @@
-part of 'playlist_tab.dart';
+﻿part of 'playlist_tab.dart';
 
 class _SessionDetailContent extends StatefulWidget {
   const _SessionDetailContent({
@@ -117,7 +117,6 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
           child: LayoutBuilder(
             builder: (context, constraints) {
               final compact = constraints.maxWidth < 400;
-              final gap = compact ? 8.0 : 16.0;
               final skipIconSize = compact ? 48.0 : 54.0;
               final playIconSize = compact ? 76.0 : 86.0;
               final loadingSize = compact ? 38.0 : 44.0;
@@ -267,14 +266,12 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
             borderRadius: BorderRadius.circular(24),
             border: Border.all(
               color: cs.outlineVariant.withValues(alpha: 0.15),
-              width: 1.0,
             ),
             boxShadow: [
               // Bottom rim highlight for inset depth
               BoxShadow(
                 color: Colors.white.withValues(alpha: 0.12),
                 offset: const Offset(0, 1),
-                blurRadius: 0,
               ),
               // Top inner shadow simulation
               BoxShadow(
@@ -302,7 +299,6 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
                 _ExpandableLoopOptions(
                   session: session,
                   provider: provider,
-                  compact: false,
                 ),
                 const SizedBox(width: 8),
                 IconButton(

@@ -32,7 +32,6 @@ class FloatingSubtitleWindow extends ConsumerStatefulWidget {
 class _FloatingSubtitleWindowState
     extends ConsumerState<FloatingSubtitleWindow> {
   ProviderSubscription<AsyncValue<PlaybackStateSliceData>>? _playbackStateSub;
-  ProviderSubscription<SubtitleSettingsState>? _subtitleSettingsSub;
   StreamSubscription<Duration>? _positionSub;
   SubtitleTrack? _subtitleTrack;
   String? _subtitleText;
@@ -194,7 +193,6 @@ class _FloatingSubtitleWindowState
     // Ensure it's within bounds, allowing more freedom near bottom but keeping it visible
     top = top.clamp(40.0, screenHeight - 60.0);
 
-    final isSmallWindow = screenWidth < 450 || screenHeight < 400;
     final isTinyWindow = screenWidth < 300 || screenHeight < 300;
 
     Widget buildContainer() => Container(

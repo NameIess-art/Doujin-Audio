@@ -198,16 +198,13 @@ class _SessionHeroArtworkState extends ConsumerState<_SessionHeroArtwork> {
                     if (_isSelecting)
                       Positioned.fill(
                         child: AnimatedSwitcher(
-                          duration: const Duration(milliseconds: 250),
+                          duration: const Duration(milliseconds: 200),
+                          switchInCurve: Curves.easeInOut,
+                          switchOutCurve: Curves.easeInOut,
                           transitionBuilder: (child, animation) {
                             return FadeTransition(
                               opacity: animation,
-                              child: ScaleTransition(
-                                scale: Tween<double>(begin: 0.92, end: 1.0).animate(
-                                  CurvedAnimation(parent: animation, curve: Curves.easeOutBack),
-                                ),
-                                child: child,
-                              ),
+                              child: child,
                             );
                           },
                           child: _isLoadingImages 

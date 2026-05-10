@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 import 'dart:ui';
@@ -17,6 +17,7 @@ import '../providers/audio_provider_riverpod.dart';
 import '../providers/subtitle_settings_provider.dart';
 import '../services/audio_state_services.dart';
 import '../services/subtitle_parser.dart';
+import '../services/subtitle_overlay_controller.dart';
 import '../widgets/app_feedback.dart';
 import '../widgets/app_transitions.dart';
 import '../widgets/async_cover_image.dart';

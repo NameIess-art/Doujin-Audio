@@ -101,9 +101,12 @@ class MainActivity : AudioServiceActivity() {
     private val nativePlaybackMethodsChannel = "nameless_audio/native_playback"
     private val nativePlaybackEventsChannel = "nameless_audio/native_playback/events"
     private val updateChannel = "nameless_audio/update"
+    private val subtitleOverlayChannel = "nameless_audio/subtitle_overlay"
     private val pickAudioSourceRequestCode = 7001
     private var pendingPickAudioResult: MethodChannel.Result? = null
     private var notificationsMethodChannel: MethodChannel? = null
+    private var subtitleOverlayService: SubtitleOverlayService? = null
+    private var isSubtitleServiceBound = false
     private var pendingNotificationSessionId: String? = null
     private val blockedExtensions = setOf(
         "vtt", "srt", "ass", "ssa", "lrc", "txt", "md", "json", "xml",
@@ -210,6 +213,54 @@ class MainActivity : AudioServiceActivity() {
                     }
                     "openInstallPermissionSettings" -> {
                         result.success(openInstallPermissionSettings())
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, subtitleOverlayChannel)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "canDrawOverlays" -> {
+                        result.success(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                            Settings.canDrawOverlays(this)
+                        } else {
+                            true
+                        })
+                    }
+                    "openOverlaySettings" -> {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                            val intent = Intent(
+                                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                Uri.parse("package:$packageName")
+                            ).apply {
+                                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                            }
+                            startActivity(intent)
+                            result.success(true)
+                        } else {
+                            result.success(false)
+                        }
+                    }
+                    "startOverlay" -> {
+                        startSubtitleService()
+                        result.success(true)
+                    }
+                    "stopOverlay" -> {
+                        stopSubtitleService()
+                        result.success(true)
+                    }
+                    "updateSubtitle" -> {
+                        val text = call.argument<String>("text") ?: ""
+                        subtitleOverlayService?.updateSubtitle(text)
+                        result.success(true)
+                    }
+                    "updateStyle" -> {
+                        val fontSize = call.argument<Double>("fontSize")?.toFloat() ?: 18f
+                        val backgroundColor = call.argument<String>("backgroundColor") ?: "#80000000"
+                        val textColor = call.argument<String>("textColor") ?: "#FFFFFF"
+                        subtitleOverlayService?.setStyle(fontSize, backgroundColor, textColor)
+                        result.success(true)
                     }
                     else -> result.notImplemented()
                 }
@@ -884,7 +935,38 @@ class MainActivity : AudioServiceActivity() {
 
     override fun onDestroy() {
         notificationsMethodChannel = null
+        stopSubtitleService()
         super.onDestroy()
+    }
+
+    private val subtitleServiceConnection = object : android.content.ServiceConnection {
+        override fun onServiceConnected(name: ComponentName?, service: android.os.IBinder?) {
+            val binder = service as SubtitleOverlayService.LocalBinder
+            subtitleOverlayService = binder.getService()
+            isSubtitleServiceBound = true
+        }
+
+        override fun onServiceDisconnected(name: ComponentName?) {
+            subtitleOverlayService = null
+            isSubtitleServiceBound = false
+        }
+    }
+
+    private fun startSubtitleService() {
+        if (!isSubtitleServiceBound) {
+            val intent = Intent(this, SubtitleOverlayService::class.java)
+            startService(intent)
+            bindService(intent, subtitleServiceConnection, Context.BIND_AUTO_CREATE)
+        }
+    }
+
+    private fun stopSubtitleService() {
+        if (isSubtitleServiceBound) {
+            unbindService(subtitleServiceConnection)
+            isSubtitleServiceBound = false
+            subtitleOverlayService = null
+        }
+        stopService(Intent(this, SubtitleOverlayService::class.java))
     }
 
     private fun capturePendingNotificationSession(intent: Intent?) {

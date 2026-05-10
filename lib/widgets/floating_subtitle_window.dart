@@ -9,6 +9,7 @@ import '../providers/audio_provider_riverpod.dart';
 import '../providers/subtitle_settings_provider.dart';
 import '../services/audio_state_services.dart';
 import '../services/subtitle_parser.dart';
+import '../services/subtitle_overlay_controller.dart';
 
 class FloatingSubtitleWindow extends ConsumerStatefulWidget {
   final bool isCrossPage;
@@ -30,7 +31,7 @@ class FloatingSubtitleWindow extends ConsumerStatefulWidget {
 }
 
 class _FloatingSubtitleWindowState
-    extends ConsumerState<FloatingSubtitleWindow> {
+    extends ConsumerState<FloatingSubtitleWindow> with WidgetsBindingObserver {
   ProviderSubscription<AsyncValue<PlaybackStateSliceData>>? _playbackStateSub;
   StreamSubscription<Duration>? _positionSub;
   SubtitleTrack? _subtitleTrack;
@@ -39,10 +40,13 @@ class _FloatingSubtitleWindowState
   PlaybackSession? _currentSession;
   double? _dragY;
   bool _snapHapticFired = false;
+  bool _isAppInBackground = false;
+  bool _isOverlayActive = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _playbackStateSub = ref.listenManual<AsyncValue<PlaybackStateSliceData>>(
       playbackStateProvider,
       (previous, next) {
@@ -50,6 +54,64 @@ class _FloatingSubtitleWindowState
       },
       fireImmediately: true,
     );
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    if (_isOverlayActive) {
+      SubtitleOverlayController.stopOverlay();
+    }
+    _playbackStateSub?.close();
+    _positionSub?.cancel();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _isAppInBackground = (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive);
+
+    if (_isAppInBackground) {
+      _tryStartOverlay();
+    } else if (state == AppLifecycleState.resumed) {
+      _stopOverlay();
+    }
+  }
+
+  Future<void> _tryStartOverlay() async {
+    if (_currentSession == null) return;
+    final settings = ref.read(subtitleSettingsProvider);
+    if (!settings.isGlobalEnabled(_currentSession!.id)) return;
+
+    if (await SubtitleOverlayController.canDrawOverlays()) {
+      await SubtitleOverlayController.startOverlay();
+      
+      final bg = settings.backgroundColor ?? const Color(0xFF000000);
+      final bgColor = bg.withValues(alpha: settings.backgroundOpacity);
+      final txtColor = settings.fontColor ?? const Color(0xFFFFFFFF);
+
+      await SubtitleOverlayController.updateStyle(
+        fontSize: settings.fontSize,
+        backgroundColor: _toHex(bgColor),
+        textColor: _toHex(txtColor),
+      );
+      if (_subtitleText != null) {
+        await SubtitleOverlayController.updateSubtitle(_subtitleText!);
+      }
+      _isOverlayActive = true;
+    }
+  }
+
+  String _toHex(Color color) {
+    return '#${color.toARGB32().toRadixString(16).padLeft(8, '0')}';
+  }
+
+  Future<void> _stopOverlay() async {
+    if (_isOverlayActive) {
+      await SubtitleOverlayController.stopOverlay();
+      _isOverlayActive = false;
+    }
   }
 
   void _syncSession(PlaybackStateSliceData? playbackState) {
@@ -108,6 +170,9 @@ class _FloatingSubtitleWindowState
       if (_currentSession != null) {
         _updateSubtitleText(_currentSession!.position);
       }
+      if (_isOverlayActive) {
+        SubtitleOverlayController.updateSubtitle(_subtitleText ?? '');
+      }
     });
   }
 
@@ -119,10 +184,15 @@ class _FloatingSubtitleWindowState
       position,
       subtitleTrack: _subtitleTrack,
     );
-    if (_subtitleText == nextText) return;
-    setState(() {
-      _subtitleText = nextText;
-    });
+
+    if (nextText != _subtitleText) {
+      setState(() {
+        _subtitleText = nextText;
+      });
+      if (_isOverlayActive) {
+        SubtitleOverlayController.updateSubtitle(nextText ?? '');
+      }
+    }
   }
 
   @override
@@ -131,13 +201,6 @@ class _FloatingSubtitleWindowState
     if (oldWidget.sessionId != widget.sessionId) {
       _syncSession(ref.read(playbackStateProvider).valueOrNull);
     }
-  }
-
-  @override
-  void dispose() {
-    _playbackStateSub?.close();
-    _positionSub?.cancel();
-    super.dispose();
   }
 
   @override
@@ -158,7 +221,6 @@ class _FloatingSubtitleWindowState
       final cached = provider.getSubtitleTrackSync(trackPath);
       if (cached != null) {
         _subtitleTrack = cached;
-        // Also update text immediately if possible
         if (_currentSession != null) {
           _subtitleText = provider.subtitleTextForTrackAt(
             trackPath,
@@ -183,16 +245,14 @@ class _FloatingSubtitleWindowState
       top = _dragY ?? settings.positions[_currentSession?.id] ?? -1.0;
       if (top < 0) {
         if (widget.isCrossPage) {
-          top = screenHeight - 151; // Above the bottom playback card (3px optical offset)
+          top = screenHeight - 151;
         } else {
           top = widget.defaultTop ?? screenHeight * 0.60;
         }
       }
     }
 
-    // Ensure it's within bounds, allowing more freedom near bottom but keeping it visible
     top = top.clamp(40.0, screenHeight - 60.0);
-
     final isTinyWindow = screenWidth < 300 || screenHeight < 300;
 
     Widget buildContainer() => Container(
@@ -235,11 +295,7 @@ class _FloatingSubtitleWindowState
               onVerticalDragUpdate: (details) {
                 setState(() {
                   var newY = (_dragY ?? top) + (details.primaryDelta ?? 0);
-                  
-                  final defaultTop = widget.isCrossPage
-                      ? null
-                      : (widget.defaultTop ?? screenHeight * 0.60);
-                  
+                  final defaultTop = widget.isCrossPage ? null : (widget.defaultTop ?? screenHeight * 0.60);
                   if (defaultTop != null) {
                     final dist = (newY - defaultTop).abs();
                     if (dist < 25) {
@@ -247,45 +303,29 @@ class _FloatingSubtitleWindowState
                         _snapHapticFired = true;
                         HapticFeedback.selectionClick();
                       }
-                      // Apply magnetic pull: toned down to make it easier to drag out
                       final pull = (1.0 - dist / 25.0).clamp(0.0, 1.0) * 0.45;
                       newY = newY + (defaultTop - newY) * pull;
                     } else {
                       _snapHapticFired = false;
                     }
                   }
-                  
                   _dragY = newY;
                 });
               },
               onVerticalDragEnd: (details) {
                 if (_dragY != null && _currentSession != null) {
-                  final defaultTop = widget.isCrossPage
-                      ? null
-                      : (widget.defaultTop ?? screenHeight * 0.60);
-                  
+                  final defaultTop = widget.isCrossPage ? null : (widget.defaultTop ?? screenHeight * 0.60);
                   final currentY = _dragY!;
                   final snapToDefault = defaultTop != null && (currentY - defaultTop).abs() < 30;
-
                   if (snapToDefault) {
-                    ref
-                        .read(subtitleSettingsProvider.notifier)
-                        .updatePosition(_currentSession!.id, -1);
+                    ref.read(subtitleSettingsProvider.notifier).updatePosition(_currentSession!.id, -1);
                   } else {
-                    ref
-                        .read(subtitleSettingsProvider.notifier)
-                        .updatePosition(_currentSession!.id, currentY);
+                    ref.read(subtitleSettingsProvider.notifier).updatePosition(_currentSession!.id, currentY);
                   }
-                  setState(() {
-                    _dragY = null;
-                  });
+                  setState(() { _dragY = null; });
                 }
               },
-              onVerticalDragCancel: () {
-                setState(() {
-                  _dragY = null;
-                });
-              },
+              onVerticalDragCancel: () { setState(() { _dragY = null; }); },
               child: ClipRect(
                 child: isTinyWindow
                     ? buildContainer()
@@ -312,14 +352,10 @@ class _FloatingSubtitleWindowState
           _subtitleText ?? '',
           textAlign: TextAlign.center,
           style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-            color: settings.fontColor ??
-                Theme.of(context).colorScheme.onSurface,
+            color: settings.fontColor ?? Theme.of(context).colorScheme.onSurface,
             fontWeight: FontWeight.w700,
             fontSize: settings.fontSize,
-            fontFamily:
-                settings.fontFamily.isEmpty
-                    ? null
-                    : settings.fontFamily,
+            fontFamily: settings.fontFamily.isEmpty ? null : settings.fontFamily,
             shadows: [
               Shadow(
                 color: Colors.black.withValues(alpha: 0.5),

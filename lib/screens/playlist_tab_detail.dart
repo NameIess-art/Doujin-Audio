@@ -1,4 +1,4 @@
-﻿part of 'playlist_tab.dart';
+part of 'playlist_tab.dart';
 
 class SessionDetailPage extends ConsumerStatefulWidget {
   const SessionDetailPage({super.key, required this.sessionId});
@@ -661,9 +661,20 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold> 
                                       return;
                                     }
                                     if (value == 'toggle_cross_page') {
-                                      ref
-                                          .read(subtitleSettingsProvider.notifier)
-                                          .toggleGlobalSubtitles(session.id);
+                                      final notifier = ref.read(subtitleSettingsProvider.notifier);
+                                      final isEnabling = !settings.isGlobalEnabled(session.id);
+                                      
+                                      if (isEnabling) {
+                                        SubtitleOverlayController.canDrawOverlays().then((allowed) {
+                                          if (allowed) {
+                                            notifier.toggleGlobalSubtitles(session.id);
+                                          } else {
+                                            SubtitleOverlayController.openOverlaySettings();
+                                          }
+                                        });
+                                      } else {
+                                        notifier.toggleGlobalSubtitles(session.id);
+                                      }
                                       return;
                                     }
                                     if (value != 'channel_swap') return;

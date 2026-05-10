@@ -92,18 +92,13 @@ class _AsyncCoverImageState extends State<AsyncCoverImage> {
     }
 
     return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 400),
-      switchInCurve: Curves.easeOutCubic,
-      switchOutCurve: Curves.easeInCubic,
+      duration: const Duration(milliseconds: 600),
+      switchInCurve: Curves.easeInOutSine,
+      switchOutCurve: Curves.easeInOutSine,
       transitionBuilder: (child, animation) {
         return FadeTransition(
           opacity: animation,
-          child: ScaleTransition(
-            scale: Tween<double>(begin: 0.95, end: 1.0).animate(
-              CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
-            ),
-            child: child,
-          ),
+          child: child,
         );
       },
       child: SizedBox.expand(

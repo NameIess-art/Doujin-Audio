@@ -261,17 +261,42 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
         ),
         const SizedBox(height: 0),
         Container(
+          margin: const EdgeInsets.only(top: 8),
           decoration: BoxDecoration(
             color: cs.surfaceContainerHighest.withValues(alpha: 0.35),
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(24),
             border: Border.all(
-              color: cs.outlineVariant.withValues(alpha: 0.12),
-              width: 0.5,
+              color: cs.outlineVariant.withValues(alpha: 0.15),
+              width: 1.0,
+            ),
+            boxShadow: [
+              // Bottom rim highlight for inset depth
+              BoxShadow(
+                color: Colors.white.withValues(alpha: 0.12),
+                offset: const Offset(0, 1),
+                blurRadius: 0,
+              ),
+              // Top inner shadow simulation
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.08),
+                offset: const Offset(0, 1),
+                blurRadius: 4,
+                spreadRadius: -2,
+              ),
+            ],
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Colors.black.withValues(alpha: 0.06),
+                Colors.transparent,
+              ],
+              stops: const [0.0, 0.15],
             ),
           ),
           padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
           child: SizedBox(
-            height: 48,
+            height: 52,
             child: Row(
               children: [
                 _ExpandableLoopOptions(

@@ -13,6 +13,8 @@ class NativePlaybackRepository {
 
   Future<void> stopListening() => _bridge.stopListening();
 
+  Future<void> dispose() => _bridge.dispose();
+
   Future<NativeResult<NativePlaybackSnapshot>> prepareSession({
     required String sessionId,
     required Uri uri,

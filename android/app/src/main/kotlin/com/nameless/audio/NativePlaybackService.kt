@@ -256,7 +256,10 @@ class NativePlaybackService : MediaSessionService() {
 
     fun setVolume(sessionId: String, volume: Float): Map<String, Any?> {
         val session = sessions[sessionId] ?: return errorResult("Unknown session.")
-        session.ensurePlayer().volume = volume.coerceIn(0f, 2f)
+        val clamped = volume.coerceIn(0f, 2f)
+        session.volume = clamped
+        session.playerOrNull()?.volume = clamped
+        publishSessionState(sessionId)
         schedulePersistSessionState()
         return okResult(session.snapshot())
     }

@@ -483,9 +483,17 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold> 
 
     return Material(
       color: cs.surface,
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
+      child: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onHorizontalDragUpdate: onHorizontalDragUpdate,
+        onHorizontalDragEnd: onHorizontalDragEnd,
+        onHorizontalDragCancel: onHorizontalDragCancel,
+        onVerticalDragUpdate: onVerticalDragUpdate,
+        onVerticalDragEnd: onVerticalDragEnd,
+        onVerticalDragCancel: onVerticalDragCancel,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
           // Dynamic Blurred Background
           Positioned.fill(
             child: AsyncCoverImage(
@@ -651,52 +659,41 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold> 
                           },
                         ),
                       ),
-                      // Content area — wrapped in GestureDetector for drag-to-dismiss / session switching
+                      // Content area — keep session drag gestures on artwork only
                       Expanded(
-                        child: GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onHorizontalDragUpdate: onHorizontalDragUpdate,
-                          onHorizontalDragEnd: onHorizontalDragEnd,
-                          onHorizontalDragCancel: onHorizontalDragCancel,
-                          onVerticalDragUpdate: onVerticalDragUpdate,
-                          onVerticalDragEnd: onVerticalDragEnd,
-                          onVerticalDragCancel: onVerticalDragCancel,
-                          child: Column(
-                            children: [
-                              // Large Artwork — fills available space
-                              Expanded(
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 32,
-                                  ),
-                                  child: _SessionHeroArtwork(
-                                    height: constraints.maxHeight,
-                                    coverPathFuture: coverPathFuture,
-                                    title: '',
-                                    folderName: '',
-                                    isPlaying: session.state.playing,
-                                    trackPath: session.currentTrackPath,
-                                  ),
+                        child: Column(
+                          children: [
+                            Expanded(
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 32,
+                                ),
+                                child: _SessionHeroArtwork(
+                                  height: constraints.maxHeight,
+                                  coverPathFuture: coverPathFuture,
+                                  title: '',
+                                  folderName: '',
+                                  isPlaying: session.state.playing,
+                                  trackPath: session.currentTrackPath,
                                 ),
                               ),
-                              // Detail Content — natural height at bottom
-                              Padding(
-                                padding: const EdgeInsets.fromLTRB(
-                                  28,
-                                  12,
-                                  28,
-                                  8,
-                                ),
-                                child: _SessionDetailContent(
-                                  session: session,
-                                  provider: provider,
-                                  filenameKey: _filenameKey,
-                                  progressBarKey: _progressBarKey,
-                                  subtitleFontSize: ref.watch(subtitleSettingsProvider).fontSize,
-                                ),
+                            ),
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(
+                                28,
+                                12,
+                                28,
+                                8,
                               ),
-                            ],
-                          ),
+                              child: _SessionDetailContent(
+                                session: session,
+                                provider: provider,
+                                filenameKey: _filenameKey,
+                                progressBarKey: _progressBarKey,
+                                subtitleFontSize: ref.watch(subtitleSettingsProvider).fontSize,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
@@ -707,6 +704,7 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold> 
           ),
         ],
       ),
-    );
-  }
+    ),
+  );
+}
 }

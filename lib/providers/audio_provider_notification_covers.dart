@@ -177,33 +177,37 @@ extension AudioProviderNotificationCovers on AudioProvider {
 
   Future<String?> _resolveCoverPathForFolder(String folderPath) {
     final normalizedFolderPath = path.normalize(folderPath);
-    // Priority: Check if any track in this folder or its sub-folders has a manual cover override.
-    // We search the entire library to ensure root folders correctly reflect sub-folder overrides.
-    for (final track in _library) {
-      if (track.manualCoverPath != null) {
-        if (PathMatcher.isWithinOrEqual(track.path, normalizedFolderPath)) {
-          return Future<String?>.value(track.manualCoverPath);
-        }
-      }
-    }
 
     if (_resolvedCoverPaths.containsKey(normalizedFolderPath)) {
       return Future<String?>.value(_resolvedCoverPaths[normalizedFolderPath]);
     }
-    
+
     return _coverPathFutures.putIfAbsent(normalizedFolderPath, () async {
-      final coverPath = await _findNotificationCoverPath(normalizedFolderPath);
+      String? coverPath;
+
+      for (final track in _library) {
+        final manualCoverPath = track.manualCoverPath;
+        if (manualCoverPath == null) {
+          continue;
+        }
+        if (PathMatcher.isWithinOrEqual(track.path, normalizedFolderPath)) {
+          coverPath = manualCoverPath;
+          break;
+        }
+      }
+
+      coverPath ??= await _findNotificationCoverPath(normalizedFolderPath);
       unawaited(
         _coverPathFutures.remove(normalizedFolderPath) ?? Future<String?>.value(),
       );
-      
+
       final previous = _resolvedCoverPaths[normalizedFolderPath];
       _resolvedCoverPaths[normalizedFolderPath] = coverPath;
-      
+
       if (previous != coverPath) {
         _notifyListeners();
       }
-      
+
       return coverPath;
     });
   }
@@ -212,6 +216,12 @@ extension AudioProviderNotificationCovers on AudioProvider {
     final normalizedFolderPath = path.normalize(folderPath);
     if (_notificationCoverSearchMisses.contains(normalizedFolderPath)) {
       return null;
+    }
+    if (_resolvedCoverPaths.containsKey(normalizedFolderPath)) {
+      return _resolvedCoverPaths[normalizedFolderPath];
+    }
+    if (_resolvedNotificationCoverPaths.containsKey(normalizedFolderPath)) {
+      return _resolvedNotificationCoverPaths[normalizedFolderPath];
     }
 
     final directory = Directory(folderPath);

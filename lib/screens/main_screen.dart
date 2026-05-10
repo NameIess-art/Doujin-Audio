@@ -42,7 +42,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
   static const Duration _pageTransitionDuration = Duration(milliseconds: 240);
   static const Curve _pageTransitionCurve = Curves.easeOutCubic;
   static const double _desktopBreakpoint = 980;
-  static const double _mobileDockContentGap = 4;
   static const String _backgroundKeepAliveInitializedKey =
       'background_keep_alive_initialized_v2';
   static const MethodChannel _powerChannel = MethodChannel(
@@ -64,6 +63,8 @@ class _MainScreenState extends ConsumerState<MainScreen>
   bool _notificationSettingsOpened = false;
   bool _timerOverlayPrimed = false;
   bool _needsMeasurement = true;
+  bool _bootstrapDone = false;
+  bool _isDataReady = false;
   bool? _lastShowCard;
   Timer? _notificationSessionNavigationTimer;
   String? _pendingNotificationSessionId;
@@ -186,6 +187,19 @@ class _MainScreenState extends ConsumerState<MainScreen>
         });
   }
 
+  List<PlaybackSession> _buildOverlaySessions(PlaybackStateSliceData? state) {
+    if (state == null) return const <PlaybackSession>[];
+    final sessions = state.activeSessions;
+    if (state.multiThreadPlaybackEnabled || sessions.isEmpty) {
+      return sessions;
+    }
+    final retainedSession = sessions.firstWhere(
+      (session) => session.state.playing || session.isLoading,
+      orElse: () => sessions.first,
+    );
+    return <PlaybackSession>[retainedSession];
+  }
+
   @override
   Widget build(BuildContext context) {
     final i18n = context.watch<AppLanguageProvider>();
@@ -211,24 +225,11 @@ class _MainScreenState extends ConsumerState<MainScreen>
             systemStatusBarContrastEnforced: false,
             systemNavigationBarContrastEnforced: false,
           );
-    final playbackState =
-        ref.watch(playbackStateProvider).valueOrNull ??
-        const PlaybackStateSliceData();
-    final settingsState =
-        ref.watch(settingsStateProvider).valueOrNull ?? const SettingsState();
-    final overlaySessions = (() {
-      final sessions = playbackState.activeSessions;
-      if (playbackState.multiThreadPlaybackEnabled || sessions.isEmpty) {
-        return sessions;
-      }
-      final retainedSession = sessions.firstWhere(
-        (session) => session.state.playing || session.isLoading,
-        orElse: () => sessions.first,
-      );
-      return <PlaybackSession>[retainedSession];
-    })();
-    final activeSessionCount = playbackState.activeSessions.length;
-    final showCard = settingsState.showPlaybackCard;
+    final playbackState = ref.watch(playbackStateProvider).valueOrNull;
+    final settingsState = ref.watch(settingsStateProvider).valueOrNull;
+    final overlaySessions = _buildOverlaySessions(playbackState);
+    final activeSessionCount = playbackState?.activeSessions.length ?? 0;
+    final showCard = settingsState?.showPlaybackCard ?? false;
     final visibleSessions = showCard ? overlaySessions : <PlaybackSession>[];
     if (_lastShowCard != showCard) {
       _lastShowCard = showCard;
@@ -253,6 +254,10 @@ class _MainScreenState extends ConsumerState<MainScreen>
       active: timerSlice.active,
       mode: timerSlice.mode,
     );
+
+    if (!_isDataReady && (playbackState?.isInitialized ?? false)) {
+      _isDataReady = true; 
+    }
     final width = MediaQuery.sizeOf(context).width;
     final height = MediaQuery.sizeOf(context).height;
     final isDesktop = width >= _desktopBreakpoint;
@@ -329,6 +334,13 @@ class _MainScreenState extends ConsumerState<MainScreen>
             if (_timerOverlayPrimed) const _ImmediateTimerScrim(),
             for (final session in subtitleSessions)
               FloatingSubtitleWindow(key: ValueKey('subtitle_${session.id}'), sessionId: session.id, isCrossPage: true),
+            if (!_bootstrapDone)
+              _BootstrapOverlay(
+                visible: !_isDataReady,
+                onAnimationEnd: () {
+                  if (mounted) setState(() => _bootstrapDone = true);
+                },
+              ),
           ],
         ),
       ),

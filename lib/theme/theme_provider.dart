@@ -11,7 +11,11 @@ class ThemeProvider with ChangeNotifier {
   bool get isDarkMode => _isDarkMode;
 
   ThemeProvider() {
-    _loadTheme();
+    _loadThemeSync();
+  }
+
+  void _loadThemeSync() {
+    _isDarkMode = AppPreferences.getBoolSync('isDarkMode') ?? false;
   }
 
   Future<void> _loadTheme() async {

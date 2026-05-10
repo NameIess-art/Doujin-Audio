@@ -40,8 +40,12 @@ class NativePlaybackSnapshot {
   final String? error;
 
   factory NativePlaybackSnapshot.fromMap(Map<dynamic, dynamic> map) {
+    final sessionId = map['sessionId'] as String?;
+    if (sessionId == null || sessionId.trim().isEmpty) {
+      throw const FormatException('Native playback snapshot is missing sessionId.');
+    }
     return NativePlaybackSnapshot(
-      sessionId: map['sessionId'] as String? ?? '',
+      sessionId: sessionId,
       uri: map['uri'] as String?,
       title: map['title'] as String?,
       subtitle: map['subtitle'] as String?,
@@ -100,25 +104,38 @@ class NativePlaybackBridge {
     NativePlaybackChannel.eventName,
   );
 
-  final StreamController<NativePlaybackSnapshot> _snapshotController =
-      StreamController<NativePlaybackSnapshot>.broadcast();
+  StreamController<NativePlaybackSnapshot>? _snapshotController;
+  StreamController<NativePlaybackSnapshot> get _controller =>
+      _snapshotController ??=
+          StreamController<NativePlaybackSnapshot>.broadcast();
   StreamSubscription<dynamic>? _eventSubscription;
+  Timer? _reconnectTimer;
+  bool _listeningEnabled = false;
   int _reconnectAttempt = 0;
   static const int _maxReconnectAttempts = 5;
 
-  Stream<NativePlaybackSnapshot> get snapshots => _snapshotController.stream;
+  Stream<NativePlaybackSnapshot> get snapshots => _controller.stream;
 
   void startListening() {
+    _listeningEnabled = true;
     if (_eventSubscription != null) return;
+    _reconnectAttempt = 0;
     _attachEventListener();
   }
 
   void _attachEventListener() {
+    if (!_listeningEnabled) return;
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
     _eventSubscription?.cancel();
     _eventSubscription = _events.receiveBroadcastStream().listen(
       (event) {
         if (event is Map) {
-          _snapshotController.add(NativePlaybackSnapshot.fromMap(event));
+          try {
+            _controller.add(NativePlaybackSnapshot.fromMap(event));
+          } catch (error) {
+            debugPrint('NativePlaybackBridge: dropping invalid snapshot: $error');
+          }
         }
       },
       onError: (error) {
@@ -134,6 +151,7 @@ class NativePlaybackBridge {
 
   void _scheduleReconnect() {
     _eventSubscription = null;
+    if (!_listeningEnabled) return;
     if (_reconnectAttempt >= _maxReconnectAttempts) return;
     _reconnectAttempt++;
     final delay = Duration(milliseconds: 200 * _reconnectAttempt);
@@ -141,16 +159,26 @@ class NativePlaybackBridge {
       'NativePlaybackBridge: reconnecting in ${delay.inMilliseconds}ms '
       '(attempt $_reconnectAttempt/$_maxReconnectAttempts)',
     );
-    Future.delayed(delay, () {
-      if (_eventSubscription != null) return;
+    _reconnectTimer?.cancel();
+    _reconnectTimer = Timer(delay, () {
+      if (!_listeningEnabled || _eventSubscription != null) return;
       _attachEventListener();
     });
   }
 
   Future<void> stopListening() async {
+    _listeningEnabled = false;
     _reconnectAttempt = _maxReconnectAttempts;
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
     await _eventSubscription?.cancel();
     _eventSubscription = null;
+  }
+
+  Future<void> dispose() async {
+    await stopListening();
+    await _snapshotController?.close();
+    _snapshotController = null;
   }
 
   Future<NativeResult<NativePlaybackSnapshot>> prepareSession({

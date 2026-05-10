@@ -75,6 +75,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
   ValueListenable<int?>? _scrollToTopListenable;
   bool _isReordering = false;
 
+
   @override
   bool get wantKeepAlive => true;
 
@@ -134,8 +135,9 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
       icon: Icons.delete_sweep_rounded,
     );
     if (confirmed == true) {
+      if (!mounted) return;
       await provider.clearAllSessions();
-      if (context.mounted) {
+      if (mounted) {
         showAppSnackBar(
           context,
           i18n.tr('all_sessions_cleared'),
@@ -197,53 +199,83 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
           topExpansion: 150,
           bottomExpansion: 350,
           child: !isInitialized
-              ? const SizedBox.shrink()
-              : sessions.isEmpty
-              ? _SessionsEmptyState(bottomInset: 350, topInset: 150 + 4)
-              : ReorderAutoScroller(
-                  scrollController: _scrollController,
-                  isDragging: _isReordering,
-                  child: ReorderableListView.builder(
-                    scrollController: _scrollController,
-                    padding: EdgeInsets.fromLTRB(16, 4 + 150, 16, 350),
-                    cacheExtent: listCacheExtent,
-                    clipBehavior: Clip.none,
-                    buildDefaultDragHandles: false,
-                    keyboardDismissBehavior:
-                        ScrollViewKeyboardDismissBehavior.onDrag,
-                    onReorder: (oldIndex, newIndex) {
-                      setState(() => _isReordering = false);
-                      provider.reorderSessions(oldIndex, newIndex);
-                    },
-                    onReorderStart: (index) {
-                      setState(() => _isReordering = true);
-                      unawaited(HapticFeedback.heavyImpact());
-                    },
-                    proxyDecorator: (child, index, animation) =>
-                        _buildReorderProxy(context, child, animation),
-                    itemCount: sessions.length + 1,
-                    itemBuilder: (context, index) {
-                      if (index == sessions.length) {
-                        return const SizedBox.shrink(key: ValueKey('bottom_spacing'));
-                      }
-                      final session = sessions[index];
-                      return WaterfallFlowStagger(
-                        key: ValueKey('stagger_${session.id}'),
-                        index: index,
-                        child: ReorderableHoldDragStartListener(
-                          key: ValueKey(session.id),
-                          index: index,
-                          child: RepaintBoundary(
-                            child: _SessionListCard(
-                              session: session,
-                              provider: provider,
-                              onOpen: () => _openSessionDetail(context, session.id),
-                            ),
+              ? const SizedBox.shrink(key: ValueKey('initializing'))
+              : Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    // 1) Empty state (bottom layer). Always rendered when
+                    //    clearing or when sessions are empty so it's visible
+                    //    behind the transparent list as cards slide out.
+                    if (sessions.isEmpty)
+                      _SessionsEmptyState(
+                        key: const ValueKey('empty_state'),
+                        bottomInset: 100,
+                        topInset: _headerHeight + 64,
+                      ),
+
+                    // 2) Session list (top layer). The ReorderableListView
+                    //    internally paints an opaque Material using
+                    //    Theme.canvasColor. We override it to transparent so
+                    //    the empty state beneath is visible as cards exit.
+                    if (sessions.isNotEmpty)
+                      Theme(
+                        data: Theme.of(context).copyWith(
+                          canvasColor: Colors.transparent,
+                        ),
+                        child: ReorderAutoScroller(
+                          key: const ValueKey('session_list'),
+                          scrollController: _scrollController,
+                          isDragging: _isReordering,
+                          topTriggerOffset: 150 + 100,
+                          bottomTriggerOffset: 350 + 120,
+                          child: ReorderableListView.builder(
+                            scrollController: _scrollController,
+                            padding:
+                                const EdgeInsets.fromLTRB(16, 4 + 150, 16, 350),
+                            cacheExtent: listCacheExtent,
+                            clipBehavior: Clip.none,
+                            buildDefaultDragHandles: false,
+                            keyboardDismissBehavior:
+                                ScrollViewKeyboardDismissBehavior.onDrag,
+                            onReorder: (oldIndex, newIndex) {
+                              setState(() => _isReordering = false);
+                              provider.reorderSessions(oldIndex, newIndex);
+                            },
+                            onReorderStart: (index) {
+                              setState(() => _isReordering = true);
+                              unawaited(HapticFeedback.heavyImpact());
+                            },
+                            proxyDecorator: (child, index, animation) =>
+                                _buildReorderProxy(context, child, animation),
+                            itemCount: sessions.length + 1,
+                            itemBuilder: (context, index) {
+                              if (index == sessions.length) {
+                                return const SizedBox.shrink(
+                                  key: ValueKey('bottom_spacing'),
+                                );
+                              }
+                              final session = sessions[index];
+                              return WaterfallFlowStagger(
+                                key: ValueKey('stagger_${session.id}'),
+                                index: index,
+                                child: ReorderableHoldDragStartListener(
+                                  key: ValueKey(session.id),
+                                  index: index,
+                                  child: RepaintBoundary(
+                                    child: _SessionListCard(
+                                      session: session,
+                                      provider: provider,
+                                      onOpen: () =>
+                                          _openSessionDetail(context, session.id),
+                                    ),
+                                  ),
+                                ),
+                              );
+                            },
                           ),
                         ),
-                      );
-                    },
-                  ),
+                      ),
+                  ],
                 ),
         ),
         Positioned(
@@ -336,3 +368,4 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     );
   }
 }
+

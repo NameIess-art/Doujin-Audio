@@ -4,10 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../models/playback_session.dart';
 import '../providers/audio_provider.dart';
 import '../providers/audio_provider_riverpod.dart';
 import '../providers/subtitle_settings_provider.dart';
+import '../services/audio_state_services.dart';
 import '../services/subtitle_parser.dart';
 
 class FloatingSubtitleWindow extends ConsumerStatefulWidget {
@@ -31,6 +31,8 @@ class FloatingSubtitleWindow extends ConsumerStatefulWidget {
 
 class _FloatingSubtitleWindowState
     extends ConsumerState<FloatingSubtitleWindow> {
+  ProviderSubscription<AsyncValue<PlaybackStateSliceData>>? _playbackStateSub;
+  ProviderSubscription<SubtitleSettingsState>? _subtitleSettingsSub;
   StreamSubscription<Duration>? _positionSub;
   SubtitleTrack? _subtitleTrack;
   String? _subtitleText;
@@ -42,13 +44,16 @@ class _FloatingSubtitleWindowState
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _checkSession();
-    });
+    _playbackStateSub = ref.listenManual<AsyncValue<PlaybackStateSliceData>>(
+      playbackStateProvider,
+      (previous, next) {
+        _syncSession(next.valueOrNull);
+      },
+      fireImmediately: true,
+    );
   }
 
-  void _checkSession() {
-    final playbackState = ref.read(playbackStateProvider).valueOrNull;
+  void _syncSession(PlaybackStateSliceData? playbackState) {
     if (playbackState == null) return;
 
     final sessions = playbackState.activeSessions;
@@ -67,21 +72,24 @@ class _FloatingSubtitleWindowState
       activeSession ??= sessions.firstOrNull;
     }
 
-    if (_currentSession?.id != activeSession?.id ||
-        _loadedPath != activeSession?.currentTrackPath) {
-      _currentSession = activeSession;
-      unawaited(_positionSub?.cancel());
+    if (_currentSession?.id == activeSession?.id &&
+        _loadedPath == activeSession?.currentTrackPath) {
+      return;
+    }
 
-      if (_currentSession != null) {
-        _positionSub = _currentSession!.positionStream.listen(
-          _updateSubtitleText,
-        );
-        _loadSubtitleTrack();
-      } else {
-        setState(() {
-          _subtitleText = null;
-        });
-      }
+    _currentSession = activeSession;
+    unawaited(_positionSub?.cancel());
+    _positionSub = null;
+
+    if (_currentSession != null) {
+      _positionSub = _currentSession!.positionStream.listen(_updateSubtitleText);
+      _loadSubtitleTrack();
+    } else if (mounted) {
+      setState(() {
+        _subtitleTrack = null;
+        _subtitleText = null;
+        _loadedPath = null;
+      });
     }
   }
 
@@ -119,46 +127,23 @@ class _FloatingSubtitleWindowState
   }
 
   @override
+  void didUpdateWidget(covariant FloatingSubtitleWindow oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.sessionId != widget.sessionId) {
+      _syncSession(ref.read(playbackStateProvider).valueOrNull);
+    }
+  }
+
+  @override
   void dispose() {
-    unawaited(_positionSub?.cancel());
+    _playbackStateSub?.close();
+    _positionSub?.cancel();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final playbackState = ref.watch(playbackStateProvider).valueOrNull;
-    final sessions = playbackState?.activeSessions ?? [];
-    final focusedId = playbackState?.focusedSessionId;
-
-    PlaybackSession? activeSession;
-    if (widget.sessionId != null) {
-      activeSession = sessions
-          .where((s) => s.id == widget.sessionId)
-          .firstOrNull;
-    } else {
-      if (focusedId != null) {
-        activeSession = sessions.where((s) => s.id == focusedId).firstOrNull;
-      }
-      activeSession ??= sessions.where((s) => s.state.playing).firstOrNull;
-      activeSession ??= sessions.firstOrNull;
-    }
-
-    if (_currentSession?.id != activeSession?.id ||
-        _loadedPath != activeSession?.currentTrackPath) {
-      _currentSession = activeSession;
-      unawaited(_positionSub?.cancel());
-
-      if (_currentSession != null) {
-        _positionSub = _currentSession!.positionStream.listen(
-          _updateSubtitleText,
-        );
-        _loadSubtitleTrack();
-      } else {
-        _subtitleText = null;
-        _subtitleTrack = null;
-      }
-    }
-
+    ref.watch(playbackStateProvider);
     final settings = ref.watch(subtitleSettingsProvider);
 
     final sessionId = _currentSession?.id ?? '';
@@ -207,7 +192,8 @@ class _FloatingSubtitleWindowState
     }
 
     // Ensure it's within bounds
-    top = top.clamp(40.0, screenHeight - 100.0);
+    // Ensure it's within bounds, allowing more freedom near bottom but keeping it visible
+    top = top.clamp(40.0, screenHeight - 60.0);
 
     final isSmallWindow = screenWidth < 450 || screenHeight < 400;
 
@@ -217,93 +203,100 @@ class _FloatingSubtitleWindowState
       right: 0,
       child: FractionalTranslation(
         translation: const Offset(0, -0.5),
-        child: GestureDetector(
-          behavior: HitTestBehavior.translucent,
-          onPanStart: (_) {
-            _dragY = top;
-            _snapHapticFired = false;
-          },
-          onPanUpdate: (details) {
-            setState(() {
-              var newY = _dragY! + details.delta.dy;
-              final defaultTop = widget.isCrossPage
-                  ? null
-                  : (widget.defaultTop ?? screenHeight * 0.60);
-              if (defaultTop != null) {
-                final dist = (newY - defaultTop).abs();
-                if (dist < 20) {
-                  if (!_snapHapticFired) {
-                    _snapHapticFired = true;
-                    HapticFeedback.selectionClick();
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onVerticalDragStart: (_) {
+                _dragY = top;
+                _snapHapticFired = false;
+              },
+              onVerticalDragUpdate: (details) {
+                setState(() {
+                  var newY = (_dragY ?? top) + (details.primaryDelta ?? 0);
+                  
+                  final defaultTop = widget.isCrossPage
+                      ? null
+                      : (widget.defaultTop ?? screenHeight * 0.60);
+                  
+                  if (defaultTop != null) {
+                    final dist = (newY - defaultTop).abs();
+                    if (dist < 25) {
+                      if (!_snapHapticFired) {
+                        _snapHapticFired = true;
+                        HapticFeedback.selectionClick();
+                      }
+                      // Apply magnetic pull: toned down to make it easier to drag out
+                      final pull = (1.0 - dist / 25.0).clamp(0.0, 1.0) * 0.45;
+                      newY = newY + (defaultTop - newY) * pull;
+                    } else {
+                      _snapHapticFired = false;
+                    }
                   }
-                  // Magnetic pull toward default
-                  final pull = (1 - dist / 20) * 0.5;
-                  newY = newY + (defaultTop - newY) * pull;
-                } else {
-                  _snapHapticFired = false;
+                  
+                  _dragY = newY;
+                });
+              },
+              onVerticalDragEnd: (details) {
+                if (_dragY != null && _currentSession != null) {
+                  final defaultTop = widget.isCrossPage
+                      ? null
+                      : (widget.defaultTop ?? screenHeight * 0.60);
+                  
+                  final currentY = _dragY!;
+                  final snapToDefault = defaultTop != null && (currentY - defaultTop).abs() < 30;
+
+                  if (snapToDefault) {
+                    ref
+                        .read(subtitleSettingsProvider.notifier)
+                        .updatePosition(_currentSession!.id, -1);
+                  } else {
+                    ref
+                        .read(subtitleSettingsProvider.notifier)
+                        .updatePosition(_currentSession!.id, currentY);
+                  }
+                  setState(() {
+                    _dragY = null;
+                  });
                 }
-              }
-              _dragY = newY.clamp(40.0, screenHeight - 100.0);
-            });
-          },
-          onPanEnd: (_) {
-            if (_dragY != null && _currentSession != null) {
-              final defaultTop = widget.isCrossPage
-                  ? null
-                  : (widget.defaultTop ?? screenHeight * 0.60);
-              final snapToDefault = defaultTop != null &&
-                  (_dragY! - defaultTop).abs() < 10;
-              if (snapToDefault) {
-                _dragY = null;
-                ref
-                    .read(subtitleSettingsProvider.notifier)
-                    .updatePosition(_currentSession!.id, -1);
-              } else {
-                ref
-                    .read(subtitleSettingsProvider.notifier)
-                    .updatePosition(_currentSession!.id, _dragY!);
-                _dragY = null;
-              }
-            }
-          },
-          onPanCancel: () {
-            setState(() {
-              _dragY = null;
-            });
-          },
-          child: ClipRect(
-            child: BackdropFilter(
-              filter: ImageFilter.blur(
-                sigmaX: isSmallWindow 
-                    ? settings.backgroundBlur.clamp(0.0, 4.0) 
-                    : settings.backgroundBlur, 
-                sigmaY: isSmallWindow 
-                    ? settings.backgroundBlur.clamp(0.0, 4.0) 
-                    : settings.backgroundBlur,
-              ),
-              child: Container(
-                constraints: const BoxConstraints(minHeight: 32),
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
-                decoration: BoxDecoration(
-                  color: settings.backgroundColor != null
-                      ? settings.backgroundColor!.withValues(alpha: isSmallWindow ? settings.backgroundOpacity.clamp(0.85, 1.0) : settings.backgroundOpacity)
-                      : Theme.of(context).colorScheme.surface.withValues(alpha: isSmallWindow ? settings.backgroundOpacity.clamp(0.85, 1.0) : settings.backgroundOpacity),
-                  border: Border(
-                    top: BorderSide(
-                      color: Colors.white.withValues(alpha: 0.08 * settings.borderDepth * 2),
-                      width: settings.borderDepth,
+              },
+              onVerticalDragCancel: () {
+                setState(() {
+                  _dragY = null;
+                });
+              },
+              child: ClipRect(
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(
+                    sigmaX: settings.backgroundBlur, 
+                    sigmaY: settings.backgroundBlur,
+                  ),
+                  child: Container(
+                    constraints: const BoxConstraints(minHeight: 34),
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: settings.backgroundColor != null
+                          ? settings.backgroundColor!.withValues(alpha: settings.backgroundOpacity)
+                          : Theme.of(context).colorScheme.surface.withValues(alpha: settings.backgroundOpacity),
+                      border: Border(
+                        top: BorderSide(
+                          color: Colors.white.withValues(alpha: 0.1 * settings.borderDepth),
+                          width: settings.borderDepth,
+                        ),
+                        bottom: BorderSide(
+                          color: Colors.white.withValues(alpha: 0.1 * settings.borderDepth),
+                          width: settings.borderDepth,
+                        ),
+                      ),
                     ),
-                    bottom: BorderSide(
-                      color: Colors.white.withValues(alpha: 0.08 * settings.borderDepth * 2),
-                      width: settings.borderDepth,
-                    ),
+                    child: _buildSubtitleContent(context, settings, screenWidth),
                   ),
                 ),
-                child: _buildSubtitleContent(context, settings, screenWidth),
               ),
             ),
-          ),
+          ],
         ),
       ),
     );

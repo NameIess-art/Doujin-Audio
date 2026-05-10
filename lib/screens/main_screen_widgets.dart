@@ -345,3 +345,174 @@ class _TimerOverlaySheet extends StatelessWidget {
     );
   }
 }
+class _BootstrapOverlay extends StatefulWidget {
+  const _BootstrapOverlay({
+    required this.visible,
+    required this.onAnimationEnd,
+  });
+
+  final bool visible;
+  final VoidCallback onAnimationEnd;
+
+  @override
+  State<_BootstrapOverlay> createState() => _BootstrapOverlayState();
+}
+
+class _BootstrapOverlayState extends State<_BootstrapOverlay>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _logoScale;
+  late final Animation<double> _opacity;
+  late final Animation<double> _blur;
+
+  @override
+  void initState() {
+    super.initState();
+    // Total duration 1.5s: 0.75s grow + 0.75s shrink/fade
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    );
+
+    _logoScale = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween<double>(begin: 0.0, end: 1.0).chain(
+          CurveTween(curve: Curves.easeOutBack),
+        ),
+        weight: 50, // 0.75s
+      ),
+      TweenSequenceItem(
+        tween: Tween<double>(begin: 1.0, end: 0.0).chain(
+          CurveTween(curve: Curves.easeInBack),
+        ),
+        weight: 50, // 0.75s
+      ),
+    ]).animate(_controller);
+
+    _opacity = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: ConstantTween<double>(1.0),
+        weight: 50, // Stay solid during grow
+      ),
+      TweenSequenceItem(
+        tween: Tween<double>(begin: 1.0, end: 0.0).chain(
+          CurveTween(curve: Curves.easeInCubic),
+        ),
+        weight: 50, // Fade during shrink
+      ),
+    ]).animate(_controller);
+
+    _blur = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: ConstantTween<double>(0.0),
+        weight: 50, // No blur during grow
+      ),
+      TweenSequenceItem(
+        tween: Tween<double>(begin: 0.0, end: 25.0).chain(
+          CurveTween(curve: Curves.easeInQuint),
+        ),
+        weight: 50, // Blur during shrink
+      ),
+    ]).animate(_controller);
+
+    _controller.forward().then((_) {
+      if (mounted) widget.onAnimationEnd();
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        final progress = _controller.value;
+        if (progress >= 1.0) return const SizedBox.shrink();
+
+        return Stack(
+          children: [
+            // Background - Solid layer first to prevent flicker
+            Positioned.fill(
+              child: Opacity(
+                opacity: _opacity.value.clamp(0.0, 1.0),
+                child: Container(
+                  color: cs.surface,
+                  child: Stack(
+                    children: [
+                      const Positioned.fill(child: _AmbientBackground()),
+                      // Blur applies to the ambient background
+                      Positioned.fill(
+                        child: BackdropFilter(
+                          filter: ImageFilter.blur(
+                            sigmaX: _blur.value,
+                            sigmaY: _blur.value,
+                          ),
+                          child: const SizedBox.shrink(),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            // Logo
+            Center(
+              child: ScaleTransition(
+                scale: _logoScale,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 100,
+                      height: 100,
+                      decoration: BoxDecoration(
+                        color: cs.primary,
+                        borderRadius: BorderRadius.circular(28),
+                        boxShadow: [
+                          BoxShadow(
+                            color: cs.primary.withValues(alpha: 0.3),
+                            blurRadius: 24,
+                            offset: const Offset(0, 8),
+                          ),
+                        ],
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            cs.primary,
+                            cs.primary.withValues(alpha: 0.8),
+                          ],
+                        ),
+                      ),
+                      child: const Icon(
+                        Icons.graphic_eq_rounded,
+                        color: Colors.white,
+                        size: 52,
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    Text(
+                      'NL Audio',
+                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: -0.5,
+                        color: cs.onSurface,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}

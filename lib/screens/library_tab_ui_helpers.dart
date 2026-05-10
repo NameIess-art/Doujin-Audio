@@ -76,12 +76,13 @@ extension _LibraryTabUiHelpers on _LibraryTabState {
                   const Duration(milliseconds: 220),
                   () {
                     if (!mounted) return;
+                    final nextQuery = value.trim();
+                    if (_searchQuery == nextQuery) return;
                     context.read<AudioProvider>().setPageTransitioning(false);
                     _jumpLibraryListToTop();
-                    _setLocalState(() => _searchQuery = value.trim());
+                    _setLocalState(() => _searchQuery = nextQuery);
                   },
                 );
-                _setLocalState(() {});
               },
             ),
           ),

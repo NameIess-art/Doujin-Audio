@@ -11,47 +11,18 @@ class _SessionVolumeSlider extends StatefulWidget {
 }
 
 class _SessionVolumeSliderState extends State<_SessionVolumeSlider> {
-  static const Duration _previewCommitDelay = Duration(milliseconds: 48);
-
   double? _dragVolume;
-  Timer? _previewCommitTimer;
-  double? _queuedPreviewVolume;
 
   @override
   void didUpdateWidget(covariant _SessionVolumeSlider oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.session.id != widget.session.id) {
-      _cancelPreviewCommit();
       _dragVolume = null;
     }
   }
 
-  void _cancelPreviewCommit() {
-    _previewCommitTimer?.cancel();
-    _previewCommitTimer = null;
-    _queuedPreviewVolume = null;
-  }
-
-  void _schedulePreviewCommit(double value) {
-    _queuedPreviewVolume = value;
-    if (_previewCommitTimer != null) return;
-    _previewCommitTimer = Timer(_previewCommitDelay, () {
-      final queued = _queuedPreviewVolume;
-      _previewCommitTimer = null;
-      _queuedPreviewVolume = null;
-      if (queued == null) return;
-      widget.provider.setSessionVolume(
-        widget.session.id,
-        queued,
-        persist: false,
-        notify: false,
-      );
-    });
-  }
-
   @override
   void dispose() {
-    _cancelPreviewCommit();
     super.dispose();
   }
 
@@ -194,11 +165,14 @@ class _SessionVolumeSliderState extends State<_SessionVolumeSlider> {
                 setState(() {
                   _dragVolume = value;
                 });
-                _schedulePreviewCommit(value);
+                widget.provider.setSessionVolume(
+                  widget.session.id,
+                  value,
+                  persist: false,
+                );
               },
               onChangeEnd: (value) {
                 HapticFeedback.selectionClick();
-                _cancelPreviewCommit();
                 setState(() {
                   _dragVolume = null;
                 });

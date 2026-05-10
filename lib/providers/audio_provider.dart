@@ -541,7 +541,7 @@ class AudioProvider with ChangeNotifier {
     );
     unawaited(_deactivateAudioSession());
     unawaited(_nativePlaybackSubscription?.cancel());
-    unawaited(_nativePlaybackRepository.stopListening());
+    unawaited(_nativePlaybackRepository.dispose());
     unawaited(_libraryService.dispose());
     unawaited(_playbackService.dispose());
     unawaited(_timerService.dispose());

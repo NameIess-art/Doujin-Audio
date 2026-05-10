@@ -131,20 +131,20 @@ extension AudioProviderLibrary on AudioProvider {
         (track) => path.equals(track.path, normalizedTrackPath),
       );
     } else {
-      _restoreExcludedTrack(normalizedTrackPath);
+      unawaited(_restoreExcludedTrack(normalizedTrackPath));
     }
     _notifyListeners();
   }
 
-  void _restoreExcludedTrack(String trackPath) {
+  Future<void> _restoreExcludedTrack(String trackPath) async {
     if (_libraryByPath.containsKey(trackPath)) return;
     final isContentUri = trackPath.startsWith('content://');
     FileStat? fileStat;
     if (!isContentUri) {
       try {
         final file = File(trackPath);
-        if (!file.existsSync()) return;
-        fileStat = file.statSync();
+        if (!await file.exists()) return;
+        fileStat = await file.stat();
       } catch (_) {
         return;
       }

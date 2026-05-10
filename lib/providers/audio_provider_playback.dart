@@ -70,6 +70,10 @@ extension AudioProviderPlayback on AudioProvider {
         _notificationFocusSessionId = null;
       }
     }
+    if (notify) {
+      _notifyListeners();
+    }
+
     await Future.wait(
       removedSessions.map((session) async {
         await _nativePlaybackRepository.removeSession(session.id);
@@ -78,9 +82,6 @@ extension AudioProviderPlayback on AudioProvider {
     );
     _syncKeepCpuAwake();
     _syncNotificationState();
-    if (notify) {
-      _notifyListeners();
-    }
     if (persist) {
       _scheduleSaveSessionState();
       _scheduleSaveSessionOrder();
@@ -265,6 +266,26 @@ extension AudioProviderPlayback on AudioProvider {
   }
 
   Future<void> clearAllSessions() async {
-    await _removeSessions(_sessions.keys.toList());
+    final sessionIds = _sessions.keys.toList();
+    if (sessionIds.isEmpty) return;
+
+    final removedSessions = _playbackService.removeSessions(sessionIds);
+    for (final session in removedSessions) {
+      session.isPlaybackStarting = false;
+      _clearNotificationSubtitleForSession(session.id);
+    }
+    _notificationFocusSessionId = null;
+
+    _notifyListeners();
+
+    await _nativePlaybackRepository.clearAll();
+    for (final session in removedSessions) {
+      session.dispose();
+    }
+
+    _syncKeepCpuAwake();
+    _syncNotificationState();
+    _scheduleSaveSessionState();
+    _scheduleSaveSessionOrder();
   }
 }

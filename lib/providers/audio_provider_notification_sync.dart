@@ -123,7 +123,9 @@ extension AudioProviderNotificationSync on AudioProvider {
       return;
     }
 
-    _queuedNotificationRefreshSessionId = sessionId;
+    if (_queuedNotificationRefreshSessionId != sessionId) {
+      _queuedNotificationRefreshSessionId = sessionId;
+    }
     if (_notificationProgressRefreshTimer != null) {
       return;
     }

@@ -271,7 +271,6 @@ class _ProgressBarState extends State<_ProgressBar> {
 
 class _SessionSubtitlePanel extends StatefulWidget {
   const _SessionSubtitlePanel({
-    super.key,
     required this.session,
     required this.provider,
   });

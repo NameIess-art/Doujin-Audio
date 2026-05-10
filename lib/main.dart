@@ -17,6 +17,7 @@ import 'services/native_playback_repository.dart';
 import 'services/playback_command_runner.dart';
 import 'services/playback_notification_service.dart';
 import 'theme/theme_provider.dart';
+import 'services/app_preferences.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -25,10 +26,22 @@ Future<void> main() async {
   PaintingBinding.instance.imageCache.maximumSizeBytes = 50 * 1024 * 1024; // 50MB
   PaintingBinding.instance.imageCache.maximumSize = 200; // 200 images
   
-  await SystemChrome.setPreferredOrientations(
-    AppOrientationPolicy.current.allowedOrientations,
-  );
-  await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+  // Start essential services in parallel to minimize blocking before runApp
+  final initFutures = Future.wait([
+    SystemChrome.setPreferredOrientations(AppOrientationPolicy.current.allowedOrientations),
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge),
+    AudioSession.instance.then((session) => session.configure(const AudioSessionConfiguration.music())),
+    AudioService.init(
+      builder: PlaybackNotificationHandler.new,
+      config: const AudioServiceConfig(
+        androidNotificationChannelId: 'com.nameless.audio.channel.playback',
+        androidNotificationChannelName: 'Playback',
+        androidNotificationOngoing: true,
+      ),
+    ),
+    AppPreferences.init(),
+  ]);
+
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
@@ -39,16 +52,9 @@ Future<void> main() async {
     ),
   );
 
-  final audioSession = await AudioSession.instance;
-  await audioSession.configure(const AudioSessionConfiguration.music());
-  final audioHandler = await AudioService.init(
-    builder: PlaybackNotificationHandler.new,
-    config: const AudioServiceConfig(
-      androidNotificationChannelId: 'com.nameless.audio.channel.playback',
-      androidNotificationChannelName: 'Playback',
-      androidNotificationOngoing: true,
-    ),
-  );
+  final results = await initFutures;
+  final audioHandler = results[3] as PlaybackNotificationHandler;
+
   final notificationService = PlaybackNotificationService(audioHandler);
   final audioDatabaseRepository = AudioDatabaseRepository();
   final nativePlaybackRepository = NativePlaybackRepository();
@@ -58,7 +64,7 @@ Future<void> main() async {
   final timerService = TimerService();
   final notificationCoordinatorService = NotificationCoordinatorService();
   final settingsRepository = SettingsRepository();
-  await audioDatabaseRepository.database;
+
   final audioProvider = AudioProvider(
     notificationService: notificationService,
     audioDatabaseRepository: audioDatabaseRepository,
@@ -118,6 +124,7 @@ class MusicPlayerApp extends StatelessWidget {
         return MaterialApp(
           title: languageProvider.tr('app_title'),
           debugShowCheckedModeBanner: false,
+          color: themeProvider.isDarkMode ? const Color(0xFF121017) : const Color(0xFFF7F4EE),
           locale: languageProvider.locale,
           supportedLocales: AppLanguageProvider.supportedLocales,
           localizationsDelegates: const [

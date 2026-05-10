@@ -1,7 +1,11 @@
 part of 'playlist_tab.dart';
 
 class _SessionsEmptyState extends StatelessWidget {
-  const _SessionsEmptyState({required this.bottomInset, this.topInset = 16});
+  const _SessionsEmptyState({
+    super.key,
+    required this.bottomInset,
+    this.topInset = 16,
+  });
 
   final double bottomInset;
   final double topInset;
@@ -10,49 +14,87 @@ class _SessionsEmptyState extends StatelessWidget {
   Widget build(BuildContext context) {
     final i18n = context.watch<AppLanguageProvider>();
     final cs = Theme.of(context).colorScheme;
-    return ListView(
+    return Padding(
       padding: EdgeInsets.fromLTRB(24, topInset, 24, bottomInset),
-      physics: const BouncingScrollPhysics(),
-      children: [
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(18, 20, 18, 18),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 58,
-                  height: 58,
-                  decoration: BoxDecoration(
-                    color: cs.primaryContainer,
-                    borderRadius: BorderRadius.circular(18),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.start,
+        children: [
+          const SizedBox(height: 20),
+          Container(
+            width: double.infinity,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(28),
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  cs.surfaceContainerHigh.withValues(alpha: 0.6),
+                  cs.surfaceContainerLow.withValues(alpha: 0.4),
+                ],
+              ),
+              border: Border.all(
+                color: cs.outlineVariant.withValues(alpha: 0.1),
+                width: 1,
+              ),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(24, 42, 24, 42),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 72,
+                    height: 72,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          cs.primaryContainer,
+                          cs.primaryContainer.withValues(alpha: 0.8),
+                        ],
+                      ),
+                      borderRadius: BorderRadius.circular(24),
+                      boxShadow: [
+                        BoxShadow(
+                          color: cs.primary.withValues(alpha: 0.12),
+                          blurRadius: 20,
+                          offset: const Offset(0, 8),
+                        ),
+                      ],
+                    ),
+                    child: Icon(
+                      Icons.queue_music_rounded,
+                      size: 36,
+                      color: cs.onPrimaryContainer,
+                    ),
                   ),
-                  child: Icon(
-                    Icons.queue_music_rounded,
-                    size: 30,
-                    color: cs.onPrimaryContainer,
+                  const SizedBox(height: 24),
+                  Text(
+                    i18n.tr('no_active_sessions'),
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: -0.5,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  i18n.tr('no_active_sessions'),
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w800,
+                  const SizedBox(height: 10),
+                  Text(
+                    i18n.tr('go_library_hint'),
+                    textAlign: TextAlign.center,
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodyMedium?.copyWith(
+                      color: cs.onSurfaceVariant,
+                      height: 1.4,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  i18n.tr('go_library_hint'),
-                  textAlign: TextAlign.center,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }

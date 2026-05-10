@@ -367,6 +367,8 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                     child: ReorderAutoScroller(
                       scrollController: _scrollController,
                       isDragging: _isReordering,
+                      topTriggerOffset: 150 + 44 + 100,
+                      bottomTriggerOffset: 350 + 120,
                       child: ReorderableListView.builder(
                         scrollController: _scrollController,
                         // Clip.none allows items to be visible when scrolled into the

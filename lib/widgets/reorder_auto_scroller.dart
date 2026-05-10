@@ -12,14 +12,16 @@ class ReorderAutoScroller extends StatefulWidget {
     required this.scrollController,
     required this.child,
     this.isDragging = false,
-    this.edgeThreshold = 100.0,
-    this.maxVelocity = 1200.0,
+    this.topTriggerOffset = 100.0,
+    this.bottomTriggerOffset = 100.0,
+    this.maxVelocity = 1500.0,
   });
 
   final ScrollController scrollController;
   final Widget child;
   final bool isDragging;
-  final double edgeThreshold;
+  final double topTriggerOffset;
+  final double bottomTriggerOffset;
   final double maxVelocity;
 
   @override
@@ -44,18 +46,24 @@ class _ReorderAutoScrollerState extends State<ReorderAutoScroller> {
 
     final localPos = box.globalToLocal(event.position);
     final height = box.size.height;
-    final threshold = widget.edgeThreshold;
+    
+    // Use configurable offsets for triggering scroll
+    final topThreshold = widget.topTriggerOffset;
+    final bottomThreshold = widget.bottomTriggerOffset;
 
-    if (localPos.dy < threshold) {
-      // Near top - Velocity increases quadratically as we get closer to the edge
-      final dist = localPos.dy.clamp(0.0, threshold);
-      final intensity = 1.0 - (dist / threshold);
-      _velocity = -widget.maxVelocity * (intensity * intensity);
-    } else if (localPos.dy > height - threshold) {
+    if (localPos.dy < topThreshold) {
+      // Near top - Using a curve that's more responsive at the boundary to avoid "dead" feel
+      final dist = localPos.dy.clamp(0.0, topThreshold);
+      final intensity = 1.0 - (dist / topThreshold);
+      // Mix linear and cubic: more immediate response than pure quadratic
+      final curve = intensity * 0.4 + intensity * intensity * intensity * 0.6;
+      _velocity = -widget.maxVelocity * curve;
+    } else if (localPos.dy > height - bottomThreshold) {
       // Near bottom
-      final dist = (height - localPos.dy).clamp(0.0, threshold);
-      final intensity = 1.0 - (dist / threshold);
-      _velocity = widget.maxVelocity * (intensity * intensity);
+      final dist = (height - localPos.dy).clamp(0.0, bottomThreshold);
+      final intensity = 1.0 - (dist / bottomThreshold);
+      final curve = intensity * 0.4 + intensity * intensity * intensity * 0.6;
+      _velocity = widget.maxVelocity * curve;
     } else {
       _velocity = 0;
     }

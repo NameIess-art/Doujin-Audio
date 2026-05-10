@@ -395,19 +395,19 @@ class _SubtitleWindowSettingsSheet extends StatelessWidget {
                 Slider(
                   value: settings.backgroundBlur,
                   min: 0,
-                  max: 30,
-                  divisions: 30,
+                  max: 50,
+                  divisions: 50,
                   onChanged: (v) => notifier.setBackgroundBlur(v),
                 ),
 
-                // Background opacity
+                // Transparency (User requested: 0% = solid, 100% = transparent)
                 Row(
                   children: [
                     Expanded(
-                      child: Text(i18n.tr('background_opacity'), style: labelStyle),
+                      child: Text(i18n.tr('background_transparency') ?? i18n.tr('background_opacity'), style: labelStyle),
                     ),
                     Text(
-                      ((1.0 - settings.backgroundOpacity) * 100).toStringAsFixed(0),
+                      '${((1.0 - settings.backgroundOpacity) * 100).toStringAsFixed(0)}%',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: cs.onSurfaceVariant,
                         fontWeight: FontWeight.w700,

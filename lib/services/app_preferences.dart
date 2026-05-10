@@ -5,11 +5,19 @@ import 'package:shared_preferences/shared_preferences.dart';
 typedef JsonValueReader<T> = T Function(Object? value);
 
 class AppPreferences {
+  static SharedPreferences? _instance;
   const AppPreferences._();
 
-  static Future<SharedPreferences> get _prefs async {
-    return SharedPreferences.getInstance();
+  static Future<void> init() async {
+    _instance = await SharedPreferences.getInstance();
   }
+
+  static Future<SharedPreferences> get _prefs async {
+    return _instance ??= await SharedPreferences.getInstance();
+  }
+
+  static String? getStringSync(String key) => _instance?.getString(key);
+  static bool? getBoolSync(String key) => _instance?.getBool(key);
 
   static Future<String?> getString(String key) async {
     try {

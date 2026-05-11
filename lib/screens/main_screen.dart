@@ -12,6 +12,7 @@ import 'package:provider/provider.dart';
 import '../i18n/app_language_provider.dart';
 import '../providers/audio_provider.dart';
 import '../providers/audio_provider_riverpod.dart';
+import '../providers/subtitle_settings_provider.dart';
 import '../services/app_preferences.dart';
 import '../services/audio_state_services.dart';
 import 'library_tab.dart';
@@ -247,7 +248,10 @@ class _MainScreenState extends ConsumerState<MainScreen>
       _lastShowCard = showCard;
       _needsMeasurement = true;
     }
-    final subtitleSessions = overlaySessions;
+    final subtitleSettings = ref.watch(subtitleSettingsProvider);
+    final subtitleSessions = overlaySessions
+        .where((session) => subtitleSettings.isGlobalEnabled(session.id))
+        .toList(growable: false);
     final hasNowPlaying = visibleSessions.isNotEmpty;
     if (activeSessionCount > 0 &&
         !_notificationPermissionCheckDone &&

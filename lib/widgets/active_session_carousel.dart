@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:ui';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -90,9 +91,7 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
   @override
   void dispose() {
     final provider = ref.read(audioProviderFacadeProvider);
-    provider.carouselSnapListenable.removeListener(
-      _handleCarouselSnap,
-    );
+    provider.carouselSnapListenable.removeListener(_handleCarouselSnap);
     _pageController
       ..removeListener(_handlePageTick)
       ..dispose();
@@ -110,7 +109,8 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
   }
 
   void _handleCarouselSnap() {
-    final sessionId = ref.read(audioProviderFacadeProvider)
+    final sessionId = ref
+        .read(audioProviderFacadeProvider)
         .carouselSnapListenable
         .value;
     if (sessionId == null || sessionId == _lastCarouselSnapSessionId) return;
@@ -168,48 +168,66 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
 
     return SizedBox(
       height: 88,
-      child: ListenableBuilder(
-        listenable: _pageNotifier,
-        builder: (context, _) {
-          return PageView.builder(
-            controller: _pageController,
-            pageSnapping: false,
-            physics: sessions.length == 1
-                ? const NeverScrollableScrollPhysics()
-                : const SnapScrollPhysics(parent: BouncingScrollPhysics()),
-            itemCount: sessions.length,
-            itemBuilder: (context, index) {
-              final session = sessions[index];
-              final pageDelta = index - _pageNotifier.value;
-              final selectedness = (1 - pageDelta.abs()).clamp(0.0, 1.0);
-              final scale = lerpDouble(0.972, 1.0, selectedness) ?? 1.0;
-              const translateX = 0.0;
-              final translateY = lerpDouble(4, 0, selectedness) ?? 0;
-              final track = provider.trackByPath(session.currentTrackPath);
+      child: PageView.builder(
+        controller: _pageController,
+        pageSnapping: false,
+        physics: sessions.length == 1
+            ? const NeverScrollableScrollPhysics()
+            : const SnapScrollPhysics(parent: BouncingScrollPhysics()),
+        itemCount: sessions.length,
+        itemBuilder: (context, index) {
+          final session = sessions[index];
+          final track = provider.trackByPath(session.currentTrackPath);
 
-              return Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 2),
-                child: Transform.translate(
-                  offset: Offset(translateX, translateY),
-                  child: Transform.scale(
-                    scale: scale,
-                    child: _ActiveSessionCard(
-                      session: session,
-                      track: track,
-                      provider: provider,
-                      coverPathFuture: _sessionCoverFutureForTrack(
-                        provider,
-                        track,
-                      ),
-                      onOpen: () => _openSessionDetail(context, session),
-                    ),
-                  ),
-                ),
-              );
-            },
+          return _ActiveSessionPageTransform(
+            pageListenable: _pageNotifier,
+            index: index,
+            child: RepaintBoundary(
+              child: _ActiveSessionCard(
+                session: session,
+                track: track,
+                provider: provider,
+                coverPathFuture: _sessionCoverFutureForTrack(provider, track),
+                onOpen: () => _openSessionDetail(context, session),
+              ),
+            ),
           );
         },
       ),
+    );
+  }
+}
+
+class _ActiveSessionPageTransform extends StatelessWidget {
+  const _ActiveSessionPageTransform({
+    required this.pageListenable,
+    required this.index,
+    required this.child,
+  });
+
+  final ValueListenable<double> pageListenable;
+  final int index;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: pageListenable,
+      child: child,
+      builder: (context, child) {
+        final pageDelta = index - pageListenable.value;
+        final selectedness = (1 - pageDelta.abs()).clamp(0.0, 1.0);
+        final scale = lerpDouble(0.972, 1.0, selectedness) ?? 1.0;
+        final translateY = lerpDouble(4, 0, selectedness) ?? 0;
+
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 2),
+          child: Transform.translate(
+            offset: Offset(0, translateY),
+            child: Transform.scale(scale: scale, child: child),
+          ),
+        );
+      },
     );
   }
 }

@@ -42,11 +42,15 @@ class _FloatingSubtitleWindowState
   bool _snapHapticFired = false;
   bool _isAppInBackground = false;
   bool _isOverlayActive = false;
+  bool _isSyncing = false;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _isAppInBackground = WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed &&
+        WidgetsBinding.instance.lifecycleState != null;
+    
     _playbackStateSub = ref.listenManual<AsyncValue<PlaybackStateSliceData>>(
       playbackStateProvider,
       (previous, next) {
@@ -54,13 +58,24 @@ class _FloatingSubtitleWindowState
       },
       fireImmediately: true,
     );
+
+    // Also listen to settings changes to sync overlay state if toggled in background
+    ref.listenManual(subtitleSettingsProvider, (prev, next) {
+      if (_isAppInBackground) {
+        _syncOverlayState();
+      }
+    });
+
+    if (_isAppInBackground) {
+      _syncOverlayState();
+    }
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    if (_isOverlayActive) {
-      SubtitleOverlayController.stopOverlay();
+    if (widget.isCrossPage && _isOverlayActive) {
+      _stopOverlay();
     }
     _playbackStateSub?.close();
     _positionSub?.cancel();
@@ -69,17 +84,33 @@ class _FloatingSubtitleWindowState
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    _isAppInBackground = (state == AppLifecycleState.paused ||
-        state == AppLifecycleState.inactive);
+    // On Android, inactive can be triggered by notifications or dialogs.
+    // We only want the system overlay when the app is actually in background (paused).
+    final isBg = (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached);
+    
+    if (isBg != _isAppInBackground) {
+      _isAppInBackground = isBg;
+      _syncOverlayState();
+    }
+  }
 
-    if (_isAppInBackground) {
-      _tryStartOverlay();
-    } else if (state == AppLifecycleState.resumed) {
-      _stopOverlay();
+  Future<void> _syncOverlayState() async {
+    if (_isSyncing) return;
+    _isSyncing = true;
+    try {
+      if (_isAppInBackground) {
+        await _tryStartOverlay();
+      } else {
+        await _stopOverlay(immediate: true);
+      }
+    } finally {
+      _isSyncing = false;
     }
   }
 
   Future<void> _tryStartOverlay() async {
+    if (!widget.isCrossPage) return;
     if (_currentSession == null) return;
     final settings = ref.read(subtitleSettingsProvider);
     if (!settings.isGlobalEnabled(_currentSession!.id)) return;
@@ -107,9 +138,10 @@ class _FloatingSubtitleWindowState
     return '#${color.toARGB32().toRadixString(16).padLeft(8, '0')}';
   }
 
-  Future<void> _stopOverlay() async {
+  Future<void> _stopOverlay({bool immediate = false}) async {
+    if (!widget.isCrossPage) return;
     if (_isOverlayActive) {
-      await SubtitleOverlayController.stopOverlay();
+      await SubtitleOverlayController.stopOverlay(immediate: immediate);
       _isOverlayActive = false;
     }
   }
@@ -145,6 +177,9 @@ class _FloatingSubtitleWindowState
     if (_currentSession != null) {
       _positionSub = _currentSession!.positionStream.listen(_updateSubtitleText);
       _loadSubtitleTrack();
+      if (_isAppInBackground) {
+        _syncOverlayState();
+      }
     } else if (mounted) {
       setState(() {
         _subtitleTrack = null;

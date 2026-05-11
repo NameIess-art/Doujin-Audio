@@ -891,7 +891,7 @@ class NotificationCoordinatorService {
     notificationActionGuardTimeout = null;
     notificationActionRefreshTimer?.cancel();
     notificationActionRefreshTimer = Timer(
-      const Duration(milliseconds: 250),
+      const Duration(milliseconds: 120),
       () {
         notificationActionRefreshTimer = null;
         notificationActionRefreshPending = false;

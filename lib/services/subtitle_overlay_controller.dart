@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/services.dart';
 
 class SubtitleOverlayController {
@@ -19,13 +20,34 @@ class SubtitleOverlayController {
     }
   }
 
+  static Timer? _stopTimer;
+  static bool _isActive = false;
+
   static Future<void> startOverlay() async {
+    _stopTimer?.cancel();
+    _stopTimer = null;
+    _isActive = true;
     try {
       await _channel.invokeMethod('startOverlay');
     } on PlatformException catch (_) {}
   }
 
-  static Future<void> stopOverlay() async {
+  static Future<void> stopOverlay({bool immediate = false}) async {
+    _stopTimer?.cancel();
+    _stopTimer = null;
+    if (immediate) {
+      await _doStop();
+    } else {
+      _stopTimer = Timer(const Duration(milliseconds: 300), () {
+        _doStop();
+      });
+    }
+  }
+
+  static Future<void> _doStop() async {
+    _stopTimer?.cancel();
+    _stopTimer = null;
+    _isActive = false;
     try {
       await _channel.invokeMethod('stopOverlay');
     } on PlatformException catch (_) {}
@@ -44,11 +66,9 @@ class SubtitleOverlayController {
   }) async {
     try {
       await _channel.invokeMethod('updateStyle', {
-        ?fontSize == null ? null : MapEntry('fontSize', fontSize),
-        ?backgroundColor == null
-            ? null
-            : MapEntry('backgroundColor', backgroundColor),
-        ?textColor == null ? null : MapEntry('textColor', textColor),
+        if (fontSize != null) 'fontSize': fontSize,
+        if (backgroundColor != null) 'backgroundColor': backgroundColor,
+        if (textColor != null) 'textColor': textColor,
       });
     } on PlatformException catch (_) {}
   }

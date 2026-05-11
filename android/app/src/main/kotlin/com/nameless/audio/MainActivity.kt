@@ -40,6 +40,12 @@ import java.nio.charset.StandardCharsets
 import java.util.ArrayDeque
 import java.util.Locale
 
+private data class SubtitleOverlayStyle(
+    val fontSize: Float,
+    val backgroundColor: String,
+    val textColor: String
+)
+
 private object PlaybackWakeLockController {
     private var wakeLock: PowerManager.WakeLock? = null
 
@@ -110,6 +116,8 @@ class MainActivity : AudioServiceActivity() {
     private var notificationsMethodChannel: MethodChannel? = null
     private var subtitleOverlayService: SubtitleOverlayService? = null
     private var isSubtitleServiceBound = false
+    private var pendingSubtitleOverlayText: String? = null
+    private var pendingSubtitleOverlayStyle: SubtitleOverlayStyle? = null
     private var pendingNotificationSessionId: String? = null
     private val audioPickerMimeTypes = arrayOf(
         "audio/*",
@@ -296,14 +304,20 @@ class MainActivity : AudioServiceActivity() {
                     }
                     "updateSubtitle" -> {
                         val text = call.argument<String>("text") ?: ""
-                        subtitleOverlayService?.updateSubtitle(text)
+                        updateSubtitleOverlayText(text)
                         result.success(true)
                     }
                     "updateStyle" -> {
                         val fontSize = call.argument<Double>("fontSize")?.toFloat() ?: 18f
                         val backgroundColor = call.argument<String>("backgroundColor") ?: "#80000000"
                         val textColor = call.argument<String>("textColor") ?: "#FFFFFF"
-                        subtitleOverlayService?.setStyle(fontSize, backgroundColor, textColor)
+                        updateSubtitleOverlayStyle(
+                            SubtitleOverlayStyle(
+                                fontSize = fontSize,
+                                backgroundColor = backgroundColor,
+                                textColor = textColor
+                            )
+                        )
                         result.success(true)
                     }
                     else -> result.notImplemented()
@@ -787,9 +801,9 @@ class MainActivity : AudioServiceActivity() {
         // Only cancel the notification if the unified notification controller
         // is NOT actively managing it; otherwise the cancel would remove the
         // rich playback notification and cause a visible collapse/reappear.
-        if (UnifiedPlaybackNotificationController.activeNotificationCount == 0) {
+        if (!UnifiedPlaybackNotificationController.hasUnifiedNotifications()) {
             val manager = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
-            manager?.cancel(1107)
+            manager?.cancel(UnifiedPlaybackNotificationController.foregroundServiceNotificationId)
         }
     }
 
@@ -1083,7 +1097,11 @@ class MainActivity : AudioServiceActivity() {
 
     override fun onDestroy() {
         notificationsMethodChannel = null
-        stopSubtitleService()
+        if (isSubtitleServiceBound) {
+            unbindService(subtitleServiceConnection)
+            isSubtitleServiceBound = false
+            subtitleOverlayService = null
+        }
         super.onDestroy()
     }
 
@@ -1092,6 +1110,7 @@ class MainActivity : AudioServiceActivity() {
             val binder = service as SubtitleOverlayService.LocalBinder
             subtitleOverlayService = binder.getService()
             isSubtitleServiceBound = true
+            applyPendingSubtitleOverlayState()
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
@@ -1105,6 +1124,8 @@ class MainActivity : AudioServiceActivity() {
             val intent = Intent(this, SubtitleOverlayService::class.java)
             startService(intent)
             bindService(intent, subtitleServiceConnection, Context.BIND_AUTO_CREATE)
+        } else {
+            applyPendingSubtitleOverlayState()
         }
     }
 
@@ -1114,7 +1135,30 @@ class MainActivity : AudioServiceActivity() {
             isSubtitleServiceBound = false
             subtitleOverlayService = null
         }
+        pendingSubtitleOverlayText = null
         stopService(Intent(this, SubtitleOverlayService::class.java))
+    }
+
+    private fun updateSubtitleOverlayText(text: String) {
+        pendingSubtitleOverlayText = text
+        subtitleOverlayService?.updateSubtitle(text)
+    }
+
+    private fun updateSubtitleOverlayStyle(style: SubtitleOverlayStyle) {
+        pendingSubtitleOverlayStyle = style
+        subtitleOverlayService?.setStyle(
+            style.fontSize,
+            style.backgroundColor,
+            style.textColor
+        )
+    }
+
+    private fun applyPendingSubtitleOverlayState() {
+        val service = subtitleOverlayService ?: return
+        pendingSubtitleOverlayStyle?.let { style ->
+            service.setStyle(style.fontSize, style.backgroundColor, style.textColor)
+        }
+        pendingSubtitleOverlayText?.let(service::updateSubtitle)
     }
 
     private fun capturePendingNotificationSession(intent: Intent?) {

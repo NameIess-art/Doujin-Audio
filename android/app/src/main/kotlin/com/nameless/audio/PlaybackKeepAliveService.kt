@@ -27,8 +27,9 @@ class PlaybackKeepAliveService : Service() {
         private const val CHANNEL_ID = "playback_keep_alive"
         private const val UNIFIED_CHANNEL_ID = "com.nameless.audio.channel.playback"
         private const val CHANNEL_NAME = "Playback"
-        private const val GROUP_KEY = "com.nameless.audio.PLAYBACK_GROUP"
-        private const val NOTIFICATION_ID = 1107
+        private const val GROUP_KEY = UnifiedPlaybackNotificationController.groupKey
+        private const val NOTIFICATION_ID =
+            UnifiedPlaybackNotificationController.foregroundServiceNotificationId
     }
 
     private var wakeLock: PowerManager.WakeLock? = null
@@ -41,7 +42,7 @@ class PlaybackKeepAliveService : Service() {
         return when (intent?.action) {
             ACTION_STOP -> {
                 val hasUnifiedNotifications =
-                    UnifiedPlaybackNotificationController.activeNotificationCount > 0
+                    UnifiedPlaybackNotificationController.hasUnifiedNotifications()
                 stopForegroundCompat(detachOnly = hasUnifiedNotifications)
                 releaseWakeLock()
                 currentForegroundSignature = null
@@ -67,7 +68,7 @@ class PlaybackKeepAliveService : Service() {
 
                 if (!keepForegroundServiceAlive) {
                     val hasUnifiedNotifications =
-                        UnifiedPlaybackNotificationController.activeNotificationCount > 0
+                        UnifiedPlaybackNotificationController.hasUnifiedNotifications()
                     stopForegroundCompat(detachOnly = hasUnifiedNotifications)
                     releaseWakeLock()
                     currentForegroundSignature = null
@@ -124,7 +125,7 @@ class PlaybackKeepAliveService : Service() {
 
     override fun onDestroy() {
         val hasUnifiedNotifications =
-            UnifiedPlaybackNotificationController.activeNotificationCount > 0
+            UnifiedPlaybackNotificationController.hasUnifiedNotifications()
         stopForegroundCompat(detachOnly = hasUnifiedNotifications)
         releaseWakeLock()
         currentForegroundSignature = null

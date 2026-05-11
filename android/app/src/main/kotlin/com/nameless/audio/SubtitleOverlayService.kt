@@ -60,6 +60,7 @@ class SubtitleOverlayService : Service() {
 
         val textView = TextView(this).apply {
             text = ""
+            visibility = View.GONE
             setTextColor(Color.WHITE)
             textSize = 18f
             setPadding(40, 20, 40, 20)
@@ -106,8 +107,15 @@ class SubtitleOverlayService : Service() {
 
     fun updateSubtitle(text: String) {
         subtitleTextView?.post {
-            subtitleTextView?.text = text
-            subtitleTextView?.visibility = if (text.isEmpty()) View.GONE else View.VISIBLE
+            val view = subtitleTextView ?: return@post
+            view.text = text
+            val nextVisibility = if (text.isEmpty()) View.GONE else View.VISIBLE
+            if (view.visibility != nextVisibility) {
+                view.visibility = nextVisibility
+                try {
+                    windowManager.updateViewLayout(view, params)
+                } catch (_: Exception) {}
+            }
         }
     }
 

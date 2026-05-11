@@ -33,8 +33,8 @@ class NativePlaybackService : MediaSessionService() {
         private const val PLAYBACK_CHANNEL_ID = "com.nameless.audio.channel.playback"
         private const val PLAYBACK_CHANNEL_NAME = "Playback"
         private const val PLAYBACK_CHANNEL_DESCRIPTION = "Playback notification controls"
-        private const val PLAYBACK_GROUP_KEY = "com.nameless.audio.PLAYBACK_GROUP"
-        private const val FOREGROUND_NOTIFICATION_ID = 11_225
+        private const val FOREGROUND_NOTIFICATION_ID =
+            UnifiedPlaybackNotificationController.foregroundServiceNotificationId
         private const val FOREGROUND_WATCHDOG_INTERVAL_MS = 4 * 60 * 1000L
         private const val STATE_PERSISTENCE_INTERVAL_MS = 60 * 1000L
         private const val STATE_PERSISTENCE_DEBOUNCE_MS = 800L
@@ -571,7 +571,13 @@ class NativePlaybackService : MediaSessionService() {
             }
             ?: sessions.values.firstOrNull()
             ?: return
-        val signature = foregroundSession.foregroundNotificationSignature()
+        val usesUnifiedNotification =
+            UnifiedPlaybackNotificationController.hasUnifiedNotifications()
+        val signature = if (usesUnifiedNotification) {
+            "unified|$FOREGROUND_NOTIFICATION_ID"
+        } else {
+            foregroundSession.foregroundNotificationSignature()
+        }
         if (!forceRefresh && playbackForegroundStarted && playbackForegroundSignature == signature) {
             return
         }
@@ -591,12 +597,16 @@ class NativePlaybackService : MediaSessionService() {
     }
 
     private fun stopPlaybackForeground(removeNotification: Boolean = true) {
+        val shouldRemoveNotification =
+            UnifiedPlaybackNotificationController.shouldRemoveForegroundNotification(
+                removeNotification
+            )
         if (playbackForegroundStarted) {
-            stopForegroundCompat(removeNotification = removeNotification)
+            stopForegroundCompat(removeNotification = shouldRemoveNotification)
         }
         playbackForegroundStarted = false
         playbackForegroundSignature = null
-        if (removeNotification) {
+        if (shouldRemoveNotification) {
             val manager = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
             manager?.cancel(FOREGROUND_NOTIFICATION_ID)
         }
@@ -605,6 +615,11 @@ class NativePlaybackService : MediaSessionService() {
     private fun buildForegroundNotification(
         session: NativePlaybackSession
     ): Notification {
+        if (UnifiedPlaybackNotificationController.hasUnifiedNotifications()) {
+            UnifiedPlaybackNotificationController.lastRichSummaryNotification?.let {
+                return it
+            }
+        }
         val launchIntent = packageManager.getLaunchIntentForPackage(packageName)?.apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
@@ -633,7 +648,6 @@ class NativePlaybackService : MediaSessionService() {
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setCategory(NotificationCompat.CATEGORY_TRANSPORT)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
-            .setGroup(PLAYBACK_GROUP_KEY)
             .build()
     }
 

@@ -210,7 +210,7 @@ object PlaybackTimerAlarmScheduler {
             putExtra(PlaybackKeepAliveService.EXTRA_HAS_ACTIVE_TIMER, true)
             putExtra(
                 PlaybackKeepAliveService.EXTRA_USES_UNIFIED_PLAYBACK_NOTIFICATION,
-                UnifiedPlaybackNotificationController.activeNotificationCount > 0
+                UnifiedPlaybackNotificationController.hasUnifiedNotifications()
             )
             putExtra(
                 PlaybackKeepAliveService.EXTRA_KEEP_FOREGROUND_SERVICE_ALIVE,
@@ -522,7 +522,7 @@ object PlaybackTimerAlarmScheduler {
             )
             putExtra(
                 PlaybackKeepAliveService.EXTRA_USES_UNIFIED_PLAYBACK_NOTIFICATION,
-                UnifiedPlaybackNotificationController.activeNotificationCount > 0
+                UnifiedPlaybackNotificationController.hasUnifiedNotifications()
             )
             putExtra(
                 PlaybackKeepAliveService.EXTRA_KEEP_FOREGROUND_SERVICE_ALIVE,

@@ -12,6 +12,7 @@ import 'package:path/path.dart' as path;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/audio_detail.dart';
+import '../models/audio_library_category.dart';
 import '../models/dlsite_metadata.dart';
 import '../models/library_node.dart';
 import '../models/music_track.dart';
@@ -31,6 +32,7 @@ import '../services/warmup_scheduler.dart';
 
 export '../models/library_node.dart';
 export '../models/audio_detail.dart';
+export '../models/audio_library_category.dart';
 export '../models/dlsite_metadata.dart';
 export '../models/music_track.dart';
 export '../models/playback_mode.dart';
@@ -45,6 +47,7 @@ part 'audio_provider_notifications.dart';
 part 'audio_provider_persistence.dart';
 part 'audio_provider_library.dart';
 part 'audio_provider_audio_details.dart';
+part 'audio_provider_library_categories.dart';
 part 'audio_provider_playback.dart';
 part 'audio_provider_playback_sessions.dart';
 part 'audio_provider_playback_timer.dart';
@@ -132,6 +135,11 @@ class AudioProvider with ChangeNotifier {
     null,
   );
   ValueListenable<String?> get carouselSnapListenable => _carouselSnapNotifier;
+  AudioLibraryCategorySnapshot? _audioLibraryCategorySnapshot;
+  Future<AudioLibraryCategorySnapshot>? _audioLibraryCategorySnapshotFuture;
+  int _audioLibraryCategoryFutureStructureRevision = -1;
+  int _audioLibraryCategoryFutureDetailRevision = -1;
+  int _audioDetailRevision = 0;
 
   void requestCarouselSnapTo(String sessionId) {
     _carouselSnapNotifier.value = sessionId;
@@ -605,6 +613,10 @@ class AudioProvider with ChangeNotifier {
 
   void _notifyListeners() {
     _syncAllStateSlices();
+    notifyListeners();
+  }
+
+  void _notifyPresentationListeners() {
     notifyListeners();
   }
 

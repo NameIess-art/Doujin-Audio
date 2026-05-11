@@ -39,6 +39,7 @@ part 'library_tab_folder_imports.dart';
 part 'library_tab_ui_helpers.dart';
 part 'library_tab_empty_scan.dart';
 part 'library_tab_tree_widgets.dart';
+part 'library_tab_category_widgets.dart';
 part 'library_tab_models.dart';
 part 'library_tab_edit.dart';
 
@@ -109,6 +110,10 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   String _searchQuery = '';
   Timer? _searchDebounceTimer;
   final LibrarySearchIndex _searchIndex = LibrarySearchIndex();
+  AudioLibraryCategoryType _categoryType = AudioLibraryCategoryType.all;
+  final Set<String> _selectedTagTerms = <String>{};
+  final Set<String> _selectedVoiceActorTerms = <String>{};
+  final Set<String> _selectedCircleTerms = <String>{};
   bool _refreshTriggeredInCurrentScroll = false;
   bool _isReordering = false;
 
@@ -198,8 +203,8 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   void _measureHeader() {
     final box = _headerKey.currentContext?.findRenderObject() as RenderBox?;
     if (box != null && mounted) {
-      const double searchBarFullHeight = 44.0;
-      final h = box.size.height - searchBarFullHeight;
+      const double headerControlsFullHeight = 86.0;
+      final h = box.size.height - headerControlsFullHeight;
       if (h > 0 && h != _headerHeight) {
         setState(() => _headerHeight = h);
       }
@@ -220,6 +225,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     super.build(context);
     final i18n = context.watch<AppLanguageProvider>();
     final provider = ref.read(audioProviderFacadeProvider);
+    unawaited(provider.audioLibraryCategorySnapshot());
     final sliceState =
         ref.watch(libraryStateProvider).valueOrNull ?? const LibraryState();
     final libraryHeaderState = context
@@ -258,9 +264,9 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     final matchCount = filteredResult.matchCount;
     final bottomInset = MobileOverlayInset.of(context);
 
-    const double searchBarFullHeight = 44.0;
+    const double headerControlsFullHeight = 86.0;
     final topTotalHeight = _headerHeight + 4;
-    final headerContentHeight = topTotalHeight + searchBarFullHeight;
+    final headerContentHeight = topTotalHeight + headerControlsFullHeight;
     // Remove the extra 96px to make content flush with the bottom dock.
     final listBottomInset = bottomInset;
     // Reduced cacheExtent to significantly lower memory footprint and improve
@@ -279,9 +285,15 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     Widget dynamicSearchBar() {
       return _CollapsingSearchBar(
         controller: _scrollController,
-        height: searchBarFullHeight,
-        pinned: _searchQuery.isNotEmpty || _searchController.text.isNotEmpty,
-        child: _buildSearchBar(i18n, matchCount, libraryHeaderState.audioCount),
+        height: headerControlsFullHeight,
+        pinned: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _buildLibraryCategoryTabs(i18n),
+            _buildSearchBar(i18n, matchCount, libraryHeaderState.audioCount),
+          ],
+        ),
       );
     }
 
@@ -312,7 +324,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
       // Padding adjustment for restricted Positioned viewport.
       // We expand the Positioned by 80px to pre-render items under the glass,
       // so we add 80px to the internal padding to keep the content visually in place.
-      const relativeTop = 150 + 4 + searchBarFullHeight;
+      const relativeTop = 150 + 4 + headerControlsFullHeight;
       const relativeBottom = 350.0;
 
       if (_searchQuery.isNotEmpty) {
@@ -375,7 +387,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
           await _refreshWatchedFolders();
         },
         // Adjust edgeOffset because RefreshIndicator is now inside the restricted Positioned.
-        edgeOffset: 150 + 4 + searchBarFullHeight,
+        edgeOffset: 150 + 4 + headerControlsFullHeight,
         displacement: 32,
         triggerMode: RefreshIndicatorTriggerMode.anywhere,
         child: body,
@@ -411,15 +423,24 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
             bottomExpansion: 350,
             child: !listState.isInitialized
                 ? const SizedBox.shrink()
-                : tree.isEmpty
+                : _categoryType == AudioLibraryCategoryType.all && tree.isEmpty
                 ? refreshableEmptyBody()
+                : _categoryType != AudioLibraryCategoryType.all
+                ? _buildCategoryBody(
+                    provider: provider,
+                    i18n: i18n,
+                    headerControlsFullHeight: headerControlsFullHeight,
+                    bottomInset: listBottomInset,
+                    cacheExtent: listCacheExtent,
+                    canPullRefresh: canPullRefresh,
+                  )
                 : _searchQuery.isNotEmpty
                 ? ListView.builder(
                     key: const ValueKey('search_results_list'),
                     controller: _scrollController,
                     padding: const EdgeInsets.fromLTRB(
                       16,
-                      4 + searchBarFullHeight + 150,
+                      4 + headerControlsFullHeight + 150,
                       16,
                       350,
                     ),
@@ -443,13 +464,13 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                       unawaited(HapticFeedback.mediumImpact());
                       await _refreshWatchedFolders();
                     },
-                    edgeOffset: 150 + 4 + searchBarFullHeight,
+                    edgeOffset: 150 + 4 + headerControlsFullHeight,
                     displacement: 32,
                     triggerMode: RefreshIndicatorTriggerMode.anywhere,
                     child: ReorderAutoScroller(
                       scrollController: _scrollController,
                       isDragging: _isReordering,
-                      contentMarginTop: 194,
+                      contentMarginTop: 150 + 4 + headerControlsFullHeight,
                       contentMarginBottom: 350,
                       child: ReorderableListView.builder(
                         scrollController: _scrollController,
@@ -458,7 +479,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                         clipBehavior: Clip.none,
                         padding: const EdgeInsets.fromLTRB(
                           16,
-                          4 + searchBarFullHeight + 150,
+                          4 + headerControlsFullHeight + 150,
                           16,
                           350,
                         ),

@@ -119,6 +119,10 @@ class _FolderNodeWidgetState extends State<_FolderNodeWidget> {
   Widget build(BuildContext context) {
     final i18n = context.watch<AppLanguageProvider>();
     final provider = context.read<AudioProvider>();
+    final categorySnapshot = context
+        .select<AudioProvider, AudioLibraryCategorySnapshot?>(
+          (value) => value.audioLibraryCategorySnapshotSync,
+        );
     final cs = Theme.of(context).colorScheme;
     final isRootFolder = widget.folder.depth == 0;
     final hasChildren = widget.folder.children.isNotEmpty;
@@ -129,6 +133,19 @@ class _FolderNodeWidgetState extends State<_FolderNodeWidget> {
     final groupLabel = isRootFolder
         ? ''
         : _displaySourceName(path.dirname(widget.folder.path));
+    final rootDetail = isRootFolder
+        ? categorySnapshot?.detailFor(
+            AudioDetailTarget.libraryRootFolder(widget.folder.path),
+          )
+        : null;
+    final rootMetaText = rootDetail == null
+        ? i18n.tr('audio_count', {'count': widget.folder.totalTrackCount})
+        : rootDetail.rjCode.trim().isEmpty
+        ? i18n.tr('audio_detail_empty')
+        : rootDetail.rjCode.trim();
+    final rootMetaIcon = rootDetail == null
+        ? Icons.library_music_rounded
+        : Icons.confirmation_number_rounded;
 
     Widget content = Theme(
       data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
@@ -221,10 +238,8 @@ class _FolderNodeWidgetState extends State<_FolderNodeWidget> {
                     SizedBox(
                       width: double.infinity,
                       child: _LibraryMetaChip(
-                        icon: Icons.library_music_rounded,
-                        text: i18n.tr('audio_count', {
-                          'count': widget.folder.totalTrackCount,
-                        }),
+                        icon: rootMetaIcon,
+                        text: rootMetaText,
                       ),
                     ),
                   ],
@@ -365,6 +380,10 @@ class _TrackNodeWidget extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final i18n = context.watch<AppLanguageProvider>();
     final provider = ref.read(audioProviderFacadeProvider);
+    final categorySnapshot = context
+        .select<AudioProvider, AudioLibraryCategorySnapshot?>(
+          (value) => value.audioLibraryCategorySnapshotSync,
+        );
     final cs = Theme.of(context).colorScheme;
     final track = trackNode.track;
     final isAlreadyPlaying = context.select<AudioProvider, bool>(
@@ -376,6 +395,19 @@ class _TrackNodeWidget extends ConsumerWidget {
           : BorderSide.none,
       borderRadius: BorderRadius.circular(14),
     );
+    final singleDetail = track.isSingle
+        ? categorySnapshot?.detailFor(
+            AudioDetailTarget.singleAudioFile(track.path),
+          )
+        : null;
+    final singleMetaText = singleDetail == null
+        ? i18n.tr('file_added')
+        : singleDetail.rjCode.trim().isEmpty
+        ? i18n.tr('audio_detail_empty')
+        : singleDetail.rjCode.trim();
+    final singleMetaIcon = singleDetail == null
+        ? Icons.upload_file_rounded
+        : Icons.confirmation_number_rounded;
 
     if (track.isSingle) {
       return SwipeRevealCard(
@@ -428,8 +460,8 @@ class _TrackNodeWidget extends ConsumerWidget {
                         SizedBox(
                           width: double.infinity,
                           child: _LibraryMetaChip(
-                            icon: Icons.upload_file_rounded,
-                            text: i18n.tr('file_added'),
+                            icon: singleMetaIcon,
+                            text: singleMetaText,
                           ),
                         ),
                       ],

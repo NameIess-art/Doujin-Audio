@@ -28,19 +28,32 @@ extension AudioProviderAudioDetails on AudioProvider {
     return _audioDetailRepository.load(target);
   }
 
-  Future<AudioDetailSaveResult> saveAudioDetail(AudioDetail detail) {
-    return _audioDetailRepository.save(detail);
+  Future<AudioDetailSaveResult> saveAudioDetail(AudioDetail detail) async {
+    final result = await _audioDetailRepository.save(detail);
+    _markAudioDetailDataChanged();
+    _notifyListeners();
+    return result;
   }
 
-  Future<void> deleteAudioDetail(AudioDetailTarget target) {
-    return _audioDetailRepository.delete(target);
+  Future<void> deleteAudioDetail(AudioDetailTarget target) async {
+    await _audioDetailRepository.delete(target);
+    _markAudioDetailDataChanged();
+    _notifyListeners();
   }
 
   Future<AudioDetailSaveResult?> prefillAudioDetailRjCodeFromText(
     AudioDetailTarget target,
     String text,
-  ) {
-    return _audioDetailRepository.prefillRjCodeFromText(target, text);
+  ) async {
+    final result = await _audioDetailRepository.prefillRjCodeFromText(
+      target,
+      text,
+    );
+    if (result != null) {
+      _markAudioDetailDataChanged();
+      _notifyListeners();
+    }
+    return result;
   }
 
   Future<DlsiteMetadata> fetchDlsiteMetadata(String rjCode) {
@@ -257,7 +270,7 @@ extension AudioProviderAudioDetails on AudioProvider {
   ) async {
     final rootFolder = getRootFolderPath(folderPath);
     final targetPath = rootFolder.isNotEmpty ? rootFolder : folderPath;
-    
+
     final updatedTracks = <MusicTrack>[];
     for (var i = 0; i < _library.length; i++) {
       final track = _library[i];

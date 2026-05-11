@@ -1,6 +1,66 @@
 part of 'library_tab.dart';
 
 extension _LibraryTabUiHelpers on _LibraryTabState {
+  Widget _buildLibraryCategoryTabs(AppLanguageProvider i18n) {
+    final cs = Theme.of(context).colorScheme;
+    final items = <({AudioLibraryCategoryType type, String label})>[
+      (
+        type: AudioLibraryCategoryType.all,
+        label: i18n.tr('library_category_all'),
+      ),
+      (
+        type: AudioLibraryCategoryType.tags,
+        label: i18n.tr('library_category_tags'),
+      ),
+      (
+        type: AudioLibraryCategoryType.voiceActors,
+        label: i18n.tr('library_category_voice_actors'),
+      ),
+      (
+        type: AudioLibraryCategoryType.circles,
+        label: i18n.tr('library_category_circles'),
+      ),
+    ];
+    return SizedBox(
+      height: 42,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.fromLTRB(12, 1, 12, 7),
+        itemCount: items.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 8),
+        itemBuilder: (context, index) {
+          final item = items[index];
+          final selected = _categoryType == item.type;
+          return ChoiceChip(
+            selected: selected,
+            label: Text(item.label),
+            onSelected: (_) {
+              if (_categoryType == item.type) return;
+              _jumpLibraryListToTop();
+              _setLocalState(() => _categoryType = item.type);
+            },
+            showCheckmark: false,
+            visualDensity: VisualDensity.compact,
+            labelStyle: Theme.of(context).textTheme.labelMedium?.copyWith(
+              fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+              color: selected ? cs.onPrimaryContainer : cs.onSurfaceVariant,
+            ),
+            selectedColor: cs.primaryContainer,
+            backgroundColor: cs.surfaceContainerHigh,
+            side: BorderSide(
+              color: selected
+                  ? cs.primary.withValues(alpha: 0.45)
+                  : cs.outlineVariant,
+            ),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   Widget _buildSearchBar(
     AppLanguageProvider i18n,
     int matchCount,

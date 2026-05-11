@@ -2,7 +2,6 @@ part of 'library_tab.dart';
 
 extension _LibraryTabUiHelpers on _LibraryTabState {
   Widget _buildLibraryCategoryTabs(AppLanguageProvider i18n) {
-    final cs = Theme.of(context).colorScheme;
     final items = <({AudioLibraryCategoryType type, String label})>[
       (
         type: AudioLibraryCategoryType.all,
@@ -23,40 +22,26 @@ extension _LibraryTabUiHelpers on _LibraryTabState {
     ];
     return SizedBox(
       height: 42,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
+      child: Padding(
         padding: const EdgeInsets.fromLTRB(12, 1, 12, 7),
-        itemCount: items.length,
-        separatorBuilder: (_, _) => const SizedBox(width: 8),
-        itemBuilder: (context, index) {
-          final item = items[index];
-          final selected = _categoryType == item.type;
-          return ChoiceChip(
-            selected: selected,
-            label: Text(item.label),
-            onSelected: (_) {
-              if (_categoryType == item.type) return;
-              _jumpLibraryListToTop();
-              _setLocalState(() => _categoryType = item.type);
-            },
-            showCheckmark: false,
-            visualDensity: VisualDensity.compact,
-            labelStyle: Theme.of(context).textTheme.labelMedium?.copyWith(
-              fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
-              color: selected ? cs.onPrimaryContainer : cs.onSurfaceVariant,
-            ),
-            selectedColor: cs.primaryContainer,
-            backgroundColor: cs.surfaceContainerHigh,
-            side: BorderSide(
-              color: selected
-                  ? cs.primary.withValues(alpha: 0.45)
-                  : cs.outlineVariant,
-            ),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-          );
-        },
+        child: Row(
+          children: [
+            for (var index = 0; index < items.length; index++) ...[
+              if (index > 0) const SizedBox(width: 8),
+              Expanded(
+                child: _LibraryCategoryButton(
+                  label: items[index].label,
+                  selected: _categoryType == items[index].type,
+                  onTap: () {
+                    if (_categoryType == items[index].type) return;
+                    _jumpLibraryListToTop();
+                    _setLocalState(() => _categoryType = items[index].type);
+                  },
+                ),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }
@@ -280,6 +265,52 @@ extension _LibraryTabUiHelpers on _LibraryTabState {
         );
       },
       child: child,
+    );
+  }
+}
+
+class _LibraryCategoryButton extends StatelessWidget {
+  const _LibraryCategoryButton({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Material(
+      color: selected ? cs.primaryContainer : cs.surfaceContainerHigh,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(
+          color: selected
+              ? cs.primary.withValues(alpha: 0.45)
+              : cs.outlineVariant,
+        ),
+      ),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: SizedBox(
+          height: 34,
+          child: Center(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                color: selected ? cs.onPrimaryContainer : cs.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

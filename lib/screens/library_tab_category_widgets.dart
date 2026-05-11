@@ -140,11 +140,17 @@ extension _LibraryTabCategoryView on _LibraryTabState {
                 terms: terms,
                 selectedTerms: _selectedTermsForCurrentCategory,
                 emptyText: _noTermsText(i18n),
+                clearLabel: i18n.tr('clear'),
                 onToggle: (term) {
                   _setLocalState(() {
                     final selected = _selectedTermsForCurrentCategory;
                     if (!selected.remove(term)) selected.add(term);
                   });
+                },
+                onClear: () {
+                  _setLocalState(
+                    () => _selectedTermsForCurrentCategory.clear(),
+                  );
                 },
               );
             }
@@ -173,7 +179,7 @@ extension _LibraryTabCategoryView on _LibraryTabState {
               index: entryIndex,
               child: _AudioLibraryCategoryEntryCard(
                 entry: entry,
-                searchQuery: _searchQuery,
+                folder: _folderForCategoryEntry(provider, entry),
                 secondaryIcon: _categoryIcon(),
                 secondaryText: _entrySecondaryText(i18n, entry),
               ),
@@ -202,6 +208,20 @@ extension _LibraryTabCategoryView on _LibraryTabState {
       },
     );
   }
+
+  FolderNode? _folderForCategoryEntry(
+    AudioProvider provider,
+    AudioLibraryCategoryEntry entry,
+  ) {
+    if (!entry.isFolder) return null;
+    for (final node in provider.libraryTree) {
+      if (node is FolderNode &&
+          PathMatcher.equalsNormalized(node.path, entry.path)) {
+        return node;
+      }
+    }
+    return null;
+  }
 }
 
 class _LibraryCategoryTermBox extends StatelessWidget {
@@ -209,13 +229,17 @@ class _LibraryCategoryTermBox extends StatelessWidget {
     required this.terms,
     required this.selectedTerms,
     required this.emptyText,
+    required this.clearLabel,
     required this.onToggle,
+    required this.onClear,
   });
 
   final List<String> terms;
   final Set<String> selectedTerms;
   final String emptyText;
+  final String clearLabel;
   final ValueChanged<String> onToggle;
+  final VoidCallback onClear;
 
   @override
   Widget build(BuildContext context) {
@@ -240,7 +264,7 @@ class _LibraryCategoryTermBox extends StatelessWidget {
               spacing: 7,
               runSpacing: 7,
               children: terms
-                  .map((term) {
+                  .map<Widget>((term) {
                     final selected = selectedTerms.contains(term);
                     return FilterChip(
                       selected: selected,
@@ -266,6 +290,23 @@ class _LibraryCategoryTermBox extends StatelessWidget {
                           ),
                     );
                   })
+                  .followedBy(<Widget>[
+                    ActionChip(
+                      avatar: const Icon(Icons.close_rounded, size: 16),
+                      label: Text(clearLabel),
+                      onPressed: selectedTerms.isEmpty ? null : onClear,
+                      visualDensity: VisualDensity.compact,
+                      backgroundColor: cs.surface,
+                      side: BorderSide(color: cs.outlineVariant),
+                      labelStyle: Theme.of(context).textTheme.labelSmall
+                          ?.copyWith(
+                            color: selectedTerms.isEmpty
+                                ? cs.onSurfaceVariant.withValues(alpha: 0.45)
+                                : cs.primary,
+                            fontWeight: FontWeight.w800,
+                          ),
+                    ),
+                  ])
                   .toList(growable: false),
             ),
     );
@@ -275,13 +316,13 @@ class _LibraryCategoryTermBox extends StatelessWidget {
 class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
   const _AudioLibraryCategoryEntryCard({
     required this.entry,
-    required this.searchQuery,
+    required this.folder,
     required this.secondaryIcon,
     required this.secondaryText,
   });
 
   final AudioLibraryCategoryEntry entry;
-  final String searchQuery;
+  final FolderNode? folder;
   final IconData secondaryIcon;
   final String secondaryText;
 
@@ -372,6 +413,94 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
       side: BorderSide(color: cs.outlineVariant),
       borderRadius: BorderRadius.circular(14),
     );
+    const cardHeight = _FolderNodeWidgetState._rootFolderTileHeight;
+    final countText = i18n.tr('audio_count', {'count': entry.tracks.length});
+    final folderNode = folder;
+
+    if (entry.isFolder && folderNode != null) {
+      return SwipeRevealCard(
+        margin: const EdgeInsets.only(bottom: 6),
+        shape: cardShape,
+        actionLabel: i18n.tr('remove'),
+        removeTooltip: i18n.tr('remove_audio_folder'),
+        secondaryActionLabel: i18n.tr('audio_detail'),
+        secondaryActionTooltip: i18n.tr('audio_detail'),
+        onSecondaryAction: () =>
+            unawaited(showAudioDetailSheet(context, entry.target)),
+        onRemove: () => _remove(context, provider),
+        child: Card(
+          margin: EdgeInsets.zero,
+          clipBehavior: Clip.antiAlias,
+          shape: cardShape,
+          color: cs.surface,
+          child: Theme(
+            data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+            child: ExpansionTile(
+              minTileHeight: cardHeight,
+              tilePadding: const EdgeInsets.fromLTRB(12, 2, 4, 2),
+              childrenPadding: const EdgeInsets.fromLTRB(12, 0, 0, 0),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
+              collapsedShape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
+              title: _AudioLibraryCategoryEntryTitle(
+                entry: entry,
+                secondaryIcon: secondaryIcon,
+                secondaryText: secondaryText,
+                countText: countText,
+              ),
+              trailing: SizedBox(
+                width: 62,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    IconButton(
+                      onPressed: firstTrack == null
+                          ? null
+                          : () => _play(context, provider),
+                      visualDensity: VisualDensity.compact,
+                      tooltip: i18n.tr('play'),
+                      style: IconButton.styleFrom(
+                        foregroundColor: cs.primary,
+                        minimumSize: const Size(40, 44),
+                        maximumSize: const Size(40, 44),
+                        padding: EdgeInsets.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      icon: const Icon(Icons.add_circle_rounded, size: 25),
+                    ),
+                    const SizedBox(width: 2),
+                    Padding(
+                      padding: const EdgeInsets.only(right: 6),
+                      child: Icon(
+                        Icons.expand_more_rounded,
+                        color: cs.onSurfaceVariant,
+                        size: 20,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              children: folderNode.children
+                  .map(
+                    (childNode) => Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: RepaintBoundary(
+                        child: _LibraryTreeItem(
+                          key: ValueKey(childNode.path),
+                          node: childNode,
+                        ),
+                      ),
+                    ),
+                  )
+                  .toList(),
+            ),
+          ),
+        ),
+      );
+    }
 
     return SwipeRevealCard(
       margin: const EdgeInsets.only(bottom: 6),
@@ -396,70 +525,17 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
               )
             : cs.surface,
         child: SizedBox(
-          height: 82,
+          height: cardHeight,
           child: Padding(
             padding: const EdgeInsets.fromLTRB(12, 7, 6, 7),
             child: Row(
               children: [
-                if (entry.isFolder) ...[
-                  _LibraryCoverThumbnail(
-                    folderPath: entry.path,
-                    title: entry.title,
-                  ),
-                  const SizedBox(width: 14),
-                ],
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      _HighlightedText(
-                        text: entry.title,
-                        query: searchQuery,
-                        maxLines: 1,
-                        style:
-                            Theme.of(context).textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.w900,
-                              fontSize: 14,
-                              height: 1.06,
-                            ) ??
-                            const TextStyle(),
-                      ),
-                      const SizedBox(height: 5),
-                      SizedBox(
-                        width: double.infinity,
-                        height: 16,
-                        child: SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                secondaryIcon,
-                                size: 12,
-                                color: cs.onSurfaceVariant.withValues(
-                                  alpha: 0.65,
-                                ),
-                              ),
-                              const SizedBox(width: 5),
-                              Text(
-                                secondaryText,
-                                maxLines: 1,
-                                style: Theme.of(context).textTheme.labelSmall
-                                    ?.copyWith(
-                                      fontWeight: FontWeight.w600,
-                                      fontStyle: FontStyle.italic,
-                                      color: cs.onSurfaceVariant.withValues(
-                                        alpha: 0.65,
-                                      ),
-                                      fontSize: 9,
-                                    ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
+                  child: _AudioLibraryCategoryEntryTitle(
+                    entry: entry,
+                    secondaryIcon: secondaryIcon,
+                    secondaryText: secondaryText,
+                    countText: countText,
                   ),
                 ),
                 IconButton(
@@ -480,6 +556,62 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _AudioLibraryCategoryEntryTitle extends StatelessWidget {
+  const _AudioLibraryCategoryEntryTitle({
+    required this.entry,
+    required this.secondaryIcon,
+    required this.secondaryText,
+    required this.countText,
+  });
+
+  final AudioLibraryCategoryEntry entry;
+  final IconData secondaryIcon;
+  final String secondaryText;
+  final String countText;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final titleStyle =
+        Theme.of(context).textTheme.titleMedium?.copyWith(
+          fontWeight: FontWeight.w900,
+          fontSize: 14,
+          height: 1.06,
+          color: cs.onSurface,
+        ) ??
+        const TextStyle();
+    return Row(
+      children: [
+        if (entry.isFolder) ...[
+          _LibraryCoverThumbnail(folderPath: entry.path, title: entry.title),
+          const SizedBox(width: 14),
+        ],
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _LibraryTwoLineMarqueeText(text: entry.title, style: titleStyle),
+              const SizedBox(height: 5),
+              _LibrarySecondaryInfoLine(
+                icon: secondaryIcon,
+                text: secondaryText,
+              ),
+              if (entry.isFolder) ...[
+                const SizedBox(height: 4),
+                _LibraryTertiaryInfoLine(
+                  icon: Icons.library_music_rounded,
+                  text: countText,
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

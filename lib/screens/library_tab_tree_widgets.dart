@@ -46,9 +46,9 @@ class _FolderNodeWidget extends StatefulWidget {
 }
 
 class _FolderNodeWidgetState extends State<_FolderNodeWidget> {
-  static const double _rootFolderTileHeight = 82;
+  static const double _rootFolderTileHeight = 104;
   static const double _childFolderTileHeight = 62;
-  static const double _rootFolderTitleBlockHeight = 34;
+  static const double _rootFolderTitleBlockHeight = 72;
   static const double _childFolderTitleBlockHeight = 50;
 
   final ExpansibleController _expansionController = ExpansibleController();
@@ -130,22 +130,17 @@ class _FolderNodeWidgetState extends State<_FolderNodeWidget> {
       side: BorderSide(color: cs.outlineVariant),
       borderRadius: BorderRadius.circular(14),
     );
-    final groupLabel = isRootFolder
-        ? ''
-        : _displaySourceName(path.dirname(widget.folder.path));
     final rootDetail = isRootFolder
         ? categorySnapshot?.detailFor(
             AudioDetailTarget.libraryRootFolder(widget.folder.path),
           )
         : null;
-    final rootMetaText = rootDetail == null
-        ? i18n.tr('audio_count', {'count': widget.folder.totalTrackCount})
-        : rootDetail.rjCode.trim().isEmpty
+    final rootMetaText = rootDetail == null || rootDetail.rjCode.trim().isEmpty
         ? i18n.tr('audio_detail_empty')
         : rootDetail.rjCode.trim();
-    final rootMetaIcon = rootDetail == null
-        ? Icons.library_music_rounded
-        : Icons.confirmation_number_rounded;
+    final rootCountText = i18n.tr('audio_count', {
+      'count': widget.folder.totalTrackCount,
+    });
 
     Widget content = Theme(
       data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
@@ -194,55 +189,59 @@ class _FolderNodeWidgetState extends State<_FolderNodeWidget> {
                     height: isRootFolder
                         ? _rootFolderTitleBlockHeight
                         : _childFolderTitleBlockHeight,
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (groupLabel.isNotEmpty && isRootFolder) ...[
-                          _HighlightedText(
-                            text: groupLabel,
-                            query: widget.searchQuery,
-                            style:
-                                Theme.of(context).textTheme.bodySmall?.copyWith(
-                                  color: cs.onSurfaceVariant.withValues(
-                                    alpha: 0.65,
-                                  ),
-                                  fontWeight: FontWeight.w500,
-                                  fontSize: 10,
-                                ) ??
-                                const TextStyle(),
+                    child: isRootFolder
+                        ? Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _LibraryTwoLineMarqueeText(
+                                text: widget.folder.name,
+                                style:
+                                    Theme.of(
+                                      context,
+                                    ).textTheme.titleMedium?.copyWith(
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: 14,
+                                      height: 1.06,
+                                      color: cs.onSurface,
+                                    ) ??
+                                    const TextStyle(),
+                              ),
+                              const SizedBox(height: 5),
+                              _LibrarySecondaryInfoLine(
+                                icon: Icons.confirmation_number_rounded,
+                                text: rootMetaText,
+                              ),
+                              const SizedBox(height: 4),
+                              _LibraryTertiaryInfoLine(
+                                icon: Icons.library_music_rounded,
+                                text: rootCountText,
+                              ),
+                            ],
+                          )
+                        : Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _HighlightedText(
+                                text: widget.folder.name,
+                                query: widget.searchQuery,
+                                style:
+                                    Theme.of(
+                                      context,
+                                    ).textTheme.titleMedium?.copyWith(
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 13,
+                                      height: 1.06,
+                                      color: cs.onSurface.withValues(
+                                        alpha: 0.9,
+                                      ),
+                                    ) ??
+                                    const TextStyle(),
+                              ),
+                            ],
                           ),
-                          const SizedBox(height: 3),
-                        ],
-                        _HighlightedText(
-                          text: widget.folder.name,
-                          query: widget.searchQuery,
-                          style:
-                              Theme.of(context).textTheme.titleMedium?.copyWith(
-                                fontWeight: isRootFolder
-                                    ? FontWeight.w900
-                                    : FontWeight.w700,
-                                fontSize: isRootFolder ? 14 : 13,
-                                height: 1.06,
-                                color: isRootFolder
-                                    ? cs.onSurface
-                                    : cs.onSurface.withValues(alpha: 0.9),
-                              ) ??
-                              const TextStyle(),
-                        ),
-                      ],
-                    ),
                   ),
-                  if (isRootFolder) ...[
-                    const SizedBox(height: 4),
-                    SizedBox(
-                      width: double.infinity,
-                      child: _LibraryMetaChip(
-                        icon: rootMetaIcon,
-                        text: rootMetaText,
-                      ),
-                    ),
-                  ],
                 ],
               ),
             ),
@@ -400,14 +399,10 @@ class _TrackNodeWidget extends ConsumerWidget {
             AudioDetailTarget.singleAudioFile(track.path),
           )
         : null;
-    final singleMetaText = singleDetail == null
-        ? i18n.tr('file_added')
-        : singleDetail.rjCode.trim().isEmpty
+    final singleMetaText =
+        singleDetail == null || singleDetail.rjCode.trim().isEmpty
         ? i18n.tr('audio_detail_empty')
         : singleDetail.rjCode.trim();
-    final singleMetaIcon = singleDetail == null
-        ? Icons.upload_file_rounded
-        : Icons.confirmation_number_rounded;
 
     if (track.isSingle) {
       return SwipeRevealCard(
@@ -435,7 +430,7 @@ class _TrackNodeWidget extends ConsumerWidget {
                 )
               : cs.surface,
           child: SizedBox(
-            height: 82,
+            height: _FolderNodeWidgetState._rootFolderTileHeight,
             child: Padding(
               padding: const EdgeInsets.fromLTRB(12, 7, 6, 7),
               child: Row(
@@ -445,9 +440,8 @@ class _TrackNodeWidget extends ConsumerWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        _HighlightedText(
+                        _LibraryTwoLineMarqueeText(
                           text: track.displayName,
-                          query: searchQuery,
                           style:
                               Theme.of(context).textTheme.titleMedium?.copyWith(
                                 fontWeight: FontWeight.w900,
@@ -459,8 +453,8 @@ class _TrackNodeWidget extends ConsumerWidget {
                         const SizedBox(height: 5),
                         SizedBox(
                           width: double.infinity,
-                          child: _LibraryMetaChip(
-                            icon: singleMetaIcon,
+                          child: _LibrarySecondaryInfoLine(
+                            icon: Icons.confirmation_number_rounded,
                             text: singleMetaText,
                           ),
                         ),
@@ -619,8 +613,73 @@ class _LibraryCoverThumbnail extends ConsumerWidget {
   }
 }
 
-class _LibraryMetaChip extends StatelessWidget {
-  const _LibraryMetaChip({required this.icon, required this.text});
+class _LibraryMarqueeLine extends StatelessWidget {
+  const _LibraryMarqueeLine({required this.text, required this.style});
+
+  final String text;
+  final TextStyle style;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      height: 16,
+      child: MarqueeText(text: text, style: style, scrollSpeed: 26),
+    );
+  }
+}
+
+class _LibraryTwoLineMarqueeText extends StatelessWidget {
+  const _LibraryTwoLineMarqueeText({required this.text, required this.style});
+
+  final String text;
+  final TextStyle style;
+
+  @override
+  Widget build(BuildContext context) {
+    final lines = _splitLibraryName(text);
+    return SizedBox(
+      width: double.infinity,
+      height: 34,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _LibraryMarqueeLine(text: lines.$1, style: style),
+          const SizedBox(height: 2),
+          _LibraryMarqueeLine(text: lines.$2, style: style),
+        ],
+      ),
+    );
+  }
+}
+
+(String, String) _splitLibraryName(String value) {
+  final text = value.trim();
+  if (text.length <= 18) return (text, '');
+
+  final middle = text.length ~/ 2;
+  var splitIndex = middle;
+  var bestDistance = text.length;
+  for (var i = 1; i < text.length - 1; i++) {
+    final char = text[i];
+    if (!RegExp(r'[\s_\-\.・、，,（）()\[\]【】]+').hasMatch(char)) {
+      continue;
+    }
+    final distance = (i - middle).abs();
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      splitIndex = i + 1;
+    }
+  }
+
+  final first = text.substring(0, splitIndex).trim();
+  final second = text.substring(splitIndex).trim();
+  if (first.isEmpty || second.isEmpty) return (text, '');
+  return (first, second);
+}
+
+class _LibrarySecondaryInfoLine extends StatelessWidget {
+  const _LibrarySecondaryInfoLine({required this.icon, required this.text});
 
   final IconData icon;
   final String text;
@@ -628,28 +687,70 @@ class _LibraryMetaChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    return Row(
-      children: [
-        Icon(
-          icon,
-          size: 12,
-          color: cs.onSurfaceVariant.withValues(alpha: 0.65),
-        ),
-        const SizedBox(width: 5),
-        Flexible(
-          child: Text(
-            text,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              fontWeight: FontWeight.w600,
-              fontStyle: FontStyle.italic,
-              color: cs.onSurfaceVariant.withValues(alpha: 0.65),
-              fontSize: 9,
+    final style =
+        Theme.of(context).textTheme.labelSmall?.copyWith(
+          fontWeight: FontWeight.w800,
+          color: cs.primary,
+          fontSize: 10,
+          height: 1.05,
+        ) ??
+        TextStyle(
+          fontWeight: FontWeight.w800,
+          color: cs.primary,
+          fontSize: 10,
+          height: 1.05,
+        );
+    return SizedBox(
+      width: double.infinity,
+      height: 14,
+      child: Row(
+        children: [
+          Icon(icon, size: 12, color: cs.primary),
+          const SizedBox(width: 5),
+          Expanded(
+            child: MarqueeText(text: text, style: style),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LibraryTertiaryInfoLine extends StatelessWidget {
+  const _LibraryTertiaryInfoLine({required this.icon, required this.text});
+
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return SizedBox(
+      height: 14,
+      child: Row(
+        children: [
+          Icon(
+            icon,
+            size: 12,
+            color: cs.onSurfaceVariant.withValues(alpha: 0.65),
+          ),
+          const SizedBox(width: 5),
+          Flexible(
+            child: Text(
+              text,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                fontWeight: FontWeight.w600,
+                fontStyle: FontStyle.italic,
+                color: cs.onSurfaceVariant.withValues(alpha: 0.65),
+                fontSize: 9,
+                height: 1.05,
+              ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }

@@ -236,6 +236,11 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                               setState(() => _isReordering = true);
                               unawaited(HapticFeedback.heavyImpact());
                             },
+                            onReorderEnd: (_) {
+                              if (_isReordering) {
+                                setState(() => _isReordering = false);
+                              }
+                            },
                             proxyDecorator: (child, index, animation) =>
                                 _buildReorderProxy(context, child, animation),
                             itemCount: listState.sessions.length + 1,

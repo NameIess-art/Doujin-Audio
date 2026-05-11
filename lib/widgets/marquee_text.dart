@@ -22,6 +22,7 @@ class MarqueeText extends StatefulWidget {
 class _MarqueeTextState extends State<MarqueeText> {
   late ScrollController _scrollController;
   bool _isMounted = true;
+  Timer? _delayTimer;
 
   @override
   void initState() {
@@ -38,18 +39,18 @@ class _MarqueeTextState extends State<MarqueeText> {
 
     while (_isMounted) {
       if (!_scrollController.hasClients) {
-        await Future<void>.delayed(const Duration(milliseconds: 100));
+        await _delay(const Duration(milliseconds: 100));
         continue;
       }
 
       final maxScroll = _scrollController.position.maxScrollExtent;
       if (maxScroll <= 0) {
-        await Future<void>.delayed(const Duration(milliseconds: 500));
+        await _delay(const Duration(milliseconds: 500));
         continue;
       }
 
       // Initial pause at the start
-      await Future<void>.delayed(widget.pauseDuration);
+      await _delay(widget.pauseDuration);
       if (!_isMounted || !_scrollController.hasClients) break;
 
       // Scroll to end
@@ -66,12 +67,25 @@ class _MarqueeTextState extends State<MarqueeText> {
       if (!_isMounted || !_scrollController.hasClients) break;
 
       // Pause at the end (as requested: 1.5s)
-      await Future<void>.delayed(widget.pauseDuration);
+      await _delay(widget.pauseDuration);
       if (!_isMounted || !_scrollController.hasClients) break;
 
       // Jump back to start
       _scrollController.jumpTo(0);
     }
+  }
+
+  Future<void> _delay(Duration duration) {
+    if (!_isMounted) return Future<void>.value();
+    final completer = Completer<void>();
+    _delayTimer?.cancel();
+    _delayTimer = Timer(duration, () {
+      _delayTimer = null;
+      if (!completer.isCompleted) {
+        completer.complete();
+      }
+    });
+    return completer.future;
   }
 
   @override
@@ -87,6 +101,7 @@ class _MarqueeTextState extends State<MarqueeText> {
   @override
   void dispose() {
     _isMounted = false;
+    _delayTimer?.cancel();
     _scrollController.dispose();
     super.dispose();
   }

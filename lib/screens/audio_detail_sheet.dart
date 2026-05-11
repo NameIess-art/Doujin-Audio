@@ -84,7 +84,11 @@ class _AudioDetailSheetState extends State<AudioDetailSheet> {
     final initialValue = field.isMulti
         ? field.readList(detail).join(_multiValueSeparator)
         : field.readText(detail);
-    final controller = TextEditingController(text: initialValue);
+    final controller = TextEditingController(
+      text: field == _AudioDetailField.rjCode && initialValue.trim().isEmpty
+          ? 'RJ'
+          : initialValue,
+    );
     final value = await showDialog<String>(
       context: context,
       builder: (context) {

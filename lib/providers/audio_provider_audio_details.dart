@@ -195,6 +195,12 @@ extension AudioProviderAudioDetails on AudioProvider {
       }
     }
 
+    for (var i = 0; i < _libraryNodeOrder.length; i++) {
+      if (PathMatcher.equalsNormalized(_libraryNodeOrder[i], oldFolderPath)) {
+        _libraryNodeOrder[i] = newFolderPath;
+      }
+    }
+
     for (var i = 0; i < _groupOrder.length; i++) {
       if (PathMatcher.isWithinOrEqual(_groupOrder[i], oldFolderPath)) {
         _groupOrder[i] = _replacePathPrefix(
@@ -204,6 +210,7 @@ extension AudioProviderAudioDetails on AudioProvider {
         );
       }
     }
+
     _retargetActiveSessions(oldFolderPath, newFolderPath);
     _clearResolvedCoverPaths();
     _syncGroupOrderFromLibrary();
@@ -231,6 +238,11 @@ extension AudioProviderAudioDetails on AudioProvider {
       final index = _library.indexWhere((item) => item.path == oldTrackPath);
       if (index >= 0) _library[index] = updatedTrack;
       _retargetActiveSessions(oldTrackPath, newTrackPath);
+      for (var i = 0; i < _libraryNodeOrder.length; i++) {
+        if (PathMatcher.equalsNormalized(_libraryNodeOrder[i], oldTrackPath)) {
+          _libraryNodeOrder[i] = newTrackPath;
+        }
+      }
       _clearResolvedCoverPaths();
       _rebuildLibraryIndexes();
       await _audioDatabaseRepository.deleteTracks([oldTrackPath]);
@@ -243,12 +255,16 @@ extension AudioProviderAudioDetails on AudioProvider {
     String folderPath,
     String coverPath,
   ) async {
+    final rootFolder = getRootFolderPath(folderPath);
+    final targetPath = rootFolder.isNotEmpty ? rootFolder : folderPath;
+    
     final updatedTracks = <MusicTrack>[];
     for (var i = 0; i < _library.length; i++) {
       final track = _library[i];
-      if (!PathMatcher.isWithinOrEqual(track.path, folderPath)) continue;
+      if (!PathMatcher.isWithinOrEqual(track.path, targetPath)) continue;
       final updatedTrack = _copyTrack(track, manualCoverPath: coverPath);
       _library[i] = updatedTrack;
+      _libraryByPath[track.path] = updatedTrack;
       updatedTracks.add(updatedTrack);
     }
     if (updatedTracks.isEmpty) return;

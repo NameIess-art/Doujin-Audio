@@ -212,8 +212,8 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                           key: const ValueKey('session_list'),
                           scrollController: _scrollController,
                           isDragging: _isReordering,
-                          topTriggerOffset: 250,
-                          bottomTriggerOffset: 470,
+                          contentMarginTop: 150,
+                          contentMarginBottom: 350,
                           child: ReorderableListView.builder(
                             scrollController: _scrollController,
                             padding: const EdgeInsets.fromLTRB(

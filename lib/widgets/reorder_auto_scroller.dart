@@ -12,16 +12,23 @@ class ReorderAutoScroller extends StatefulWidget {
     required this.scrollController,
     required this.child,
     this.isDragging = false,
-    this.topTriggerOffset = 100.0,
-    this.bottomTriggerOffset = 100.0,
-    this.maxVelocity = 1500.0,
+    this.contentMarginTop = 0.0,
+    this.contentMarginBottom = 0.0,
+    this.maxVelocity = 1800.0,
   });
 
   final ScrollController scrollController;
   final Widget child;
   final bool isDragging;
-  final double topTriggerOffset;
-  final double bottomTriggerOffset;
+
+  /// The distance from the top of this widget to the start of the visible content area
+  /// (e.g., the bottom edge of the title bar).
+  final double contentMarginTop;
+
+  /// The distance from the bottom of this widget to the end of the visible content area
+  /// (e.g., the top edge of the playback card).
+  final double contentMarginBottom;
+
   final double maxVelocity;
 
   @override
@@ -47,22 +54,31 @@ class _ReorderAutoScrollerState extends State<ReorderAutoScroller> {
     final localPos = box.globalToLocal(event.position);
     final height = box.size.height;
     
-    // Use configurable offsets for triggering scroll
-    final topThreshold = widget.topTriggerOffset;
-    final bottomThreshold = widget.bottomTriggerOffset;
+    // Define the usable content area height
+    final contentHeight = height - widget.contentMarginTop - widget.contentMarginBottom;
+    if (contentHeight <= 0) {
+      _velocity = 0;
+      return;
+    }
 
-    if (localPos.dy < topThreshold) {
-      // Near top - Using a curve that's more responsive at the boundary to avoid "dead" feel
-      final dist = localPos.dy.clamp(0.0, topThreshold);
-      final intensity = 1.0 - (dist / topThreshold);
-      // Mix linear and cubic: more immediate response than pure quadratic
-      final curve = intensity * 0.4 + intensity * intensity * intensity * 0.6;
+    // Position relative to the content area top
+    final relativeDy = localPos.dy - widget.contentMarginTop;
+    
+    // Trigger in the top 1/3 and bottom 1/3 of the content area
+    final threshold = contentHeight / 3.0;
+
+    if (relativeDy >= 0 && relativeDy < threshold) {
+      // Near top of content area
+      final intensity = 1.0 - (relativeDy / threshold);
+      // Quadratic velocity ramp as requested
+      final curve = intensity * intensity;
       _velocity = -widget.maxVelocity * curve;
-    } else if (localPos.dy > height - bottomThreshold) {
-      // Near bottom
-      final dist = (height - localPos.dy).clamp(0.0, bottomThreshold);
-      final intensity = 1.0 - (dist / bottomThreshold);
-      final curve = intensity * 0.4 + intensity * intensity * intensity * 0.6;
+    } else if (relativeDy > contentHeight - threshold && relativeDy <= contentHeight) {
+      // Near bottom of content area
+      final distFromBottom = contentHeight - relativeDy;
+      final intensity = 1.0 - (distFromBottom / threshold);
+      // Quadratic velocity ramp as requested
+      final curve = intensity * intensity;
       _velocity = widget.maxVelocity * curve;
     } else {
       _velocity = 0;

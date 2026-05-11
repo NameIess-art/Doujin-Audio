@@ -1,14 +1,19 @@
 package com.nameless.audio
 
+import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
+import androidx.core.app.NotificationCompat
+import androidx.core.app.ServiceCompat
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
@@ -69,6 +74,8 @@ class NativePlaybackService : MediaSessionService() {
     private var foregroundWatchdogScheduled = false
     private var statePersistenceScheduled = false
     private var playbackSuspended = false
+    private var playbackForegroundStarted = false
+    private var playbackForegroundSignature: String? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var pendingPersistScheduled = false
     private val positionTicker = object : Runnable {
@@ -88,6 +95,7 @@ class NativePlaybackService : MediaSessionService() {
                 stopPlaybackForeground(removeNotification = sessions.isEmpty())
                 return
             }
+            startPlaybackForeground(forceRefresh = true)
             mainHandler.postDelayed(this, FOREGROUND_WATCHDOG_INTERVAL_MS)
         }
     }
@@ -551,15 +559,103 @@ class NativePlaybackService : MediaSessionService() {
     }
 
     private fun startPlaybackForeground() {
-        // audio_service's AudioService and PlaybackKeepAliveService provide
-        // foreground notifications. This service does not need its own
-        // startForeground() call since all three run in the same process.
+        startPlaybackForeground(forceRefresh = false)
+    }
+
+    private fun startPlaybackForeground(forceRefresh: Boolean) {
+        if (foregroundSuppressed || playbackSuspended) return
+        val foregroundSession = sessions[focusedSessionId]
+            ?: sessions.values.firstOrNull { session ->
+                val player = session.playerOrNull()
+                player != null && (player.isPlaying || player.playWhenReady)
+            }
+            ?: sessions.values.firstOrNull()
+            ?: return
+        val signature = foregroundSession.foregroundNotificationSignature()
+        if (!forceRefresh && playbackForegroundStarted && playbackForegroundSignature == signature) {
+            return
+        }
+        try {
+            ServiceCompat.startForeground(
+                this,
+                FOREGROUND_NOTIFICATION_ID,
+                buildForegroundNotification(foregroundSession),
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+            )
+            playbackForegroundStarted = true
+            playbackForegroundSignature = signature
+        } catch (_: Exception) {
+            // Keep ExoPlayer and our wake lock alive best-effort if a device
+            // rejects a foreground-service refresh from its current state.
+        }
     }
 
     private fun stopPlaybackForeground(removeNotification: Boolean = true) {
+        if (playbackForegroundStarted) {
+            stopForegroundCompat(removeNotification = removeNotification)
+        }
+        playbackForegroundStarted = false
+        playbackForegroundSignature = null
         if (removeNotification) {
             val manager = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
             manager?.cancel(FOREGROUND_NOTIFICATION_ID)
+        }
+    }
+
+    private fun buildForegroundNotification(
+        session: NativePlaybackSession
+    ): Notification {
+        val launchIntent = packageManager.getLaunchIntentForPackage(packageName)?.apply {
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val pendingIntent = launchIntent?.let {
+            PendingIntent.getActivity(
+                this,
+                0,
+                it,
+                PendingIntent.FLAG_UPDATE_CURRENT or immutablePendingIntentFlag()
+            )
+        }
+        return NotificationCompat.Builder(this, PLAYBACK_CHANNEL_ID)
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentTitle(session.title.ifBlank { "Nameless Audio" })
+            .setContentText(
+                session.subtitle
+                    ?.takeIf { it.isNotBlank() }
+                    ?: getString(R.string.keep_alive_playback_active)
+            )
+            .setContentIntent(pendingIntent)
+            .setShowWhen(false)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setSilent(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setCategory(NotificationCompat.CATEGORY_TRANSPORT)
+            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
+            .setGroup(PLAYBACK_GROUP_KEY)
+            .build()
+    }
+
+    private fun immutablePendingIntentFlag(): Int {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            PendingIntent.FLAG_IMMUTABLE
+        } else {
+            0
+        }
+    }
+
+    private fun stopForegroundCompat(removeNotification: Boolean) {
+        val behavior = if (removeNotification) {
+            STOP_FOREGROUND_REMOVE
+        } else {
+            STOP_FOREGROUND_DETACH
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            stopForeground(behavior)
+        } else {
+            @Suppress("DEPRECATION")
+            stopForeground(removeNotification)
         }
     }
 
@@ -915,6 +1011,20 @@ class NativePlaybackService : MediaSessionService() {
                 playing = isP,
                 playWhenReady = isPWR
             )
+        }
+
+        fun foregroundNotificationSignature(): String {
+            val p = _player
+            val playing = p?.isPlaying ?: lastIsPlaying
+            val playWhenReady = p?.playWhenReady ?: lastPlayWhenReady
+            return listOf(
+                sessionId,
+                title,
+                subtitle.orEmpty(),
+                playing,
+                playWhenReady,
+                repeatOne
+            ).joinToString("|")
         }
 
         fun release() {

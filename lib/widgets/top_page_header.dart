@@ -113,34 +113,50 @@ class TopPageHeader extends StatelessWidget {
       ),
     );
 
-    final headerWidget = Container(
-      padding: EdgeInsets.only(top: topPadding),
-      decoration: BoxDecoration(
-        color: cs.surface.withValues(alpha: isTransitioning ? 0.72 : 0.58),
-        border: Border(
-          bottom: BorderSide(
-            color: cs.outlineVariant.withValues(alpha: 0.15),
-            width: 0.5,
-          ),
-        ),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [headerContent, ?additionalChild],
-      ),
-    );
+    final blurTarget = isTransitioning ? 0.0 : (isSmallWindow ? 20.0 : 36.0);
+    final alphaTarget = isTransitioning ? 0.72 : 0.58;
 
-    final blurSigma = isTransitioning ? 0.0 : (isSmallWindow ? 12.0 : 22.0);
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(end: blurTarget),
+      duration: const Duration(milliseconds: 240),
+      curve: Curves.easeOutCubic,
+      builder: (context, blur, _) {
+        return TweenAnimationBuilder<double>(
+          tween: Tween<double>(end: alphaTarget),
+          duration: const Duration(milliseconds: 240),
+          curve: Curves.easeOutCubic,
+          builder: (context, alpha, _) {
+            final headerWidget = Container(
+              padding: EdgeInsets.only(top: topPadding),
+              decoration: BoxDecoration(
+                color: cs.surface.withValues(alpha: alpha),
+                border: Border(
+                  bottom: BorderSide(
+                    color: cs.outlineVariant.withValues(alpha: 0.15),
+                    width: 0.5,
+                  ),
+                ),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [headerContent, if (additionalChild != null) additionalChild!],
+              ),
+            );
 
-    if (blurSigma <= 0) {
-      return headerWidget;
-    }
-    return ClipRect(
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: blurSigma, sigmaY: blurSigma),
-        child: headerWidget,
-      ),
+            if (blur <= 0.1) {
+              return headerWidget;
+            }
+
+            return ClipRect(
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+                child: headerWidget,
+              ),
+            );
+          },
+        );
+      },
     );
   }
 }

@@ -307,12 +307,12 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
               MediaQuery.sizeOf(context).height * dismissProgress;
           final enterOffset =
               (1 - enterProgress) * MediaQuery.sizeOf(context).height;
-          final backdropCurve = Curves.easeInQuint.transform(dismissProgress);
+          final backdropCurve = Curves.easeInOutCubic.transform(dismissProgress);
           final backdropProgress = (enterProgress * (1 - backdropCurve)).clamp(
             0.0,
             1.0,
           );
-          final detailOpacity = ((1 - dismissProgress) / 0.82).clamp(0.0, 1.0);
+          final detailOpacity = ((1 - dismissProgress) / 0.75).clamp(0.0, 1.0);
 
           return Stack(
             fit: StackFit.expand,
@@ -421,8 +421,8 @@ class _SessionDetailBackdrop extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final blurSigma = lerpDouble(0, 10, progress) ?? 0;
-    final gradientAlpha = lerpDouble(0, 1, progress) ?? 0;
+    final blurSigma = lerpDouble(0, 24, progress) ?? 0;
+    final gradientAlpha = lerpDouble(0, 0.8, progress) ?? 0;
 
     if (blurSigma < 0.1 && gradientAlpha < 0.01) return const SizedBox.shrink();
 
@@ -634,7 +634,7 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
             Positioned.fill(
               child: RepaintBoundary(
                 child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+                  filter: ImageFilter.blur(sigmaX: 32, sigmaY: 32),
                   child: const SizedBox.expand(),
                 ),
               ),

@@ -17,7 +17,6 @@ class _SessionsEmptyState extends StatelessWidget {
     return Padding(
       padding: EdgeInsets.fromLTRB(24, topInset, 24, bottomInset),
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.start,
         children: [
           const SizedBox(height: 20),
           Container(
@@ -34,7 +33,6 @@ class _SessionsEmptyState extends StatelessWidget {
               ),
               border: Border.all(
                 color: cs.outlineVariant.withValues(alpha: 0.1),
-                width: 1,
               ),
             ),
             child: Padding(
@@ -82,9 +80,7 @@ class _SessionsEmptyState extends StatelessWidget {
                   Text(
                     i18n.tr('go_library_hint'),
                     textAlign: TextAlign.center,
-                    style: Theme.of(
-                      context,
-                    ).textTheme.bodyMedium?.copyWith(
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       color: cs.onSurfaceVariant,
                       height: 1.4,
                     ),
@@ -209,8 +205,8 @@ class _SessionListCardState extends State<_SessionListCard> {
     final folderName = rootFolderName.isNotEmpty
         ? rootFolderName
         : (track != null && !track.isSingle)
-            ? track.groupTitle
-            : i18n.tr('imported_files');
+        ? track.groupTitle
+        : i18n.tr('imported_files');
 
     final isPlaying = sessionView.isPlaying;
     final cardShape = RoundedRectangleBorder(
@@ -326,7 +322,9 @@ class _SessionListCardState extends State<_SessionListCard> {
                                   ? null
                                   : () {
                                       Feedback.forTap(context);
-                                      provider.toggleSessionPlayPause(session.id);
+                                      provider.toggleSessionPlayPause(
+                                        session.id,
+                                      );
                                     },
                               style: IconButton.styleFrom(
                                 foregroundColor: isPlaying
@@ -375,8 +373,12 @@ class _SessionListCardState extends State<_SessionListCard> {
                             ),
                             Consumer(
                               builder: (context, ref, child) {
-                                final settings = ref.watch(subtitleSettingsProvider);
-                                final showSub = settings.isGlobalEnabled(session.id);
+                                final settings = ref.watch(
+                                  subtitleSettingsProvider,
+                                );
+                                final showSub = settings.isGlobalEnabled(
+                                  session.id,
+                                );
                                 if (!showSub &&
                                     !sessionView.channelSwapEnabled) {
                                   return const SizedBox.shrink();
@@ -387,12 +389,20 @@ class _SessionListCardState extends State<_SessionListCard> {
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
                                       if (showSub)
-                                        Icon(Icons.subtitles_rounded, size: 10, color: cs.primary),
+                                        Icon(
+                                          Icons.subtitles_rounded,
+                                          size: 10,
+                                          color: cs.primary,
+                                        ),
                                       if (showSub &&
                                           sessionView.channelSwapEnabled)
                                         const SizedBox(width: 2),
                                       if (sessionView.channelSwapEnabled)
-                                        Icon(Icons.swap_horiz_rounded, size: 10, color: cs.primary),
+                                        Icon(
+                                          Icons.swap_horiz_rounded,
+                                          size: 10,
+                                          color: cs.primary,
+                                        ),
                                     ],
                                   ),
                                 );

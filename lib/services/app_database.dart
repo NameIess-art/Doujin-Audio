@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
 
+import '../models/audio_detail.dart';
 import '../models/music_track.dart';
 
 class AppDatabase {
@@ -27,7 +28,7 @@ class AppDatabase {
     final dbPath = await getDatabasesPath();
     final db = await openDatabase(
       p.join(dbPath, 'audio_player.db'),
-      version: 7,
+      version: 8,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -73,6 +74,7 @@ class AppDatabase {
         sort_order INTEGER NOT NULL DEFAULT 0
       )
     ''');
+    await _createAudioDetailsTable(db);
   }
 
   static Future<void> _onUpgrade(
@@ -152,6 +154,9 @@ class AppDatabase {
         'INTEGER NOT NULL DEFAULT 0',
       );
     }
+    if (oldVersion < 8) {
+      await _createAudioDetailsTable(db);
+    }
     await _createTrackIndexes(db);
   }
 
@@ -185,6 +190,28 @@ class AppDatabase {
     );
     await db.execute(
       'CREATE INDEX IF NOT EXISTS idx_tracks_scan_generation ON tracks(scan_generation)',
+    );
+  }
+
+  static Future<void> _createAudioDetailsTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS audio_details (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        target_type TEXT NOT NULL,
+        target_path TEXT NOT NULL,
+        rj_code TEXT NOT NULL DEFAULT '',
+        work_title TEXT NOT NULL DEFAULT '',
+        circle_name TEXT NOT NULL DEFAULT '',
+        voice_actors_json TEXT NOT NULL DEFAULT '[]',
+        tags_json TEXT NOT NULL DEFAULT '[]',
+        created_at_ms INTEGER NOT NULL DEFAULT 0,
+        updated_at_ms INTEGER NOT NULL DEFAULT 0,
+        UNIQUE(target_type, target_path)
+      )
+    ''');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_audio_details_target '
+      'ON audio_details(target_type, target_path)',
     );
   }
 
@@ -288,6 +315,36 @@ class AppDatabase {
     await db.delete('sessions');
   }
 
+  Future<AudioDetail?> loadAudioDetail(AudioDetailTarget target) async {
+    final db = await database;
+    final rows = await db.query(
+      'audio_details',
+      where: 'target_type = ? AND target_path = ?',
+      whereArgs: [target.targetType.dbValue, target.targetPath],
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    return AudioDetail.fromRow(rows.first);
+  }
+
+  Future<void> upsertAudioDetail(AudioDetail detail) async {
+    final db = await database;
+    await db.insert(
+      'audio_details',
+      detail.toRow(),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<void> deleteAudioDetail(AudioDetailTarget target) async {
+    final db = await database;
+    await db.delete(
+      'audio_details',
+      where: 'target_type = ? AND target_path = ?',
+      whereArgs: [target.targetType.dbValue, target.targetPath],
+    );
+  }
+
   // ---- SharedPreferences migration helper ----
 
   /// One-shot: load from the legacy SharedPreferences JSON blob and store
@@ -383,7 +440,9 @@ class AppDatabase {
     coverCachePath: row['cover_cache_path'] as String?,
     lyricsPath: row['lyrics_path'] as String?,
     manualCoverPath: row['manual_cover_path'] as String?,
-    duration: Duration(milliseconds: (row['duration_ms'] as num?)?.toInt() ?? 0),
+    duration: Duration(
+      milliseconds: (row['duration_ms'] as num?)?.toInt() ?? 0,
+    ),
   );
 
   static Map<String, dynamic> _sessionToRow(

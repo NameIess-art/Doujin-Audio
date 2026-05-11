@@ -11,11 +11,13 @@ import 'package:just_audio/just_audio.dart';
 import 'package:path/path.dart' as path;
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../models/music_track.dart';
+import '../models/audio_detail.dart';
 import '../models/library_node.dart';
+import '../models/music_track.dart';
 import '../models/playback_mode.dart';
 import '../models/playback_session.dart';
 import '../services/audio_database_repository.dart';
+import '../services/audio_detail_repository.dart';
 import '../services/audio_state_services.dart';
 import '../services/app_database.dart';
 import '../services/library_organizer.dart';
@@ -26,6 +28,7 @@ import '../services/timer_runtime_calculator.dart';
 import '../services/warmup_scheduler.dart';
 
 export '../models/library_node.dart';
+export '../models/audio_detail.dart';
 export '../models/music_track.dart';
 export '../models/playback_mode.dart';
 export '../models/playback_session.dart';
@@ -38,6 +41,7 @@ import '../services/subtitle_parser.dart';
 part 'audio_provider_notifications.dart';
 part 'audio_provider_persistence.dart';
 part 'audio_provider_library.dart';
+part 'audio_provider_audio_details.dart';
 part 'audio_provider_playback.dart';
 part 'audio_provider_playback_sessions.dart';
 part 'audio_provider_playback_timer.dart';
@@ -91,6 +95,7 @@ class AudioProvider with ChangeNotifier {
   );
   final PlaybackNotificationService _notificationService;
   final AudioDatabaseRepository _audioDatabaseRepository;
+  final AudioDetailRepository _audioDetailRepository;
   final NativePlaybackRepository _nativePlaybackRepository;
   final PlaybackCommandRunner _playbackCommandRunner;
   final LibraryService _libraryService;
@@ -432,6 +437,7 @@ class AudioProvider with ChangeNotifier {
   AudioProvider({
     required PlaybackNotificationService notificationService,
     AudioDatabaseRepository? audioDatabaseRepository,
+    AudioDetailRepository? audioDetailRepository,
     NativePlaybackRepository? nativePlaybackRepository,
     PlaybackCommandRunner playbackCommandRunner = const PlaybackCommandRunner(),
     LibraryService? libraryService,
@@ -442,6 +448,12 @@ class AudioProvider with ChangeNotifier {
   }) : _notificationService = notificationService,
        _audioDatabaseRepository =
            audioDatabaseRepository ?? AudioDatabaseRepository(),
+       _audioDetailRepository =
+           audioDetailRepository ??
+           AudioDetailRepository(
+             databaseRepository:
+                 audioDatabaseRepository ?? AudioDatabaseRepository(),
+           ),
        _nativePlaybackRepository =
            nativePlaybackRepository ?? NativePlaybackRepository(),
        _playbackCommandRunner = playbackCommandRunner,
@@ -466,6 +478,7 @@ class AudioProvider with ChangeNotifier {
   AudioProvider.test({
     required PlaybackNotificationService notificationService,
     AudioDatabaseRepository? audioDatabaseRepository,
+    AudioDetailRepository? audioDetailRepository,
     NativePlaybackRepository? nativePlaybackRepository,
     PlaybackCommandRunner playbackCommandRunner = const PlaybackCommandRunner(),
     LibraryService? libraryService,
@@ -476,6 +489,12 @@ class AudioProvider with ChangeNotifier {
   }) : _notificationService = notificationService,
        _audioDatabaseRepository =
            audioDatabaseRepository ?? AudioDatabaseRepository(),
+       _audioDetailRepository =
+           audioDetailRepository ??
+           AudioDetailRepository(
+             databaseRepository:
+                 audioDatabaseRepository ?? AudioDatabaseRepository(),
+           ),
        _nativePlaybackRepository =
            nativePlaybackRepository ?? NativePlaybackRepository(),
        _playbackCommandRunner = playbackCommandRunner,

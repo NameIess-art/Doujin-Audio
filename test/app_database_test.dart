@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:nameless_audio/models/audio_detail.dart';
 import 'package:nameless_audio/models/music_track.dart';
 import 'package:nameless_audio/services/app_database.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -184,5 +185,40 @@ void main() {
     expect(indexNames, contains('idx_tracks_last_played_at'));
     expect(indexNames, contains('idx_tracks_favorite'));
     expect(indexNames, contains('idx_tracks_scan_generation'));
+  });
+
+  test('audio details round-trip and delete by target', () async {
+    final target = AudioDetailTarget.libraryRootFolder('/library/root');
+    final detail = AudioDetail(
+      target: target,
+      rjCode: 'RJ123456',
+      workTitle: 'Work',
+      circleName: 'Circle',
+      voiceActors: const <String>['A', 'B'],
+      tags: const <String>['tag'],
+      createdAt: DateTime.fromMillisecondsSinceEpoch(1000),
+      updatedAt: DateTime.fromMillisecondsSinceEpoch(2000),
+    );
+
+    await appDatabase.upsertAudioDetail(detail);
+
+    final loaded = await appDatabase.loadAudioDetail(target);
+    expect(loaded?.rjCode, 'RJ123456');
+    expect(loaded?.voiceActors, const <String>['A', 'B']);
+    expect(loaded?.tags, const <String>['tag']);
+
+    await appDatabase.deleteAudioDetail(target);
+
+    expect(await appDatabase.loadAudioDetail(target), isNull);
+  });
+
+  test('schema creates audio detail target index', () async {
+    final indexes = await db.rawQuery('PRAGMA index_list(audio_details)');
+    final indexNames = indexes
+        .map((row) => row['name'] as String?)
+        .whereType<String>()
+        .toSet();
+
+    expect(indexNames, contains('idx_audio_details_target'));
   });
 }

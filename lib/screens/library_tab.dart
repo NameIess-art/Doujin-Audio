@@ -30,6 +30,7 @@ import '../widgets/swipe_reveal_card.dart';
 import '../widgets/top_page_header.dart';
 import '../widgets/unified_popup_menu.dart';
 import '../widgets/waterfall_flow_stagger.dart';
+import 'audio_detail_sheet.dart';
 import 'screen_view_models.dart';
 import 'video_converter_tab.dart';
 
@@ -435,8 +436,9 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                 : RefreshIndicator(
                     key: _refreshIndicatorKey,
                     color: Theme.of(context).colorScheme.primary,
-                    backgroundColor:
-                        Theme.of(context).colorScheme.surfaceContainerHighest,
+                    backgroundColor: Theme.of(
+                      context,
+                    ).colorScheme.surfaceContainerHighest,
                     onRefresh: () async {
                       unawaited(HapticFeedback.mediumImpact());
                       await _refreshWatchedFolders();

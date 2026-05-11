@@ -14,6 +14,10 @@ class SwipeRevealCard extends StatefulWidget {
     required this.shape,
     this.margin = EdgeInsets.zero,
     this.onWillReveal,
+    this.onSecondaryAction,
+    this.secondaryActionLabel,
+    this.secondaryActionTooltip,
+    this.secondaryActionIcon = Icons.info_outline_rounded,
   });
 
   final Widget child;
@@ -23,13 +27,16 @@ class SwipeRevealCard extends StatefulWidget {
   final ShapeBorder shape;
   final EdgeInsets margin;
   final VoidCallback? onWillReveal;
+  final VoidCallback? onSecondaryAction;
+  final String? secondaryActionLabel;
+  final String? secondaryActionTooltip;
+  final IconData secondaryActionIcon;
 
   @override
   State<SwipeRevealCard> createState() => _SwipeRevealCardState();
 }
 
 class _SwipeRevealCardState extends State<SwipeRevealCard> {
-  static const double _actionWidth = 72;
   static const double _revealStartThreshold = 32;
   static const double _verticalRejectThreshold = 8;
   static const double _acceptSlopeRatio = 2.2;
@@ -44,6 +51,8 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
   bool _dragAccepted = false;
   bool _dragRejected = false;
 
+  bool get _hasSecondaryAction => widget.onSecondaryAction != null;
+  double get _actionWidth => _hasSecondaryAction ? 144 : 72;
   bool get _isOpen => _revealedWidth > (_actionWidth * 0.5);
 
   @override
@@ -154,6 +163,12 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
     final i18n = context.watch<AppLanguageProvider>();
     final cs = Theme.of(context).colorScheme;
     final revealProgress = (_revealedWidth / _actionWidth).clamp(0.0, 1.0);
+    final actionLabel = _hasSecondaryAction
+        ? '${widget.secondaryActionLabel ?? ''} / ${widget.actionLabel}'
+        : widget.actionLabel;
+    final actionTooltip = _hasSecondaryAction
+        ? widget.secondaryActionTooltip ?? widget.removeTooltip
+        : widget.removeTooltip;
     return TapRegion(
       onTapOutside: (_) => _closePane(),
       child: Padding(
@@ -187,7 +202,10 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                       Align(
                         alignment: Alignment.centerLeft,
                         child: Padding(
-                          padding: const EdgeInsets.only(left: 18, right: 86),
+                          padding: EdgeInsets.only(
+                            left: 18,
+                            right: _hasSecondaryAction ? 158 : 86,
+                          ),
                           child: AnimatedOpacity(
                             opacity: 0.24 + (revealProgress * 0.76),
                             duration: const Duration(milliseconds: 160),
@@ -218,7 +236,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                                       ),
                                       const SizedBox(width: 4),
                                       Text(
-                                        widget.actionLabel,
+                                        actionLabel,
                                         style: Theme.of(context)
                                             .textTheme
                                             .labelMedium
@@ -232,7 +250,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                                 ),
                                 const SizedBox(height: 8),
                                 Text(
-                                  widget.removeTooltip,
+                                  actionTooltip,
                                   maxLines: 2,
                                   overflow: TextOverflow.ellipsis,
                                   style: Theme.of(context).textTheme.bodySmall
@@ -254,21 +272,49 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                             scale: 0.92 + (revealProgress * 0.08),
                             duration: const Duration(milliseconds: 180),
                             curve: Curves.easeOutBack,
-                            child: IconButton.filled(
-                              onPressed: () {
-                                Feedback.forTap(context);
-                                HapticFeedback.mediumImpact();
-                                _closePane();
-                                widget.onRemove();
-                              },
-                              style: IconButton.styleFrom(
-                                backgroundColor: cs.error,
-                                foregroundColor: cs.onError,
-                                minimumSize: const Size(54, 54),
-                                maximumSize: const Size(54, 54),
-                              ),
-                              tooltip: i18n.tr('remove'),
-                              icon: const Icon(Icons.delete_outline_rounded),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (_hasSecondaryAction) ...[
+                                  IconButton.filledTonal(
+                                    onPressed: () {
+                                      Feedback.forTap(context);
+                                      HapticFeedback.selectionClick();
+                                      _closePane();
+                                      widget.onSecondaryAction?.call();
+                                    },
+                                    style: IconButton.styleFrom(
+                                      backgroundColor: cs.primaryContainer,
+                                      foregroundColor: cs.onPrimaryContainer,
+                                      minimumSize: const Size(54, 54),
+                                      maximumSize: const Size(54, 54),
+                                    ),
+                                    tooltip:
+                                        widget.secondaryActionTooltip ??
+                                        widget.secondaryActionLabel,
+                                    icon: Icon(widget.secondaryActionIcon),
+                                  ),
+                                  const SizedBox(width: 8),
+                                ],
+                                IconButton.filled(
+                                  onPressed: () {
+                                    Feedback.forTap(context);
+                                    HapticFeedback.mediumImpact();
+                                    _closePane();
+                                    widget.onRemove();
+                                  },
+                                  style: IconButton.styleFrom(
+                                    backgroundColor: cs.error,
+                                    foregroundColor: cs.onError,
+                                    minimumSize: const Size(54, 54),
+                                    maximumSize: const Size(54, 54),
+                                  ),
+                                  tooltip: i18n.tr('remove'),
+                                  icon: const Icon(
+                                    Icons.delete_outline_rounded,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ),

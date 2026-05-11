@@ -298,6 +298,14 @@ class _FolderNodeWidgetState extends State<_FolderNodeWidget> {
       shape: cardShape,
       actionLabel: i18n.tr('remove'),
       removeTooltip: i18n.tr('remove_audio_folder'),
+      secondaryActionLabel: i18n.tr('audio_detail'),
+      secondaryActionTooltip: i18n.tr('audio_detail'),
+      onSecondaryAction: () => unawaited(
+        showAudioDetailSheet(
+          context,
+          AudioDetailTarget.libraryRootFolder(widget.folder.path),
+        ),
+      ),
       onRemove: () => _removeFolder(context, provider),
       onWillReveal: _expansionController.collapse,
       child: Card(
@@ -375,6 +383,14 @@ class _TrackNodeWidget extends ConsumerWidget {
         shape: cardShape,
         actionLabel: i18n.tr('remove'),
         removeTooltip: i18n.tr('remove_audio'),
+        secondaryActionLabel: i18n.tr('audio_detail'),
+        secondaryActionTooltip: i18n.tr('audio_detail'),
+        onSecondaryAction: () => unawaited(
+          showAudioDetailSheet(
+            context,
+            AudioDetailTarget.singleAudioFile(track.path),
+          ),
+        ),
         onRemove: () => _removeTrack(context, provider, track),
         child: Card(
           margin: EdgeInsets.zero,

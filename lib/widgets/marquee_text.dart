@@ -21,7 +21,6 @@ class MarqueeText extends StatefulWidget {
 
 class _MarqueeTextState extends State<MarqueeText> {
   late ScrollController _scrollController;
-  bool _isScrolling = false;
   bool _isMounted = true;
 
   @override
@@ -36,7 +35,7 @@ class _MarqueeTextState extends State<MarqueeText> {
 
   void _startScrolling() async {
     if (!_isMounted) return;
-    
+
     while (_isMounted) {
       if (!_scrollController.hasClients) {
         await Future<void>.delayed(const Duration(milliseconds: 100));
@@ -57,14 +56,12 @@ class _MarqueeTextState extends State<MarqueeText> {
       final duration = Duration(
         milliseconds: (maxScroll / widget.scrollSpeed * 1000).toInt(),
       );
-      
-      _isScrolling = true;
+
       await _scrollController.animateTo(
         maxScroll,
         duration: duration,
         curve: Curves.linear,
       );
-      _isScrolling = false;
 
       if (!_isMounted || !_scrollController.hasClients) break;
 

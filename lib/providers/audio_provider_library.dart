@@ -107,7 +107,8 @@ extension AudioProviderLibrary on AudioProvider {
     if (!changed) return;
     if (excluded) {
       _removeTracksWhere(
-        (track) => PathMatcher.isWithinOrEqual(track.path, normalizedFolderPath),
+        (track) =>
+            PathMatcher.isWithinOrEqual(track.path, normalizedFolderPath),
       );
     }
     _notifyListeners();
@@ -386,6 +387,9 @@ extension AudioProviderLibrary on AudioProvider {
 
   Future<void> removeFolderFromLibrary(String folderPath) async {
     _clearResolvedCoverPaths();
+    unawaited(
+      deleteAudioDetail(AudioDetailTarget.libraryRootFolder(folderPath)),
+    );
     final normalizedFolderPath = PathMatcher.normalize(folderPath);
     final trackPaths = _library
         .where(

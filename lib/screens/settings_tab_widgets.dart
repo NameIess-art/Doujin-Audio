@@ -443,7 +443,6 @@ class _SubtitleWindowSettingsSheet extends StatelessWidget {
                 ),
                 Slider(
                   value: settings.backgroundBlur,
-                  min: 0,
                   max: 50,
                   divisions: 50,
                   onChanged: (v) => notifier.setBackgroundBlur(v),
@@ -469,8 +468,6 @@ class _SubtitleWindowSettingsSheet extends StatelessWidget {
                 ),
                 Slider(
                   value: 1.0 - settings.backgroundOpacity,
-                  min: 0,
-                  max: 1.0,
                   divisions: 100,
                   onChanged: (v) => notifier.setBackgroundOpacity(1.0 - v),
                 ),
@@ -508,8 +505,6 @@ class _SubtitleWindowSettingsSheet extends StatelessWidget {
                 ),
                 Slider(
                   value: settings.borderDepth,
-                  min: 0,
-                  max: 1.0,
                   divisions: 100,
                   onChanged: (v) => notifier.setBorderDepth(v),
                 ),
@@ -591,7 +586,6 @@ class _RgbSliderRowState extends State<_RgbSliderRow> {
         Expanded(
           child: Slider(
             value: widget.value.toDouble(),
-            min: 0,
             max: 255,
             divisions: 255,
             onChanged: widget.onChanged,

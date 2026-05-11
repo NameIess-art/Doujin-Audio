@@ -1,5 +1,6 @@
 import 'package:sqflite/sqflite.dart';
 
+import '../models/audio_detail.dart';
 import '../models/music_track.dart';
 import 'app_database.dart';
 
@@ -46,5 +47,17 @@ class AudioDatabaseRepository {
 
   Future<void> saveAllSessions(List<PersistedSession> sessions) {
     return _database.saveAllSessions(sessions);
+  }
+
+  Future<AudioDetail?> loadAudioDetail(AudioDetailTarget target) {
+    return _database.loadAudioDetail(target);
+  }
+
+  Future<void> upsertAudioDetail(AudioDetail detail) {
+    return _database.upsertAudioDetail(detail);
+  }
+
+  Future<void> deleteAudioDetail(AudioDetailTarget target) {
+    return _database.deleteAudioDetail(target);
   }
 }

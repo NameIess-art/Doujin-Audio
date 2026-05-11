@@ -28,8 +28,15 @@ jobs:
       - name: Test
         run: flutter test
 
+      - name: Android JVM tests
+        working-directory: android
+        run: ./gradlew testDebugUnitTest
+
       - name: Build debug APK
         run: flutter build apk --debug
 
       - name: Build release APK
         run: flutter build apk --release
+
+      - name: Build split release APKs
+        run: flutter build apk --release --split-per-abi

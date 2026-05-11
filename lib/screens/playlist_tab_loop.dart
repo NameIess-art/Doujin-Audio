@@ -1,15 +1,10 @@
 part of 'playlist_tab.dart';
 
 class _ExpandableLoopOptions extends StatefulWidget {
-  const _ExpandableLoopOptions({
-    required this.session,
-    required this.provider,
-    this.compact = false,
-  });
+  const _ExpandableLoopOptions({required this.session, required this.provider});
 
   final PlaybackSession session;
   final AudioProvider provider;
-  final bool compact;
 
   @override
   State<_ExpandableLoopOptions> createState() => _ExpandableLoopOptionsState();
@@ -321,8 +316,8 @@ class _ExpandableLoopOptionsState extends State<_ExpandableLoopOptions>
     return CompositedTransformTarget(
       link: _anchorLink,
       child: SizedBox(
-        width: widget.compact ? 40 : 44,
-        height: widget.compact ? 74 : 82,
+        width: 44,
+        height: 82,
         child: IgnorePointer(
           ignoring: _expanded,
           child: Visibility(

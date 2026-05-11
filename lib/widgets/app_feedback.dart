@@ -198,7 +198,6 @@ class AppFeedbackSurface extends StatelessWidget {
             borderRadius: BorderRadius.circular(borderRadius),
             border: Border.all(
               color: cs.outlineVariant.withValues(alpha: 0.18),
-              width: 1,
             ),
             boxShadow: [
               BoxShadow(
@@ -288,7 +287,9 @@ Color _accentColor(BuildContext context, AppFeedbackTone tone) {
     case AppFeedbackTone.warning:
       return isDark ? Colors.orangeAccent.shade100 : Colors.orange.shade900;
     case AppFeedbackTone.destructive:
-      return isDark ? const Color(0xFFFFB4AB) : const Color(0xFFBA1A1A); // Custom light/dark error colors
+      return isDark
+          ? const Color(0xFFFFB4AB)
+          : const Color(0xFFBA1A1A); // Custom light/dark error colors
   }
 }
 

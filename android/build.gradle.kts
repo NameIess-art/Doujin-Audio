@@ -12,8 +12,20 @@ val newBuildDir: Directory =
 rootProject.layout.buildDirectory.value(newBuildDir)
 
 subprojects {
-    val newSubprojectBuildDir: Directory = newBuildDir.dir(project.name)
+    val projectPath = project.layout.projectDirectory.asFile.toPath().normalize()
+    val rootPath = rootProject.layout.projectDirectory.asFile.toPath().normalize()
+    val isInRepository = projectPath.startsWith(rootPath)
+    val newSubprojectBuildDir: Directory = if (isInRepository) {
+        newBuildDir.dir(project.name)
+    } else {
+        project.layout.projectDirectory.dir("build")
+    }
     project.layout.buildDirectory.value(newSubprojectBuildDir)
+    if (!isInRepository) {
+        tasks.matching { it.name.contains("UnitTest") }.configureEach {
+            enabled = false
+        }
+    }
 }
 subprojects {
     project.evaluationDependsOn(":app")

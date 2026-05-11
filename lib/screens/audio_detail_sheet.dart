@@ -1,0 +1,393 @@
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import '../i18n/app_language_provider.dart';
+import '../providers/audio_provider.dart';
+import '../widgets/app_feedback.dart';
+
+Future<void> showAudioDetailSheet(
+  BuildContext context,
+  AudioDetailTarget target,
+) {
+  return showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    showDragHandle: true,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+    ),
+    builder: (_) => AudioDetailSheet(target: target),
+  );
+}
+
+class AudioDetailSheet extends StatefulWidget {
+  const AudioDetailSheet({super.key, required this.target});
+
+  final AudioDetailTarget target;
+
+  @override
+  State<AudioDetailSheet> createState() => _AudioDetailSheetState();
+}
+
+class _AudioDetailSheetState extends State<AudioDetailSheet> {
+  AudioDetail? _detail;
+  Object? _loadError;
+  bool _loading = true;
+  _AudioDetailField? _savingField;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_load());
+  }
+
+  Future<void> _load() async {
+    try {
+      final result = await context.read<AudioProvider>().loadAudioDetail(
+        widget.target,
+      );
+      if (!mounted) return;
+      setState(() {
+        _detail = result.detail;
+        _loading = false;
+      });
+      if (result.restoredFromBackup) {
+        showAppSnackBar(
+          context,
+          context.read<AppLanguageProvider>().tr(
+            'audio_detail_restored_from_backup',
+          ),
+          tone: AppFeedbackTone.success,
+        );
+      }
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _loadError = error;
+        _loading = false;
+      });
+    }
+  }
+
+  Future<void> _editField(_AudioDetailField field) async {
+    final detail = _detail;
+    if (detail == null || _savingField != null) return;
+
+    final i18n = context.read<AppLanguageProvider>();
+    final initialValue = field.isMulti
+        ? field.readList(detail).join('，')
+        : field.readText(detail);
+    final controller = TextEditingController(text: initialValue);
+    final value = await showDialog<String>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text(
+            i18n.tr('audio_detail_edit_title', {'name': field.label(i18n)}),
+          ),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            minLines: 1,
+            maxLines: field.isMulti ? 3 : 1,
+            textInputAction: TextInputAction.done,
+            decoration: InputDecoration(
+              hintText: field.isMulti
+                  ? i18n.tr('audio_detail_multi_hint')
+                  : null,
+            ),
+            onSubmitted: (_) => Navigator.of(context).pop(controller.text),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: Text(i18n.tr('cancel')),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(controller.text),
+              child: Text(MaterialLocalizations.of(context).saveButtonLabel),
+            ),
+          ],
+        );
+      },
+    );
+    controller.dispose();
+    if (value == null || !mounted) return;
+
+    final nextDetail = field.apply(detail, value);
+    await _saveField(field, nextDetail);
+  }
+
+  Future<void> _saveField(
+    _AudioDetailField field,
+    AudioDetail nextDetail,
+  ) async {
+    setState(() {
+      _savingField = field;
+    });
+    try {
+      final result = await context.read<AudioProvider>().saveAudioDetail(
+        nextDetail,
+      );
+      if (!mounted) return;
+      setState(() {
+        _detail = result.detail;
+        _savingField = null;
+      });
+      final i18n = context.read<AppLanguageProvider>();
+      if (field == _AudioDetailField.rjCode &&
+          !_looksLikeRjCode(result.detail.rjCode)) {
+        showAppSnackBar(
+          context,
+          i18n.tr('audio_detail_rj_format_hint'),
+          tone: AppFeedbackTone.warning,
+        );
+      }
+      if (result.backupFailed) {
+        showAppSnackBar(
+          context,
+          i18n.tr('audio_detail_backup_failed'),
+          tone: AppFeedbackTone.warning,
+        );
+      }
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _savingField = null;
+      });
+      showAppSnackBar(
+        context,
+        context.read<AppLanguageProvider>().tr('audio_detail_save_failed'),
+        tone: AppFeedbackTone.warning,
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final i18n = context.watch<AppLanguageProvider>();
+    final cs = Theme.of(context).colorScheme;
+    final labelStyle = Theme.of(
+      context,
+    ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700);
+    final detail = _detail;
+
+    return ConstrainedBox(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.sizeOf(context).height * 0.68,
+      ),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(24, 0, 24, 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    i18n.tr('audio_detail_title'),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  onPressed: () => Navigator.of(context).maybePop(),
+                  tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
+                  icon: const Icon(Icons.keyboard_arrow_down_rounded),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              widget.target.isLibraryRootFolder
+                  ? i18n.tr('audio_detail_library_root')
+                  : i18n.tr('audio_detail_single_file'),
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              widget.target.targetPath,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+            ),
+            const SizedBox(height: 16),
+            if (_loading)
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.symmetric(vertical: 32),
+                  child: CircularProgressIndicator(),
+                ),
+              )
+            else if (_loadError != null)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 24),
+                child: Text(
+                  i18n.tr('audio_detail_load_failed'),
+                  style: TextStyle(color: cs.error),
+                ),
+              )
+            else if (detail != null)
+              ..._AudioDetailField.values.expand(
+                (field) => [
+                  _AudioDetailRow(
+                    label: field.label(i18n),
+                    value: field.displayValue(detail, i18n),
+                    labelStyle: labelStyle,
+                    busy: _savingField == field,
+                    onTap: () => _editField(field),
+                  ),
+                  if (field != _AudioDetailField.values.last)
+                    const Divider(height: 1),
+                ],
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AudioDetailRow extends StatelessWidget {
+  const _AudioDetailRow({
+    required this.label,
+    required this.value,
+    required this.labelStyle,
+    required this.busy,
+    required this.onTap,
+  });
+
+  final String label;
+  final String value;
+  final TextStyle? labelStyle;
+  final bool busy;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return InkWell(
+      onTap: busy ? null : onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 92,
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: labelStyle,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                value,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.right,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: value.isEmpty ? cs.onSurfaceVariant : cs.onSurface,
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            SizedBox(
+              width: 24,
+              height: 24,
+              child: busy
+                  ? const CircularProgressIndicator(strokeWidth: 2)
+                  : Icon(
+                      Icons.edit_rounded,
+                      size: 18,
+                      color: cs.onSurfaceVariant,
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+enum _AudioDetailField {
+  rjCode,
+  workTitle,
+  circleName,
+  voiceActors,
+  tags;
+
+  bool get isMulti =>
+      this == _AudioDetailField.voiceActors || this == _AudioDetailField.tags;
+
+  String label(AppLanguageProvider i18n) {
+    return switch (this) {
+      _AudioDetailField.rjCode => i18n.tr('audio_detail_rj_code'),
+      _AudioDetailField.workTitle => i18n.tr('audio_detail_work_title'),
+      _AudioDetailField.circleName => i18n.tr('audio_detail_circle_name'),
+      _AudioDetailField.voiceActors => i18n.tr('audio_detail_voice_actors'),
+      _AudioDetailField.tags => i18n.tr('audio_detail_tags'),
+    };
+  }
+
+  String readText(AudioDetail detail) {
+    return switch (this) {
+      _AudioDetailField.rjCode => detail.rjCode,
+      _AudioDetailField.workTitle => detail.workTitle,
+      _AudioDetailField.circleName => detail.circleName,
+      _AudioDetailField.voiceActors => detail.voiceActors.join('，'),
+      _AudioDetailField.tags => detail.tags.join('，'),
+    };
+  }
+
+  List<String> readList(AudioDetail detail) {
+    return switch (this) {
+      _AudioDetailField.voiceActors => detail.voiceActors,
+      _AudioDetailField.tags => detail.tags,
+      _ => const <String>[],
+    };
+  }
+
+  String displayValue(AudioDetail detail, AppLanguageProvider i18n) {
+    final value = isMulti ? readList(detail).join('，') : readText(detail);
+    return value.isEmpty ? i18n.tr('audio_detail_empty') : value;
+  }
+
+  AudioDetail apply(AudioDetail detail, String rawValue) {
+    final trimmed = rawValue.trim();
+    return switch (this) {
+      _AudioDetailField.rjCode => detail.copyWith(
+        rjCode: trimmed.toUpperCase(),
+      ),
+      _AudioDetailField.workTitle => detail.copyWith(workTitle: trimmed),
+      _AudioDetailField.circleName => detail.copyWith(circleName: trimmed),
+      _AudioDetailField.voiceActors => detail.copyWith(
+        voiceActors: _splitMultiValue(rawValue),
+      ),
+      _AudioDetailField.tags => detail.copyWith(
+        tags: _splitMultiValue(rawValue),
+      ),
+    };
+  }
+}
+
+List<String> _splitMultiValue(String rawValue) {
+  return AudioDetail.normalizeList(rawValue.split('，'));
+}
+
+bool _looksLikeRjCode(String value) {
+  return value.isEmpty || RegExp(r'^RJ\d+$').hasMatch(value);
+}

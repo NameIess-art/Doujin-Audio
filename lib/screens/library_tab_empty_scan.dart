@@ -68,10 +68,7 @@ class _LibraryEmptyState extends StatelessWidget {
                 cs.surfaceContainerLow.withValues(alpha: 0.4),
               ],
             ),
-            border: Border.all(
-              color: cs.outlineVariant.withValues(alpha: 0.1),
-              width: 1,
-            ),
+            border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.1)),
           ),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(24, 42, 24, 42),
@@ -118,9 +115,7 @@ class _LibraryEmptyState extends StatelessWidget {
                 Text(
                   i18n.tr('import_audio_hint'),
                   textAlign: TextAlign.center,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.bodyMedium?.copyWith(
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: cs.onSurfaceVariant,
                     height: 1.4,
                   ),
@@ -144,7 +139,10 @@ class _LibraryEmptyState extends StatelessWidget {
                     ),
                     FilledButton.icon(
                       onPressed: onImportFolder,
-                      icon: const Icon(Icons.create_new_folder_rounded, size: 18),
+                      icon: const Icon(
+                        Icons.create_new_folder_rounded,
+                        size: 18,
+                      ),
                       label: Text(i18n.tr('import_folder')),
                       style: FilledButton.styleFrom(
                         padding: const EdgeInsets.symmetric(

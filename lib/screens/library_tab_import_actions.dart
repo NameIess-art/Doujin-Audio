@@ -39,6 +39,7 @@ extension _LibraryTabImportActions on _LibraryTabState {
           }
           foldersToRefresh.add(childFolder);
           provider.addWatchedFolder(childFolder, notify: false);
+          await _prefillRjDetailForFolder(provider, childFolder);
         }
       }
 
@@ -189,6 +190,7 @@ extension _LibraryTabImportActions on _LibraryTabState {
     } finally {
       await provider.endLibraryBatch();
       provider.addWatchedFolder(folderPath, notify: false);
+      await _prefillRjDetailForFolder(provider, folderPath);
       provider.setScanning(false);
       if (mounted) {
         _showSnack(i18n.tr('import_done_added', {'count': added}));
@@ -251,6 +253,7 @@ extension _LibraryTabImportActions on _LibraryTabState {
 
         if (!mounted) return;
         provider.addWatchedFolder(folderPath, notify: false);
+        await _prefillRjDetailForFolder(provider, folderPath);
       }
     } finally {
       await provider.endLibraryBatch();
@@ -355,5 +358,17 @@ extension _LibraryTabImportActions on _LibraryTabState {
       await provider.endLibraryBatch();
       provider.setScanning(false);
     }
+  }
+
+  Future<void> _prefillRjDetailForFolder(
+    AudioProvider provider,
+    String folderPath,
+  ) async {
+    try {
+      await provider.prefillAudioDetailRjCodeFromText(
+        AudioDetailTarget.libraryRootFolder(folderPath),
+        _displaySourceName(folderPath),
+      );
+    } catch (_) {}
   }
 }

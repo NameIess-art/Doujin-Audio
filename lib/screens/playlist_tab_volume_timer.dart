@@ -141,17 +141,12 @@ class _SessionVolumeSliderState extends State<_SessionVolumeSlider> {
           child: SliderTheme(
             data: Theme.of(context).sliderTheme.copyWith(
               trackHeight: 6,
-              thumbShape: const RoundSliderThumbShape(
-                enabledThumbRadius: 10,
-                elevation: 3,
-                pressedElevation: 6,
-              ),
+              thumbShape: const RoundSliderThumbShape(),
               overlayShape: const RoundSliderOverlayShape(overlayRadius: 20),
               activeTrackColor: isBoosted ? cs.primary : null,
             ),
             child: Slider(
               value: volume,
-              min: 0.0,
               max: 2.0,
               onChangeStart: (value) {
                 HapticFeedback.selectionClick();
@@ -220,15 +215,10 @@ class _SessionVolumeSliderState extends State<_SessionVolumeSlider> {
 }
 
 class _SessionVolumeButton extends StatefulWidget {
-  const _SessionVolumeButton({
-    required this.session,
-    required this.provider,
-    this.compact = false,
-  });
+  const _SessionVolumeButton({required this.session, required this.provider});
 
   final PlaybackSession session;
   final AudioProvider provider;
-  final bool compact;
 
   @override
   State<_SessionVolumeButton> createState() => _SessionVolumeButtonState();
@@ -281,13 +271,10 @@ class _SessionVolumeButtonState extends State<_SessionVolumeButton> {
     return CompositedTransformTarget(
       link: _link,
       child: IconButton(
-        constraints: BoxConstraints.tightFor(
-          width: widget.compact ? 40 : 48,
-          height: widget.compact ? 40 : 48,
-        ),
+        constraints: const BoxConstraints.tightFor(width: 48, height: 48),
         padding: EdgeInsets.zero,
         onPressed: _toggleVolume,
-        icon: Icon(icon, size: widget.compact ? 19 : 20, color: cs.onSurface),
+        icon: Icon(icon, size: 20, color: cs.onSurface),
       ),
     );
   }
@@ -460,10 +447,7 @@ class _VerticalVolumeSliderState extends State<_VerticalVolumeSlider> {
                       child: SliderTheme(
                         data: SliderTheme.of(context).copyWith(
                           trackHeight: 7,
-                          thumbShape: const RoundSliderThumbShape(
-                            enabledThumbRadius: 10,
-                            elevation: 4,
-                          ),
+                          thumbShape: const RoundSliderThumbShape(),
                           overlayShape: const RoundSliderOverlayShape(
                             overlayRadius: 18,
                           ),
@@ -471,7 +455,6 @@ class _VerticalVolumeSliderState extends State<_VerticalVolumeSlider> {
                         ),
                         child: Slider(
                           value: volume,
-                          min: 0.0,
                           max: 2.0,
                           onChanged: (v) {
                             setState(() => _dragVolume = v);

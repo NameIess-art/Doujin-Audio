@@ -10,7 +10,7 @@
 -keep class com.ryanheise.** { *; }
 
 # Application classes
--keep class com.example.music_player.** { *; }
+-keep class com.nameless.audio.** { *; }
 
 # Media3 (reflection-based initialization for MediaSession)
 -keep class androidx.media3.** { *; }

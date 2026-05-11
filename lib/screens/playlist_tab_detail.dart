@@ -307,7 +307,9 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
               MediaQuery.sizeOf(context).height * dismissProgress;
           final enterOffset =
               (1 - enterProgress) * MediaQuery.sizeOf(context).height;
-          final backdropCurve = Curves.easeInOutCubic.transform(dismissProgress);
+          final backdropCurve = Curves.easeInOutCubic.transform(
+            dismissProgress,
+          );
           final backdropProgress = (enterProgress * (1 - backdropCurve)).clamp(
             0.0,
             1.0,
@@ -720,6 +722,13 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                                       context,
                                     ).moreButtonTooltip,
                                     entries: [
+                                      UnifiedMenuEntry<String>.action(
+                                        value: 'audio_detail',
+                                        icon: Icons.info_outline_rounded,
+                                        label: context
+                                            .read<AppLanguageProvider>()
+                                            .tr('audio_detail'),
+                                      ),
                                       if (hasSubtitle) ...[
                                         UnifiedMenuEntry<String>.action(
                                           value: 'toggle_subtitle',
@@ -764,6 +773,21 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                                       ),
                                     ],
                                     onSelected: (value) {
+                                      if (value == 'audio_detail') {
+                                        final target = provider
+                                            .audioDetailTargetForSession(
+                                              session.id,
+                                            );
+                                        if (target != null) {
+                                          unawaited(
+                                            showAudioDetailSheet(
+                                              context,
+                                              target,
+                                            ),
+                                          );
+                                        }
+                                        return;
+                                      }
                                       if (value == 'toggle_subtitle') {
                                         ref
                                             .read(

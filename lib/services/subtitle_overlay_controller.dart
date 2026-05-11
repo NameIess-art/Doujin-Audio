@@ -44,9 +44,11 @@ class SubtitleOverlayController {
   }) async {
     try {
       await _channel.invokeMethod('updateStyle', {
-        if (fontSize != null) 'fontSize': fontSize,
-        if (backgroundColor != null) 'backgroundColor': backgroundColor,
-        if (textColor != null) 'textColor': textColor,
+        ?fontSize == null ? null : MapEntry('fontSize', fontSize),
+        ?backgroundColor == null
+            ? null
+            : MapEntry('backgroundColor', backgroundColor),
+        ?textColor == null ? null : MapEntry('textColor', textColor),
       });
     } on PlatformException catch (_) {}
   }

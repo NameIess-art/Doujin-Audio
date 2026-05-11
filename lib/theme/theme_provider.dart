@@ -18,13 +18,6 @@ class ThemeProvider with ChangeNotifier {
     _isDarkMode = AppPreferences.getBoolSync('isDarkMode') ?? false;
   }
 
-  Future<void> _loadTheme() async {
-    final savedDarkMode = await AppPreferences.getBool('isDarkMode') ?? false;
-    if (_isDarkMode == savedDarkMode) return;
-    _isDarkMode = savedDarkMode;
-    notifyListeners();
-  }
-
   Future<void> toggleTheme(bool value) async {
     if (_isDarkMode == value) return;
     _isDarkMode = value;
@@ -260,10 +253,7 @@ class ThemeProvider with ChangeNotifier {
         surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(28),
-          side: BorderSide(
-            color: scheme.outlineVariant.withValues(alpha: 0.5),
-            width: 1,
-          ),
+          side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.5)),
         ),
       ),
     );

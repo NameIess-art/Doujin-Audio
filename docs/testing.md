@@ -6,10 +6,13 @@ Run these checks before merging app changes:
 flutter pub get
 flutter analyze
 flutter test
+cd android && ./gradlew testDebugUnitTest && cd ..
 flutter build apk --debug
+flutter build apk --release
+flutter build apk --release --split-per-abi
 ```
 
-`flutter analyze` is expected to report zero issues. CI runs the same baseline checks on pushes to `main` and on pull requests.
+`flutter analyze` is expected to report zero issues. CI runs the same baseline checks on pushes to `main` and on pull requests. The Gradle unit test task is configured to run app and in-repository Android tests while skipping external Flutter plugin test tasks from the Pub cache.
 
 Focused core logic tests can be run while refactoring playback behavior:
 
@@ -28,3 +31,5 @@ For Android playback changes, also perform a device smoke test:
 3. Turn the screen off and confirm playback continues.
 4. If multi-session playback is enabled, confirm all active sessions keep playing.
 5. Toggle notification controls and confirm playback state stays consistent.
+
+For release checks, install the generated arm64 split APK on a physical Android device and smoke test startup, playback, notification controls, video-to-audio conversion, and any permission handoff touched by the change.

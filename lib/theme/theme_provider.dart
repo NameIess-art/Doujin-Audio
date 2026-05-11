@@ -253,6 +253,19 @@ class ThemeProvider with ChangeNotifier {
           fontWeight: FontWeight.w500,
         ),
       ),
+      dialogTheme: DialogThemeData(
+        backgroundColor: scheme.surfaceContainerLow,
+        elevation: 0,
+        shadowColor: scheme.shadow.withValues(alpha: 0.12),
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(28),
+          side: BorderSide(
+            color: scheme.outlineVariant.withValues(alpha: 0.5),
+            width: 1,
+          ),
+        ),
+      ),
     );
   }
 

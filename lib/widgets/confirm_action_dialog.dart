@@ -16,7 +16,7 @@ Future<bool> showConfirmActionDialog({
     context: context,
     barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
     barrierDismissible: true,
-    barrierColor: Colors.black.withValues(alpha: 0.18),
+    barrierColor: Colors.black.withValues(alpha: 0.42),
     transitionDuration: const Duration(milliseconds: 220),
     pageBuilder: (ctx, animation, secondaryAnimation) {
       final theme = Theme.of(ctx);
@@ -24,7 +24,7 @@ Future<bool> showConfirmActionDialog({
       final resolvedConfirmColor = confirmColor ?? cs.error;
 
       return BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
         child: SafeArea(
           child: Center(
             child: Padding(
@@ -34,17 +34,26 @@ Future<bool> showConfirmActionDialog({
                 child: Material(
                   color: Colors.transparent,
                   child: Container(
-                    decoration: BoxDecoration(
-                      color: cs.surfaceContainerLow.withValues(alpha: 0.88),
-                      borderRadius: BorderRadius.circular(28),
-                      boxShadow: [
-                        BoxShadow(
-                          color: cs.shadow.withValues(alpha: 0.12),
-                          blurRadius: 28,
-                          offset: const Offset(0, 18),
+                      decoration: BoxDecoration(
+                        color: cs.surfaceContainerLow.withValues(alpha: 0.94),
+                        borderRadius: BorderRadius.circular(28),
+                        border: Border.all(
+                          color: cs.outlineVariant.withValues(alpha: 0.22),
+                          width: 1.2,
                         ),
-                      ],
-                    ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: cs.shadow.withValues(alpha: 0.24),
+                            blurRadius: 38,
+                            offset: const Offset(0, 22),
+                          ),
+                          BoxShadow(
+                            color: cs.shadow.withValues(alpha: 0.08),
+                            blurRadius: 14,
+                            offset: const Offset(0, 6),
+                          ),
+                        ],
+                      ),
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
                       child: Column(

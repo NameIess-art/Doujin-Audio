@@ -367,6 +367,8 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
       if (!canPullRefresh) return body;
       return RefreshIndicator(
         key: _refreshIndicatorKey,
+        color: Theme.of(context).colorScheme.primary,
+        backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
         onRefresh: () async {
           unawaited(HapticFeedback.mediumImpact());
           await _refreshWatchedFolders();
@@ -432,6 +434,9 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                   )
                 : RefreshIndicator(
                     key: _refreshIndicatorKey,
+                    color: Theme.of(context).colorScheme.primary,
+                    backgroundColor:
+                        Theme.of(context).colorScheme.surfaceContainerHighest,
                     onRefresh: () async {
                       unawaited(HapticFeedback.mediumImpact());
                       await _refreshWatchedFolders();

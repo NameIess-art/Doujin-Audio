@@ -183,19 +183,33 @@ class AppFeedbackSurface extends StatelessWidget {
     final accent = _accentColor(context, tone);
     final chipBackground = accent.withValues(alpha: 0.12);
 
+    final isDark = theme.brightness == Brightness.dark;
+    final surfaceColor = isDark
+        ? cs.surfaceContainerHighest.withValues(alpha: 0.95)
+        : cs.surfaceContainerHigh.withValues(alpha: 0.98);
+
     return ClipRRect(
       borderRadius: BorderRadius.circular(borderRadius),
       child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+        filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
         child: DecoratedBox(
           decoration: BoxDecoration(
-            color: cs.surfaceContainerLow.withValues(alpha: 0.86),
+            color: surfaceColor,
             borderRadius: BorderRadius.circular(borderRadius),
+            border: Border.all(
+              color: cs.outlineVariant.withValues(alpha: 0.18),
+              width: 1,
+            ),
             boxShadow: [
               BoxShadow(
-                color: cs.shadow.withValues(alpha: 0.08),
-                blurRadius: 18,
-                offset: const Offset(0, 10),
+                color: cs.shadow.withValues(alpha: 0.12),
+                blurRadius: 24,
+                offset: const Offset(0, 12),
+              ),
+              BoxShadow(
+                color: cs.shadow.withValues(alpha: 0.06),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
               ),
             ],
           ),
@@ -262,16 +276,19 @@ class AppFeedbackSurface extends StatelessWidget {
 }
 
 Color _accentColor(BuildContext context, AppFeedbackTone tone) {
-  final cs = Theme.of(context).colorScheme;
+  final theme = Theme.of(context);
+  final cs = theme.colorScheme;
+  final isDark = theme.brightness == Brightness.dark;
+
   switch (tone) {
     case AppFeedbackTone.info:
-      return cs.primary;
+      return isDark ? cs.primary : cs.primary;
     case AppFeedbackTone.success:
-      return Colors.green.shade600;
+      return isDark ? Colors.greenAccent.shade200 : Colors.green.shade900;
     case AppFeedbackTone.warning:
-      return Colors.orange.shade700;
+      return isDark ? Colors.orangeAccent.shade100 : Colors.orange.shade900;
     case AppFeedbackTone.destructive:
-      return cs.error;
+      return isDark ? const Color(0xFFFFB4AB) : const Color(0xFFBA1A1A); // Custom light/dark error colors
   }
 }
 

@@ -12,6 +12,7 @@ import 'package:path/path.dart' as path;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/audio_detail.dart';
+import '../models/dlsite_metadata.dart';
 import '../models/library_node.dart';
 import '../models/music_track.dart';
 import '../models/playback_mode.dart';
@@ -20,6 +21,7 @@ import '../services/audio_database_repository.dart';
 import '../services/audio_detail_repository.dart';
 import '../services/audio_state_services.dart';
 import '../services/app_database.dart';
+import '../services/dlsite_metadata_service.dart';
 import '../services/library_organizer.dart';
 import '../services/native_playback_repository.dart';
 import '../services/playback_queue_resolver.dart';
@@ -29,6 +31,7 @@ import '../services/warmup_scheduler.dart';
 
 export '../models/library_node.dart';
 export '../models/audio_detail.dart';
+export '../models/dlsite_metadata.dart';
 export '../models/music_track.dart';
 export '../models/playback_mode.dart';
 export '../models/playback_session.dart';
@@ -96,6 +99,7 @@ class AudioProvider with ChangeNotifier {
   final PlaybackNotificationService _notificationService;
   final AudioDatabaseRepository _audioDatabaseRepository;
   final AudioDetailRepository _audioDetailRepository;
+  final DlsiteMetadataService _dlsiteMetadataService;
   final NativePlaybackRepository _nativePlaybackRepository;
   final PlaybackCommandRunner _playbackCommandRunner;
   final LibraryService _libraryService;
@@ -438,6 +442,7 @@ class AudioProvider with ChangeNotifier {
     required PlaybackNotificationService notificationService,
     AudioDatabaseRepository? audioDatabaseRepository,
     AudioDetailRepository? audioDetailRepository,
+    DlsiteMetadataService? dlsiteMetadataService,
     NativePlaybackRepository? nativePlaybackRepository,
     PlaybackCommandRunner playbackCommandRunner = const PlaybackCommandRunner(),
     LibraryService? libraryService,
@@ -454,6 +459,8 @@ class AudioProvider with ChangeNotifier {
              databaseRepository:
                  audioDatabaseRepository ?? AudioDatabaseRepository(),
            ),
+       _dlsiteMetadataService =
+           dlsiteMetadataService ?? DlsiteMetadataService(),
        _nativePlaybackRepository =
            nativePlaybackRepository ?? NativePlaybackRepository(),
        _playbackCommandRunner = playbackCommandRunner,
@@ -479,6 +486,7 @@ class AudioProvider with ChangeNotifier {
     required PlaybackNotificationService notificationService,
     AudioDatabaseRepository? audioDatabaseRepository,
     AudioDetailRepository? audioDetailRepository,
+    DlsiteMetadataService? dlsiteMetadataService,
     NativePlaybackRepository? nativePlaybackRepository,
     PlaybackCommandRunner playbackCommandRunner = const PlaybackCommandRunner(),
     LibraryService? libraryService,
@@ -495,6 +503,8 @@ class AudioProvider with ChangeNotifier {
              databaseRepository:
                  audioDatabaseRepository ?? AudioDatabaseRepository(),
            ),
+       _dlsiteMetadataService =
+           dlsiteMetadataService ?? DlsiteMetadataService(),
        _nativePlaybackRepository =
            nativePlaybackRepository ?? NativePlaybackRepository(),
        _playbackCommandRunner = playbackCommandRunner,

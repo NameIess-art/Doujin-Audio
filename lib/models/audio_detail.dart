@@ -146,6 +146,7 @@ class AudioDetail {
       tags.isEmpty;
 
   AudioDetail copyWith({
+    AudioDetailTarget? target,
     String? rjCode,
     String? workTitle,
     String? circleName,
@@ -155,7 +156,7 @@ class AudioDetail {
     DateTime? updatedAt,
   }) {
     return AudioDetail(
-      target: target,
+      target: target ?? this.target,
       rjCode: rjCode ?? this.rjCode,
       workTitle: workTitle ?? this.workTitle,
       circleName: circleName ?? this.circleName,

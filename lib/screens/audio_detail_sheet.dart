@@ -6,6 +6,9 @@ import 'package:provider/provider.dart';
 import '../i18n/app_language_provider.dart';
 import '../providers/audio_provider.dart';
 import '../widgets/app_feedback.dart';
+import 'dlsite_metadata_review_page.dart';
+
+const _multiValueSeparator = '\uFF0C';
 
 Future<void> showAudioDetailSheet(
   BuildContext context,
@@ -32,9 +35,11 @@ class AudioDetailSheet extends StatefulWidget {
 }
 
 class _AudioDetailSheetState extends State<AudioDetailSheet> {
+  late AudioDetailTarget _target = widget.target;
   AudioDetail? _detail;
   Object? _loadError;
   bool _loading = true;
+  bool _runningAction = false;
   _AudioDetailField? _savingField;
 
   @override
@@ -46,7 +51,7 @@ class _AudioDetailSheetState extends State<AudioDetailSheet> {
   Future<void> _load() async {
     try {
       final result = await context.read<AudioProvider>().loadAudioDetail(
-        widget.target,
+        _target,
       );
       if (!mounted) return;
       setState(() {
@@ -73,11 +78,11 @@ class _AudioDetailSheetState extends State<AudioDetailSheet> {
 
   Future<void> _editField(_AudioDetailField field) async {
     final detail = _detail;
-    if (detail == null || _savingField != null) return;
+    if (detail == null || _savingField != null || _runningAction) return;
 
     final i18n = context.read<AppLanguageProvider>();
     final initialValue = field.isMulti
-        ? field.readList(detail).join('，')
+        ? field.readList(detail).join(_multiValueSeparator)
         : field.readText(detail);
     final controller = TextEditingController(text: initialValue);
     final value = await showDialog<String>(
@@ -165,6 +170,116 @@ class _AudioDetailSheetState extends State<AudioDetailSheet> {
     }
   }
 
+  Future<void> _confirmFetchInfo(AudioDetail detail) async {
+    final i18n = context.read<AppLanguageProvider>();
+    if (!_looksLikeRjCode(detail.rjCode) || detail.rjCode.isEmpty) {
+      showAppSnackBar(
+        context,
+        i18n.tr('audio_detail_rj_format_hint'),
+        tone: AppFeedbackTone.warning,
+      );
+      return;
+    }
+    final confirmed = await _confirmAction(
+      title: i18n.tr('audio_detail_fetch_info'),
+      message: i18n.tr('audio_detail_fetch_confirm'),
+      confirmLabel: i18n.tr('audio_detail_fetch_info'),
+    );
+    if (!confirmed || !mounted) return;
+
+    final updated = await Navigator.of(context).push<AudioDetail>(
+      MaterialPageRoute(
+        builder: (_) =>
+            DlsiteMetadataReviewPage(detail: detail, rjCode: detail.rjCode),
+      ),
+    );
+    if (updated == null || !mounted) return;
+    setState(() {
+      _detail = updated;
+      _target = updated.target;
+    });
+  }
+
+  Future<void> _confirmRename(AudioDetail detail) async {
+    final i18n = context.read<AppLanguageProvider>();
+    if (detail.workTitle.trim().isEmpty) {
+      showAppSnackBar(
+        context,
+        i18n.tr('audio_detail_rename_missing_title'),
+        tone: AppFeedbackTone.warning,
+      );
+      return;
+    }
+    final confirmed = await _confirmAction(
+      title: i18n.tr('audio_detail_rename_file'),
+      message: i18n.tr('audio_detail_rename_confirm'),
+      confirmLabel: i18n.tr('audio_detail_rename_file'),
+    );
+    if (!confirmed || !mounted) return;
+
+    setState(() {
+      _runningAction = true;
+    });
+    try {
+      final result = await context
+          .read<AudioProvider>()
+          .renameAudioDetailTarget(detail);
+      if (!mounted) return;
+      setState(() {
+        _target = result.detail.target;
+        _detail = result.detail;
+        _runningAction = false;
+      });
+      showAppSnackBar(
+        context,
+        result.backupFailed
+            ? i18n.tr('audio_detail_backup_failed')
+            : i18n.tr('audio_detail_rename_done'),
+        tone: result.backupFailed
+            ? AppFeedbackTone.warning
+            : AppFeedbackTone.success,
+      );
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _runningAction = false;
+      });
+      showAppSnackBar(
+        context,
+        i18n.tr('audio_detail_rename_failed'),
+        tone: AppFeedbackTone.warning,
+      );
+    }
+  }
+
+  Future<bool> _confirmAction({
+    required String title,
+    required String message,
+    required String confirmLabel,
+  }) async {
+    final i18n = context.read<AppLanguageProvider>();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text(title),
+          content: Text(message),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: Text(i18n.tr('cancel')),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: Text(confirmLabel),
+            ),
+          ],
+        );
+      },
+    );
+    return confirmed == true;
+  }
+
   @override
   Widget build(BuildContext context) {
     final i18n = context.watch<AppLanguageProvider>();
@@ -205,7 +320,7 @@ class _AudioDetailSheetState extends State<AudioDetailSheet> {
             ),
             const SizedBox(height: 4),
             Text(
-              widget.target.isLibraryRootFolder
+              _target.isLibraryRootFolder
                   ? i18n.tr('audio_detail_library_root')
                   : i18n.tr('audio_detail_single_file'),
               style: Theme.of(
@@ -214,7 +329,7 @@ class _AudioDetailSheetState extends State<AudioDetailSheet> {
             ),
             const SizedBox(height: 2),
             Text(
-              widget.target.targetPath,
+              _target.targetPath,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: Theme.of(
@@ -237,7 +352,31 @@ class _AudioDetailSheetState extends State<AudioDetailSheet> {
                   style: TextStyle(color: cs.error),
                 ),
               )
-            else if (detail != null)
+            else if (detail != null) ...[
+              Row(
+                children: [
+                  Expanded(
+                    child: FilledButton.tonalIcon(
+                      onPressed: _runningAction
+                          ? null
+                          : () => _confirmFetchInfo(detail),
+                      icon: const Icon(Icons.cloud_download_rounded),
+                      label: Text(i18n.tr('audio_detail_fetch_info')),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: FilledButton.tonalIcon(
+                      onPressed: _runningAction
+                          ? null
+                          : () => _confirmRename(detail),
+                      icon: const Icon(Icons.drive_file_rename_outline),
+                      label: Text(i18n.tr('audio_detail_rename_file')),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
               ..._AudioDetailField.values.expand(
                 (field) => [
                   _AudioDetailRow(
@@ -251,6 +390,7 @@ class _AudioDetailSheetState extends State<AudioDetailSheet> {
                     const Divider(height: 1),
                 ],
               ),
+            ],
           ],
         ),
       ),
@@ -348,8 +488,10 @@ enum _AudioDetailField {
       _AudioDetailField.rjCode => detail.rjCode,
       _AudioDetailField.workTitle => detail.workTitle,
       _AudioDetailField.circleName => detail.circleName,
-      _AudioDetailField.voiceActors => detail.voiceActors.join('，'),
-      _AudioDetailField.tags => detail.tags.join('，'),
+      _AudioDetailField.voiceActors => detail.voiceActors.join(
+        _multiValueSeparator,
+      ),
+      _AudioDetailField.tags => detail.tags.join(_multiValueSeparator),
     };
   }
 
@@ -362,7 +504,9 @@ enum _AudioDetailField {
   }
 
   String displayValue(AudioDetail detail, AppLanguageProvider i18n) {
-    final value = isMulti ? readList(detail).join('，') : readText(detail);
+    final value = isMulti
+        ? readList(detail).join(_multiValueSeparator)
+        : readText(detail);
     return value.isEmpty ? i18n.tr('audio_detail_empty') : value;
   }
 
@@ -385,7 +529,7 @@ enum _AudioDetailField {
 }
 
 List<String> _splitMultiValue(String rawValue) {
-  return AudioDetail.normalizeList(rawValue.split('，'));
+  return AudioDetail.normalizeList(rawValue.split(_multiValueSeparator));
 }
 
 bool _looksLikeRjCode(String value) {

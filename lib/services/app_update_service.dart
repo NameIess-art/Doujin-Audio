@@ -6,6 +6,8 @@ import 'package:flutter/services.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 
+import 'path_display.dart';
+
 class AppVersionInfo {
   const AppVersionInfo({required this.versionName, required this.buildNumber});
 
@@ -261,8 +263,12 @@ class AppUpdateService {
   }
 
   static String _safeFileName(String value) {
-    final cleaned = value.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_').trim();
-    if (cleaned.isEmpty) return 'NamelessAudio-update.apk';
+    final cleaned = PathDisplay.safeFileName(
+      value,
+      replacement: '_',
+      collapseWhitespace: false,
+      fallback: 'NamelessAudio-update',
+    );
     return cleaned.endsWith('.apk') ? cleaned : '$cleaned.apk';
   }
 }

@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:path/path.dart' as path;
 
 import '../models/library_node.dart';
@@ -211,29 +209,7 @@ class LibraryOrganizer {
   }
 
   String _normalizeDisplaySegment(String value) {
-    var normalized = value.trim();
-    if (normalized.isEmpty) return normalized;
-
-    normalized = PathMatcher.safeDecodeComponent(normalized);
-    final maybeFixed = _tryLatin1ToUtf8(normalized);
-    if (_looksLikeMojibake(normalized) && !_looksLikeMojibake(maybeFixed)) {
-      normalized = maybeFixed;
-    }
-    return normalized;
-  }
-
-  String _tryLatin1ToUtf8(String input) {
-    try {
-      return utf8.decode(latin1.encode(input), allowMalformed: false);
-    } catch (_) {
-      return input;
-    }
-  }
-
-  bool _looksLikeMojibake(String value) {
-    const mojibakePattern =
-        r'[\\u00C0-\\u00FF]{2,}|[\\u4E00-\\u9FFF][\\u0080-\\u00FF]';
-    return RegExp(mojibakePattern).hasMatch(value);
+    return PathDisplay.normalizeDisplaySegment(value);
   }
 
   String _sanitizeFolderPart(String rawPart, String rootDisplayName) {

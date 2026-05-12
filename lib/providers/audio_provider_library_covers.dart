@@ -3,18 +3,22 @@ part of 'audio_provider.dart';
 extension AudioProviderLibraryCovers on AudioProvider {
   /// Recursively scans for all images in the root folder containing the given track.
   Future<List<String>> discoverImagesInRoot(String trackPath) async {
-    final rootFolder = getRootFolderPath(trackPath);
-    if (rootFolder.isEmpty) return [];
+    final track = trackByPath(trackPath);
+    final scopeFolder = _resolveCoverScopeFolderPath(
+      this,
+      track,
+      trackPath: trackPath,
+    );
+    if (scopeFolder == null || scopeFolder.isEmpty) return [];
 
-    if (PathMatcher.isContentUri(rootFolder) ||
+    if (PathMatcher.isContentUri(scopeFolder) ||
         PathMatcher.isContentUri(trackPath)) {
-      final track = trackByPath(trackPath);
       try {
         final raw = await AudioProvider._fileCacheChannel
             .invokeMethod<List<dynamic>>('discoverRootImages', {
               'path': trackPath,
               'groupKey': track?.groupKey,
-              'rootFolder': rootFolder,
+              'rootFolder': scopeFolder,
             });
         if (raw == null) return [];
         return raw
@@ -24,14 +28,20 @@ extension AudioProviderLibraryCovers on AudioProvider {
       } on MissingPluginException {
         return [];
       } catch (e) {
-        debugPrint('Error discovering content images in root $rootFolder: $e');
+        debugPrint('Error discovering content images in root $scopeFolder: $e');
         return [];
       }
     }
 
+    final normalizedScope = PathMatcher.normalize(scopeFolder);
+    final cached = _discoveredImagesByScopeCache[normalizedScope];
+    if (cached != null) {
+      return cached;
+    }
+
     final images = <String>[];
     try {
-      final dir = Directory(rootFolder);
+      final dir = Directory(scopeFolder);
       if (!await dir.exists()) return [];
 
       await for (final entity in dir.list(
@@ -46,12 +56,13 @@ extension AudioProviderLibraryCovers on AudioProvider {
         }
       }
     } catch (e) {
-      debugPrint('Error discovering images in root $rootFolder: $e');
+      debugPrint('Error discovering images in root $scopeFolder: $e');
     }
 
-    // Sort to keep a stable order
     images.sort((a, b) => a.compareTo(b));
-    return images;
+    final snapshot = List<String>.unmodifiable(images);
+    _discoveredImagesByScopeCache[normalizedScope] = snapshot;
+    return snapshot;
   }
 
   /// Sets a manual cover image for a track and persists it.
@@ -59,39 +70,42 @@ extension AudioProviderLibraryCovers on AudioProvider {
     final targetTrack = trackByPath(trackPath);
     if (targetTrack == null) return;
 
-    final rootFolder = getRootFolderPath(trackPath);
+    final scopeFolder = _resolveCoverScopeFolderPath(
+      this,
+      targetTrack,
+      trackPath: trackPath,
+    );
+    final normalizedScope = scopeFolder == null || scopeFolder.isEmpty
+        ? null
+        : PathMatcher.normalize(scopeFolder);
     final tracksToUpdate = <MusicTrack>[];
 
-    // If we found a root folder, update ALL tracks in that root.
-    // Otherwise fall back to just tracks in the same immediate group.
-    if (rootFolder.isNotEmpty) {
+    if (normalizedScope != null) {
       for (var i = 0; i < _library.length; i++) {
         final track = _library[i];
-        if (PathMatcher.isWithinOrEqual(track.path, rootFolder)) {
-          final updatedTrack = _copyTrack(track, manualCoverPath: imagePath);
-          _library[i] = updatedTrack;
-          _libraryByPath[track.path] = updatedTrack;
-          tracksToUpdate.add(updatedTrack);
+        final trackScope = _notificationCoverSearchKey(track);
+        if (trackScope == null ||
+            !PathMatcher.equalsNormalized(trackScope, normalizedScope)) {
+          continue;
         }
-      }
-    } else {
-      final groupTracks = tracksInSameGroup(trackPath).toList();
-      for (final track in groupTracks) {
         final updatedTrack = _copyTrack(track, manualCoverPath: imagePath);
+        _library[i] = updatedTrack;
         _libraryByPath[track.path] = updatedTrack;
-        final index = _library.indexWhere((t) => t.path == track.path);
-        if (index >= 0) {
-          _library[index] = updatedTrack;
-        }
         tracksToUpdate.add(updatedTrack);
       }
+    } else {
+      final updatedTrack = _copyTrack(targetTrack, manualCoverPath: imagePath);
+      final index = _library.indexWhere((track) => track.path == trackPath);
+      if (index >= 0) {
+        _library[index] = updatedTrack;
+      }
+      _libraryByPath[trackPath] = updatedTrack;
+      tracksToUpdate.add(updatedTrack);
     }
 
     // Clear caches to force re-resolution
     _clearResolvedCoverPaths();
 
-    // Rebuild indexes to ensure folder cards and other groupings see the new track data
-    _rebuildLibraryIndexes();
     // Mark sessions dirty to refresh playlist tab and bottom card
     _markActiveSessionsDirty();
 

@@ -15,6 +15,8 @@ import '../providers/audio_provider_riverpod.dart';
 import '../providers/subtitle_settings_provider.dart';
 import '../services/app_preferences.dart';
 import '../services/audio_state_services.dart';
+import '../services/permission_action_controller.dart';
+import '../services/platform_channels.dart';
 import 'library_tab.dart';
 import 'playlist_tab.dart';
 import 'settings_tab.dart';
@@ -27,6 +29,7 @@ import '../widgets/snap_scroll_physics.dart';
 import '../widgets/floating_subtitle_window.dart';
 
 part 'main_screen_notifications.dart';
+part 'main_screen_storage_permission.dart';
 part 'main_screen_layout.dart';
 part 'main_screen_widgets.dart';
 part 'main_screen_timer_scrim.dart';
@@ -45,11 +48,9 @@ class _MainScreenState extends ConsumerState<MainScreen>
   static const double _desktopBreakpoint = 980;
   static const String _backgroundKeepAliveInitializedKey =
       'background_keep_alive_initialized_v2';
-  static const MethodChannel _powerChannel = MethodChannel(
-    'nameless_audio/power',
-  );
+  static const MethodChannel _powerChannel = MethodChannel(PowerChannel.name);
   static const MethodChannel _notificationsChannel = MethodChannel(
-    'nameless_audio/notifications',
+    NotificationsChannel.name,
   );
 
   int _currentIndex = 0;
@@ -63,6 +64,9 @@ class _MainScreenState extends ConsumerState<MainScreen>
   bool _notificationPermissionCheckQueued = false;
   bool _notificationSettingsDialogVisible = false;
   bool _notificationSettingsOpened = false;
+  bool _manageFilesPermissionCheckDone = false;
+  final PermissionActionController _permissionActionController =
+      PermissionActionController();
   bool _timerOverlayPrimed = false;
   bool _needsMeasurement = true;
   bool _bootstrapDone = false;
@@ -108,6 +112,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final provider = ref.read(audioProviderFacadeProvider);
       unawaited(_consumePendingNotificationSession());
+      unawaited(_ensureManageFilesPermission());
       unawaited(_maybeEnableBackgroundKeepAliveOnFirstLaunch());
       provider.scheduleUiWarmup(
         currentPageIndex: _currentIndex,
@@ -132,6 +137,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
   void dispose() {
     _pageController.dispose();
     _notificationSessionNavigationTimer?.cancel();
+    _permissionActionController.dispose();
     _notificationsChannel.setMethodCallHandler(null);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
@@ -154,6 +160,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
     }
     unawaited(_consumePendingNotificationSession());
     final provider = ref.read(audioProviderFacadeProvider);
+    unawaited(_permissionActionController.handleAppResumed());
     provider.resyncNotificationsAfterResume();
     unawaited(
       provider.syncTimerRuntimeFromNative().then((_) {

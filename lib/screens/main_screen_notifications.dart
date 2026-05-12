@@ -5,7 +5,7 @@ extension _MainScreenNotifications on _MainScreenState {
     if (!Platform.isAndroid) return true;
     try {
       return await _MainScreenState._notificationsChannel.invokeMethod<bool>(
-            'areNotificationsEnabled',
+            NotificationsMethod.areNotificationsEnabled,
           ) ??
           true;
     } catch (_) {
@@ -17,7 +17,7 @@ extension _MainScreenNotifications on _MainScreenState {
     if (!Platform.isAndroid) return true;
     try {
       return await _MainScreenState._powerChannel.invokeMethod<bool>(
-            'isIgnoringBatteryOptimizations',
+            PowerMethod.isIgnoringBatteryOptimizations,
           ) ??
           false;
     } catch (_) {
@@ -29,7 +29,7 @@ extension _MainScreenNotifications on _MainScreenState {
     if (!Platform.isAndroid) return;
     try {
       await _MainScreenState._powerChannel.invokeMethod<bool>(
-        'openBatteryOptimizationSettings',
+        PowerMethod.openBatteryOptimizationSettings,
       );
     } catch (_) {}
   }
@@ -72,7 +72,7 @@ extension _MainScreenNotifications on _MainScreenState {
     try {
       final opened =
           await _MainScreenState._notificationsChannel.invokeMethod<bool>(
-            'openNotificationSettings',
+            NotificationsMethod.openNotificationSettings,
           ) ??
           false;
       if (!opened && mounted) {
@@ -177,7 +177,7 @@ extension _MainScreenNotifications on _MainScreenState {
 
   Future<dynamic> _handleNotificationsChannelCall(MethodCall call) async {
     switch (call.method) {
-      case 'openSessionFromNotification':
+      case NotificationsMethod.openSessionFromNotification:
         final args = call.arguments;
         String? sessionId;
         if (args is Map) {
@@ -198,7 +198,7 @@ extension _MainScreenNotifications on _MainScreenState {
     if (!Platform.isAndroid || !mounted) return;
     try {
       final sessionId = await _MainScreenState._notificationsChannel
-          .invokeMethod<String>('consumePendingNotificationSessionId');
+          .invokeMethod<String>(NotificationsMethod.consumePendingNotificationSessionId);
       if (!mounted || sessionId == null || sessionId.isEmpty) {
         return;
       }

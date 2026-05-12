@@ -68,6 +68,49 @@ void main() {
     expect(databaseDetail?.workTitle, 'Work');
   });
 
+  test('load prefers normalized database path before local backup', () async {
+    final normalizedTarget = AudioDetailTarget.libraryRootFolder(tempDir.path);
+    final variantTarget = AudioDetailTarget.libraryRootFolder(
+      '${tempDir.path}${Platform.pathSeparator}.',
+    );
+    final detail = AudioDetail.empty(
+      variantTarget,
+    ).copyWith(rjCode: 'RJ333333', workTitle: 'Normalized');
+
+    await repository.save(detail);
+
+    final result = await repository.load(normalizedTarget);
+
+    expect(result.restoredFromBackup, isFalse);
+    expect(result.detail.rjCode, 'RJ333333');
+    expect(result.detail.workTitle, 'Normalized');
+  });
+
+  test('manual edits overwrite the local backup file', () async {
+    final target = AudioDetailTarget.libraryRootFolder(tempDir.path);
+    final first = AudioDetail.empty(
+      target,
+    ).copyWith(rjCode: 'RJ111111', workTitle: 'First title');
+    final second = AudioDetail.empty(target).copyWith(
+      rjCode: 'RJ222222',
+      workTitle: 'Second title',
+      circleName: 'Circle',
+    );
+
+    await repository.save(first);
+    final result = await repository.save(second);
+
+    expect(result.backupSaved, isTrue);
+    final backupFile = File(
+      '${tempDir.path}${Platform.pathSeparator}${AudioDetailRepository.backupFileName}',
+    );
+    final backup = json.decode(await backupFile.readAsString());
+    expect(backup, isA<Map<String, dynamic>>());
+    expect((backup as Map<String, dynamic>)['rjCode'], 'RJ222222');
+    expect(backup['workTitle'], 'Second title');
+    expect(backup['circleName'], 'Circle');
+  });
+
   test('root folder load restores from backup when database is empty', () async {
     final target = AudioDetailTarget.libraryRootFolder(tempDir.path);
     final backupFile = File(
@@ -108,7 +151,7 @@ void main() {
     expect(result.detail.isEmpty, isTrue);
   });
 
-  test('single imported audio details are database-only', () async {
+  test('single imported audio details use database with local backup fallback', () async {
     final target = AudioDetailTarget.singleAudioFile(
       '${tempDir.path}${Platform.pathSeparator}single.mp3',
     );
@@ -116,15 +159,16 @@ void main() {
 
     final result = await repository.save(detail);
 
-    expect(result.backupAttempted, isFalse);
+    expect(result.backupAttempted, isTrue);
+    expect(result.backupSaved, isTrue);
     expect(result.detail.workTitle, 'Single');
     expect(
-      await File(
-        '${tempDir.path}${Platform.pathSeparator}${AudioDetailRepository.backupFileName}',
-      ).exists(),
-      isFalse,
+      await File('${target.targetPath}${AudioDetailRepository.singleBackupSuffix}')
+          .exists(),
+      isTrue,
     );
   });
+
 
   test(
     'prefill extracts RJ code from folder name without overwriting',
@@ -152,5 +196,60 @@ void main() {
   test('RJ extraction accepts embedded lower-case codes', () {
     expect(AudioDetail.findRjCodeInText('circle_rj987654_title'), 'RJ987654');
     expect(AudioDetail.findRjCodeInText('no code here'), isNull);
+  });
+
+  test(
+    'single audio load restores from local backup when database is empty',
+    () async {
+      final target = AudioDetailTarget.singleAudioFile(
+        '${tempDir.path}${Platform.pathSeparator}single.mp3',
+      );
+      final backupFile = File(
+        '${target.targetPath}${AudioDetailRepository.singleBackupSuffix}',
+      );
+      await backupFile.writeAsString(
+        json.encode({
+          'schemaVersion': 1,
+          'type': 'audio-detail',
+          'targetType': 'single-audio-file',
+          'targetPath': target.targetPath,
+          'rjCode': 'RJ998877',
+          'workTitle': 'Single backup work',
+          'circleName': 'Single backup circle',
+          'voiceActors': ['A', 'B'],
+          'tags': ['tag'],
+        }),
+      );
+
+      final result = await repository.load(target);
+
+      expect(result.restoredFromBackup, isTrue);
+      expect(result.detail.rjCode, 'RJ998877');
+      expect(result.detail.workTitle, 'Single backup work');
+      expect((await appDatabase.loadAudioDetail(target))?.rjCode, 'RJ998877');
+    },
+  );
+
+  test('legacy hidden backup file is still readable', () async {
+    final target = AudioDetailTarget.libraryRootFolder(tempDir.path);
+    final legacyBackupFile = File(
+      '${tempDir.path}${Platform.pathSeparator}${AudioDetailRepository.legacyBackupFileName}',
+    );
+    await legacyBackupFile.writeAsString(
+      json.encode({
+        'schemaVersion': 1,
+        'type': 'audio-detail',
+        'targetType': 'library-root-folder',
+        'targetPath': tempDir.path,
+        'rjCode': 'RJ777777',
+        'workTitle': 'Legacy backup',
+      }),
+    );
+
+    final result = await repository.load(target);
+
+    expect(result.restoredFromBackup, isTrue);
+    expect(result.detail.rjCode, 'RJ777777');
+    expect(result.detail.workTitle, 'Legacy backup');
   });
 }

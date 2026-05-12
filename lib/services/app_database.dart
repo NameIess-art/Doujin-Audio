@@ -6,6 +6,7 @@ import 'package:sqflite/sqflite.dart';
 
 import '../models/audio_detail.dart';
 import '../models/music_track.dart';
+import 'path_matcher.dart';
 
 class AppDatabase {
   AppDatabase._();
@@ -317,10 +318,11 @@ class AppDatabase {
 
   Future<AudioDetail?> loadAudioDetail(AudioDetailTarget target) async {
     final db = await database;
+    final normalizedTargetPath = PathMatcher.normalize(target.targetPath);
     final rows = await db.query(
       'audio_details',
       where: 'target_type = ? AND target_path = ?',
-      whereArgs: [target.targetType.dbValue, target.targetPath],
+      whereArgs: [target.targetType.dbValue, normalizedTargetPath],
       limit: 1,
     );
     if (rows.isEmpty) return null;
@@ -329,19 +331,22 @@ class AppDatabase {
 
   Future<void> upsertAudioDetail(AudioDetail detail) async {
     final db = await database;
+    final row = detail.toRow();
+    row['target_path'] = PathMatcher.normalize(detail.target.targetPath);
     await db.insert(
       'audio_details',
-      detail.toRow(),
+      row,
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
   }
 
   Future<void> deleteAudioDetail(AudioDetailTarget target) async {
     final db = await database;
+    final normalizedTargetPath = PathMatcher.normalize(target.targetPath);
     await db.delete(
       'audio_details',
       where: 'target_type = ? AND target_path = ?',
-      whereArgs: [target.targetType.dbValue, target.targetPath],
+      whereArgs: [target.targetType.dbValue, normalizedTargetPath],
     );
   }
 

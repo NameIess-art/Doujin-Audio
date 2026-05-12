@@ -307,6 +307,10 @@ const Map<AppLanguage, Map<String, String>> _localizedValues = {
     'background_play_permission_title': '允许后台播放',
     'background_play_permission_message':
         '为了在息屏后继续播放音频，需要将本应用设为不限制电量。前往系统设置开启吗？',
+    'manage_files_permission_title': '开启管理所有文件权限',
+    'manage_files_permission_message':
+        '当前应用还没有开启“管理所有文件”权限，导入文件夹、曲库和读取本地资源可能会失败。现在前往系统设置开启吗？',
+    'manage_files_permission_enabled': '管理所有文件权限已开启。',
     'go_settings': '去设置',
     'later': '稍后',
     'start_conversion': '开始转换',
@@ -599,6 +603,10 @@ const Map<AppLanguage, Map<String, String>> _localizedValues = {
     'background_play_permission_title': 'バックグラウンド再生を許可',
     'background_play_permission_message':
         '画面オフ後も音声を再生し続けるために、アプリを電池制限の対象外に設定してください。設定画面を開きますか？',
+    'manage_files_permission_title': 'すべてのファイルへのアクセスを許可',
+    'manage_files_permission_message':
+        'このアプリにはまだ「すべてのファイルの管理」権限がありません。フォルダや曲庫の取り込み、ローカル資源の読み取りに失敗する可能性があります。今すぐ設定を開きますか？',
+    'manage_files_permission_enabled': 'すべてのファイルへのアクセスを許可しました。',
     'go_settings': '設定を開く',
     'later': 'あとで',
     'start_conversion': '変換開始',
@@ -925,6 +933,10 @@ const Map<AppLanguage, Map<String, String>> _localizedValues = {
     'background_play_permission_title': 'Allow Background Playback',
     'background_play_permission_message':
         'To continue playing audio after the screen turns off, this app needs to be exempt from battery optimization. Open settings now?',
+    'manage_files_permission_title': 'Allow file management access',
+    'manage_files_permission_message':
+        'This app does not have the "manage all files" permission yet. Importing folders, importing libraries, and reading local media may fail until it is enabled. Open system settings now?',
+    'manage_files_permission_enabled': 'File management access is now enabled.',
     'go_settings': 'Open settings',
     'later': 'Later',
     'start_conversion': 'Start conversion',

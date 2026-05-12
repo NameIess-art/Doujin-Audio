@@ -265,7 +265,7 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
     final folder = Directory(folderPath);
     if (!await folder.exists()) return 0;
 
-    final existingPaths = provider.library.map((t) => t.path).toSet();
+    final discoveredPaths = <String>{};
     final pendingDirs = Queue<Directory>()..add(folder);
     final batch = <MusicTrack>[];
     const batchSize = 350;
@@ -312,11 +312,12 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
               provider.isLibraryPathExcluded(libraryRoot, absolutePath)) {
             continue;
           }
-          if (existingPaths.contains(absolutePath)) {
+          if (provider.trackByPath(absolutePath) != null ||
+              discoveredPaths.contains(absolutePath)) {
             duplicates++;
             continue;
           }
-          existingPaths.add(absolutePath);
+          discoveredPaths.add(absolutePath);
 
           final parentFolder = path.dirname(absolutePath);
           final folderName = path.basename(parentFolder);

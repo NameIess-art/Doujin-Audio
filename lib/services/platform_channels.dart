@@ -77,6 +77,9 @@ abstract final class PowerMethod {
   static const String stopPlaybackKeepAlive = 'stopPlaybackKeepAlive';
   static const String syncPlaybackTimerAlarms = 'syncPlaybackTimerAlarms';
   static const String setKeepCpuAwake = 'setKeepCpuAwake';
+  static const String canManageAllFilesAccess = 'canManageAllFilesAccess';
+  static const String openManageAllFilesAccessSettings =
+      'openManageAllFilesAccessSettings';
   static const String isIgnoringBatteryOptimizations =
       'isIgnoringBatteryOptimizations';
   static const String openBatteryOptimizationSettings =
@@ -100,6 +103,7 @@ abstract final class FileCacheMethod {
   static const String renameDocument = 'renameDocument';
   static const String readAudioDetailBackup = 'readAudioDetailBackup';
   static const String writeAudioDetailBackup = 'writeAudioDetailBackup';
+  static const String writeFileBytesToFolder = 'writeFileBytesToFolder';
   static const String pickAudioSource = 'pickAudioSource';
   static const String pickAudioFiles = 'pickAudioFiles';
   static const String pickAudioFolder = 'pickAudioFolder';

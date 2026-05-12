@@ -30,7 +30,10 @@ abstract final class PathMatcher {
   }
 
   static String normalize(String value) {
-    return isContentUri(value) ? value : path.normalize(value);
+    if (isContentUri(value)) {
+      return value.trimRightSlash();
+    }
+    return path.normalize(value);
   }
 
   static bool equalsNormalized(String first, String second) {

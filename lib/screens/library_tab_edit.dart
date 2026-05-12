@@ -151,6 +151,7 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage> {
             _diskAudioFilePaths,
             excludedTracks,
           ),
+          excludedFolders,
         ),
         _searchQuery,
       );
@@ -331,7 +332,10 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage> {
     return tracks;
   }
 
-  List<_LibraryEditTreeNode> _buildEditTree(List<String> trackPaths) {
+  List<_LibraryEditTreeNode> _buildEditTree(
+    List<String> trackPaths,
+    List<String> excludedFolders,
+  ) {
     final rootPath = PathMatcher.normalize(widget.libraryPath);
     final folderByPath = <String, _LibraryEditFolderTreeNode>{};
     final roots = <_LibraryEditTreeNode>[];
@@ -360,11 +364,16 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage> {
       return folder;
     }
 
+    for (final excludedFolderPath in excludedFolders) {
+      ensureFolder(excludedFolderPath);
+    }
+
     for (final trackPath in trackPaths) {
       final normalizedTrackPath = PathMatcher.normalize(trackPath);
       if (!_trackBelongsToLibrary(normalizedTrackPath)) continue;
       final trackNode = _LibraryEditTrackTreeNode(normalizedTrackPath);
-      final folder = ensureFolder(path.dirname(normalizedTrackPath));
+      final folderPath = _folderPathForTrack(normalizedTrackPath);
+      final folder = folderPath == null ? null : ensureFolder(folderPath);
       if (folder == null) {
         roots.add(trackNode);
       } else {
@@ -377,20 +386,46 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage> {
   }
 
   int _relativeFolderDepth(String folderPath) {
-    if (PathMatcher.isContentUri(folderPath) ||
-        PathMatcher.isContentUri(widget.libraryPath)) {
+    final relative = PathMatcher.relativeWithin(
+      PathMatcher.normalize(folderPath),
+      PathMatcher.normalize(widget.libraryPath),
+    );
+    if (relative == null || relative.isEmpty) {
       return 0;
     }
-    final relative = path.relative(
-      path.normalize(folderPath),
-      from: path.normalize(widget.libraryPath),
-    );
-    if (relative == '.' || relative.isEmpty) return 0;
     return relative
             .split(RegExp(r'[\\/]+'))
             .where((segment) => segment.isNotEmpty)
             .length -
         1;
+  }
+
+  String? _folderPathForTrack(String trackPath) {
+    final normalizedTrackPath = PathMatcher.normalize(trackPath);
+    final rootPath = PathMatcher.normalize(widget.libraryPath);
+    final relativeTrackPath = PathMatcher.relativeWithin(
+      normalizedTrackPath,
+      rootPath,
+    );
+    if (relativeTrackPath == null || relativeTrackPath.isEmpty) {
+      final parentPath = path.dirname(normalizedTrackPath);
+      if (parentPath == '.' ||
+          parentPath.isEmpty ||
+          PathMatcher.equalsNormalized(parentPath, rootPath)) {
+        return null;
+      }
+      return parentPath;
+    }
+
+    final normalizedRelativeTrackPath = relativeTrackPath.replaceAll('\\', '/');
+    final relativeFolderPath = path.posix.dirname(normalizedRelativeTrackPath);
+    if (relativeFolderPath == '.' || relativeFolderPath.isEmpty) {
+      return null;
+    }
+    if (PathMatcher.isContentUri(rootPath)) {
+      return '$rootPath::$relativeFolderPath';
+    }
+    return path.normalize(path.join(rootPath, relativeFolderPath));
   }
 
   void _sortEditTree(List<_LibraryEditTreeNode> nodes) {

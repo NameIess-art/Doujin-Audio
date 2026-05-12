@@ -65,9 +65,35 @@ abstract final class PathDisplay {
     return _normalizeDisplaySegment(documentPath);
   }
 
+  static String normalizeDisplaySegment(String value) {
+    return _normalizeDisplaySegment(value);
+  }
+
+  static String safeFileName(
+    String value, {
+    String replacement = ' ',
+    bool collapseWhitespace = true,
+    bool trimTrailingDotsAndSpaces = true,
+    String fallback = '',
+  }) {
+    final cleaned = value.replaceAll(
+      RegExp(r'[<>:"/\\|?*\x00-\x1F]'),
+      replacement,
+    );
+    final whitespaceAdjusted = collapseWhitespace
+        ? cleaned.replaceAll(RegExp(r'\s+'), replacement)
+        : cleaned;
+    final trimmed = whitespaceAdjusted.trim();
+    final result = trimTrailingDotsAndSpaces
+        ? trimmed.replaceAll(RegExp(r'[. ]+$'), '')
+        : trimmed;
+    return result.isEmpty ? fallback : result;
+  }
+
   static String _normalizeDisplaySegment(String value) {
     var normalized = value.trim();
     if (normalized.isEmpty) return normalized;
+    normalized = PathMatcher.safeDecodeComponent(normalized);
     final fixed = _tryLatin1ToUtf8(normalized);
     if (_looksLikeMojibake(normalized) && !_looksLikeMojibake(fixed)) {
       normalized = fixed;

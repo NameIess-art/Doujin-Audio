@@ -14,6 +14,7 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Environment
 import android.os.PowerManager
 import android.os.SystemClock
 import android.provider.DocumentsContract
@@ -99,7 +100,8 @@ private val preferredCoverBasenames = listOf(
     "cover", "folder", "front", "album", "artwork", "poster"
 )
 
-private const val audioDetailBackupFileName = ".nameless-audio.json"
+private const val audioDetailBackupFileName = "nameless-audio.json"
+private const val legacyAudioDetailBackupFileName = ".nameless-audio.json"
 
 class MainActivity : AudioServiceActivity() {
     companion object {
@@ -180,6 +182,12 @@ class MainActivity : AudioServiceActivity() {
                             keepForegroundServiceAlive = keepForegroundServiceAlive
                         )
                         result.success(null)
+                    }
+                    "canManageAllFilesAccess" -> {
+                        result.success(canManageAllFilesAccess())
+                    }
+                    "openManageAllFilesAccessSettings" -> {
+                        result.success(openManageAllFilesAccessSettings())
                     }
                     "stopPlaybackKeepAlive" -> {
                         stopPlaybackKeepAliveService()
@@ -573,16 +581,45 @@ class MainActivity : AudioServiceActivity() {
                             }
                         }.start()
                     }
+                    "writeFileBytesToFolder" -> {
+                        val folder = call.argument<String>("folder")
+                        val name = call.argument<String>("name")
+                        val bytes = call.argument<ByteArray>("bytes")
+                        val mimeType = call.argument<String>("mimeType")
+                        if (folder.isNullOrBlank() || name.isNullOrBlank() || bytes == null) {
+                            result.error(
+                                "invalid_args",
+                                "folder, name and bytes are required",
+                                null
+                            )
+                            return@setMethodCallHandler
+                        }
+                        Thread {
+                            try {
+                                val savedPath = writeFileBytesToFolder(folder, name, bytes, mimeType)
+                                runOnUiThread { result.success(savedPath) }
+                            } catch (e: Exception) {
+                                runOnUiThread {
+                                    result.error(
+                                        "folder_file_write_failed",
+                                        e.message ?: "unknown error",
+                                        null
+                                    )
+                                }
+                            }
+                        }.start()
+                    }
                     "resolveTrackCover" -> {
                         val trackPath = call.argument<String>("path")
                         val groupKey = call.argument<String>("groupKey")
+                        val rootFolder = call.argument<String>("rootFolder")
                         if (trackPath.isNullOrBlank()) {
                             result.error("invalid_args", "path is required", null)
                             return@setMethodCallHandler
                         }
                         Thread {
                             try {
-                                val coverPath = resolveTrackCover(trackPath, groupKey)
+                                val coverPath = resolveTrackCover(trackPath, groupKey, rootFolder)
                                 runOnUiThread { result.success(coverPath) }
                             } catch (e: Exception) {
                                 runOnUiThread {
@@ -984,6 +1021,45 @@ class MainActivity : AudioServiceActivity() {
         }
         val powerManager = getSystemService(POWER_SERVICE) as? PowerManager
         return powerManager?.isIgnoringBatteryOptimizations(packageName) == true
+    }
+
+    private fun canManageAllFilesAccess(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            return true
+        }
+        return try {
+            Environment.isExternalStorageManager()
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun openManageAllFilesAccessSettings(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            return openApplicationDetailsSettings()
+        }
+        return try {
+            val intent = Intent(
+                Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                Uri.parse("package:$packageName")
+            ).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            startActivity(intent)
+            true
+        } catch (_: Exception) {
+            try {
+                val fallbackIntent = Intent(
+                    Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION
+                ).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                }
+                startActivity(fallbackIntent)
+                true
+            } catch (_: Exception) {
+                openApplicationDetailsSettings()
+            }
+        }
     }
 
     private fun openBatteryOptimizationSettings(): Boolean {
@@ -1452,6 +1528,8 @@ class MainActivity : AudioServiceActivity() {
         val folder = resolveDocumentFileForFolderPath(folderPath) ?: return null
         val backup = folder.listFiles().firstOrNull {
             it.isFile && it.name == audioDetailBackupFileName
+        } ?: folder.listFiles().firstOrNull {
+            it.isFile && it.name == legacyAudioDetailBackupFileName
         } ?: return null
         return contentResolver.openInputStream(backup.uri)?.use { input ->
             input.bufferedReader(Charsets.UTF_8).readText()
@@ -1469,6 +1547,30 @@ class MainActivity : AudioServiceActivity() {
             output.flush()
         } ?: return false
         return true
+    }
+
+    private fun writeFileBytesToFolder(
+        folderPath: String,
+        name: String,
+        bytes: ByteArray,
+        mimeType: String?
+    ): String? {
+        val folder = resolveDocumentFileForFolderPath(folderPath) ?: return null
+        val file = folder.listFiles().firstOrNull {
+            it.isFile && normalizeDisplayName(it.name?.trim().orEmpty()) == name
+        } ?: folder.createFile(
+            mimeType ?: MimeTypeMap.getSingleton()
+                .getMimeTypeFromExtension(name.substringAfterLast('.', "").lowercase(Locale.US))
+                ?: "application/octet-stream",
+            name
+        ) ?: return null
+
+        contentResolver.openOutputStream(file.uri, "w")?.use { output ->
+            output.write(bytes)
+            output.flush()
+        } ?: return null
+
+        return cacheDocumentCover(file, "$folderPath/$name")
     }
 
     private fun resolveDocumentFileForFolderPath(folderPath: String): DocumentFile? {
@@ -2172,13 +2274,20 @@ class MainActivity : AudioServiceActivity() {
         val sortPath: String
     )
 
-    private fun resolveTrackCover(trackPath: String, groupKey: String?): String? {
+    private fun resolveTrackCover(
+        trackPath: String,
+        groupKey: String?,
+        rootFolder: String?
+    ): String? {
         if (!trackPath.startsWith("content://")) {
             return null
         }
 
-        val discovered = discoverRootImages(trackPath, groupKey, null)
-        if (discovered.isNotEmpty()) return discovered.first()
+        if (!rootFolder.isNullOrBlank() && rootFolder.startsWith("content://")) {
+            val coverDirectory = resolveDocumentFileForFolderPath(rootFolder) ?: return null
+            val cover = findPreferredCoverInDocumentTree(coverDirectory) ?: return null
+            return cacheDocumentCover(cover, rootFolder)
+        }
 
         val rootTreeUri = when {
             groupKey.isNullOrBlank() -> null
@@ -2214,8 +2323,16 @@ class MainActivity : AudioServiceActivity() {
         groupKey: String?,
         rootFolder: String?
     ): List<String> {
+        if (!rootFolder.isNullOrBlank() && rootFolder.startsWith("content://")) {
+            val root = resolveDocumentFileForFolderPath(rootFolder) ?: return emptyList()
+            val candidates = collectImageDocumentsRecursively(root)
+            if (candidates.isEmpty()) return emptyList()
+            return candidates.mapNotNull { candidate ->
+                cacheDocumentCover(candidate.file, "$trackPath|${candidate.sortPath}")
+            }
+        }
+
         val rootUriString = when {
-            !rootFolder.isNullOrBlank() && rootFolder.startsWith("content://") -> rootFolder
             !groupKey.isNullOrBlank() && groupKey.contains("::") ->
                 groupKey.substringBefore("::")
             !groupKey.isNullOrBlank() && groupKey.startsWith("content://") -> groupKey
@@ -2358,20 +2475,70 @@ class MainActivity : AudioServiceActivity() {
         }.firstOrNull()
     }
 
+    private data class DocumentCoverCandidate(
+        val file: DocumentFile,
+        val sortPath: String
+    )
+
+    private fun findPreferredCoverInDocumentTree(directory: DocumentFile): DocumentFile? {
+        val images = collectImageDocumentsRecursively(directory)
+        if (images.isEmpty()) return null
+        return images.sortedWith { left, right ->
+            val leftName = normalizeDisplayName(left.file.name ?: left.file.uri.lastPathSegment ?: "")
+            val rightName = normalizeDisplayName(right.file.name ?: right.file.uri.lastPathSegment ?: "")
+            val priority = compareCoverNames(leftName, rightName)
+            if (priority != 0) priority else left.sortPath.lowercase(Locale.US)
+                .compareTo(right.sortPath.lowercase(Locale.US))
+        }.firstOrNull()?.file
+    }
+
     private fun collectImageDocuments(directory: DocumentFile): List<DocumentFile> {
         return try {
             val images = mutableListOf<DocumentFile>()
-            val pending = java.util.ArrayDeque<DocumentFile>()
-            pending.add(directory)
-            while (pending.isNotEmpty()) {
-                val current = pending.removeFirst()
-                for (child in current.listFiles()) {
-                    when {
-                        child.isDirectory -> pending.addLast(child)
-                        child.isFile && isSupportedImageDocument(child) -> images.add(child)
-                    }
+            for (child in directory.listFiles()) {
+                if (child.isFile && isSupportedImageDocument(child)) {
+                    images.add(child)
                 }
             }
+            images
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    private fun collectImageDocumentsRecursively(directory: DocumentFile): List<DocumentCoverCandidate> {
+        data class Node(val folder: DocumentFile, val relative: String)
+
+        return try {
+            val pending = ArrayDeque<Node>()
+            val images = mutableListOf<DocumentCoverCandidate>()
+            pending.add(Node(directory, ""))
+
+            while (pending.isNotEmpty()) {
+                val current = pending.removeFirst()
+                for (child in current.folder.listFiles()) {
+                    val name = normalizeDisplayName(child.name?.trim().orEmpty()).ifBlank {
+                        normalizeDisplayName(child.uri.lastPathSegment ?: "")
+                    }
+                    if (child.isDirectory) {
+                        val nextRelative = when {
+                            current.relative.isEmpty() -> name
+                            name.isEmpty() -> current.relative
+                            else -> "${current.relative}/$name"
+                        }
+                        pending.add(Node(child, nextRelative))
+                        continue
+                    }
+                    if (!child.isFile || !isSupportedImageDocument(child)) continue
+                    val sortPath = if (current.relative.isEmpty()) {
+                        name
+                    } else {
+                        "${current.relative}/$name"
+                    }
+                    images.add(DocumentCoverCandidate(file = child, sortPath = sortPath))
+                }
+            }
+
             images
         } catch (_: Exception) {
             emptyList()

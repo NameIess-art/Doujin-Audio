@@ -42,7 +42,9 @@ class AudioDetailRepository {
   }) : _databaseRepository = databaseRepository ?? AudioDatabaseRepository(),
        _now = now ?? DateTime.now;
 
-  static const backupFileName = '.nameless-audio.json';
+  static const backupFileName = 'nameless-audio.json';
+  static const legacyBackupFileName = '.nameless-audio.json';
+  static const singleBackupSuffix = '.nameless-audio.json';
   static const MethodChannel _fileCacheChannel = MethodChannel(
     FileCacheChannel.name,
   );
@@ -51,18 +53,17 @@ class AudioDetailRepository {
   final DateTime Function() _now;
 
   Future<AudioDetailLoadResult> load(AudioDetailTarget target) async {
-    final databaseDetail = await _databaseRepository.loadAudioDetail(target);
+    final normalizedTarget = _normalizeTarget(target);
+    final databaseDetail = await _databaseRepository.loadAudioDetail(
+      normalizedTarget,
+    );
     if (databaseDetail != null) {
       return AudioDetailLoadResult(detail: databaseDetail);
     }
 
-    if (!target.isLibraryRootFolder) {
-      return AudioDetailLoadResult(detail: AudioDetail.empty(target));
-    }
-
-    final backupDetail = await _readBackup(target);
+    final backupDetail = await _readBackup(normalizedTarget);
     if (backupDetail == null) {
-      return AudioDetailLoadResult(detail: AudioDetail.empty(target));
+      return AudioDetailLoadResult(detail: AudioDetail.empty(normalizedTarget));
     }
 
     final normalized = backupDetail.normalizedForSave(_now());
@@ -71,15 +72,31 @@ class AudioDetailRepository {
   }
 
   Future<AudioDetailSaveResult> save(AudioDetail detail) async {
-    final normalized = detail.normalizedForSave(_now());
+    final normalized = detail
+        .copyWith(target: _normalizeTarget(detail.target))
+        .normalizedForSave(_now());
     await _databaseRepository.upsertAudioDetail(normalized);
 
     if (!normalized.target.isLibraryRootFolder) {
-      return AudioDetailSaveResult(
-        detail: normalized,
-        backupAttempted: false,
-        backupSaved: false,
-      );
+      try {
+        final backupFile = _backupFile(normalized.target);
+        final payload = const JsonEncoder.withIndent(
+          '  ',
+        ).convert(normalized.toBackupJson());
+        await backupFile.writeAsString(payload, flush: true);
+        return AudioDetailSaveResult(
+          detail: normalized,
+          backupAttempted: true,
+          backupSaved: true,
+        );
+      } catch (error) {
+        return AudioDetailSaveResult(
+          detail: normalized,
+          backupAttempted: true,
+          backupSaved: false,
+          backupError: error,
+        );
+      }
     }
 
     try {
@@ -116,7 +133,7 @@ class AudioDetailRepository {
   }
 
   Future<void> delete(AudioDetailTarget target) {
-    return _databaseRepository.deleteAudioDetail(target);
+    return _databaseRepository.deleteAudioDetail(_normalizeTarget(target));
   }
 
   Future<AudioDetailSaveResult?> prefillRjCodeFromText(
@@ -152,11 +169,30 @@ class AudioDetailRepository {
       );
     }
     final backupFile = _backupFile(target);
-    if (!await backupFile.exists()) return null;
+    if (!await backupFile.exists()) {
+      final legacyBackupFile = _backupFile(target, legacy: true);
+      if (!await legacyBackupFile.exists()) return null;
+      return legacyBackupFile.readAsString();
+    }
     return backupFile.readAsString();
   }
 
-  File _backupFile(AudioDetailTarget target) {
-    return File(path.join(target.targetPath, backupFileName));
+  AudioDetailTarget _normalizeTarget(AudioDetailTarget target) {
+    return AudioDetailTarget(
+      targetType: target.targetType,
+      targetPath: PathMatcher.normalize(target.targetPath),
+    );
+  }
+
+  File _backupFile(AudioDetailTarget target, {bool legacy = false}) {
+    if (target.isLibraryRootFolder) {
+      return File(
+        path.join(
+          target.targetPath,
+          legacy ? legacyBackupFileName : backupFileName,
+        ),
+      );
+    }
+    return File('${target.targetPath}$singleBackupSuffix');
   }
 }

@@ -1,5 +1,130 @@
 part of 'audio_provider.dart';
 
+const List<String> _preferredCoverBasenames = <String>[
+  'cover',
+  'folder',
+  'front',
+  'album',
+  'artwork',
+  'poster',
+];
+
+String? _mostSpecificContainingRoot(Iterable<String> roots, String value) {
+  String? bestMatch;
+  for (final root in roots) {
+    if (!PathMatcher.isWithinOrEqual(value, root)) {
+      continue;
+    }
+    if (bestMatch == null || root.length > bestMatch.length) {
+      bestMatch = root;
+    }
+  }
+  return bestMatch;
+}
+
+String? _libraryWorkScopeFolderPath(String libraryRoot, String groupKey) {
+  final relativePath = PathMatcher.relativeWithin(groupKey, libraryRoot);
+  if (relativePath == null || relativePath.isEmpty) {
+    return null;
+  }
+
+  final firstSegment = relativePath
+      .split(RegExp(r'[\\/]+'))
+      .firstWhere((segment) => segment.isNotEmpty, orElse: () => '');
+  if (firstSegment.isEmpty) {
+    return null;
+  }
+
+  final normalizedRoot = PathMatcher.normalize(libraryRoot);
+  if (PathMatcher.isContentUri(normalizedRoot)) {
+    return '$normalizedRoot::$firstSegment';
+  }
+
+  return path.normalize(path.join(normalizedRoot, firstSegment));
+}
+
+String? _resolveCoverScopeFolderPath(
+  AudioProvider provider,
+  MusicTrack? track, {
+  String? trackPath,
+}) {
+  final pathValue = track?.path ?? trackPath;
+  if (pathValue == null || pathValue.isEmpty) {
+    return null;
+  }
+
+  final groupKey = track?.groupKey.trim() ?? '';
+
+  final watchedFolder =
+      _mostSpecificContainingRoot(provider._watchedFolders, pathValue) ??
+      (groupKey.isEmpty
+          ? null
+          : _mostSpecificContainingRoot(provider._watchedFolders, groupKey));
+  if (watchedFolder != null && watchedFolder.isNotEmpty) {
+    return watchedFolder;
+  }
+
+  final watchedLibrary =
+      (groupKey.isEmpty
+          ? null
+          : _mostSpecificContainingRoot(
+              provider._watchedLibraries,
+              groupKey,
+            )) ??
+      _mostSpecificContainingRoot(provider._watchedLibraries, pathValue);
+  if (watchedLibrary != null && watchedLibrary.isNotEmpty) {
+    final workScope = groupKey.isEmpty
+        ? null
+        : _libraryWorkScopeFolderPath(watchedLibrary, groupKey);
+    return workScope ?? watchedLibrary;
+  }
+
+  if (groupKey.isNotEmpty) {
+    return PathMatcher.normalize(groupKey);
+  }
+
+  if (PathMatcher.isContentUri(pathValue)) {
+    return null;
+  }
+
+  final directoryPath = path.dirname(pathValue);
+  if (directoryPath.isEmpty || directoryPath == '.') {
+    return null;
+  }
+  return directoryPath;
+}
+
+int _coverPriority(String baseName) {
+  final exactMatchIndex = _preferredCoverBasenames.indexOf(baseName);
+  if (exactMatchIndex >= 0) {
+    return exactMatchIndex;
+  }
+  for (var i = 0; i < _preferredCoverBasenames.length; i++) {
+    if (baseName.contains(_preferredCoverBasenames[i])) {
+      return 100 + i;
+    }
+  }
+  return 200;
+}
+
+int _compareCoverPaths(String leftPath, String rightPath) {
+  final leftName = path.basename(leftPath);
+  final rightName = path.basename(rightPath);
+  final leftBase = path.basenameWithoutExtension(leftName).toLowerCase();
+  final rightBase = path.basenameWithoutExtension(rightName).toLowerCase();
+  final scoreCompare = _coverPriority(
+    leftBase,
+  ).compareTo(_coverPriority(rightBase));
+  if (scoreCompare != 0) {
+    return scoreCompare;
+  }
+  final nameCompare = leftBase.compareTo(rightBase);
+  if (nameCompare != 0) {
+    return nameCompare;
+  }
+  return leftPath.toLowerCase().compareTo(rightPath.toLowerCase());
+}
+
 extension AudioProviderNotificationCovers on AudioProvider {
   Future<void> _resumeNotificationSession(PlaybackSession session) async {
     if (session.isLoading || session.state.playing) return;
@@ -16,7 +141,9 @@ extension AudioProviderNotificationCovers on AudioProvider {
     final track = trackByPath(trackPath);
     final artPath = coverPathForTrack(track, trackPath: trackPath);
     if (artPath == null) {
-      unawaited(_resolveNotificationCoverPathForTrack(track, trackPath: trackPath));
+      unawaited(
+        _resolveNotificationCoverPathForTrack(track, trackPath: trackPath),
+      );
     }
     return track?.displayName ??
         path.basenameWithoutExtension(session.currentTrackPath);
@@ -52,7 +179,10 @@ extension AudioProviderNotificationCovers on AudioProvider {
       return track!.manualCoverPath;
     }
     final pathValue = track?.path ?? trackPath;
-    final coverSearchKey = _notificationCoverSearchKey(track, trackPath: pathValue);
+    final coverSearchKey = _notificationCoverSearchKey(
+      track,
+      trackPath: pathValue,
+    );
     if (coverSearchKey == null) {
       return null;
     }
@@ -72,23 +202,30 @@ extension AudioProviderNotificationCovers on AudioProvider {
     if (pathValue == null || pathValue.isEmpty) {
       return null;
     }
-    if (pathValue.startsWith('content://')) {
-      final groupKey = track?.groupKey.trim() ?? '';
-      if (groupKey.isNotEmpty) {
-        return 'content:$groupKey';
-      }
-      return 'content:$pathValue';
+    final scopedFolder = _resolveCoverScopeFolderPath(
+      this,
+      track,
+      trackPath: pathValue,
+    );
+    if (scopedFolder != null && scopedFolder.isNotEmpty) {
+      return PathMatcher.normalize(scopedFolder);
     }
     final directoryPath = path.dirname(pathValue);
     if (directoryPath.isEmpty || directoryPath == '.') {
       return null;
     }
-    return path.normalize(directoryPath);
+    return PathMatcher.normalize(directoryPath);
   }
 
-  Future<String?> _resolveNotificationCoverPathForTrack(MusicTrack? track, {String? trackPath}) {
+  Future<String?> _resolveNotificationCoverPathForTrack(
+    MusicTrack? track, {
+    String? trackPath,
+  }) {
     final pathValue = track?.path ?? trackPath;
-    final coverSearchKey = _notificationCoverSearchKey(track, trackPath: pathValue);
+    final coverSearchKey = _notificationCoverSearchKey(
+      track,
+      trackPath: pathValue,
+    );
     if (coverSearchKey == null) {
       return Future<String?>.value();
     }
@@ -113,16 +250,26 @@ extension AudioProviderNotificationCovers on AudioProvider {
     return _notificationCoverPathFutures.putIfAbsent(coverSearchKey, () async {
       String? coverPath;
       if (pathValue != null) {
+        final coverScopeFolder = _resolveCoverScopeFolderPath(
+          this,
+          track,
+          trackPath: pathValue,
+        );
         if (pathValue.startsWith('content://')) {
           if (track != null) {
-            coverPath = await _resolveContentCoverPathForTrack(track);
+            coverPath = await _resolveContentCoverPathForTrack(
+              track,
+              rootFolder: coverScopeFolder,
+            );
           } else {
-            coverPath = await _resolveContentCoverPathForFolder(pathValue);
+            coverPath = await _resolveContentCoverPathForFolder(
+              coverScopeFolder ?? pathValue,
+            );
           }
         } else {
-          final candidateDirectories = track != null
-              ? _notificationCoverCandidateDirectories(track)
-              : [coverSearchKey];
+          final candidateDirectories = <String>[
+            coverScopeFolder ?? coverSearchKey,
+          ];
           for (final candidateDirectory in candidateDirectories) {
             coverPath = await _findNotificationCoverPath(candidateDirectory);
             if (coverPath != null) {
@@ -156,11 +303,18 @@ extension AudioProviderNotificationCovers on AudioProvider {
     });
   }
 
-  Future<String?> _resolveContentCoverPathForTrack(MusicTrack track) async {
+  Future<String?> _resolveContentCoverPathForTrack(
+    MusicTrack track, {
+    String? rootFolder,
+  }) async {
     try {
       return await AudioProvider._fileCacheChannel.invokeMethod<String>(
         'resolveTrackCover',
-        <String, dynamic>{'path': track.path, 'groupKey': track.groupKey},
+        <String, dynamic>{
+          'path': track.path,
+          'groupKey': track.groupKey,
+          'rootFolder': rootFolder,
+        },
       );
     } on MissingPluginException {
       return null;
@@ -168,35 +322,6 @@ extension AudioProviderNotificationCovers on AudioProvider {
       debugPrint('AudioProvider._resolveContentCoverPathForTrack error: $e');
       return null;
     }
-  }
-
-  List<String> _notificationCoverCandidateDirectories(MusicTrack track) {
-    final coverSearchKey = _notificationCoverSearchKey(track);
-    if (coverSearchKey == null) {
-      return const <String>[];
-    }
-
-    final directories = <String>[coverSearchKey];
-    for (final watchedFolder in _watchedFolders) {
-      if (watchedFolder.startsWith('content://')) {
-        continue;
-      }
-      final normalizedRoot = path.normalize(watchedFolder);
-      if (!PathMatcher.isWithinOrEqual(coverSearchKey, normalizedRoot)) {
-        continue;
-      }
-
-      var current = coverSearchKey;
-      while (!path.equals(current, normalizedRoot)) {
-        final parent = path.dirname(current);
-        if (parent == current || directories.contains(parent)) {
-          break;
-        }
-        directories.add(parent);
-        current = parent;
-      }
-    }
-    return directories;
   }
 
   Future<String?> _resolveCoverPathForFolder(String folderPath) {
@@ -214,17 +339,10 @@ extension AudioProviderNotificationCovers on AudioProvider {
     return _coverPathFutures.putIfAbsent(normalizedFolderPath, () async {
       String? coverPath;
 
-      for (final track in _library) {
-        final manualCoverPath = track.manualCoverPath;
-        if (manualCoverPath == null) {
-          continue;
-        }
-        if (PathMatcher.isWithinOrEqual(track.path, normalizedFolderPath) ||
-            PathMatcher.isWithinOrEqual(track.groupKey, normalizedFolderPath)) {
-          coverPath = manualCoverPath;
-          break;
-        }
+      if (_manualCoverByScopeCache.isEmpty) {
+        _rebuildManualCoverByScopeCache();
       }
+      coverPath = _manualCoverByScopeCache[normalizedFolderPath];
 
       coverPath ??= PathMatcher.isContentUri(normalizedFolderPath)
           ? await _resolveContentCoverPathForFolder(normalizedFolderPath)
@@ -258,18 +376,12 @@ extension AudioProviderNotificationCovers on AudioProvider {
     }
 
     try {
-      final raw = await AudioProvider._fileCacheChannel
-          .invokeMethod<List<dynamic>>('discoverRootImages', {
+      return await AudioProvider._fileCacheChannel
+          .invokeMethod<String>('resolveTrackCover', <String, dynamic>{
             'path': firstTrack?.path ?? folderPath,
             'groupKey': firstTrack?.groupKey,
             'rootFolder': folderPath,
           });
-      if (raw == null) return null;
-      for (final item in raw) {
-        final value = item?.toString().trim() ?? '';
-        if (value.isNotEmpty) return value;
-      }
-      return null;
     } on MissingPluginException {
       return null;
     } catch (e) {
@@ -299,54 +411,29 @@ extension AudioProviderNotificationCovers on AudioProvider {
     try {
       // First pass: check common cover file names in the top-level directory
       // (non-recursive) — this covers the vast majority of cases.
-      final shallowList = directory.list(followLinks: false);
-      String? firstImage;
-      await for (final entity in shallowList) {
-        if (entity is! File) continue;
-        final extension = path.extension(entity.path).toLowerCase();
-        if (!AudioProvider._supportedImageExtensions.contains(extension)) {
-          continue;
-        }
-        firstImage ??= entity.path;
-        final basename = path
-            .basenameWithoutExtension(entity.path)
-            .toLowerCase();
-        if (basename == 'cover' ||
-            basename == 'folder' ||
-            basename == 'album' ||
-            basename == 'albumart' ||
-            basename == 'front' ||
-            basename == 'artwork') {
-          _notificationCoverSearchMisses.remove(normalizedFolderPath);
-          return entity.path;
-        }
-      }
-      if (firstImage != null) {
-        _notificationCoverSearchMisses.remove(normalizedFolderPath);
-        return firstImage;
-      }
-    } catch (_) {
-      // Shallow pass failed — fall through to recursive search.
-    }
-
-    // Second pass: recursive search with early exit on first image found.
-    try {
+      final candidates = <String>[];
       await for (final entity in directory.list(
         recursive: true,
         followLinks: false,
       )) {
         if (entity is! File) continue;
         final extension = path.extension(entity.path).toLowerCase();
-        if (AudioProvider._supportedImageExtensions.contains(extension)) {
-          _notificationCoverSearchMisses.remove(normalizedFolderPath);
-          return entity.path;
+        if (!AudioProvider._supportedImageExtensions.contains(extension)) {
+          continue;
         }
+        candidates.add(entity.path);
+      }
+      if (candidates.isNotEmpty) {
+        candidates.sort(_compareCoverPaths);
+        _notificationCoverSearchMisses.remove(normalizedFolderPath);
+        return candidates.first;
       }
     } catch (_) {
-      _notificationCoverSearchMisses.add(normalizedFolderPath);
-      return null;
+      // Recursive scan failed.
     }
 
+    // Recursive search is disabled here to avoid sibling/unrelated child cover pollution.
+    // The miss is cached so repeated lookups stay cheap.
     _notificationCoverSearchMisses.add(normalizedFolderPath);
     return null;
   }

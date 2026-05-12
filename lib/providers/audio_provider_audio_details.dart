@@ -325,7 +325,6 @@ extension AudioProviderAudioDetails on AudioProvider {
     }
     if (updatedTracks.isEmpty) return;
     _clearResolvedCoverPaths();
-    _rebuildLibraryIndexes();
     _markActiveSessionsDirty();
     await _audioDatabaseRepository.upsertTracks(updatedTracks);
     _syncNotificationState();
@@ -367,11 +366,7 @@ extension AudioProviderAudioDetails on AudioProvider {
   }
 
   String _safeFileName(String value) {
-    return value
-        .replaceAll(RegExp(r'[<>:"/\\|?*\x00-\x1F]'), ' ')
-        .replaceAll(RegExp(r'\s+'), ' ')
-        .trim()
-        .replaceAll(RegExp(r'[. ]+$'), '');
+    return PathDisplay.safeFileName(value);
   }
 
   MusicTrack _copyTrack(

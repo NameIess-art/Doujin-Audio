@@ -648,8 +648,26 @@ class AudioProvider with ChangeNotifier {
   }
 
   int _coverGeneration = 0;
+  final Map<String, String?> _manualCoverByScopeCache = <String, String?>{};
+  final Map<String, List<String>> _discoveredImagesByScopeCache =
+      <String, List<String>>{};
 
   int get coverGeneration => _coverGeneration;
+
+  void _rebuildManualCoverByScopeCache() {
+    _manualCoverByScopeCache.clear();
+    for (final track in _library) {
+      final manualCoverPath = track.manualCoverPath;
+      if (manualCoverPath == null || manualCoverPath.isEmpty) {
+        continue;
+      }
+      final scope = _notificationCoverSearchKey(track);
+      if (scope == null || scope.isEmpty) {
+        continue;
+      }
+      _manualCoverByScopeCache[scope] = manualCoverPath;
+    }
+  }
 
   void _clearResolvedCoverPaths() {
     _coverGeneration++;
@@ -660,5 +678,7 @@ class AudioProvider with ChangeNotifier {
     _resolvedNotificationCoverPaths.clear();
     _resolvedNotificationCoverPathFutures.clear();
     _notificationCoverSearchMisses.clear();
+    _manualCoverByScopeCache.clear();
+    _discoveredImagesByScopeCache.clear();
   }
 }

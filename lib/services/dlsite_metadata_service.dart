@@ -1,10 +1,13 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/services.dart';
 import 'package:path/path.dart' as path;
 
 import '../models/audio_detail.dart';
 import '../models/dlsite_metadata.dart';
+import 'path_matcher.dart';
+import 'platform_channels.dart';
 
 class DlsiteMetadataException implements Exception {
   const DlsiteMetadataException(this.message);
@@ -18,6 +21,10 @@ class DlsiteMetadataException implements Exception {
 class DlsiteMetadataService {
   DlsiteMetadataService({HttpClient? httpClient})
     : _httpClient = httpClient ?? HttpClient();
+
+  static const MethodChannel _fileCacheChannel = MethodChannel(
+    FileCacheChannel.name,
+  );
 
   final HttpClient _httpClient;
 
@@ -52,9 +59,7 @@ class DlsiteMetadataService {
   }) async {
     final uri = Uri.parse(coverUrl);
     final extension = _coverExtension(uri);
-    final destination = File(
-      path.join(folderPath, 'dlsite_${rjCode.toUpperCase()}_cover$extension'),
-    );
+    final fileName = 'dlsite_${rjCode.toUpperCase()}_cover$extension';
     final request = await _httpClient.getUrl(uri);
     _applyHeaders(request);
     final response = await request.close();
@@ -63,6 +68,30 @@ class DlsiteMetadataService {
         'Cover download failed: ${response.statusCode}',
       );
     }
+
+    if (PathMatcher.isContentUri(folderPath)) {
+      final bytes = await response.fold<List<int>>(
+        <int>[],
+        (buffer, chunk) => buffer..addAll(chunk),
+      );
+      final mimeType =
+          response.headers.contentType?.mimeType ?? _coverMimeType(extension);
+      final savedPath = await _fileCacheChannel.invokeMethod<String>(
+        FileCacheMethod.writeFileBytesToFolder,
+        <String, Object?>{
+          'folder': folderPath,
+          'name': fileName,
+          'bytes': Uint8List.fromList(bytes),
+          'mimeType': mimeType,
+        },
+      );
+      if (savedPath == null || savedPath.isEmpty) {
+        throw const DlsiteMetadataException('Content cover save failed');
+      }
+      return savedPath;
+    }
+
+    final destination = File(path.join(folderPath, fileName));
     await response.pipe(destination.openWrite());
     return destination.path;
   }
@@ -101,5 +130,15 @@ class DlsiteMetadataService {
       return extension;
     }
     return '.jpg';
+  }
+
+  String _coverMimeType(String extension) {
+    return switch (extension.toLowerCase()) {
+      '.png' => 'image/png',
+      '.webp' => 'image/webp',
+      '.jpeg' => 'image/jpeg',
+      '.jpg' => 'image/jpeg',
+      _ => 'image/jpeg',
+    };
   }
 }

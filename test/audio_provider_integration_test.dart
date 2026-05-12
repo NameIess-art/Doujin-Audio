@@ -1,16 +1,21 @@
+import 'dart:io';
+
 import 'package:audio_service/audio_service.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:nameless_audio/providers/audio_provider.dart';
 import 'package:nameless_audio/services/native_playback_bridge.dart';
 import 'package:nameless_audio/services/playback_notification_handler.dart';
 import 'package:nameless_audio/services/playback_notification_service.dart';
+import 'package:nameless_audio/services/platform_channels.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   SharedPreferences.setMockInitialValues(const <String, Object>{});
 
+  const fileCacheChannel = MethodChannel(FileCacheChannel.name);
   late AudioProvider provider;
   late PlaybackNotificationHandler handler;
   late PlaybackNotificationService notificationService;
@@ -21,7 +26,11 @@ void main() {
     provider = AudioProvider.test(notificationService: notificationService);
   });
 
-  tearDown(() => provider.dispose);
+  tearDown(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(fileCacheChannel, null);
+    provider.dispose();
+  });
 
   // ── multi-session playback stability ──────────────────────────
 
@@ -204,6 +213,203 @@ void main() {
 
       expect(states, hasLength(2));
       expect(session.state.processingState, ProcessingState.completed);
+    });
+  });
+
+  group('cover scope consistency', () {
+    test('content track cover resolves against its work folder scope', () async {
+      const libraryRoot =
+          'content://com.android.externalstorage.documents/tree/primary%3AASMR';
+      const workScope = '$libraryRoot::WorkA';
+      const groupKey = '$libraryRoot::WorkA/Disc1';
+      const trackPath =
+          'content://com.android.externalstorage.documents/tree/primary%3AASMR/document/primary%3AASMR%2FWorkA%2FDisc1%2F01.mp3';
+
+      provider.addWatchedLibrary(libraryRoot, notify: false);
+      provider.addTracks(
+        const <MusicTrack>[
+          MusicTrack(
+            path: trackPath,
+            displayName: '01',
+            groupKey: groupKey,
+            groupTitle: 'Disc1',
+            groupSubtitle: 'WorkA/Disc1',
+            isSingle: false,
+          ),
+        ],
+        notify: false,
+        persist: false,
+      );
+
+      final calls = <MethodCall>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(fileCacheChannel, (call) async {
+            calls.add(call);
+            return null;
+          });
+
+      await provider.coverPathFutureForTrack(provider.trackByPath(trackPath));
+
+      expect(
+        calls.any((call) {
+          if (call.method != FileCacheMethod.resolveTrackCover) {
+            return false;
+          }
+          final arguments = call.arguments as Map<Object?, Object?>;
+          return arguments['path'] == trackPath &&
+              arguments['groupKey'] == groupKey &&
+              arguments['rootFolder'] == workScope;
+        }),
+        isTrue,
+      );
+    });
+
+    test('folder card cover resolves against its own folder scope', () async {
+      const workScope =
+          'content://com.android.externalstorage.documents/tree/primary%3AASMR::WorkA';
+
+      final calls = <MethodCall>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(fileCacheChannel, (call) async {
+            calls.add(call);
+            return null;
+          });
+
+      await provider.coverPathFutureForFolder(workScope);
+
+      expect(
+        calls.any((call) {
+          if (call.method != FileCacheMethod.resolveTrackCover) {
+            return false;
+          }
+          final arguments = call.arguments as Map<Object?, Object?>;
+          return arguments['path'] == workScope &&
+              arguments['rootFolder'] == workScope;
+        }),
+        isTrue,
+      );
+    });
+
+    test(
+      'filesystem track cover scans recursively inside work folder only',
+      () async {
+        final workDir = await Directory.systemTemp.createTemp('cover_scope_');
+        addTearDown(() async {
+          if (await workDir.exists()) {
+            await workDir.delete(recursive: true);
+          }
+        });
+
+        final nestedDir = Directory(
+          '${workDir.path}${Platform.pathSeparator}Disc1',
+        );
+        await nestedDir.create(recursive: true);
+        final coverFile = File(
+          '${nestedDir.path}${Platform.pathSeparator}zzz_promo.jpg',
+        );
+        await coverFile.writeAsBytes(const <int>[1, 2, 3]);
+        final trackPath = '${nestedDir.path}${Platform.pathSeparator}01.mp3';
+        await File(trackPath).writeAsBytes(const <int>[4, 5, 6]);
+
+        provider.addWatchedFolder(workDir.path, notify: false);
+        provider.addTracks(
+          <MusicTrack>[
+            MusicTrack(
+              path: trackPath,
+              displayName: '01',
+              groupKey: nestedDir.path,
+              groupTitle: 'Disc1',
+              groupSubtitle: 'Disc1',
+              isSingle: false,
+            ),
+          ],
+          notify: false,
+          persist: false,
+        );
+
+        final resolved = await provider.coverPathFutureForTrack(
+          provider.trackByPath(trackPath),
+        );
+
+        expect(resolved, coverFile.path);
+      },
+    );
+
+    test('discoverImagesInRoot uses cache until cover generation changes', () async {
+      final workDir = await Directory.systemTemp.createTemp('discover_root_');
+      addTearDown(() async {
+        if (await workDir.exists()) {
+          await workDir.delete(recursive: true);
+        }
+      });
+
+      final coverA = File(
+        '${workDir.path}${Platform.pathSeparator}cover_a.jpg',
+      );
+      await coverA.writeAsBytes(const <int>[1, 2, 3]);
+      final trackPath = '${workDir.path}${Platform.pathSeparator}01.mp3';
+      await File(trackPath).writeAsBytes(const <int>[4, 5, 6]);
+
+      provider.addWatchedFolder(workDir.path, notify: false);
+      provider.addTracks(
+        <MusicTrack>[
+          MusicTrack(
+            path: trackPath,
+            displayName: '01',
+            groupKey: workDir.path,
+            groupTitle: 'Work',
+            groupSubtitle: 'Work',
+            isSingle: false,
+          ),
+        ],
+        notify: false,
+        persist: false,
+      );
+
+      final first = await provider.discoverImagesInRoot(trackPath);
+      expect(first, contains(coverA.path));
+
+      await coverA.delete();
+      final second = await provider.discoverImagesInRoot(trackPath);
+      expect(second, contains(coverA.path));
+
+      await provider.setTrackManualCover(trackPath, null);
+      final third = await provider.discoverImagesInRoot(trackPath);
+      expect(third, isNot(contains(coverA.path)));
+    });
+
+    test('folder cover resolves from manual-cover scope cache', () async {
+      final workDir = await Directory.systemTemp.createTemp('scope_cache_');
+      addTearDown(() async {
+        if (await workDir.exists()) {
+          await workDir.delete(recursive: true);
+        }
+      });
+
+      final cover = File('${workDir.path}${Platform.pathSeparator}manual.jpg');
+      await cover.writeAsBytes(const <int>[1, 2, 3]);
+      final trackPath = '${workDir.path}${Platform.pathSeparator}01.mp3';
+      await File(trackPath).writeAsBytes(const <int>[4, 5, 6]);
+
+      provider.addWatchedFolder(workDir.path, notify: false);
+      provider.addTracks(
+        <MusicTrack>[
+          MusicTrack(
+            path: trackPath,
+            displayName: '01',
+            groupKey: workDir.path,
+            groupTitle: 'Work',
+            groupSubtitle: 'Work',
+            isSingle: false,
+            manualCoverPath: cover.path,
+          ),
+        ],
+        notify: false,
+        persist: false,
+      );
+
+      final resolved = await provider.coverPathFutureForFolder(workDir.path);
+      expect(resolved, cover.path);
     });
   });
 }

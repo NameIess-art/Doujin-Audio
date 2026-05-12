@@ -178,8 +178,12 @@ extension AudioProviderNotificationSync on AudioProvider {
         .map((session) {
           final title = _notificationTitleForSession(session);
           final subtitle = _notificationSubtitleForSession(session);
-          final track = trackByPath(session.currentTrackPath);
-          final artPath = coverPathForTrack(track);
+          final trackPath = session.currentTrackPath;
+          final track = trackByPath(trackPath);
+          final artPath = coverPathForTrack(track, trackPath: trackPath);
+          if (artPath == null) {
+            unawaited(_resolveNotificationCoverPathForTrack(track, trackPath: trackPath));
+          }
           return <String, dynamic>{
             'id': session.id,
             'title': title,

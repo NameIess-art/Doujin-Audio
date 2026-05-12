@@ -4,6 +4,8 @@ import 'package:path/path.dart' as path;
 
 import '../models/library_node.dart';
 import '../models/music_track.dart';
+import 'path_matcher.dart';
+import 'path_display.dart';
 
 class LibraryOrganizer {
   const LibraryOrganizer();
@@ -13,7 +15,8 @@ class LibraryOrganizer {
       return track.path;
     }
     for (final root in watchedRoots) {
-      if (track.groupKey.startsWith(root)) {
+      if (PathMatcher.isWithinOrEqual(track.groupKey, root) ||
+          PathMatcher.isWithinOrEqual(track.path, root)) {
         return root;
       }
     }
@@ -74,22 +77,22 @@ class LibraryOrganizer {
       FolderNode currentNode = rootNodes[matchedRoot]!;
       final rootDisplayName = currentNode.name;
 
-      if (dirPath != matchedRoot && dirPath.length > matchedRoot.length) {
-        String relDir = dirPath.substring(matchedRoot.length);
-        if (relDir.startsWith('::')) {
-          relDir = relDir.substring(2);
-        }
-        if (relDir.startsWith(path.separator)) relDir = relDir.substring(1);
-
+      final relativeDir = PathMatcher.relativeWithin(dirPath, matchedRoot);
+      if (relativeDir != null && relativeDir.isNotEmpty) {
+        final relDir = relativeDir
+            .replaceAll('\\', '/')
+            .replaceFirst(RegExp(r'^/+'), '');
         final parts = relDir.split(RegExp(r'[\\/]+'));
-        String currentPath = matchedRoot;
+        final currentParts = <String>[];
 
         for (final rawPart in parts) {
           final part = _sanitizeFolderPart(rawPart, rootDisplayName);
           if (part.isEmpty) continue;
-          currentPath = currentPath.endsWith(path.separator)
-              ? currentPath + part
-              : currentPath + path.separator + part;
+          currentParts.add(part);
+          final currentPath = _folderPathForRelativeParts(
+            matchedRoot,
+            currentParts,
+          );
 
           final childFolders = folderIndexByPath.putIfAbsent(
             currentNode.path,
@@ -180,6 +183,11 @@ class LibraryOrganizer {
   }
 
   String _resolveRootNodeName(String rootPath, MusicTrack track) {
+    final displayName = PathDisplay.folderName(rootPath);
+    if (displayName.isNotEmpty && displayName != rootPath) {
+      return displayName;
+    }
+
     final subtitle = _normalizeDisplaySegment(track.groupSubtitle);
     if (subtitle.isNotEmpty) {
       final fromSubtitle = _normalizeDisplaySegment(
@@ -190,54 +198,28 @@ class LibraryOrganizer {
       }
     }
 
-    final decodedTreeName = _decodeTreeRootName(rootPath);
-    if (decodedTreeName != null && decodedTreeName.isNotEmpty) {
-      return decodedTreeName;
-    }
-
-    final baseName = _normalizeDisplaySegment(path.basename(rootPath));
+    final baseName = PathDisplay.folderName(rootPath);
     return baseName.isEmpty ? rootPath : baseName;
   }
 
-  String? _decodeTreeRootName(String rawPath) {
-    if (!rawPath.startsWith('content://')) return null;
-    final uri = Uri.tryParse(rawPath);
-    if (uri == null) return null;
-
-    final segments = uri.pathSegments;
-    final treeIndex = segments.indexOf('tree');
-    if (treeIndex < 0 || treeIndex + 1 >= segments.length) return null;
-
-    final documentId = _safeUriDecode(segments[treeIndex + 1]);
-    if (documentId.isEmpty) return null;
-    final lastPart = documentId.split('/').last;
-    final colonIndex = lastPart.lastIndexOf(':');
-    if (colonIndex >= 0 && colonIndex + 1 < lastPart.length) {
-      return _normalizeDisplaySegment(
-        lastPart.substring(colonIndex + 1).trim(),
-      );
+  String _folderPathForRelativeParts(String rootPath, List<String> parts) {
+    if (parts.isEmpty) return rootPath;
+    if (PathMatcher.isContentUri(rootPath)) {
+      return '$rootPath::${parts.join('/')}';
     }
-    return _normalizeDisplaySegment(lastPart.trim());
+    return path.normalize(path.joinAll(<String>[rootPath, ...parts]));
   }
 
   String _normalizeDisplaySegment(String value) {
     var normalized = value.trim();
     if (normalized.isEmpty) return normalized;
 
-    normalized = _safeUriDecode(normalized);
+    normalized = PathMatcher.safeDecodeComponent(normalized);
     final maybeFixed = _tryLatin1ToUtf8(normalized);
     if (_looksLikeMojibake(normalized) && !_looksLikeMojibake(maybeFixed)) {
       normalized = maybeFixed;
     }
     return normalized;
-  }
-
-  String _safeUriDecode(String value) {
-    try {
-      return Uri.decodeComponent(value);
-    } catch (_) {
-      return value;
-    }
   }
 
   String _tryLatin1ToUtf8(String input) {

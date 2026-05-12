@@ -73,10 +73,17 @@ internal object UnifiedPlaybackNotificationController {
     @Volatile
     var dismissPending = false
 
-    private fun isNotifyThrottled(notificationId: Int): Boolean {
+    private fun isNotifyThrottled(notificationId: Int, item: UnifiedPlaybackNotificationItem? = null): Boolean {
+        if (item != null) {
+            val previous = activeItemsById[item.id]
+            if (previous != null && previous.artPath != item.artPath) {
+                // Never throttle if the cover art path has changed.
+                return false
+            }
+        }
         val now = android.os.SystemClock.elapsedRealtime()
         val last = lastNotifyTimestampsMs[notificationId] ?: 0L
-        return now - last < 120L
+        return now - last < 75L
     }
 
     fun hasUnifiedNotifications(): Boolean {
@@ -171,7 +178,7 @@ internal object UnifiedPlaybackNotificationController {
                 !postedUnifiedNotifications.contains(notificationId) ||
                 lastStyleVariant != styleKey
         ) {
-            if (!isNotifyThrottled(notificationId)) {
+            if (!isNotifyThrottled(notificationId, item)) {
                 val notification = buildSingleSessionNotification(context, item)
                 manager.notify(notificationId, notification)
                 lastRichSummaryNotification = notification
@@ -236,7 +243,7 @@ internal object UnifiedPlaybackNotificationController {
                 summaryWasReplacedByForegroundService ||
                 !postedNotificationIds.contains(summaryNotificationId)
         ) {
-            if (!isNotifyThrottled(summaryNotificationId)) {
+            if (!isNotifyThrottled(summaryNotificationId, mainItem)) {
                 val notification = buildMultiSessionNotification(
                     context,
                     mainItem,
@@ -260,7 +267,7 @@ internal object UnifiedPlaybackNotificationController {
                     !postedUnifiedNotifications.contains(notificationId) ||
                     !postedNotificationIds.contains(notificationId)
             ) {
-                if (!isNotifyThrottled(notificationId)) {
+                if (!isNotifyThrottled(notificationId, item)) {
                     manager.notify(
                         notificationId,
                         buildMultiSessionChildNotification(context, item)

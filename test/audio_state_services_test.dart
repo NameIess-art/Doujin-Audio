@@ -184,6 +184,51 @@ void main() {
   });
 
   group('LibraryService', () {
+    test('watched SAF folders dedupe equivalent tree and document uris', () {
+      final service = LibraryService();
+      addTearDown(service.dispose);
+
+      const albumTree =
+          'content://com.android.externalstorage.documents/tree/primary%3AMusic%2FAlbum';
+      const albumDocument =
+          'content://com.android.externalstorage.documents/tree/primary%3AMusic/document/primary%3AMusic%2FAlbum';
+
+      expect(service.addWatchedFolder(albumTree), isTrue);
+      expect(service.addWatchedFolder(albumDocument), isFalse);
+      expect(service.watchedFolders, <String>[albumTree]);
+    });
+
+    test('removeLibrary clears SAF child folders and exclusions', () async {
+      final service = LibraryService();
+      addTearDown(service.dispose);
+
+      const root =
+          'content://com.android.externalstorage.documents/tree/primary%3AMusic';
+      const albumTree =
+          'content://com.android.externalstorage.documents/tree/primary%3AMusic%2FAlbum';
+      const albumDocument =
+          'content://com.android.externalstorage.documents/tree/primary%3AMusic/document/primary%3AMusic%2FAlbum';
+
+      service
+        ..watchedLibraries.add(root)
+        ..watchedFolders.add(albumTree)
+        ..excludedLibraryFolders[root] = <String>{albumDocument}
+        ..excludedLibraryTracks[root] = <String>{
+          '$albumDocument/document/primary%3AMusic%2FAlbum%2F01.mp3',
+        };
+
+      final removedFolders = <String>[];
+      await service.removeLibrary(
+        root,
+        removeFolder: (folderPath) async => removedFolders.add(folderPath),
+      );
+
+      expect(removedFolders, <String>[albumTree]);
+      expect(service.watchedLibraries, isEmpty);
+      expect(service.excludedLibraryFolders, isEmpty);
+      expect(service.excludedLibraryTracks, isEmpty);
+    });
+
     test('syncSlice reflects scan and structure metadata', () {
       final service = LibraryService();
       addTearDown(service.dispose);

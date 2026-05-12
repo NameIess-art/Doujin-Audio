@@ -17,6 +17,7 @@ import '../i18n/app_language_provider.dart';
 import '../providers/audio_provider.dart';
 import '../providers/audio_provider_riverpod.dart';
 import '../services/audio_state_services.dart';
+import '../services/path_display.dart';
 import '../services/path_matcher.dart';
 import '../services/platform_channels.dart';
 import '../widgets/app_feedback.dart';
@@ -45,50 +46,11 @@ part 'library_tab_models.dart';
 part 'library_tab_edit.dart';
 
 String _displaySourceName(String sourcePath) {
-  final trimmed = sourcePath.trim();
-  if (trimmed.isEmpty) return trimmed;
-  if (!PathMatcher.isContentUri(trimmed)) {
-    final name = path.basename(trimmed);
-    return name.isEmpty ? trimmed : name;
-  }
-
-  final uri = Uri.tryParse(trimmed);
-  if (uri != null) {
-    final segments = uri.pathSegments;
-    final treeIndex = segments.indexOf('tree');
-    if (treeIndex >= 0 && treeIndex + 1 < segments.length) {
-      final documentId = Uri.decodeComponent(segments[treeIndex + 1]);
-      final lastPart = documentId.split('/').last;
-      final colonIndex = lastPart.lastIndexOf(':');
-      final treeName = colonIndex >= 0
-          ? lastPart.substring(colonIndex + 1)
-          : lastPart;
-      final normalizedTreeName = treeName.trim();
-      if (normalizedTreeName.isNotEmpty) {
-        return normalizedTreeName;
-      }
-    }
-  }
-
-  final fallback = Uri.decodeComponent(trimmed.split('/').last);
-  return fallback.isEmpty ? trimmed : fallback;
+  return PathDisplay.folderName(sourcePath);
 }
 
 String _displayTrackName(String trackPath) {
-  if (!PathMatcher.isContentUri(trackPath)) {
-    return path.basenameWithoutExtension(trackPath);
-  }
-
-  final uri = Uri.tryParse(trackPath);
-  final lastSegment = uri?.pathSegments.isNotEmpty == true
-      ? uri!.pathSegments.last
-      : trackPath.split('/').last;
-  final decoded = Uri.decodeComponent(lastSegment);
-  final colonIndex = decoded.lastIndexOf(':');
-  final candidate = colonIndex >= 0
-      ? decoded.substring(colonIndex + 1)
-      : decoded;
-  return path.basenameWithoutExtension(candidate);
+  return PathDisplay.fileName(trackPath, withoutExtension: true);
 }
 
 class LibraryTab extends ConsumerStatefulWidget {

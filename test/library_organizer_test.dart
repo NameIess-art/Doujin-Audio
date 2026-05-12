@@ -75,6 +75,47 @@ void main() {
     expect(snapshot.tree.single.name, 'Music');
   });
 
+  test('content document tracks match watched tree roots', () {
+    const root =
+        'content://com.android.externalstorage.documents/tree/primary%3AOld';
+    const trackPath = '$root/document/primary%3AOld%2FAlbum%2F01.mp3';
+
+    final snapshot = organizer.buildTree(
+      tracks: <MusicTrack>[
+        track(trackPath, groupKey: '$root::Album', groupSubtitle: 'Old/Album'),
+      ],
+      watchedFolders: const <String>[root],
+      nodeOrder: const <String>[],
+    );
+
+    expect(snapshot.tree.single.path, root);
+    expect(snapshot.tree.single.name, 'Old');
+  });
+
+  test('content library child roots keep nested folder tree and own names', () {
+    const libraryRoot =
+        'content://com.android.externalstorage.documents/tree/primary%3ALibrary';
+    const childRoot = '$libraryRoot/document/primary%3ALibrary%2FAlbum';
+
+    final snapshot = organizer.buildTree(
+      tracks: <MusicTrack>[
+        track(
+          '$libraryRoot/document/primary%3ALibrary%2FAlbum%2FDisc%2F01.mp3',
+          groupKey: '$libraryRoot::Album/Disc',
+          groupTitle: 'Disc',
+          groupSubtitle: 'Library/Album/Disc',
+        ),
+      ],
+      watchedFolders: const <String>[childRoot],
+      nodeOrder: const <String>[],
+    );
+
+    final album = snapshot.tree.single as FolderNode;
+    expect(album.name, 'Album');
+    expect(album.children.single, isA<FolderNode>());
+    expect((album.children.single as FolderNode).name, 'Disc');
+  });
+
   test('node order wins over alphabetical order', () {
     final snapshot = organizer.buildTree(
       tracks: <MusicTrack>[

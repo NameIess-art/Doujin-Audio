@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../i18n/app_language_provider.dart';
 import '../providers/audio_provider.dart';
+import '../services/path_display.dart';
 import '../widgets/app_feedback.dart';
 import 'dlsite_metadata_review_page.dart';
 
@@ -333,7 +334,7 @@ class _AudioDetailSheetState extends State<AudioDetailSheet> {
             ),
             const SizedBox(height: 2),
             Text(
-              _target.targetPath,
+              PathDisplay.displayPathFor(_target.targetPath),
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: Theme.of(

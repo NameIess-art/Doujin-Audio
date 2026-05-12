@@ -91,9 +91,15 @@ private val supportedImageExtensions = setOf(
     "jpg", "jpeg", "png", "webp", "bmp", "gif"
 )
 
+private val supportedSubtitleExtensions = setOf(
+    "vtt", "webvtt", "lrc", "srt", "ass", "ssa"
+)
+
 private val preferredCoverBasenames = listOf(
     "cover", "folder", "front", "album", "artwork", "poster"
 )
+
+private const val audioDetailBackupFileName = ".nameless-audio.json"
 
 class MainActivity : AudioServiceActivity() {
     companion object {
@@ -450,9 +456,25 @@ class MainActivity : AudioServiceActivity() {
                                     )
                                 }
                                 runOnUiThread { result.success(data) }
+                            } catch (e: SecurityException) {
+                                runOnUiThread {
+                                    result.error(
+                                        "scan_permission_denied",
+                                        e.message ?: "permission denied",
+                                        null
+                                    )
+                                }
+                            } catch (e: IllegalStateException) {
+                                runOnUiThread {
+                                    result.error(
+                                        "scan_provider_error",
+                                        e.message ?: "provider error",
+                                        null
+                                    )
+                                }
                             } catch (e: Exception) {
                                 runOnUiThread {
-                                    result.error("scan_failed", e.message ?: "unknown error", null)
+                                    result.error("scan_unknown_error", e.message ?: "unknown error", null)
                                 }
                             }
                         }.start()
@@ -478,6 +500,79 @@ class MainActivity : AudioServiceActivity() {
                             }
                         }.start()
                     }
+                    "renameDocument" -> {
+                        val targetPath = call.argument<String>("path")
+                        val name = call.argument<String>("name")
+                        if (targetPath.isNullOrBlank() || name.isNullOrBlank()) {
+                            result.error("invalid_args", "path and name are required", null)
+                            return@setMethodCallHandler
+                        }
+                        Thread {
+                            try {
+                                val renamed = renameDocumentTarget(targetPath, name)
+                                runOnUiThread { result.success(renamed) }
+                            } catch (e: SecurityException) {
+                                runOnUiThread {
+                                    result.error(
+                                        "rename_permission_denied",
+                                        e.message ?: "permission denied",
+                                        null
+                                    )
+                                }
+                            } catch (e: Exception) {
+                                runOnUiThread {
+                                    result.error(
+                                        "rename_failed",
+                                        e.message ?: "unknown error",
+                                        null
+                                    )
+                                }
+                            }
+                        }.start()
+                    }
+                    "readAudioDetailBackup" -> {
+                        val folder = call.argument<String>("folder")
+                        if (folder.isNullOrBlank()) {
+                            result.error("invalid_args", "folder is required", null)
+                            return@setMethodCallHandler
+                        }
+                        Thread {
+                            try {
+                                val json = readAudioDetailBackup(folder)
+                                runOnUiThread { result.success(json) }
+                            } catch (e: Exception) {
+                                runOnUiThread {
+                                    result.error(
+                                        "detail_backup_read_failed",
+                                        e.message ?: "unknown error",
+                                        null
+                                    )
+                                }
+                            }
+                        }.start()
+                    }
+                    "writeAudioDetailBackup" -> {
+                        val folder = call.argument<String>("folder")
+                        val json = call.argument<String>("json")
+                        if (folder.isNullOrBlank() || json == null) {
+                            result.error("invalid_args", "folder and json are required", null)
+                            return@setMethodCallHandler
+                        }
+                        Thread {
+                            try {
+                                val saved = writeAudioDetailBackup(folder, json)
+                                runOnUiThread { result.success(saved) }
+                            } catch (e: Exception) {
+                                runOnUiThread {
+                                    result.error(
+                                        "detail_backup_write_failed",
+                                        e.message ?: "unknown error",
+                                        null
+                                    )
+                                }
+                            }
+                        }.start()
+                    }
                     "resolveTrackCover" -> {
                         val trackPath = call.argument<String>("path")
                         val groupKey = call.argument<String>("groupKey")
@@ -493,6 +588,51 @@ class MainActivity : AudioServiceActivity() {
                                 runOnUiThread {
                                     result.error(
                                         "cover_resolve_failed",
+                                        e.message ?: "unknown error",
+                                        null
+                                    )
+                                }
+                            }
+                        }.start()
+                    }
+                    "discoverRootImages" -> {
+                        val trackPath = call.argument<String>("path")
+                        val groupKey = call.argument<String>("groupKey")
+                        val rootFolder = call.argument<String>("rootFolder")
+                        if (trackPath.isNullOrBlank()) {
+                            result.error("invalid_args", "path is required", null)
+                            return@setMethodCallHandler
+                        }
+                        Thread {
+                            try {
+                                val images = discoverRootImages(trackPath, groupKey, rootFolder)
+                                runOnUiThread { result.success(images) }
+                            } catch (e: Exception) {
+                                runOnUiThread {
+                                    result.error(
+                                        "cover_discover_failed",
+                                        e.message ?: "unknown error",
+                                        null
+                                    )
+                                }
+                            }
+                        }.start()
+                    }
+                    "resolveTrackSubtitle" -> {
+                        val trackPath = call.argument<String>("path")
+                        val groupKey = call.argument<String>("groupKey")
+                        if (trackPath.isNullOrBlank()) {
+                            result.error("invalid_args", "path is required", null)
+                            return@setMethodCallHandler
+                        }
+                        Thread {
+                            try {
+                                val subtitle = resolveTrackSubtitle(trackPath, groupKey)
+                                runOnUiThread { result.success(subtitle) }
+                            } catch (e: Exception) {
+                                runOnUiThread {
+                                    result.error(
+                                        "subtitle_resolve_failed",
                                         e.message ?: "unknown error",
                                         null
                                     )
@@ -595,6 +735,7 @@ class MainActivity : AudioServiceActivity() {
             putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
             putExtra(Intent.EXTRA_MIME_TYPES, audioPickerMimeTypes)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
             addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
         }
     }
@@ -602,6 +743,7 @@ class MainActivity : AudioServiceActivity() {
     private fun buildPickAudioFolderIntent(): Intent {
         return Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
             addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
             addFlags(Intent.FLAG_GRANT_PREFIX_URI_PERMISSION)
         }
@@ -695,11 +837,15 @@ class MainActivity : AudioServiceActivity() {
 
     private fun persistReadPermission(uri: Uri, flags: Int) {
         val canRead = flags and Intent.FLAG_GRANT_READ_URI_PERMISSION != 0
-        if (!canRead) return
+        val canWrite = flags and Intent.FLAG_GRANT_WRITE_URI_PERMISSION != 0
+        if (!canRead && !canWrite) return
         try {
+            var modeFlags = 0
+            if (canRead) modeFlags = modeFlags or Intent.FLAG_GRANT_READ_URI_PERMISSION
+            if (canWrite) modeFlags = modeFlags or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
             contentResolver.takePersistableUriPermission(
                 uri,
-                Intent.FLAG_GRANT_READ_URI_PERMISSION
+                modeFlags
             )
         } catch (_: Exception) {
             // Some providers do not support persistable permissions.
@@ -1067,6 +1213,14 @@ class MainActivity : AudioServiceActivity() {
         val modifiedAtMs: Long? = null
     )
 
+    private data class DocumentRenameTarget(
+        val uri: Uri,
+        val rootUri: Uri?,
+        val syntheticBase: String?,
+        val syntheticParentRelative: String?,
+        val treeRoot: Boolean
+    )
+
     private fun scanFolder(folder: String): List<ScannedTrack> {
         val byPath = linkedMapOf<String, ScannedTrack>()
         val folderTrimmed = folder.trim()
@@ -1199,6 +1353,7 @@ class MainActivity : AudioServiceActivity() {
         val uri = resolveContentUri(folderTrimmed)
 
         if (uri != null) {
+            listChildFoldersViaDocumentsContract(uri)?.let { return it }
             val treeRoot = DocumentFile.fromTreeUri(this, uri)
             val root = treeRoot ?: DocumentFile.fromSingleUri(this, uri) ?: return emptyList()
             if (!root.exists()) return emptyList()
@@ -1243,7 +1398,261 @@ class MainActivity : AudioServiceActivity() {
         return null
     }
 
+    private fun renameDocumentTarget(targetPath: String, newName: String): HashMap<String, String> {
+        val target = resolveDocumentRenameTarget(targetPath)
+            ?: throw IllegalArgumentException("Cannot resolve rename target.")
+        val renamedUri = DocumentsContract.renameDocument(contentResolver, target.uri, newName)
+            ?: throw IllegalStateException("Provider did not return renamed document uri.")
+        var renamedPermissionUri: Uri? = renamedUri
+        val renamedPath = when {
+            target.syntheticBase != null -> {
+                renamedPermissionUri = null
+                val parent = target.syntheticParentRelative.orEmpty()
+                if (parent.isBlank()) {
+                    "${target.syntheticBase}::$newName"
+                } else {
+                    "${target.syntheticBase}::$parent/$newName"
+                }
+            }
+            target.treeRoot -> {
+                val documentId = documentIdForUri(renamedUri)
+                    ?: throw IllegalStateException("Cannot resolve renamed tree document id.")
+                val authority = renamedUri.authority ?: target.rootUri?.authority
+                    ?: throw IllegalStateException("Cannot resolve renamed tree authority.")
+                val renamedTreeUri = DocumentsContract.buildTreeDocumentUri(authority, documentId)
+                renamedPermissionUri = renamedTreeUri
+                renamedTreeUri.toString()
+            }
+            else -> renamedUri.toString()
+        }
+        renamedPermissionUri?.let { persistRenamedPermission(target.rootUri ?: target.uri, it) }
+        return hashMapOf("path" to renamedPath)
+    }
+
+    private fun persistRenamedPermission(oldUri: Uri, newUri: Uri) {
+        val existing = contentResolver.persistedUriPermissions.firstOrNull {
+            it.uri == oldUri
+        } ?: return
+        var modeFlags = 0
+        if (existing.isReadPermission) {
+            modeFlags = modeFlags or Intent.FLAG_GRANT_READ_URI_PERMISSION
+        }
+        if (existing.isWritePermission) {
+            modeFlags = modeFlags or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+        }
+        if (modeFlags == 0) return
+        try {
+            contentResolver.takePersistableUriPermission(newUri, modeFlags)
+        } catch (_: Exception) {
+            // Some providers keep the old grant alive or do not expose a new persistable grant.
+        }
+    }
+
+    private fun readAudioDetailBackup(folderPath: String): String? {
+        val folder = resolveDocumentFileForFolderPath(folderPath) ?: return null
+        val backup = folder.listFiles().firstOrNull {
+            it.isFile && it.name == audioDetailBackupFileName
+        } ?: return null
+        return contentResolver.openInputStream(backup.uri)?.use { input ->
+            input.bufferedReader(Charsets.UTF_8).readText()
+        }
+    }
+
+    private fun writeAudioDetailBackup(folderPath: String, json: String): Boolean {
+        val folder = resolveDocumentFileForFolderPath(folderPath) ?: return false
+        val backup = folder.listFiles().firstOrNull {
+            it.isFile && it.name == audioDetailBackupFileName
+        } ?: folder.createFile("application/json", audioDetailBackupFileName)
+            ?: return false
+        contentResolver.openOutputStream(backup.uri, "wt")?.use { output ->
+            output.write(json.toByteArray(Charsets.UTF_8))
+            output.flush()
+        } ?: return false
+        return true
+    }
+
+    private fun resolveDocumentFileForFolderPath(folderPath: String): DocumentFile? {
+        val trimmed = folderPath.trim()
+        if (!trimmed.startsWith("content://")) return null
+        val syntheticIndex = trimmed.indexOf("::")
+        if (syntheticIndex >= 0) {
+            val base = trimmed.substring(0, syntheticIndex)
+            val relative = trimmed.substring(syntheticIndex + 2).trim('/')
+            val root = DocumentFile.fromTreeUri(this, Uri.parse(base)) ?: return null
+            return resolveRelativeDocumentDirectory(root, relative)
+        }
+        val uri = Uri.parse(trimmed)
+        return DocumentFile.fromTreeUri(this, uri)
+            ?: DocumentFile.fromSingleUri(this, uri)?.takeIf { it.isDirectory }
+    }
+
+    private fun resolveDocumentRenameTarget(targetPath: String): DocumentRenameTarget? {
+        val trimmed = targetPath.trim()
+        if (!trimmed.startsWith("content://")) return null
+
+        val syntheticIndex = trimmed.indexOf("::")
+        if (syntheticIndex >= 0) {
+            val base = trimmed.substring(0, syntheticIndex)
+            val relative = trimmed.substring(syntheticIndex + 2).trim('/')
+            val rootUri = Uri.parse(base)
+            val targetUri = if (relative.isBlank()) {
+                documentUriForTreeRoot(rootUri)
+            } else {
+                resolveRelativeDocumentUri(rootUri, relative)
+            } ?: return null
+            val parentRelative = relative.substringBeforeLast('/', missingDelimiterValue = "")
+            return DocumentRenameTarget(
+                uri = targetUri,
+                rootUri = rootUri,
+                syntheticBase = base,
+                syntheticParentRelative = parentRelative,
+                treeRoot = false
+            )
+        }
+
+        val uri = Uri.parse(trimmed)
+        if (DocumentsContract.isTreeUri(uri) && trimmed.indexOf("/document/") < 0) {
+            val documentUri = documentUriForTreeRoot(uri) ?: return null
+            return DocumentRenameTarget(
+                uri = documentUri,
+                rootUri = uri,
+                syntheticBase = null,
+                syntheticParentRelative = null,
+                treeRoot = true
+            )
+        }
+
+        return DocumentRenameTarget(
+            uri = uri,
+            rootUri = treeUriBaseForDocumentUri(uri),
+            syntheticBase = null,
+            syntheticParentRelative = null,
+            treeRoot = false
+        )
+    }
+
+    private fun documentUriForTreeRoot(rootUri: Uri): Uri? {
+        val documentId = startDocumentIdForTreeUri(rootUri) ?: return null
+        return DocumentsContract.buildDocumentUriUsingTree(rootUri, documentId)
+    }
+
+    private fun treeUriBaseForDocumentUri(uri: Uri): Uri? {
+        return try {
+            val treeDocumentId = DocumentsContract.getTreeDocumentId(uri)
+            val authority = uri.authority ?: return null
+            DocumentsContract.buildTreeDocumentUri(authority, treeDocumentId)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun documentIdForUri(uri: Uri): String? {
+        return try {
+            DocumentsContract.getDocumentId(uri)
+        } catch (_: Exception) {
+            startDocumentIdForTreeUri(uri)
+        }
+    }
+
+    private fun resolveRelativeDocumentUri(rootUri: Uri, relativePath: String): Uri? {
+        val startDocumentId = startDocumentIdForTreeUri(rootUri) ?: return null
+        var currentDocumentId = startDocumentId
+        val segments = relativePath.split('/').filter { it.isNotBlank() }
+        if (segments.isEmpty()) {
+            return DocumentsContract.buildDocumentUriUsingTree(rootUri, currentDocumentId)
+        }
+        for (segment in segments) {
+            val child = findChildDocumentId(rootUri, currentDocumentId, segment) ?: return null
+            currentDocumentId = child
+        }
+        return DocumentsContract.buildDocumentUriUsingTree(rootUri, currentDocumentId)
+    }
+
+    private fun findChildDocumentId(
+        rootUri: Uri,
+        parentDocumentId: String,
+        displayName: String
+    ): String? {
+        val childUri = DocumentsContract.buildChildDocumentsUriUsingTree(
+            rootUri,
+            parentDocumentId
+        )
+        val projection = arrayOf(
+            DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+            DocumentsContract.Document.COLUMN_DISPLAY_NAME
+        )
+        return try {
+            contentResolver.query(childUri, projection, null, null, null)?.use { cursor ->
+                val documentIdIndex = cursor.getColumnIndex(
+                    DocumentsContract.Document.COLUMN_DOCUMENT_ID
+                )
+                val nameIndex = cursor.getColumnIndex(
+                    DocumentsContract.Document.COLUMN_DISPLAY_NAME
+                )
+                if (documentIdIndex < 0 || nameIndex < 0) return null
+                while (cursor.moveToNext()) {
+                    val name = normalizeDisplayName(cursor.getString(nameIndex)?.trim().orEmpty())
+                    if (name != displayName) continue
+                    return cursor.getString(documentIdIndex)
+                }
+                null
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun listChildFoldersViaDocumentsContract(rootUri: Uri): List<String>? {
+        val startDocumentId = startDocumentIdForTreeUri(rootUri) ?: return null
+        val childUri = DocumentsContract.buildChildDocumentsUriUsingTree(
+            rootUri,
+            startDocumentId
+        )
+        val folders = mutableListOf<Pair<String, String>>()
+        val projection = arrayOf(
+            DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+            DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+            DocumentsContract.Document.COLUMN_MIME_TYPE
+        )
+        return try {
+            contentResolver.query(childUri, projection, null, null, null)?.use { cursor ->
+                val documentIdIndex = cursor.getColumnIndex(
+                    DocumentsContract.Document.COLUMN_DOCUMENT_ID
+                )
+                val nameIndex = cursor.getColumnIndex(
+                    DocumentsContract.Document.COLUMN_DISPLAY_NAME
+                )
+                val mimeIndex = cursor.getColumnIndex(
+                    DocumentsContract.Document.COLUMN_MIME_TYPE
+                )
+                if (documentIdIndex < 0 || mimeIndex < 0) return null
+                while (cursor.moveToNext()) {
+                    val mime = cursor.getString(mimeIndex)
+                    if (mime != DocumentsContract.Document.MIME_TYPE_DIR) continue
+                    val documentId = cursor.getString(documentIdIndex) ?: continue
+                    val name = if (nameIndex >= 0) cursor.getString(nameIndex) else null
+                    val childDocumentUri = DocumentsContract
+                        .buildDocumentUriUsingTree(rootUri, documentId)
+                        .toString()
+                    folders.add(
+                        Pair(
+                            normalizeDisplayName(name?.trim().orEmpty()).ifBlank {
+                                documentId
+                            },
+                            childDocumentUri
+                        )
+                    )
+                }
+            } ?: return null
+            folders.sortedBy { it.first.lowercase(Locale.US) }.map { it.second }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     private fun scanDocumentTree(rootUri: Uri, output: MutableMap<String, ScannedTrack>) {
+        if (scanDocumentTreeViaDocumentsContract(rootUri, output)) return
+
         val treeRoot = DocumentFile.fromTreeUri(this, rootUri)
         val root = treeRoot ?: DocumentFile.fromSingleUri(this, rootUri) ?: return
         if (!root.exists()) return
@@ -1304,6 +1713,252 @@ class MainActivity : AudioServiceActivity() {
                     )
                 )
             }
+        }
+    }
+
+    private fun scanDocumentTreeViaDocumentsContract(
+        rootUri: Uri,
+        output: MutableMap<String, ScannedTrack>
+    ): Boolean {
+        val startDocumentId = startDocumentIdForTreeUri(rootUri) ?: return false
+        val rootName = normalizeDisplayName(
+            startDocumentId.substringAfterLast(':')
+                .substringAfterLast('/')
+                .ifBlank { "Folder" }
+        )
+        data class Node(val documentId: String, val relative: String)
+        val pending = ArrayDeque<Node>()
+        pending.add(Node(startDocumentId, ""))
+        val projection = arrayOf(
+            DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+            DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+            DocumentsContract.Document.COLUMN_MIME_TYPE,
+            DocumentsContract.Document.COLUMN_SIZE,
+            DocumentsContract.Document.COLUMN_LAST_MODIFIED
+        )
+
+        return try {
+            while (pending.isNotEmpty()) {
+                val current = pending.removeFirst()
+                val childUri = DocumentsContract.buildChildDocumentsUriUsingTree(
+                    rootUri,
+                    current.documentId
+                )
+                contentResolver.query(childUri, projection, null, null, null)?.use { cursor ->
+                    val documentIdIndex = cursor.getColumnIndex(
+                        DocumentsContract.Document.COLUMN_DOCUMENT_ID
+                    )
+                    val nameIndex = cursor.getColumnIndex(
+                        DocumentsContract.Document.COLUMN_DISPLAY_NAME
+                    )
+                    val mimeIndex = cursor.getColumnIndex(
+                        DocumentsContract.Document.COLUMN_MIME_TYPE
+                    )
+                    val sizeIndex = cursor.getColumnIndex(
+                        DocumentsContract.Document.COLUMN_SIZE
+                    )
+                    val modifiedIndex = cursor.getColumnIndex(
+                        DocumentsContract.Document.COLUMN_LAST_MODIFIED
+                    )
+                    if (documentIdIndex < 0 || mimeIndex < 0) return false
+
+                    while (cursor.moveToNext()) {
+                        val documentId = cursor.getString(documentIdIndex) ?: continue
+                        val mime = cursor.getString(mimeIndex)
+                        val displayName = normalizeDisplayName(
+                            if (nameIndex >= 0) {
+                                cursor.getString(nameIndex)?.trim().orEmpty()
+                            } else {
+                                ""
+                            }
+                        ).ifBlank {
+                            normalizeDisplayName(documentId.substringAfterLast('/'))
+                        }
+
+                        if (mime == DocumentsContract.Document.MIME_TYPE_DIR) {
+                            val nextRelative = when {
+                                current.relative.isEmpty() -> displayName
+                                displayName.isEmpty() -> current.relative
+                                else -> "${current.relative}/$displayName"
+                            }
+                            pending.add(Node(documentId, nextRelative))
+                            continue
+                        }
+                        if (!isSupportedDocumentEntry(displayName, mime)) continue
+
+                        val documentUri = DocumentsContract
+                            .buildDocumentUriUsingTree(rootUri, documentId)
+                            .toString()
+                        val parentRelative = current.relative
+                        val groupTitle = if (parentRelative.isEmpty()) {
+                            rootName
+                        } else {
+                            parentRelative.substringAfterLast('/')
+                        }
+                        val groupSubtitle = if (parentRelative.isEmpty()) {
+                            rootName
+                        } else {
+                            "$rootName/$parentRelative"
+                        }
+                        val groupKey = if (parentRelative.isEmpty()) {
+                            rootUri.toString()
+                        } else {
+                            "${rootUri}::$parentRelative"
+                        }
+                        val title = displayName.substringBeforeLast('.', displayName)
+                        val fileSizeBytes = if (sizeIndex >= 0 && !cursor.isNull(sizeIndex)) {
+                            cursor.getLong(sizeIndex).takeIf { it >= 0 }
+                        } else {
+                            null
+                        }
+                        val modifiedAtMs = if (
+                            modifiedIndex >= 0 &&
+                            !cursor.isNull(modifiedIndex)
+                        ) {
+                            cursor.getLong(modifiedIndex).takeIf { it > 0 }
+                        } else {
+                            null
+                        }
+
+                        output.putIfAbsent(
+                            documentUri,
+                            ScannedTrack(
+                                path = documentUri,
+                                title = title,
+                                groupKey = groupKey,
+                                groupTitle = groupTitle.ifBlank { rootName },
+                                groupSubtitle = groupSubtitle,
+                                fileSizeBytes = fileSizeBytes,
+                                modifiedAtMs = modifiedAtMs
+                            )
+                        )
+                    }
+                }
+            }
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun startDocumentIdForTreeUri(uri: Uri): String? {
+        return try {
+            val segments = uri.pathSegments
+            val documentIndex = segments.indexOf("document")
+            if (documentIndex >= 0 && documentIndex + 1 < segments.size) {
+                segments[documentIndex + 1]
+            } else {
+                DocumentsContract.getTreeDocumentId(uri)
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun resolveTrackSubtitle(
+        trackPath: String,
+        groupKey: String?
+    ): HashMap<String, String>? {
+        if (!trackPath.startsWith("content://")) return null
+        val rootUriString = when {
+            !groupKey.isNullOrBlank() && groupKey.contains("::") ->
+                groupKey.substringBefore("::")
+            !groupKey.isNullOrBlank() && groupKey.startsWith("content://") -> groupKey
+            else -> trackPath.substringBefore("/document/", missingDelimiterValue = trackPath)
+        }
+        val rootUri = Uri.parse(rootUriString)
+        val trackUri = Uri.parse(trackPath)
+        val trackDocumentId = startDocumentIdForTreeUri(trackUri) ?: return null
+        val rootDocumentId = startDocumentIdForTreeUri(rootUri) ?: return null
+        val parentDocumentId = if (trackDocumentId.contains('/')) {
+            trackDocumentId.substringBeforeLast('/')
+        } else {
+            rootDocumentId
+        }
+        val audioStem = normalizeDisplayName(
+            trackDocumentId.substringAfterLast('/').substringBeforeLast('.')
+        ).lowercase(Locale.US)
+        val childUri = DocumentsContract.buildChildDocumentsUriUsingTree(
+            rootUri,
+            parentDocumentId
+        )
+        val projection = arrayOf(
+            DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+            DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+            DocumentsContract.Document.COLUMN_MIME_TYPE
+        )
+        val candidates = mutableListOf<Triple<Int, String, Uri>>()
+
+        try {
+            contentResolver.query(childUri, projection, null, null, null)?.use { cursor ->
+                val documentIdIndex = cursor.getColumnIndex(
+                    DocumentsContract.Document.COLUMN_DOCUMENT_ID
+                )
+                val nameIndex = cursor.getColumnIndex(
+                    DocumentsContract.Document.COLUMN_DISPLAY_NAME
+                )
+                val mimeIndex = cursor.getColumnIndex(
+                    DocumentsContract.Document.COLUMN_MIME_TYPE
+                )
+                if (documentIdIndex < 0 || mimeIndex < 0) return null
+                while (cursor.moveToNext()) {
+                    val documentId = cursor.getString(documentIdIndex) ?: continue
+                    val mime = cursor.getString(mimeIndex)
+                    if (mime == DocumentsContract.Document.MIME_TYPE_DIR) continue
+                    val name = normalizeDisplayName(
+                        if (nameIndex >= 0) {
+                            cursor.getString(nameIndex)?.trim().orEmpty()
+                        } else {
+                            ""
+                        }
+                    ).ifBlank {
+                        normalizeDisplayName(documentId.substringAfterLast('/'))
+                    }
+                    if (!isSupportedSubtitleEntry(name, mime)) continue
+                    val stem = name.substringBeforeLast('.', name).lowercase(Locale.US)
+                    val rank = when {
+                        stem == audioStem -> 0
+                        stem.startsWith("$audioStem.") -> 1
+                        stem.startsWith("${audioStem}_") -> 2
+                        stem.startsWith("$audioStem ") -> 3
+                        else -> 10
+                    }
+                    candidates.add(
+                        Triple(
+                            rank,
+                            name.lowercase(Locale.US),
+                            DocumentsContract.buildDocumentUriUsingTree(rootUri, documentId)
+                        )
+                    )
+                }
+            }
+        } catch (_: Exception) {
+            return null
+        }
+
+        val best = candidates
+            .filter { it.first < 10 }
+            .sortedWith(compareBy<Triple<Int, String, Uri>> { it.first }.thenBy { it.second })
+            .firstOrNull() ?: return null
+        val subtitleUri = best.third
+        val subtitleName = best.second
+        val text = readDocumentText(subtitleUri) ?: return null
+        val extension = subtitleName.substringAfterLast('.', "")
+        if (extension.isBlank()) return null
+        return hashMapOf(
+            "sourcePath" to subtitleUri.toString(),
+            "extension" to extension,
+            "text" to text
+        )
+    }
+
+    private fun readDocumentText(uri: Uri): String? {
+        return try {
+            contentResolver.openInputStream(uri)?.bufferedReader(
+                StandardCharsets.UTF_8
+            )?.use { reader -> reader.readText() }
+        } catch (_: Exception) {
+            null
         }
     }
 
@@ -1472,8 +2127,8 @@ class MainActivity : AudioServiceActivity() {
 
     private fun looksLikeMojibake(value: String): Boolean {
         if (value.isEmpty()) return false
-        val pattern = Regex("[脙脗脜脝脟脨脩脴脵脷脹脺脻脼脽脿谩芒茫盲氓忙莽猫茅锚毛矛铆卯茂冒帽貌贸么玫枚酶霉煤没眉媒镁每锟絔")
-        return pattern.containsMatchIn(value)
+        if (value.any { it == '\uFFFD' || it == '\u951F' }) return true
+        return value.count { it.code in 0x00C0..0x00FF } >= 2
     }
 
     private fun isSupportedDocumentFile(file: DocumentFile): Boolean {
@@ -1482,6 +2137,16 @@ class MainActivity : AudioServiceActivity() {
             return true
         }
         val name = file.name ?: return false
+        return isSupportedFileName(name)
+    }
+
+    private fun isSupportedDocumentEntry(name: String, mime: String?): Boolean {
+        val normalizedMime = mime?.lowercase(Locale.US)
+        if (normalizedMime != null &&
+            (normalizedMime.startsWith("audio/") || normalizedMime == "application/ogg")
+        ) {
+            return true
+        }
         return isSupportedFileName(name)
     }
 
@@ -1501,10 +2166,19 @@ class MainActivity : AudioServiceActivity() {
         return mime.startsWith("audio/") || mime == "application/ogg"
     }
 
+    private data class DocumentImageCandidate(
+        val uri: Uri,
+        val name: String,
+        val sortPath: String
+    )
+
     private fun resolveTrackCover(trackPath: String, groupKey: String?): String? {
         if (!trackPath.startsWith("content://")) {
             return null
         }
+
+        val discovered = discoverRootImages(trackPath, groupKey, null)
+        if (discovered.isNotEmpty()) return discovered.first()
 
         val rootTreeUri = when {
             groupKey.isNullOrBlank() -> null
@@ -1533,6 +2207,108 @@ class MainActivity : AudioServiceActivity() {
             return cacheDocumentCover(cover, trackPath)
         }
         return null
+    }
+
+    private fun discoverRootImages(
+        trackPath: String,
+        groupKey: String?,
+        rootFolder: String?
+    ): List<String> {
+        val rootUriString = when {
+            !rootFolder.isNullOrBlank() && rootFolder.startsWith("content://") -> rootFolder
+            !groupKey.isNullOrBlank() && groupKey.contains("::") ->
+                groupKey.substringBefore("::")
+            !groupKey.isNullOrBlank() && groupKey.startsWith("content://") -> groupKey
+            else -> null
+        } ?: return emptyList()
+        val rootUri = Uri.parse(rootUriString)
+        val candidates = collectImageDocumentsViaDocumentsContract(rootUri)
+        if (candidates.isEmpty()) return emptyList()
+        return candidates.mapNotNull { candidate ->
+            cacheDocumentImage(
+                uri = candidate.uri,
+                name = candidate.name,
+                cacheKey = "$trackPath|${candidate.uri}"
+            )
+        }
+    }
+
+    private fun collectImageDocumentsViaDocumentsContract(
+        rootUri: Uri
+    ): List<DocumentImageCandidate> {
+        val startDocumentId = startDocumentIdForTreeUri(rootUri) ?: return emptyList()
+        data class Node(val documentId: String, val relative: String)
+        val pending = ArrayDeque<Node>()
+        pending.add(Node(startDocumentId, ""))
+        val images = mutableListOf<DocumentImageCandidate>()
+        val projection = arrayOf(
+            DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+            DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+            DocumentsContract.Document.COLUMN_MIME_TYPE
+        )
+
+        try {
+            while (pending.isNotEmpty()) {
+                val current = pending.removeFirst()
+                val childUri = DocumentsContract.buildChildDocumentsUriUsingTree(
+                    rootUri,
+                    current.documentId
+                )
+                contentResolver.query(childUri, projection, null, null, null)?.use { cursor ->
+                    val documentIdIndex = cursor.getColumnIndex(
+                        DocumentsContract.Document.COLUMN_DOCUMENT_ID
+                    )
+                    val nameIndex = cursor.getColumnIndex(
+                        DocumentsContract.Document.COLUMN_DISPLAY_NAME
+                    )
+                    val mimeIndex = cursor.getColumnIndex(
+                        DocumentsContract.Document.COLUMN_MIME_TYPE
+                    )
+                    if (documentIdIndex < 0 || mimeIndex < 0) return emptyList()
+
+                    while (cursor.moveToNext()) {
+                        val documentId = cursor.getString(documentIdIndex) ?: continue
+                        val mime = cursor.getString(mimeIndex)
+                        val name = normalizeDisplayName(
+                            if (nameIndex >= 0) {
+                                cursor.getString(nameIndex)?.trim().orEmpty()
+                            } else {
+                                ""
+                            }
+                        ).ifBlank {
+                            normalizeDisplayName(documentId.substringAfterLast('/'))
+                        }
+
+                        if (mime == DocumentsContract.Document.MIME_TYPE_DIR) {
+                            val nextRelative = when {
+                                current.relative.isEmpty() -> name
+                                name.isEmpty() -> current.relative
+                                else -> "${current.relative}/$name"
+                            }
+                            pending.add(Node(documentId, nextRelative))
+                            continue
+                        }
+                        if (!isSupportedImageEntry(name, mime)) continue
+                        val documentUri = DocumentsContract
+                            .buildDocumentUriUsingTree(rootUri, documentId)
+                        val sortPath = if (current.relative.isEmpty()) {
+                            name
+                        } else {
+                            "${current.relative}/$name"
+                        }
+                        images.add(DocumentImageCandidate(documentUri, name, sortPath))
+                    }
+                }
+            }
+        } catch (_: Exception) {
+            return emptyList()
+        }
+
+        return images.sortedWith { left, right ->
+            val priority = compareCoverNames(left.name, right.name)
+            if (priority != 0) priority else left.sortPath.lowercase(Locale.US)
+                .compareTo(right.sortPath.lowercase(Locale.US))
+        }
     }
 
     private fun resolveCandidateDocumentDirectories(
@@ -1614,6 +2390,27 @@ class MainActivity : AudioServiceActivity() {
         return extension in supportedImageExtensions
     }
 
+    private fun isSupportedImageEntry(name: String, mime: String?): Boolean {
+        val normalizedMime = mime?.lowercase(Locale.US)
+        if (normalizedMime != null && normalizedMime.startsWith("image/")) {
+            return true
+        }
+        val extension = name.substringAfterLast('.', "").lowercase(Locale.US)
+        return extension in supportedImageExtensions
+    }
+
+    private fun isSupportedSubtitleEntry(name: String, mime: String?): Boolean {
+        val normalizedMime = mime?.lowercase(Locale.US)
+        if (normalizedMime == "text/vtt" ||
+            normalizedMime == "application/x-subrip" ||
+            normalizedMime == "text/plain"
+        ) {
+            return true
+        }
+        val extension = name.substringAfterLast('.', "").lowercase(Locale.US)
+        return extension in supportedSubtitleExtensions
+    }
+
     private fun compareCoverNames(leftNameRaw: String, rightNameRaw: String): Int {
         val leftName = leftNameRaw.substringBeforeLast('.', leftNameRaw).lowercase(Locale.US)
         val rightName = rightNameRaw.substringBeforeLast('.', rightNameRaw).lowercase(Locale.US)
@@ -1656,6 +2453,36 @@ class MainActivity : AudioServiceActivity() {
 
         return try {
             contentResolver.openInputStream(file.uri)?.use { input ->
+                FileOutputStream(outputFile).use { output ->
+                    input.copyTo(output)
+                    output.flush()
+                }
+            } ?: return null
+            outputFile.absolutePath
+        } catch (_: Exception) {
+            if (outputFile.exists()) {
+                outputFile.delete()
+            }
+            null
+        }
+    }
+
+    private fun cacheDocumentImage(uri: Uri, name: String, cacheKey: String): String? {
+        val extension = name.substringAfterLast('.', "").ifBlank { "img" }
+        val coverDir = File(cacheDir, "nameless_audio_covers")
+        if (!coverDir.exists()) {
+            coverDir.mkdirs()
+        }
+        val outputFile = File(
+            coverDir,
+            "cover_${kotlin.math.abs(cacheKey.hashCode())}.$extension"
+        )
+        if (outputFile.exists() && outputFile.length() > 0) {
+            return outputFile.absolutePath
+        }
+
+        return try {
+            contentResolver.openInputStream(uri)?.use { input ->
                 FileOutputStream(outputFile).use { output ->
                     input.copyTo(output)
                     output.flush()

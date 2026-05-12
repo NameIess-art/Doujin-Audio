@@ -11,7 +11,9 @@ extension AudioProviderNotificationSubtitles on AudioProvider {
 
     return _subtitleTrackFutures.putIfAbsent(trackPath, () async {
       try {
-        final subtitleTrack = await loadSubtitleTrackForAudio(trackPath);
+        final subtitleTrack = trackPath.startsWith('content://')
+            ? await _loadContentSubtitleTrack(trackPath)
+            : await loadSubtitleTrackForAudio(trackPath);
         _subtitleTracks[trackPath] = subtitleTrack;
         _subtitleTrackResultFutures[trackPath] =
             SynchronousFuture<SubtitleTrack?>(subtitleTrack);
@@ -37,6 +39,8 @@ extension AudioProviderNotificationSubtitles on AudioProvider {
 
         if (shouldRefreshNotification) {
           _syncNotificationState();
+          _notifyListeners();
+        } else if (subtitleTrack != null) {
           _notifyListeners();
         }
         return subtitleTrack;
@@ -118,5 +122,38 @@ extension AudioProviderNotificationSubtitles on AudioProvider {
   void _clearNotificationSubtitleForSession(String sessionId) {
     _notificationSubtitleTexts.remove(sessionId);
     _notificationSubtitleTrackPaths.remove(sessionId);
+  }
+
+  Future<SubtitleTrack?> _loadContentSubtitleTrack(String trackPath) async {
+    final track = trackByPath(trackPath);
+    try {
+      final raw = await AudioProvider._fileCacheChannel
+          .invokeMapMethod<String, Object?>(
+            'resolveTrackSubtitle',
+            <String, dynamic>{'path': trackPath, 'groupKey': track?.groupKey},
+          );
+      if (raw == null) return null;
+      final sourcePath = raw['sourcePath']?.toString();
+      final text = raw['text']?.toString();
+      final extension = raw['extension']?.toString();
+      if (sourcePath == null ||
+          sourcePath.isEmpty ||
+          text == null ||
+          text.isEmpty ||
+          extension == null ||
+          extension.isEmpty) {
+        return null;
+      }
+      return parseSubtitleTrackFromRaw(
+        sourcePath: sourcePath,
+        raw: text,
+        extension: extension,
+      );
+    } on MissingPluginException {
+      return null;
+    } catch (e) {
+      debugPrint('AudioProvider._loadContentSubtitleTrack error: $e');
+      return null;
+    }
   }
 }

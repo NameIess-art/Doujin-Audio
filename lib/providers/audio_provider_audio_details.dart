@@ -107,21 +107,19 @@ extension AudioProviderAudioDetails on AudioProvider {
       throw const AudioDetailRenameException('missingTitle');
     }
     final oldTarget = detail.target;
-    if (PathMatcher.isContentUri(oldTarget.targetPath)) {
-      throw const AudioDetailRenameException('unsupportedPath');
-    }
 
     final safeName = _safeFileName(title);
     if (safeName.isEmpty) {
       throw const AudioDetailRenameException('invalidTitle');
     }
 
-    final oldPath = path.normalize(oldTarget.targetPath);
-    final newPath = oldTarget.isLibraryRootFolder
-        ? path.join(path.dirname(oldPath), safeName)
-        : path.join(
-            path.dirname(oldPath),
-            '$safeName${path.extension(oldPath)}',
+    final oldPath = PathMatcher.normalize(oldTarget.targetPath);
+    final newPath = PathMatcher.isContentUri(oldPath)
+        ? await _renameContentAudioDetailTarget(oldTarget, safeName)
+        : await _renameFileSystemAudioDetailTarget(
+            oldTarget,
+            oldPath,
+            safeName,
           );
     if (PathMatcher.equalsNormalized(oldPath, newPath)) {
       return AudioDetailRenameResult(detail: detail, renamed: false);
@@ -132,10 +130,8 @@ extension AudioProviderAudioDetails on AudioProvider {
       targetPath: newPath,
     );
     if (oldTarget.isLibraryRootFolder) {
-      await Directory(oldPath).rename(newPath);
       await _retargetLibraryFolder(oldPath, newPath, safeName);
     } else {
-      await File(oldPath).rename(newPath);
       await _retargetSingleTrack(oldPath, newPath, safeName);
     }
 
@@ -148,6 +144,53 @@ extension AudioProviderAudioDetails on AudioProvider {
       renamed: true,
       backupFailed: saveResult.backupFailed,
     );
+  }
+
+  Future<String> _renameFileSystemAudioDetailTarget(
+    AudioDetailTarget oldTarget,
+    String oldPath,
+    String safeName,
+  ) async {
+    final newPath = oldTarget.isLibraryRootFolder
+        ? path.join(path.dirname(oldPath), safeName)
+        : path.join(
+            path.dirname(oldPath),
+            '$safeName${path.extension(oldPath)}',
+          );
+    if (PathMatcher.equalsNormalized(oldPath, newPath)) return newPath;
+    if (oldTarget.isLibraryRootFolder) {
+      await Directory(oldPath).rename(newPath);
+    } else {
+      await File(oldPath).rename(newPath);
+    }
+    return newPath;
+  }
+
+  Future<String> _renameContentAudioDetailTarget(
+    AudioDetailTarget oldTarget,
+    String safeName,
+  ) async {
+    final name = oldTarget.isLibraryRootFolder
+        ? safeName
+        : '$safeName${_contentFileExtension(oldTarget.targetPath)}';
+    final raw = await AudioProvider._fileCacheChannel
+        .invokeMapMethod<String, Object?>(FileCacheMethod.renameDocument, {
+          'path': oldTarget.targetPath,
+          'name': name,
+        });
+    final renamedPath = raw?['path'] as String?;
+    if (renamedPath == null || renamedPath.isEmpty) {
+      throw const AudioDetailRenameException('renameFailed');
+    }
+    return renamedPath;
+  }
+
+  String _contentFileExtension(String targetPath) {
+    final segment = PathMatcher.lastContentPathSegment(targetPath);
+    final decoded = segment == null
+        ? targetPath
+        : PathMatcher.safeDecodeComponent(segment).replaceAll('\\', '/');
+    return path.extension(decoded);
   }
 
   Future<void> _retargetLibraryFolder(
@@ -175,8 +218,8 @@ extension AudioProviderAudioDetails on AudioProvider {
         groupKey: nextGroupKey,
         groupTitle: PathMatcher.equalsNormalized(nextGroupKey, newFolderPath)
             ? folderName
-            : path.basename(nextGroupKey),
-        groupSubtitle: nextGroupKey,
+            : PathDisplay.folderName(nextGroupKey),
+        groupSubtitle: PathDisplay.displayPathFor(nextGroupKey),
         coverCachePath: _retargetNullablePath(
           track.coverCachePath,
           oldFolderPath,
@@ -320,9 +363,7 @@ extension AudioProviderAudioDetails on AudioProvider {
   }
 
   String _replacePathPrefix(String value, String oldRoot, String newRoot) {
-    if (PathMatcher.equalsNormalized(value, oldRoot)) return newRoot;
-    final relative = path.relative(value, from: oldRoot);
-    return path.normalize(path.join(newRoot, relative));
+    return PathMatcher.replaceWithinOrEqual(value, oldRoot, newRoot);
   }
 
   String _safeFileName(String value) {

@@ -41,6 +41,7 @@ import '../services/native_playback_bridge.dart';
 import '../services/playback_notification_service.dart';
 import '../services/playback_command_runner.dart';
 import '../services/path_matcher.dart';
+import '../services/path_display.dart';
 import '../services/subtitle_parser.dart';
 
 part 'audio_provider_notifications.dart';

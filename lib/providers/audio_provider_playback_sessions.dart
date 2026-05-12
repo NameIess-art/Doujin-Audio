@@ -181,7 +181,7 @@ extension AudioProviderPlaybackSessions on AudioProvider {
           : Uri.file(nextPath);
 
       final track = trackByPath(nextPath);
-      final coverPath = coverPathForTrack(track);
+      final coverPath = await _resolveNotificationCoverPathForTrack(track);
 
       final isNewTrack = session.loadedPath != nextPath;
       if (isNewTrack) {

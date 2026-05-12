@@ -3,14 +3,13 @@ import 'dart:collection';
 
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
-import 'package:path/path.dart' as path;
-
 import '../models/library_node.dart';
 import '../models/music_track.dart';
 import '../models/playback_mode.dart';
 import '../models/playback_session.dart';
 import 'library_organizer.dart';
 import 'native_playback_bridge.dart';
+import 'path_matcher.dart';
 import 'playback_notification_service.dart';
 import 'subtitle_parser.dart';
 import 'warmup_scheduler.dart';
@@ -364,7 +363,12 @@ class LibraryService {
   }
 
   bool addWatchedFolder(String folderPath, {VoidCallback? onPersist}) {
-    if (watchedFolders.contains(folderPath)) return false;
+    if (watchedFolders.any(
+      (watchedFolder) =>
+          PathMatcher.equalsNormalized(watchedFolder, folderPath),
+    )) {
+      return false;
+    }
     watchedFolders.add(folderPath);
     syncLibraryNodeOrder(onPersist: onPersist);
     markStructureChanged();
@@ -373,14 +377,24 @@ class LibraryService {
   }
 
   bool addWatchedLibrary(String folderPath, {VoidCallback? onPersist}) {
-    if (watchedLibraries.contains(folderPath)) return false;
+    if (watchedLibraries.any(
+      (watchedLibrary) =>
+          PathMatcher.equalsNormalized(watchedLibrary, folderPath),
+    )) {
+      return false;
+    }
     watchedLibraries.add(folderPath);
     onPersist?.call();
     return true;
   }
 
   bool removeWatchedFolder(String folderPath, {VoidCallback? onPersist}) {
-    if (!watchedFolders.remove(folderPath)) return false;
+    final previousLength = watchedFolders.length;
+    watchedFolders.removeWhere(
+      (watchedFolder) =>
+          PathMatcher.equalsNormalized(watchedFolder, folderPath),
+    );
+    if (watchedFolders.length == previousLength) return false;
     syncLibraryNodeOrder(persist: false);
     markStructureChanged();
     onPersist?.call();
@@ -388,17 +402,22 @@ class LibraryService {
   }
 
   bool removeWatchedLibrary(String folderPath, {VoidCallback? onPersist}) {
-    if (!watchedLibraries.remove(folderPath)) return false;
+    final previousLength = watchedLibraries.length;
+    watchedLibraries.removeWhere(
+      (watchedLibrary) =>
+          PathMatcher.equalsNormalized(watchedLibrary, folderPath),
+    );
+    if (watchedLibraries.length == previousLength) return false;
     onPersist?.call();
     return true;
   }
 
   List<String> childFoldersForLibrary(String libraryPath) {
-    final normalizedLibraryPath = path.normalize(libraryPath);
+    final normalizedLibraryPath = PathMatcher.normalize(libraryPath);
     return watchedFolders
         .where(
           (folderPath) => _isPathWithinOrEqual(
-            path.normalize(folderPath),
+            PathMatcher.normalize(folderPath),
             normalizedLibraryPath,
           ),
         )
@@ -407,24 +426,25 @@ class LibraryService {
   }
 
   List<String> excludedFoldersForLibrary(String libraryPath) {
-    return (excludedLibraryFolders[path.normalize(libraryPath)] ??
+    return (excludedLibraryFolders[PathMatcher.normalize(libraryPath)] ??
             const <String>{})
         .toList(growable: false)
       ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
   }
 
   List<String> excludedTracksForLibrary(String libraryPath) {
-    return (excludedLibraryTracks[path.normalize(libraryPath)] ??
+    return (excludedLibraryTracks[PathMatcher.normalize(libraryPath)] ??
             const <String>{})
         .toList(growable: false)
       ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
   }
 
   bool isLibraryPathExcluded(String libraryPath, String entityPath) {
-    final normalizedLibraryPath = path.normalize(libraryPath);
-    final normalizedPath = path.normalize(entityPath);
-    if (excludedLibraryTracks[normalizedLibraryPath]?.contains(
-          normalizedPath,
+    final normalizedLibraryPath = PathMatcher.normalize(libraryPath);
+    final normalizedPath = PathMatcher.normalize(entityPath);
+    if (excludedLibraryTracks[normalizedLibraryPath]?.any(
+          (trackPath) =>
+              PathMatcher.equalsNormalized(trackPath, normalizedPath),
         ) ??
         false) {
       return true;
@@ -440,15 +460,17 @@ class LibraryService {
     String libraryPath,
     String folderPath,
   ) {
-    return excludedLibraryFolders[path.normalize(libraryPath)]?.contains(
-          path.normalize(folderPath),
+    return excludedLibraryFolders[PathMatcher.normalize(libraryPath)]?.any(
+          (excludedFolder) =>
+              PathMatcher.equalsNormalized(excludedFolder, folderPath),
         ) ??
         false;
   }
 
   bool isLibraryTrackExplicitlyExcluded(String libraryPath, String trackPath) {
-    return excludedLibraryTracks[path.normalize(libraryPath)]?.contains(
-          path.normalize(trackPath),
+    return excludedLibraryTracks[PathMatcher.normalize(libraryPath)]?.any(
+          (excludedTrack) =>
+              PathMatcher.equalsNormalized(excludedTrack, trackPath),
         ) ??
         false;
   }
@@ -459,8 +481,8 @@ class LibraryService {
     bool excluded, {
     VoidCallback? onPersist,
   }) {
-    final normalizedLibraryPath = path.normalize(libraryPath);
-    final normalizedFolderPath = path.normalize(folderPath);
+    final normalizedLibraryPath = PathMatcher.normalize(libraryPath);
+    final normalizedFolderPath = PathMatcher.normalize(folderPath);
     final folders = excludedLibraryFolders.putIfAbsent(
       normalizedLibraryPath,
       () => <String>{},
@@ -480,8 +502,8 @@ class LibraryService {
     bool excluded, {
     VoidCallback? onPersist,
   }) {
-    final normalizedLibraryPath = path.normalize(libraryPath);
-    final normalizedTrackPath = path.normalize(trackPath);
+    final normalizedLibraryPath = PathMatcher.normalize(libraryPath);
+    final normalizedTrackPath = PathMatcher.normalize(trackPath);
     final tracks = excludedLibraryTracks.putIfAbsent(
       normalizedLibraryPath,
       () => <String>{},
@@ -517,11 +539,11 @@ class LibraryService {
     VoidCallback? onSaveWatchedLibraries,
     VoidCallback? onSaveLibraryExclusions,
   }) async {
-    final normalizedLibraryPath = path.normalize(libraryPath);
+    final normalizedLibraryPath = PathMatcher.normalize(libraryPath);
     final childFolders = watchedFolders
         .where(
           (folderPath) => _isPathWithinOrEqual(
-            path.normalize(folderPath),
+            PathMatcher.normalize(folderPath),
             normalizedLibraryPath,
           ),
         )
@@ -531,10 +553,16 @@ class LibraryService {
     }
     watchedLibraries.removeWhere(
       (pathValue) =>
-          path.equals(path.normalize(pathValue), normalizedLibraryPath),
+          PathMatcher.equalsNormalized(pathValue, normalizedLibraryPath),
     );
-    excludedLibraryFolders.remove(normalizedLibraryPath);
-    excludedLibraryTracks.remove(normalizedLibraryPath);
+    excludedLibraryFolders.removeWhere(
+      (pathValue, _) =>
+          PathMatcher.equalsNormalized(pathValue, normalizedLibraryPath),
+    );
+    excludedLibraryTracks.removeWhere(
+      (pathValue, _) =>
+          PathMatcher.equalsNormalized(pathValue, normalizedLibraryPath),
+    );
     syncLibraryNodeOrder(persist: false);
     markStructureChanged();
     onSaveWatchedLibraries?.call();
@@ -542,8 +570,7 @@ class LibraryService {
   }
 
   bool _isPathWithinOrEqual(String childPath, String parentPath) {
-    return path.equals(childPath, parentPath) ||
-        path.isWithin(parentPath, childPath);
+    return PathMatcher.isWithinOrEqual(childPath, parentPath);
   }
 
   void syncSlice({required bool isInitialized}) {

@@ -24,20 +24,19 @@ extension _LibraryTabImportActions on _LibraryTabState {
       final foldersToRefresh = LinkedHashSet<String>.from(watchedFolders);
       for (final libraryRoot in watchedLibraries) {
         foldersToRefresh.removeWhere(
-          (folderPath) => PathMatcher.equalsNormalized(folderPath, libraryRoot),
+          (folderPath) => PathMatcher.isWithinOrEqual(folderPath, libraryRoot),
         );
         provider.removeWatchedFolder(libraryRoot, notify: false);
-        totalAdded += await _importLibraryRootAudioFiles(
+        final childFolders = await _listImmediateChildFolders(libraryRoot);
+        totalAdded += await _importLibraryWithSingleScan(
           libraryRoot,
           provider,
           i18n,
         );
-        final childFolders = await _listImmediateChildFolders(libraryRoot);
         for (final childFolder in childFolders) {
           if (provider.isLibraryPathExcluded(libraryRoot, childFolder)) {
             continue;
           }
-          foldersToRefresh.add(childFolder);
           provider.addWatchedFolder(childFolder, notify: false);
           await _prefillRjDetailForFolder(provider, childFolder);
         }
@@ -57,15 +56,15 @@ extension _LibraryTabImportActions on _LibraryTabState {
           orElse: () => '',
         );
         final effectiveLibraryRoot = libraryRoot.isEmpty ? null : libraryRoot;
-        final nativeTracks = await _scanFolderViaNative(folderPath);
-        if (nativeTracks != null) {
+        final nativeScan = await _scanFolderViaNative(folderPath);
+        if (nativeScan.ok) {
           final toAdd = _filterExcludedScannedTracks(
             provider,
             effectiveLibraryRoot,
-            nativeTracks,
+            nativeScan.tracks,
           ).map(_trackFromScanned).toList();
           final before = provider.library.length;
-          provider.addTracks(toAdd, notify: false);
+          provider.addOrReplaceTracks(toAdd, notify: false);
           final added = provider.library.length - before;
           totalAdded += added;
           provider.setScanProgress(
@@ -73,11 +72,18 @@ extension _LibraryTabImportActions on _LibraryTabState {
             duplicateCount:
                 provider.scanDuplicateCount + (toAdd.length - added),
           );
-        } else {
+        } else if (nativeScan.notSupported ||
+            !PathMatcher.isContentUri(folderPath)) {
           totalAdded += await _importFolderIncrementally(
             folderPath,
             provider,
             effectiveLibraryRoot,
+          );
+        } else {
+          provider.setScanProgress(failureCount: provider.scanFailureCount + 1);
+          debugPrint(
+            '[library-import] native scan failed for content uri: $folderPath '
+            'code=${nativeScan.errorCode} message=${nativeScan.errorMessage}',
           );
         }
       }
@@ -142,24 +148,32 @@ extension _LibraryTabImportActions on _LibraryTabState {
   ) async {
     final childFolders = await _listImmediateChildFolders(folderPath);
     final importTargets = childFolders;
+    if (!mounted) return;
+    final provider = context.read<AudioProvider>();
 
-    if (mounted) {
-      context.read<AudioProvider>().addWatchedLibrary(
-        folderPath,
-        notify: false,
-      );
+    provider.addWatchedLibrary(folderPath, notify: false);
+    provider.setScanning(true);
+    provider.beginLibraryBatch();
+    var added = 0;
+    try {
+      added = await _importLibraryWithSingleScan(folderPath, provider, i18n);
+      for (final childFolder in importTargets) {
+        if (provider.isLibraryPathExcluded(folderPath, childFolder)) continue;
+        provider.addWatchedFolder(childFolder, notify: false);
+        await _prefillRjDetailForFolder(provider, childFolder);
+      }
+    } finally {
+      await provider.endLibraryBatch();
+      provider.setScanning(false);
+      if (mounted) {
+        _showSnack(
+          i18n.tr('import_library_done', {
+            'count': added,
+            'folderCount': importTargets.length,
+          }),
+        );
+      }
     }
-    await _addFoldersFromPaths(
-      importTargets,
-      beforeFolderImport: (provider) =>
-          _importLibraryRootAudioFiles(folderPath, provider, i18n),
-      completionMessageBuilder: (trackCount, folderCount) {
-        return i18n.tr('import_library_done', {
-          'count': trackCount,
-          'folderCount': folderCount,
-        });
-      },
-    );
   }
 
   Future<void> _addFolderFromPath(String folderPath) async {
@@ -173,19 +187,26 @@ extension _LibraryTabImportActions on _LibraryTabState {
 
     try {
       provider.setScanProgress(currentFolder: _displaySourceName(folderPath));
-      final nativeTracks = await _scanFolderViaNative(folderPath);
-      if (nativeTracks != null) {
-        final toAdd = nativeTracks.map(_trackFromScanned).toList();
+      final nativeScan = await _scanFolderViaNative(folderPath);
+      if (nativeScan.ok) {
+        final toAdd = nativeScan.tracks.map(_trackFromScanned).toList();
 
         final beforeCount = provider.library.length;
-        provider.addTracks(toAdd, notify: false);
+        provider.addOrReplaceTracks(toAdd, notify: false);
         added = provider.library.length - beforeCount;
         provider.setScanProgress(
           foundCount: added,
           duplicateCount: toAdd.length - added,
         );
-      } else {
+      } else if (nativeScan.notSupported ||
+          !PathMatcher.isContentUri(folderPath)) {
         added = await _importFolderIncrementally(folderPath, provider, null);
+      } else {
+        provider.setScanProgress(failureCount: provider.scanFailureCount + 1);
+        debugPrint(
+          '[library-import] native scan failed for content uri: $folderPath '
+          'code=${nativeScan.errorCode} message=${nativeScan.errorMessage}',
+        );
       }
     } finally {
       await provider.endLibraryBatch();
@@ -194,75 +215,6 @@ extension _LibraryTabImportActions on _LibraryTabState {
       provider.setScanning(false);
       if (mounted) {
         _showSnack(i18n.tr('import_done_added', {'count': added}));
-      }
-    }
-  }
-
-  Future<void> _addFoldersFromPaths(
-    List<String> folderPaths, {
-    Future<int> Function(AudioProvider provider)? beforeFolderImport,
-    String Function(int trackCount, int folderCount)? completionMessageBuilder,
-  }) async {
-    final i18n = context.read<AppLanguageProvider>();
-    final provider = context.read<AudioProvider>();
-    final uniqueFolderPaths = LinkedHashSet<String>.from(
-      folderPaths
-          .map((folderPath) => folderPath.trim())
-          .where((folderPath) => folderPath.isNotEmpty),
-    ).toList(growable: false);
-    if (uniqueFolderPaths.isEmpty && beforeFolderImport == null) return;
-    if (!mounted) return;
-
-    provider.setScanning(true);
-    provider.beginLibraryBatch();
-    var added = 0;
-    final totalFolders = uniqueFolderPaths.length;
-    var processedFolders = 0;
-
-    try {
-      if (beforeFolderImport != null) {
-        added += await beforeFolderImport(provider);
-      }
-      for (final folderPath in uniqueFolderPaths) {
-        if (!provider.isScanning) break;
-        processedFolders++;
-        provider.setScanProgress(
-          currentFolder:
-              '[$processedFolders/$totalFolders] ${_displaySourceName(folderPath)}',
-        );
-        final nativeTracks = await _scanFolderViaNative(folderPath);
-        if (nativeTracks != null) {
-          final toAdd = _filterExcludedScannedTracks(
-            provider,
-            null,
-            nativeTracks,
-          ).map(_trackFromScanned).toList();
-
-          final beforeCount = provider.library.length;
-          provider.addTracks(toAdd, notify: false);
-          final folderAdded = provider.library.length - beforeCount;
-          added += folderAdded;
-          provider.setScanProgress(
-            foundCount: provider.scanFoundCount + folderAdded,
-            duplicateCount:
-                provider.scanDuplicateCount + (toAdd.length - folderAdded),
-          );
-        } else {
-          added += await _importFolderIncrementally(folderPath, provider, null);
-        }
-
-        if (!mounted) return;
-        provider.addWatchedFolder(folderPath, notify: false);
-        await _prefillRjDetailForFolder(provider, folderPath);
-      }
-    } finally {
-      await provider.endLibraryBatch();
-      provider.setScanning(false);
-      if (mounted) {
-        _showSnack(
-          completionMessageBuilder?.call(added, uniqueFolderPaths.length) ??
-              i18n.tr('import_done_added', {'count': added}),
-        );
       }
     }
   }

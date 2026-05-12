@@ -97,6 +97,9 @@ abstract final class FileCacheMethod {
   static const String cacheFromUri = 'cacheFromUri';
   static const String scanFolder = 'scanFolder';
   static const String listChildFolders = 'listChildFolders';
+  static const String renameDocument = 'renameDocument';
+  static const String readAudioDetailBackup = 'readAudioDetailBackup';
+  static const String writeAudioDetailBackup = 'writeAudioDetailBackup';
   static const String pickAudioSource = 'pickAudioSource';
   static const String pickAudioFiles = 'pickAudioFiles';
   static const String pickAudioFolder = 'pickAudioFolder';

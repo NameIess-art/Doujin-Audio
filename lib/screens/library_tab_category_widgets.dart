@@ -527,7 +527,7 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
         child: SizedBox(
           height: cardHeight,
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 7, 6, 7),
+            padding: const EdgeInsets.fromLTRB(12, 5, 6, 5),
             child: Row(
               children: [
                 Expanded(

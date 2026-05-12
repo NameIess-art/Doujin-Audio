@@ -73,6 +73,23 @@ Future<SubtitleTrack?> loadSubtitleTrackForAudio(String audioPath) async {
   );
 }
 
+Future<SubtitleTrack?> parseSubtitleTrackFromRaw({
+  required String sourcePath,
+  required String raw,
+  required String extension,
+}) async {
+  final normalizedExtension = extension.startsWith('.')
+      ? extension.toLowerCase()
+      : '.${extension.toLowerCase()}';
+  return Isolate.run(
+    () => _parseSubtitleTrack(
+      sourcePath: sourcePath,
+      raw: raw,
+      extension: normalizedExtension,
+    ),
+  );
+}
+
 SubtitleTrack? _parseSubtitleTrack({
   required String sourcePath,
   required String raw,

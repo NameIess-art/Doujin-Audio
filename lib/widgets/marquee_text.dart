@@ -112,8 +112,6 @@ class _MarqueeTextState extends State<MarqueeText> {
     return ShaderMask(
       shaderCallback: (Rect bounds) {
         return LinearGradient(
-          begin: Alignment.centerLeft,
-          end: Alignment.centerRight,
           colors: [
             cs.surface.withValues(alpha: 0.0),
             cs.surface,

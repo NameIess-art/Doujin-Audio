@@ -6,12 +6,38 @@ extension AudioProviderLibraryCovers on AudioProvider {
     final rootFolder = getRootFolderPath(trackPath);
     if (rootFolder.isEmpty) return [];
 
+    if (PathMatcher.isContentUri(rootFolder) ||
+        PathMatcher.isContentUri(trackPath)) {
+      final track = trackByPath(trackPath);
+      try {
+        final raw = await AudioProvider._fileCacheChannel
+            .invokeMethod<List<dynamic>>('discoverRootImages', {
+              'path': trackPath,
+              'groupKey': track?.groupKey,
+              'rootFolder': rootFolder,
+            });
+        if (raw == null) return [];
+        return raw
+            .map((item) => item?.toString().trim() ?? '')
+            .where((item) => item.isNotEmpty)
+            .toList(growable: false);
+      } on MissingPluginException {
+        return [];
+      } catch (e) {
+        debugPrint('Error discovering content images in root $rootFolder: $e');
+        return [];
+      }
+    }
+
     final images = <String>[];
     try {
       final dir = Directory(rootFolder);
       if (!await dir.exists()) return [];
 
-      await for (final entity in dir.list(recursive: true, followLinks: false)) {
+      await for (final entity in dir.list(
+        recursive: true,
+        followLinks: false,
+      )) {
         if (entity is File) {
           final ext = path.extension(entity.path).toLowerCase();
           if (AudioProvider._supportedImageExtensions.contains(ext)) {
@@ -35,7 +61,7 @@ extension AudioProviderLibraryCovers on AudioProvider {
 
     final rootFolder = getRootFolderPath(trackPath);
     final tracksToUpdate = <MusicTrack>[];
-    
+
     // If we found a root folder, update ALL tracks in that root.
     // Otherwise fall back to just tracks in the same immediate group.
     if (rootFolder.isNotEmpty) {
@@ -63,21 +89,20 @@ extension AudioProviderLibraryCovers on AudioProvider {
 
     // Clear caches to force re-resolution
     _clearResolvedCoverPaths();
-    
+
     // Rebuild indexes to ensure folder cards and other groupings see the new track data
     _rebuildLibraryIndexes();
     // Mark sessions dirty to refresh playlist tab and bottom card
     _markActiveSessionsDirty();
-    
+
     // Persist to DB
     if (tracksToUpdate.isNotEmpty) {
       await _audioDatabaseRepository.upsertTracks(tracksToUpdate);
     }
-    
+
     // Refresh system notifications to reflect the new cover
     _syncNotificationState();
-    
+
     _notifyListeners();
   }
-
 }

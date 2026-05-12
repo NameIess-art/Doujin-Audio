@@ -53,6 +53,7 @@ extension AudioProviderLibrary on AudioProvider {
   }
 
   Future<void> removeLibrary(String libraryPath) async {
+    setScanning(false);
     await _libraryService.removeLibrary(
       libraryPath,
       removeFolder: removeFolderFromLibrary,
@@ -97,7 +98,7 @@ extension AudioProviderLibrary on AudioProvider {
     String folderPath,
     bool excluded,
   ) {
-    final normalizedFolderPath = path.normalize(folderPath);
+    final normalizedFolderPath = PathMatcher.normalize(folderPath);
     final changed = _libraryService.setLibraryFolderExcluded(
       libraryPath,
       folderPath,
@@ -108,7 +109,8 @@ extension AudioProviderLibrary on AudioProvider {
     if (excluded) {
       _removeTracksWhere(
         (track) =>
-            PathMatcher.isWithinOrEqual(track.path, normalizedFolderPath),
+            PathMatcher.isWithinOrEqual(track.path, normalizedFolderPath) ||
+            PathMatcher.isWithinOrEqual(track.groupKey, normalizedFolderPath),
       );
     }
     _notifyListeners();
@@ -119,7 +121,7 @@ extension AudioProviderLibrary on AudioProvider {
     String trackPath,
     bool excluded,
   ) {
-    final normalizedTrackPath = path.normalize(trackPath);
+    final normalizedTrackPath = PathMatcher.normalize(trackPath);
     final changed = _libraryService.setLibraryTrackExcluded(
       libraryPath,
       trackPath,
@@ -129,7 +131,8 @@ extension AudioProviderLibrary on AudioProvider {
     if (!changed) return;
     if (excluded) {
       _removeTracksWhere(
-        (track) => path.equals(track.path, normalizedTrackPath),
+        (track) =>
+            PathMatcher.equalsNormalized(track.path, normalizedTrackPath),
       );
     } else {
       unawaited(_restoreExcludedTrack(normalizedTrackPath));
@@ -306,25 +309,30 @@ extension AudioProviderLibrary on AudioProvider {
 
     for (final track in tracks) {
       final existing = _libraryByPath[track.path];
-      if (existing == track) continue;
-      if (existing != null && existing.groupKey != track.groupKey) {
+      final nextTrack = existing == null
+          ? track
+          : _mergeExistingTrackState(existing, track);
+      if (existing == nextTrack) continue;
+      if (existing != null && existing.groupKey != nextTrack.groupKey) {
         didReplaceGroup = true;
       }
       if (existing == null) {
-        _library.add(track);
+        _library.add(nextTrack);
       } else {
-        final index = _library.indexWhere((item) => item.path == track.path);
+        final index = _library.indexWhere(
+          (item) => item.path == nextTrack.path,
+        );
         if (index >= 0) {
-          _library[index] = track;
+          _library[index] = nextTrack;
         } else {
-          _library.add(track);
+          _library.add(nextTrack);
         }
       }
-      _libraryByPath[track.path] = track;
-      tracksToPersist.add(track);
+      _libraryByPath[nextTrack.path] = nextTrack;
+      tracksToPersist.add(nextTrack);
       changed = true;
-      if (_groupOrderSet.add(track.groupKey)) {
-        _groupOrder.add(track.groupKey);
+      if (_groupOrderSet.add(nextTrack.groupKey)) {
+        _groupOrder.add(nextTrack.groupKey);
         didChangeGroupOrder = true;
       }
     }
@@ -355,6 +363,30 @@ extension AudioProviderLibrary on AudioProvider {
       }
       _saveLibraryNodeOrder();
     }
+  }
+
+  MusicTrack _mergeExistingTrackState(MusicTrack existing, MusicTrack scanned) {
+    return MusicTrack(
+      path: scanned.path,
+      displayName: scanned.displayName,
+      groupKey: scanned.groupKey,
+      groupTitle: scanned.groupTitle,
+      groupSubtitle: scanned.groupSubtitle,
+      isSingle: scanned.isSingle,
+      scannedAt: scanned.scannedAt,
+      fileSizeBytes: scanned.fileSizeBytes,
+      modifiedAt: scanned.modifiedAt,
+      lastPlayedPosition: existing.lastPlayedPosition,
+      lastPlayedAt: existing.lastPlayedAt,
+      isFavorite: existing.isFavorite,
+      tags: existing.tags,
+      coverCachePath: existing.coverCachePath ?? scanned.coverCachePath,
+      lyricsPath: existing.lyricsPath ?? scanned.lyricsPath,
+      manualCoverPath: existing.manualCoverPath ?? scanned.manualCoverPath,
+      duration: existing.duration == Duration.zero
+          ? scanned.duration
+          : existing.duration,
+    );
   }
 
   Future<void> removeTrackFromLibrary(String trackPath) async {
@@ -394,7 +426,8 @@ extension AudioProviderLibrary on AudioProvider {
     final trackPaths = _library
         .where(
           (track) =>
-              PathMatcher.isWithinOrEqual(track.path, normalizedFolderPath),
+              PathMatcher.isWithinOrEqual(track.path, normalizedFolderPath) ||
+              PathMatcher.isWithinOrEqual(track.groupKey, normalizedFolderPath),
         )
         .map((track) => track.path)
         .toSet();
@@ -415,7 +448,9 @@ extension AudioProviderLibrary on AudioProvider {
     }
 
     _library.removeWhere(
-      (track) => PathMatcher.isWithinOrEqual(track.path, normalizedFolderPath),
+      (track) =>
+          PathMatcher.isWithinOrEqual(track.path, normalizedFolderPath) ||
+          PathMatcher.isWithinOrEqual(track.groupKey, normalizedFolderPath),
     );
     for (final trackPath in trackPaths) {
       _libraryByPath.remove(trackPath);
@@ -493,14 +528,12 @@ extension AudioProviderLibrary on AudioProvider {
   String getRootFolderName(String trackPath) {
     for (final folder in _watchedFolders) {
       if (PathMatcher.isWithinOrEqual(trackPath, folder)) {
-        final name = path.basename(folder);
-        return name.isEmpty ? folder : name;
+        return PathDisplay.folderName(folder);
       }
     }
     for (final libraryPath in _watchedLibraries) {
       if (PathMatcher.isWithinOrEqual(trackPath, libraryPath)) {
-        final name = path.basename(libraryPath);
-        return name.isEmpty ? libraryPath : name;
+        return PathDisplay.folderName(libraryPath);
       }
     }
     return '';

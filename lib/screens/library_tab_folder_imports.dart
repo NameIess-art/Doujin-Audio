@@ -99,12 +99,19 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
     return Directory(path.join(supportDir.path, 'nameless_audio_imports'));
   }
 
-  Future<List<_ScannedTrack>?> _scanFolderViaNative(String folderPath) async {
-    if (!Platform.isAndroid) return null;
+  Future<_NativeScanResult> _scanFolderViaNative(String folderPath) async {
+    if (!Platform.isAndroid) {
+      return const _NativeScanResult.notSupported();
+    }
     try {
       final data = await _LibraryTabState._fileCacheChannel
           .invokeMethod<List<dynamic>>('scanFolder', {'folder': folderPath});
-      if (data == null) return null;
+      if (data == null) {
+        return const _NativeScanResult.failed(
+          code: 'scan_empty_response',
+          message: 'Native scan returned null data.',
+        );
+      }
 
       final scanned = <_ScannedTrack>[];
       for (final item in data) {
@@ -126,7 +133,7 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
             : path.dirname(scannedPath);
         final groupTitle = (nativeGroupTitle?.isNotEmpty ?? false)
             ? nativeGroupTitle!
-            : path.basename(groupKey);
+            : PathDisplay.folderName(groupKey);
         final groupSubtitle = (nativeGroupSubtitle?.isNotEmpty ?? false)
             ? nativeGroupSubtitle!
             : groupKey;
@@ -155,9 +162,14 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
           ),
         );
       }
-      return scanned;
-    } catch (_) {
-      return null;
+      return _NativeScanResult.success(scanned);
+    } on PlatformException catch (error) {
+      return _NativeScanResult.failed(code: error.code, message: error.message);
+    } catch (error) {
+      return _NativeScanResult.failed(
+        code: 'scan_unknown_error',
+        message: error.toString(),
+      );
     }
   }
 
@@ -197,62 +209,43 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
     return childFolders;
   }
 
-  Future<List<String>> _listImmediateAudioFiles(String folderPath) async {
-    final directory = Directory(folderPath);
-    if (!await directory.exists()) return const <String>[];
-
-    final audioFiles = <String>[];
-    try {
-      await for (final entity in directory.list(followLinks: false)) {
-        if (entity is! File) continue;
-        final normalizedPath = path.normalize(entity.path);
-        if (_isSupportedAudioFile(normalizedPath)) {
-          audioFiles.add(normalizedPath);
-        }
-      }
-    } catch (_) {
-      return const <String>[];
-    }
-
-    audioFiles.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
-    return audioFiles;
-  }
-
-  Future<int> _importLibraryRootAudioFiles(
+  Future<int> _importLibraryWithSingleScan(
     String libraryRoot,
     AudioProvider provider,
     AppLanguageProvider i18n,
   ) async {
-    final nativeTracks = await _scanFolderViaNative(libraryRoot);
-    final candidates = nativeTracks == null
-        ? await _singleTracksFromImmediateFiles(libraryRoot, provider, i18n)
-        : nativeTracks
-              .where((track) => _trackIsDirectlyInFolder(libraryRoot, track))
-              .where(
-                (track) =>
-                    !provider.isLibraryPathExcluded(libraryRoot, track.path),
-              )
-              .map((track) => _singleTrackFromScanned(track, i18n))
-              .toList(growable: false);
+    provider.setScanProgress(currentFolder: _displaySourceName(libraryRoot));
+    final nativeScan = await _scanFolderViaNative(libraryRoot);
+    if (!nativeScan.ok) {
+      if (nativeScan.notSupported || !PathMatcher.isContentUri(libraryRoot)) {
+        return _importFolderIncrementally(libraryRoot, provider, libraryRoot);
+      }
+      provider.setScanProgress(failureCount: provider.scanFailureCount + 1);
+      debugPrint(
+        '[library-import] native scan failed for content uri: $libraryRoot '
+        'code=${nativeScan.errorCode} message=${nativeScan.errorMessage}',
+      );
+      return 0;
+    }
 
+    final candidates =
+        _filterExcludedScannedTracks(provider, libraryRoot, nativeScan.tracks)
+            .map((track) {
+              if (_trackIsDirectlyInFolder(libraryRoot, track)) {
+                return _singleTrackFromScanned(track, i18n);
+              }
+              return _trackFromScanned(track);
+            })
+            .toList(growable: false);
     if (candidates.isEmpty) return 0;
     final beforeCount = provider.library.length;
     provider.addOrReplaceTracks(candidates, notify: false);
-    return provider.library.length - beforeCount;
-  }
-
-  Future<List<MusicTrack>> _singleTracksFromImmediateFiles(
-    String libraryRoot,
-    AudioProvider provider,
-    AppLanguageProvider i18n,
-  ) async {
-    final rootAudioFiles = await _listImmediateAudioFiles(libraryRoot);
-    final tracks = <MusicTrack>[];
-    for (final filePath in rootAudioFiles) {
-      if (provider.isLibraryPathExcluded(libraryRoot, filePath)) continue;
-      tracks.add(await _singleTrackFromFilePath(filePath, i18n));
-    }
-    return tracks;
+    final added = provider.library.length - beforeCount;
+    provider.setScanProgress(
+      foundCount: provider.scanFoundCount + added,
+      duplicateCount: provider.scanDuplicateCount + (candidates.length - added),
+    );
+    return added;
   }
 
   bool _trackIsDirectlyInFolder(String folderPath, _ScannedTrack track) {
@@ -265,6 +258,10 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
     AudioProvider provider,
     String? libraryRoot,
   ) async {
+    if (PathMatcher.isContentUri(folderPath)) {
+      provider.setScanProgress(failureCount: provider.scanFailureCount + 1);
+      return 0;
+    }
     final folder = Directory(folderPath);
     if (!await folder.exists()) return 0;
 
@@ -375,7 +372,8 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
     return MusicTrack(
       path: track.path,
       displayName:
-          track.displayName ?? path.basenameWithoutExtension(track.path),
+          track.displayName ??
+          PathDisplay.fileName(track.path, withoutExtension: true),
       groupKey: track.groupKey,
       groupTitle: track.groupTitle,
       groupSubtitle: track.groupSubtitle,
@@ -393,7 +391,8 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
     return MusicTrack(
       path: track.path,
       displayName:
-          track.displayName ?? path.basenameWithoutExtension(track.path),
+          track.displayName ??
+          PathDisplay.fileName(track.path, withoutExtension: true),
       groupKey: '__single_files__',
       groupTitle: i18n.tr('imported_files'),
       groupSubtitle: i18n.tr('manually_selected_files'),
@@ -401,27 +400,6 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
       scannedAt: track.scannedAt ?? DateTime.now(),
       fileSizeBytes: track.fileSizeBytes,
       modifiedAt: track.modifiedAt,
-    );
-  }
-
-  Future<MusicTrack> _singleTrackFromFilePath(
-    String filePath,
-    AppLanguageProvider i18n,
-  ) async {
-    FileStat? fileStat;
-    try {
-      fileStat = await File(filePath).stat();
-    } catch (_) {}
-    return MusicTrack(
-      path: filePath,
-      displayName: path.basenameWithoutExtension(filePath),
-      groupKey: '__single_files__',
-      groupTitle: i18n.tr('imported_files'),
-      groupSubtitle: i18n.tr('manually_selected_files'),
-      isSingle: true,
-      scannedAt: DateTime.now(),
-      fileSizeBytes: fileStat?.size,
-      modifiedAt: fileStat?.modified,
     );
   }
 
@@ -467,4 +445,29 @@ class _PickedAudioFile {
 
   final String uri;
   final String name;
+}
+
+class _NativeScanResult {
+  const _NativeScanResult._({
+    required this.ok,
+    this.tracks = const <_ScannedTrack>[],
+    this.errorCode,
+    this.errorMessage,
+    this.notSupported = false,
+  });
+
+  const _NativeScanResult.success(List<_ScannedTrack> tracks)
+    : this._(ok: true, tracks: tracks);
+
+  const _NativeScanResult.failed({String? code, String? message})
+    : this._(ok: false, errorCode: code, errorMessage: message);
+
+  const _NativeScanResult.notSupported()
+    : this._(ok: false, notSupported: true);
+
+  final bool ok;
+  final List<_ScannedTrack> tracks;
+  final String? errorCode;
+  final String? errorMessage;
+  final bool notSupported;
 }

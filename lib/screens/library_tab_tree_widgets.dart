@@ -46,7 +46,7 @@ class _FolderNodeWidget extends StatefulWidget {
 }
 
 class _FolderNodeWidgetState extends State<_FolderNodeWidget> {
-  static const double _rootFolderTileHeight = 104;
+  static const double _rootFolderTileHeight = 82;
   static const double _childFolderTileHeight = 62;
   static const double _rootFolderTitleBlockHeight = 72;
   static const double _childFolderTitleBlockHeight = 50;
@@ -432,7 +432,7 @@ class _TrackNodeWidget extends ConsumerWidget {
           child: SizedBox(
             height: _FolderNodeWidgetState._rootFolderTileHeight,
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 7, 6, 7),
+              padding: const EdgeInsets.fromLTRB(12, 5, 6, 5),
               child: Row(
                 children: [
                   Expanded(

@@ -21,12 +21,10 @@ class SubtitleOverlayController {
   }
 
   static Timer? _stopTimer;
-  static bool _isActive = false;
 
   static Future<void> startOverlay() async {
     _stopTimer?.cancel();
     _stopTimer = null;
-    _isActive = true;
     try {
       await _channel.invokeMethod('startOverlay');
     } on PlatformException catch (_) {}
@@ -47,7 +45,6 @@ class SubtitleOverlayController {
   static Future<void> _doStop() async {
     _stopTimer?.cancel();
     _stopTimer = null;
-    _isActive = false;
     try {
       await _channel.invokeMethod('stopOverlay');
     } on PlatformException catch (_) {}
@@ -64,12 +61,13 @@ class SubtitleOverlayController {
     String? backgroundColor,
     String? textColor,
   }) async {
+    final args = <String, Object?>{
+      'fontSize': fontSize,
+      'backgroundColor': backgroundColor,
+      'textColor': textColor,
+    }..removeWhere((_, value) => value == null);
     try {
-      await _channel.invokeMethod('updateStyle', {
-        if (fontSize != null) 'fontSize': fontSize,
-        if (backgroundColor != null) 'backgroundColor': backgroundColor,
-        if (textColor != null) 'textColor': textColor,
-      });
+      await _channel.invokeMethod('updateStyle', args);
     } on PlatformException catch (_) {}
   }
 }

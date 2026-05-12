@@ -44,12 +44,6 @@ extension _MainScreenStoragePermission on _MainScreenState {
   }
 
   Future<void> _handleManageFilesPermissionGranted() async {
-    if (!mounted) return;
-    showAppSnackBar(
-      context,
-      context.read<AppLanguageProvider>().tr('manage_files_permission_enabled'),
-      tone: AppFeedbackTone.success,
-      icon: Icons.folder_open_rounded,
-    );
+    return;
   }
 }

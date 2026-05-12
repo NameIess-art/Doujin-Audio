@@ -5,11 +5,14 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:nameless_audio/providers/audio_provider.dart';
+import 'package:nameless_audio/services/app_database.dart';
+import 'package:nameless_audio/services/audio_database_repository.dart';
 import 'package:nameless_audio/services/native_playback_bridge.dart';
 import 'package:nameless_audio/services/playback_notification_handler.dart';
 import 'package:nameless_audio/services/playback_notification_service.dart';
 import 'package:nameless_audio/services/platform_channels.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -19,17 +22,32 @@ void main() {
   late AudioProvider provider;
   late PlaybackNotificationHandler handler;
   late PlaybackNotificationService notificationService;
+  late Database db;
 
-  setUp(() async {
-    handler = PlaybackNotificationHandler();
-    notificationService = PlaybackNotificationService(handler);
-    provider = AudioProvider.test(notificationService: notificationService);
+  setUpAll(() {
+    sqfliteFfiInit();
+    databaseFactory = databaseFactoryFfi;
   });
 
-  tearDown(() {
+  setUp(() async {
+    db = await databaseFactoryFfi.openDatabase(inMemoryDatabasePath);
+    await AppDatabase.createSchemaForTest(db);
+    final databaseRepository = AudioDatabaseRepository(
+      database: AppDatabase.test(db),
+    );
+    handler = PlaybackNotificationHandler();
+    notificationService = PlaybackNotificationService(handler);
+    provider = AudioProvider.test(
+      notificationService: notificationService,
+      audioDatabaseRepository: databaseRepository,
+    );
+  });
+
+  tearDown(() async {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(fileCacheChannel, null);
     provider.dispose();
+    await db.close();
   });
 
   // ── multi-session playback stability ──────────────────────────
@@ -335,48 +353,51 @@ void main() {
       },
     );
 
-    test('discoverImagesInRoot uses cache until cover generation changes', () async {
-      final workDir = await Directory.systemTemp.createTemp('discover_root_');
-      addTearDown(() async {
-        if (await workDir.exists()) {
-          await workDir.delete(recursive: true);
-        }
-      });
+    test(
+      'discoverImagesInRoot uses cache until cover generation changes',
+      () async {
+        final workDir = await Directory.systemTemp.createTemp('discover_root_');
+        addTearDown(() async {
+          if (await workDir.exists()) {
+            await workDir.delete(recursive: true);
+          }
+        });
 
-      final coverA = File(
-        '${workDir.path}${Platform.pathSeparator}cover_a.jpg',
-      );
-      await coverA.writeAsBytes(const <int>[1, 2, 3]);
-      final trackPath = '${workDir.path}${Platform.pathSeparator}01.mp3';
-      await File(trackPath).writeAsBytes(const <int>[4, 5, 6]);
+        final coverA = File(
+          '${workDir.path}${Platform.pathSeparator}cover_a.jpg',
+        );
+        await coverA.writeAsBytes(const <int>[1, 2, 3]);
+        final trackPath = '${workDir.path}${Platform.pathSeparator}01.mp3';
+        await File(trackPath).writeAsBytes(const <int>[4, 5, 6]);
 
-      provider.addWatchedFolder(workDir.path, notify: false);
-      provider.addTracks(
-        <MusicTrack>[
-          MusicTrack(
-            path: trackPath,
-            displayName: '01',
-            groupKey: workDir.path,
-            groupTitle: 'Work',
-            groupSubtitle: 'Work',
-            isSingle: false,
-          ),
-        ],
-        notify: false,
-        persist: false,
-      );
+        provider.addWatchedFolder(workDir.path, notify: false);
+        provider.addTracks(
+          <MusicTrack>[
+            MusicTrack(
+              path: trackPath,
+              displayName: '01',
+              groupKey: workDir.path,
+              groupTitle: 'Work',
+              groupSubtitle: 'Work',
+              isSingle: false,
+            ),
+          ],
+          notify: false,
+          persist: false,
+        );
 
-      final first = await provider.discoverImagesInRoot(trackPath);
-      expect(first, contains(coverA.path));
+        final first = await provider.discoverImagesInRoot(trackPath);
+        expect(first, contains(coverA.path));
 
-      await coverA.delete();
-      final second = await provider.discoverImagesInRoot(trackPath);
-      expect(second, contains(coverA.path));
+        await coverA.delete();
+        final second = await provider.discoverImagesInRoot(trackPath);
+        expect(second, contains(coverA.path));
 
-      await provider.setTrackManualCover(trackPath, null);
-      final third = await provider.discoverImagesInRoot(trackPath);
-      expect(third, isNot(contains(coverA.path)));
-    });
+        await provider.setTrackManualCover(trackPath, null);
+        final third = await provider.discoverImagesInRoot(trackPath);
+        expect(third, isNot(contains(coverA.path)));
+      },
+    );
 
     test('folder cover resolves from manual-cover scope cache', () async {
       final workDir = await Directory.systemTemp.createTemp('scope_cache_');
@@ -410,6 +431,65 @@ void main() {
 
       final resolved = await provider.coverPathFutureForFolder(workDir.path);
       expect(resolved, cover.path);
+    });
+  });
+
+  group('audio detail rename target name', () {
+    test(
+      'renames a single audio file while preserving its extension',
+      () async {
+        final tempDir = await Directory.systemTemp.createTemp(
+          'detail_file_rename_',
+        );
+        addTearDown(() async {
+          if (await tempDir.exists()) {
+            await tempDir.delete(recursive: true);
+          }
+        });
+
+        final source = File('${tempDir.path}${Platform.pathSeparator}old.mp3');
+        await source.writeAsBytes(const <int>[1, 2, 3]);
+        final detail = AudioDetail.empty(
+          AudioDetailTarget.singleAudioFile(source.path),
+        );
+
+        final result = await provider.renameAudioDetailTargetToName(
+          detail,
+          'New Title',
+        );
+
+        expect(result.detail.target.targetPath, endsWith('New Title.mp3'));
+        expect(await File(result.detail.target.targetPath).exists(), isTrue);
+        expect(await source.exists(), isFalse);
+      },
+    );
+
+    test('renames a folder target with the provided folder name', () async {
+      final tempDir = await Directory.systemTemp.createTemp(
+        'detail_folder_rename_',
+      );
+      addTearDown(() async {
+        if (await tempDir.exists()) {
+          await tempDir.delete(recursive: true);
+        }
+      });
+
+      final source = Directory(
+        '${tempDir.path}${Platform.pathSeparator}Old Folder',
+      );
+      await source.create();
+      final detail = AudioDetail.empty(
+        AudioDetailTarget.libraryRootFolder(source.path),
+      );
+
+      final result = await provider.renameAudioDetailTargetToName(
+        detail,
+        'New Folder',
+      );
+
+      expect(result.detail.target.targetPath, endsWith('New Folder'));
+      expect(await Directory(result.detail.target.targetPath).exists(), isTrue);
+      expect(await source.exists(), isFalse);
     });
   });
 }

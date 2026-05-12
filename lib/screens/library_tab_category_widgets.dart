@@ -105,7 +105,7 @@ extension _LibraryTabCategoryView on _LibraryTabState {
     required bool canPullRefresh,
   }) {
     final topPadding = 4 + headerControlsFullHeight + 150;
-    final bottomPadding = bottomInset + 350;
+    const bottomPadding = 350.0;
     return FutureBuilder<AudioLibraryCategorySnapshot>(
       future: provider.audioLibraryCategorySnapshot(),
       initialData: provider.audioLibraryCategorySnapshotSync,

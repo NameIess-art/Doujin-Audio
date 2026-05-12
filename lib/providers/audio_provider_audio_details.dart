@@ -102,13 +102,20 @@ extension AudioProviderAudioDetails on AudioProvider {
   Future<AudioDetailRenameResult> renameAudioDetailTarget(
     AudioDetail detail,
   ) async {
-    final title = detail.workTitle.trim();
-    if (title.isEmpty) {
+    return renameAudioDetailTargetToName(detail, detail.workTitle);
+  }
+
+  Future<AudioDetailRenameResult> renameAudioDetailTargetToName(
+    AudioDetail detail,
+    String targetName,
+  ) async {
+    final name = targetName.trim();
+    if (name.isEmpty) {
       throw const AudioDetailRenameException('missingTitle');
     }
     final oldTarget = detail.target;
 
-    final safeName = _safeFileName(title);
+    final safeName = _safeFileName(name);
     if (safeName.isEmpty) {
       throw const AudioDetailRenameException('invalidTitle');
     }

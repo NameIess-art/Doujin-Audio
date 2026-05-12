@@ -59,15 +59,6 @@ class _AudioDetailSheetState extends State<AudioDetailSheet> {
         _detail = result.detail;
         _loading = false;
       });
-      if (result.restoredFromBackup) {
-        showAppSnackBar(
-          context,
-          context.read<AppLanguageProvider>().tr(
-            'audio_detail_restored_from_backup',
-          ),
-          tone: AppFeedbackTone.success,
-        );
-      }
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -95,7 +86,9 @@ class _AudioDetailSheetState extends State<AudioDetailSheet> {
       builder: (context) {
         return AlertDialog(
           title: Text(
-            i18n.tr('audio_detail_edit_title', {'name': field.label(i18n)}),
+            i18n.tr('audio_detail_edit_title', {
+              'name': field.label(i18n, detail),
+            }),
           ),
           content: TextField(
             controller: controller,
@@ -126,8 +119,54 @@ class _AudioDetailSheetState extends State<AudioDetailSheet> {
     controller.dispose();
     if (value == null || !mounted) return;
 
+    if (field == _AudioDetailField.targetName) {
+      await _renameTargetToName(detail, value);
+      return;
+    }
+
     final nextDetail = field.apply(detail, value);
     await _saveField(field, nextDetail);
+  }
+
+  Future<void> _renameTargetToName(
+    AudioDetail detail,
+    String targetName,
+  ) async {
+    setState(() {
+      _savingField = _AudioDetailField.targetName;
+      _runningAction = true;
+    });
+    try {
+      final result = await context
+          .read<AudioProvider>()
+          .renameAudioDetailTargetToName(detail, targetName);
+      if (!mounted) return;
+      setState(() {
+        _target = result.detail.target;
+        _detail = result.detail;
+        _savingField = null;
+        _runningAction = false;
+      });
+      final i18n = context.read<AppLanguageProvider>();
+      if (result.backupFailed) {
+        showAppSnackBar(
+          context,
+          i18n.tr('audio_detail_backup_failed'),
+          tone: AppFeedbackTone.warning,
+        );
+      }
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _savingField = null;
+        _runningAction = false;
+      });
+      showAppSnackBar(
+        context,
+        context.read<AppLanguageProvider>().tr('audio_detail_rename_failed'),
+        tone: AppFeedbackTone.warning,
+      );
+    }
   }
 
   Future<void> _saveField(
@@ -216,9 +255,9 @@ class _AudioDetailSheetState extends State<AudioDetailSheet> {
       return;
     }
     final confirmed = await _confirmAction(
-      title: i18n.tr('audio_detail_rename_file'),
+      title: _renameWorkTitleLabel(detail, i18n),
       message: i18n.tr('audio_detail_rename_confirm'),
-      confirmLabel: i18n.tr('audio_detail_rename_file'),
+      confirmLabel: _renameWorkTitleLabel(detail, i18n),
     );
     if (!confirmed || !mounted) return;
 
@@ -366,7 +405,11 @@ class _AudioDetailSheetState extends State<AudioDetailSheet> {
                           ? null
                           : () => _confirmFetchInfo(detail),
                       icon: const Icon(Icons.cloud_download_rounded),
-                      label: Text(i18n.tr('audio_detail_fetch_info')),
+                      label: Text(
+                        i18n.tr('audio_detail_fetch_info'),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -376,7 +419,11 @@ class _AudioDetailSheetState extends State<AudioDetailSheet> {
                           ? null
                           : () => _confirmRename(detail),
                       icon: const Icon(Icons.drive_file_rename_outline),
-                      label: Text(i18n.tr('audio_detail_rename_file')),
+                      label: Text(
+                        _renameWorkTitleLabel(detail, i18n),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                   ),
                 ],
@@ -385,7 +432,7 @@ class _AudioDetailSheetState extends State<AudioDetailSheet> {
               ..._AudioDetailField.values.expand(
                 (field) => [
                   _AudioDetailRow(
-                    label: field.label(i18n),
+                    label: field.label(i18n, detail),
                     value: field.displayValue(detail, i18n),
                     labelStyle: labelStyle,
                     busy: _savingField == field,
@@ -401,6 +448,12 @@ class _AudioDetailSheetState extends State<AudioDetailSheet> {
       ),
     );
   }
+}
+
+String _renameWorkTitleLabel(AudioDetail detail, AppLanguageProvider i18n) {
+  return detail.target.isLibraryRootFolder
+      ? i18n.tr('audio_detail_rename_folder_from_title')
+      : i18n.tr('audio_detail_rename_file_from_title');
 }
 
 class _AudioDetailRow extends StatelessWidget {
@@ -469,6 +522,7 @@ class _AudioDetailRow extends StatelessWidget {
 }
 
 enum _AudioDetailField {
+  targetName,
   rjCode,
   workTitle,
   circleName,
@@ -478,8 +532,12 @@ enum _AudioDetailField {
   bool get isMulti =>
       this == _AudioDetailField.voiceActors || this == _AudioDetailField.tags;
 
-  String label(AppLanguageProvider i18n) {
+  String label(AppLanguageProvider i18n, AudioDetail detail) {
     return switch (this) {
+      _AudioDetailField.targetName =>
+        detail.target.isLibraryRootFolder
+            ? i18n.tr('audio_detail_folder_name')
+            : i18n.tr('audio_detail_file_name'),
       _AudioDetailField.rjCode => i18n.tr('audio_detail_rj_code'),
       _AudioDetailField.workTitle => i18n.tr('audio_detail_work_title'),
       _AudioDetailField.circleName => i18n.tr('audio_detail_circle_name'),
@@ -490,6 +548,7 @@ enum _AudioDetailField {
 
   String readText(AudioDetail detail) {
     return switch (this) {
+      _AudioDetailField.targetName => _targetDisplayName(detail.target),
       _AudioDetailField.rjCode => detail.rjCode,
       _AudioDetailField.workTitle => detail.workTitle,
       _AudioDetailField.circleName => detail.circleName,
@@ -518,6 +577,7 @@ enum _AudioDetailField {
   AudioDetail apply(AudioDetail detail, String rawValue) {
     final trimmed = rawValue.trim();
     return switch (this) {
+      _AudioDetailField.targetName => detail,
       _AudioDetailField.rjCode => detail.copyWith(
         rjCode: trimmed.toUpperCase(),
       ),
@@ -531,6 +591,12 @@ enum _AudioDetailField {
       ),
     };
   }
+}
+
+String _targetDisplayName(AudioDetailTarget target) {
+  return target.isLibraryRootFolder
+      ? PathDisplay.folderName(target.targetPath)
+      : PathDisplay.fileName(target.targetPath, withoutExtension: true);
 }
 
 List<String> _splitMultiValue(String rawValue) {

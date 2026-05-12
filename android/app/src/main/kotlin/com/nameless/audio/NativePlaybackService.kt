@@ -14,6 +14,7 @@ import android.os.Looper
 import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
+import androidx.core.content.ContextCompat
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
@@ -30,6 +31,8 @@ import java.util.concurrent.ConcurrentHashMap
 class NativePlaybackService : MediaSessionService() {
     companion object {
         const val ACTION_START = "com.nameless.audio.native.START"
+        private const val EXTRA_REQUIRE_FOREGROUND_BOOTSTRAP =
+            "require_foreground_bootstrap"
         private const val PLAYBACK_CHANNEL_ID = "com.nameless.audio.channel.playback"
         private const val PLAYBACK_CHANNEL_NAME = "Playback"
         private const val PLAYBACK_CHANNEL_DESCRIPTION = "Playback notification controls"
@@ -51,15 +54,31 @@ class NativePlaybackService : MediaSessionService() {
 
         fun controller(): NativePlaybackService? = instance
 
-        fun ensureStarted(context: Context): NativePlaybackService? {
+        fun ensureStarted(
+            context: Context,
+            requireForegroundBootstrap: Boolean = false
+        ): NativePlaybackService? {
             controller()?.let { return it }
             val intent = Intent(context.applicationContext, NativePlaybackService::class.java).apply {
                 action = ACTION_START
+                putExtra(EXTRA_REQUIRE_FOREGROUND_BOOTSTRAP, requireForegroundBootstrap)
             }
             return try {
-                context.applicationContext.startService(intent)
+                if (requireForegroundBootstrap) {
+                    ContextCompat.startForegroundService(context.applicationContext, intent)
+                } else {
+                    context.applicationContext.startService(intent)
+                }
                 controller()
             } catch (_: Exception) {
+                try {
+                    ContextCompat.startForegroundService(context.applicationContext, intent.apply {
+                        putExtra(EXTRA_REQUIRE_FOREGROUND_BOOTSTRAP, true)
+                    })
+                } catch (_: Exception) {
+                    // Best effort; callers retry while a BroadcastReceiver async
+                    // result is alive.
+                }
                 controller()
             }
         }
@@ -122,6 +141,12 @@ class NativePlaybackService : MediaSessionService() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
+        if (intent?.action == ACTION_START &&
+            intent.getBooleanExtra(EXTRA_REQUIRE_FOREGROUND_BOOTSTRAP, false) &&
+            !hasActivePlayback()
+        ) {
+            startBootstrapForeground()
+        }
         return START_STICKY
     }
 
@@ -264,9 +289,7 @@ class NativePlaybackService : MediaSessionService() {
 
     fun setVolume(sessionId: String, volume: Float): Map<String, Any?> {
         val session = sessions[sessionId] ?: return errorResult("Unknown session.")
-        val clamped = volume.coerceIn(0f, 2f)
-        session.volume = clamped
-        session.playerOrNull()?.volume = clamped
+        session.applyVolume(volume)
         publishSessionState(sessionId)
         schedulePersistSessionState()
         return okResult(session.snapshot())
@@ -450,14 +473,20 @@ class NativePlaybackService : MediaSessionService() {
         }
     }
 
-    private fun createPlayer(sessionId: String, audioProcessor: ChannelMappingAudioProcessor): ExoPlayer {
+    private fun createPlayer(
+        sessionId: String,
+        channelMappingAudioProcessor: ChannelMappingAudioProcessor,
+        volumeBoostAudioProcessor: VolumeBoostAudioProcessor
+    ): ExoPlayer {
         val renderersFactory = object : DefaultRenderersFactory(this) {
             override fun buildAudioSink(
                 context: Context,
                 enableFloatOutput: Boolean,
                 enableAudioTrackPlaybackParams: Boolean
             ) = DefaultAudioSink.Builder(context)
-                .setAudioProcessors(arrayOf(audioProcessor))
+                .setAudioProcessors(
+                    arrayOf(channelMappingAudioProcessor, volumeBoostAudioProcessor)
+                )
                 .setEnableFloatOutput(enableFloatOutput)
                 .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
                 .build()
@@ -596,6 +625,24 @@ class NativePlaybackService : MediaSessionService() {
         }
     }
 
+    private fun startBootstrapForeground() {
+        if (playbackForegroundStarted) return
+        try {
+            ServiceCompat.startForeground(
+                this,
+                FOREGROUND_NOTIFICATION_ID,
+                buildBootstrapForegroundNotification(),
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+            )
+            playbackForegroundStarted = true
+            playbackForegroundSignature = "bootstrap|$FOREGROUND_NOTIFICATION_ID"
+            acquireWakeLock()
+        } catch (_: Exception) {
+            // If the bootstrap foreground notification is rejected, the alarm
+            // receiver still retries delivery while its async result is alive.
+        }
+    }
+
     private fun stopPlaybackForeground(removeNotification: Boolean = true) {
         val shouldRemoveNotification =
             UnifiedPlaybackNotificationController.shouldRemoveForegroundNotification(
@@ -647,6 +694,34 @@ class NativePlaybackService : MediaSessionService() {
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setCategory(NotificationCompat.CATEGORY_TRANSPORT)
+            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
+            .build()
+    }
+
+    private fun buildBootstrapForegroundNotification(): Notification {
+        val launchIntent = packageManager.getLaunchIntentForPackage(packageName)?.apply {
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val pendingIntent = launchIntent?.let {
+            PendingIntent.getActivity(
+                this,
+                0,
+                it,
+                PendingIntent.FLAG_UPDATE_CURRENT or immutablePendingIntentFlag()
+            )
+        }
+        return NotificationCompat.Builder(this, PLAYBACK_CHANNEL_ID)
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentTitle("Nameless Audio")
+            .setContentText(getString(R.string.keep_alive_timer_active))
+            .setContentIntent(pendingIntent)
+            .setShowWhen(false)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setSilent(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
             .build()
     }
@@ -835,6 +910,7 @@ class NativePlaybackService : MediaSessionService() {
         val sessionId: String
     ) {
         private val channelMappingAudioProcessor = ChannelMappingAudioProcessor()
+        private val volumeBoostAudioProcessor = VolumeBoostAudioProcessor()
         private var _player: ExoPlayer? = null
         var lastUsedMs: Long = System.currentTimeMillis()
         var uri: String? = null
@@ -857,7 +933,11 @@ class NativePlaybackService : MediaSessionService() {
 
         fun ensurePlayer(): ExoPlayer {
             _player?.let { return it }
-            val p = createPlayer(sessionId, channelMappingAudioProcessor)
+            val p = createPlayer(
+                sessionId,
+                channelMappingAudioProcessor,
+                volumeBoostAudioProcessor
+            )
             _player = p
             
             // Re-configure the player with stored state
@@ -877,7 +957,8 @@ class NativePlaybackService : MediaSessionService() {
                     .build()
 
                 p.setMediaItem(mediaItem, lastPositionMs)
-                p.volume = volume
+                volumeBoostAudioProcessor.setGain(volume)
+                p.volume = PlaybackVolumeMapper.playerVolume(volume)
                 p.repeatMode = if (repeatOne) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
                 p.playWhenReady = lastPlayWhenReady
                 p.prepare()
@@ -916,7 +997,7 @@ class NativePlaybackService : MediaSessionService() {
             this.subtitle = subtitle
             this.artUri = artUri
             this.lastPositionMs = startPositionMs
-            this.volume = volume
+            this.volume = PlaybackVolumeMapper.normalize(volume)
             this.repeatOne = repeatOne
             this.lastPlayWhenReady = autoPlay
             applyChannelMap()
@@ -936,7 +1017,8 @@ class NativePlaybackService : MediaSessionService() {
                 .build()
 
             p.setMediaItem(mediaItem, startPositionMs.coerceAtLeast(0L))
-            p.volume = volume
+            volumeBoostAudioProcessor.setGain(this.volume)
+            p.volume = PlaybackVolumeMapper.playerVolume(this.volume)
             p.repeatMode = if (repeatOne) {
                 Player.REPEAT_MODE_ONE
             } else {
@@ -956,6 +1038,12 @@ class NativePlaybackService : MediaSessionService() {
                     intArrayOf(0, 1)
                 }
             )
+        }
+
+        fun applyVolume(volume: Float) {
+            this.volume = PlaybackVolumeMapper.normalize(volume)
+            volumeBoostAudioProcessor.setGain(this.volume)
+            playerOrNull()?.volume = PlaybackVolumeMapper.playerVolume(this.volume)
         }
 
         fun reprepareCurrentMediaItem() {
@@ -1001,6 +1089,7 @@ class NativePlaybackService : MediaSessionService() {
                 "durationMs" to lastDurationMs,
                 "bufferedPositionMs" to lastBufferedPositionMs,
                 "volume" to volume.toDouble(),
+                "boostGain" to PlaybackVolumeMapper.boostGain(volume).toDouble(),
                 "channelSwap" to channelSwapEnabled,
                 "error" to p?.playerError?.message
             )

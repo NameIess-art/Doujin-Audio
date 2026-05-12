@@ -28,7 +28,7 @@ extension AudioProviderPersistenceSessions on AudioProvider {
         final loopModeIndex = item.loopModeIndex;
         final loopMode = SessionLoopMode
             .values[loopModeIndex.clamp(0, SessionLoopMode.values.length - 1)];
-        final volume = item.volume;
+        final volume = item.volume.clamp(0.0, _maxSessionVolume);
         final restoredPositionMs = item.positionMs;
         final restoredPosition = Duration(
           milliseconds: max(0, restoredPositionMs),
@@ -69,7 +69,7 @@ extension AudioProviderPersistenceSessions on AudioProvider {
         ..clear()
         ..addAll(validOrdered);
       _markActiveSessionsDirty();
-      
+
       final firstSessionId = _sessionOrder.firstOrNull;
       _notificationFocusSessionId = firstSessionId;
 

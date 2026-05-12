@@ -3,7 +3,7 @@ package com.nameless.audio
 object PlaybackVolumeMapper {
     private const val minVolume = 0f
     private const val unityVolume = 1f
-    private const val maxVolume = 2f
+    private const val maxVolume = 1.2f
 
     fun normalize(volume: Float): Float {
         return volume.coerceIn(minVolume, maxVolume)

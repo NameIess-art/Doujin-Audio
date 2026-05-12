@@ -231,7 +231,10 @@ object PlaybackTimerAlarmScheduler {
         attempt: Int,
         pendingResult: BroadcastReceiver.PendingResult?
     ) {
-        val service = NativePlaybackService.ensureStarted(context)
+        val service = NativePlaybackService.ensureStarted(
+            context,
+            requireForegroundBootstrap = true
+        )
         if (service == null) {
             if (attempt >= maxServiceDeliveryAttempts) {
                 pendingResult?.finish()

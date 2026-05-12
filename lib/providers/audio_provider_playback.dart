@@ -2,6 +2,7 @@ part of 'audio_provider.dart';
 
 const PlaybackQueueResolver _playbackQueueResolver = PlaybackQueueResolver();
 const TimerRuntimeCalculator _timerRuntimeCalculator = TimerRuntimeCalculator();
+const double _maxSessionVolume = 1.2;
 
 extension AudioProviderPlayback on AudioProvider {
   bool get _hasArmedTimerRuntime {
@@ -185,7 +186,7 @@ extension AudioProviderPlayback on AudioProvider {
   }) async {
     final session = _sessions[sessionId];
     if (session == null) return;
-    final nextVolume = volume.clamp(0.0, 2.0);
+    final nextVolume = volume.clamp(0.0, _maxSessionVolume);
     if ((session.volume - nextVolume).abs() < 0.001) {
       if (persist) {
         _scheduleSaveSessionState();

@@ -26,10 +26,15 @@ class StoredPlaybackTimerRuntimeStateTest {
             waitingForPlayback = false,
             pausedSessionIds = listOf("session-1")
         )
+        val autoResumeState = pausedState.copy(
+            autoResumeAtMs = 1_700_000_000_000L
+        )
 
         assertTrue(waitingState.hasRuntime)
         assertTrue(waitingState.shouldKeepForegroundServiceAlive)
         assertTrue(pausedState.hasRuntime)
         assertFalse(pausedState.shouldKeepForegroundServiceAlive)
+        assertTrue(autoResumeState.hasRuntime)
+        assertTrue(autoResumeState.shouldKeepForegroundServiceAlive)
     }
 }

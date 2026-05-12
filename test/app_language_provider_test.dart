@@ -13,7 +13,7 @@ void main() {
 
       await provider.setLanguage(AppLanguage.zh);
       expect(provider.tr('background_transparency'), '背景透明度');
-      expect(provider.tr('volume_range_hint'), '0-200');
+      expect(provider.tr('volume_range_hint'), '0-120');
 
       await provider.setLanguage(AppLanguage.ja);
       expect(provider.tr('background_transparency'), '背景透明度');

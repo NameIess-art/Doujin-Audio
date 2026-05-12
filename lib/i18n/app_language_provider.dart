@@ -155,8 +155,8 @@ const Map<AppLanguage, Map<String, String>> _localizedValues = {
     'audio_detail_fetch_info': '获取信息',
     'audio_detail_fetch_confirm': '将通过RJ号从DLsite获取作品信息，获取后可在新页面修改并确认。',
     'audio_detail_rename_file': '重命名文件',
-    'audio_detail_rename_file_from_title': '作品标题作为文件名',
-    'audio_detail_rename_folder_from_title': '作品标题作为文件夹名',
+    'audio_detail_rename_file_from_title': '作品标题\n作为文件名',
+    'audio_detail_rename_folder_from_title': '作品标题\n作为文件夹名',
     'audio_detail_rename_confirm': '将使用作品标题重命名当前文件或文件夹。此操作会移动本地路径，是否继续？',
     'audio_detail_rename_missing_title': '请先填写作品标题。',
     'audio_detail_rename_done': '已重命名。',
@@ -448,6 +448,8 @@ const Map<AppLanguage, Map<String, String>> _localizedValues = {
     'audio_detail_fetch_confirm':
         'RJ番号を使ってDLsiteから作品情報を取得します。取得後、新しい画面で編集して確認できます。',
     'audio_detail_rename_file': 'ファイル名を変更',
+    'audio_detail_rename_file_from_title': '作品タイトルを\nファイル名にする',
+    'audio_detail_rename_folder_from_title': '作品タイトルを\nフォルダ名にする',
     'audio_detail_rename_confirm':
         '作品タイトルを使って現在のファイルまたはフォルダ名を変更します。ローカルパスが移動されます。続行しますか？',
     'audio_detail_rename_missing_title': '先に作品タイトルを入力してください。',
@@ -754,8 +756,8 @@ const Map<AppLanguage, Map<String, String>> _localizedValues = {
     'audio_detail_fetch_confirm':
         'Fetch work information from DLsite using the RJ number. You can edit it on the next page before applying it.',
     'audio_detail_rename_file': 'Rename file',
-    'audio_detail_rename_file_from_title': 'Use work title as file name',
-    'audio_detail_rename_folder_from_title': 'Use work title as folder name',
+    'audio_detail_rename_file_from_title': 'Use work title\nas file name',
+    'audio_detail_rename_folder_from_title': 'Use work title\nas folder name',
     'audio_detail_rename_confirm':
         'Use the work title to rename this file or folder. This moves the local path. Continue?',
     'audio_detail_rename_missing_title': 'Fill in the work title first.',

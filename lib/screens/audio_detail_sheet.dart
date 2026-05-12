@@ -257,7 +257,7 @@ class _AudioDetailSheetState extends State<AudioDetailSheet> {
     final confirmed = await _confirmAction(
       title: _renameWorkTitleLabel(detail, i18n),
       message: i18n.tr('audio_detail_rename_confirm'),
-      confirmLabel: _renameWorkTitleLabel(detail, i18n),
+      confirmLabel: i18n.tr('confirm'),
     );
     if (!confirmed || !mounted) return;
 
@@ -397,36 +397,43 @@ class _AudioDetailSheetState extends State<AudioDetailSheet> {
                 ),
               )
             else if (detail != null) ...[
-              Row(
-                children: [
-                  Expanded(
-                    child: FilledButton.tonalIcon(
-                      onPressed: _runningAction
-                          ? null
-                          : () => _confirmFetchInfo(detail),
-                      icon: const Icon(Icons.cloud_download_rounded),
-                      label: Text(
-                        i18n.tr('audio_detail_fetch_info'),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+              IntrinsicHeight(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Expanded(
+                      child: FilledButton.tonalIcon(
+                        onPressed: _runningAction
+                            ? null
+                            : () => _confirmFetchInfo(detail),
+                        icon: const Icon(Icons.cloud_download_rounded),
+                        label: Text(
+                          i18n.tr('audio_detail_fetch_info'),
+                          maxLines: 2,
+                          textAlign: TextAlign.center,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 12),
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: FilledButton.tonalIcon(
-                      onPressed: _runningAction
-                          ? null
-                          : () => _confirmRename(detail),
-                      icon: const Icon(Icons.drive_file_rename_outline),
-                      label: Text(
-                        _renameWorkTitleLabel(detail, i18n),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: FilledButton.tonalIcon(
+                        onPressed: _runningAction
+                            ? null
+                            : () => _confirmRename(detail),
+                        icon: const Icon(Icons.drive_file_rename_outline),
+                        label: Text(
+                          _renameWorkTitleLabel(detail, i18n),
+                          maxLines: 2,
+                          textAlign: TextAlign.center,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 12),
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
               const SizedBox(height: 12),
               ..._AudioDetailField.values.expand(

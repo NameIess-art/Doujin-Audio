@@ -34,11 +34,8 @@ extension AudioProviderLibraryCategories on AudioProvider {
             if (snapshot.structureRevision ==
                     _libraryService.structureRevision &&
                 snapshot.detailRevision == _audioDetailRevision) {
-              final hadCachedSnapshot = _audioLibraryCategorySnapshot != null;
               _audioLibraryCategorySnapshot = snapshot;
-              if (!hadCachedSnapshot) {
-                _notifyPresentationListeners();
-              }
+              _notifyPresentationListeners();
             }
           })
           .whenComplete(() {
@@ -52,7 +49,6 @@ extension AudioProviderLibraryCategories on AudioProvider {
 
   void _markAudioDetailDataChanged() {
     _audioDetailRevision++;
-    _audioLibraryCategorySnapshot = null;
     _audioLibraryCategorySnapshotFuture = null;
   }
 
@@ -60,49 +56,50 @@ extension AudioProviderLibraryCategories on AudioProvider {
     required int structureRevision,
     required int detailRevision,
   }) async {
-    final entries = <AudioLibraryCategoryEntry>[];
-    final tagFrequencies = <String, int>{};
-    final voiceActorFrequencies = <String, int>{};
-    final circleFrequencies = <String, int>{};
-
+    final entryFutures = <Future<AudioLibraryCategoryEntry>>[];
     for (final node in libraryTree) {
       if (node is FolderNode) {
         final target = AudioDetailTarget.libraryRootFolder(node.path);
-        final detail = await _loadCategoryDetail(target);
-        final entry = AudioLibraryCategoryEntry(
-          target: target,
-          title: node.name,
-          path: node.path,
-          isFolder: true,
-          detail: detail,
-          tracks: List<MusicTrack>.unmodifiable(node.allTracks),
-        );
-        entries.add(entry);
-        _countCategoryTerms(
-          entry,
-          tagFrequencies,
-          voiceActorFrequencies,
-          circleFrequencies,
+        entryFutures.add(
+          _loadCategoryDetail(target).then(
+            (detail) => AudioLibraryCategoryEntry(
+              target: target,
+              title: node.name,
+              path: node.path,
+              isFolder: true,
+              detail: detail,
+              tracks: List<MusicTrack>.unmodifiable(node.allTracks),
+            ),
+          ),
         );
       } else if (node is TrackNode && node.track.isSingle) {
         final target = AudioDetailTarget.singleAudioFile(node.track.path);
-        final detail = await _loadCategoryDetail(target);
-        final entry = AudioLibraryCategoryEntry(
-          target: target,
-          title: node.track.displayName,
-          path: node.track.path,
-          isFolder: false,
-          detail: detail,
-          tracks: List<MusicTrack>.unmodifiable([node.track]),
-        );
-        entries.add(entry);
-        _countCategoryTerms(
-          entry,
-          tagFrequencies,
-          voiceActorFrequencies,
-          circleFrequencies,
+        entryFutures.add(
+          _loadCategoryDetail(target).then(
+            (detail) => AudioLibraryCategoryEntry(
+              target: target,
+              title: node.track.displayName,
+              path: node.track.path,
+              isFolder: false,
+              detail: detail,
+              tracks: List<MusicTrack>.unmodifiable([node.track]),
+            ),
+          ),
         );
       }
+    }
+
+    final entries = await Future.wait(entryFutures);
+    final tagFrequencies = <String, int>{};
+    final voiceActorFrequencies = <String, int>{};
+    final circleFrequencies = <String, int>{};
+    for (final entry in entries) {
+      _countCategoryTerms(
+        entry,
+        tagFrequencies,
+        voiceActorFrequencies,
+        circleFrequencies,
+      );
     }
 
     return AudioLibraryCategorySnapshot(

@@ -492,4 +492,83 @@ void main() {
       expect(await source.exists(), isFalse);
     });
   });
+
+  group('library card detail loading', () {
+    test(
+      'keeps the previous detail snapshot while a refresh is pending',
+      () async {
+        final tempDir = await Directory.systemTemp.createTemp(
+          'detail_snapshot_',
+        );
+        addTearDown(() async {
+          if (await tempDir.exists()) {
+            await tempDir.delete(recursive: true);
+          }
+        });
+
+        final source = File('${tempDir.path}${Platform.pathSeparator}work.mp3');
+        await source.writeAsBytes(const <int>[1, 2, 3]);
+        provider.addTracks(
+          <MusicTrack>[
+            MusicTrack(
+              path: source.path,
+              displayName: 'work',
+              groupKey: source.path,
+              groupTitle: 'work',
+              groupSubtitle: source.path,
+              isSingle: true,
+            ),
+          ],
+          notify: false,
+          persist: false,
+        );
+
+        await provider.saveAudioDetail(
+          AudioDetail.empty(
+            AudioDetailTarget.singleAudioFile(source.path),
+          ).copyWith(rjCode: 'RJ111111'),
+        );
+        final firstSnapshot = await provider.audioLibraryCategorySnapshot();
+        expect(
+          firstSnapshot
+              .detailFor(AudioDetailTarget.singleAudioFile(source.path))
+              ?.rjCode,
+          'RJ111111',
+        );
+
+        await provider.saveAudioDetail(
+          AudioDetail.empty(
+            AudioDetailTarget.singleAudioFile(source.path),
+          ).copyWith(rjCode: 'RJ222222'),
+        );
+
+        expect(provider.audioLibraryCategorySnapshotSync, same(firstSnapshot));
+
+        final refreshedSnapshot = await provider.audioLibraryCategorySnapshot();
+        expect(
+          refreshedSnapshot
+              .detailFor(AudioDetailTarget.singleAudioFile(source.path))
+              ?.rjCode,
+          'RJ222222',
+        );
+      },
+    );
+  });
+
+  group('cover loading state', () {
+    test(
+      'reports a folder cover lookup as loading only while in flight',
+      () async {
+        final missingFolder =
+            '${Directory.systemTemp.path}'
+            '${Platform.pathSeparator}missing_cover_lookup';
+
+        final future = provider.coverPathFutureForFolder(missingFolder);
+
+        expect(provider.isCoverPathLoadingForFolder(missingFolder), isTrue);
+        expect(await future, isNull);
+        expect(provider.isCoverPathLoadingForFolder(missingFolder), isFalse);
+      },
+    );
+  });
 }

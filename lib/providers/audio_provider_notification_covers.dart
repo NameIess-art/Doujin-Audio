@@ -197,6 +197,10 @@ extension AudioProviderNotificationCovers on AudioProvider {
     return _resolveCoverPathForFolder(folderPath);
   }
 
+  bool isCoverPathLoadingForFolder(String folderPath) {
+    return _coverPathFutures.containsKey(PathMatcher.normalize(folderPath));
+  }
+
   String? _notificationCoverSearchKey(MusicTrack? track, {String? trackPath}) {
     final pathValue = track?.path ?? trackPath;
     if (pathValue == null || pathValue.isEmpty) {

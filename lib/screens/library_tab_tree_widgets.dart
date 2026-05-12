@@ -135,9 +135,10 @@ class _FolderNodeWidgetState extends State<_FolderNodeWidget> {
             AudioDetailTarget.libraryRootFolder(widget.folder.path),
           )
         : null;
-    final rootMetaText = rootDetail == null || rootDetail.rjCode.trim().isEmpty
-        ? i18n.tr('audio_detail_empty')
-        : rootDetail.rjCode.trim();
+    final isRootDetailLoading = isRootFolder && categorySnapshot == null;
+    final rootMetaText = rootDetail?.rjCode.trim().isNotEmpty == true
+        ? rootDetail!.rjCode.trim()
+        : i18n.tr('audio_detail_empty');
     final rootCountText = i18n.tr('audio_count', {
       'count': widget.folder.totalTrackCount,
     });
@@ -211,6 +212,7 @@ class _FolderNodeWidgetState extends State<_FolderNodeWidget> {
                               _LibrarySecondaryInfoLine(
                                 icon: Icons.confirmation_number_rounded,
                                 text: rootMetaText,
+                                loading: isRootDetailLoading,
                               ),
                               const SizedBox(height: 4),
                               _LibraryTertiaryInfoLine(
@@ -399,10 +401,10 @@ class _TrackNodeWidget extends ConsumerWidget {
             AudioDetailTarget.singleAudioFile(track.path),
           )
         : null;
-    final singleMetaText =
-        singleDetail == null || singleDetail.rjCode.trim().isEmpty
-        ? i18n.tr('audio_detail_empty')
-        : singleDetail.rjCode.trim();
+    final isSingleDetailLoading = track.isSingle && categorySnapshot == null;
+    final singleMetaText = singleDetail?.rjCode.trim().isNotEmpty == true
+        ? singleDetail!.rjCode.trim()
+        : i18n.tr('audio_detail_empty');
 
     if (track.isSingle) {
       return SwipeRevealCard(
@@ -456,6 +458,7 @@ class _TrackNodeWidget extends ConsumerWidget {
                           child: _LibrarySecondaryInfoLine(
                             icon: Icons.confirmation_number_rounded,
                             text: singleMetaText,
+                            loading: isSingleDetailLoading,
                           ),
                         ),
                       ],
@@ -556,6 +559,7 @@ class _LibraryCoverThumbnail extends ConsumerWidget {
     context.select<AudioProvider, int>((value) => value.coverGeneration);
     final provider = context.read<AudioProvider>();
     final coverPathFuture = provider.coverPathFutureForFolder(folderPath);
+    final isCoverLoading = provider.isCoverPathLoadingForFolder(folderPath);
     final cs = Theme.of(context).colorScheme;
 
     Widget fallback() {
@@ -590,9 +594,19 @@ class _LibraryCoverThumbnail extends ConsumerWidget {
           child: AsyncCoverImage(
             future: coverPathFuture,
             fallbackBuilder: (_) => fallback(),
-            loadingBuilder: (_) => PulsingPlaceholder(
-              borderRadius: BorderRadius.circular(12),
-              child: fallback(),
+            loadingBuilder: (_) => Stack(
+              fit: StackFit.expand,
+              children: [
+                fallback(),
+                if (isCoverLoading)
+                  Center(
+                    child: Icon(
+                      Icons.hourglass_top_rounded,
+                      size: 22,
+                      color: cs.onPrimaryContainer,
+                    ),
+                  ),
+              ],
             ),
             imageBuilder: (context, coverPath) {
               final dpr = MediaQuery.devicePixelRatioOf(context);
@@ -679,10 +693,15 @@ class _LibraryTwoLineMarqueeText extends StatelessWidget {
 }
 
 class _LibrarySecondaryInfoLine extends StatelessWidget {
-  const _LibrarySecondaryInfoLine({required this.icon, required this.text});
+  const _LibrarySecondaryInfoLine({
+    required this.icon,
+    required this.text,
+    this.loading = false,
+  });
 
   final IconData icon;
   final String text;
+  final bool loading;
 
   @override
   Widget build(BuildContext context) {
@@ -708,7 +727,16 @@ class _LibrarySecondaryInfoLine extends StatelessWidget {
           Icon(icon, size: 12, color: cs.primary),
           const SizedBox(width: 5),
           Expanded(
-            child: MarqueeText(text: text, style: style),
+            child: loading
+                ? Align(
+                    alignment: Alignment.centerLeft,
+                    child: Icon(
+                      Icons.hourglass_top_rounded,
+                      size: 12,
+                      color: cs.primary,
+                    ),
+                  )
+                : MarqueeText(text: text, style: style),
           ),
         ],
       ),

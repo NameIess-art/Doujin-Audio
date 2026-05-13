@@ -193,7 +193,7 @@ class _FloatingGlassPanel extends StatelessWidget {
     this.borderOpacity = 0.42,
     this.shadowOpacity = 0.22,
     this.showTopHighlight = true,
-    this.primaryFillOpacity = 0.22,
+    this.primaryFillOpacity = 0.88,
     this.secondaryFillOpacity = 0.10,
     this.tinyMode = false,
   });
@@ -212,15 +212,17 @@ class _FloatingGlassPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final fillAlpha = isDark ? 0.72 : 0.85;
+    final screenSize = MediaQuery.sizeOf(context);
+    final isSmallWindow = screenSize.width < 450 || screenSize.height < 400;
+    final targetAlpha = isSmallWindow
+        ? (isDark ? 0.96 : 0.98)
+        : (isDark ? 0.92 : 0.94);
     final bgColor = isDark ? cs.surfaceBright : cs.surfaceContainerHighest;
 
     Widget buildPanel() => DecoratedBox(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(radius),
-        color: bgColor.withValues(
-          alpha: (primaryFillOpacity * fillAlpha).clamp(0.0, 0.95),
-        ),
+        color: bgColor.withValues(alpha: targetAlpha),
         border: Border.all(
           color: cs.outlineVariant.withValues(alpha: borderOpacity),
         ),
@@ -273,10 +275,7 @@ class _FloatingGlassPanel extends StatelessWidget {
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(radius),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-        child: buildPanel(),
-      ),
+      child: buildPanel(),
     );
   }
 }

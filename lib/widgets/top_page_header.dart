@@ -113,8 +113,11 @@ class TopPageHeader extends StatelessWidget {
       ),
     );
 
-    final blurTarget = isTransitioning ? 0.0 : (isSmallWindow ? 20.0 : 36.0);
-    final alphaTarget = isTransitioning ? 0.72 : 0.58;
+    final blurTarget = 0.0;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final alphaTarget = isSmallWindow
+        ? (isDark ? 0.96 : 0.98)
+        : (isDark ? 0.92 : 0.94);
 
     return TweenAnimationBuilder<double>(
       tween: Tween<double>(end: blurTarget),

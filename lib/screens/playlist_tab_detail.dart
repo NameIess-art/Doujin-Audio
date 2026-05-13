@@ -307,9 +307,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
               MediaQuery.sizeOf(context).height * dismissProgress;
           final enterOffset =
               (1 - enterProgress) * MediaQuery.sizeOf(context).height;
-          final backdropCurve = Curves.easeInOutCubic.transform(
-            dismissProgress,
-          );
+          final backdropCurve = dismissProgress; // Use linear for backdrop to avoid sudden changes
           final backdropProgress = (enterProgress * (1 - backdropCurve)).clamp(
             0.0,
             1.0,
@@ -327,9 +325,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
               ),
               Positioned.fill(
                 child: IgnorePointer(
-                  child: RepaintBoundary(
-                    child: _SessionDetailBackdrop(progress: backdropProgress),
-                  ),
+                  child: _SessionDetailBackdrop(progress: backdropProgress),
                 ),
               ),
               Opacity(
@@ -368,6 +364,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
               provider: provider,
               coverPathFuture: coverPathFuture,
               slideAnimation: _slideAnimation,
+              dismissAnimation: _dismissController,
               onClose: () async {
                 _saveSubtitlePositionBeforeDismiss();
                 ref
@@ -423,10 +420,8 @@ class _SessionDetailBackdrop extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final blurSigma = lerpDouble(0, 24, progress) ?? 0;
-    final gradientAlpha = lerpDouble(0, 0.8, progress) ?? 0;
-
-    if (blurSigma < 0.1 && gradientAlpha < 0.01) return const SizedBox.shrink();
+    final blurSigma = (lerpDouble(0, 32, progress) ?? 0).clamp(0.0, 32.0);
+    final gradientAlpha = (lerpDouble(0, 0.8, progress) ?? 0).clamp(0.0, 1.0);
 
     return Stack(
       fit: StackFit.expand,
@@ -447,13 +442,12 @@ class _SessionDetailBackdrop extends StatelessWidget {
             ),
           ),
         ),
-        if (blurSigma > 0.1)
-          ClipRect(
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: blurSigma, sigmaY: blurSigma),
-              child: const SizedBox.expand(),
-            ),
+        ClipRect(
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: blurSigma, sigmaY: blurSigma),
+            child: const SizedBox.expand(),
           ),
+        ),
       ],
     );
   }
@@ -464,6 +458,7 @@ class _SessionDetailScaffold extends ConsumerStatefulWidget {
   final AudioProvider provider;
   final Future<String?> coverPathFuture;
   final Animation<Offset> slideAnimation;
+  final Animation<double> dismissAnimation;
   final VoidCallback onClose;
   final void Function(DragUpdateDetails)? onHorizontalDragUpdate;
   final void Function(DragEndDetails)? onHorizontalDragEnd;
@@ -488,6 +483,7 @@ class _SessionDetailScaffold extends ConsumerStatefulWidget {
     this.onVerticalDragEnd,
     this.onVerticalDragCancel,
     this.onSubtitleAnchorComputed,
+    required this.dismissAnimation,
   });
 
   @override
@@ -633,13 +629,22 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                 },
               ),
             ),
-            Positioned.fill(
-              child: RepaintBoundary(
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 32, sigmaY: 32),
-                  child: const SizedBox.expand(),
-                ),
-              ),
+            AnimatedBuilder(
+              animation: widget.dismissAnimation,
+              builder: (context, _) {
+                final dismissProgress = Curves.easeOutCubic.transform(
+                  widget.dismissAnimation.value.clamp(0.0, 1.0),
+                );
+                return Positioned.fill(
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(
+                      sigmaX: 32 * (1 - dismissProgress),
+                      sigmaY: 32 * (1 - dismissProgress),
+                    ),
+                    child: const SizedBox.expand(),
+                  ),
+                );
+              },
             ),
             // Content
             SafeArea(

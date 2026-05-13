@@ -337,13 +337,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
                         child: RepaintBoundary(
                           child: isTinyWindow
                               ? const SizedBox.expand()
-                              : BackdropFilter(
-                                  filter: ImageFilter.blur(
-                                    sigmaX: isSmallWindow ? 4.0 : 7.0,
-                                    sigmaY: isSmallWindow ? 4.0 : 7.0,
-                                  ),
-                                  child: const SizedBox.expand(),
-                                ),
+                                  : const SizedBox.expand(),
                         ),
                       ),
                     ),

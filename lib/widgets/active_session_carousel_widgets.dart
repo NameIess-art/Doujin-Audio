@@ -48,41 +48,50 @@ class _ActiveSessionCard extends StatelessWidget {
       label: displayName,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(cardRadius),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: blurSigma, sigmaY: blurSigma),
-          child: Material(
-            color: Colors.transparent,
-            child: InkWell(
-              borderRadius: BorderRadius.circular(cardRadius),
-              onTap: onOpen,
-              child: Ink(
-                height: 74,
-                decoration: BoxDecoration(
-                  color: (isDark ? cs.surfaceBright : cs.surfaceContainerHighest)
-                      .withValues(alpha: isSmallWindow 
-                          ? (isDark ? 0.88 : 0.92) 
-                          : (isDark ? 0.55 : 0.75)),
-                  borderRadius: BorderRadius.circular(cardRadius),
-                  boxShadow: isTinyWindow ? null : [
-                    BoxShadow(
-                      color: cs.shadow.withValues(
-                        alpha: isPlaying ? 0.26 : 0.18,
-                      ),
-                      blurRadius: isPlaying ? 34 : 26,
-                      spreadRadius: -7,
-                      offset: const Offset(0, 18),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(cardRadius),
+            onTap: onOpen,
+            child: Ink(
+              height: 74,
+              decoration: BoxDecoration(
+                color: (isDark ? cs.surfaceBright : cs.surfaceContainerHighest)
+                    .withValues(
+                      alpha:
+                          isSmallWindow
+                              ? (isDark ? 0.96 : 0.98)
+                              : (isDark ? 0.92 : 0.94),
                     ),
-                    BoxShadow(
-                      color: cs.primary.withValues(
-                        alpha: isPlaying ? 0.08 : 0.04,
-                      ),
-                      blurRadius: 18,
-                      spreadRadius: -10,
-                      offset: const Offset(0, 8),
-                    ),
-                  ],
-                ),
-                child: _buildCardContent(context, cs, isPlaying, view, displayName),
+                borderRadius: BorderRadius.circular(cardRadius),
+                boxShadow:
+                    isTinyWindow
+                        ? null
+                        : [
+                          BoxShadow(
+                            color: cs.shadow.withValues(
+                              alpha: isPlaying ? 0.26 : 0.18,
+                            ),
+                            blurRadius: isPlaying ? 34 : 26,
+                            spreadRadius: -7,
+                            offset: const Offset(0, 18),
+                          ),
+                          BoxShadow(
+                            color: cs.primary.withValues(
+                              alpha: isPlaying ? 0.08 : 0.04,
+                            ),
+                            blurRadius: 18,
+                            spreadRadius: -10,
+                            offset: const Offset(0, 8),
+                          ),
+                        ],
+              ),
+              child: _buildCardContent(
+                context,
+                cs,
+                isPlaying,
+                view,
+                displayName,
               ),
             ),
           ),

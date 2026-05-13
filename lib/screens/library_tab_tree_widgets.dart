@@ -875,14 +875,14 @@ class _SingleAudioFileCardContent extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              for (final line in lines) ...[
-                const SizedBox(height: 2),
+              for (var i = 0; i < lines.length; i++) ...[
+                const SizedBox(height: 6),
                 _LibraryDetailInfoLine(
-                  label: line.label,
-                  text: line.text,
+                  label: lines[i].label,
+                  text: lines[i].text,
                   style: infoStyle,
                   loading: false,
-                  lines: line.lines,
+                  lines: lines[i].lines,
                   reserveLineHeight: false,
                 ),
               ],

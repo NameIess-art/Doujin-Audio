@@ -2,6 +2,7 @@ import 'package:path/path.dart' as path;
 
 import '../models/library_node.dart';
 import '../models/music_track.dart';
+import 'natural_sort.dart';
 import 'path_matcher.dart';
 import 'path_display.dart';
 
@@ -39,11 +40,9 @@ class LibraryOrganizer {
   }
 
   int compareTracks(MusicTrack a, MusicTrack b) {
-    final groupResult = a.groupTitle.toLowerCase().compareTo(
-      b.groupTitle.toLowerCase(),
-    );
+    final groupResult = compareNatural(a.groupTitle, b.groupTitle);
     if (groupResult != 0) return groupResult;
-    return a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase());
+    return compareNatural(a.displayName, b.displayName);
   }
 
   LibraryTreeSnapshot buildTree({
@@ -150,7 +149,7 @@ class LibraryOrganizer {
       }
       if (aIndex != null) return -1;
       if (bIndex != null) return 1;
-      return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+      return compareNatural(a.name, b.name);
     });
 
     return LibraryTreeSnapshot(
@@ -173,7 +172,7 @@ class LibraryOrganizer {
     folder.children.sort((a, b) {
       if (a is FolderNode && b is TrackNode) return -1;
       if (a is TrackNode && b is FolderNode) return 1;
-      return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+      return compareNatural(a.name, b.name);
     });
     for (final child in folder.children) {
       if (child is FolderNode) _sortFolder(child);

@@ -31,6 +31,7 @@ extension AudioProviderAudioDetails on AudioProvider {
   Future<AudioDetailSaveResult> saveAudioDetail(AudioDetail detail) async {
     final result = await _audioDetailRepository.save(detail);
     _markAudioDetailDataChanged();
+    _applyAudioDetailToCategorySnapshot(result.detail);
     _notifyListeners();
     return result;
   }
@@ -51,6 +52,7 @@ extension AudioProviderAudioDetails on AudioProvider {
     );
     if (result != null) {
       _markAudioDetailDataChanged();
+      _applyAudioDetailToCategorySnapshot(result.detail);
       _notifyListeners();
     }
     return result;

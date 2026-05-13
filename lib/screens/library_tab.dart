@@ -17,6 +17,7 @@ import '../i18n/app_language_provider.dart';
 import '../providers/audio_provider.dart';
 import '../providers/audio_provider_riverpod.dart';
 import '../services/audio_state_services.dart';
+import '../services/natural_sort.dart';
 import '../services/path_display.dart';
 import '../services/path_matcher.dart';
 import '../services/platform_channels.dart';
@@ -87,6 +88,12 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
 
   final ScrollController _scrollController = ScrollController();
   ValueListenable<int?>? _scrollToTopTabListenable;
+
+  double get _headerControlsFullHeight =>
+      _categoryType == AudioLibraryCategoryType.all ? 86.0 : 46.0;
+
+  String get _effectiveSearchQuery =>
+      _categoryType == AudioLibraryCategoryType.all ? _searchQuery : '';
 
   void _setLocalState(VoidCallback fn) => setState(fn);
 
@@ -166,8 +173,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   void _measureHeader() {
     final box = _headerKey.currentContext?.findRenderObject() as RenderBox?;
     if (box != null && mounted) {
-      const double headerControlsFullHeight = 86.0;
-      final h = box.size.height - headerControlsFullHeight;
+      final h = box.size.height - _headerControlsFullHeight;
       if (h > 0 && h != _headerHeight) {
         setState(() => _headerHeight = h);
       }
@@ -188,6 +194,9 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     super.build(context);
     final i18n = context.watch<AppLanguageProvider>();
     final provider = ref.read(audioProviderFacadeProvider);
+    final detailRevision = context.select<AudioProvider, int>(
+      (value) => value.audioDetailRevision,
+    );
     unawaited(provider.audioLibraryCategorySnapshot());
     final sliceState =
         ref.watch(libraryStateProvider).valueOrNull ?? const LibraryState();
@@ -220,14 +229,14 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     );
     final filteredResult = _searchIndex.resolve(
       tree: listState.rawTree,
-      query: _searchQuery,
+      query: _effectiveSearchQuery,
       structureRevision: listState.structureRevision,
     );
     final tree = filteredResult.tree;
     final matchCount = filteredResult.matchCount;
     final bottomInset = MobileOverlayInset.of(context);
 
-    const double headerControlsFullHeight = 86.0;
+    final headerControlsFullHeight = _headerControlsFullHeight;
     final topTotalHeight = _headerHeight + 4;
     final headerContentHeight = topTotalHeight + headerControlsFullHeight;
     // Remove the extra 96px to make content flush with the bottom dock.
@@ -240,7 +249,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     final hasLibrary = listState.hasLibrary;
     final showLibrarySkeleton =
         !hasLibrary &&
-        _searchQuery.isEmpty &&
+        _effectiveSearchQuery.isEmpty &&
         listState.isScanning &&
         libraryHeaderState.hasWatchedSources;
     final canPullRefresh = listState.canPullRefresh;
@@ -254,7 +263,8 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
           mainAxisSize: MainAxisSize.min,
           children: [
             _buildLibraryCategoryTabs(i18n),
-            _buildSearchBar(i18n, matchCount, libraryHeaderState.audioCount),
+            if (_categoryType == AudioLibraryCategoryType.all)
+              _buildSearchBar(i18n, matchCount, libraryHeaderState.audioCount),
           ],
         ),
       );
@@ -266,12 +276,12 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
       }
       final node = tree[index];
       final item = RepaintBoundary(
-        child: _searchQuery.isNotEmpty
+        child: _effectiveSearchQuery.isNotEmpty
             ? _LibraryTreeItem(
                 key: ValueKey(node.path),
                 node: node,
                 initiallyExpanded: true,
-                searchQuery: _searchQuery,
+                searchQuery: _effectiveSearchQuery,
               )
             : _LibraryTreeItem(key: ValueKey(node.path), node: node),
       );
@@ -287,15 +297,15 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
       // Padding adjustment for restricted Positioned viewport.
       // We expand the Positioned by 80px to pre-render items under the glass,
       // so we add 80px to the internal padding to keep the content visually in place.
-      const relativeTop = 150 + 4 + headerControlsFullHeight;
+      final relativeTop = 150.0 + 4 + headerControlsFullHeight;
       const relativeBottom = 350.0;
 
-      if (_searchQuery.isNotEmpty) {
+      if (_effectiveSearchQuery.isNotEmpty) {
         return ListView(
           physics: const AlwaysScrollableScrollPhysics(
             parent: BouncingScrollPhysics(),
           ),
-          padding: const EdgeInsets.fromLTRB(
+          padding: EdgeInsets.fromLTRB(
             16,
             relativeTop,
             16,
@@ -319,7 +329,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         );
       }
       if (showLibrarySkeleton) {
-        return const _LibraryLoadingSkeleton(
+        return _LibraryLoadingSkeleton(
           bottomInset: relativeBottom,
           topInset: relativeTop,
         );
@@ -365,7 +375,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
             !_refreshTriggeredInCurrentScroll &&
             canPullRefresh &&
             !listState.isScanning &&
-            _searchQuery.isEmpty) {
+            _effectiveSearchQuery.isEmpty) {
           _refreshTriggeredInCurrentScroll = true;
           unawaited(HapticFeedback.mediumImpact());
           _refreshIndicatorKey.currentState?.show();
@@ -396,12 +406,13 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                     bottomInset: listBottomInset,
                     cacheExtent: listCacheExtent,
                     canPullRefresh: canPullRefresh,
+                    detailRevision: detailRevision,
                   )
-                : _searchQuery.isNotEmpty
+                : _effectiveSearchQuery.isNotEmpty
                 ? ListView.builder(
                     key: const ValueKey('search_results_list'),
                     controller: _scrollController,
-                    padding: const EdgeInsets.fromLTRB(
+                    padding: EdgeInsets.fromLTRB(
                       16,
                       4 + headerControlsFullHeight + 150,
                       16,
@@ -440,7 +451,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                         // Clip.none allows items to be visible when scrolled into the
                         // "empty" space above/below the restricted Positioned area.
                         clipBehavior: Clip.none,
-                        padding: const EdgeInsets.fromLTRB(
+                        padding: EdgeInsets.fromLTRB(
                           16,
                           4 + headerControlsFullHeight + 150,
                           16,

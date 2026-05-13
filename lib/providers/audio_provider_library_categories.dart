@@ -52,6 +52,59 @@ extension AudioProviderLibraryCategories on AudioProvider {
     _audioLibraryCategorySnapshotFuture = null;
   }
 
+  void _applyAudioDetailToCategorySnapshot(AudioDetail detail) {
+    final cached = _audioLibraryCategorySnapshot;
+    if (cached == null) return;
+
+    final targetKey = AudioLibraryCategorySnapshot.targetKey(detail.target);
+    var changed = false;
+    final updatedEntries = cached.entries
+        .map((entry) {
+          if (AudioLibraryCategorySnapshot.targetKey(entry.target) !=
+              targetKey) {
+            return entry;
+          }
+          changed = true;
+          return AudioLibraryCategoryEntry(
+            target: entry.target,
+            title: entry.title,
+            path: entry.path,
+            isFolder: entry.isFolder,
+            detail: detail,
+            tracks: entry.tracks,
+          );
+        })
+        .toList(growable: false);
+    if (!changed) return;
+
+    final tagFrequencies = <String, int>{};
+    final voiceActorFrequencies = <String, int>{};
+    final circleFrequencies = <String, int>{};
+    for (final entry in updatedEntries) {
+      _countCategoryTerms(
+        entry,
+        tagFrequencies,
+        voiceActorFrequencies,
+        circleFrequencies,
+      );
+    }
+
+    _audioLibraryCategorySnapshot = AudioLibraryCategorySnapshot(
+      entries: List<AudioLibraryCategoryEntry>.unmodifiable(updatedEntries),
+      tagTerms: AudioLibraryCategorySnapshot.sortTermsByFrequency(
+        tagFrequencies,
+      ),
+      voiceActorTerms: AudioLibraryCategorySnapshot.sortTermsByFrequency(
+        voiceActorFrequencies,
+      ),
+      circleTerms: AudioLibraryCategorySnapshot.sortTermsByFrequency(
+        circleFrequencies,
+      ),
+      structureRevision: _libraryService.structureRevision,
+      detailRevision: _audioDetailRevision,
+    );
+  }
+
   Future<AudioLibraryCategorySnapshot> _buildAudioLibraryCategorySnapshot({
     required int structureRevision,
     required int detailRevision,

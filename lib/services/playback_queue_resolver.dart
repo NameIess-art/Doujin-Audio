@@ -69,10 +69,10 @@ class PlaybackQueueResolver {
         final next = (idx + (forward ? 1 : -1) + scope.length) % scope.length;
         return scope[next].path;
       case SessionLoopMode.crossSequential:
-        return _crossSequentialPath(
-          currentTrack: currentTrack,
+        return _adjacentPathInLibraryOrder(
+          currentPath: currentTrack.path,
           forward: forward,
-          tracksByGroup: tracksByGroup,
+          sortedLibraryTrackPaths: sortedLibraryTrackPaths,
         );
       case SessionLoopMode.folderRandom:
         if (forward) {
@@ -109,44 +109,17 @@ class PlaybackQueueResolver {
     return candidate;
   }
 
-  String _crossSequentialPath({
-    required MusicTrack currentTrack,
+  String _adjacentPathInLibraryOrder({
+    required String currentPath,
     required bool forward,
-    required Map<String, List<MusicTrack>> tracksByGroup,
+    required List<String> sortedLibraryTrackPaths,
   }) {
-    final groupEntries = tracksByGroup.entries.toList()
-      ..sort((a, b) {
-        final titleA = a.value.first.groupTitle.toLowerCase();
-        final titleB = b.value.first.groupTitle.toLowerCase();
-        return titleA.compareTo(titleB);
-      });
-    if (groupEntries.isEmpty) return currentTrack.path;
-    final currentGroupIdx = groupEntries.indexWhere(
-      (entry) => entry.key == currentTrack.groupKey,
-    );
-    if (currentGroupIdx < 0) {
-      return groupEntries.first.value.first.path;
-    }
-
-    final currentGroup = groupEntries[currentGroupIdx].value;
-    final trackIdx = currentGroup.indexWhere(
-      (track) => track.path == currentTrack.path,
-    );
-    if (trackIdx < 0) return currentGroup.first.path;
-
-    if (forward) {
-      if (trackIdx < currentGroup.length - 1) {
-        return currentGroup[trackIdx + 1].path;
-      }
-      final nextGroupIdx = (currentGroupIdx + 1) % groupEntries.length;
-      return groupEntries[nextGroupIdx].value.first.path;
-    }
-
-    if (trackIdx > 0) {
-      return currentGroup[trackIdx - 1].path;
-    }
-    final prevGroupIdx =
-        (currentGroupIdx - 1 + groupEntries.length) % groupEntries.length;
-    return groupEntries[prevGroupIdx].value.last.path;
+    if (sortedLibraryTrackPaths.isEmpty) return currentPath;
+    final currentIndex = sortedLibraryTrackPaths.indexOf(currentPath);
+    if (currentIndex < 0) return sortedLibraryTrackPaths.first;
+    final nextIndex =
+        (currentIndex + (forward ? 1 : -1) + sortedLibraryTrackPaths.length) %
+        sortedLibraryTrackPaths.length;
+    return sortedLibraryTrackPaths[nextIndex];
   }
 }

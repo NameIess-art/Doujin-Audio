@@ -542,7 +542,15 @@ void main() {
           ).copyWith(rjCode: 'RJ222222'),
         );
 
-        expect(provider.audioLibraryCategorySnapshotSync, same(firstSnapshot));
+        final refreshedSyncSnapshot = provider.audioLibraryCategorySnapshotSync;
+        expect(refreshedSyncSnapshot, isNotNull);
+        expect(refreshedSyncSnapshot, isNot(same(firstSnapshot)));
+        expect(
+          refreshedSyncSnapshot
+              ?.detailFor(AudioDetailTarget.singleAudioFile(source.path))
+              ?.rjCode,
+          'RJ222222',
+        );
 
         final refreshedSnapshot = await provider.audioLibraryCategorySnapshot();
         expect(

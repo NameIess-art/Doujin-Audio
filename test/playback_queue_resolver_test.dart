@@ -62,6 +62,20 @@ void main() {
     );
   });
 
+  test('cross sequential follows provided library order', () {
+    expect(
+      resolver.resolveNextPath(
+        currentTrack: b1,
+        forward: true,
+        loopMode: SessionLoopMode.crossSequential,
+        sortedLibraryTrackPaths: const <String>['b1', 'a2', 'a1'],
+        tracksByGroup: tracksByGroup,
+        nextInt: (_) => 0,
+      ),
+      'a2',
+    );
+  });
+
   test('cross random retries current track', () {
     expect(
       resolve(

@@ -80,7 +80,7 @@ extension _LibraryTabCategoryView on _LibraryTabState {
     AudioLibraryCategorySnapshot snapshot,
   ) {
     final selectedTerms = _selectedTermsForCurrentCategory;
-    final normalizedQuery = _searchQuery.trim().toLowerCase();
+    final normalizedQuery = _effectiveSearchQuery.trim().toLowerCase();
     return snapshot.entries
         .where((entry) {
           if (selectedTerms.isNotEmpty) {
@@ -103,10 +103,12 @@ extension _LibraryTabCategoryView on _LibraryTabState {
     required double bottomInset,
     required double cacheExtent,
     required bool canPullRefresh,
+    required int detailRevision,
   }) {
     final topPadding = 4 + headerControlsFullHeight + 150;
     const bottomPadding = 350.0;
     return FutureBuilder<AudioLibraryCategorySnapshot>(
+      key: ValueKey('category_future_${_categoryType.name}_$detailRevision'),
       future: provider.audioLibraryCategorySnapshot(),
       initialData: provider.audioLibraryCategorySnapshotSync,
       builder: (context, snapshotState) {

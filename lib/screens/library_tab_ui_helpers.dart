@@ -34,8 +34,12 @@ extension _LibraryTabUiHelpers on _LibraryTabState {
                   selected: _categoryType == items[index].type,
                   onTap: () {
                     if (_categoryType == items[index].type) return;
+                    FocusScope.of(context).unfocus();
                     _jumpLibraryListToTop();
                     _setLocalState(() => _categoryType = items[index].type);
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (mounted) _measureHeader();
+                    });
                   },
                 ),
               ),

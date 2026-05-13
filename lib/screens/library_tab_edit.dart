@@ -66,7 +66,12 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage> {
     } catch (_) {}
 
     final sortedAudioFiles = audioFiles.toList(growable: false)
-      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+      ..sort(
+        (a, b) => compareNatural(
+          path.basenameWithoutExtension(a),
+          path.basenameWithoutExtension(b),
+        ),
+      );
     if (!mounted) return;
     setState(() {
       _diskAudioFilePaths = sortedAudioFiles;
@@ -324,10 +329,10 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage> {
     }.toList(growable: false);
 
     tracks.sort(
-      (a, b) => path
-          .basenameWithoutExtension(a)
-          .toLowerCase()
-          .compareTo(path.basenameWithoutExtension(b).toLowerCase()),
+      (a, b) => compareNatural(
+        path.basenameWithoutExtension(a),
+        path.basenameWithoutExtension(b),
+      ),
     );
     return tracks;
   }
@@ -436,7 +441,7 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage> {
       if (a is _LibraryEditTrackTreeNode && b is _LibraryEditFolderTreeNode) {
         return 1;
       }
-      return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+      return compareNatural(a.name, b.name);
     });
     for (final node in nodes) {
       if (node is _LibraryEditFolderTreeNode) {

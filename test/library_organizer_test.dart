@@ -42,17 +42,31 @@ void main() {
   test('buildTree groups folders under watched root and sorts tracks', () {
     final snapshot = organizer.buildTree(
       tracks: <MusicTrack>[
-        track('/library/root/b/02.mp3', groupKey: '/library/root/b'),
-        track('/library/root/a/01.mp3', groupKey: '/library/root/a'),
+        track(
+          '/library/root/Album 10/10.mp3',
+          groupKey: '/library/root/Album 10',
+        ),
+        track(
+          '/library/root/Album 2/02.mp3',
+          groupKey: '/library/root/Album 2',
+        ),
+        track(
+          '/library/root/Album 1/01.mp3',
+          groupKey: '/library/root/Album 1',
+        ),
       ],
       watchedFolders: const <String>['/library/root'],
       nodeOrder: const <String>[],
     );
 
-    expect(snapshot.leafFolderCount, 2);
+    expect(snapshot.leafFolderCount, 3);
     final root = snapshot.tree.single as FolderNode;
     expect(root.path, '/library/root');
-    expect(root.children.map((node) => node.name), <String>['a', 'b']);
+    expect(root.children.map((node) => node.name), <String>[
+      'Album 1',
+      'Album 2',
+      'Album 10',
+    ]);
   });
 
   test('content tree root uses decoded display name', () {

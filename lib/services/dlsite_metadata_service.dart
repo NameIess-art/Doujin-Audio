@@ -184,7 +184,7 @@ class DlsiteMetadataService {
   void _applyHeaders(HttpClientRequest request) {
     request.headers.set(
       HttpHeaders.userAgentHeader,
-      'Mozilla/5.0 NamelessAudio/0.8.1',
+      'Mozilla/5.0 NamelessAudio/0.8.5',
     );
     request.headers.set(
       HttpHeaders.acceptHeader,

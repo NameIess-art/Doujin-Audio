@@ -46,9 +46,8 @@ class _FolderNodeWidget extends StatefulWidget {
 }
 
 class _FolderNodeWidgetState extends State<_FolderNodeWidget> {
-  static const double _rootFolderTileHeight = 82;
+  static const double _rootFolderTileHeight = 160;
   static const double _childFolderTileHeight = 62;
-  static const double _rootFolderTitleBlockHeight = 72;
   static const double _childFolderTitleBlockHeight = 50;
 
   final ExpansibleController _expansionController = ExpansibleController();
@@ -136,12 +135,6 @@ class _FolderNodeWidgetState extends State<_FolderNodeWidget> {
           )
         : null;
     final isRootDetailLoading = isRootFolder && categorySnapshot == null;
-    final rootMetaText = rootDetail?.rjCode.trim().isNotEmpty == true
-        ? rootDetail!.rjCode.trim()
-        : i18n.tr('audio_detail_empty');
-    final rootCountText = i18n.tr('audio_count', {
-      'count': widget.folder.totalTrackCount,
-    });
 
     Widget content = Theme(
       data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
@@ -163,130 +156,101 @@ class _FolderNodeWidgetState extends State<_FolderNodeWidget> {
         collapsedShape: isRootFolder
             ? RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))
             : const RoundedRectangleBorder(),
-        tilePadding: EdgeInsets.fromLTRB(isRootFolder ? 12 : 6, 2, 4, 2),
-        childrenPadding: EdgeInsets.fromLTRB(isRootFolder ? 12 : 16, 0, 0, 0),
-        title: Row(
-          children: [
-            if (isRootFolder) ...[
-              _LibraryCoverThumbnail(
-                folderPath: widget.folder.path,
-                title: widget.folder.name,
-              ),
-              const SizedBox(width: 14),
-            ] else ...[
-              Icon(
-                _expanded ? Icons.folder_open_rounded : Icons.folder_rounded,
-                size: 20,
-                color: cs.primary.withValues(alpha: 0.8),
-              ),
-              const SizedBox(width: 10),
-            ],
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  SizedBox(
-                    height: isRootFolder
-                        ? _rootFolderTitleBlockHeight
-                        : _childFolderTitleBlockHeight,
-                    child: isRootFolder
-                        ? Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              _LibraryTwoLineMarqueeText(
-                                text: widget.folder.name,
-                                style:
-                                    Theme.of(
-                                      context,
-                                    ).textTheme.titleMedium?.copyWith(
-                                      fontWeight: FontWeight.w900,
-                                      fontSize: 14,
-                                      height: 1.06,
-                                      color: cs.onSurface,
-                                    ) ??
-                                    const TextStyle(),
-                              ),
-                              const SizedBox(height: 5),
-                              _LibrarySecondaryInfoLine(
-                                icon: Icons.confirmation_number_rounded,
-                                text: rootMetaText,
-                                loading: isRootDetailLoading,
-                              ),
-                              const SizedBox(height: 4),
-                              _LibraryTertiaryInfoLine(
-                                icon: Icons.library_music_rounded,
-                                text: rootCountText,
-                              ),
-                            ],
-                          )
-                        : Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              _HighlightedText(
-                                text: widget.folder.name,
-                                query: widget.searchQuery,
-                                style:
-                                    Theme.of(
-                                      context,
-                                    ).textTheme.titleMedium?.copyWith(
-                                      fontWeight: FontWeight.w700,
-                                      fontSize: 13,
-                                      height: 1.06,
-                                      color: cs.onSurface.withValues(
-                                        alpha: 0.9,
-                                      ),
-                                    ) ??
-                                    const TextStyle(),
-                              ),
-                            ],
-                          ),
-                  ),
-                ],
-              ),
-            ),
-          ],
+        showTrailingIcon: !isRootFolder,
+        tilePadding: EdgeInsets.fromLTRB(
+          isRootFolder ? 12 : 6,
+          2,
+          isRootFolder ? 12 : 4,
+          2,
         ),
-        trailing: SizedBox(
-          width: 62,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              IconButton(
-                onPressed: () => _playFolder(context, provider),
-                visualDensity: VisualDensity.compact,
-                tooltip: i18n.tr('play'),
-                style: IconButton.styleFrom(
-                  foregroundColor: cs.primary,
-                  minimumSize: const Size(40, 44),
-                  maximumSize: const Size(40, 44),
-                  padding: EdgeInsets.zero,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
-                icon: const Icon(Icons.add_circle_rounded, size: 25),
-              ),
-              const SizedBox(width: 2),
-              if (hasChildren)
-                Padding(
-                  padding: const EdgeInsets.only(right: 6),
-                  child: IgnorePointer(
-                    child: AnimatedRotation(
-                      turns: _expanded ? 0.5 : 0,
-                      duration: const Duration(milliseconds: 180),
-                      curve: Curves.easeOutCubic,
-                      child: Icon(
-                        Icons.expand_more_rounded,
-                        color: cs.onSurfaceVariant,
-                        size: 20,
+        childrenPadding: EdgeInsets.fromLTRB(isRootFolder ? 12 : 16, 0, 0, 0),
+        title: isRootFolder
+            ? _RootFolderCardContent(
+                folderPath: widget.folder.path,
+                folderName: widget.folder.name,
+                detail: rootDetail,
+                detailLoading: isRootDetailLoading,
+                expanded: _expanded,
+                hasChildren: hasChildren,
+                onPlay: () => _playFolder(context, provider),
+              )
+            : Row(
+                children: [
+                  Icon(
+                    _expanded
+                        ? Icons.folder_open_rounded
+                        : Icons.folder_rounded,
+                    size: 20,
+                    color: cs.primary.withValues(alpha: 0.8),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: SizedBox(
+                      height: _childFolderTitleBlockHeight,
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _HighlightedText(
+                            text: widget.folder.name,
+                            query: widget.searchQuery,
+                            style:
+                                Theme.of(
+                                  context,
+                                ).textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 13,
+                                  height: 1.06,
+                                  color: cs.onSurface.withValues(alpha: 0.9),
+                                ) ??
+                                const TextStyle(),
+                          ),
+                        ],
                       ),
                     ),
                   ),
+                ],
+              ),
+        trailing: isRootFolder
+            ? null
+            : SizedBox(
+                width: 62,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    IconButton(
+                      onPressed: () => _playFolder(context, provider),
+                      visualDensity: VisualDensity.compact,
+                      tooltip: i18n.tr('play'),
+                      style: IconButton.styleFrom(
+                        foregroundColor: cs.primary,
+                        minimumSize: const Size(40, 44),
+                        maximumSize: const Size(40, 44),
+                        padding: EdgeInsets.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      icon: const Icon(Icons.add_circle_rounded, size: 25),
+                    ),
+                    const SizedBox(width: 2),
+                    if (hasChildren)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 6),
+                        child: IgnorePointer(
+                          child: AnimatedRotation(
+                            turns: _expanded ? 0.5 : 0,
+                            duration: const Duration(milliseconds: 180),
+                            curve: Curves.easeOutCubic,
+                            child: Icon(
+                              Icons.expand_more_rounded,
+                              color: cs.onSurfaceVariant,
+                              size: 20,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
-            ],
-          ),
-        ),
+              ),
         children: widget.folder.children
             .map(
               (childNode) => Padding(
@@ -316,6 +280,7 @@ class _FolderNodeWidgetState extends State<_FolderNodeWidget> {
       removeTooltip: i18n.tr('remove_audio_folder'),
       secondaryActionLabel: i18n.tr('audio_detail'),
       secondaryActionTooltip: i18n.tr('audio_detail'),
+      verticalActions: true,
       onSecondaryAction: () => unawaited(
         showAudioDetailSheet(
           context,
@@ -549,10 +514,15 @@ class _TrackNodeWidget extends ConsumerWidget {
 }
 
 class _LibraryCoverThumbnail extends ConsumerWidget {
-  const _LibraryCoverThumbnail({required this.folderPath, required this.title});
+  const _LibraryCoverThumbnail({
+    required this.folderPath,
+    required this.title,
+    this.width = 82,
+  });
 
   final String folderPath;
   final String title;
+  final double width;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -584,9 +554,10 @@ class _LibraryCoverThumbnail extends ConsumerWidget {
       );
     }
 
+    final height = width * 0.8;
     return SizedBox(
-      width: 82,
-      height: 66,
+      width: width,
+      height: height,
       child: Padding(
         padding: EdgeInsets.zero,
         child: ClipRRect(
@@ -613,7 +584,7 @@ class _LibraryCoverThumbnail extends ConsumerWidget {
               return Image(
                 image: resizeFileImageIfNeeded(
                   path: coverPath,
-                  cacheWidth: (82 * dpr).round(),
+                  cacheWidth: (width * dpr).round(),
                 ),
                 fit: BoxFit.cover,
                 gaplessPlayback: true,
@@ -625,6 +596,231 @@ class _LibraryCoverThumbnail extends ConsumerWidget {
       ),
     );
   }
+}
+
+class _RootFolderCardContent extends StatelessWidget {
+  const _RootFolderCardContent({
+    required this.folderPath,
+    required this.folderName,
+    required this.detail,
+    required this.detailLoading,
+    required this.expanded,
+    required this.hasChildren,
+    required this.onPlay,
+  });
+
+  final String folderPath;
+  final String folderName;
+  final AudioDetail? detail;
+  final bool detailLoading;
+  final bool expanded;
+  final bool hasChildren;
+  final VoidCallback onPlay;
+
+  @override
+  Widget build(BuildContext context) {
+    final i18n = context.watch<AppLanguageProvider>();
+    final cs = Theme.of(context).colorScheme;
+    final titleStyle =
+        Theme.of(context).textTheme.titleMedium?.copyWith(
+          fontWeight: FontWeight.w900,
+          fontSize: 14,
+          height: 1.06,
+          color: cs.onSurface,
+        ) ??
+        const TextStyle();
+    final infoStyle =
+        Theme.of(context).textTheme.labelSmall?.copyWith(
+          fontWeight: FontWeight.w700,
+          fontSize: 10,
+          height: 1.05,
+          color: cs.onSurface.withValues(alpha: 0.82),
+        ) ??
+        TextStyle(
+          fontWeight: FontWeight.w700,
+          fontSize: 10,
+          height: 1.05,
+          color: cs.onSurface.withValues(alpha: 0.82),
+        );
+    final emptyText = i18n.tr('audio_detail_empty');
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const infoBlockHeight = 96.0;
+        const titleBlockHeight = 38.0;
+        const coverWidth = infoBlockHeight * 1.25;
+        return SizedBox(
+          height: 140,
+          child: Column(
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _LibraryCoverThumbnail(
+                    folderPath: folderPath,
+                    title: folderName,
+                    width: coverWidth,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: SizedBox(
+                      height: infoBlockHeight,
+                      child: Column(
+                        children: [
+                          _LibraryDetailInfoLine(
+                            label: 'RJ',
+                            text: _nonEmpty(detail?.rjCode, emptyText),
+                            style: infoStyle,
+                            loading: detailLoading,
+                          ),
+                          const SizedBox(height: 4),
+                          _LibraryDetailInfoLine(
+                            label: 'CV',
+                            text: _joinedOrEmpty(
+                              detail?.voiceActors,
+                              emptyText,
+                            ),
+                            style: infoStyle,
+                            loading: detailLoading,
+                          ),
+                          const SizedBox(height: 4),
+                          _LibraryDetailInfoLine(
+                            label: '社团',
+                            text: _nonEmpty(detail?.circleName, emptyText),
+                            style: infoStyle,
+                            loading: detailLoading,
+                          ),
+                          const SizedBox(height: 4),
+                          _LibraryDetailInfoLine(
+                            label: '标签',
+                            text: _joinedOrEmpty(detail?.tags, emptyText),
+                            style: infoStyle,
+                            loading: detailLoading,
+                            lines: 2,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              SizedBox(
+                height: titleBlockHeight,
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: _LibraryTwoLineMarqueeText(
+                        text: folderName,
+                        style: titleStyle,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    IconButton(
+                      onPressed: onPlay,
+                      visualDensity: VisualDensity.compact,
+                      tooltip: i18n.tr('play'),
+                      style: IconButton.styleFrom(
+                        foregroundColor: cs.primary,
+                        minimumSize: const Size(40, 44),
+                        maximumSize: const Size(40, 44),
+                        padding: EdgeInsets.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      icon: const Icon(Icons.add_circle_rounded, size: 25),
+                    ),
+                    if (hasChildren)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 2),
+                        child: IgnorePointer(
+                          child: AnimatedRotation(
+                            turns: expanded ? 0.5 : 0,
+                            duration: const Duration(milliseconds: 180),
+                            curve: Curves.easeOutCubic,
+                            child: Icon(
+                              Icons.expand_more_rounded,
+                              color: cs.onSurfaceVariant,
+                              size: 21,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _LibraryDetailInfoLine extends StatelessWidget {
+  const _LibraryDetailInfoLine({
+    required this.label,
+    required this.text,
+    required this.style,
+    required this.loading,
+    this.lines = 1,
+  });
+
+  final String label;
+  final String text;
+  final TextStyle style;
+  final bool loading;
+  final int lines;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final lineCount = lines.clamp(1, 2);
+    return SizedBox(
+      height: lineCount == 2 ? 36 : 16,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 28,
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.clip,
+              style: style.copyWith(
+                color: cs.primary,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          const SizedBox(width: 5),
+          Expanded(
+            child: loading
+                ? Align(
+                    alignment: Alignment.centerLeft,
+                    child: Icon(
+                      Icons.hourglass_top_rounded,
+                      size: 12,
+                      color: cs.primary,
+                    ),
+                  )
+                : lineCount == 2
+                ? _LibraryTwoLineMarqueeText(text: text, style: style)
+                : MarqueeText(text: text, style: style, scrollSpeed: 24),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+String _nonEmpty(String? value, String fallback) {
+  final text = value?.trim() ?? '';
+  return text.isEmpty ? fallback : text;
+}
+
+String _joinedOrEmpty(Iterable<String>? values, String fallback) {
+  final text = AudioDetail.normalizeList(values ?? const <String>[]).join('，');
+  return text.isEmpty ? fallback : text;
 }
 
 class _LibraryMarqueeLine extends StatelessWidget {

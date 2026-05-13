@@ -18,6 +18,7 @@ class SwipeRevealCard extends StatefulWidget {
     this.secondaryActionLabel,
     this.secondaryActionTooltip,
     this.secondaryActionIcon = Icons.info_outline_rounded,
+    this.verticalActions = false,
   });
 
   final Widget child;
@@ -31,6 +32,7 @@ class SwipeRevealCard extends StatefulWidget {
   final String? secondaryActionLabel;
   final String? secondaryActionTooltip;
   final IconData secondaryActionIcon;
+  final bool verticalActions;
 
   @override
   State<SwipeRevealCard> createState() => _SwipeRevealCardState();
@@ -52,7 +54,8 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
   bool _dragRejected = false;
 
   bool get _hasSecondaryAction => widget.onSecondaryAction != null;
-  double get _actionWidth => _hasSecondaryAction ? 144 : 72;
+  double get _actionWidth =>
+      _hasSecondaryAction ? (widget.verticalActions ? 76 : 144) : 72;
   bool get _isOpen => _revealedWidth > (_actionWidth * 0.5);
 
   @override
@@ -204,7 +207,9 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                         child: Padding(
                           padding: EdgeInsets.only(
                             left: 18,
-                            right: _hasSecondaryAction ? 158 : 86,
+                            right: _hasSecondaryAction
+                                ? (widget.verticalActions ? 90 : 158)
+                                : 86,
                           ),
                           child: AnimatedOpacity(
                             opacity: 0.24 + (revealProgress * 0.76),
@@ -272,50 +277,76 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                             scale: 0.92 + (revealProgress * 0.08),
                             duration: const Duration(milliseconds: 180),
                             curve: Curves.easeOutBack,
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                if (_hasSecondaryAction) ...[
-                                  IconButton.filledTonal(
-                                    onPressed: () {
-                                      Feedback.forTap(context);
-                                      HapticFeedback.selectionClick();
-                                      _closePane();
-                                      widget.onSecondaryAction?.call();
-                                    },
-                                    style: IconButton.styleFrom(
-                                      backgroundColor: cs.primaryContainer,
-                                      foregroundColor: cs.onPrimaryContainer,
-                                      minimumSize: const Size(54, 54),
-                                      maximumSize: const Size(54, 54),
-                                    ),
-                                    tooltip:
-                                        widget.secondaryActionTooltip ??
-                                        widget.secondaryActionLabel,
-                                    icon: Icon(widget.secondaryActionIcon),
+                            child: widget.verticalActions && _hasSecondaryAction
+                                ? Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      _SwipeRevealActionButton(
+                                        onPressed: () {
+                                          Feedback.forTap(context);
+                                          HapticFeedback.selectionClick();
+                                          _closePane();
+                                          widget.onSecondaryAction?.call();
+                                        },
+                                        backgroundColor: cs.primaryContainer,
+                                        foregroundColor: cs.onPrimaryContainer,
+                                        tooltip:
+                                            widget.secondaryActionTooltip ??
+                                            widget.secondaryActionLabel,
+                                        icon: widget.secondaryActionIcon,
+                                        tonal: true,
+                                      ),
+                                      const SizedBox(height: 8),
+                                      _SwipeRevealActionButton(
+                                        onPressed: () {
+                                          Feedback.forTap(context);
+                                          HapticFeedback.mediumImpact();
+                                          _closePane();
+                                          widget.onRemove();
+                                        },
+                                        backgroundColor: cs.error,
+                                        foregroundColor: cs.onError,
+                                        tooltip: i18n.tr('remove'),
+                                        icon: Icons.delete_outline_rounded,
+                                      ),
+                                    ],
+                                  )
+                                : Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      if (_hasSecondaryAction) ...[
+                                        _SwipeRevealActionButton(
+                                          onPressed: () {
+                                            Feedback.forTap(context);
+                                            HapticFeedback.selectionClick();
+                                            _closePane();
+                                            widget.onSecondaryAction?.call();
+                                          },
+                                          backgroundColor: cs.primaryContainer,
+                                          foregroundColor:
+                                              cs.onPrimaryContainer,
+                                          tooltip:
+                                              widget.secondaryActionTooltip ??
+                                              widget.secondaryActionLabel,
+                                          icon: widget.secondaryActionIcon,
+                                          tonal: true,
+                                        ),
+                                        const SizedBox(width: 8),
+                                      ],
+                                      _SwipeRevealActionButton(
+                                        onPressed: () {
+                                          Feedback.forTap(context);
+                                          HapticFeedback.mediumImpact();
+                                          _closePane();
+                                          widget.onRemove();
+                                        },
+                                        backgroundColor: cs.error,
+                                        foregroundColor: cs.onError,
+                                        tooltip: i18n.tr('remove'),
+                                        icon: Icons.delete_outline_rounded,
+                                      ),
+                                    ],
                                   ),
-                                  const SizedBox(width: 8),
-                                ],
-                                IconButton.filled(
-                                  onPressed: () {
-                                    Feedback.forTap(context);
-                                    HapticFeedback.mediumImpact();
-                                    _closePane();
-                                    widget.onRemove();
-                                  },
-                                  style: IconButton.styleFrom(
-                                    backgroundColor: cs.error,
-                                    foregroundColor: cs.onError,
-                                    minimumSize: const Size(54, 54),
-                                    maximumSize: const Size(54, 54),
-                                  ),
-                                  tooltip: i18n.tr('remove'),
-                                  icon: const Icon(
-                                    Icons.delete_outline_rounded,
-                                  ),
-                                ),
-                              ],
-                            ),
                           ),
                         ),
                       ),
@@ -360,5 +391,46 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
         ),
       ),
     );
+  }
+}
+
+class _SwipeRevealActionButton extends StatelessWidget {
+  const _SwipeRevealActionButton({
+    required this.onPressed,
+    required this.backgroundColor,
+    required this.foregroundColor,
+    required this.tooltip,
+    required this.icon,
+    this.tonal = false,
+  });
+
+  final VoidCallback onPressed;
+  final Color backgroundColor;
+  final Color foregroundColor;
+  final String? tooltip;
+  final IconData icon;
+  final bool tonal;
+
+  @override
+  Widget build(BuildContext context) {
+    final style = IconButton.styleFrom(
+      backgroundColor: backgroundColor,
+      foregroundColor: foregroundColor,
+      minimumSize: const Size(54, 54),
+      maximumSize: const Size(54, 54),
+    );
+    return tonal
+        ? IconButton.filledTonal(
+            onPressed: onPressed,
+            style: style,
+            tooltip: tooltip,
+            icon: Icon(icon),
+          )
+        : IconButton.filled(
+            onPressed: onPressed,
+            style: style,
+            tooltip: tooltip,
+            icon: Icon(icon),
+          );
   }
 }

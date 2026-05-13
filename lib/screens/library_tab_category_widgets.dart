@@ -425,6 +425,7 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
         removeTooltip: i18n.tr('remove_audio_folder'),
         secondaryActionLabel: i18n.tr('audio_detail'),
         secondaryActionTooltip: i18n.tr('audio_detail'),
+        verticalActions: true,
         onSecondaryAction: () =>
             unawaited(showAudioDetailSheet(context, entry.target)),
         onRemove: () => _remove(context, provider),
@@ -437,7 +438,8 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
             data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
             child: ExpansionTile(
               minTileHeight: cardHeight,
-              tilePadding: const EdgeInsets.fromLTRB(12, 2, 4, 2),
+              showTrailingIcon: false,
+              tilePadding: const EdgeInsets.fromLTRB(12, 2, 12, 2),
               childrenPadding: const EdgeInsets.fromLTRB(12, 0, 0, 0),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(14),
@@ -445,43 +447,16 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
               collapsedShape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(14),
               ),
-              title: _AudioLibraryCategoryEntryTitle(
-                entry: entry,
-                secondaryIcon: secondaryIcon,
-                secondaryText: secondaryText,
-                countText: countText,
-              ),
-              trailing: SizedBox(
-                width: 62,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    IconButton(
-                      onPressed: firstTrack == null
-                          ? null
-                          : () => _play(context, provider),
-                      visualDensity: VisualDensity.compact,
-                      tooltip: i18n.tr('play'),
-                      style: IconButton.styleFrom(
-                        foregroundColor: cs.primary,
-                        minimumSize: const Size(40, 44),
-                        maximumSize: const Size(40, 44),
-                        padding: EdgeInsets.zero,
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
-                      icon: const Icon(Icons.add_circle_rounded, size: 25),
-                    ),
-                    const SizedBox(width: 2),
-                    Padding(
-                      padding: const EdgeInsets.only(right: 6),
-                      child: Icon(
-                        Icons.expand_more_rounded,
-                        color: cs.onSurfaceVariant,
-                        size: 20,
-                      ),
-                    ),
-                  ],
-                ),
+              title: _RootFolderCardContent(
+                folderPath: entry.path,
+                folderName: entry.title,
+                detail: entry.detail,
+                detailLoading: false,
+                expanded: false,
+                hasChildren: folderNode.children.isNotEmpty,
+                onPlay: firstTrack == null
+                    ? () {}
+                    : () => _play(context, provider),
               ),
               children: folderNode.children
                   .map(

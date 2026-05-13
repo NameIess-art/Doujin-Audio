@@ -713,6 +713,7 @@ const Map<AppLanguage, Map<String, String>> _localizedValues = {
     'refresh_done_no_new': 'No new audio found.',
     'choose_music_folder': 'Choose music folder',
     'import_done_added': 'Import complete: {count} new tracks added.',
+    'library_item_exists': 'Already exists in the library.',
     'choose_audio_files': 'Choose audio files',
     'imported_files': 'Imported files',
     'manually_selected_files': 'Manually selected files',

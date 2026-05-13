@@ -1,6 +1,58 @@
 part of 'library_tab.dart';
 
 extension _LibraryTabImportActions on _LibraryTabState {
+  bool _pathsOverlap(String first, String second) {
+    return PathMatcher.isWithinOrEqual(first, second) ||
+        PathMatcher.isWithinOrEqual(second, first);
+  }
+
+  bool _isFolderAlreadyInLibrary(AudioProvider provider, String folderPath) {
+    final normalizedFolderPath = PathMatcher.normalize(folderPath);
+    if (provider.watchedFolders.any(
+      (value) => _pathsOverlap(value, normalizedFolderPath),
+    )) {
+      return true;
+    }
+    if (provider.watchedLibraries.any(
+      (value) => _pathsOverlap(value, normalizedFolderPath),
+    )) {
+      return true;
+    }
+    return provider.library.any(
+      (track) =>
+          _pathsOverlap(track.path, normalizedFolderPath) ||
+          (track.groupKey != '__single_files__' &&
+              _pathsOverlap(track.groupKey, normalizedFolderPath)),
+    );
+  }
+
+  bool _isTrackAlreadyInLibrary(AudioProvider provider, String trackPath) {
+    final normalizedTrackPath = PathMatcher.normalize(trackPath);
+    if (provider.trackByPath(normalizedTrackPath) != null) {
+      return true;
+    }
+    if (provider.watchedFolders.any(
+      (value) => PathMatcher.isWithinOrEqual(normalizedTrackPath, value),
+    )) {
+      return true;
+    }
+    if (provider.watchedLibraries.any(
+      (value) => PathMatcher.isWithinOrEqual(normalizedTrackPath, value),
+    )) {
+      return true;
+    }
+    return provider.library.any(
+      (track) =>
+          PathMatcher.equalsNormalized(track.path, normalizedTrackPath) ||
+          (track.groupKey != '__single_files__' &&
+              PathMatcher.isWithinOrEqual(normalizedTrackPath, track.groupKey)),
+    );
+  }
+
+  void _showAlreadyExistsSnack(AppLanguageProvider i18n) {
+    _showSnack(i18n.tr('library_item_exists'));
+  }
+
   Future<void> _refreshWatchedFolders({bool silent = false}) async {
     final i18n = context.read<AppLanguageProvider>();
     final provider = context.read<AudioProvider>();
@@ -150,6 +202,10 @@ extension _LibraryTabImportActions on _LibraryTabState {
     final importTargets = childFolders;
     if (!mounted) return;
     final provider = context.read<AudioProvider>();
+    if (_isFolderAlreadyInLibrary(provider, folderPath)) {
+      _showAlreadyExistsSnack(i18n);
+      return;
+    }
 
     provider.addWatchedLibrary(folderPath, notify: false);
     provider.setScanning(true);
@@ -180,6 +236,10 @@ extension _LibraryTabImportActions on _LibraryTabState {
     final i18n = context.read<AppLanguageProvider>();
     final provider = context.read<AudioProvider>();
     if (!mounted) return;
+    if (_isFolderAlreadyInLibrary(provider, folderPath)) {
+      _showAlreadyExistsSnack(i18n);
+      return;
+    }
     provider.setScanning(true);
     provider.beginLibraryBatch();
 
@@ -231,6 +291,12 @@ extension _LibraryTabImportActions on _LibraryTabState {
 
         try {
           final candidates = _tracksFromPickedAudioFiles(pickedFiles, i18n);
+          if (candidates.any(
+            (track) => _isTrackAlreadyInLibrary(provider, track.path),
+          )) {
+            _showAlreadyExistsSnack(i18n);
+            return;
+          }
           final beforeCount = provider.library.length;
           provider.addTracks(candidates, notify: false);
           final added = provider.library.length - beforeCount;
@@ -276,6 +342,13 @@ extension _LibraryTabImportActions on _LibraryTabState {
         if (cachedPath != null) {
           resolvedPaths.add(path.normalize(cachedPath));
         }
+      }
+
+      if (resolvedPaths.any(
+        (trackPath) => _isTrackAlreadyInLibrary(provider, trackPath),
+      )) {
+        _showAlreadyExistsSnack(i18n);
+        return;
       }
 
       final candidates = <MusicTrack>[];

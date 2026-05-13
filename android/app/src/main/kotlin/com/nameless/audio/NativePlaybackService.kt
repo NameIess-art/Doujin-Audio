@@ -475,8 +475,7 @@ class NativePlaybackService : MediaSessionService() {
 
     private fun createPlayer(
         sessionId: String,
-        channelMappingAudioProcessor: ChannelMappingAudioProcessor,
-        volumeBoostAudioProcessor: VolumeBoostAudioProcessor
+        channelMappingAudioProcessor: ChannelMappingAudioProcessor
     ): ExoPlayer {
         val renderersFactory = object : DefaultRenderersFactory(this) {
             override fun buildAudioSink(
@@ -484,9 +483,7 @@ class NativePlaybackService : MediaSessionService() {
                 enableFloatOutput: Boolean,
                 enableAudioTrackPlaybackParams: Boolean
             ) = DefaultAudioSink.Builder(context)
-                .setAudioProcessors(
-                    arrayOf(channelMappingAudioProcessor, volumeBoostAudioProcessor)
-                )
+                .setAudioProcessors(arrayOf(channelMappingAudioProcessor))
                 .setEnableFloatOutput(enableFloatOutput)
                 .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
                 .build()
@@ -910,7 +907,6 @@ class NativePlaybackService : MediaSessionService() {
         val sessionId: String
     ) {
         private val channelMappingAudioProcessor = ChannelMappingAudioProcessor()
-        private val volumeBoostAudioProcessor = VolumeBoostAudioProcessor()
         private var _player: ExoPlayer? = null
         var lastUsedMs: Long = System.currentTimeMillis()
         var uri: String? = null
@@ -935,8 +931,7 @@ class NativePlaybackService : MediaSessionService() {
             _player?.let { return it }
             val p = createPlayer(
                 sessionId,
-                channelMappingAudioProcessor,
-                volumeBoostAudioProcessor
+                channelMappingAudioProcessor
             )
             _player = p
             
@@ -957,8 +952,7 @@ class NativePlaybackService : MediaSessionService() {
                     .build()
 
                 p.setMediaItem(mediaItem, lastPositionMs)
-                volumeBoostAudioProcessor.setGain(volume)
-                p.volume = PlaybackVolumeMapper.playerVolume(volume)
+                p.volume = PlaybackVolumeMapper.normalize(volume)
                 p.repeatMode = if (repeatOne) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
                 p.playWhenReady = lastPlayWhenReady
                 p.prepare()
@@ -1017,8 +1011,7 @@ class NativePlaybackService : MediaSessionService() {
                 .build()
 
             p.setMediaItem(mediaItem, startPositionMs.coerceAtLeast(0L))
-            volumeBoostAudioProcessor.setGain(this.volume)
-            p.volume = PlaybackVolumeMapper.playerVolume(this.volume)
+            p.volume = PlaybackVolumeMapper.normalize(this.volume)
             p.repeatMode = if (repeatOne) {
                 Player.REPEAT_MODE_ONE
             } else {
@@ -1042,8 +1035,7 @@ class NativePlaybackService : MediaSessionService() {
 
         fun applyVolume(volume: Float) {
             this.volume = PlaybackVolumeMapper.normalize(volume)
-            volumeBoostAudioProcessor.setGain(this.volume)
-            playerOrNull()?.volume = PlaybackVolumeMapper.playerVolume(this.volume)
+            playerOrNull()?.volume = this.volume
         }
 
         fun reprepareCurrentMediaItem() {

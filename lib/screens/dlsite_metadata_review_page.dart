@@ -11,11 +11,13 @@ class DlsiteMetadataReviewPage extends StatefulWidget {
   const DlsiteMetadataReviewPage({
     super.key,
     required this.detail,
-    required this.rjCode,
-  });
+    this.rjCode,
+    this.searchTitles = const <String>[],
+  }) : assert(rjCode != null || searchTitles.length > 0);
 
   final AudioDetail detail;
-  final String rjCode;
+  final String? rjCode;
+  final List<String> searchTitles;
 
   @override
   State<DlsiteMetadataReviewPage> createState() =>
@@ -29,6 +31,8 @@ class _DlsiteMetadataReviewPageState extends State<DlsiteMetadataReviewPage> {
   final _tagsController = TextEditingController();
 
   DlsiteMetadata? _metadata;
+  List<DlsiteMetadata> _candidates = const <DlsiteMetadata>[];
+  int _candidateIndex = 0;
   Object? _error;
   bool _loading = true;
   bool _saving = false;
@@ -50,22 +54,21 @@ class _DlsiteMetadataReviewPageState extends State<DlsiteMetadataReviewPage> {
   }
 
   Future<void> _fetch() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+      _metadata = null;
+      _candidates = const <DlsiteMetadata>[];
+      _candidateIndex = 0;
+    });
     try {
-      final metadata = await context.read<AudioProvider>().fetchDlsiteMetadata(
-        widget.rjCode,
-      );
+      final provider = context.read<AudioProvider>();
+      final rjCode = widget.rjCode;
+      final candidates = rjCode != null
+          ? <DlsiteMetadata>[await provider.fetchDlsiteMetadata(rjCode)]
+          : await provider.searchDlsiteMetadataByTitles(widget.searchTitles);
       if (!mounted) return;
-      _titleController.text = metadata.workTitle;
-      _circleController.text = metadata.circleName;
-      _voiceActorsController.text = metadata.voiceActors.join('\uFF0C');
-      _tagsController.text = metadata.tags.join('\uFF0C');
-      setState(() {
-        _metadata = metadata;
-        _saveCover =
-            widget.detail.target.isLibraryRootFolder &&
-            metadata.coverUrl != null;
-        _loading = false;
-      });
+      _showCandidate(0, candidates);
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -73,6 +76,25 @@ class _DlsiteMetadataReviewPageState extends State<DlsiteMetadataReviewPage> {
         _loading = false;
       });
     }
+  }
+
+  void _showCandidate(int index, [List<DlsiteMetadata>? candidates]) {
+    final nextCandidates = candidates ?? _candidates;
+    if (nextCandidates.isEmpty) return;
+    final nextIndex = index.clamp(0, nextCandidates.length - 1).toInt();
+    final metadata = nextCandidates[nextIndex];
+    _titleController.text = metadata.workTitle;
+    _circleController.text = metadata.circleName;
+    _voiceActorsController.text = metadata.voiceActors.join('\uFF0C');
+    _tagsController.text = metadata.tags.join('\uFF0C');
+    setState(() {
+      _candidateIndex = nextIndex;
+      _candidates = nextCandidates;
+      _metadata = metadata;
+      _loading = false;
+      _saveCover =
+          widget.detail.target.isLibraryRootFolder && metadata.coverUrl != null;
+    });
   }
 
   Future<void> _apply() async {
@@ -128,7 +150,34 @@ class _DlsiteMetadataReviewPageState extends State<DlsiteMetadataReviewPage> {
         : null;
 
     return Scaffold(
-      appBar: AppBar(title: Text(i18n.tr('dlsite_review_title'))),
+      appBar: AppBar(
+        title: Text(i18n.tr('dlsite_review_title')),
+        actions: [
+          if (_candidates.length > 1 && !_loading)
+            IconButton(
+              onPressed: _candidateIndex <= 0 || _saving
+                  ? null
+                  : () => _showCandidate(_candidateIndex - 1),
+              tooltip: i18n.tr('previous'),
+              icon: const Icon(Icons.chevron_left_rounded),
+            ),
+          if (_candidates.length > 1 && !_loading)
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: Text('${_candidateIndex + 1}/${_candidates.length}'),
+              ),
+            ),
+          if (_candidates.length > 1 && !_loading)
+            IconButton(
+              onPressed: _candidateIndex >= _candidates.length - 1 || _saving
+                  ? null
+                  : () => _showCandidate(_candidateIndex + 1),
+              tooltip: i18n.tr('next'),
+              icon: const Icon(Icons.chevron_right_rounded),
+            ),
+        ],
+      ),
       body: SafeArea(
         child: _loading
             ? const Center(child: CircularProgressIndicator())

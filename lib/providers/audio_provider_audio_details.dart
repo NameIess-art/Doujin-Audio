@@ -60,6 +60,12 @@ extension AudioProviderAudioDetails on AudioProvider {
     return _dlsiteMetadataService.fetchByRjCode(rjCode);
   }
 
+  Future<List<DlsiteMetadata>> searchDlsiteMetadataByTitles(
+    Iterable<String> titles,
+  ) {
+    return _dlsiteMetadataService.searchByTitleCandidates(titles);
+  }
+
   Future<DlsiteMetadataApplyResult> applyDlsiteMetadata(
     AudioDetail detail,
     DlsiteMetadata metadata, {

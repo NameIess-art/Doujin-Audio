@@ -7,6 +7,7 @@ class _ScannedTrack {
     required this.groupTitle,
     required this.groupSubtitle,
     required this.isSingle,
+    required this.isVideo,
     this.displayName,
     this.scannedAt,
     this.fileSizeBytes,
@@ -18,6 +19,7 @@ class _ScannedTrack {
   final String groupTitle;
   final String groupSubtitle;
   final bool isSingle;
+  final bool isVideo;
   final String? displayName;
   final DateTime? scannedAt;
   final int? fileSizeBytes;

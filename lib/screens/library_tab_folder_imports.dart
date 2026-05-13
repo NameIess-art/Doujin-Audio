@@ -27,7 +27,7 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
       final audioTypeHint = name == null || name.isEmpty
           ? (uri ?? '')
           : path.normalize(name);
-      if (uri == null || uri.isEmpty || !_isSupportedAudioFile(audioTypeHint)) {
+      if (uri == null || uri.isEmpty || !isSupportedMediaFile(audioTypeHint)) {
         continue;
       }
       files.add(
@@ -53,6 +53,7 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
             groupTitle: i18n.tr('imported_files'),
             groupSubtitle: i18n.tr('manually_selected_files'),
             isSingle: true,
+            isVideo: isVideoMediaFile(file.name),
             scannedAt: DateTime.now(),
           ),
         )
@@ -120,7 +121,7 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
         final scannedPath = map['path']?.toString().trim();
         if (scannedPath == null ||
             scannedPath.isEmpty ||
-            !_isSupportedAudioFile(scannedPath)) {
+            !isSupportedMediaFile(scannedPath)) {
           continue;
         }
 
@@ -138,6 +139,11 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
             ? nativeGroupSubtitle!
             : groupKey;
         final displayName = map['title']?.toString().trim();
+        final isVideo =
+            map['isVideo'] as bool? ??
+            isVideoMediaFile(
+              displayName?.isEmpty ?? true ? scannedPath : displayName!,
+            );
         final resolvedPath = scannedPath.startsWith('content://')
             ? scannedPath
             : path.normalize(scannedPath);
@@ -151,6 +157,7 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
             groupTitle: groupTitle,
             groupSubtitle: groupSubtitle,
             isSingle: false,
+            isVideo: isVideo,
             displayName: displayName?.isEmpty ?? true ? null : displayName,
             scannedAt: scannedAtMs == null
                 ? null
@@ -307,7 +314,7 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
           if (entity is! File) continue;
 
           final absolutePath = path.normalize(entity.path);
-          if (!_isSupportedAudioFile(absolutePath)) continue;
+          if (!isSupportedMediaFile(absolutePath)) continue;
           if (libraryRoot != null &&
               provider.isLibraryPathExcluded(libraryRoot, absolutePath)) {
             continue;
@@ -333,6 +340,7 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
               groupTitle: folderName.isEmpty ? parentFolder : folderName,
               groupSubtitle: parentFolder,
               isSingle: false,
+              isVideo: isVideoMediaFile(absolutePath),
               scannedAt: DateTime.now(),
               fileSizeBytes: fileStat.size,
               modifiedAt: fileStat.modified,
@@ -359,16 +367,6 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
     return added;
   }
 
-  bool _isSupportedAudioFile(String filePath) {
-    if (filePath.toLowerCase().endsWith('.flac') ||
-        filePath.toLowerCase().endsWith('.wav')) {
-      return true;
-    }
-    final mimeType = lookupMimeType(filePath);
-    if (mimeType == null) return true;
-    return mimeType.startsWith('audio/') || mimeType == 'application/ogg';
-  }
-
   MusicTrack _trackFromScanned(_ScannedTrack track) {
     return MusicTrack(
       path: track.path,
@@ -379,6 +377,7 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
       groupTitle: track.groupTitle,
       groupSubtitle: track.groupSubtitle,
       isSingle: track.isSingle,
+      isVideo: track.isVideo,
       scannedAt: track.scannedAt ?? DateTime.now(),
       fileSizeBytes: track.fileSizeBytes,
       modifiedAt: track.modifiedAt,
@@ -398,6 +397,7 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
       groupTitle: i18n.tr('imported_files'),
       groupSubtitle: i18n.tr('manually_selected_files'),
       isSingle: true,
+      isVideo: track.isVideo,
       scannedAt: track.scannedAt ?? DateTime.now(),
       fileSizeBytes: track.fileSizeBytes,
       modifiedAt: track.modifiedAt,
@@ -429,7 +429,11 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
     }
     final manageStatus = await Permission.manageExternalStorage.request();
     if (manageStatus.isGranted) return true;
-    final statuses = await [Permission.audio, Permission.storage].request();
+    final statuses = await [
+      Permission.audio,
+      Permission.videos,
+      Permission.storage,
+    ].request();
     return statuses.values.any(
       (status) => status.isGranted || status.isLimited,
     );

@@ -29,7 +29,7 @@ class AppDatabase {
     final dbPath = await getDatabasesPath();
     final db = await openDatabase(
       p.join(dbPath, 'audio_player.db'),
-      version: 8,
+      version: 9,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -45,6 +45,7 @@ class AppDatabase {
         group_title TEXT NOT NULL,
         group_subtitle TEXT NOT NULL,
         is_single INTEGER NOT NULL DEFAULT 0,
+        is_video INTEGER NOT NULL DEFAULT 0,
         scanned_at_ms INTEGER,
         file_size_bytes INTEGER,
         modified_at_ms INTEGER,
@@ -157,6 +158,14 @@ class AppDatabase {
     }
     if (oldVersion < 8) {
       await _createAudioDetailsTable(db);
+    }
+    if (oldVersion < 9) {
+      await _addColumnIfMissing(
+        db,
+        'tracks',
+        'is_video',
+        'INTEGER NOT NULL DEFAULT 0',
+      );
     }
     await _createTrackIndexes(db);
   }
@@ -412,6 +421,7 @@ class AppDatabase {
     'group_title': t.groupTitle,
     'group_subtitle': t.groupSubtitle,
     'is_single': t.isSingle ? 1 : 0,
+    'is_video': t.isVideo ? 1 : 0,
     'scanned_at_ms': t.scannedAt?.millisecondsSinceEpoch,
     'file_size_bytes': t.fileSizeBytes,
     'modified_at_ms': t.modifiedAt?.millisecondsSinceEpoch,
@@ -433,6 +443,7 @@ class AppDatabase {
     groupTitle: row['group_title'] as String,
     groupSubtitle: row['group_subtitle'] as String,
     isSingle: (row['is_single'] as int) == 1,
+    isVideo: (row['is_video'] as int? ?? 0) == 1,
     scannedAt: _dateTimeFromMs(row['scanned_at_ms']),
     fileSizeBytes: (row['file_size_bytes'] as num?)?.toInt(),
     modifiedAt: _dateTimeFromMs(row['modified_at_ms']),

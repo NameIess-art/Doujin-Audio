@@ -60,7 +60,7 @@ extension _LibraryTabCategoryView on _LibraryTabState {
           i18n.tr('audio_detail_empty'),
       ],
     };
-    return values.isEmpty ? i18n.tr('audio_detail_empty') : values.join('，');
+    return values.isEmpty ? i18n.tr('audio_detail_empty') : values.join(', ');
   }
 
   String _noTermsText(AppLanguageProvider i18n) {
@@ -533,6 +533,25 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
                   ),
                 ),
               )
+            : firstTrack?.isVideo == true
+            ? Theme(
+                data: Theme.of(
+                  context,
+                ).copyWith(dividerColor: Colors.transparent),
+                child: SizedBox(
+                  height: cardHeight,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 2, 12, 2),
+                    child: _SingleVideoFileCardContent(
+                      track: firstTrack!,
+                      title: entry.title,
+                      detail: entry.detail,
+                      detailLoading: false,
+                      onPlay: () => _play(context, provider),
+                    ),
+                  ),
+                ),
+              )
             : Padding(
                 padding: const EdgeInsets.fromLTRB(12, 8, 6, 8),
                 child: Row(
@@ -592,7 +611,7 @@ class _AudioLibraryCategoryEntryTitle extends StatelessWidget {
     return Row(
       children: [
         if (entry.isFolder) ...[
-          _LibraryCoverThumbnail(folderPath: entry.path, title: entry.title),
+          _LibraryCoverThumbnail(folderPath: entry.path),
           const SizedBox(width: 14),
         ],
         Expanded(

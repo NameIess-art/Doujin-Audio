@@ -402,6 +402,7 @@ extension AudioProviderAudioDetails on AudioProvider {
       groupTitle: groupTitle ?? track.groupTitle,
       groupSubtitle: groupSubtitle ?? track.groupSubtitle,
       isSingle: track.isSingle,
+      isVideo: track.isVideo,
       scannedAt: track.scannedAt,
       fileSizeBytes: track.fileSizeBytes,
       modifiedAt: track.modifiedAt,

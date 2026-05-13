@@ -58,7 +58,7 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage> {
             pendingDirs.add(entity);
             continue;
           }
-          if (entity is File && _isSupportedLibraryAudioFile(normalizedPath)) {
+          if (entity is File && _isSupportedLibraryMediaFile(normalizedPath)) {
             audioFiles.add(normalizedPath);
           }
         }
@@ -78,21 +78,8 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage> {
     });
   }
 
-  bool _isSupportedLibraryAudioFile(String filePath) {
-    final lowerPath = filePath.toLowerCase();
-    if (lowerPath.endsWith('.flac') ||
-        lowerPath.endsWith('.wav') ||
-        lowerPath.endsWith('.mp3') ||
-        lowerPath.endsWith('.m4a') ||
-        lowerPath.endsWith('.aac') ||
-        lowerPath.endsWith('.ogg') ||
-        lowerPath.endsWith('.opus')) {
-      return true;
-    }
-    final mimeType = lookupMimeType(filePath);
-    if (mimeType == null) return false;
-    return mimeType.startsWith('audio/') || mimeType == 'application/ogg';
-  }
+  bool _isSupportedLibraryMediaFile(String filePath) =>
+      isSupportedMediaFile(filePath);
 
   @override
   void dispose() {

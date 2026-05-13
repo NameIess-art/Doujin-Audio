@@ -6,6 +6,7 @@ class MusicTrack {
     required this.groupTitle,
     required this.groupSubtitle,
     required this.isSingle,
+    this.isVideo = false,
     this.scannedAt,
     this.fileSizeBytes,
     this.modifiedAt,
@@ -25,6 +26,7 @@ class MusicTrack {
   final String groupTitle;
   final String groupSubtitle;
   final bool isSingle;
+  final bool isVideo;
   final DateTime? scannedAt;
   final int? fileSizeBytes;
   final DateTime? modifiedAt;
@@ -36,7 +38,7 @@ class MusicTrack {
   final String? lyricsPath;
   final String? manualCoverPath;
   final Duration duration;
-  
+
   MusicTrack copyWith({
     Duration? duration,
     Duration? lastPlayedPosition,
@@ -46,6 +48,7 @@ class MusicTrack {
     String? coverCachePath,
     String? lyricsPath,
     String? manualCoverPath,
+    bool? isVideo,
   }) => MusicTrack(
     path: path,
     displayName: displayName,
@@ -53,6 +56,7 @@ class MusicTrack {
     groupTitle: groupTitle,
     groupSubtitle: groupSubtitle,
     isSingle: isSingle,
+    isVideo: isVideo ?? this.isVideo,
     scannedAt: scannedAt,
     fileSizeBytes: fileSizeBytes,
     modifiedAt: modifiedAt,
@@ -73,6 +77,7 @@ class MusicTrack {
     'groupTitle': groupTitle,
     'groupSubtitle': groupSubtitle,
     'isSingle': isSingle,
+    'isVideo': isVideo,
     'scannedAtMs': scannedAt?.millisecondsSinceEpoch,
     'fileSizeBytes': fileSizeBytes,
     'modifiedAtMs': modifiedAt?.millisecondsSinceEpoch,
@@ -93,6 +98,7 @@ class MusicTrack {
     groupTitle: json['groupTitle'] as String,
     groupSubtitle: json['groupSubtitle'] as String,
     isSingle: json['isSingle'] as bool? ?? false,
+    isVideo: json['isVideo'] as bool? ?? false,
     scannedAt: _dateTimeFromJson(json['scannedAtMs']),
     fileSizeBytes: (json['fileSizeBytes'] as num?)?.toInt(),
     modifiedAt: _dateTimeFromJson(json['modifiedAtMs']),
@@ -107,7 +113,9 @@ class MusicTrack {
     coverCachePath: json['coverCachePath'] as String?,
     lyricsPath: json['lyricsPath'] as String?,
     manualCoverPath: json['manualCoverPath'] as String?,
-    duration: Duration(milliseconds: (json['durationMs'] as num?)?.toInt() ?? 0),
+    duration: Duration(
+      milliseconds: (json['durationMs'] as num?)?.toInt() ?? 0,
+    ),
   );
 }
 

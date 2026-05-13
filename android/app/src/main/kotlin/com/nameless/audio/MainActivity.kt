@@ -11,6 +11,7 @@ import android.content.Context
 import android.content.ContentUris
 import android.content.Intent
 import android.graphics.BitmapFactory
+import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -96,6 +97,10 @@ private val supportedSubtitleExtensions = setOf(
     "vtt", "webvtt", "lrc", "srt", "ass", "ssa"
 )
 
+private val supportedVideoExtensions = setOf(
+    "mp4", "mkv", "webm", "mov", "m4v", "avi", "3gp"
+)
+
 private val preferredCoverBasenames = listOf(
     "cover", "folder", "front", "album", "artwork", "poster"
 )
@@ -129,6 +134,7 @@ class MainActivity : AudioServiceActivity() {
     private var pendingNotificationSessionId: String? = null
     private val audioPickerMimeTypes = arrayOf(
         "audio/*",
+        "video/*",
         "application/ogg",
         "audio/ogg",
         "audio/flac",
@@ -140,7 +146,13 @@ class MainActivity : AudioServiceActivity() {
         "audio/aac",
         "audio/x-m4a",
         "audio/3gpp",
-        "audio/opus"
+        "audio/opus",
+        "video/mp4",
+        "video/x-matroska",
+        "video/webm",
+        "video/quicktime",
+        "video/x-msvideo",
+        "video/3gpp"
     )
     private val blockedExtensions = setOf(
         "vtt", "srt", "ass", "ssa", "lrc", "txt", "md", "json", "xml",
@@ -458,6 +470,7 @@ class MainActivity : AudioServiceActivity() {
                                         "groupKey" to track.groupKey,
                                         "groupTitle" to track.groupTitle,
                                         "groupSubtitle" to track.groupSubtitle,
+                                        "isVideo" to track.isVideo,
                                         "scannedAtMs" to track.scannedAtMs,
                                         "fileSizeBytes" to track.fileSizeBytes,
                                         "modifiedAtMs" to track.modifiedAtMs
@@ -625,6 +638,28 @@ class MainActivity : AudioServiceActivity() {
                                 runOnUiThread {
                                     result.error(
                                         "cover_resolve_failed",
+                                        e.message ?: "unknown error",
+                                        null
+                                    )
+                                }
+                            }
+                        }.start()
+                    }
+                    "resolveVideoFrame" -> {
+                        val trackPath = call.argument<String>("path")
+                        val modifiedAtMs = call.argument<Long>("modifiedAtMs")
+                        if (trackPath.isNullOrBlank()) {
+                            result.error("invalid_args", "path is required", null)
+                            return@setMethodCallHandler
+                        }
+                        Thread {
+                            try {
+                                val framePath = resolveVideoFrame(trackPath, modifiedAtMs)
+                                runOnUiThread { result.success(framePath) }
+                            } catch (e: Exception) {
+                                runOnUiThread {
+                                    result.error(
+                                        "video_frame_resolve_failed",
                                         e.message ?: "unknown error",
                                         null
                                     )
@@ -1284,6 +1319,7 @@ class MainActivity : AudioServiceActivity() {
         val groupKey: String,
         val groupTitle: String,
         val groupSubtitle: String,
+        val isVideo: Boolean = false,
         val scannedAtMs: Long = System.currentTimeMillis(),
         val fileSizeBytes: Long? = null,
         val modifiedAtMs: Long? = null
@@ -1810,6 +1846,7 @@ class MainActivity : AudioServiceActivity() {
                         groupKey = groupKey,
                         groupTitle = groupTitle.ifBlank { rootName },
                         groupSubtitle = groupSubtitle,
+                        isVideo = isVideoFileName(safeName),
                         fileSizeBytes = child.length().takeIf { it >= 0 },
                         modifiedAtMs = child.lastModified().takeIf { it > 0 }
                     )
@@ -1930,6 +1967,7 @@ class MainActivity : AudioServiceActivity() {
                                 groupKey = groupKey,
                                 groupTitle = groupTitle.ifBlank { rootName },
                                 groupSubtitle = groupSubtitle,
+                                isVideo = isVideoFileName(displayName),
                                 fileSizeBytes = fileSizeBytes,
                                 modifiedAtMs = modifiedAtMs
                             )
@@ -2096,6 +2134,7 @@ class MainActivity : AudioServiceActivity() {
                         groupKey = parentPath,
                         groupTitle = parentName,
                         groupSubtitle = parentPath,
+                        isVideo = isVideoFileName(child.name),
                         fileSizeBytes = child.length().takeIf { it >= 0 },
                         modifiedAtMs = child.lastModified().takeIf { it > 0 }
                     )
@@ -2189,6 +2228,7 @@ class MainActivity : AudioServiceActivity() {
                         groupKey = groupKey,
                         groupTitle = groupTitle.ifBlank { "Folder" },
                         groupSubtitle = groupSubtitle,
+                        isVideo = isVideoFileName(displayName),
                         fileSizeBytes = fileSizeBytes,
                         modifiedAtMs = modifiedAtMs
                     )
@@ -2235,7 +2275,7 @@ class MainActivity : AudioServiceActivity() {
 
     private fun isSupportedDocumentFile(file: DocumentFile): Boolean {
         val mime = file.type?.lowercase(Locale.US)
-        if (mime != null && (mime.startsWith("audio/") || mime == "application/ogg")) {
+        if (mime != null && isSupportedMediaMime(mime)) {
             return true
         }
         val name = file.name ?: return false
@@ -2244,9 +2284,7 @@ class MainActivity : AudioServiceActivity() {
 
     private fun isSupportedDocumentEntry(name: String, mime: String?): Boolean {
         val normalizedMime = mime?.lowercase(Locale.US)
-        if (normalizedMime != null &&
-            (normalizedMime.startsWith("audio/") || normalizedMime == "application/ogg")
-        ) {
+        if (normalizedMime != null && isSupportedMediaMime(normalizedMime)) {
             return true
         }
         return isSupportedFileName(name)
@@ -2265,7 +2303,26 @@ class MainActivity : AudioServiceActivity() {
         if (mime == null) {
             return true
         }
-        return mime.startsWith("audio/") || mime == "application/ogg"
+        return isSupportedMediaMime(mime)
+    }
+
+    private fun isSupportedMediaMime(mime: String): Boolean {
+        return mime.startsWith("audio/") ||
+            mime.startsWith("video/") ||
+            mime == "application/ogg"
+    }
+
+    private fun isVideoFileName(name: String): Boolean {
+        val extension = name.substringAfterLast('.', "").lowercase(Locale.US)
+        if (extension.isBlank()) {
+            return false
+        }
+        if (extension in supportedVideoExtensions) {
+            return true
+        }
+        val mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension)
+            ?.lowercase(Locale.US)
+        return mime?.startsWith("video/") == true
     }
 
     private data class DocumentImageCandidate(
@@ -2316,6 +2373,60 @@ class MainActivity : AudioServiceActivity() {
             return cacheDocumentCover(cover, trackPath)
         }
         return null
+    }
+
+    private fun resolveVideoFrame(
+        trackPath: String,
+        modifiedAtMs: Long?
+    ): String? {
+        val coverCacheDir = File(this.cacheDir, "nameless_audio_covers")
+        if (!coverCacheDir.exists()) {
+            coverCacheDir.mkdirs()
+        }
+        val cacheKey = buildString {
+            append(trackPath)
+            if (modifiedAtMs != null) {
+                append('|')
+                append(modifiedAtMs)
+            }
+        }
+        val outputFile = File(
+            coverCacheDir,
+            "video_frame_${kotlin.math.abs(cacheKey.hashCode())}.jpg"
+        )
+        if (outputFile.exists() && outputFile.length() > 0) {
+            return outputFile.absolutePath
+        }
+
+        var retriever: MediaMetadataRetriever? = null
+        try {
+            retriever = MediaMetadataRetriever()
+            if (trackPath.startsWith("content://")) {
+                retriever.setDataSource(this, Uri.parse(trackPath))
+            } else {
+                retriever.setDataSource(trackPath)
+            }
+            val bitmap = retriever.getFrameAtTime(
+                1_000_000L,
+                MediaMetadataRetriever.OPTION_CLOSEST_SYNC
+            ) ?: retriever.frameAtTime ?: return null
+            FileOutputStream(outputFile).use { output ->
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 88, output)
+                output.flush()
+            }
+            bitmap.recycle()
+            return outputFile.absolutePath
+        } catch (_: Exception) {
+            if (outputFile.exists()) {
+                outputFile.delete()
+            }
+            return null
+        } finally {
+            try {
+                retriever?.release()
+            } catch (_: Exception) {
+            }
+        }
     }
 
     private fun discoverRootImages(

@@ -376,55 +376,80 @@ class _TrackNodeWidget extends ConsumerWidget {
         removeTooltip: i18n.tr('remove_audio'),
         secondaryActionLabel: i18n.tr('audio_detail'),
         secondaryActionTooltip: i18n.tr('audio_detail'),
-        onSecondaryAction: () => unawaited(
-          showAudioDetailSheet(
-            context,
-            AudioDetailTarget.singleAudioFile(track.path),
+          verticalActions: track.isVideo,
+          onSecondaryAction: () => unawaited(
+            showAudioDetailSheet(
+              context,
+              AudioDetailTarget.singleAudioFile(track.path),
+            ),
           ),
-        ),
         onRemove: () => _removeTrack(context, provider, track),
         child: Card(
           margin: EdgeInsets.zero,
           clipBehavior: Clip.antiAlias,
           shape: cardShape,
-          color: isAlreadyPlaying
+          color: (isAlreadyPlaying && !track.isVideo)
               ? Color.alphaBlend(
                   cs.primaryContainer.withValues(alpha: 0.40),
                   cs.surface,
                 )
               : cs.surface,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 6, 8),
-            child: Row(
-              children: [
-                Expanded(
-                  child: _SingleAudioFileCardContent(
+          child: track.isVideo
+              ? ListTile(
+                  contentPadding: const EdgeInsets.fromLTRB(12, 2, 12, 2),
+                  minTileHeight: _FolderNodeWidgetState._rootFolderTileHeight,
+                  shape: cardShape,
+                  title: _SingleVideoFileCardContent(
+                    track: track,
                     title: track.displayName,
                     detail: singleDetail,
                     detailLoading: isSingleDetailLoading,
+                    onPlay: () {
+                      Feedback.forTap(context);
+                      unawaited(provider.spawnSession(track, autoPlay: true));
+                      _showSessionCreatedSnack(
+                        context,
+                        i18n.tr('session_created', {'name': track.displayName}),
+                      );
+                    },
+                  ),
+                )
+              : Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 8, 6, 8),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: _SingleAudioFileCardContent(
+                          title: track.displayName,
+                          detail: singleDetail,
+                          detailLoading: isSingleDetailLoading,
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () {
+                          Feedback.forTap(context);
+                          unawaited(
+                            provider.spawnSession(track, autoPlay: true),
+                          );
+                          _showSessionCreatedSnack(
+                            context,
+                            i18n.tr('session_created', {
+                              'name': track.displayName,
+                            }),
+                          );
+                        },
+                        style: IconButton.styleFrom(
+                          foregroundColor: cs.primary,
+                          minimumSize: const Size(40, 44),
+                          maximumSize: const Size(40, 44),
+                          padding: EdgeInsets.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        icon: const Icon(Icons.add_circle_rounded, size: 25),
+                      ),
+                    ],
                   ),
                 ),
-                IconButton(
-                  onPressed: () {
-                    Feedback.forTap(context);
-                    unawaited(provider.spawnSession(track, autoPlay: true));
-                    _showSessionCreatedSnack(
-                      context,
-                      i18n.tr('session_created', {'name': track.displayName}),
-                    );
-                  },
-                  style: IconButton.styleFrom(
-                    foregroundColor: cs.primary,
-                    minimumSize: const Size(40, 44),
-                    maximumSize: const Size(40, 44),
-                    padding: EdgeInsets.zero,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                  icon: const Icon(Icons.add_circle_rounded, size: 25),
-                ),
-              ],
-            ),
-          ),
         ),
       );
     }
@@ -488,14 +513,9 @@ class _TrackNodeWidget extends ConsumerWidget {
 }
 
 class _LibraryCoverThumbnail extends ConsumerWidget {
-  const _LibraryCoverThumbnail({
-    required this.folderPath,
-    required this.title,
-    this.width = 82,
-  });
+  const _LibraryCoverThumbnail({required this.folderPath, this.width = 82});
 
   final String folderPath;
-  final String title;
   final double width;
 
   @override
@@ -572,6 +592,69 @@ class _LibraryCoverThumbnail extends ConsumerWidget {
   }
 }
 
+class _LibraryTrackCoverThumbnail extends ConsumerWidget {
+  const _LibraryTrackCoverThumbnail({required this.track, this.width = 82});
+
+  final MusicTrack track;
+  final double width;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    context.select<AudioProvider, int>((value) => value.coverGeneration);
+    final provider = context.read<AudioProvider>();
+    final coverPathFuture = provider.coverPathFutureForTrack(track);
+    final cs = Theme.of(context).colorScheme;
+
+    Widget fallback() {
+      return DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              cs.primaryContainer,
+              cs.secondaryContainer.withValues(alpha: 0.92),
+            ],
+          ),
+        ),
+        child: Center(
+          child: Icon(
+            Icons.photo_album_rounded,
+            size: 28,
+            color: cs.onPrimaryContainer,
+          ),
+        ),
+      );
+    }
+
+    final height = width * 0.8;
+    return SizedBox(
+      width: width,
+      height: height,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: AsyncCoverImage(
+          future: coverPathFuture,
+          fallbackBuilder: (_) => fallback(),
+          loadingBuilder: (_) => fallback(),
+          imageBuilder: (context, coverPath) {
+            final dpr = MediaQuery.devicePixelRatioOf(context);
+            return Image(
+              image: resizeFileImageIfNeeded(
+                path: coverPath,
+                cacheWidth: (width * dpr).round(),
+              ),
+              fit: BoxFit.cover,
+              gaplessPlayback: true,
+              errorBuilder: (_, _, _) => fallback(),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
 class _RootFolderCardContent extends StatelessWidget {
   const _RootFolderCardContent({
     required this.folderPath,
@@ -590,6 +673,40 @@ class _RootFolderCardContent extends StatelessWidget {
   final bool expanded;
   final bool hasChildren;
   final VoidCallback onPlay;
+
+  @override
+  Widget build(BuildContext context) {
+    return _LibraryFeaturedCardContent(
+      title: folderName,
+      detail: detail,
+      detailLoading: detailLoading,
+      expanded: expanded,
+      showExpandIndicator: hasChildren,
+      onPlay: onPlay,
+      coverBuilder: (coverWidth) =>
+          _LibraryCoverThumbnail(folderPath: folderPath, width: coverWidth),
+    );
+  }
+}
+
+class _LibraryFeaturedCardContent extends StatelessWidget {
+  const _LibraryFeaturedCardContent({
+    required this.title,
+    required this.detail,
+    required this.detailLoading,
+    required this.coverBuilder,
+    required this.onPlay,
+    this.expanded = false,
+    this.showExpandIndicator = false,
+  });
+
+  final String title;
+  final AudioDetail? detail;
+  final bool detailLoading;
+  final Widget Function(double coverWidth) coverBuilder;
+  final VoidCallback onPlay;
+  final bool expanded;
+  final bool showExpandIndicator;
 
   @override
   Widget build(BuildContext context) {
@@ -630,11 +747,7 @@ class _RootFolderCardContent extends StatelessWidget {
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _LibraryCoverThumbnail(
-                    folderPath: folderPath,
-                    title: folderName,
-                    width: coverWidth,
-                  ),
+                  coverBuilder(coverWidth),
                   const SizedBox(width: 10),
                   Expanded(
                     child: SizedBox(
@@ -659,14 +772,14 @@ class _RootFolderCardContent extends StatelessWidget {
                           ),
                           const SizedBox(height: 4),
                           _LibraryDetailInfoLine(
-                            label: '社团',
+                            label: '\u793e\u56e2',
                             text: _nonEmpty(detail?.circleName, emptyText),
                             style: infoStyle,
                             loading: detailLoading,
                           ),
                           const SizedBox(height: 4),
                           _LibraryDetailInfoLine(
-                            label: '标签',
+                            label: '\u6807\u7b7e',
                             text: _joinedOrEmpty(detail?.tags, emptyText),
                             style: infoStyle,
                             loading: detailLoading,
@@ -685,7 +798,7 @@ class _RootFolderCardContent extends StatelessWidget {
                   children: [
                     Expanded(
                       child: _LibraryTwoLineMarqueeText(
-                        text: folderName,
+                        text: title,
                         style: titleStyle,
                       ),
                     ),
@@ -703,7 +816,7 @@ class _RootFolderCardContent extends StatelessWidget {
                       ),
                       icon: const Icon(Icons.add_circle_rounded, size: 25),
                     ),
-                    if (hasChildren)
+                    if (showExpandIndicator)
                       Padding(
                         padding: const EdgeInsets.only(right: 2),
                         child: IgnorePointer(
@@ -804,6 +917,34 @@ class _SingleAudioFileCardContent extends StatelessWidget {
   }
 }
 
+class _SingleVideoFileCardContent extends StatelessWidget {
+  const _SingleVideoFileCardContent({
+    required this.track,
+    required this.title,
+    required this.detail,
+    required this.detailLoading,
+    required this.onPlay,
+  });
+
+  final MusicTrack track;
+  final String title;
+  final AudioDetail? detail;
+  final bool detailLoading;
+  final VoidCallback onPlay;
+
+  @override
+  Widget build(BuildContext context) {
+    return _LibraryFeaturedCardContent(
+      title: title,
+      detail: detail,
+      detailLoading: detailLoading,
+      onPlay: onPlay,
+      coverBuilder: (coverWidth) =>
+          _LibraryTrackCoverThumbnail(track: track, width: coverWidth),
+    );
+  }
+}
+
 class _AudioDetailInfoLineData {
   const _AudioDetailInfoLineData(this.label, this.text);
 
@@ -874,7 +1015,7 @@ String _nonEmpty(String? value, String fallback) {
 }
 
 String _joinedOrEmpty(Iterable<String>? values, String fallback) {
-  final text = AudioDetail.normalizeList(values ?? const <String>[]).join('，');
+  final text = AudioDetail.normalizeList(values ?? const <String>[]).join(', ');
   return text.isEmpty ? fallback : text;
 }
 

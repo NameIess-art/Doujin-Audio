@@ -206,6 +206,9 @@ extension AudioProviderNotificationCovers on AudioProvider {
     if (pathValue == null || pathValue.isEmpty) {
       return null;
     }
+    if (track?.isSingle == true && track?.isVideo == true) {
+      return PathMatcher.normalize(pathValue);
+    }
     final scopedFolder = _resolveCoverScopeFolderPath(
       this,
       track,
@@ -281,6 +284,11 @@ extension AudioProviderNotificationCovers on AudioProvider {
             }
           }
         }
+        if (coverPath == null &&
+            track?.isSingle == true &&
+            track?.isVideo == true) {
+          coverPath = await _resolveVideoFramePathForTrack(track!);
+        }
       }
 
       unawaited(
@@ -305,6 +313,24 @@ extension AudioProviderNotificationCovers on AudioProvider {
 
       return coverPath;
     });
+  }
+
+  Future<String?> _resolveVideoFramePathForTrack(MusicTrack track) async {
+    try {
+      return await AudioProvider._fileCacheChannel.invokeMethod<String>(
+        FileCacheMethod.resolveVideoFrame,
+        <String, dynamic>{
+          'path': track.path,
+          if (track.modifiedAt != null)
+            'modifiedAtMs': track.modifiedAt!.millisecondsSinceEpoch,
+        },
+      );
+    } on MissingPluginException {
+      return null;
+    } catch (e) {
+      debugPrint('AudioProvider._resolveVideoFramePathForTrack error: $e');
+      return null;
+    }
   }
 
   Future<String?> _resolveContentCoverPathForTrack(

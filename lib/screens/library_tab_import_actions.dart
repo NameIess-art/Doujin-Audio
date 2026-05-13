@@ -279,7 +279,7 @@ extension _LibraryTabImportActions on _LibraryTabState {
       }
 
       final candidates = <MusicTrack>[];
-      for (final p in resolvedPaths.where(_isSupportedAudioFile)) {
+      for (final p in resolvedPaths.where(isSupportedMediaFile)) {
         final file = File(p);
         FileStat? fileStat;
         try {
@@ -293,6 +293,7 @@ extension _LibraryTabImportActions on _LibraryTabState {
             groupTitle: i18n.tr('imported_files'),
             groupSubtitle: i18n.tr('manually_selected_files'),
             isSingle: true,
+            isVideo: isVideoMediaFile(p),
             scannedAt: DateTime.now(),
             fileSizeBytes: fileStat?.size,
             modifiedAt: fileStat?.modified,

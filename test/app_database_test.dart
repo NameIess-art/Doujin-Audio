@@ -51,6 +51,7 @@ void main() {
           groupTitle: 'Imported',
           groupSubtitle: '1 track',
           isSingle: true,
+          isVideo: true,
         ),
       ];
 
@@ -72,6 +73,7 @@ void main() {
       groupTitle: 'Library',
       groupSubtitle: '1 track',
       isSingle: false,
+      isVideo: true,
       scannedAt: DateTime.fromMillisecondsSinceEpoch(4000),
       fileSizeBytes: 4096,
       modifiedAt: DateTime.fromMillisecondsSinceEpoch(5000),

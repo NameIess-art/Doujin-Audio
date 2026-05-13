@@ -24,6 +24,7 @@ import '../services/audio_state_services.dart';
 import '../services/app_database.dart';
 import '../services/dlsite_metadata_service.dart';
 import '../services/library_organizer.dart';
+import '../services/media_file_support.dart';
 import '../services/native_playback_repository.dart';
 import '../services/playback_queue_resolver.dart';
 import '../services/platform_channels.dart';

@@ -97,6 +97,7 @@ abstract final class PowerMethod {
 // ---------------------------------------------------------------------------
 abstract final class FileCacheMethod {
   static const String resolveTrackCover = 'resolveTrackCover';
+  static const String resolveVideoFrame = 'resolveVideoFrame';
   static const String cacheFromUri = 'cacheFromUri';
   static const String scanFolder = 'scanFolder';
   static const String listChildFolders = 'listChildFolders';

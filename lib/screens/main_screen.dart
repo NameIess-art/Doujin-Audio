@@ -193,7 +193,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
     });
     if (!_pageController.hasClients) return;
     provider.setPageTransitioning(true);
-    provider.triggerScrollToTop(index);
     _pageController
         .animateToPage(
           index,

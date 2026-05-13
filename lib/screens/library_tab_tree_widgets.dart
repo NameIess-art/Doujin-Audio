@@ -367,9 +367,6 @@ class _TrackNodeWidget extends ConsumerWidget {
           )
         : null;
     final isSingleDetailLoading = track.isSingle && categorySnapshot == null;
-    final singleMetaText = singleDetail?.rjCode.trim().isNotEmpty == true
-        ? singleDetail!.rjCode.trim()
-        : i18n.tr('audio_detail_empty');
 
     if (track.isSingle) {
       return SwipeRevealCard(
@@ -396,59 +393,36 @@ class _TrackNodeWidget extends ConsumerWidget {
                   cs.surface,
                 )
               : cs.surface,
-          child: SizedBox(
-            height: _FolderNodeWidgetState._rootFolderTileHeight,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 5, 6, 5),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        _LibraryTwoLineMarqueeText(
-                          text: track.displayName,
-                          style:
-                              Theme.of(context).textTheme.titleMedium?.copyWith(
-                                fontWeight: FontWeight.w900,
-                                fontSize: 14,
-                                height: 1.06,
-                              ) ??
-                              const TextStyle(),
-                        ),
-                        const SizedBox(height: 5),
-                        SizedBox(
-                          width: double.infinity,
-                          child: _LibrarySecondaryInfoLine(
-                            icon: Icons.confirmation_number_rounded,
-                            text: singleMetaText,
-                            loading: isSingleDetailLoading,
-                          ),
-                        ),
-                      ],
-                    ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 6, 8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: _SingleAudioFileCardContent(
+                    title: track.displayName,
+                    detail: singleDetail,
+                    detailLoading: isSingleDetailLoading,
                   ),
-                  IconButton(
-                    onPressed: () {
-                      Feedback.forTap(context);
-                      unawaited(provider.spawnSession(track, autoPlay: true));
-                      _showSessionCreatedSnack(
-                        context,
-                        i18n.tr('session_created', {'name': track.displayName}),
-                      );
-                    },
-                    style: IconButton.styleFrom(
-                      foregroundColor: cs.primary,
-                      minimumSize: const Size(40, 44),
-                      maximumSize: const Size(40, 44),
-                      padding: EdgeInsets.zero,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                    icon: const Icon(Icons.add_circle_rounded, size: 25),
+                ),
+                IconButton(
+                  onPressed: () {
+                    Feedback.forTap(context);
+                    unawaited(provider.spawnSession(track, autoPlay: true));
+                    _showSessionCreatedSnack(
+                      context,
+                      i18n.tr('session_created', {'name': track.displayName}),
+                    );
+                  },
+                  style: IconButton.styleFrom(
+                    foregroundColor: cs.primary,
+                    minimumSize: const Size(40, 44),
+                    maximumSize: const Size(40, 44),
+                    padding: EdgeInsets.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
-                ],
-              ),
+                  icon: const Icon(Icons.add_circle_rounded, size: 25),
+                ),
+              ],
             ),
           ),
         ),
@@ -756,6 +730,87 @@ class _RootFolderCardContent extends StatelessWidget {
   }
 }
 
+class _SingleAudioFileCardContent extends StatelessWidget {
+  const _SingleAudioFileCardContent({
+    required this.title,
+    required this.detail,
+    required this.detailLoading,
+  });
+
+  final String title;
+  final AudioDetail? detail;
+  final bool detailLoading;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final titleStyle =
+        Theme.of(context).textTheme.titleMedium?.copyWith(
+          fontWeight: FontWeight.w900,
+          fontSize: 14,
+          height: 1.06,
+          color: cs.onSurface,
+        ) ??
+        const TextStyle();
+    final infoStyle =
+        Theme.of(context).textTheme.labelSmall?.copyWith(
+          fontWeight: FontWeight.w700,
+          fontSize: 10,
+          height: 1.05,
+          color: cs.onSurface.withValues(alpha: 0.82),
+        ) ??
+        TextStyle(
+          fontWeight: FontWeight.w700,
+          fontSize: 10,
+          height: 1.05,
+          color: cs.onSurface.withValues(alpha: 0.82),
+        );
+    final d = detail;
+    final lines = detailLoading || d == null
+        ? const <_AudioDetailInfoLineData>[]
+        : [
+            if (d.rjCode.trim().isNotEmpty)
+              _AudioDetailInfoLineData('RJ', d.rjCode.trim()),
+            if (d.voiceActors.isNotEmpty)
+              _AudioDetailInfoLineData(
+                'CV',
+                AudioDetail.normalizeList(d.voiceActors).join('\uFF0C'),
+              ),
+            if (d.circleName.trim().isNotEmpty)
+              _AudioDetailInfoLineData('\u793e\u56e2', d.circleName.trim()),
+            if (d.tags.isNotEmpty)
+              _AudioDetailInfoLineData(
+                '\u6807\u7b7e',
+                AudioDetail.normalizeList(d.tags).join('\uFF0C'),
+              ),
+          ];
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _LibraryTwoLineMarqueeText(text: title, style: titleStyle),
+        for (final line in lines) ...[
+          const SizedBox(height: 3),
+          _LibraryDetailInfoLine(
+            label: line.label,
+            text: line.text,
+            style: infoStyle,
+            loading: false,
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _AudioDetailInfoLineData {
+  const _AudioDetailInfoLineData(this.label, this.text);
+
+  final String label;
+  final String text;
+}
+
 class _LibraryDetailInfoLine extends StatelessWidget {
   const _LibraryDetailInfoLine({
     required this.label,
@@ -823,6 +878,83 @@ String _joinedOrEmpty(Iterable<String>? values, String fallback) {
   return text.isEmpty ? fallback : text;
 }
 
+class _LibrarySecondaryInfoLine extends StatelessWidget {
+  const _LibrarySecondaryInfoLine({required this.icon, required this.text});
+
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final style =
+        Theme.of(context).textTheme.labelSmall?.copyWith(
+          fontWeight: FontWeight.w800,
+          color: cs.primary,
+          fontSize: 10,
+          height: 1.05,
+        ) ??
+        TextStyle(
+          fontWeight: FontWeight.w800,
+          color: cs.primary,
+          fontSize: 10,
+          height: 1.05,
+        );
+    return SizedBox(
+      width: double.infinity,
+      height: 14,
+      child: Row(
+        children: [
+          Icon(icon, size: 12, color: cs.primary),
+          const SizedBox(width: 5),
+          Expanded(
+            child: MarqueeText(text: text, style: style),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LibraryTertiaryInfoLine extends StatelessWidget {
+  const _LibraryTertiaryInfoLine({required this.icon, required this.text});
+
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return SizedBox(
+      height: 14,
+      child: Row(
+        children: [
+          Icon(
+            icon,
+            size: 12,
+            color: cs.onSurfaceVariant.withValues(alpha: 0.65),
+          ),
+          const SizedBox(width: 5),
+          Flexible(
+            child: Text(
+              text,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                fontWeight: FontWeight.w600,
+                fontStyle: FontStyle.italic,
+                color: cs.onSurfaceVariant.withValues(alpha: 0.65),
+                fontSize: 9,
+                height: 1.05,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _LibraryMarqueeLine extends StatelessWidget {
   const _LibraryMarqueeLine({required this.text, required this.style});
 
@@ -886,97 +1018,6 @@ class _LibraryTwoLineMarqueeText extends StatelessWidget {
   final second = text.substring(splitIndex).trim();
   if (first.isEmpty || second.isEmpty) return (text, '');
   return (first, second);
-}
-
-class _LibrarySecondaryInfoLine extends StatelessWidget {
-  const _LibrarySecondaryInfoLine({
-    required this.icon,
-    required this.text,
-    this.loading = false,
-  });
-
-  final IconData icon;
-  final String text;
-  final bool loading;
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final style =
-        Theme.of(context).textTheme.labelSmall?.copyWith(
-          fontWeight: FontWeight.w800,
-          color: cs.primary,
-          fontSize: 10,
-          height: 1.05,
-        ) ??
-        TextStyle(
-          fontWeight: FontWeight.w800,
-          color: cs.primary,
-          fontSize: 10,
-          height: 1.05,
-        );
-    return SizedBox(
-      width: double.infinity,
-      height: 14,
-      child: Row(
-        children: [
-          Icon(icon, size: 12, color: cs.primary),
-          const SizedBox(width: 5),
-          Expanded(
-            child: loading
-                ? Align(
-                    alignment: Alignment.centerLeft,
-                    child: Icon(
-                      Icons.hourglass_top_rounded,
-                      size: 12,
-                      color: cs.primary,
-                    ),
-                  )
-                : MarqueeText(text: text, style: style),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _LibraryTertiaryInfoLine extends StatelessWidget {
-  const _LibraryTertiaryInfoLine({required this.icon, required this.text});
-
-  final IconData icon;
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return SizedBox(
-      height: 14,
-      child: Row(
-        children: [
-          Icon(
-            icon,
-            size: 12,
-            color: cs.onSurfaceVariant.withValues(alpha: 0.65),
-          ),
-          const SizedBox(width: 5),
-          Flexible(
-            child: Text(
-              text,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                fontWeight: FontWeight.w600,
-                fontStyle: FontStyle.italic,
-                color: cs.onSurfaceVariant.withValues(alpha: 0.65),
-                fontSize: 9,
-                height: 1.05,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
 class _HighlightedText extends StatelessWidget {

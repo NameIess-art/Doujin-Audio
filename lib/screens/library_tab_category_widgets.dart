@@ -499,37 +499,65 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
                 cs.surface,
               )
             : cs.surface,
-        child: SizedBox(
-          height: cardHeight,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 5, 6, 5),
-            child: Row(
-              children: [
-                Expanded(
-                  child: _AudioLibraryCategoryEntryTitle(
-                    entry: entry,
-                    secondaryIcon: secondaryIcon,
-                    secondaryText: secondaryText,
-                    countText: countText,
+        child: entry.isFolder
+            ? SizedBox(
+                height: cardHeight,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 5, 6, 5),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: _AudioLibraryCategoryEntryTitle(
+                          entry: entry,
+                          secondaryIcon: secondaryIcon,
+                          secondaryText: secondaryText,
+                          countText: countText,
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: firstTrack == null
+                            ? null
+                            : () => _play(context, provider),
+                        style: IconButton.styleFrom(
+                          foregroundColor: cs.primary,
+                          minimumSize: const Size(40, 44),
+                          maximumSize: const Size(40, 44),
+                          padding: EdgeInsets.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        icon: const Icon(Icons.add_circle_rounded, size: 25),
+                      ),
+                    ],
                   ),
                 ),
-                IconButton(
-                  onPressed: firstTrack == null
-                      ? null
-                      : () => _play(context, provider),
-                  style: IconButton.styleFrom(
-                    foregroundColor: cs.primary,
-                    minimumSize: const Size(40, 44),
-                    maximumSize: const Size(40, 44),
-                    padding: EdgeInsets.zero,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                  icon: const Icon(Icons.add_circle_rounded, size: 25),
+              )
+            : Padding(
+                padding: const EdgeInsets.fromLTRB(12, 8, 6, 8),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: _SingleAudioFileCardContent(
+                        title: entry.title,
+                        detail: entry.detail,
+                        detailLoading: false,
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: firstTrack == null
+                          ? null
+                          : () => _play(context, provider),
+                      style: IconButton.styleFrom(
+                        foregroundColor: cs.primary,
+                        minimumSize: const Size(40, 44),
+                        maximumSize: const Size(40, 44),
+                        padding: EdgeInsets.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      icon: const Icon(Icons.add_circle_rounded, size: 25),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-          ),
-        ),
+              ),
       ),
     );
   }

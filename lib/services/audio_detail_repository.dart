@@ -116,6 +116,7 @@ class AudioDetailRepository {
       } else {
         final backupFile = _backupFile(normalized.target);
         await backupFile.writeAsString(payload, flush: true);
+        await _deleteLegacyBackupIfNeeded(normalized.target);
       }
       return AudioDetailSaveResult(
         detail: normalized,
@@ -155,7 +156,9 @@ class AudioDetailRepository {
       if (rawJson == null || rawJson.isEmpty) return null;
       final decoded = json.decode(rawJson);
       if (decoded is! Map<String, dynamic>) return null;
-      return AudioDetail.fromBackupJson(target, decoded);
+      final detail = AudioDetail.fromBackupJson(target, decoded);
+      if (detail.target.targetType != target.targetType) return null;
+      return detail.copyWith(target: target);
     } catch (_) {
       return null;
     }
@@ -194,5 +197,21 @@ class AudioDetailRepository {
       );
     }
     return File('${target.targetPath}$singleBackupSuffix');
+  }
+
+  Future<void> _deleteLegacyBackupIfNeeded(AudioDetailTarget target) async {
+    if (!target.isLibraryRootFolder ||
+        PathMatcher.isContentUri(target.targetPath)) {
+      return;
+    }
+    final legacyBackupFile = _backupFile(target, legacy: true);
+    try {
+      if (await legacyBackupFile.exists()) {
+        await legacyBackupFile.delete();
+      }
+    } catch (_) {
+      // Legacy cleanup is best-effort; the modern backup and database are
+      // already saved, so cleanup failure should not discard user edits.
+    }
   }
 }

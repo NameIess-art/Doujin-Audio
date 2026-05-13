@@ -376,13 +376,13 @@ class _TrackNodeWidget extends ConsumerWidget {
         removeTooltip: i18n.tr('remove_audio'),
         secondaryActionLabel: i18n.tr('audio_detail'),
         secondaryActionTooltip: i18n.tr('audio_detail'),
-          verticalActions: track.isVideo,
-          onSecondaryAction: () => unawaited(
-            showAudioDetailSheet(
-              context,
-              AudioDetailTarget.singleAudioFile(track.path),
-            ),
+        verticalActions: track.isVideo,
+        onSecondaryAction: () => unawaited(
+          showAudioDetailSheet(
+            context,
+            AudioDetailTarget.singleAudioFile(track.path),
           ),
+        ),
         onRemove: () => _removeTrack(context, provider, track),
         child: Card(
           margin: EdgeInsets.zero,
@@ -396,7 +396,7 @@ class _TrackNodeWidget extends ConsumerWidget {
               : cs.surface,
           child: track.isVideo
               ? ListTile(
-                  contentPadding: const EdgeInsets.fromLTRB(12, 2, 12, 2),
+                  contentPadding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
                   minTileHeight: _FolderNodeWidgetState._rootFolderTileHeight,
                   shape: cardShape,
                   title: _SingleVideoFileCardContent(
@@ -415,8 +415,9 @@ class _TrackNodeWidget extends ConsumerWidget {
                   ),
                 )
               : Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 8, 6, 8),
+                  padding: const EdgeInsets.fromLTRB(12, 10, 6, 10),
                   child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
                       Expanded(
                         child: _SingleAudioFileCardContent(
@@ -733,7 +734,7 @@ class _LibraryFeaturedCardContent extends StatelessWidget {
           height: 1.05,
           color: cs.onSurface.withValues(alpha: 0.82),
         );
-    final emptyText = i18n.tr('audio_detail_empty');
+    final lines = _audioDetailInfoLines(detail, detailLoading);
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -754,37 +755,20 @@ class _LibraryFeaturedCardContent extends StatelessWidget {
                       height: infoBlockHeight,
                       child: Column(
                         children: [
-                          _LibraryDetailInfoLine(
-                            label: 'RJ',
-                            text: _nonEmpty(detail?.rjCode, emptyText),
-                            style: infoStyle,
-                            loading: detailLoading,
-                          ),
-                          const SizedBox(height: 4),
-                          _LibraryDetailInfoLine(
-                            label: 'CV',
-                            text: _joinedOrEmpty(
-                              detail?.voiceActors,
-                              emptyText,
+                          for (
+                            var index = 0;
+                            index < lines.length;
+                            index++
+                          ) ...[
+                            if (index > 0) const SizedBox(height: 4),
+                            _LibraryDetailInfoLine(
+                              label: lines[index].label,
+                              text: lines[index].text,
+                              style: infoStyle,
+                              loading: false,
+                              lines: lines[index].lines,
                             ),
-                            style: infoStyle,
-                            loading: detailLoading,
-                          ),
-                          const SizedBox(height: 4),
-                          _LibraryDetailInfoLine(
-                            label: '\u793e\u56e2',
-                            text: _nonEmpty(detail?.circleName, emptyText),
-                            style: infoStyle,
-                            loading: detailLoading,
-                          ),
-                          const SizedBox(height: 4),
-                          _LibraryDetailInfoLine(
-                            label: '\u6807\u7b7e',
-                            text: _joinedOrEmpty(detail?.tags, emptyText),
-                            style: infoStyle,
-                            loading: detailLoading,
-                            lines: 2,
-                          ),
+                          ],
                         ],
                       ),
                     ),
@@ -879,39 +863,31 @@ class _SingleAudioFileCardContent extends StatelessWidget {
           color: cs.onSurface.withValues(alpha: 0.82),
         );
     final d = detail;
-    final lines = detailLoading || d == null
-        ? const <_AudioDetailInfoLineData>[]
-        : [
-            if (d.rjCode.trim().isNotEmpty)
-              _AudioDetailInfoLineData('RJ', d.rjCode.trim()),
-            if (d.voiceActors.isNotEmpty)
-              _AudioDetailInfoLineData(
-                'CV',
-                AudioDetail.normalizeList(d.voiceActors).join('\uFF0C'),
-              ),
-            if (d.circleName.trim().isNotEmpty)
-              _AudioDetailInfoLineData('\u793e\u56e2', d.circleName.trim()),
-            if (d.tags.isNotEmpty)
-              _AudioDetailInfoLineData(
-                '\u6807\u7b7e',
-                AudioDetail.normalizeList(d.tags).join('\uFF0C'),
-              ),
-          ];
+    final lines = _audioDetailInfoLines(d, detailLoading);
 
     return Column(
-      mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
       children: [
         _LibraryTwoLineMarqueeText(text: title, style: titleStyle),
-        for (final line in lines) ...[
-          const SizedBox(height: 3),
-          _LibraryDetailInfoLine(
-            label: line.label,
-            text: line.text,
-            style: infoStyle,
-            loading: false,
+        if (lines.isNotEmpty)
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (final line in lines) ...[
+                const SizedBox(height: 2),
+                _LibraryDetailInfoLine(
+                  label: line.label,
+                  text: line.text,
+                  style: infoStyle,
+                  loading: false,
+                  lines: line.lines,
+                  reserveLineHeight: false,
+                ),
+              ],
+            ],
           ),
-        ],
       ],
     );
   }
@@ -946,10 +922,11 @@ class _SingleVideoFileCardContent extends StatelessWidget {
 }
 
 class _AudioDetailInfoLineData {
-  const _AudioDetailInfoLineData(this.label, this.text);
+  const _AudioDetailInfoLineData(this.label, this.text, {this.lines = 1});
 
   final String label;
   final String text;
+  final int lines;
 }
 
 class _LibraryDetailInfoLine extends StatelessWidget {
@@ -959,6 +936,7 @@ class _LibraryDetailInfoLine extends StatelessWidget {
     required this.style,
     required this.loading,
     this.lines = 1,
+    this.reserveLineHeight = true,
   });
 
   final String label;
@@ -966,57 +944,86 @@ class _LibraryDetailInfoLine extends StatelessWidget {
   final TextStyle style;
   final bool loading;
   final int lines;
+  final bool reserveLineHeight;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final lineCount = lines.clamp(1, 2);
-    return SizedBox(
-      height: lineCount == 2 ? 36 : 16,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 28,
-            child: Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.clip,
-              style: style.copyWith(
-                color: cs.primary,
-                fontWeight: FontWeight.w900,
-              ),
+    final content = Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 28,
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.clip,
+            style: style.copyWith(
+              color: cs.primary,
+              fontWeight: FontWeight.w900,
             ),
           ),
-          const SizedBox(width: 5),
-          Expanded(
-            child: loading
-                ? Align(
-                    alignment: Alignment.centerLeft,
-                    child: Icon(
-                      Icons.hourglass_top_rounded,
-                      size: 12,
-                      color: cs.primary,
-                    ),
-                  )
-                : lineCount == 2
-                ? _LibraryTwoLineMarqueeText(text: text, style: style)
-                : MarqueeText(text: text, style: style, scrollSpeed: 24),
-          ),
-        ],
-      ),
+        ),
+        const SizedBox(width: 5),
+        Expanded(
+          child: loading
+              ? Align(
+                  alignment: Alignment.centerLeft,
+                  child: Icon(
+                    Icons.hourglass_top_rounded,
+                    size: 12,
+                    color: cs.primary,
+                  ),
+                )
+              : reserveLineHeight
+              ? lineCount == 2
+                    ? _LibraryTwoLineMarqueeText(text: text, style: style)
+                    : MarqueeText(text: text, style: style, scrollSpeed: 24)
+              : Text(
+                  text,
+                  maxLines: lineCount,
+                  overflow: TextOverflow.ellipsis,
+                  style: style,
+                ),
+        ),
+      ],
     );
+
+    if (!reserveLineHeight) {
+      return content;
+    }
+
+    return SizedBox(height: lineCount == 2 ? 36 : 16, child: content);
   }
 }
 
-String _nonEmpty(String? value, String fallback) {
-  final text = value?.trim() ?? '';
-  return text.isEmpty ? fallback : text;
-}
+List<_AudioDetailInfoLineData> _audioDetailInfoLines(
+  AudioDetail? detail,
+  bool detailLoading,
+) {
+  final d = detail;
+  if (detailLoading || d == null) {
+    return const <_AudioDetailInfoLineData>[];
+  }
 
-String _joinedOrEmpty(Iterable<String>? values, String fallback) {
-  final text = AudioDetail.normalizeList(values ?? const <String>[]).join(', ');
-  return text.isEmpty ? fallback : text;
+  return <_AudioDetailInfoLineData>[
+    if (d.rjCode.trim().isNotEmpty)
+      _AudioDetailInfoLineData('RJ', d.rjCode.trim()),
+    if (d.voiceActors.isNotEmpty)
+      _AudioDetailInfoLineData(
+        'CV',
+        AudioDetail.normalizeList(d.voiceActors).join('\uFF0C'),
+      ),
+    if (d.circleName.trim().isNotEmpty)
+      _AudioDetailInfoLineData('\u793e\u56e2', d.circleName.trim()),
+    if (d.tags.isNotEmpty)
+      _AudioDetailInfoLineData(
+        '\u6807\u7b7e',
+        AudioDetail.normalizeList(d.tags).join('\uFF0C'),
+        lines: 2,
+      ),
+  ];
 }
 
 class _LibrarySecondaryInfoLine extends StatelessWidget {

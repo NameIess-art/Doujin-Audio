@@ -555,6 +555,7 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
             : Padding(
                 padding: const EdgeInsets.fromLTRB(12, 8, 6, 8),
                 child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Expanded(
                       child: _SingleAudioFileCardContent(

@@ -579,4 +579,46 @@ void main() {
       },
     );
   });
+
+  group('library folder restore', () {
+    test('restoring an excluded content folder repopulates its tracks', () async {
+      const libraryRoot =
+          'content://com.android.externalstorage.documents/tree/primary%3AASMR';
+      const restoredFolder = '$libraryRoot::WorkA';
+      const trackPath =
+          'content://com.android.externalstorage.documents/tree/primary%3AASMR/document/primary%3AASMR%2FWorkA%2F01.mp4';
+
+      provider.addWatchedLibrary(libraryRoot, notify: false);
+      provider.setLibraryFolderExcluded(libraryRoot, restoredFolder, true);
+
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(fileCacheChannel, (call) async {
+            if (call.method != FileCacheMethod.scanFolder) {
+              return null;
+            }
+            final arguments = call.arguments as Map<Object?, Object?>;
+            if (arguments['folder'] != restoredFolder) {
+              return const <Object?>[];
+            }
+            return <Object?>[
+              <Object?, Object?>{
+                'path': trackPath,
+                'groupKey': restoredFolder,
+                'groupTitle': 'WorkA',
+                'groupSubtitle': 'WorkA',
+                'title': '01',
+                'isVideo': true,
+              },
+            ];
+          });
+
+      provider.setLibraryFolderExcluded(libraryRoot, restoredFolder, false);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      final restoredTrack = provider.trackByPath(trackPath);
+      expect(restoredTrack, isNotNull);
+      expect(restoredTrack!.groupKey, restoredFolder);
+      expect(restoredTrack.isVideo, isTrue);
+    });
+  });
 }

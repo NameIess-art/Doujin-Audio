@@ -14,6 +14,9 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage> {
   List<String> _diskAudioFilePaths = const <String>[];
   Timer? _searchDebounceTimer;
   String _searchQuery = '';
+  final Map<String, _LibraryEditFolderTreeNode> _folderStructureSnapshots =
+      <String, _LibraryEditFolderTreeNode>{};
+  int _folderStructureSnapshotRevision = 0;
 
   // Edit-tree cache (memoized per build inputs).
   Object? _editTreeCacheKey;
@@ -127,9 +130,15 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage> {
     final excludedFolders = libraryService.excludedFoldersForLibrary(
       widget.libraryPath,
     );
+    final childFolders = libraryService
+        .childFoldersForLibrary(widget.libraryPath)
+        .map(_folderPathForLibraryChild)
+        .toList(growable: false);
     final cacheKey = Object.hash(
       libraryService.library,
       _diskAudioFilePaths,
+      _folderStructureSnapshotRevision,
+      childFolders,
       excludedTracks,
       excludedFolders,
       _searchQuery,
@@ -143,7 +152,12 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage> {
             _diskAudioFilePaths,
             excludedTracks,
           ),
-          excludedFolders,
+          <String>{
+            ...childFolders,
+            ...excludedFolders,
+            ..._folderStructureSnapshots.keys,
+          }.toList(growable: false),
+          _folderStructureSnapshots.values.toList(growable: false),
         ),
         _searchQuery,
       );
@@ -326,11 +340,13 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage> {
 
   List<_LibraryEditTreeNode> _buildEditTree(
     List<String> trackPaths,
-    List<String> excludedFolders,
+    List<String> persistentFolderPaths,
+    List<_LibraryEditFolderTreeNode> restoringFolderSnapshots,
   ) {
     final rootPath = PathMatcher.normalize(widget.libraryPath);
     final folderByPath = <String, _LibraryEditFolderTreeNode>{};
     final roots = <_LibraryEditTreeNode>[];
+    final insertedTrackPaths = <String>{};
 
     _LibraryEditFolderTreeNode? ensureFolder(String folderPath) {
       final normalizedFolderPath = PathMatcher.normalize(folderPath);
@@ -342,7 +358,8 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage> {
       final existing = folderByPath[normalizedFolderPath];
       if (existing != null) return existing;
 
-      final parent = ensureFolder(path.dirname(normalizedFolderPath));
+      final parentPath = _parentFolderPath(normalizedFolderPath, rootPath);
+      final parent = parentPath == null ? null : ensureFolder(parentPath);
       final folder = _LibraryEditFolderTreeNode(
         folderPath: normalizedFolderPath,
         depth: _relativeFolderDepth(normalizedFolderPath),
@@ -356,13 +373,12 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage> {
       return folder;
     }
 
-    for (final excludedFolderPath in excludedFolders) {
-      ensureFolder(excludedFolderPath);
-    }
-
-    for (final trackPath in trackPaths) {
+    void addTrackNode(String trackPath) {
       final normalizedTrackPath = PathMatcher.normalize(trackPath);
-      if (!_trackBelongsToLibrary(normalizedTrackPath)) continue;
+      if (!_trackBelongsToLibrary(normalizedTrackPath) ||
+          !insertedTrackPaths.add(normalizedTrackPath)) {
+        return;
+      }
       final trackNode = _LibraryEditTrackTreeNode(normalizedTrackPath);
       final folderPath = _folderPathForTrack(normalizedTrackPath);
       final folder = folderPath == null ? null : ensureFolder(folderPath);
@@ -373,8 +389,57 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage> {
       }
     }
 
+    void mergeFolderSnapshot(_LibraryEditFolderTreeNode snapshot) {
+      final folder = ensureFolder(snapshot.folderPath);
+      if (folder == null) return;
+      for (final child in snapshot.children) {
+        if (child is _LibraryEditFolderTreeNode) {
+          mergeFolderSnapshot(child);
+        } else if (child is _LibraryEditTrackTreeNode) {
+          addTrackNode(child.trackPath);
+        }
+      }
+    }
+
+    for (final folderPath in persistentFolderPaths) {
+      ensureFolder(folderPath);
+    }
+    for (final snapshot in restoringFolderSnapshots) {
+      mergeFolderSnapshot(snapshot);
+    }
+
+    for (final trackPath in trackPaths) {
+      addTrackNode(trackPath);
+    }
+
     _sortEditTree(roots);
     return roots;
+  }
+
+  String? _parentFolderPath(String folderPath, String rootPath) {
+    final normalizedFolderPath = PathMatcher.normalize(folderPath);
+    if (PathMatcher.equalsNormalized(normalizedFolderPath, rootPath)) {
+      return null;
+    }
+
+    if (PathMatcher.isContentUri(normalizedFolderPath)) {
+      final markerIndex = normalizedFolderPath.indexOf('::');
+      if (markerIndex >= 0) {
+        final base = normalizedFolderPath.substring(0, markerIndex);
+        final relative = normalizedFolderPath
+            .substring(markerIndex + 2)
+            .replaceAll('\\', '/')
+            .replaceFirst(RegExp(r'^/+'), '')
+            .replaceFirst(RegExp(r'/+$'), '');
+        final parentRelative = path.posix.dirname(relative);
+        if (parentRelative == '.' || parentRelative.isEmpty) {
+          return base;
+        }
+        return '$base::$parentRelative';
+      }
+    }
+
+    return path.dirname(normalizedFolderPath);
   }
 
   int _relativeFolderDepth(String folderPath) {
@@ -418,6 +483,23 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage> {
       return '$rootPath::$relativeFolderPath';
     }
     return path.normalize(path.join(rootPath, relativeFolderPath));
+  }
+
+  String _folderPathForLibraryChild(String folderPath) {
+    final normalizedFolderPath = PathMatcher.normalize(folderPath);
+    final rootPath = PathMatcher.normalize(widget.libraryPath);
+    if (!PathMatcher.isContentUri(rootPath)) {
+      return normalizedFolderPath;
+    }
+
+    final relativeFolderPath = PathMatcher.relativeWithin(
+      normalizedFolderPath,
+      rootPath,
+    );
+    if (relativeFolderPath == null || relativeFolderPath.isEmpty) {
+      return normalizedFolderPath;
+    }
+    return '$rootPath::${relativeFolderPath.replaceAll('\\', '/')}';
   }
 
   void _sortEditTree(List<_LibraryEditTreeNode> nodes) {
@@ -499,6 +581,38 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage> {
 
   bool _trackBelongsToLibrary(String trackPath) {
     return PathMatcher.isWithinOrEqual(trackPath, widget.libraryPath);
+  }
+
+  void rememberFolderStructureSnapshot(
+    String folderPath,
+    _LibraryEditFolderTreeNode folder,
+  ) {
+    final normalizedFolderPath = PathMatcher.normalize(folderPath);
+    setState(() {
+      _folderStructureSnapshots[normalizedFolderPath] = _cloneFolderNode(
+        folder,
+      );
+      _folderStructureSnapshotRevision++;
+    });
+  }
+
+  _LibraryEditFolderTreeNode _cloneFolderNode(
+    _LibraryEditFolderTreeNode folder,
+  ) {
+    return _LibraryEditFolderTreeNode(
+      folderPath: folder.folderPath,
+      depth: folder.depth,
+      children: folder.children
+          .map<_LibraryEditTreeNode>((child) {
+            if (child is _LibraryEditFolderTreeNode) {
+              return _cloneFolderNode(child);
+            }
+            return _LibraryEditTrackTreeNode(
+              (child as _LibraryEditTrackTreeNode).trackPath,
+            );
+          })
+          .toList(growable: false),
+    );
   }
 }
 
@@ -677,6 +791,12 @@ class _LibraryEditFolderTreeTileState
                 child: TextButton.icon(
                   style: muted ? _libraryMutedButtonStyle(cs) : null,
                   onPressed: () {
+                    if (widget.folder.children.isNotEmpty) {
+                      editState?.rememberFolderStructureSnapshot(
+                        folderPath,
+                        widget.folder,
+                      );
+                    }
                     audioProvider.setLibraryFolderExcluded(
                       widget.libraryPath,
                       folderPath,

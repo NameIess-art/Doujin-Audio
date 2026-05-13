@@ -98,6 +98,7 @@ extension AudioProviderLibrary on AudioProvider {
     String folderPath,
     bool excluded,
   ) {
+    final normalizedLibraryPath = PathMatcher.normalize(libraryPath);
     final normalizedFolderPath = PathMatcher.normalize(folderPath);
     final changed = _libraryService.setLibraryFolderExcluded(
       libraryPath,
@@ -111,6 +112,10 @@ extension AudioProviderLibrary on AudioProvider {
         (track) =>
             PathMatcher.isWithinOrEqual(track.path, normalizedFolderPath) ||
             PathMatcher.isWithinOrEqual(track.groupKey, normalizedFolderPath),
+      );
+    } else {
+      unawaited(
+        _restoreExcludedFolder(normalizedLibraryPath, normalizedFolderPath),
       );
     }
     _notifyListeners();
@@ -170,6 +175,160 @@ extension AudioProviderLibrary on AudioProvider {
         modifiedAt: fileStat?.modified,
       ),
     ], notify: false);
+  }
+
+  Future<void> _restoreExcludedFolder(
+    String libraryPath,
+    String folderPath,
+  ) async {
+    final restoredTracks = PathMatcher.isContentUri(folderPath)
+        ? await _scanRestorableTracksViaNative(folderPath)
+        : await _scanRestorableTracksFromDisk(folderPath);
+    if (restoredTracks.isEmpty) {
+      _notifyListeners();
+      return;
+    }
+
+    final candidates = restoredTracks
+        .where(
+          (track) =>
+              !_libraryService.isLibraryPathExcluded(libraryPath, track.path),
+        )
+        .toList(growable: false);
+    if (candidates.isEmpty) {
+      _notifyListeners();
+      return;
+    }
+
+    addOrReplaceTracks(candidates, notify: false);
+    _notifyListeners();
+  }
+
+  Future<List<MusicTrack>> _scanRestorableTracksFromDisk(
+    String folderPath,
+  ) async {
+    final directory = Directory(folderPath);
+    if (!await directory.exists()) return const <MusicTrack>[];
+
+    final pendingDirs = <Directory>[directory];
+    final restoredTracks = <MusicTrack>[];
+
+    while (pendingDirs.isNotEmpty) {
+      final currentDir = pendingDirs.removeLast();
+      late final Stream<FileSystemEntity> stream;
+      try {
+        stream = currentDir.list(followLinks: false);
+      } catch (_) {
+        continue;
+      }
+
+      await for (final entity in stream.handleError((_) {})) {
+        if (entity is Directory) {
+          pendingDirs.add(entity);
+          continue;
+        }
+        if (entity is! File) continue;
+
+        final absolutePath = path.normalize(entity.path);
+        if (!isSupportedMediaFile(absolutePath) ||
+            _libraryByPath.containsKey(absolutePath)) {
+          continue;
+        }
+
+        FileStat? fileStat;
+        try {
+          fileStat = await entity.stat();
+        } catch (_) {}
+
+        final parentFolder = path.dirname(absolutePath);
+        final folderName = path.basename(parentFolder);
+        restoredTracks.add(
+          MusicTrack(
+            path: absolutePath,
+            displayName: path.basenameWithoutExtension(absolutePath),
+            groupKey: parentFolder,
+            groupTitle: folderName.isEmpty ? parentFolder : folderName,
+            groupSubtitle: parentFolder,
+            isSingle: false,
+            isVideo: isVideoMediaFile(absolutePath),
+            scannedAt: DateTime.now(),
+            fileSizeBytes: fileStat?.size,
+            modifiedAt: fileStat?.modified,
+          ),
+        );
+      }
+    }
+
+    return restoredTracks;
+  }
+
+  Future<List<MusicTrack>> _scanRestorableTracksViaNative(
+    String folderPath,
+  ) async {
+    try {
+      final data = await AudioProvider._fileCacheChannel
+          .invokeMethod<List<dynamic>>(FileCacheMethod.scanFolder, {
+            'folder': folderPath,
+          });
+      if (data == null) return const <MusicTrack>[];
+
+      final restoredTracks = <MusicTrack>[];
+      for (final item in data) {
+        if (item is! Map) continue;
+        final map = item.cast<Object?, Object?>();
+        final rawPath = map['path']?.toString().trim();
+        if (rawPath == null ||
+            rawPath.isEmpty ||
+            !isSupportedMediaFile(rawPath) ||
+            _libraryByPath.containsKey(rawPath)) {
+          continue;
+        }
+
+        final normalizedPath = rawPath.startsWith('content://')
+            ? rawPath
+            : path.normalize(rawPath);
+        final nativeGroupKey = map['groupKey']?.toString().trim();
+        final nativeGroupTitle = map['groupTitle']?.toString().trim();
+        final nativeGroupSubtitle = map['groupSubtitle']?.toString().trim();
+        final groupKey = (nativeGroupKey?.isNotEmpty ?? false)
+            ? nativeGroupKey!
+            : path.dirname(normalizedPath);
+        final groupTitle = (nativeGroupTitle?.isNotEmpty ?? false)
+            ? nativeGroupTitle!
+            : PathDisplay.folderName(groupKey);
+        final groupSubtitle = (nativeGroupSubtitle?.isNotEmpty ?? false)
+            ? nativeGroupSubtitle!
+            : groupKey;
+        final displayName = map['title']?.toString().trim();
+        final scannedAtMs = map['scannedAtMs'] as num?;
+        final modifiedAtMs = map['modifiedAtMs'] as num?;
+
+        restoredTracks.add(
+          MusicTrack(
+            path: normalizedPath,
+            displayName: displayName?.isEmpty ?? true
+                ? PathDisplay.fileName(normalizedPath, withoutExtension: true)
+                : displayName!,
+            groupKey: groupKey,
+            groupTitle: groupTitle,
+            groupSubtitle: groupSubtitle,
+            isSingle: false,
+            isVideo:
+                map['isVideo'] as bool? ?? isVideoMediaFile(normalizedPath),
+            scannedAt: scannedAtMs == null
+                ? DateTime.now()
+                : DateTime.fromMillisecondsSinceEpoch(scannedAtMs.toInt()),
+            fileSizeBytes: (map['fileSizeBytes'] as num?)?.toInt(),
+            modifiedAt: modifiedAtMs == null
+                ? null
+                : DateTime.fromMillisecondsSinceEpoch(modifiedAtMs.toInt()),
+          ),
+        );
+      }
+      return restoredTracks;
+    } catch (_) {
+      return const <MusicTrack>[];
+    }
   }
 
   void _removeTracksWhere(bool Function(MusicTrack track) test) {

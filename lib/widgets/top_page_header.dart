@@ -2,7 +2,6 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../providers/audio_provider.dart';
 import '../i18n/app_language_provider.dart';
 
 class TopPageHeader extends StatelessWidget {
@@ -41,9 +40,6 @@ class TopPageHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final i18n = context.watch<AppLanguageProvider>();
-    final isTransitioning = context.select<AudioProvider, bool>(
-      (p) => p.isPageTransitioning,
-    );
     final screenSize = MediaQuery.sizeOf(context);
     final isSmallWindow = screenSize.width < 450 || screenSize.height < 400;
     final topPadding = useSafeAreaTop ? MediaQuery.paddingOf(context).top : 0.0;
@@ -113,7 +109,7 @@ class TopPageHeader extends StatelessWidget {
       ),
     );
 
-    final blurTarget = 0.0;
+    const blurTarget = 0.0;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final alphaTarget = isSmallWindow
         ? (isDark ? 0.96 : 0.98)

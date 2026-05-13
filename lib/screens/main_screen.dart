@@ -281,10 +281,8 @@ class _MainScreenState extends ConsumerState<MainScreen>
       _isDataReady = true;
     }
     final width = MediaQuery.sizeOf(context).width;
-    final height = MediaQuery.sizeOf(context).height;
     final isDesktop = width >= _desktopBreakpoint;
-    final isSmallWindow = width < 450 || height < 400;
-    final isTinyWindow = width < 300 || height < 300;
+    final isTinyWindow = width < 300 || MediaQuery.sizeOf(context).height < 300;
     final mobileContentInset = isDesktop
         ? 0.0
         : _mobileContentInset(hasNowPlaying: hasNowPlaying);
@@ -337,7 +335,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
                         child: RepaintBoundary(
                           child: isTinyWindow
                               ? const SizedBox.expand()
-                                  : const SizedBox.expand(),
+                              : const SizedBox.expand(),
                         ),
                       ),
                     ),

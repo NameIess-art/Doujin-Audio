@@ -683,7 +683,11 @@ class PlaybackSessionService {
   bool applyNativeSnapshot(NativePlaybackSnapshot snapshot) {
     final session = sessions[snapshot.sessionId];
     if (session == null) return false;
+    final previousTrackPath = session.currentTrackPath;
     session.applyNativeSnapshot(snapshot);
+    if (session.currentTrackPath != previousTrackPath) {
+      markActiveSessionsDirty();
+    }
     return true;
   }
 

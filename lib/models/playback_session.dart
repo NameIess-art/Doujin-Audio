@@ -85,12 +85,17 @@ class PlaybackSession {
       bufferedPosition = snapshot.bufferedPosition;
       _bufferedPositionController.add(bufferedPosition);
     }
+    final nativePath = snapshot.path ?? _pathFromUri(snapshot.uri);
+    if (nativePath != null && nativePath.isNotEmpty) {
+      currentTrackPath = nativePath;
+      loadedPath = nativePath;
+    }
     if ((volume - snapshot.volume).abs() >= 0.001) {
       volume = snapshot.volume;
     }
     nativeBoostGain = snapshot.boostGain;
     channelSwapEnabled = snapshot.channelSwapEnabled;
-    if (snapshot.uri != null) {
+    if (snapshot.uri != null && loadedPath == null) {
       loadedPath = currentTrackPath;
     }
   }
@@ -136,6 +141,15 @@ class PlaybackSession {
     _durationController.close();
     _bufferedPositionController.close();
   }
+}
+
+String? _pathFromUri(String? uriValue) {
+  if (uriValue == null || uriValue.isEmpty) return null;
+  final uri = Uri.tryParse(uriValue);
+  if (uri == null) return uriValue;
+  if (uri.scheme == 'file') return uri.toFilePath(windows: false);
+  if (uri.scheme == 'content') return uriValue;
+  return null;
 }
 
 ProcessingState _nativeProcessingState(String state) {

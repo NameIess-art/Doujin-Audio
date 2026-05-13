@@ -93,10 +93,21 @@ extension AudioProviderPersistenceSessions on AudioProvider {
             sessionId: session.id,
             uri: uri,
             title: track.displayName,
+            path: track.path,
             subtitle: track.groupTitle,
             startPosition: session.lastKnownPosition,
             volume: session.volume,
             repeatOne: session.loopMode == SessionLoopMode.single,
+            queue: _nativePlaybackQueueFor(
+              session,
+              currentPath: session.currentTrackPath,
+            ),
+            queueStartIndex: _nativePlaybackQueueStartIndexFor(
+              session,
+              currentPath: session.currentTrackPath,
+            ),
+            repeatAll: session.loopMode != SessionLoopMode.single,
+            shuffle: _isShuffleMode(session.loopMode),
           );
           if (!prepareResult.isOk) {
             continue;

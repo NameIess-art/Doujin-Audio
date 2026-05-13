@@ -41,8 +41,6 @@ class _ActiveSessionCard extends StatelessWidget {
     final isSmallWindow = screenSize.width < 450 || screenSize.height < 400;
     final isTinyWindow = screenSize.width < 300 || screenSize.height < 300;
 
-    final blurSigma = isSmallWindow ? 4.0 : 8.0;
-
     return Semantics(
       button: true,
       label: displayName,
@@ -58,33 +56,31 @@ class _ActiveSessionCard extends StatelessWidget {
               decoration: BoxDecoration(
                 color: (isDark ? cs.surfaceBright : cs.surfaceContainerHighest)
                     .withValues(
-                      alpha:
-                          isSmallWindow
-                              ? (isDark ? 0.96 : 0.98)
-                              : (isDark ? 0.92 : 0.94),
+                      alpha: isSmallWindow
+                          ? (isDark ? 0.96 : 0.98)
+                          : (isDark ? 0.92 : 0.94),
                     ),
                 borderRadius: BorderRadius.circular(cardRadius),
-                boxShadow:
-                    isTinyWindow
-                        ? null
-                        : [
-                          BoxShadow(
-                            color: cs.shadow.withValues(
-                              alpha: isPlaying ? 0.26 : 0.18,
-                            ),
-                            blurRadius: isPlaying ? 34 : 26,
-                            spreadRadius: -7,
-                            offset: const Offset(0, 18),
+                boxShadow: isTinyWindow
+                    ? null
+                    : [
+                        BoxShadow(
+                          color: cs.shadow.withValues(
+                            alpha: isPlaying ? 0.26 : 0.18,
                           ),
-                          BoxShadow(
-                            color: cs.primary.withValues(
-                              alpha: isPlaying ? 0.08 : 0.04,
-                            ),
-                            blurRadius: 18,
-                            spreadRadius: -10,
-                            offset: const Offset(0, 8),
+                          blurRadius: isPlaying ? 34 : 26,
+                          spreadRadius: -7,
+                          offset: const Offset(0, 18),
+                        ),
+                        BoxShadow(
+                          color: cs.primary.withValues(
+                            alpha: isPlaying ? 0.08 : 0.04,
                           ),
-                        ],
+                          blurRadius: 18,
+                          spreadRadius: -10,
+                          offset: const Offset(0, 8),
+                        ),
+                      ],
               ),
               child: _buildCardContent(
                 context,
@@ -100,8 +96,13 @@ class _ActiveSessionCard extends StatelessWidget {
     );
   }
 
-  Widget _buildCardContent(BuildContext context, ColorScheme cs, bool isPlaying, 
-      ({bool playing, bool loading, String trackPath}) view, String displayName) {
+  Widget _buildCardContent(
+    BuildContext context,
+    ColorScheme cs,
+    bool isPlaying,
+    ({bool playing, bool loading, String trackPath}) view,
+    String displayName,
+  ) {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -144,10 +145,19 @@ class _ActiveSessionCard extends StatelessWidget {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             if (showSub)
-                              Icon(Icons.subtitles_rounded, size: 10, color: cs.primary),
-                            if (showSub && session.channelSwapEnabled) const SizedBox(width: 2),
+                              Icon(
+                                Icons.subtitles_rounded,
+                                size: 10,
+                                color: cs.primary,
+                              ),
+                            if (showSub && session.channelSwapEnabled)
+                              const SizedBox(width: 2),
                             if (session.channelSwapEnabled)
-                              Icon(Icons.swap_horiz_rounded, size: 10, color: cs.primary),
+                              Icon(
+                                Icons.swap_horiz_rounded,
+                                size: 10,
+                                color: cs.primary,
+                              ),
                           ],
                         ),
                       );

@@ -213,10 +213,18 @@ extension AudioProviderPlaybackSessions on AudioProvider {
             sessionId: session.id,
             uri: uri,
             title: title,
+            path: nextPath,
             subtitle: track?.groupTitle,
             artUri: artUri,
             volume: session.volume,
             repeatOne: session.loopMode == SessionLoopMode.single,
+            queue: _nativePlaybackQueueFor(session, currentPath: nextPath),
+            queueStartIndex: _nativePlaybackQueueStartIndexFor(
+              session,
+              currentPath: nextPath,
+            ),
+            repeatAll: session.loopMode != SessionLoopMode.single,
+            shuffle: _isShuffleMode(session.loopMode),
           );
           if (!_sessions.containsKey(session.id) ||
               session.loadGeneration != generation) {
@@ -267,5 +275,66 @@ extension AudioProviderPlaybackSessions on AudioProvider {
       _syncNotificationState();
       _syncKeepCpuAwake();
     }
+  }
+
+  List<Map<String, Object?>> _nativePlaybackQueueFor(
+    PlaybackSession session, {
+    required String currentPath,
+  }) {
+    final paths = _nativePlaybackQueuePathsFor(
+      session,
+      currentPath: currentPath,
+    );
+    return paths.map(_nativePlaybackQueueItemForPath).toList(growable: false);
+  }
+
+  int? _nativePlaybackQueueStartIndexFor(
+    PlaybackSession session, {
+    required String currentPath,
+  }) {
+    final paths = _nativePlaybackQueuePathsFor(
+      session,
+      currentPath: currentPath,
+    );
+    final index = paths.indexOf(currentPath);
+    return index < 0 ? 0 : index;
+  }
+
+  List<String> _nativePlaybackQueuePathsFor(
+    PlaybackSession session, {
+    required String currentPath,
+  }) {
+    final currentTrack = trackByPath(currentPath);
+    switch (session.loopMode) {
+      case SessionLoopMode.single:
+        return <String>[currentPath];
+      case SessionLoopMode.crossSequential:
+      case SessionLoopMode.crossRandom:
+        return _sortedLibraryTrackPaths.isEmpty
+            ? <String>[currentPath]
+            : _sortedLibraryTrackPaths;
+      case SessionLoopMode.folderSequential:
+      case SessionLoopMode.folderRandom:
+        final groupTracks = currentTrack == null
+            ? const <MusicTrack>[]
+            : _tracksByGroup[currentTrack.groupKey] ?? const <MusicTrack>[];
+        return groupTracks.isEmpty
+            ? <String>[currentPath]
+            : groupTracks.map((track) => track.path).toList(growable: false);
+    }
+  }
+
+  Map<String, Object?> _nativePlaybackQueueItemForPath(String trackPath) {
+    final track = trackByPath(trackPath);
+    final subtitle = track?.groupTitle;
+    return <String, Object?>{
+      'path': trackPath,
+      'uri': PathMatcher.isContentUri(trackPath)
+          ? trackPath
+          : Uri.file(trackPath).toString(),
+      'title': track?.displayName ?? path.basenameWithoutExtension(trackPath),
+      // ignore: use_null_aware_elements
+      if (subtitle != null) 'subtitle': subtitle,
+    };
   }
 }

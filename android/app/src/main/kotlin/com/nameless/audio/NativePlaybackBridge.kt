@@ -56,7 +56,8 @@ class NativePlaybackBridge(
                 ) ?: mapOf("ok" to false, "error" to "Native playback service is not ready.")
                 NativePlaybackMethods.SET_REPEAT_ONE -> service?.setRepeatOne(
                     call.requiredString("sessionId"),
-                    call.argument<Boolean>("repeatOne") ?: false
+                    call.argument<Boolean>("repeatOne") ?: false,
+                    call.argumentsMap()
                 ) ?: mapOf("ok" to false, "error" to "Native playback service is not ready.")
                 NativePlaybackMethods.SET_CHANNEL_SWAP -> service?.setChannelSwap(
                     call.requiredString("sessionId"),

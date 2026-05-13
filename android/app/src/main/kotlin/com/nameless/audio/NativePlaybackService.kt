@@ -28,6 +28,14 @@ import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import java.util.concurrent.ConcurrentHashMap
 
+private data class NativeMediaItemDescriptor(
+    val path: String,
+    val uri: String,
+    val title: String,
+    val subtitle: String?,
+    val artUri: String?
+)
+
 class NativePlaybackService : MediaSessionService() {
     companion object {
         const val ACTION_START = "com.nameless.audio.native.START"
@@ -198,6 +206,7 @@ class NativePlaybackService : MediaSessionService() {
     fun prepareSession(args: Map<String, Any?>): Map<String, Any?> {
         val sessionId = args["sessionId"] as? String ?: return errorResult("Missing sessionId.")
         val uri = args["uri"] as? String ?: return errorResult("Missing uri.")
+        val path = args["path"] as? String ?: uri
         val title = args["title"] as? String ?: "Audio"
         val subtitle = args["subtitle"] as? String
         val artUri = args["artUri"] as? String
@@ -205,6 +214,13 @@ class NativePlaybackService : MediaSessionService() {
         val autoPlay = args["autoPlay"] as? Boolean ?: false
         val volume = (args["volume"] as? Number)?.toFloat() ?: 1f
         val repeatOne = args["repeatOne"] as? Boolean ?: false
+        val queue = parseQueue(args["queue"]).ifEmpty {
+            listOf(NativeMediaItemDescriptor(path, uri, title, subtitle, artUri))
+        }
+        val queueStartIndex = ((args["queueStartIndex"] as? Number)?.toInt() ?: 0)
+            .coerceIn(0, queue.lastIndex)
+        val repeatAll = args["repeatAll"] as? Boolean ?: false
+        val shuffle = args["shuffle"] as? Boolean ?: false
         if (autoPlay) {
             notificationsDismissed = false
             playbackSuspended = false
@@ -213,13 +229,14 @@ class NativePlaybackService : MediaSessionService() {
         val nativeSession = sessions.getOrPut(sessionId) { NativePlaybackSession(sessionId) }
         return try {
             nativeSession.configure(
-                uri = uri,
-                title = title,
-                subtitle = subtitle,
-                artUri = artUri,
+                descriptor = queue[queueStartIndex],
+                queue = queue,
+                queueStartIndex = queueStartIndex,
                 startPositionMs = startPositionMs,
                 volume = volume,
                 repeatOne = repeatOne,
+                repeatAll = repeatAll,
+                shuffleModeEnabled = shuffle,
                 autoPlay = autoPlay
             )
             focusSession(sessionId)
@@ -295,14 +312,34 @@ class NativePlaybackService : MediaSessionService() {
         return okResult(session.snapshot())
     }
 
-    fun setRepeatOne(sessionId: String, repeatOne: Boolean): Map<String, Any?> {
+    fun setRepeatOne(
+        sessionId: String,
+        repeatOne: Boolean,
+        args: Map<String, Any?> = emptyMap()
+    ): Map<String, Any?> {
         val session = sessions[sessionId] ?: return errorResult("Unknown session.")
         session.lastUsedMs = System.currentTimeMillis()
         session.repeatOne = repeatOne
-        session.playerOrNull()?.repeatMode = if (repeatOne) {
-            Player.REPEAT_MODE_ONE
+        val queue = parseQueue(args["queue"])
+        if (queue.isNotEmpty()) {
+            val queueStartIndex = ((args["queueStartIndex"] as? Number)?.toInt() ?: 0)
+                .coerceIn(0, queue.lastIndex)
+            session.updateQueue(
+                queue = queue,
+                queueStartIndex = queueStartIndex,
+                repeatOne = repeatOne,
+                repeatAll = args["repeatAll"] as? Boolean ?: false,
+                shuffleModeEnabled = args["shuffle"] as? Boolean ?: false
+            )
         } else {
-            Player.REPEAT_MODE_OFF
+            session.repeatAll = args["repeatAll"] as? Boolean ?: session.repeatAll
+            session.shuffleModeEnabled = args["shuffle"] as? Boolean ?: session.shuffleModeEnabled
+            session.playerOrNull()?.repeatMode = if (repeatOne) {
+                Player.REPEAT_MODE_ONE
+            } else {
+                session.currentRepeatMode()
+            }
+            session.playerOrNull()?.shuffleModeEnabled = session.currentShuffleModeEnabled()
         }
         schedulePersistSessionState()
         return okResult(session.snapshot())
@@ -473,6 +510,23 @@ class NativePlaybackService : MediaSessionService() {
         }
     }
 
+    private fun parseQueue(rawQueue: Any?): List<NativeMediaItemDescriptor> {
+        val queue = rawQueue as? List<*> ?: return emptyList()
+        return queue.mapNotNull { rawItem ->
+            val item = rawItem as? Map<*, *> ?: return@mapNotNull null
+            val uri = item["uri"] as? String ?: return@mapNotNull null
+            val path = item["path"] as? String ?: uri
+            val title = item["title"] as? String ?: "Audio"
+            NativeMediaItemDescriptor(
+                path = path,
+                uri = uri,
+                title = title,
+                subtitle = item["subtitle"] as? String,
+                artUri = item["artUri"] as? String
+            )
+        }
+    }
+
     private fun createPlayer(
         sessionId: String,
         channelMappingAudioProcessor: ChannelMappingAudioProcessor
@@ -495,6 +549,13 @@ class NativePlaybackService : MediaSessionService() {
                 override fun onPlaybackStateChanged(playbackState: Int) {
                     publishSessionState(sessionId)
                     schedulePersistSessionState()
+                    syncForegroundState()
+                }
+
+                override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                    sessions[sessionId]?.syncCurrentMediaItemFromPlayer()
+                    publishSessionState(sessionId)
+                    persistSessionStateNow()
                     syncForegroundState()
                 }
 
@@ -809,14 +870,22 @@ class NativePlaybackService : MediaSessionService() {
                 }
                 try {
                     nativeSession.channelSwapEnabled = stored.channelSwapEnabled
-                    nativeSession.configure(
+                    val descriptor = NativeMediaItemDescriptor(
+                        path = stored.uri,
                         uri = stored.uri,
                         title = stored.title,
                         subtitle = stored.subtitle,
-                        artUri = stored.artUri,
+                        artUri = stored.artUri
+                    )
+                    nativeSession.configure(
+                        descriptor = descriptor,
+                        queue = listOf(descriptor),
+                        queueStartIndex = 0,
                         startPositionMs = stored.positionMs,
                         volume = stored.volume,
                         repeatOne = stored.repeatOne,
+                        repeatAll = false,
+                        shuffleModeEnabled = false,
                         autoPlay = false
                     )
                     focusSession(stored.sessionId)
@@ -909,12 +978,16 @@ class NativePlaybackService : MediaSessionService() {
         private val channelMappingAudioProcessor = ChannelMappingAudioProcessor()
         private var _player: ExoPlayer? = null
         var lastUsedMs: Long = System.currentTimeMillis()
+        var path: String? = null
         var uri: String? = null
         var title: String = "Audio"
         var subtitle: String? = null
         var artUri: String? = null
         var volume: Float = 1f
         var repeatOne: Boolean = false
+        var repeatAll: Boolean = false
+        var shuffleModeEnabled: Boolean = false
+        private var queue: List<NativeMediaItemDescriptor> = emptyList()
         var channelSwapEnabled: Boolean = false
         var lastPositionMs: Long = 0L
         var lastDurationMs: Long? = null
@@ -935,25 +1008,27 @@ class NativePlaybackService : MediaSessionService() {
             )
             _player = p
             
-            // Re-configure the player with stored state
-            val currentUri = uri
-            if (currentUri != null) {
-                val metadataBuilder = MediaMetadata.Builder()
-                    .setTitle(title)
-                    .setArtist(subtitle)
-                if (!artUri.isNullOrBlank()) {
-                    metadataBuilder.setArtworkUri(Uri.parse(artUri))
+            val descriptors = queue.takeIf { it.isNotEmpty() }
+                ?: uri?.let {
+                    listOf(
+                        NativeMediaItemDescriptor(
+                            path = path ?: it,
+                            uri = it,
+                            title = title,
+                            subtitle = subtitle,
+                            artUri = artUri
+                        )
+                    )
                 }
-
-                val mediaItem = MediaItem.Builder()
-                    .setMediaId(sessionId)
-                    .setUri(Uri.parse(currentUri))
-                    .setMediaMetadata(metadataBuilder.build())
-                    .build()
-
-                p.setMediaItem(mediaItem, lastPositionMs)
+            if (!descriptors.isNullOrEmpty()) {
+                p.setMediaItems(
+                    descriptors.map(::buildMediaItem),
+                    currentQueueIndexFor(descriptors),
+                    lastPositionMs
+                )
                 p.volume = PlaybackVolumeMapper.normalize(volume)
-                p.repeatMode = if (repeatOne) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
+                p.repeatMode = repeatModeFor(descriptors.size)
+                p.shuffleModeEnabled = shuffleModeEnabled && descriptors.size > 1
                 p.playWhenReady = lastPlayWhenReady
                 p.prepare()
             }
@@ -971,54 +1046,52 @@ class NativePlaybackService : MediaSessionService() {
                 lastIsPlaying = p.isPlaying
                 lastPlayWhenReady = p.playWhenReady
                 lastPlaybackState = p.playbackStateName()
+                syncCurrentMediaItemFromPlayer()
                 p.release()
             }
             _player = null
         }
 
         fun configure(
-            uri: String,
-            title: String,
-            subtitle: String?,
-            artUri: String?,
+            descriptor: NativeMediaItemDescriptor,
+            queue: List<NativeMediaItemDescriptor>,
+            queueStartIndex: Int,
             startPositionMs: Long,
             volume: Float,
             repeatOne: Boolean,
+            repeatAll: Boolean,
+            shuffleModeEnabled: Boolean,
             autoPlay: Boolean
         ) {
-            this.uri = uri
-            this.title = title
-            this.subtitle = subtitle
-            this.artUri = artUri
+            this.queue = queue.ifEmpty { listOf(descriptor) }
+            this.path = descriptor.path
+            this.uri = descriptor.uri
+            this.title = descriptor.title
+            this.subtitle = descriptor.subtitle
+            this.artUri = descriptor.artUri
             this.lastPositionMs = startPositionMs
             this.volume = PlaybackVolumeMapper.normalize(volume)
             this.repeatOne = repeatOne
+            this.repeatAll = repeatAll
+            this.shuffleModeEnabled = shuffleModeEnabled
             this.lastPlayWhenReady = autoPlay
             applyChannelMap()
 
-            val p = ensurePlayer()
-            val metadataBuilder = MediaMetadata.Builder()
-                .setTitle(title)
-                .setArtist(subtitle)
-            if (!artUri.isNullOrBlank()) {
-                metadataBuilder.setArtworkUri(Uri.parse(artUri))
-            }
-
-            val mediaItem = MediaItem.Builder()
-                .setMediaId(sessionId)
-                .setUri(Uri.parse(uri))
-                .setMediaMetadata(metadataBuilder.build())
-                .build()
-
-            p.setMediaItem(mediaItem, startPositionMs.coerceAtLeast(0L))
+            val p = playerOrNull() ?: createPlayer(
+                sessionId,
+                channelMappingAudioProcessor
+            ).also { _player = it }
+            p.setMediaItems(
+                this.queue.map(::buildMediaItem),
+                queueStartIndex.coerceIn(0, this.queue.lastIndex),
+                startPositionMs.coerceAtLeast(0L)
+            )
             p.volume = PlaybackVolumeMapper.normalize(this.volume)
-            p.repeatMode = if (repeatOne) {
-                Player.REPEAT_MODE_ONE
-            } else {
-                Player.REPEAT_MODE_OFF
-            }
+            p.repeatMode = repeatModeFor(this.queue.size)
+            p.shuffleModeEnabled = shuffleModeEnabled && this.queue.size > 1
             p.playWhenReady = autoPlay
             p.prepare()
+            syncCurrentMediaItemFromPlayer()
             
             evictPlayersIfNeeded()
         }
@@ -1038,21 +1111,56 @@ class NativePlaybackService : MediaSessionService() {
             playerOrNull()?.volume = this.volume
         }
 
+        fun updateQueue(
+            queue: List<NativeMediaItemDescriptor>,
+            queueStartIndex: Int,
+            repeatOne: Boolean,
+            repeatAll: Boolean,
+            shuffleModeEnabled: Boolean
+        ) {
+            if (queue.isEmpty()) return
+            val p = _player
+            val currentPositionMs = p?.currentPosition?.coerceAtLeast(0L) ?: lastPositionMs
+            val shouldResume = p?.let { it.playWhenReady || it.isPlaying } ?: lastPlayWhenReady
+            configure(
+                descriptor = queue[queueStartIndex.coerceIn(0, queue.lastIndex)],
+                queue = queue,
+                queueStartIndex = queueStartIndex,
+                startPositionMs = currentPositionMs,
+                volume = volume,
+                repeatOne = repeatOne,
+                repeatAll = repeatAll,
+                shuffleModeEnabled = shuffleModeEnabled,
+                autoPlay = shouldResume
+            )
+        }
+
         fun reprepareCurrentMediaItem() {
             val currentUri = uri ?: return
             val p = _player
             val currentPositionMs = p?.currentPosition?.coerceAtLeast(0L) ?: lastPositionMs
             val shouldResume = p?.let { it.playWhenReady || it.isPlaying } ?: lastPlayWhenReady
             val isRepeatOne = (p?.repeatMode == Player.REPEAT_MODE_ONE) || (p == null && repeatOne)
+            val descriptors = queue.takeIf { it.isNotEmpty() } ?: listOf(
+                NativeMediaItemDescriptor(
+                    path = path ?: currentUri,
+                    uri = currentUri,
+                    title = title,
+                    subtitle = subtitle,
+                    artUri = artUri
+                )
+            )
+            val currentIndex = p?.currentMediaItemIndex ?: currentQueueIndexFor(descriptors)
 
             configure(
-                uri = currentUri,
-                title = title,
-                subtitle = subtitle,
-                artUri = artUri,
+                descriptor = descriptors[currentIndex.coerceIn(0, descriptors.lastIndex)],
+                queue = descriptors,
+                queueStartIndex = currentIndex,
                 startPositionMs = currentPositionMs,
                 volume = volume,
                 repeatOne = isRepeatOne,
+                repeatAll = repeatAll,
+                shuffleModeEnabled = shuffleModeEnabled,
                 autoPlay = shouldResume,
             )
         }
@@ -1066,10 +1174,12 @@ class NativePlaybackService : MediaSessionService() {
                 lastIsPlaying = p.isPlaying
                 lastPlayWhenReady = p.playWhenReady
                 lastPlaybackState = p.playbackStateName()
+                syncCurrentMediaItemFromPlayer()
             }
             
             return mapOf(
                 "sessionId" to sessionId,
+                "path" to path,
                 "uri" to uri,
                 "title" to title,
                 "subtitle" to subtitle,
@@ -1092,6 +1202,9 @@ class NativePlaybackService : MediaSessionService() {
             val currentPos = p?.currentPosition?.coerceAtLeast(0L) ?: lastPositionMs
             val isP = p?.isPlaying ?: lastIsPlaying
             val isPWR = p?.playWhenReady ?: lastPlayWhenReady
+            if (p != null) {
+                syncCurrentMediaItemFromPlayer()
+            }
             
             return StoredNativePlaybackSession(
                 sessionId = sessionId,
@@ -1120,6 +1233,48 @@ class NativePlaybackService : MediaSessionService() {
                 playWhenReady,
                 repeatOne
             ).joinToString("|")
+        }
+
+        fun syncCurrentMediaItemFromPlayer() {
+            val mediaItem = _player?.currentMediaItem ?: return
+            val metadata = mediaItem.mediaMetadata
+            path = mediaItem.mediaId.takeIf { it.isNotBlank() }
+            uri = mediaItem.localConfiguration?.uri?.toString() ?: uri
+            title = metadata.title?.toString()?.takeIf { it.isNotBlank() } ?: title
+            subtitle = metadata.artist?.toString()?.takeIf { it.isNotBlank() }
+            artUri = metadata.artworkUri?.toString()
+        }
+
+        private fun buildMediaItem(descriptor: NativeMediaItemDescriptor): MediaItem {
+            val metadataBuilder = MediaMetadata.Builder()
+                .setTitle(descriptor.title)
+                .setArtist(descriptor.subtitle)
+            if (!descriptor.artUri.isNullOrBlank()) {
+                metadataBuilder.setArtworkUri(Uri.parse(descriptor.artUri))
+            }
+            return MediaItem.Builder()
+                .setMediaId(descriptor.path)
+                .setUri(Uri.parse(descriptor.uri))
+                .setMediaMetadata(metadataBuilder.build())
+                .build()
+        }
+
+        private fun repeatModeFor(queueSize: Int): Int {
+            return when {
+                repeatOne -> Player.REPEAT_MODE_ONE
+                repeatAll && queueSize > 1 -> Player.REPEAT_MODE_ALL
+                else -> Player.REPEAT_MODE_OFF
+            }
+        }
+
+        fun currentRepeatMode(): Int = repeatModeFor(queue.size)
+
+        fun currentShuffleModeEnabled(): Boolean = shuffleModeEnabled && queue.size > 1
+
+        private fun currentQueueIndexFor(descriptors: List<NativeMediaItemDescriptor>): Int {
+            val currentPath = path
+            val index = descriptors.indexOfFirst { it.path == currentPath }
+            return if (index >= 0) index else 0
         }
 
         fun release() {

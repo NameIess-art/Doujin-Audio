@@ -19,23 +19,33 @@ class NativePlaybackRepository {
     required String sessionId,
     required Uri uri,
     required String title,
+    String? path,
     String? subtitle,
     Uri? artUri,
     Duration startPosition = Duration.zero,
     double volume = 1.0,
     bool repeatOne = false,
     bool autoPlay = false,
+    List<Map<String, Object?>>? queue,
+    int? queueStartIndex,
+    bool repeatAll = false,
+    bool shuffle = false,
   }) {
     return _bridge.prepareSession(
       sessionId: sessionId,
       uri: uri,
       title: title,
+      path: path,
       subtitle: subtitle,
       artUri: artUri,
       startPosition: startPosition,
       volume: volume,
       repeatOne: repeatOne,
       autoPlay: autoPlay,
+      queue: queue,
+      queueStartIndex: queueStartIndex,
+      repeatAll: repeatAll,
+      shuffle: shuffle,
     );
   }
 
@@ -67,9 +77,20 @@ class NativePlaybackRepository {
 
   Future<NativeResult<NativePlaybackSnapshot>> setRepeatOne(
     String sessionId,
-    bool repeatOne,
-  ) {
-    return _bridge.setRepeatOne(sessionId, repeatOne);
+    bool repeatOne, {
+    List<Map<String, Object?>>? queue,
+    int? queueStartIndex,
+    bool repeatAll = false,
+    bool shuffle = false,
+  }) {
+    return _bridge.setRepeatOne(
+      sessionId,
+      repeatOne,
+      queue: queue,
+      queueStartIndex: queueStartIndex,
+      repeatAll: repeatAll,
+      shuffle: shuffle,
+    );
   }
 
   Future<NativeResult<NativePlaybackSnapshot>> setChannelSwap(

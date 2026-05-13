@@ -18,6 +18,7 @@ class NativePlaybackSnapshot {
     required this.boostGain,
     required this.channelSwapEnabled,
     this.uri,
+    this.path,
     this.title,
     this.subtitle,
     this.artUri,
@@ -27,6 +28,7 @@ class NativePlaybackSnapshot {
 
   final String sessionId;
   final String? uri;
+  final String? path;
   final String? title;
   final String? subtitle;
   final String? artUri;
@@ -51,6 +53,7 @@ class NativePlaybackSnapshot {
     return NativePlaybackSnapshot(
       sessionId: sessionId,
       uri: map['uri'] as String?,
+      path: map['path'] as String?,
       title: map['title'] as String?,
       subtitle: map['subtitle'] as String?,
       artUri: map['artUri'] as String?,
@@ -192,24 +195,38 @@ class NativePlaybackBridge {
     required String sessionId,
     required Uri uri,
     required String title,
+    String? path,
     String? subtitle,
     Uri? artUri,
     Duration startPosition = Duration.zero,
     double volume = 1.0,
     bool repeatOne = false,
     bool autoPlay = false,
+    List<Map<String, Object?>>? queue,
+    int? queueStartIndex,
+    bool repeatAll = false,
+    bool shuffle = false,
   }) {
     return _invokeSnapshot(NativePlaybackMethod.prepareSession, {
       'sessionId': sessionId,
       'uri': uri.toString(),
+      // ignore: use_null_aware_elements
+      if (path != null) 'path': path,
       'title': title,
       // ignore: use_null_aware_elements
       if (subtitle != null) 'subtitle': subtitle,
+      // ignore: use_null_aware_elements
       if (artUri != null) 'artUri': artUri.toString(),
       'startPositionMs': startPosition.inMilliseconds,
       'volume': volume,
       'repeatOne': repeatOne,
       'autoPlay': autoPlay,
+      // ignore: use_null_aware_elements
+      if (queue != null && queue.isNotEmpty) 'queue': queue,
+      // ignore: use_null_aware_elements
+      if (queueStartIndex != null) 'queueStartIndex': queueStartIndex,
+      'repeatAll': repeatAll,
+      'shuffle': shuffle,
     });
   }
 
@@ -249,11 +266,21 @@ class NativePlaybackBridge {
 
   Future<NativeResult<NativePlaybackSnapshot>> setRepeatOne(
     String sessionId,
-    bool repeatOne,
-  ) {
+    bool repeatOne, {
+    List<Map<String, Object?>>? queue,
+    int? queueStartIndex,
+    bool repeatAll = false,
+    bool shuffle = false,
+  }) {
     return _invokeSnapshot(NativePlaybackMethod.setRepeatOne, {
       'sessionId': sessionId,
       'repeatOne': repeatOne,
+      // ignore: use_null_aware_elements
+      if (queue != null && queue.isNotEmpty) 'queue': queue,
+      // ignore: use_null_aware_elements
+      if (queueStartIndex != null) 'queueStartIndex': queueStartIndex,
+      'repeatAll': repeatAll,
+      'shuffle': shuffle,
     });
   }
 

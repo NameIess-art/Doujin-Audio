@@ -102,6 +102,16 @@ extension AudioProviderPlayback on AudioProvider {
     await _nativePlaybackRepository.setRepeatOne(
       session.id,
       mode == SessionLoopMode.single,
+      queue: _nativePlaybackQueueFor(
+        session,
+        currentPath: session.currentTrackPath,
+      ),
+      queueStartIndex: _nativePlaybackQueueStartIndexFor(
+        session,
+        currentPath: session.currentTrackPath,
+      ),
+      repeatAll: mode != SessionLoopMode.single,
+      shuffle: _isShuffleMode(mode),
     );
     _syncNotificationState();
     _notifyListeners();

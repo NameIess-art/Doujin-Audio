@@ -130,6 +130,9 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage> {
     final excludedFolders = libraryService.excludedFoldersForLibrary(
       widget.libraryPath,
     );
+    final persistedEntries = libraryService.libraryEntriesForLibrary(
+      widget.libraryPath,
+    );
     final childFolders = libraryService
         .childFoldersForLibrary(widget.libraryPath)
         .map(_folderPathForLibraryChild)
@@ -141,6 +144,7 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage> {
       childFolders,
       excludedTracks,
       excludedFolders,
+      persistedEntries,
       _searchQuery,
     );
     if (_editTreeCacheKey != cacheKey) {
@@ -151,10 +155,13 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage> {
             libraryService,
             _diskAudioFilePaths,
             excludedTracks,
+            persistedEntries,
           ),
           <String>{
             ...childFolders,
             ...excludedFolders,
+            for (final entry in persistedEntries)
+              if (entry.isFolder) _folderPathForLibraryChild(entry.path),
             ..._folderStructureSnapshots.keys,
           }.toList(growable: false),
           _folderStructureSnapshots.values.toList(growable: false),
@@ -318,11 +325,15 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage> {
     LibraryService libraryService,
     List<String> diskAudioFilePaths,
     List<String> excludedTracks,
+    List<LibraryEntry> persistedEntries,
   ) {
     final tracks = <String>{
       for (final track in libraryService.library)
         if (_trackBelongsToLibrary(track.path))
           PathMatcher.normalize(track.path),
+      for (final entry in persistedEntries)
+        if (entry.isTrack && _trackBelongsToLibrary(entry.path))
+          PathMatcher.normalize(entry.path),
       for (final trackPath in diskAudioFilePaths)
         if (_trackBelongsToLibrary(trackPath)) PathMatcher.normalize(trackPath),
       for (final trackPath in excludedTracks)
@@ -740,6 +751,10 @@ class _LibraryEditFolderTreeTileState
       widget.libraryPath,
       folderPath,
     );
+    final inheritedExcluded = libraryService.isLibraryPathInheritedExcluded(
+      widget.libraryPath,
+      folderPath,
+    );
     final muted = libraryService.isLibraryPathExcluded(
       widget.libraryPath,
       folderPath,
@@ -790,19 +805,21 @@ class _LibraryEditFolderTreeTileState
               Flexible(
                 child: TextButton.icon(
                   style: muted ? _libraryMutedButtonStyle(cs) : null,
-                  onPressed: () {
-                    if (widget.folder.children.isNotEmpty) {
-                      editState?.rememberFolderStructureSnapshot(
-                        folderPath,
-                        widget.folder,
-                      );
-                    }
-                    audioProvider.setLibraryFolderExcluded(
-                      widget.libraryPath,
-                      folderPath,
-                      !explicitExcluded,
-                    );
-                  },
+                  onPressed: inheritedExcluded
+                      ? null
+                      : () {
+                          if (widget.folder.children.isNotEmpty) {
+                            editState?.rememberFolderStructureSnapshot(
+                              folderPath,
+                              widget.folder,
+                            );
+                          }
+                          audioProvider.setLibraryFolderExcluded(
+                            widget.libraryPath,
+                            folderPath,
+                            !explicitExcluded,
+                          );
+                        },
                   icon: Icon(
                     explicitExcluded
                         ? Icons.restore_rounded
@@ -894,6 +911,10 @@ class _LibraryEditTrackTile extends ConsumerWidget {
         track?.displayName ?? path.basenameWithoutExtension(trackPath);
     final isMuted =
         muted ?? libraryService.isLibraryPathExcluded(libraryPath, trackPath);
+    final inheritedExcluded = libraryService.isLibraryPathInheritedExcluded(
+      libraryPath,
+      trackPath,
+    );
 
     return ListTile(
       dense: true,
@@ -914,13 +935,15 @@ class _LibraryEditTrackTile extends ConsumerWidget {
       subtitle: isMuted ? Text(i18n.tr('excluded')) : null,
       trailing: TextButton(
         style: isMuted ? _libraryMutedButtonStyle(cs) : null,
-        onPressed: () {
-          provider.setLibraryTrackExcluded(
-            libraryPath,
-            trackPath,
-            !explicitExcluded,
-          );
-        },
+        onPressed: inheritedExcluded
+            ? null
+            : () {
+                provider.setLibraryTrackExcluded(
+                  libraryPath,
+                  trackPath,
+                  !explicitExcluded,
+                );
+              },
         child: Text(explicitExcluded ? i18n.tr('restore') : i18n.tr('exclude')),
       ),
     );

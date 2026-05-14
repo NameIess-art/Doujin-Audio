@@ -4,6 +4,7 @@ import 'dart:collection';
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 import '../models/library_node.dart';
+import '../models/library_entry.dart';
 import '../models/music_track.dart';
 import '../models/playback_mode.dart';
 import '../models/playback_session.dart';
@@ -294,6 +295,8 @@ class LibraryService {
       <String, Set<String>>{};
   final Map<String, Set<String>> excludedLibraryTracks =
       <String, Set<String>>{};
+  final Map<String, Map<String, LibraryEntry>> libraryEntriesByLibrary =
+      <String, Map<String, LibraryEntry>>{};
   bool isScanning = false;
   bool isBackgroundScanning = false;
   String scanCurrentFolder = '';
@@ -439,6 +442,19 @@ class LibraryService {
       ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
   }
 
+  List<LibraryEntry> libraryEntriesForLibrary(String libraryPath) {
+    final normalizedLibraryPath = PathMatcher.normalize(libraryPath);
+    final entries = libraryEntriesByLibrary[normalizedLibraryPath];
+    if (entries == null) return const <LibraryEntry>[];
+    return entries.values.toList(growable: false);
+  }
+
+  bool hasLibraryEntriesForLibrary(String libraryPath) {
+    return libraryEntriesByLibrary[PathMatcher.normalize(libraryPath)]
+            ?.isNotEmpty ??
+        false;
+  }
+
   bool isLibraryPathExcluded(String libraryPath, String entityPath) {
     final normalizedLibraryPath = PathMatcher.normalize(libraryPath);
     final normalizedPath = PathMatcher.normalize(entityPath);
@@ -453,6 +469,18 @@ class LibraryService {
     if (folders == null) return false;
     return folders.any(
       (folderPath) => _isPathWithinOrEqual(normalizedPath, folderPath),
+    );
+  }
+
+  bool isLibraryPathInheritedExcluded(String libraryPath, String entityPath) {
+    final normalizedLibraryPath = PathMatcher.normalize(libraryPath);
+    final normalizedPath = PathMatcher.normalize(entityPath);
+    final folders = excludedLibraryFolders[normalizedLibraryPath];
+    if (folders == null) return false;
+    return folders.any(
+      (folderPath) =>
+          !PathMatcher.equalsNormalized(folderPath, normalizedPath) &&
+          _isPathWithinOrEqual(normalizedPath, folderPath),
     );
   }
 
@@ -489,8 +517,18 @@ class LibraryService {
     );
     final changed = excluded
         ? folders.add(normalizedFolderPath)
-        : folders.remove(normalizedFolderPath);
+        : _removePathsWithin(folders, normalizedFolderPath);
     if (!changed) return false;
+    if (!excluded) {
+      excludedLibraryTracks[normalizedLibraryPath]?.removeWhere(
+        (trackPath) => _isPathWithinOrEqual(trackPath, normalizedFolderPath),
+      );
+    }
+    setLibraryEntriesSubtreeState(
+      normalizedLibraryPath,
+      normalizedFolderPath,
+      excluded ? LibraryEntryState.excluded : LibraryEntryState.active,
+    );
     markStructureChanged();
     onPersist?.call();
     return true;
@@ -508,12 +546,80 @@ class LibraryService {
       normalizedLibraryPath,
       () => <String>{},
     );
+    if (excluded && isLibraryPathInheritedExcluded(libraryPath, trackPath)) {
+      return false;
+    }
     final changed = excluded
         ? tracks.add(normalizedTrackPath)
         : tracks.remove(normalizedTrackPath);
     if (!changed) return false;
+    setLibraryEntryState(
+      normalizedLibraryPath,
+      normalizedTrackPath,
+      excluded ? LibraryEntryState.excluded : LibraryEntryState.active,
+    );
     markStructureChanged();
     onPersist?.call();
+    return true;
+  }
+
+  bool _removePathsWithin(Set<String> paths, String parentPath) {
+    final beforeLength = paths.length;
+    paths.removeWhere(
+      (pathValue) => _isPathWithinOrEqual(pathValue, parentPath),
+    );
+    return paths.length != beforeLength;
+  }
+
+  void replaceLibraryEntries(Iterable<LibraryEntry> entries) {
+    for (final entry in entries) {
+      final normalizedLibraryPath = PathMatcher.normalize(entry.libraryPath);
+      final normalizedPath = PathMatcher.normalize(entry.path);
+      libraryEntriesByLibrary.putIfAbsent(
+        normalizedLibraryPath,
+        () => <String, LibraryEntry>{},
+      )[normalizedPath] = entry
+          .copyWith();
+    }
+    if (entries.isNotEmpty) {
+      markStructureChanged();
+    }
+  }
+
+  List<String> setLibraryEntriesSubtreeState(
+    String libraryPath,
+    String rootPath,
+    LibraryEntryState state,
+  ) {
+    final normalizedLibraryPath = PathMatcher.normalize(libraryPath);
+    final normalizedRootPath = PathMatcher.normalize(rootPath);
+    final entries = libraryEntriesByLibrary[normalizedLibraryPath];
+    if (entries == null) return const <String>[];
+    final changedPaths = <String>[];
+    for (final entry in entries.values.toList(growable: false)) {
+      if (!_isPathWithinOrEqual(entry.path, normalizedRootPath)) continue;
+      if (entry.state == state) continue;
+      entries[entry.path] = entry.copyWith(state: state);
+      changedPaths.add(entry.path);
+    }
+    if (changedPaths.isNotEmpty) {
+      markStructureChanged();
+    }
+    return changedPaths;
+  }
+
+  bool setLibraryEntryState(
+    String libraryPath,
+    String entryPath,
+    LibraryEntryState state,
+  ) {
+    final normalizedLibraryPath = PathMatcher.normalize(libraryPath);
+    final normalizedEntryPath = PathMatcher.normalize(entryPath);
+    final entries = libraryEntriesByLibrary[normalizedLibraryPath];
+    final entry = entries?[normalizedEntryPath];
+    if (entry == null || entry.state == state) return false;
+    entries![normalizedEntryPath] = entry.copyWith(state: state);
+    markStructureChanged();
     return true;
   }
 
@@ -560,6 +666,10 @@ class LibraryService {
           PathMatcher.equalsNormalized(pathValue, normalizedLibraryPath),
     );
     excludedLibraryTracks.removeWhere(
+      (pathValue, _) =>
+          PathMatcher.equalsNormalized(pathValue, normalizedLibraryPath),
+    );
+    libraryEntriesByLibrary.removeWhere(
       (pathValue, _) =>
           PathMatcher.equalsNormalized(pathValue, normalizedLibraryPath),
     );

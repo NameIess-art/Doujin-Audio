@@ -581,6 +581,58 @@ void main() {
   });
 
   group('library folder restore', () {
+    test(
+      'folder exclusion keeps entry tree and restores tracks from it',
+      () async {
+        final libraryRoot = await Directory.systemTemp.createTemp(
+          'library_entries_',
+        );
+        addTearDown(() async {
+          if (await libraryRoot.exists()) {
+            await libraryRoot.delete(recursive: true);
+          }
+        });
+        final folder = '${libraryRoot.path}${Platform.pathSeparator}work';
+        final trackPath = '$folder${Platform.pathSeparator}01.mp3';
+
+        provider.addWatchedLibrary(libraryRoot.path, notify: false);
+        provider.addTracks(<MusicTrack>[
+          MusicTrack(
+            path: trackPath,
+            displayName: '01',
+            groupKey: folder,
+            groupTitle: 'work',
+            groupSubtitle: folder,
+            isSingle: false,
+          ),
+        ], notify: false);
+
+        provider.setLibraryFolderExcluded(libraryRoot.path, folder, true);
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        expect(provider.trackByPath(trackPath), isNull);
+        expect(
+          provider
+              .libraryEntriesForLibrary(libraryRoot.path)
+              .where((entry) => entry.path == folder || entry.path == trackPath)
+              .every((entry) => entry.isExcluded),
+          isTrue,
+        );
+
+        provider.setLibraryFolderExcluded(libraryRoot.path, folder, false);
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        expect(provider.trackByPath(trackPath), isNotNull);
+        expect(
+          provider
+              .libraryEntriesForLibrary(libraryRoot.path)
+              .where((entry) => entry.path == folder || entry.path == trackPath)
+              .every((entry) => entry.isActive),
+          isTrue,
+        );
+      },
+    );
+
     test('restoring an excluded content folder repopulates its tracks', () async {
       const libraryRoot =
           'content://com.android.externalstorage.documents/tree/primary%3AASMR';

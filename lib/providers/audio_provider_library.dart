@@ -61,6 +61,11 @@ extension AudioProviderLibrary on AudioProvider {
       onSaveLibraryExclusions: () => unawaited(_saveLibraryExclusions()),
     );
     await removeFolderFromLibrary(libraryPath);
+    if (!_skipDisposePersistence) {
+      unawaited(
+        _audioDatabaseRepository.deleteLibraryEntriesForLibrary(libraryPath),
+      );
+    }
     _notifyListeners();
   }
 
@@ -73,8 +78,14 @@ extension AudioProviderLibrary on AudioProvider {
   List<String> excludedTracksForLibrary(String libraryPath) =>
       _libraryService.excludedTracksForLibrary(libraryPath);
 
+  List<LibraryEntry> libraryEntriesForLibrary(String libraryPath) =>
+      _libraryService.libraryEntriesForLibrary(libraryPath);
+
   bool isLibraryPathExcluded(String libraryPath, String entityPath) =>
       _libraryService.isLibraryPathExcluded(libraryPath, entityPath);
+
+  bool isLibraryPathInheritedExcluded(String libraryPath, String entityPath) =>
+      _libraryService.isLibraryPathInheritedExcluded(libraryPath, entityPath);
 
   bool isLibraryFolderExplicitlyExcluded(
     String libraryPath,
@@ -107,6 +118,23 @@ extension AudioProviderLibrary on AudioProvider {
       onPersist: () => unawaited(_saveLibraryExclusions()),
     );
     if (!changed) return;
+    final affectedEntryPaths = _libraryService
+        .libraryEntriesForLibrary(normalizedLibraryPath)
+        .where(
+          (entry) =>
+              PathMatcher.isWithinOrEqual(entry.path, normalizedFolderPath),
+        )
+        .map((entry) => entry.path)
+        .toList(growable: false);
+    if (affectedEntryPaths.isNotEmpty && !_skipDisposePersistence) {
+      unawaited(
+        _audioDatabaseRepository.setLibraryEntriesState(
+          normalizedLibraryPath,
+          affectedEntryPaths,
+          excluded ? LibraryEntryState.excluded : LibraryEntryState.active,
+        ),
+      );
+    }
     if (excluded) {
       _removeTracksWhere(
         (track) =>
@@ -134,6 +162,19 @@ extension AudioProviderLibrary on AudioProvider {
       onPersist: () => unawaited(_saveLibraryExclusions()),
     );
     if (!changed) return;
+    if (_libraryService
+        .libraryEntriesForLibrary(libraryPath)
+        .any((entry) => PathMatcher.equalsNormalized(entry.path, trackPath))) {
+      if (!_skipDisposePersistence) {
+        unawaited(
+          _audioDatabaseRepository.setLibraryEntriesState(
+            libraryPath,
+            [normalizedTrackPath],
+            excluded ? LibraryEntryState.excluded : LibraryEntryState.active,
+          ),
+        );
+      }
+    }
     if (excluded) {
       _removeTracksWhere(
         (track) =>
@@ -181,6 +222,24 @@ extension AudioProviderLibrary on AudioProvider {
     String libraryPath,
     String folderPath,
   ) async {
+    final persistedTracks = _libraryService
+        .libraryEntriesForLibrary(libraryPath)
+        .where(
+          (entry) =>
+              entry.isTrack &&
+              entry.isActive &&
+              PathMatcher.isWithinOrEqual(entry.path, folderPath) &&
+              !_libraryService.isLibraryPathExcluded(libraryPath, entry.path),
+        )
+        .map((entry) => entry.toTrack())
+        .where((track) => !_libraryByPath.containsKey(track.path))
+        .toList(growable: false);
+    if (persistedTracks.isNotEmpty) {
+      addOrReplaceTracks(persistedTracks, notify: false);
+      _notifyListeners();
+      return;
+    }
+
     final restoredTracks = PathMatcher.isContentUri(folderPath)
         ? await _scanRestorableTracksViaNative(folderPath)
         : await _scanRestorableTracksFromDisk(folderPath);
@@ -353,7 +412,9 @@ extension AudioProviderLibrary on AudioProvider {
         _removeSessions(sessionsToRemove, persist: false, notify: false),
       );
     }
-    unawaited(_audioDatabaseRepository.deleteTracks(removedPaths));
+    if (!_skipDisposePersistence) {
+      unawaited(_audioDatabaseRepository.deleteTracks(removedPaths));
+    }
     unawaited(_saveLibraryNodeOrder());
   }
 
@@ -397,7 +458,7 @@ extension AudioProviderLibrary on AudioProvider {
     if (notify) {
       _notifyListeners();
     }
-    if (tracksToPersist.isNotEmpty) {
+    if (tracksToPersist.isNotEmpty && !_skipDisposePersistence) {
       await _audioDatabaseRepository.upsertTracks(tracksToPersist);
     }
     if (didChangeGroupOrder) {
@@ -429,6 +490,7 @@ extension AudioProviderLibrary on AudioProvider {
     }
 
     if (toAdd.isNotEmpty) {
+      _recordLibraryEntriesForTracks(toAdd, persist: persist);
       if (_libraryBatchDepth > 0) {
         _libraryBatchChanged = true;
         if (persist) {
@@ -445,8 +507,10 @@ extension AudioProviderLibrary on AudioProvider {
       if (notify) {
         _notifyListeners();
       }
-      if (persist) {
+      if (persist && !_skipDisposePersistence) {
         unawaited(_audioDatabaseRepository.upsertTracks(toAdd));
+      }
+      if (persist) {
         if (didChangeGroupOrder) {
           _saveGroupOrder();
         }
@@ -498,6 +562,7 @@ extension AudioProviderLibrary on AudioProvider {
     }
 
     if (!changed) return;
+    _recordLibraryEntriesForTracks(tracksToPersist, persist: persist);
     if (_libraryBatchDepth > 0) {
       _libraryBatchChanged = true;
       if (persist) {
@@ -516,8 +581,10 @@ extension AudioProviderLibrary on AudioProvider {
     if (notify) {
       _notifyListeners();
     }
-    if (persist) {
+    if (persist && !_skipDisposePersistence) {
       unawaited(_audioDatabaseRepository.upsertTracks(tracksToPersist));
+    }
+    if (persist) {
       if (didChangeGroupOrder || didReplaceGroup) {
         _saveGroupOrder();
       }
@@ -550,6 +617,209 @@ extension AudioProviderLibrary on AudioProvider {
     );
   }
 
+  void recordLibraryEntriesForTracks(
+    String libraryPath,
+    List<MusicTrack> tracks, {
+    Iterable<String> folderPaths = const <String>[],
+    bool persist = true,
+  }) {
+    final entries = _buildLibraryEntries(
+      libraryPath,
+      tracks,
+      folderPaths: folderPaths,
+    );
+    if (entries.isEmpty) return;
+    _libraryService.replaceLibraryEntries(entries);
+    if (persist && !_skipDisposePersistence) {
+      unawaited(_audioDatabaseRepository.upsertLibraryEntries(entries));
+    }
+  }
+
+  void _recordLibraryEntriesForTracks(
+    List<MusicTrack> tracks, {
+    bool persist = true,
+  }) {
+    final entries = <LibraryEntry>[];
+    final tracksByLibrary = <String, List<MusicTrack>>{};
+    for (final track in tracks) {
+      final libraryPath = _libraryPathForTrack(track);
+      if (libraryPath == null || libraryPath.isEmpty) continue;
+      tracksByLibrary.putIfAbsent(libraryPath, () => <MusicTrack>[]).add(track);
+    }
+    for (final entry in tracksByLibrary.entries) {
+      entries.addAll(_buildLibraryEntries(entry.key, entry.value));
+    }
+    if (entries.isEmpty) return;
+    _libraryService.replaceLibraryEntries(entries);
+    if (persist && !_skipDisposePersistence) {
+      unawaited(_audioDatabaseRepository.upsertLibraryEntries(entries));
+    }
+  }
+
+  List<LibraryEntry> _buildLibraryEntries(
+    String libraryPath,
+    List<MusicTrack> tracks, {
+    Iterable<String> folderPaths = const <String>[],
+  }) {
+    final normalizedLibraryPath = PathMatcher.normalize(libraryPath);
+    final entriesByKey = <String, LibraryEntry>{};
+
+    void putEntry(LibraryEntry entry) {
+      entriesByKey['${entry.kind.dbValue}:${entry.path}'] = entry;
+    }
+
+    void ensureFolder(String folderPath) {
+      final normalizedFolderPath = _canonicalLibraryFolderPath(
+        normalizedLibraryPath,
+        folderPath,
+      );
+      if (PathMatcher.equalsNormalized(
+            normalizedFolderPath,
+            normalizedLibraryPath,
+          ) ||
+          !PathMatcher.isWithinOrEqual(
+            normalizedFolderPath,
+            normalizedLibraryPath,
+          )) {
+        return;
+      }
+      final parentPath = _parentLibraryFolderPath(
+        normalizedFolderPath,
+        normalizedLibraryPath,
+      );
+      if (parentPath != null) {
+        ensureFolder(parentPath);
+      }
+      putEntry(
+        LibraryEntry.folder(
+          libraryPath: normalizedLibraryPath,
+          path: normalizedFolderPath,
+          parentPath: parentPath,
+          state:
+              _libraryService.isLibraryPathExcluded(
+                normalizedLibraryPath,
+                normalizedFolderPath,
+              )
+              ? LibraryEntryState.excluded
+              : LibraryEntryState.active,
+          displayName: PathDisplay.folderName(normalizedFolderPath),
+        ),
+      );
+    }
+
+    for (final folderPath in folderPaths) {
+      ensureFolder(folderPath);
+    }
+
+    for (final track in tracks) {
+      if (!PathMatcher.isWithinOrEqual(track.path, normalizedLibraryPath)) {
+        continue;
+      }
+      final parentPath = _folderPathForLibraryTrack(
+        normalizedLibraryPath,
+        track,
+      );
+      if (parentPath != null) {
+        ensureFolder(parentPath);
+      }
+      putEntry(
+        LibraryEntry.track(
+          libraryPath: normalizedLibraryPath,
+          track: track,
+          parentPath: parentPath,
+          state:
+              _libraryService.isLibraryPathExcluded(
+                normalizedLibraryPath,
+                track.path,
+              )
+              ? LibraryEntryState.excluded
+              : LibraryEntryState.active,
+        ),
+      );
+    }
+
+    return entriesByKey.values.toList(growable: false);
+  }
+
+  String? _libraryPathForTrack(MusicTrack track) {
+    for (final libraryPath in _watchedLibraries) {
+      if (PathMatcher.isWithinOrEqual(track.path, libraryPath) ||
+          PathMatcher.isWithinOrEqual(track.groupKey, libraryPath)) {
+        return libraryPath;
+      }
+    }
+    for (final folderPath in _watchedFolders) {
+      if (PathMatcher.isWithinOrEqual(track.path, folderPath) ||
+          PathMatcher.isWithinOrEqual(track.groupKey, folderPath)) {
+        return folderPath;
+      }
+    }
+    return null;
+  }
+
+  String? _folderPathForLibraryTrack(String libraryPath, MusicTrack track) {
+    if (!track.isSingle &&
+        track.groupKey.isNotEmpty &&
+        track.groupKey != '__single_files__' &&
+        PathMatcher.isWithinOrEqual(track.groupKey, libraryPath) &&
+        !PathMatcher.equalsNormalized(track.groupKey, libraryPath)) {
+      return _canonicalLibraryFolderPath(libraryPath, track.groupKey);
+    }
+    final relative = PathMatcher.relativeWithin(track.path, libraryPath);
+    if (relative == null || relative.isEmpty) return null;
+    final normalizedRelative = relative.replaceAll('\\', '/');
+    final relativeFolder = path.posix.dirname(normalizedRelative);
+    if (relativeFolder == '.' || relativeFolder.isEmpty) return null;
+    if (PathMatcher.isContentUri(libraryPath)) {
+      return '$libraryPath::$relativeFolder';
+    }
+    return path.normalize(path.join(libraryPath, relativeFolder));
+  }
+
+  String _canonicalLibraryFolderPath(String libraryPath, String folderPath) {
+    final normalizedLibraryPath = PathMatcher.normalize(libraryPath);
+    final normalizedFolderPath = PathMatcher.normalize(folderPath);
+    if (!PathMatcher.isContentUri(normalizedLibraryPath) ||
+        normalizedFolderPath.contains('::')) {
+      return normalizedFolderPath;
+    }
+    final relativeFolderPath = PathMatcher.relativeWithin(
+      normalizedFolderPath,
+      normalizedLibraryPath,
+    );
+    if (relativeFolderPath == null || relativeFolderPath.isEmpty) {
+      return normalizedFolderPath;
+    }
+    return '$normalizedLibraryPath::${relativeFolderPath.replaceAll('\\', '/')}';
+  }
+
+  String? _parentLibraryFolderPath(String folderPath, String rootPath) {
+    final normalizedFolderPath = PathMatcher.normalize(folderPath);
+    if (PathMatcher.equalsNormalized(normalizedFolderPath, rootPath)) {
+      return null;
+    }
+    if (PathMatcher.isContentUri(normalizedFolderPath)) {
+      final markerIndex = normalizedFolderPath.indexOf('::');
+      if (markerIndex >= 0) {
+        final base = normalizedFolderPath.substring(0, markerIndex);
+        final relative = normalizedFolderPath
+            .substring(markerIndex + 2)
+            .replaceAll('\\', '/')
+            .replaceFirst(RegExp(r'^/+'), '')
+            .replaceFirst(RegExp(r'/+$'), '');
+        final parentRelative = path.posix.dirname(relative);
+        if (parentRelative == '.' || parentRelative.isEmpty) {
+          return base;
+        }
+        return '$base::$parentRelative';
+      }
+    }
+    final parentPath = path.dirname(normalizedFolderPath);
+    return PathMatcher.equalsNormalized(parentPath, rootPath)
+        ? rootPath
+        : parentPath;
+  }
+
   Future<void> removeTrackFromLibrary(String trackPath) async {
     final removedTrack = _libraryByPath.remove(trackPath);
     if (removedTrack == null) return;
@@ -573,7 +843,9 @@ extension AudioProviderLibrary on AudioProvider {
     _rebuildLibraryIndexes();
     _syncLibraryNodeOrder(persist: false);
     _notifyListeners();
-    unawaited(_audioDatabaseRepository.deleteTracks([trackPath]));
+    if (!_skipDisposePersistence) {
+      unawaited(_audioDatabaseRepository.deleteTracks([trackPath]));
+    }
     unawaited(_saveGroupOrder());
     unawaited(_saveLibraryNodeOrder());
   }
@@ -631,11 +903,17 @@ extension AudioProviderLibrary on AudioProvider {
     if (_watchedFolders.length != watchedFoldersBeforeRemoval) {
       unawaited(_saveWatchedFolders());
     }
+    _libraryService.libraryEntriesByLibrary.remove(normalizedFolderPath);
 
     _rebuildLibraryIndexes();
     _syncLibraryNodeOrder(persist: false);
     _notifyListeners();
-    unawaited(_audioDatabaseRepository.deleteTracks(trackPaths.toList()));
+    if (!_skipDisposePersistence) {
+      unawaited(_audioDatabaseRepository.deleteTracks(trackPaths.toList()));
+      unawaited(
+        _audioDatabaseRepository.deleteLibraryEntriesForLibrary(folderPath),
+      );
+    }
     unawaited(_saveGroupOrder());
     unawaited(_saveLibraryNodeOrder());
   }

@@ -80,6 +80,11 @@ extension _LibraryTabImportActions on _LibraryTabState {
         );
         provider.removeWatchedFolder(libraryRoot, notify: false);
         final childFolders = await _listImmediateChildFolders(libraryRoot);
+        provider.recordLibraryEntriesForTracks(
+          libraryRoot,
+          const <MusicTrack>[],
+          folderPaths: childFolders,
+        );
         totalAdded += await _importLibraryWithSingleScan(
           libraryRoot,
           provider,
@@ -107,9 +112,15 @@ extension _LibraryTabImportActions on _LibraryTabState {
           (root) => PathMatcher.isWithinOrEqual(folderPath, root),
           orElse: () => '',
         );
-        final effectiveLibraryRoot = libraryRoot.isEmpty ? null : libraryRoot;
+        final effectiveLibraryRoot = libraryRoot.isEmpty
+            ? folderPath
+            : libraryRoot;
         final nativeScan = await _scanFolderViaNative(folderPath);
         if (nativeScan.ok) {
+          provider.recordLibraryEntriesForTracks(
+            effectiveLibraryRoot,
+            nativeScan.tracks.map(_trackFromScanned).toList(growable: false),
+          );
           final toAdd = _filterExcludedScannedTracks(
             provider,
             effectiveLibraryRoot,
@@ -208,6 +219,11 @@ extension _LibraryTabImportActions on _LibraryTabState {
     }
 
     provider.addWatchedLibrary(folderPath, notify: false);
+    provider.recordLibraryEntriesForTracks(
+      folderPath,
+      const <MusicTrack>[],
+      folderPaths: childFolders,
+    );
     provider.setScanning(true);
     provider.beginLibraryBatch();
     var added = 0;
@@ -250,6 +266,7 @@ extension _LibraryTabImportActions on _LibraryTabState {
       final nativeScan = await _scanFolderViaNative(folderPath);
       if (nativeScan.ok) {
         final toAdd = nativeScan.tracks.map(_trackFromScanned).toList();
+        provider.recordLibraryEntriesForTracks(folderPath, toAdd);
 
         final beforeCount = provider.library.length;
         provider.addOrReplaceTracks(toAdd, notify: false);
@@ -260,7 +277,11 @@ extension _LibraryTabImportActions on _LibraryTabState {
         );
       } else if (nativeScan.notSupported ||
           !PathMatcher.isContentUri(folderPath)) {
-        added = await _importFolderIncrementally(folderPath, provider, null);
+        added = await _importFolderIncrementally(
+          folderPath,
+          provider,
+          folderPath,
+        );
       } else {
         provider.setScanProgress(failureCount: provider.scanFailureCount + 1);
         debugPrint(
@@ -271,6 +292,7 @@ extension _LibraryTabImportActions on _LibraryTabState {
     } finally {
       await provider.endLibraryBatch();
       provider.addWatchedFolder(folderPath, notify: false);
+      provider.recordLibraryEntriesForTracks(folderPath, const <MusicTrack>[]);
       await _prefillRjDetailForFolder(provider, folderPath);
       provider.setScanning(false);
       if (mounted) {

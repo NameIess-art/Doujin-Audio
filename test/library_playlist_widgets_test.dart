@@ -248,12 +248,19 @@ void main() {
     const libraryRoot =
         'content://com.android.externalstorage.documents/tree/primary%3AASMR';
     const childFolder = '$libraryRoot/document/primary%3AASMR%2FWorkA';
+    const syntheticChildFolder = '$libraryRoot::WorkA';
     const nestedFolder = '$libraryRoot::WorkA/Disc1';
     const trackPath =
         'content://com.android.externalstorage.documents/tree/primary%3AASMR/document/primary%3AASMR%2FWorkA%2FDisc1%2F01.mp3';
 
     audioProvider.addWatchedLibrary(libraryRoot, notify: false);
     audioProvider.addWatchedFolder(childFolder, notify: false);
+    audioProvider.recordLibraryEntriesForTracks(
+      libraryRoot,
+      const <MusicTrack>[],
+      folderPaths: const <String>[childFolder],
+      persist: false,
+    );
     audioProvider.addTracks(
       [
         _track(
@@ -287,6 +294,12 @@ void main() {
 
     expect(find.text('WorkA', findRichText: true), findsOneWidget);
     expect(
+      libraryService
+          .libraryEntriesForLibrary(libraryRoot)
+          .where((entry) => entry.path == syntheticChildFolder),
+      hasLength(1),
+    );
+    expect(
       find.text('1 \u9996\u97f3\u9891', findRichText: true),
       findsOneWidget,
     );
@@ -303,6 +316,12 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Disc1', findRichText: true), findsOneWidget);
+    final disabledChildActions = tester
+        .widgetList<TextButton>(
+          find.widgetWithText(TextButton, languageProvider.tr('exclude')),
+        )
+        .where((button) => button.onPressed == null);
+    expect(disabledChildActions, isNotEmpty);
 
     await tester.tap(
       find.widgetWithText(TextButton, languageProvider.tr('restore')).first,

@@ -2,8 +2,10 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/models/audio_detail.dart';
+import 'package:nameless_audio/models/library_entry.dart';
 import 'package:nameless_audio/models/music_track.dart';
 import 'package:nameless_audio/services/app_database.dart';
+import 'package:nameless_audio/services/path_matcher.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 void main() {
@@ -222,5 +224,60 @@ void main() {
         .toSet();
 
     expect(indexNames, contains('idx_audio_details_target'));
+  });
+
+  test('library entries persist full tree rows and state updates', () async {
+    final folder = LibraryEntry.folder(
+      libraryPath: '/library',
+      path: '/library/work',
+      parentPath: '/library',
+      state: LibraryEntryState.active,
+      displayName: 'work',
+    );
+    final track = LibraryEntry.track(
+      libraryPath: '/library',
+      track: MusicTrack(
+        path: '/library/work/01.mp3',
+        displayName: '01',
+        groupKey: '/library/work',
+        groupTitle: 'work',
+        groupSubtitle: '/library/work',
+        isSingle: false,
+        isVideo: true,
+        scannedAt: DateTime.fromMillisecondsSinceEpoch(7000),
+        fileSizeBytes: 128,
+        modifiedAt: DateTime.fromMillisecondsSinceEpoch(8000),
+      ),
+      parentPath: '/library/work',
+      state: LibraryEntryState.active,
+    );
+
+    await appDatabase.upsertLibraryEntries([folder, track]);
+    await appDatabase.setLibraryEntriesState('/library', [
+      '/library/work',
+      '/library/work/01.mp3',
+    ], LibraryEntryState.excluded);
+
+    final loaded = await appDatabase.loadLibraryEntries('/library');
+    expect(loaded, hasLength(2));
+    expect(
+      loaded.where((entry) => entry.isExcluded).map((entry) => entry.path),
+      containsAll([
+        PathMatcher.normalize('/library/work'),
+        PathMatcher.normalize('/library/work/01.mp3'),
+      ]),
+    );
+    expect(
+      loaded.singleWhere((entry) => entry.isTrack).toTrack().isVideo,
+      true,
+    );
+
+    final indexes = await db.rawQuery('PRAGMA index_list(library_entries)');
+    final indexNames = indexes
+        .map((row) => row['name'] as String?)
+        .whereType<String>()
+        .toSet();
+    expect(indexNames, contains('idx_library_entries_library'));
+    expect(indexNames, contains('idx_library_entries_state'));
   });
 }

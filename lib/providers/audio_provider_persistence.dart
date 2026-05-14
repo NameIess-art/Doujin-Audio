@@ -134,6 +134,9 @@ extension AudioProviderPersistence on AudioProvider {
         _loadTimerSettings(),
       ]);
 
+      await _loadLibraryEntries();
+      await _ensureLibraryEntriesForLoadedTracks();
+
       // Phase 3: In-memory syncs that depend on library + loaded order data.
       _syncGroupOrderFromLibrary();
       _syncLibraryNodeOrder(persist: false);
@@ -265,6 +268,43 @@ extension AudioProviderPersistence on AudioProvider {
         'tracks': _encodeExclusionMap(_excludedLibraryTracks),
       });
       await prefs.setString(_kLibraryExclusionsKey, encoded);
+    } catch (e) {
+      debugPrint('AudioProvider persistence error: $e');
+    }
+  }
+
+  Future<void> _loadLibraryEntries() async {
+    try {
+      final entries = await _audioDatabaseRepository.loadAllLibraryEntries();
+      if (entries.isEmpty) return;
+      _libraryService.replaceLibraryEntries(entries);
+    } catch (e) {
+      debugPrint('AudioProvider persistence error: $e');
+    }
+  }
+
+  Future<void> _ensureLibraryEntriesForLoadedTracks() async {
+    try {
+      final knownLibraries = <String>{..._watchedLibraries, ..._watchedFolders};
+      if (knownLibraries.isEmpty || _library.isEmpty) return;
+      final entriesToPersist = <LibraryEntry>[];
+      for (final libraryPath in knownLibraries) {
+        if (_libraryService.hasLibraryEntriesForLibrary(libraryPath)) {
+          continue;
+        }
+        final tracks = _library
+            .where(
+              (track) =>
+                  PathMatcher.isWithinOrEqual(track.path, libraryPath) ||
+                  PathMatcher.isWithinOrEqual(track.groupKey, libraryPath),
+            )
+            .toList(growable: false);
+        if (tracks.isEmpty) continue;
+        entriesToPersist.addAll(_buildLibraryEntries(libraryPath, tracks));
+      }
+      if (entriesToPersist.isEmpty) return;
+      _libraryService.replaceLibraryEntries(entriesToPersist);
+      await _audioDatabaseRepository.upsertLibraryEntries(entriesToPersist);
     } catch (e) {
       debugPrint('AudioProvider persistence error: $e');
     }

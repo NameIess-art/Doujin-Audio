@@ -244,6 +244,15 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
               return _trackFromScanned(track);
             })
             .toList(growable: false);
+    final entryTracks = nativeScan.tracks
+        .map((track) {
+          if (_trackIsDirectlyInFolder(libraryRoot, track)) {
+            return _singleTrackFromScanned(track, i18n);
+          }
+          return _trackFromScanned(track);
+        })
+        .toList(growable: false);
+    provider.recordLibraryEntriesForTracks(libraryRoot, entryTracks);
     if (candidates.isEmpty) return 0;
     final beforeCount = provider.library.length;
     provider.addOrReplaceTracks(candidates, notify: false);
@@ -275,6 +284,7 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
     final discoveredPaths = <String>{};
     final pendingDirs = Queue<Directory>()..add(folder);
     final batch = <MusicTrack>[];
+    final entryBatch = <MusicTrack>[];
     const batchSize = 350;
     final baseFoundCount = provider.scanFoundCount;
     final baseDuplicateCount = provider.scanDuplicateCount;
@@ -308,17 +318,21 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
         await for (final entity in stream.handleError((_) {})) {
           if (!provider.isScanning) break;
           if (entity is Directory) {
-            pendingDirs.add(entity);
+            final directoryPath = path.normalize(entity.path);
+            pendingDirs.add(Directory(directoryPath));
+            if (libraryRoot != null) {
+              provider.recordLibraryEntriesForTracks(
+                libraryRoot,
+                const <MusicTrack>[],
+                folderPaths: [directoryPath],
+              );
+            }
             continue;
           }
           if (entity is! File) continue;
 
           final absolutePath = path.normalize(entity.path);
           if (!isSupportedMediaFile(absolutePath)) continue;
-          if (libraryRoot != null &&
-              provider.isLibraryPathExcluded(libraryRoot, absolutePath)) {
-            continue;
-          }
           if (provider.trackByPath(absolutePath) != null ||
               discoveredPaths.contains(absolutePath)) {
             duplicates++;
@@ -332,31 +346,49 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
             (_) => FileStat.statSync(absolutePath),
           );
 
-          batch.add(
-            MusicTrack(
-              path: absolutePath,
-              displayName: path.basenameWithoutExtension(absolutePath),
-              groupKey: parentFolder,
-              groupTitle: folderName.isEmpty ? parentFolder : folderName,
-              groupSubtitle: parentFolder,
-              isSingle: false,
-              isVideo: isVideoMediaFile(absolutePath),
-              scannedAt: DateTime.now(),
-              fileSizeBytes: fileStat.size,
-              modifiedAt: fileStat.modified,
-            ),
+          final scannedTrack = MusicTrack(
+            path: absolutePath,
+            displayName: path.basenameWithoutExtension(absolutePath),
+            groupKey: parentFolder,
+            groupTitle: folderName.isEmpty ? parentFolder : folderName,
+            groupSubtitle: parentFolder,
+            isSingle: false,
+            isVideo: isVideoMediaFile(absolutePath),
+            scannedAt: DateTime.now(),
+            fileSizeBytes: fileStat.size,
+            modifiedAt: fileStat.modified,
           );
+          if (libraryRoot != null) {
+            entryBatch.add(scannedTrack);
+          }
+          if (libraryRoot != null &&
+              provider.isLibraryPathExcluded(libraryRoot, absolutePath)) {
+            if (entryBatch.length >= batchSize) {
+              provider.recordLibraryEntriesForTracks(libraryRoot, entryBatch);
+              entryBatch.clear();
+            }
+            continue;
+          }
+
+          batch.add(scannedTrack);
           added++;
 
           if (batch.length >= batchSize) {
             provider.addTracks(batch, notify: false);
             batch.clear();
+            if (libraryRoot != null && entryBatch.isNotEmpty) {
+              provider.recordLibraryEntriesForTracks(libraryRoot, entryBatch);
+              entryBatch.clear();
+            }
             await Future<void>.delayed(Duration.zero);
           }
         }
       } catch (_) {
         failures++;
       }
+    }
+    if (libraryRoot != null && entryBatch.isNotEmpty) {
+      provider.recordLibraryEntriesForTracks(libraryRoot, entryBatch);
     }
     provider.addTracks(batch, notify: false);
     provider.setScanProgress(

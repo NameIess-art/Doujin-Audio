@@ -14,6 +14,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/audio_detail.dart';
 import '../models/audio_library_category.dart';
 import '../models/dlsite_metadata.dart';
+import '../models/library_entry.dart';
 import '../models/library_node.dart';
 import '../models/music_track.dart';
 import '../models/playback_mode.dart';
@@ -32,6 +33,7 @@ import '../services/timer_runtime_calculator.dart';
 import '../services/warmup_scheduler.dart';
 
 export '../models/library_node.dart';
+export '../models/library_entry.dart';
 export '../models/audio_detail.dart';
 export '../models/audio_library_category.dart';
 export '../models/dlsite_metadata.dart';

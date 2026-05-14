@@ -5,6 +5,7 @@ import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
 
 import '../models/audio_detail.dart';
+import '../models/library_entry.dart';
 import '../models/music_track.dart';
 import 'path_matcher.dart';
 
@@ -29,7 +30,7 @@ class AppDatabase {
     final dbPath = await getDatabasesPath();
     final db = await openDatabase(
       p.join(dbPath, 'audio_player.db'),
-      version: 9,
+      version: 10,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -77,6 +78,7 @@ class AppDatabase {
       )
     ''');
     await _createAudioDetailsTable(db);
+    await _createLibraryEntriesTable(db);
   }
 
   static Future<void> _onUpgrade(
@@ -167,6 +169,9 @@ class AppDatabase {
         'INTEGER NOT NULL DEFAULT 0',
       );
     }
+    if (oldVersion < 10) {
+      await _createLibraryEntriesTable(db);
+    }
     await _createTrackIndexes(db);
   }
 
@@ -222,6 +227,41 @@ class AppDatabase {
     await db.execute(
       'CREATE INDEX IF NOT EXISTS idx_audio_details_target '
       'ON audio_details(target_type, target_path)',
+    );
+  }
+
+  static Future<void> _createLibraryEntriesTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS library_entries (
+        library_path TEXT NOT NULL,
+        path TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        state TEXT NOT NULL DEFAULT 'active',
+        parent_path TEXT,
+        display_name TEXT NOT NULL DEFAULT '',
+        group_key TEXT NOT NULL DEFAULT '',
+        group_title TEXT NOT NULL DEFAULT '',
+        group_subtitle TEXT NOT NULL DEFAULT '',
+        is_single INTEGER NOT NULL DEFAULT 0,
+        is_video INTEGER NOT NULL DEFAULT 0,
+        scanned_at_ms INTEGER,
+        file_size_bytes INTEGER,
+        modified_at_ms INTEGER,
+        scan_generation INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY(library_path, path, kind)
+      )
+    ''');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_library_entries_library '
+      'ON library_entries(library_path)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_library_entries_state '
+      'ON library_entries(library_path, state)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_library_entries_scan_generation '
+      'ON library_entries(library_path, scan_generation)',
     );
   }
 
@@ -359,6 +399,83 @@ class AppDatabase {
     );
   }
 
+  // ---- Library entries ----
+
+  Future<List<LibraryEntry>> loadAllLibraryEntries() async {
+    final db = await database;
+    final rows = await db.query('library_entries');
+    return rows.map(_libraryEntryFromRow).toList();
+  }
+
+  Future<List<LibraryEntry>> loadLibraryEntries(String libraryPath) async {
+    final db = await database;
+    final normalizedLibraryPath = PathMatcher.normalize(libraryPath);
+    final rows = await db.query(
+      'library_entries',
+      where: 'library_path = ?',
+      whereArgs: [normalizedLibraryPath],
+    );
+    return rows.map(_libraryEntryFromRow).toList();
+  }
+
+  Future<void> upsertLibraryEntries(
+    List<LibraryEntry> entries, {
+    int? scanGeneration,
+  }) async {
+    if (entries.isEmpty) return;
+    final db = await database;
+    final batch = db.batch();
+    for (final entry in entries) {
+      batch.insert(
+        'library_entries',
+        _libraryEntryToRow(entry, scanGeneration: scanGeneration),
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    }
+    await batch.commit(noResult: true);
+  }
+
+  Future<int> nextLibraryEntryScanGeneration(String libraryPath) async {
+    final db = await database;
+    final normalizedLibraryPath = PathMatcher.normalize(libraryPath);
+    final rows = await db.rawQuery(
+      'SELECT COALESCE(MAX(scan_generation), 0) + 1 AS next_generation '
+      'FROM library_entries WHERE library_path = ?',
+      [normalizedLibraryPath],
+    );
+    return (rows.first['next_generation'] as num?)?.toInt() ?? 1;
+  }
+
+  Future<void> deleteLibraryEntriesForLibrary(String libraryPath) async {
+    final db = await database;
+    await db.delete(
+      'library_entries',
+      where: 'library_path = ?',
+      whereArgs: [PathMatcher.normalize(libraryPath)],
+    );
+  }
+
+  Future<void> setLibraryEntriesState(
+    String libraryPath,
+    Iterable<String> entryPaths,
+    LibraryEntryState state,
+  ) async {
+    final normalizedLibraryPath = PathMatcher.normalize(libraryPath);
+    final paths = entryPaths.map(PathMatcher.normalize).toSet();
+    if (paths.isEmpty) return;
+    final db = await database;
+    final batch = db.batch();
+    for (final entryPath in paths) {
+      batch.update(
+        'library_entries',
+        {'state': state.dbValue},
+        where: 'library_path = ? AND path = ?',
+        whereArgs: [normalizedLibraryPath, entryPath],
+      );
+    }
+    await batch.commit(noResult: true);
+  }
+
   // ---- SharedPreferences migration helper ----
 
   /// One-shot: load from the legacy SharedPreferences JSON blob and store
@@ -460,6 +577,48 @@ class AppDatabase {
       milliseconds: (row['duration_ms'] as num?)?.toInt() ?? 0,
     ),
   );
+
+  static Map<String, dynamic> _libraryEntryToRow(
+    LibraryEntry entry, {
+    int? scanGeneration,
+  }) => {
+    'library_path': PathMatcher.normalize(entry.libraryPath),
+    'path': PathMatcher.normalize(entry.path),
+    'kind': entry.kind.dbValue,
+    'state': entry.state.dbValue,
+    'parent_path': entry.parentPath == null
+        ? null
+        : PathMatcher.normalize(entry.parentPath!),
+    'display_name': entry.displayName,
+    'group_key': entry.groupKey,
+    'group_title': entry.groupTitle,
+    'group_subtitle': entry.groupSubtitle,
+    'is_single': entry.isSingle ? 1 : 0,
+    'is_video': entry.isVideo ? 1 : 0,
+    'scanned_at_ms': entry.scannedAt?.millisecondsSinceEpoch,
+    'file_size_bytes': entry.fileSizeBytes,
+    'modified_at_ms': entry.modifiedAt?.millisecondsSinceEpoch,
+    'scan_generation': scanGeneration ?? 0,
+  };
+
+  static LibraryEntry _libraryEntryFromRow(Map<String, dynamic> row) {
+    return LibraryEntry(
+      libraryPath: row['library_path'] as String,
+      path: row['path'] as String,
+      kind: LibraryEntryKind.fromDbValue(row['kind'] as String),
+      state: LibraryEntryState.fromDbValue(row['state'] as String),
+      parentPath: row['parent_path'] as String?,
+      displayName: row['display_name'] as String? ?? '',
+      groupKey: row['group_key'] as String? ?? '',
+      groupTitle: row['group_title'] as String? ?? '',
+      groupSubtitle: row['group_subtitle'] as String? ?? '',
+      isSingle: (row['is_single'] as int? ?? 0) == 1,
+      isVideo: (row['is_video'] as int? ?? 0) == 1,
+      scannedAt: _dateTimeFromMs(row['scanned_at_ms']),
+      fileSizeBytes: (row['file_size_bytes'] as num?)?.toInt(),
+      modifiedAt: _dateTimeFromMs(row['modified_at_ms']),
+    );
+  }
 
   static Map<String, dynamic> _sessionToRow(
     PersistedSession session,

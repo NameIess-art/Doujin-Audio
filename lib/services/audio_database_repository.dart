@@ -1,6 +1,7 @@
 import 'package:sqflite/sqflite.dart';
 
 import '../models/audio_detail.dart';
+import '../models/library_entry.dart';
 import '../models/music_track.dart';
 import 'app_database.dart';
 
@@ -59,5 +60,39 @@ class AudioDatabaseRepository {
 
   Future<void> deleteAudioDetail(AudioDetailTarget target) {
     return _database.deleteAudioDetail(target);
+  }
+
+  Future<List<LibraryEntry>> loadAllLibraryEntries() {
+    return _database.loadAllLibraryEntries();
+  }
+
+  Future<List<LibraryEntry>> loadLibraryEntries(String libraryPath) {
+    return _database.loadLibraryEntries(libraryPath);
+  }
+
+  Future<void> upsertLibraryEntries(
+    List<LibraryEntry> entries, {
+    int? scanGeneration,
+  }) {
+    return _database.upsertLibraryEntries(
+      entries,
+      scanGeneration: scanGeneration,
+    );
+  }
+
+  Future<int> nextLibraryEntryScanGeneration(String libraryPath) {
+    return _database.nextLibraryEntryScanGeneration(libraryPath);
+  }
+
+  Future<void> deleteLibraryEntriesForLibrary(String libraryPath) {
+    return _database.deleteLibraryEntriesForLibrary(libraryPath);
+  }
+
+  Future<void> setLibraryEntriesState(
+    String libraryPath,
+    Iterable<String> entryPaths,
+    LibraryEntryState state,
+  ) {
+    return _database.setLibraryEntriesState(libraryPath, entryPaths, state);
   }
 }

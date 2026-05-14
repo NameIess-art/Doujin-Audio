@@ -30,7 +30,7 @@ extension AudioProviderPlaybackKeepAlive on AudioProvider {
         _timerActive || _timerWaitingForPlayback || _hasPendingAutoResume;
     final usesUnifiedNotifications =
         _multiThreadPlaybackEnabled && _notificationsEnabled;
-    final shouldKeepAwake = hasPlayback || hasTimer || _hasPendingAutoResume;
+    final shouldKeepAwake = hasTimer || _hasPendingAutoResume;
     final keepForegroundServiceAlive = shouldKeepAwake;
     if (_keepCpuAwake == shouldKeepAwake &&
         _keepAliveHasPlayback == hasPlayback &&
@@ -72,8 +72,7 @@ extension AudioProviderPlaybackKeepAlive on AudioProvider {
         _timerActive || _timerWaitingForPlayback || _hasPendingAutoResume;
     _keepAliveUsesUnifiedNotifications =
         _multiThreadPlaybackEnabled && _notificationsEnabled;
-    _keepCpuAwake =
-        _keepAliveHasPlayback || _keepAliveHasTimer || _hasPendingAutoResume;
+    _keepCpuAwake = _keepAliveHasTimer || _hasPendingAutoResume;
     _keepAliveKeepsForegroundService = _keepCpuAwake;
     unawaited(
       _setKeepCpuAwake(

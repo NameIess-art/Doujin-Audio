@@ -34,7 +34,9 @@ class NativePlaybackBridge(
     private val listenerId = "flutter"
     private val mainHandler = Handler(Looper.getMainLooper())
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
-        val service = ensureService()
+        val service = ensureService(
+            requireForegroundBootstrap = call.requiresForegroundBootstrap()
+        )
         attachEventListenerIfNeeded(service)
         val response = try {
             when (call.method) {
@@ -107,8 +109,13 @@ class NativePlaybackBridge(
         events = null
     }
 
-    private fun ensureService(): NativePlaybackService? {
-        return NativePlaybackService.ensureStarted(context).also { service ->
+    private fun ensureService(
+        requireForegroundBootstrap: Boolean = false
+    ): NativePlaybackService? {
+        return NativePlaybackService.ensureStarted(
+            context,
+            requireForegroundBootstrap = requireForegroundBootstrap
+        ).also { service ->
             if (service == null && listening) {
                 mainHandler.postDelayed(
                     { if (listening) attachEventListenerIfNeeded(NativePlaybackService.controller()) },
@@ -129,6 +136,14 @@ class NativePlaybackBridge(
         val value = response["value"] as? Map<*, *> ?: return
         if (!value.containsKey("sessionId")) return
         events?.success(value)
+    }
+}
+
+private fun MethodCall.requiresForegroundBootstrap(): Boolean {
+    return when (method) {
+        NativePlaybackMethods.PLAY -> true
+        NativePlaybackMethods.PREPARE_SESSION -> argument<Boolean>("autoPlay") == true
+        else -> false
     }
 }
 

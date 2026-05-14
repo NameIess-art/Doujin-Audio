@@ -89,6 +89,23 @@ private object PlaybackWakeLockController {
         }
     }
 }
+
+internal object PlaybackKeepAlivePolicy {
+    fun shouldRunKeepAliveService(
+        keepForegroundServiceAlive: Boolean,
+        hasActiveTimer: Boolean
+    ): Boolean {
+        return keepForegroundServiceAlive && hasActiveTimer
+    }
+
+    fun shouldHoldKeepAliveWakeLock(
+        enabled: Boolean,
+        hasActiveTimer: Boolean
+    ): Boolean {
+        return enabled && hasActiveTimer
+    }
+}
+
 private val supportedImageExtensions = setOf(
     "jpg", "jpeg", "png", "webp", "bmp", "gif"
 )
@@ -962,15 +979,25 @@ class MainActivity : AudioServiceActivity() {
         keepForegroundServiceAlive: Boolean
     ) {
         try {
-            // Pure playback also needs a foreground service on some OEM ROMs,
-            // otherwise the process is still eligible to be culled after screen-off.
-            if (keepForegroundServiceAlive) {
+            // NativePlaybackService owns foreground playback. This keep-alive
+            // service is only for timer/auto-resume reliability.
+            val playbackOwnedByNativeService = hasActivePlayback
+            val shouldRunKeepAliveService =
+                if (playbackOwnedByNativeService && !hasActiveTimer) {
+                    false
+                } else {
+                    PlaybackKeepAlivePolicy.shouldRunKeepAliveService(
+                        keepForegroundServiceAlive = keepForegroundServiceAlive,
+                        hasActiveTimer = hasActiveTimer
+                    )
+                }
+            if (shouldRunKeepAliveService) {
                 val serviceIntent =
                     Intent(applicationContext, PlaybackKeepAliveService::class.java).apply {
                         action = PlaybackKeepAliveService.ACTION_START
                         putExtra(
                             PlaybackKeepAliveService.EXTRA_HAS_ACTIVE_PLAYBACK,
-                            hasActivePlayback
+                            false
                         )
                         putExtra(
                             PlaybackKeepAliveService.EXTRA_HAS_ACTIVE_TIMER,
@@ -982,7 +1009,7 @@ class MainActivity : AudioServiceActivity() {
                         )
                         putExtra(
                             PlaybackKeepAliveService.EXTRA_KEEP_FOREGROUND_SERVICE_ALIVE,
-                            keepForegroundServiceAlive
+                            true
                         )
                     }
                 ContextCompat.startForegroundService(applicationContext, serviceIntent)
@@ -993,7 +1020,13 @@ class MainActivity : AudioServiceActivity() {
             // Ignore foreground service sync failures and fall back to a wakelock.
         }
         try {
-            PlaybackWakeLockController.sync(applicationContext, enabled)
+            PlaybackWakeLockController.sync(
+                applicationContext,
+                PlaybackKeepAlivePolicy.shouldHoldKeepAliveWakeLock(
+                    enabled = enabled,
+                    hasActiveTimer = hasActiveTimer
+                )
+            )
         } catch (_: Exception) {
             // Ignore keep-alive sync failures and let playback continue best-effort.
         }

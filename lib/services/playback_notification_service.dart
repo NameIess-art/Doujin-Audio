@@ -70,7 +70,9 @@ class PlaybackNotificationService {
       await _clearUnifiedNotifications();
     }
     _enabled = enabled;
-    await NativePlaybackBridge.instance.setForegroundEnabled(enabled);
+    if (enabled) {
+      await NativePlaybackBridge.instance.setForegroundEnabled(true);
+    }
   }
 
   Future<void> clearUnifiedNotifications() async {

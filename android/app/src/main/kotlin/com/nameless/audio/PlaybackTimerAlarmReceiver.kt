@@ -205,7 +205,7 @@ object PlaybackTimerAlarmScheduler {
             this.action = PlaybackKeepAliveService.ACTION_START
             putExtra(
                 PlaybackKeepAliveService.EXTRA_HAS_ACTIVE_PLAYBACK,
-                action == actionAutoResume
+                false
             )
             putExtra(PlaybackKeepAliveService.EXTRA_HAS_ACTIVE_TIMER, true)
             putExtra(

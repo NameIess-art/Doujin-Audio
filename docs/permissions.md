@@ -19,7 +19,9 @@ If broad storage access is denied, users should still prefer Android's picker or
 - `SCHEDULE_EXACT_ALARM` / `USE_EXACT_ALARM`: improve sleep timer pause and auto-resume reliability for long-running background sessions.
 - `RECEIVE_BOOT_COMPLETED`: lets the app restore native timer runtime state after reboot, package replacement, or clock changes.
 
-If the user denies battery optimization exemption, playback still works best-effort through media services and wake locks, but some OEM ROMs may stop background work more aggressively.
+During playback, Android requires a visible foreground media notification so the system can treat the app as active media playback while the screen is off. Disabling rich in-app notification controls does not remove the minimal foreground playback notification while audio is playing.
+
+If the user denies battery optimization exemption, playback still works best-effort through the native media service and wake locks, but some OEM ROMs may stop background work more aggressively.
 
 ## Subtitle Overlay
 
@@ -31,7 +33,7 @@ If overlay permission is denied, in-app playback and normal subtitle parsing con
 
 - `POST_NOTIFICATIONS`: shows playback controls on Android 13 and newer.
 
-If notification permission is denied or playback notifications are disabled in the app, playback should continue without rich notification controls.
+If notification permission is denied or rich playback notifications are disabled in the app, playback should continue through the native foreground media service, but background controls and status visibility may be limited by Android or the device vendor.
 
 ## App Updates
 

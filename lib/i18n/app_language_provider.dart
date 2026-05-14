@@ -208,8 +208,8 @@ const Map<AppLanguage, Map<String, String>> _localizedValues = {
     'dark_mode_subtitle': '夜间使用更低眩光的配色。',
     'multi_thread_playback': '多线程播放',
     'multi_thread_playback_subtitle': '开启后可同时播放多首音频；关闭后始终只保留一个播放会话。',
-    'notification_bar': '通知栏',
-    'notification_bar_subtitle': '在通知栏中显示播放控制和当前播放信息。',
+    'notification_bar': '播放通知控制',
+    'notification_bar_subtitle': '控制富播放通知的显示；播放中仍会保留系统前台通知以保证息屏稳定。',
     'show_playback_card': '播放卡片显示',
     'show_playback_card_subtitle': '在页面底部显示当前播放卡片。',
     'auto_play_added_sessions': '添加后立即播放',
@@ -225,8 +225,8 @@ const Map<AppLanguage, Map<String, String>> _localizedValues = {
     'allow_background_run_checking': '正在检查后台运行状态...',
     'allow_background_run_open_failed': '无法打开系统后台运行设置，请手动进入应用设置调整。',
     'notification_permission_status': '通知权限状态',
-    'notification_permission_ready': '通知权限已开启，通知栏与后台控制可正常显示。',
-    'notification_permission_missing': '通知权限未开启，后台控制与状态提醒可能不可用。',
+    'notification_permission_ready': '通知权限已开启，后台控制可正常显示，息屏播放更稳定。',
+    'notification_permission_missing': '通知权限未开启，系统可能限制后台播放通知与控制显示。',
     'notification_permission_checking': '正在检查通知权限...',
     'notification_settings_open_failed': '无法打开通知设置，请手动进入系统设置调整。',
     'open_notification_settings': '打开通知设置',
@@ -507,8 +507,9 @@ const Map<AppLanguage, Map<String, String>> _localizedValues = {
     'dark_mode_subtitle': '夜間に眩しさを抑えた配色を使います。',
     'multi_thread_playback': 'マルチスレッド再生',
     'multi_thread_playback_subtitle': 'オンにすると複数音声を同時再生し、オフでは再生セッションを1つだけ保持します。',
-    'notification_bar': '通知バー',
-    'notification_bar_subtitle': '通知バーに再生コントロールと現在の再生情報を表示します。',
+    'notification_bar': '再生通知コントロール',
+    'notification_bar_subtitle':
+        '詳細な再生通知の表示を切り替えます。再生中は画面オフ時の安定性のため、システムの前景通知を保持します。',
     'show_playback_card': '再生カード表示',
     'show_playback_card_subtitle': '画面下部に現在の再生カードを表示します。',
     'auto_play_added_sessions': '追加後すぐ再生',
@@ -524,9 +525,10 @@ const Map<AppLanguage, Map<String, String>> _localizedValues = {
     'allow_background_run_checking': 'バックグラウンド実行の状態を確認しています...',
     'allow_background_run_open_failed': 'システム設定を開けませんでした。アプリ設定から手動で変更してください。',
     'notification_permission_status': '通知権限の状態',
-    'notification_permission_ready': '通知権限は有効です。通知バーとバックグラウンド操作を表示できます。',
+    'notification_permission_ready':
+        '通知権限は有効です。バックグラウンド操作を表示でき、画面オフ再生がより安定します。',
     'notification_permission_missing':
-        '通知権限が無効です。バックグラウンド操作や状態通知が利用できない場合があります。',
+        '通知権限が無効です。システムがバックグラウンド再生通知や操作表示を制限する場合があります。',
     'notification_permission_checking': '通知権限を確認しています...',
     'notification_settings_open_failed': '通知設定を開けませんでした。システム設定から手動で変更してください。',
     'open_notification_settings': '通知設定を開く',
@@ -826,9 +828,9 @@ const Map<AppLanguage, Map<String, String>> _localizedValues = {
     'multi_thread_playback': 'Multi-thread playback',
     'multi_thread_playback_subtitle':
         'When on, multiple tracks can play together. When off, only one playback session is kept.',
-    'notification_bar': 'Notification bar',
+    'notification_bar': 'Playback notification controls',
     'notification_bar_subtitle':
-        'Show playback controls and current track info in the notification bar.',
+        'Toggle rich playback controls; a minimal foreground notification stays during playback for screen-off stability.',
     'show_playback_card': 'Show playback card',
     'show_playback_card_subtitle':
         'Show the current playback card at the bottom of the screen.',
@@ -850,9 +852,9 @@ const Map<AppLanguage, Map<String, String>> _localizedValues = {
         'Could not open background run settings. Please adjust this app manually in system settings.',
     'notification_permission_status': 'Notification permission',
     'notification_permission_ready':
-        'Notification permission is enabled, so background controls can stay visible.',
+        'Notification permission is enabled, so background controls can stay visible and screen-off playback is more stable.',
     'notification_permission_missing':
-        'Notification permission is disabled, so background controls and status updates may be unavailable.',
+        'Notification permission is disabled, so Android may restrict background playback controls and status.',
     'notification_permission_checking': 'Checking notification permission...',
     'notification_settings_open_failed':
         'Could not open notification settings. Please change it manually in system settings.',

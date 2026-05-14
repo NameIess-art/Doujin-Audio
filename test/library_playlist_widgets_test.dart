@@ -334,4 +334,88 @@ void main() {
     expect(find.text('Disc1', findRichText: true), findsOneWidget);
     expect(find.text(languageProvider.tr('exclude')), findsWidgets);
   });
+
+  testWidgets('library edit keeps decoded content track name after exclusion', (
+    WidgetTester tester,
+  ) async {
+    final handler = PlaybackNotificationHandler();
+    final notificationService = PlaybackNotificationService(handler);
+    final audioDatabaseRepository = AudioDatabaseRepository();
+    final nativePlaybackRepository = NativePlaybackRepository();
+    const playbackCommandRunner = PlaybackCommandRunner();
+    final libraryService = LibraryService();
+    final playbackService = PlaybackSessionService();
+    final timerService = TimerService();
+    final notificationCoordinatorService = NotificationCoordinatorService();
+    final settingsRepository = SettingsRepository();
+    final languageProvider = AppLanguageProvider();
+    final audioProvider = AudioProvider.test(
+      notificationService: notificationService,
+      audioDatabaseRepository: audioDatabaseRepository,
+      nativePlaybackRepository: nativePlaybackRepository,
+      libraryService: libraryService,
+      playbackService: playbackService,
+      timerService: timerService,
+      notificationStateService: notificationCoordinatorService,
+      settingsRepository: settingsRepository,
+    );
+
+    addTearDown(audioProvider.dispose);
+
+    const libraryRoot =
+        'content://com.android.externalstorage.documents/tree/primary%3AASMR';
+    const trackPath =
+        'content://com.android.externalstorage.documents/tree/primary%3AASMR/document/primary%3AASMR%2F%E3%82%8C%E3%81%84%E3%81%8D%E3%82%89%E8%80%B3%E8%88%90%E3%82%81.mp3';
+
+    audioProvider.addWatchedLibrary(libraryRoot, notify: false);
+    audioProvider.addTracks(
+      [
+        _track(
+          name: 'れいきら耳舐め',
+          path: trackPath,
+          groupKey: libraryRoot,
+          groupTitle: 'ASMR',
+        ),
+      ],
+      notify: false,
+      persist: false,
+    );
+    libraryService.syncSlice(isInitialized: true);
+
+    await tester.pumpWidget(
+      _buildTestApp(
+        audioProvider: audioProvider,
+        audioDatabaseRepository: audioDatabaseRepository,
+        nativePlaybackRepository: nativePlaybackRepository,
+        playbackCommandRunner: playbackCommandRunner,
+        libraryService: libraryService,
+        playbackService: playbackService,
+        timerService: timerService,
+        notificationCoordinatorService: notificationCoordinatorService,
+        settingsRepository: settingsRepository,
+        languageProvider: languageProvider,
+        child: const LibraryEditPage(libraryPath: libraryRoot),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.widgetWithText(TextButton, languageProvider.tr('exclude')).first,
+    );
+    await tester.pump();
+
+    expect(find.text('れいきら耳舐め'), findsOneWidget);
+    expect(find.textContaining('primary%3A'), findsNothing);
+    expect(find.text(languageProvider.tr('restore')), findsOneWidget);
+
+    await tester.tap(
+      find.widgetWithText(TextButton, languageProvider.tr('restore')).first,
+    );
+    await tester.pump(const Duration(milliseconds: 20));
+
+    expect(audioProvider.trackByPath(trackPath)?.displayName, 'れいきら耳舐め');
+    expect(find.text('れいきら耳舐め'), findsOneWidget);
+    expect(find.textContaining('primary%3A'), findsNothing);
+    expect(find.text(languageProvider.tr('exclude')), findsOneWidget);
+  });
 }

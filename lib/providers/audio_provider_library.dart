@@ -181,13 +181,29 @@ extension AudioProviderLibrary on AudioProvider {
             PathMatcher.equalsNormalized(track.path, normalizedTrackPath),
       );
     } else {
-      unawaited(_restoreExcludedTrack(normalizedTrackPath));
+      unawaited(_restoreExcludedTrack(libraryPath, normalizedTrackPath));
     }
     _notifyListeners();
   }
 
-  Future<void> _restoreExcludedTrack(String trackPath) async {
+  Future<void> _restoreExcludedTrack(
+    String libraryPath,
+    String trackPath,
+  ) async {
     if (_libraryByPath.containsKey(trackPath)) return;
+    final persistedEntry = _libraryService
+        .libraryEntriesForLibrary(libraryPath)
+        .where(
+          (entry) =>
+              entry.isTrack &&
+              PathMatcher.equalsNormalized(entry.path, trackPath),
+        )
+        .firstOrNull;
+    if (persistedEntry != null) {
+      addTracks([persistedEntry.toTrack()], notify: false);
+      return;
+    }
+
     final isContentUri = trackPath.startsWith('content://');
     FileStat? fileStat;
     if (!isContentUri) {
@@ -205,9 +221,11 @@ extension AudioProviderLibrary on AudioProvider {
     addTracks([
       MusicTrack(
         path: trackPath,
-        displayName: path.basenameWithoutExtension(trackPath),
+        displayName: PathDisplay.fileName(trackPath, withoutExtension: true),
         groupKey: parentFolder,
-        groupTitle: folderName.isEmpty ? parentFolder : folderName,
+        groupTitle: folderName.isEmpty
+            ? PathDisplay.folderName(parentFolder)
+            : PathDisplay.normalizeDisplaySegment(folderName),
         groupSubtitle: parentFolder,
         isSingle: false,
         isVideo: isVideoMediaFile(trackPath),

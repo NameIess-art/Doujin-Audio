@@ -907,8 +907,21 @@ class _LibraryEditTrackTile extends ConsumerWidget {
     final provider = ref.read(audioProviderFacadeProvider);
     final cs = Theme.of(context).colorScheme;
     final track = libraryService.trackByPath(trackPath);
-    final title =
-        track?.displayName ?? path.basenameWithoutExtension(trackPath);
+    final persistedDisplayName = libraryService
+        .libraryEntriesForLibrary(libraryPath)
+        .where(
+          (entry) =>
+              entry.isTrack &&
+              PathMatcher.equalsNormalized(entry.path, trackPath) &&
+              entry.displayName.trim().isNotEmpty,
+        )
+        .firstOrNull
+        ?.displayName
+        .trim();
+    final title = track?.displayName.trim().isNotEmpty == true
+        ? track!.displayName
+        : persistedDisplayName ??
+              PathDisplay.fileName(trackPath, withoutExtension: true);
     final isMuted =
         muted ?? libraryService.isLibraryPathExcluded(libraryPath, trackPath);
     final inheritedExcluded = libraryService.isLibraryPathInheritedExcluded(

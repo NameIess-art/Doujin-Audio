@@ -268,28 +268,32 @@ class _LibraryCategoryTermBox extends StatelessWidget {
               children: terms
                   .map<Widget>((term) {
                     final selected = selectedTerms.contains(term);
-                    return FilterChip(
-                      selected: selected,
-                      label: Text(term),
-                      onSelected: (_) => onToggle(term),
-                      showCheckmark: false,
-                      visualDensity: VisualDensity.compact,
-                      selectedColor: cs.secondaryContainer,
-                      backgroundColor: cs.surface,
-                      side: BorderSide(
-                        color: selected
-                            ? cs.secondary.withValues(alpha: 0.45)
-                            : cs.outlineVariant,
+                    return GestureDetector(
+                      behavior: HitTestBehavior.translucent,
+                      onLongPress: () => _copyCategoryTerm(context, term),
+                      child: FilterChip(
+                        selected: selected,
+                        label: Text(term),
+                        onSelected: (_) => onToggle(term),
+                        showCheckmark: false,
+                        visualDensity: VisualDensity.compact,
+                        selectedColor: cs.secondaryContainer,
+                        backgroundColor: cs.surface,
+                        side: BorderSide(
+                          color: selected
+                              ? cs.secondary.withValues(alpha: 0.45)
+                              : cs.outlineVariant,
+                        ),
+                        labelStyle: Theme.of(context).textTheme.labelSmall
+                            ?.copyWith(
+                              color: selected
+                                  ? cs.onSecondaryContainer
+                                  : cs.onSurfaceVariant,
+                              fontWeight: selected
+                                  ? FontWeight.w800
+                                  : FontWeight.w600,
+                            ),
                       ),
-                      labelStyle: Theme.of(context).textTheme.labelSmall
-                          ?.copyWith(
-                            color: selected
-                                ? cs.onSecondaryContainer
-                                : cs.onSurfaceVariant,
-                            fontWeight: selected
-                                ? FontWeight.w800
-                                : FontWeight.w600,
-                          ),
                     );
                   })
                   .followedBy(<Widget>[
@@ -311,6 +315,18 @@ class _LibraryCategoryTermBox extends StatelessWidget {
                   ])
                   .toList(growable: false),
             ),
+    );
+  }
+
+  void _copyCategoryTerm(BuildContext context, String term) {
+    Clipboard.setData(ClipboardData(text: term));
+    HapticFeedback.selectionClick();
+    showAppSnackBar(
+      context,
+      context.read<AppLanguageProvider>().tr('copied_to_clipboard', {
+        'value': term,
+      }),
+      icon: Icons.content_copy_rounded,
     );
   }
 }

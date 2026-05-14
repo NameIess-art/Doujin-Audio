@@ -219,6 +219,13 @@ class _DlsiteMetadataReviewPageState extends State<DlsiteMetadataReviewPage> {
                     controller: _titleController,
                     label: i18n.tr('audio_detail_work_title'),
                   ),
+                  if ((metadata?.rjCode.trim().isNotEmpty ?? false)) ...[
+                    _ReviewInfoLine(
+                      label: i18n.tr('audio_detail_rj_code'),
+                      value: metadata!.rjCode.trim(),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
                   _ReviewTextField(
                     controller: _circleController,
                     label: i18n.tr('audio_detail_circle_name'),
@@ -247,6 +254,55 @@ class _DlsiteMetadataReviewPageState extends State<DlsiteMetadataReviewPage> {
                   ),
                 ],
               ),
+      ),
+    );
+  }
+}
+
+class _ReviewInfoLine extends StatelessWidget {
+  const _ReviewInfoLine({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: cs.surfaceContainerHighest.withValues(alpha: 0.55),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: cs.outlineVariant),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            Icons.confirmation_number_rounded,
+            size: 18,
+            color: cs.onSurfaceVariant,
+          ),
+          const SizedBox(width: 8),
+          Text(
+            '$label: ',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: cs.onSurfaceVariant,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: cs.onSurface,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

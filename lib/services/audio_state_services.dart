@@ -335,9 +335,12 @@ class LibraryService {
       changed = true;
     }
 
-    for (final nodeId in validNodeIds) {
-      if (libraryNodeOrder.contains(nodeId)) continue;
-      libraryNodeOrder.add(nodeId);
+    final orderedNodeIdSet = libraryNodeOrder.toSet();
+    final missingNodeIds = validNodeIds
+        .where((nodeId) => !orderedNodeIdSet.contains(nodeId))
+        .toList(growable: false);
+    if (missingNodeIds.isNotEmpty) {
+      libraryNodeOrder.insertAll(0, missingNodeIds);
       changed = true;
     }
 

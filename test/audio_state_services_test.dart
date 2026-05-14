@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:nameless_audio/models/music_track.dart';
 import 'package:nameless_audio/models/playback_mode.dart';
 import 'package:nameless_audio/models/playback_session.dart';
 import 'package:nameless_audio/services/audio_state_services.dart';
@@ -101,6 +102,38 @@ void main() {
   });
 
   group('PlaybackSessionService', () {
+    test('registerSession places newly added sessions first', () {
+      final service = PlaybackSessionService();
+      addTearDown(service.dispose);
+
+      final first = PlaybackSession(
+        id: 's1',
+        currentTrackPath: '/tracks/one.mp3',
+        loopMode: SessionLoopMode.single,
+        nonSingleLoopMode: SessionLoopMode.single,
+        volume: 0.9,
+        createdAt: DateTime(2026),
+        state: PlayerState(false, ProcessingState.ready),
+      );
+      final second = PlaybackSession(
+        id: 's2',
+        currentTrackPath: '/tracks/two.mp3',
+        loopMode: SessionLoopMode.single,
+        nonSingleLoopMode: SessionLoopMode.single,
+        volume: 0.8,
+        createdAt: DateTime(2026, 1, 2),
+        state: PlayerState(false, ProcessingState.ready),
+      );
+      addTearDown(first.dispose);
+      addTearDown(second.dispose);
+
+      service.registerSession(first);
+      service.registerSession(second);
+
+      expect(service.sessionOrder, <String>['s2', 's1']);
+      expect(service.activeSessions.map((session) => session.id), ['s2', 's1']);
+    });
+
     test('activeSessions respects session order and playingSessionCount', () {
       final service = PlaybackSessionService();
       addTearDown(service.dispose);
@@ -184,6 +217,39 @@ void main() {
   });
 
   group('LibraryService', () {
+    MusicTrack track(String path, {required String groupKey}) {
+      return MusicTrack(
+        path: path,
+        displayName: path.split('/').last,
+        groupKey: groupKey,
+        groupTitle: groupKey.split('/').last,
+        groupSubtitle: groupKey,
+        isSingle: false,
+      );
+    }
+
+    test('syncLibraryNodeOrder places newly discovered roots first', () {
+      final service = LibraryService();
+      addTearDown(service.dispose);
+
+      service.library.add(track('/music/old/01.mp3', groupKey: '/music/old'));
+      service.syncLibraryNodeOrder();
+
+      expect(service.libraryNodeOrder, <String>['/music/old']);
+
+      service.library.addAll(<MusicTrack>[
+        track('/music/new-a/01.mp3', groupKey: '/music/new-a'),
+        track('/music/new-b/01.mp3', groupKey: '/music/new-b'),
+      ]);
+      service.syncLibraryNodeOrder();
+
+      expect(service.libraryNodeOrder, <String>[
+        '/music/new-a',
+        '/music/new-b',
+        '/music/old',
+      ]);
+    });
+
     test('watched SAF folders dedupe equivalent tree and document uris', () {
       final service = LibraryService();
       addTearDown(service.dispose);

@@ -193,12 +193,17 @@ void main() {
       expect(result.backupAttempted, isTrue);
       expect(result.backupSaved, isTrue);
       expect(result.detail.workTitle, 'Single');
-      expect(
-        await File(
-          '${target.targetPath}${AudioDetailRepository.singleBackupSuffix}',
-        ).exists(),
-        isTrue,
+      // Backup is written as an array entry in nameless-audio.json in the
+      // same directory as the audio file.
+      final backupFile = File(
+        '${tempDir.path}${Platform.pathSeparator}${AudioDetailRepository.backupFileName}',
       );
+      expect(await backupFile.exists(), isTrue);
+      final decoded = json.decode(await backupFile.readAsString());
+      expect(decoded, isA<List>());
+      final entries = decoded as List;
+      expect(entries.length, 1);
+      expect((entries.first as Map<String, dynamic>)['workTitle'], 'Single');
     },
   );
 
@@ -236,10 +241,44 @@ void main() {
       final target = AudioDetailTarget.singleAudioFile(
         '${tempDir.path}${Platform.pathSeparator}single.mp3',
       );
+      // Write the new array-format backup in the same directory.
       final backupFile = File(
-        '${target.targetPath}${AudioDetailRepository.singleBackupSuffix}',
+        '${tempDir.path}${Platform.pathSeparator}${AudioDetailRepository.backupFileName}',
       );
       await backupFile.writeAsString(
+        json.encode([
+          {
+            'schemaVersion': 1,
+            'type': 'audio-detail',
+            'targetType': 'single-audio-file',
+            'targetPath': target.targetPath,
+            'rjCode': 'RJ998877',
+            'workTitle': 'Single backup work',
+            'circleName': 'Single backup circle',
+            'voiceActors': ['A', 'B'],
+            'tags': ['tag'],
+          },
+        ]),
+      );
+
+      final result = await repository.load(target);
+
+      expect(result.restoredFromBackup, isTrue);
+      expect(result.detail.rjCode, 'RJ998877');
+      expect(result.detail.workTitle, 'Single backup work');
+      expect((await appDatabase.loadAudioDetail(target))?.rjCode, 'RJ998877');
+    },
+  );
+
+  test(
+    'single audio load restores from legacy sidecar when no directory backup exists',
+    () async {
+      final target = AudioDetailTarget.singleAudioFile(
+        '${tempDir.path}${Platform.pathSeparator}single.mp3',
+      );
+      // Write the old per-file sidecar format.
+      final legacySidecar = File('${target.targetPath}.nameless-audio.json');
+      await legacySidecar.writeAsString(
         json.encode({
           'schemaVersion': 1,
           'type': 'audio-detail',
@@ -259,6 +298,61 @@ void main() {
       expect(result.detail.rjCode, 'RJ998877');
       expect(result.detail.workTitle, 'Single backup work');
       expect((await appDatabase.loadAudioDetail(target))?.rjCode, 'RJ998877');
+    },
+  );
+
+  test(
+    'multiple single files in the same directory each get their own entry',
+    () async {
+      final target1 = AudioDetailTarget.singleAudioFile(
+        '${tempDir.path}${Platform.pathSeparator}track1.mp3',
+      );
+      final target2 = AudioDetailTarget.singleAudioFile(
+        '${tempDir.path}${Platform.pathSeparator}track2.mp3',
+      );
+
+      await repository.save(
+        AudioDetail.empty(target1).copyWith(workTitle: 'Track One'),
+      );
+      await repository.save(
+        AudioDetail.empty(target2).copyWith(workTitle: 'Track Two'),
+      );
+
+      final backupFile = File(
+        '${tempDir.path}${Platform.pathSeparator}${AudioDetailRepository.backupFileName}',
+      );
+      expect(await backupFile.exists(), isTrue);
+      final decoded = json.decode(await backupFile.readAsString()) as List;
+      expect(decoded.length, 2);
+
+      final result1 = await repository.load(target1);
+      final result2 = await repository.load(target2);
+      expect(result1.detail.workTitle, 'Track One');
+      expect(result2.detail.workTitle, 'Track Two');
+    },
+  );
+
+  test(
+    'updating a single file entry does not duplicate it in the backup',
+    () async {
+      final target = AudioDetailTarget.singleAudioFile(
+        '${tempDir.path}${Platform.pathSeparator}single.mp3',
+      );
+
+      await repository.save(
+        AudioDetail.empty(target).copyWith(workTitle: 'First'),
+      );
+      await repository.save(
+        AudioDetail.empty(target).copyWith(workTitle: 'Updated'),
+      );
+
+      final backupFile = File(
+        '${tempDir.path}${Platform.pathSeparator}${AudioDetailRepository.backupFileName}',
+      );
+      final decoded = json.decode(await backupFile.readAsString()) as List;
+      // Still only one entry — no duplicate.
+      expect(decoded.length, 1);
+      expect((decoded.first as Map<String, dynamic>)['workTitle'], 'Updated');
     },
   );
 

@@ -324,7 +324,7 @@ const Map<AppLanguage, Map<String, String>> _localizedValues = {
     'go_settings': '去设置',
     'later': '稍后',
     'start_conversion': '开始转换',
-    'choose_library': '选择曲库',
+    'choose_library': '添加曲库',
     'choose_library_folder': '选择曲库文件夹',
     'import_library_done': '曲库导入完成：新增 {folderCount} 个根文件夹，{count} 首音频。',
     'no_child_folder_found': '所选文件夹下没有可导入的下一层文件夹。',

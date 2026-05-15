@@ -613,6 +613,49 @@ class MainActivity : AudioServiceActivity() {
                             }
                         }.start()
                     }
+                    "readSingleFileDetailBackup" -> {
+                        val filePath = call.argument<String>("filePath")
+                        if (filePath.isNullOrBlank()) {
+                            result.error("invalid_args", "filePath is required", null)
+                            return@setMethodCallHandler
+                        }
+                        Thread {
+                            try {
+                                val json = readSingleFileDetailBackup(filePath)
+                                runOnUiThread { result.success(json) }
+                            } catch (e: Exception) {
+                                runOnUiThread {
+                                    result.error(
+                                        "single_detail_backup_read_failed",
+                                        e.message ?: "unknown error",
+                                        null
+                                    )
+                                }
+                            }
+                        }.start()
+                    }
+                    "writeSingleFileDetailBackup" -> {
+                        val filePath = call.argument<String>("filePath")
+                        val json = call.argument<String>("json")
+                        if (filePath.isNullOrBlank() || json == null) {
+                            result.error("invalid_args", "filePath and json are required", null)
+                            return@setMethodCallHandler
+                        }
+                        Thread {
+                            try {
+                                val saved = writeSingleFileDetailBackup(filePath, json)
+                                runOnUiThread { result.success(saved) }
+                            } catch (e: Exception) {
+                                runOnUiThread {
+                                    result.error(
+                                        "single_detail_backup_write_failed",
+                                        e.message ?: "unknown error",
+                                        null
+                                    )
+                                }
+                            }
+                        }.start()
+                    }
                     "writeFileBytesToFolder" -> {
                         val folder = call.argument<String>("folder")
                         val name = call.argument<String>("name")
@@ -1622,6 +1665,84 @@ class MainActivity : AudioServiceActivity() {
             output.flush()
         } ?: return false
         return true
+    }
+
+    /**
+     * Reads the `nameless-audio.json` file from the parent directory of the
+     * given single-file content URI.  Returns the raw JSON string, or null if
+     * the file does not exist or cannot be read.
+     */
+    private fun readSingleFileDetailBackup(filePath: String): String? {
+        val parentFolder = resolveParentFolderForFile(filePath) ?: return null
+        val backup = parentFolder.listFiles().firstOrNull {
+            it.isFile && it.name == audioDetailBackupFileName
+        } ?: return null
+        return contentResolver.openInputStream(backup.uri)?.use { input ->
+            input.bufferedReader(Charsets.UTF_8).readText()
+        }
+    }
+
+    /**
+     * Writes [json] into `nameless-audio.json` in the parent directory of the
+     * given single-file content URI.  Returns true on success.
+     */
+    private fun writeSingleFileDetailBackup(filePath: String, json: String): Boolean {
+        val parentFolder = resolveParentFolderForFile(filePath) ?: return false
+        val backup = parentFolder.listFiles().firstOrNull {
+            it.isFile && it.name == audioDetailBackupFileName
+        } ?: parentFolder.createFile("application/json", audioDetailBackupFileName)
+            ?: return false
+        contentResolver.openOutputStream(backup.uri, "wt")?.use { output ->
+            output.write(json.toByteArray(Charsets.UTF_8))
+            output.flush()
+        } ?: return false
+        return true
+    }
+
+    /**
+     * Resolves the parent [DocumentFile] directory for a single-file content
+     * URI.  Supports both tree-based URIs (where the document ID encodes the
+     * path) and synthetic `base::relative` URIs used internally.
+     */
+    private fun resolveParentFolderForFile(filePath: String): DocumentFile? {
+        val trimmed = filePath.trim()
+        if (!trimmed.startsWith("content://")) return null
+
+        // Synthetic URI: "content://authority/tree/rootId::relative/path/file.mp3"
+        val syntheticIndex = trimmed.indexOf("::")
+        if (syntheticIndex >= 0) {
+            val base = trimmed.substring(0, syntheticIndex)
+            val relative = trimmed.substring(syntheticIndex + 2).trim('/')
+            val parentRelative = relative.substringBeforeLast('/', missingDelimiterValue = "")
+            val root = DocumentFile.fromTreeUri(this, Uri.parse(base)) ?: return null
+            return if (parentRelative.isEmpty()) {
+                root
+            } else {
+                resolveRelativeDocumentDirectory(root, parentRelative)
+            }
+        }
+
+        // Standard tree document URI: extract parent document ID from the
+        // document ID by stripping the last path segment.
+        val uri = Uri.parse(trimmed)
+        val treeBase = treeUriBaseForDocumentUri(uri)
+        val documentId = documentIdForUri(uri)
+        if (treeBase != null && documentId != null) {
+            val parentDocumentId = if (documentId.contains('/')) {
+                documentId.substringBeforeLast('/')
+            } else {
+                // File is at the tree root — parent is the root itself.
+                startDocumentIdForTreeUri(treeBase) ?: return null
+            }
+            val parentUri = DocumentsContract.buildDocumentUriUsingTree(
+                treeBase,
+                parentDocumentId
+            )
+            return DocumentFile.fromTreeUri(this, parentUri)
+                ?: DocumentFile.fromSingleUri(this, parentUri)
+        }
+
+        return null
     }
 
     private fun writeFileBytesToFolder(

@@ -44,7 +44,8 @@ class AudioDetailRepository {
 
   static const backupFileName = 'nameless-audio.json';
   static const legacyBackupFileName = '.nameless-audio.json';
-  static const singleBackupSuffix = '.nameless-audio.json';
+  // Legacy sidecar suffix kept for migration reads only.
+  static const _legacySingleBackupSuffix = '.nameless-audio.json';
   static const MethodChannel _fileCacheChannel = MethodChannel(
     FileCacheChannel.name,
   );
@@ -78,12 +79,11 @@ class AudioDetailRepository {
     await _databaseRepository.upsertAudioDetail(normalized);
 
     if (!normalized.target.isLibraryRootFolder) {
+      // Single audio file: save into nameless-audio.json in the same directory,
+      // using an array so multiple standalone files in the same folder each
+      // have their own entry keyed by targetPath.
       try {
-        final backupFile = _backupFile(normalized.target);
-        final payload = const JsonEncoder.withIndent(
-          '  ',
-        ).convert(normalized.toBackupJson());
-        await backupFile.writeAsString(payload, flush: true);
+        await _writeSingleFileBackup(normalized);
         return AudioDetailSaveResult(
           detail: normalized,
           backupAttempted: true,
@@ -114,7 +114,7 @@ class AudioDetailRepository {
           throw const FileSystemException('Content backup was not saved.');
         }
       } else {
-        final backupFile = _backupFile(normalized.target);
+        final backupFile = _folderBackupFile(normalized.target.targetPath);
         await backupFile.writeAsString(payload, flush: true);
         await _deleteLegacyBackupIfNeeded(normalized.target);
       }
@@ -150,9 +150,216 @@ class AudioDetailRepository {
     return save(result.detail.copyWith(rjCode: rjCode));
   }
 
-  Future<AudioDetail?> _readBackup(AudioDetailTarget target) async {
+  // ---------------------------------------------------------------------------
+  // Single-file backup helpers
+  // ---------------------------------------------------------------------------
+
+  /// Returns the directory that contains [audioFilePath].
+  String _dirOf(String audioFilePath) => path.dirname(audioFilePath);
+
+  /// The shared backup file for all standalone audio files in the same
+  /// directory as [audioFilePath].
+  File _singleDirBackupFile(String audioFilePath) {
+    return File(path.join(_dirOf(audioFilePath), backupFileName));
+  }
+
+  /// Reads the array-format backup file for the directory containing
+  /// [audioFilePath] and returns the entry whose targetPath matches, or null.
+  Future<AudioDetail?> _readSingleFileBackupEntry(
+    AudioDetailTarget target,
+  ) async {
+    if (PathMatcher.isContentUri(target.targetPath)) {
+      return _readSingleFileBackupEntryViaChannel(target);
+    }
+    final backupFile = _singleDirBackupFile(target.targetPath);
+    if (!await backupFile.exists()) {
+      // Fall back to the legacy per-file sidecar written by older versions.
+      return _readLegacySingleSidecar(target);
+    }
     try {
-      final rawJson = await _readBackupJson(target);
+      final raw = await backupFile.readAsString();
+      return _parseSingleFileEntry(target, raw);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Reads the backup via the native channel for content URI paths.
+  Future<AudioDetail?> _readSingleFileBackupEntryViaChannel(
+    AudioDetailTarget target,
+  ) async {
+    try {
+      final raw = await _fileCacheChannel.invokeMethod<String>(
+        FileCacheMethod.readSingleFileDetailBackup,
+        {'filePath': target.targetPath},
+      );
+      if (raw == null || raw.isEmpty) return null;
+      return _parseSingleFileEntry(target, raw);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Parses [raw] JSON (array or single object) and returns the entry whose
+  /// targetPath matches [target.targetPath], or null.
+  AudioDetail? _parseSingleFileEntry(AudioDetailTarget target, String raw) {
+    if (raw.isEmpty) return null;
+    try {
+      final decoded = json.decode(raw);
+      // New format: array of entries.
+      if (decoded is List) {
+        for (final item in decoded) {
+          if (item is! Map<String, dynamic>) continue;
+          final entryPath = item['targetPath'] as String?;
+          if (entryPath == null) continue;
+          if (PathMatcher.normalize(entryPath) ==
+              PathMatcher.normalize(target.targetPath)) {
+            final detail = AudioDetail.fromBackupJson(target, item);
+            if (detail.target.targetType != target.targetType) continue;
+            return detail.copyWith(target: target);
+          }
+        }
+        return null;
+      }
+      // Legacy single-object format (folder-style or old sidecar content).
+      if (decoded is Map<String, dynamic>) {
+        final detail = AudioDetail.fromBackupJson(target, decoded);
+        if (detail.target.targetType != target.targetType) return null;
+        return detail.copyWith(target: target);
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  /// Reads the legacy per-file sidecar (`song.mp3.nameless-audio.json`).
+  Future<AudioDetail?> _readLegacySingleSidecar(
+    AudioDetailTarget target,
+  ) async {
+    final sidecar = File('${target.targetPath}$_legacySingleBackupSuffix');
+    if (!await sidecar.exists()) return null;
+    try {
+      final raw = await sidecar.readAsString();
+      if (raw.isEmpty) return null;
+      final decoded = json.decode(raw);
+      if (decoded is! Map<String, dynamic>) return null;
+      final detail = AudioDetail.fromBackupJson(target, decoded);
+      if (detail.target.targetType != target.targetType) return null;
+      return detail.copyWith(target: target);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Writes [detail] into the shared `nameless-audio.json` in the same
+  /// directory as the audio file, updating the matching entry or appending.
+  Future<void> _writeSingleFileBackup(AudioDetail detail) async {
+    if (PathMatcher.isContentUri(detail.target.targetPath)) {
+      await _writeSingleFileBackupViaChannel(detail);
+      return;
+    }
+    final backupFile = _singleDirBackupFile(detail.target.targetPath);
+    final normalizedPath = PathMatcher.normalize(detail.target.targetPath);
+
+    // Read existing entries from the file (if any).
+    List<Map<String, dynamic>> entries = [];
+    if (await backupFile.exists()) {
+      try {
+        final raw = await backupFile.readAsString();
+        if (raw.isNotEmpty) {
+          final decoded = json.decode(raw);
+          if (decoded is List) {
+            entries = decoded.whereType<Map<String, dynamic>>().toList();
+          } else if (decoded is Map<String, dynamic>) {
+            // Migrate a legacy single-object file to array format.
+            entries = [decoded];
+          }
+        }
+      } catch (_) {
+        // Corrupt file — start fresh.
+        entries = [];
+      }
+    }
+
+    // Update the matching entry or append a new one.
+    final newEntry = detail.toBackupJson();
+    final idx = entries.indexWhere((e) {
+      final p = e['targetPath'] as String?;
+      return p != null && PathMatcher.normalize(p) == normalizedPath;
+    });
+    if (idx >= 0) {
+      entries[idx] = newEntry;
+    } else {
+      entries.add(newEntry);
+    }
+
+    final payload = const JsonEncoder.withIndent('  ').convert(entries);
+    await backupFile.writeAsString(payload, flush: true);
+  }
+
+  /// Writes the backup via the native channel for content URI paths.
+  Future<void> _writeSingleFileBackupViaChannel(AudioDetail detail) async {
+    final normalizedPath = PathMatcher.normalize(detail.target.targetPath);
+
+    // Read the existing backup from the native side first so we can merge.
+    String? existingRaw;
+    try {
+      existingRaw = await _fileCacheChannel.invokeMethod<String>(
+        FileCacheMethod.readSingleFileDetailBackup,
+        {'filePath': detail.target.targetPath},
+      );
+    } catch (_) {
+      existingRaw = null;
+    }
+
+    List<Map<String, dynamic>> entries = [];
+    if (existingRaw != null && existingRaw.isNotEmpty) {
+      try {
+        final decoded = json.decode(existingRaw);
+        if (decoded is List) {
+          entries = decoded.whereType<Map<String, dynamic>>().toList();
+        } else if (decoded is Map<String, dynamic>) {
+          entries = [decoded];
+        }
+      } catch (_) {
+        entries = [];
+      }
+    }
+
+    final newEntry = detail.toBackupJson();
+    final idx = entries.indexWhere((e) {
+      final p = e['targetPath'] as String?;
+      return p != null && PathMatcher.normalize(p) == normalizedPath;
+    });
+    if (idx >= 0) {
+      entries[idx] = newEntry;
+    } else {
+      entries.add(newEntry);
+    }
+
+    final payload = const JsonEncoder.withIndent('  ').convert(entries);
+    final saved =
+        await _fileCacheChannel.invokeMethod<bool>(
+          FileCacheMethod.writeSingleFileDetailBackup,
+          {'filePath': detail.target.targetPath, 'json': payload},
+        ) ??
+        false;
+    if (!saved) {
+      throw const FileSystemException(
+        'Single-file content backup was not saved.',
+      );
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Shared backup helpers
+  // ---------------------------------------------------------------------------
+
+  Future<AudioDetail?> _readBackup(AudioDetailTarget target) async {
+    if (!target.isLibraryRootFolder) {
+      return _readSingleFileBackupEntry(target);
+    }
+    try {
+      final rawJson = await _readFolderBackupJson(target);
       if (rawJson == null || rawJson.isEmpty) return null;
       final decoded = json.decode(rawJson);
       if (decoded is! Map<String, dynamic>) return null;
@@ -164,16 +371,19 @@ class AudioDetailRepository {
     }
   }
 
-  Future<String?> _readBackupJson(AudioDetailTarget target) async {
+  Future<String?> _readFolderBackupJson(AudioDetailTarget target) async {
     if (PathMatcher.isContentUri(target.targetPath)) {
       return _fileCacheChannel.invokeMethod<String>(
         FileCacheMethod.readAudioDetailBackup,
         {'folder': target.targetPath},
       );
     }
-    final backupFile = _backupFile(target);
+    final backupFile = _folderBackupFile(target.targetPath);
     if (!await backupFile.exists()) {
-      final legacyBackupFile = _backupFile(target, legacy: true);
+      final legacyBackupFile = _folderBackupFile(
+        target.targetPath,
+        legacy: true,
+      );
       if (!await legacyBackupFile.exists()) return null;
       return legacyBackupFile.readAsString();
     }
@@ -187,16 +397,10 @@ class AudioDetailRepository {
     );
   }
 
-  File _backupFile(AudioDetailTarget target, {bool legacy = false}) {
-    if (target.isLibraryRootFolder) {
-      return File(
-        path.join(
-          target.targetPath,
-          legacy ? legacyBackupFileName : backupFileName,
-        ),
-      );
-    }
-    return File('${target.targetPath}$singleBackupSuffix');
+  File _folderBackupFile(String folderPath, {bool legacy = false}) {
+    return File(
+      path.join(folderPath, legacy ? legacyBackupFileName : backupFileName),
+    );
   }
 
   Future<void> _deleteLegacyBackupIfNeeded(AudioDetailTarget target) async {
@@ -204,7 +408,7 @@ class AudioDetailRepository {
         PathMatcher.isContentUri(target.targetPath)) {
       return;
     }
-    final legacyBackupFile = _backupFile(target, legacy: true);
+    final legacyBackupFile = _folderBackupFile(target.targetPath, legacy: true);
     try {
       if (await legacyBackupFile.exists()) {
         await legacyBackupFile.delete();

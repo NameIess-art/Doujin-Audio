@@ -123,6 +123,7 @@ extension AudioProviderPlaybackTimer on AudioProvider {
     _maybeResetTimerAfterExpiry();
     _syncKeepCpuAwake();
     _notifyListeners();
+    unawaited(_saveTimerRuntime());
   }
 
   void _applyLocalTimerExpiryFallback() {
@@ -175,8 +176,11 @@ extension AudioProviderPlaybackTimer on AudioProvider {
       return;
     }
     await syncTimerRuntimeFromNative();
+    // After auto-resume the timer is fully done — reset to original state.
+    _resetTimerRuntimeState();
     _syncKeepCpuAwake();
     _notifyListeners();
+    unawaited(_saveTimerRuntime());
   }
 
   Future<bool> _executeTimerActionOnPlatform(

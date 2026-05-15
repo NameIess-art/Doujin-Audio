@@ -630,7 +630,7 @@ const Map<AppLanguage, Map<String, String>> _localizedValues = {
     'go_settings': '設定を開く',
     'later': 'あとで',
     'start_conversion': '変換開始',
-    'choose_library': '曲庫を選択',
+    'choose_library': '曲庫を追加',
     'choose_library_folder': '曲庫フォルダを選択',
     'import_library_done':
         '曲庫の取り込みが完了しました。{folderCount} 個のルートフォルダと {count} 曲を追加しました。',
@@ -970,7 +970,7 @@ const Map<AppLanguage, Map<String, String>> _localizedValues = {
     'go_settings': 'Open settings',
     'later': 'Later',
     'start_conversion': 'Start conversion',
-    'choose_library': 'Choose Library',
+    'choose_library': 'Add Library',
     'choose_library_folder': 'Choose library folder',
     'import_library_done':
         'Library import complete: {folderCount} root folders and {count} new tracks added.',

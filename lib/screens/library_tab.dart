@@ -580,14 +580,14 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                           label: i18n.tr('import_folder'),
                         ),
                         UnifiedMenuEntry<int>.action(
-                          value: 1,
-                          icon: Icons.library_add_rounded,
-                          label: i18n.tr('choose_library'),
-                        ),
-                        UnifiedMenuEntry<int>.action(
                           value: 2,
                           icon: Icons.upload_file_rounded,
                           label: i18n.tr('import_file'),
+                        ),
+                        UnifiedMenuEntry<int>.action(
+                          value: 1,
+                          icon: Icons.library_add_rounded,
+                          label: i18n.tr('choose_library'),
                         ),
                         const UnifiedMenuEntry<int>.divider(),
                         UnifiedMenuEntry<int>.action(

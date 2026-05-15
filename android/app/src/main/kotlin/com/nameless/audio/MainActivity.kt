@@ -95,14 +95,14 @@ internal object PlaybackKeepAlivePolicy {
         keepForegroundServiceAlive: Boolean,
         hasActiveTimer: Boolean
     ): Boolean {
-        return keepForegroundServiceAlive && hasActiveTimer
+        return keepForegroundServiceAlive
     }
 
     fun shouldHoldKeepAliveWakeLock(
         enabled: Boolean,
         hasActiveTimer: Boolean
     ): Boolean {
-        return enabled && hasActiveTimer
+        return enabled
     }
 }
 
@@ -979,25 +979,23 @@ class MainActivity : AudioServiceActivity() {
         keepForegroundServiceAlive: Boolean
     ) {
         try {
-            // NativePlaybackService owns foreground playback. This keep-alive
-            // service is only for timer/auto-resume reliability.
-            val playbackOwnedByNativeService = hasActivePlayback
+            // NativePlaybackService already owns the foreground notification
+            // during active playback.  The keep-alive service provides a
+            // redundant foreground service + wake lock so that if
+            // NativePlaybackService briefly drops out of foreground (e.g.
+            // during a track transition) the process is not killed.
             val shouldRunKeepAliveService =
-                if (playbackOwnedByNativeService && !hasActiveTimer) {
-                    false
-                } else {
-                    PlaybackKeepAlivePolicy.shouldRunKeepAliveService(
-                        keepForegroundServiceAlive = keepForegroundServiceAlive,
-                        hasActiveTimer = hasActiveTimer
-                    )
-                }
+                PlaybackKeepAlivePolicy.shouldRunKeepAliveService(
+                    keepForegroundServiceAlive = keepForegroundServiceAlive,
+                    hasActiveTimer = hasActiveTimer
+                )
             if (shouldRunKeepAliveService) {
                 val serviceIntent =
                     Intent(applicationContext, PlaybackKeepAliveService::class.java).apply {
                         action = PlaybackKeepAliveService.ACTION_START
                         putExtra(
                             PlaybackKeepAliveService.EXTRA_HAS_ACTIVE_PLAYBACK,
-                            false
+                            hasActivePlayback
                         )
                         putExtra(
                             PlaybackKeepAliveService.EXTRA_HAS_ACTIVE_TIMER,

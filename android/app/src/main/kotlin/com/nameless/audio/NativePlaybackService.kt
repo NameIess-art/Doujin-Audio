@@ -54,6 +54,11 @@ class NativePlaybackService : MediaSessionService() {
         private const val STATE_PERSISTENCE_INTERVAL_MS = 60 * 1000L
         private const val STATE_PERSISTENCE_DEBOUNCE_MS = 800L
         private const val MAX_ACTIVE_PLAYERS = 10
+        // Grace period before releasing the wake lock / stopping foreground after
+        // playback appears to have stopped. Covers brief gaps during track
+        // transitions and buffering so that aggressive OEM battery managers
+        // cannot kill the service in that window.
+        private const val PLAYBACK_STOP_GRACE_MS = 5_000L
         private const val LOG_TAG = "NativePlaybackService"
 
         @Volatile
@@ -112,8 +117,30 @@ class NativePlaybackService : MediaSessionService() {
     private var audioFocusRequest: AudioFocusRequest? = null
     private var audioFocusHeld = false
     private var pendingPersistScheduled = false
+    // Whether a deferred foreground-stop is pending (grace period after
+    // playback appears to have stopped).
+    private var foregroundStopGracePending = false
     private val audioFocusChangeListener = AudioManager.OnAudioFocusChangeListener { change ->
         logInfo("audio_focus_change focus=${audioFocusChangeName(change)}")
+    }
+    // Deferred runnable that actually stops the foreground service and releases
+    // the wake lock after the grace period expires.  If playback resumes within
+    // the grace window this runnable is cancelled.
+    private val foregroundStopGraceRunnable = Runnable {
+        foregroundStopGracePending = false
+        if (!hasActivePlayback()) {
+            logInfo("foreground_stop_grace_expired executing_deferred_stop")
+            abandonAudioFocus(reason = "grace_expired_no_active_playback")
+            releaseWakeLock()
+            stopForegroundWatchdog()
+            persistSessionStateNow()
+            stopPlaybackForeground(
+                reason = "grace_expired_no_active_playback",
+                removeNotification = sessions.isEmpty()
+            )
+        } else {
+            logInfo("foreground_stop_grace_expired playback_resumed_skip")
+        }
     }
     private val positionTicker = object : Runnable {
         override fun run() {
@@ -128,11 +155,10 @@ class NativePlaybackService : MediaSessionService() {
     private val foregroundWatchdog = object : Runnable {
         override fun run() {
             if (!hasActivePlayback()) {
-                foregroundWatchdogScheduled = false
-                stopPlaybackForeground(
-                    reason = "foreground_watchdog_no_active_playback",
-                    removeNotification = sessions.isEmpty()
-                )
+                // Don't stop the watchdog immediately — a grace-period stop may
+                // already be pending.  Just reschedule; the grace runnable will
+                // clean up if playback truly stopped.
+                mainHandler.postDelayed(this, FOREGROUND_WATCHDOG_INTERVAL_MS)
                 return
             }
             startPlaybackForeground(forceRefresh = true)
@@ -180,12 +206,24 @@ class NativePlaybackService : MediaSessionService() {
     override fun onTaskRemoved(rootIntent: Intent?) {
         logInfo("on_task_removed hasActivePlayback=${hasActivePlayback()}")
         if (hasActivePlayback()) {
+            // Keep the foreground service alive; stopWithTask="false" in the
+            // manifest already prevents the OS from stopping us, but we also
+            // explicitly re-sync to be safe.
             syncForegroundState()
+        } else if (sessions.isNotEmpty()) {
+            // Sessions exist but nothing is actively playing right now (e.g.
+            // the user swiped the app away during a brief buffering gap).
+            // Do NOT call stopSelf() — let the grace-period runnable decide.
+            // The foreground service will keep us alive until the grace window
+            // expires or playback resumes.
+            logInfo("on_task_removed sessions_present_deferring_stop")
+            scheduleForegroundStopGrace()
         } else {
             stopForegroundWatchdog()
+            cancelForegroundStopGrace()
             stopPlaybackForeground(
-                reason = "task_removed_no_active_playback",
-                removeNotification = sessions.isEmpty()
+                reason = "task_removed_no_sessions",
+                removeNotification = true
             )
             stopSelf()
         }
@@ -200,6 +238,7 @@ class NativePlaybackService : MediaSessionService() {
         mainHandler.removeCallbacks(positionTicker)
         stopStatePersistenceTicker()
         cancelScheduledPersistSessionState()
+        cancelForegroundStopGrace()
         stopForegroundWatchdog()
         tickerScheduled = false
         releaseMediaSession("on_destroy")
@@ -377,6 +416,7 @@ class NativePlaybackService : MediaSessionService() {
             updateMediaSessionPlayer()
         }
         if (sessions.isEmpty()) {
+            cancelForegroundStopGrace()
             stopForegroundWatchdog()
             stopStatePersistenceTicker()
             cancelScheduledPersistSessionState()
@@ -400,6 +440,7 @@ class NativePlaybackService : MediaSessionService() {
         sessions.values.forEach { it.playerOrNull()?.pause() }
         publishAllSessionStates()
         persistSessionStateNow()
+        cancelForegroundStopGrace()
         stopForegroundWatchdog()
         playbackSuspended = true
         abandonAudioFocus(reason = "pause_all")
@@ -414,6 +455,7 @@ class NativePlaybackService : MediaSessionService() {
         sessions.clear()
         focusedSessionId = null
         releaseMediaSession("clear_all")
+        cancelForegroundStopGrace()
         stopForegroundWatchdog()
         stopStatePersistenceTicker()
         cancelScheduledPersistSessionState()
@@ -581,7 +623,9 @@ class NativePlaybackService : MediaSessionService() {
         }
 
         return ExoPlayer.Builder(this, renderersFactory).build().also { player ->
-            player.setWakeMode(C.WAKE_MODE_LOCAL)
+            // WAKE_MODE_NETWORK keeps the CPU and WiFi lock while ExoPlayer is
+            // actively decoding, covering both local files and network streams.
+            player.setWakeMode(C.WAKE_MODE_NETWORK)
             player.addListener(object : Player.Listener {
                 override fun onPlaybackStateChanged(playbackState: Int) {
                     logInfo(
@@ -710,21 +754,35 @@ class NativePlaybackService : MediaSessionService() {
 
     private fun syncForegroundState() {
         if (hasActivePlayback()) {
+            // Playback is active — cancel any pending grace-period stop and
+            // make sure the foreground service + wake lock are held.
+            cancelForegroundStopGrace()
             acquireWakeLock()
             requestAudioFocusIfNeeded()
             startPlaybackForeground()
             ensureForegroundWatchdog()
             ensureStatePersistenceTicker()
         } else {
-            abandonAudioFocus(reason = "no_active_playback")
-            releaseWakeLock()
-            stopForegroundWatchdog()
-            persistSessionStateNow()
-            stopPlaybackForeground(
-                reason = "sync_no_active_playback",
-                removeNotification = sessions.isEmpty()
-            )
+            // Playback is not active right now, but it may be a transient gap
+            // (track transition, buffering, seek).  Schedule a grace-period
+            // stop instead of releasing resources immediately.  If playback
+            // resumes within the window the grace runnable will be cancelled.
+            scheduleForegroundStopGrace()
         }
+    }
+
+    private fun scheduleForegroundStopGrace() {
+        if (foregroundStopGracePending) return
+        foregroundStopGracePending = true
+        logInfo("foreground_stop_grace_scheduled delay=${PLAYBACK_STOP_GRACE_MS}ms")
+        mainHandler.postDelayed(foregroundStopGraceRunnable, PLAYBACK_STOP_GRACE_MS)
+    }
+
+    private fun cancelForegroundStopGrace() {
+        if (!foregroundStopGracePending) return
+        mainHandler.removeCallbacks(foregroundStopGraceRunnable)
+        foregroundStopGracePending = false
+        logInfo("foreground_stop_grace_cancelled")
     }
 
     private fun startPlaybackForeground() {
@@ -1099,7 +1157,9 @@ class NativePlaybackService : MediaSessionService() {
                 "$packageName:native_playback"
             )?.apply {
                 setReferenceCounted(false)
-                acquire()
+                // Use a generous timeout (24 h) as a safety net against leaks.
+                // The lock is released explicitly when playback stops.
+                acquire(24 * 60 * 60 * 1000L)
             }
             logInfo("wakelock_acquired held=${wakeLock?.isHeld == true}")
         } catch (e: Exception) {

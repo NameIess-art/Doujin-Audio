@@ -1,5 +1,8 @@
 part of 'library_tab.dart';
 
+const double _libraryDetailInfoLineGap = 4;
+const double _singleAudioTitleInfoGap = 8;
+
 class _LibraryTreeItem extends StatelessWidget {
   const _LibraryTreeItem({
     super.key,
@@ -417,7 +420,6 @@ class _TrackNodeWidget extends ConsumerWidget {
               : Padding(
                   padding: const EdgeInsets.fromLTRB(12, 10, 6, 10),
                   child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
                       Expanded(
                         child: _SingleAudioFileCardContent(
@@ -760,7 +762,8 @@ class _LibraryFeaturedCardContent extends StatelessWidget {
                             index < lines.length;
                             index++
                           ) ...[
-                            if (index > 0) const SizedBox(height: 4),
+                            if (index > 0)
+                              const SizedBox(height: _libraryDetailInfoLineGap),
                             _LibraryDetailInfoLine(
                               label: lines[index].label,
                               text: lines[index].text,
@@ -870,24 +873,25 @@ class _SingleAudioFileCardContent extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         _LibraryTwoLineMarqueeText(text: title, style: titleStyle),
-        if (lines.isNotEmpty)
+        if (lines.isNotEmpty) ...[
+          const SizedBox(height: _singleAudioTitleInfoGap),
           Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               for (var i = 0; i < lines.length; i++) ...[
-                const SizedBox(height: 6),
+                if (i > 0) const SizedBox(height: _libraryDetailInfoLineGap),
                 _LibraryDetailInfoLine(
                   label: lines[i].label,
                   text: lines[i].text,
                   style: infoStyle,
                   loading: false,
                   lines: lines[i].lines,
-                  reserveLineHeight: false,
                 ),
               ],
             ],
           ),
+        ],
       ],
     );
   }
@@ -936,7 +940,6 @@ class _LibraryDetailInfoLine extends StatelessWidget {
     required this.style,
     required this.loading,
     this.lines = 1,
-    this.reserveLineHeight = true,
   });
 
   final String label;
@@ -944,7 +947,6 @@ class _LibraryDetailInfoLine extends StatelessWidget {
   final TextStyle style;
   final bool loading;
   final int lines;
-  final bool reserveLineHeight;
 
   @override
   Widget build(BuildContext context) {
@@ -976,23 +978,12 @@ class _LibraryDetailInfoLine extends StatelessWidget {
                     color: cs.primary,
                   ),
                 )
-              : reserveLineHeight
-              ? lineCount == 2
-                    ? _LibraryTwoLineMarqueeText(text: text, style: style)
-                    : MarqueeText(text: text, style: style, scrollSpeed: 24)
-              : Text(
-                  text,
-                  maxLines: lineCount,
-                  overflow: TextOverflow.ellipsis,
-                  style: style,
-                ),
+              : lineCount == 2
+              ? _LibraryTwoLineMarqueeText(text: text, style: style)
+              : MarqueeText(text: text, style: style, scrollSpeed: 24),
         ),
       ],
     );
-
-    if (!reserveLineHeight) {
-      return content;
-    }
 
     return SizedBox(height: lineCount == 2 ? 36 : 16, child: content);
   }
@@ -1017,14 +1008,20 @@ List<_AudioDetailInfoLineData> _audioDetailInfoLines(
       ),
     if (d.circleName.trim().isNotEmpty)
       _AudioDetailInfoLineData('\u793e\u56e2', d.circleName.trim()),
-    if (d.tags.isNotEmpty)
-      _AudioDetailInfoLineData(
-        '\u6807\u7b7e',
-        AudioDetail.normalizeList(d.tags).join('\uFF0C'),
-        lines: 2,
-      ),
+    if (d.tags.isNotEmpty) _tagsDetailInfoLine(d.tags),
   ];
 }
+
+_AudioDetailInfoLineData _tagsDetailInfoLine(List<String> tags) {
+  final text = AudioDetail.normalizeList(tags).join('\uFF0C');
+  return _AudioDetailInfoLineData(
+    '\u6807\u7b7e',
+    text,
+    lines: _shouldReserveTwoInfoLines(text) ? 2 : 1,
+  );
+}
+
+bool _shouldReserveTwoInfoLines(String text) => text.characters.length > 18;
 
 class _LibrarySecondaryInfoLine extends StatelessWidget {
   const _LibrarySecondaryInfoLine({required this.icon, required this.text});

@@ -30,7 +30,11 @@ extension AudioProviderPlaybackKeepAlive on AudioProvider {
         _timerActive || _timerWaitingForPlayback || _hasPendingAutoResume;
     final usesUnifiedNotifications =
         _multiThreadPlaybackEnabled && _notificationsEnabled;
-    final shouldKeepAwake = hasTimer || _hasPendingAutoResume;
+    // Keep the CPU awake whenever there is active playback OR a timer is
+    // running.  Previously this was only true for the timer case, which meant
+    // pure playback had no redundant wake-lock protection from the keep-alive
+    // service.
+    final shouldKeepAwake = hasPlayback || hasTimer || _hasPendingAutoResume;
     final keepForegroundServiceAlive = shouldKeepAwake;
     if (_keepCpuAwake == shouldKeepAwake &&
         _keepAliveHasPlayback == hasPlayback &&
@@ -72,7 +76,9 @@ extension AudioProviderPlaybackKeepAlive on AudioProvider {
         _timerActive || _timerWaitingForPlayback || _hasPendingAutoResume;
     _keepAliveUsesUnifiedNotifications =
         _multiThreadPlaybackEnabled && _notificationsEnabled;
-    _keepCpuAwake = _keepAliveHasTimer || _hasPendingAutoResume;
+    // Keep awake for both playback and timer (same logic as _syncKeepCpuAwake).
+    _keepCpuAwake =
+        _keepAliveHasPlayback || _keepAliveHasTimer || _hasPendingAutoResume;
     _keepAliveKeepsForegroundService = _keepCpuAwake;
     unawaited(
       _setKeepCpuAwake(

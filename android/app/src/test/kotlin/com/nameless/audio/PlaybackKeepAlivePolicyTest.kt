@@ -10,7 +10,8 @@ class PlaybackKeepAlivePolicyTest {
         assertFalse(
             PlaybackKeepAlivePolicy.shouldRunKeepAliveService(
                 keepForegroundServiceAlive = true,
-                hasActiveTimer = false
+                hasActiveTimer = false,
+                hasActivePlayback = true
             )
         )
     }
@@ -20,13 +21,33 @@ class PlaybackKeepAlivePolicyTest {
         assertTrue(
             PlaybackKeepAlivePolicy.shouldRunKeepAliveService(
                 keepForegroundServiceAlive = true,
-                hasActiveTimer = true
+                hasActiveTimer = true,
+                hasActivePlayback = false
             )
         )
         assertTrue(
             PlaybackKeepAlivePolicy.shouldHoldKeepAliveWakeLock(
                 enabled = true,
-                hasActiveTimer = true
+                hasActiveTimer = true,
+                hasActivePlayback = false
+            )
+        )
+    }
+
+    @Test
+    fun `active playback owns foreground service even when timer is active`() {
+        assertFalse(
+            PlaybackKeepAlivePolicy.shouldRunKeepAliveService(
+                keepForegroundServiceAlive = true,
+                hasActiveTimer = true,
+                hasActivePlayback = true
+            )
+        )
+        assertFalse(
+            PlaybackKeepAlivePolicy.shouldHoldKeepAliveWakeLock(
+                enabled = true,
+                hasActiveTimer = true,
+                hasActivePlayback = true
             )
         )
     }
@@ -36,7 +57,8 @@ class PlaybackKeepAlivePolicyTest {
         assertFalse(
             PlaybackKeepAlivePolicy.shouldHoldKeepAliveWakeLock(
                 enabled = true,
-                hasActiveTimer = false
+                hasActiveTimer = false,
+                hasActivePlayback = true
             )
         )
     }

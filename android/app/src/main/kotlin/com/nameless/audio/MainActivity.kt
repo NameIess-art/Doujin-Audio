@@ -93,16 +93,18 @@ private object PlaybackWakeLockController {
 internal object PlaybackKeepAlivePolicy {
     fun shouldRunKeepAliveService(
         keepForegroundServiceAlive: Boolean,
-        hasActiveTimer: Boolean
+        hasActiveTimer: Boolean,
+        hasActivePlayback: Boolean
     ): Boolean {
-        return keepForegroundServiceAlive
+        return keepForegroundServiceAlive && hasActiveTimer && !hasActivePlayback
     }
 
     fun shouldHoldKeepAliveWakeLock(
         enabled: Boolean,
-        hasActiveTimer: Boolean
+        hasActiveTimer: Boolean,
+        hasActivePlayback: Boolean
     ): Boolean {
-        return enabled
+        return enabled && hasActiveTimer && !hasActivePlayback
     }
 }
 
@@ -991,7 +993,8 @@ class MainActivity : AudioServiceActivity() {
                 !NativePlaybackService.foregroundSuppressed &&
                     PlaybackKeepAlivePolicy.shouldRunKeepAliveService(
                         keepForegroundServiceAlive = keepForegroundServiceAlive,
-                        hasActiveTimer = hasActiveTimer
+                        hasActiveTimer = hasActiveTimer,
+                        hasActivePlayback = hasActivePlayback
                     )
             if (shouldRunKeepAliveService) {
                 val serviceIntent =
@@ -1026,7 +1029,8 @@ class MainActivity : AudioServiceActivity() {
                 applicationContext,
                 PlaybackKeepAlivePolicy.shouldHoldKeepAliveWakeLock(
                     enabled = enabled,
-                    hasActiveTimer = hasActiveTimer
+                    hasActiveTimer = hasActiveTimer,
+                    hasActivePlayback = hasActivePlayback
                 )
             )
         } catch (_: Exception) {

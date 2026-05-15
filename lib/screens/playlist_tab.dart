@@ -298,8 +298,10 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                     _TimerCountdownCapsule(
                       remaining:
                           headerState.timerRemaining ??
-                          headerState.timerDuration!,
+                          headerState.timerDuration ??
+                          Duration.zero,
                       active: headerState.timerActive,
+                      autoResumeAt: headerState.autoResumeAt,
                       onTap: widget.onTimerTap,
                     )
                   else

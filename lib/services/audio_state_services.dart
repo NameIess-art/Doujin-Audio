@@ -151,6 +151,7 @@ class TimerStateSliceData {
     this.autoResumeEnabled = false,
     this.autoResumeHour = 7,
     this.autoResumeMinute = 0,
+    this.autoResumeAt,
     this.pausedByTimerSessionIds = const <String>[],
     this.isInitialized = false,
   });
@@ -164,6 +165,9 @@ class TimerStateSliceData {
   final bool autoResumeEnabled;
   final int autoResumeHour;
   final int autoResumeMinute;
+
+  /// Wall-clock time at which auto-resume will fire, or null if not scheduled.
+  final DateTime? autoResumeAt;
   final List<String> pausedByTimerSessionIds;
   final bool isInitialized;
 
@@ -179,6 +183,7 @@ class TimerStateSliceData {
         other.autoResumeEnabled == autoResumeEnabled &&
         other.autoResumeHour == autoResumeHour &&
         other.autoResumeMinute == autoResumeMinute &&
+        other.autoResumeAt == autoResumeAt &&
         listEquals(other.pausedByTimerSessionIds, pausedByTimerSessionIds) &&
         other.isInitialized == isInitialized;
   }
@@ -194,6 +199,7 @@ class TimerStateSliceData {
     autoResumeEnabled,
     autoResumeHour,
     autoResumeMinute,
+    autoResumeAt,
     Object.hashAll(pausedByTimerSessionIds),
     isInitialized,
   );
@@ -858,6 +864,7 @@ class TimerService {
         autoResumeEnabled: autoResumeEnabled,
         autoResumeHour: autoResumeHour,
         autoResumeMinute: autoResumeMinute,
+        autoResumeAt: autoResumeAt,
         pausedByTimerSessionIds: UnmodifiableListView<String>(
           pausedByTimerSessionIds,
         ),

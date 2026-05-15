@@ -120,6 +120,7 @@ extension AudioProviderPlaybackTimer on AudioProvider {
       return;
     }
     await syncTimerRuntimeFromNative();
+    _maybeResetTimerAfterExpiry();
     _syncKeepCpuAwake();
     _notifyListeners();
   }
@@ -134,16 +135,29 @@ extension AudioProviderPlaybackTimer on AudioProvider {
       session.setOptimisticState(playing: false);
     }
 
-    _notifyListeners();
-
     if (_autoResumeEnabled) {
       _scheduleAutoResumeTimer(
         _nextClockTime(_autoResumeHour, _autoResumeMinute),
       );
     }
+    _maybeResetTimerAfterExpiry();
     _syncKeepCpuAwake();
+    _notifyListeners();
     unawaited(_saveTimerRuntime());
     unawaited(_syncNativeTimerAlarms());
+  }
+
+  /// Resets the timer configuration back to the pre-set state after expiry
+  /// when there is no pending auto-resume.  If auto-resume is scheduled the
+  /// timer state is kept so the capsule can show the auto-resume countdown.
+  void _maybeResetTimerAfterExpiry() {
+    if (_autoResumeAt != null ||
+        _pausedByTimerSessionIds.isNotEmpty && _autoResumeEnabled) {
+      // Auto-resume is pending — keep timer state so the UI can show it.
+      return;
+    }
+    // No auto-resume: reset the timer to its original (unconfigured) state.
+    _resetTimerRuntimeState();
   }
 
   void _onAutoResume() {

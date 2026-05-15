@@ -423,16 +423,79 @@ class _VerticalVolumeSliderState extends State<_VerticalVolumeSlider> {
   }
 }
 
-class _TimerCountdownCapsule extends StatelessWidget {
+class _TimerCountdownCapsule extends StatefulWidget {
   const _TimerCountdownCapsule({
     required this.remaining,
     required this.active,
+    required this.autoResumeAt,
     required this.onTap,
   });
 
   final Duration remaining;
   final bool active;
+  final DateTime? autoResumeAt;
   final VoidCallback? onTap;
+
+  @override
+  State<_TimerCountdownCapsule> createState() => _TimerCountdownCapsuleState();
+}
+
+class _TimerCountdownCapsuleState extends State<_TimerCountdownCapsule> {
+  Timer? _ticker;
+  Duration _autoResumeRemaining = Duration.zero;
+
+  @override
+  void initState() {
+    super.initState();
+    _updateAutoResumeRemaining();
+    if (widget.autoResumeAt != null) {
+      _startTicker();
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _TimerCountdownCapsule oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.autoResumeAt != oldWidget.autoResumeAt) {
+      _updateAutoResumeRemaining();
+      if (widget.autoResumeAt != null) {
+        _startTicker();
+      } else {
+        _stopTicker();
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _stopTicker();
+    super.dispose();
+  }
+
+  void _startTicker() {
+    _ticker?.cancel();
+    _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      _updateAutoResumeRemaining();
+    });
+  }
+
+  void _stopTicker() {
+    _ticker?.cancel();
+    _ticker = null;
+  }
+
+  void _updateAutoResumeRemaining() {
+    final target = widget.autoResumeAt;
+    if (target == null) return;
+    final diff = target.difference(DateTime.now());
+    final next = diff > Duration.zero ? diff : Duration.zero;
+    if (mounted) {
+      setState(() => _autoResumeRemaining = next);
+    } else {
+      _autoResumeRemaining = next;
+    }
+  }
 
   String _fmt(Duration d) {
     final h = d.inHours;
@@ -445,7 +508,14 @@ class _TimerCountdownCapsule extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final hasRemaining = remaining > Duration.zero;
+    final autoResumeAt = widget.autoResumeAt;
+
+    // When auto-resume is pending, show the auto-resume countdown instead.
+    final showAutoResume = autoResumeAt != null;
+    final displayDuration = showAutoResume
+        ? _autoResumeRemaining
+        : widget.remaining;
+    final hasRemaining = displayDuration > Duration.zero;
 
     return Material(
       color: cs.primaryContainer.withValues(alpha: 0.85),
@@ -455,7 +525,7 @@ class _TimerCountdownCapsule extends StatelessWidget {
         onTap: () {
           Feedback.forTap(context);
           HapticFeedback.selectionClick();
-          onTap?.call();
+          widget.onTap?.call();
         },
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -467,7 +537,9 @@ class _TimerCountdownCapsule extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
-                active
+                showAutoResume
+                    ? Icons.alarm_rounded
+                    : widget.active
                     ? Icons.timer_rounded
                     : hasRemaining
                     ? Icons.timer_rounded
@@ -477,7 +549,7 @@ class _TimerCountdownCapsule extends StatelessWidget {
               ),
               const SizedBox(width: 5),
               Text(
-                hasRemaining ? _fmt(remaining) : '00:00',
+                hasRemaining ? _fmt(displayDuration) : '00:00',
                 style: Theme.of(context).textTheme.labelSmall?.copyWith(
                   color: cs.onPrimaryContainer,
                   fontWeight: FontWeight.w800,

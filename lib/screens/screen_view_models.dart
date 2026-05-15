@@ -72,8 +72,7 @@ class LibraryListState {
   final bool isInitialized;
 
   bool get hasLibrary => rawTree.isNotEmpty;
-  bool get canPullRefresh =>
-      watchedFolderCount > 0 || watchedLibraryCount > 0;
+  bool get canPullRefresh => watchedFolderCount > 0 || watchedLibraryCount > 0;
 
   @override
   bool operator ==(Object other) {
@@ -117,6 +116,7 @@ class PlaylistHeaderState {
     required this.timerDuration,
     required this.timerRemaining,
     required this.timerActive,
+    this.autoResumeAt,
   });
 
   final int sessionCount;
@@ -125,7 +125,11 @@ class PlaylistHeaderState {
   final Duration? timerRemaining;
   final bool timerActive;
 
-  bool get hasTimer => timerDuration != null;
+  /// When the timer has expired and auto-resume is scheduled, this holds the
+  /// wall-clock time at which playback will resume.  Null otherwise.
+  final DateTime? autoResumeAt;
+
+  bool get hasTimer => timerDuration != null || autoResumeAt != null;
 
   @override
   bool operator ==(Object other) {
@@ -134,7 +138,8 @@ class PlaylistHeaderState {
         other.playingCount == playingCount &&
         other.timerDuration == timerDuration &&
         other.timerRemaining == timerRemaining &&
-        other.timerActive == timerActive;
+        other.timerActive == timerActive &&
+        other.autoResumeAt == autoResumeAt;
   }
 
   @override
@@ -144,6 +149,7 @@ class PlaylistHeaderState {
     timerDuration,
     timerRemaining,
     timerActive,
+    autoResumeAt,
   );
 }
 
@@ -178,7 +184,8 @@ class SessionOrderState {
 
   @override
   bool operator ==(Object other) {
-    return other is SessionOrderState && listEquals(other.sessionIds, sessionIds);
+    return other is SessionOrderState &&
+        listEquals(other.sessionIds, sessionIds);
   }
 
   @override
@@ -304,7 +311,9 @@ class LibrarySearchIndex {
     FolderNode folder,
     String normalizedQuery,
   ) {
-    final matchesFolderName = folder.name.toLowerCase().contains(normalizedQuery);
+    final matchesFolderName = folder.name.toLowerCase().contains(
+      normalizedQuery,
+    );
     if (matchesFolderName) {
       return _FilteredFolderNodeResult(
         node: folder,
@@ -333,8 +342,11 @@ class LibrarySearchIndex {
 
     if (filteredChildren.isEmpty) return null;
 
-    final filteredFolder = FolderNode(folder.name, folder.path, depth: folder.depth)
-      ..children.addAll(filteredChildren);
+    final filteredFolder = FolderNode(
+      folder.name,
+      folder.path,
+      depth: folder.depth,
+    )..children.addAll(filteredChildren);
     return _FilteredFolderNodeResult(
       node: filteredFolder,
       matchCount: matchCount,
@@ -401,5 +413,6 @@ PlaylistHeaderState playlistHeaderStateFromSlices(
     timerDuration: timerState.duration,
     timerRemaining: timerState.remaining,
     timerActive: timerState.active,
+    autoResumeAt: timerState.autoResumeAt,
   );
 }

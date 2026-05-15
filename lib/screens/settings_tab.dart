@@ -372,32 +372,6 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                     const SizedBox(height: 12),
                     _SectionHeader(title: i18n.tr('section_notification')),
                     const SizedBox(height: 2),
-                    SwitchListTile(
-                      value: playbackSettings.notificationsEnabled,
-                      onChanged: audioProvider.setNotificationsEnabled,
-                      title: Text(i18n.tr('notification_bar')),
-                      subtitle: Text(
-                        i18n.tr('notification_bar_subtitle'),
-                        style: descStyle,
-                      ),
-                      secondary: Container(
-                        width: 38,
-                        height: 38,
-                        decoration: BoxDecoration(
-                          color: cs.tertiaryContainer,
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Icon(
-                          Icons.notifications_active_rounded,
-                          color: cs.onTertiaryContainer,
-                        ),
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                    ),
-                    const SizedBox(height: 2),
                     _CapabilitySettingsTile(
                       title: i18n.tr('notification_permission_status'),
                       icon: Icons.notifications_rounded,

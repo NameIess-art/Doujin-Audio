@@ -406,10 +406,13 @@ extension AudioProviderPersistence on AudioProvider {
     _unifiedNotificationSyncKey = null;
     _notifyListeners();
     await _notificationService.setEnabled(enabled);
-    if (enabled) {
-      await _nativePlaybackRepository.undismissNotifications();
-    } else {
-      await _nativePlaybackRepository.dismissNotifications();
+    // setForegroundEnabled drives both the foreground-service state and the
+    // notificationsDismissed flag on the native side.  When disabling, this
+    // stops the foreground notification entirely (not just strips buttons).
+    // When enabling, setForegroundEnabled(true) is already called inside
+    // _notificationService.setEnabled(true), so we only need the disable path.
+    if (!enabled) {
+      await _nativePlaybackRepository.setForegroundEnabled(false);
     }
     _syncKeepCpuAwake();
     _syncNotificationState(immediateUnifiedSync: true);

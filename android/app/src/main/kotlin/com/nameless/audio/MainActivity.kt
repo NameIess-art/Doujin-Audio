@@ -984,11 +984,15 @@ class MainActivity : AudioServiceActivity() {
             // redundant foreground service + wake lock so that if
             // NativePlaybackService briefly drops out of foreground (e.g.
             // during a track transition) the process is not killed.
+            // When foreground is suppressed (notification control disabled),
+            // do NOT start the keep-alive service — it would show a notification
+            // that the user explicitly turned off.
             val shouldRunKeepAliveService =
-                PlaybackKeepAlivePolicy.shouldRunKeepAliveService(
-                    keepForegroundServiceAlive = keepForegroundServiceAlive,
-                    hasActiveTimer = hasActiveTimer
-                )
+                !NativePlaybackService.foregroundSuppressed &&
+                    PlaybackKeepAlivePolicy.shouldRunKeepAliveService(
+                        keepForegroundServiceAlive = keepForegroundServiceAlive,
+                        hasActiveTimer = hasActiveTimer
+                    )
             if (shouldRunKeepAliveService) {
                 val serviceIntent =
                     Intent(applicationContext, PlaybackKeepAliveService::class.java).apply {

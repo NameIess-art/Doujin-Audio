@@ -122,6 +122,17 @@ class NativePlaybackService : MediaSessionService() {
     private var foregroundStopGracePending = false
     private val audioFocusChangeListener = AudioManager.OnAudioFocusChangeListener { change ->
         logInfo("audio_focus_change focus=${audioFocusChangeName(change)}")
+        when (change) {
+            AudioManager.AUDIOFOCUS_LOSS,
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
+                // Mark focus as no longer held so the next syncForegroundState
+                // call will re-request it when playback resumes.
+                audioFocusHeld = false
+            }
+            AudioManager.AUDIOFOCUS_GAIN -> {
+                audioFocusHeld = true
+            }
+        }
     }
     // Deferred runnable that actually stops the foreground service and releases
     // the wake lock after the grace period expires.  If playback resumes within
@@ -483,10 +494,15 @@ class NativePlaybackService : MediaSessionService() {
         if (!enabled) {
             notificationsDismissed = true
             if (hasActivePlayback()) {
+                // Keep the wake lock and ExoPlayer running, but stop the
+                // foreground service so no notification is shown.
                 acquireWakeLock()
                 updateMediaSessionPlayer()
-                startPlaybackForeground(forceRefresh = true)
-                ensureForegroundWatchdog()
+                stopForegroundWatchdog()
+                stopPlaybackForeground(
+                    reason = "foreground_disabled_active_playback",
+                    removeNotification = true
+                )
             } else {
                 stopForegroundWatchdog()
                 stopPlaybackForeground(
@@ -498,6 +514,9 @@ class NativePlaybackService : MediaSessionService() {
             notificationsDismissed = false
             updateMediaSessionPlayer()
             if (hasActivePlayback()) {
+                acquireWakeLock()
+                requestAudioFocusIfNeeded()
+                startPlaybackForeground(forceRefresh = true)
                 ensureForegroundWatchdog()
             }
         }
@@ -762,6 +781,13 @@ class NativePlaybackService : MediaSessionService() {
             startPlaybackForeground()
             ensureForegroundWatchdog()
             ensureStatePersistenceTicker()
+        } else if (foregroundSuppressed) {
+            // Foreground is intentionally suppressed (notification control
+            // disabled). No foreground service to stop, just release resources.
+            cancelForegroundStopGrace()
+            abandonAudioFocus(reason = "suppressed_no_active_playback")
+            releaseWakeLock()
+            persistSessionStateNow()
         } else {
             // Playback is not active right now, but it may be a transient gap
             // (track transition, buffering, seek).  Schedule a grace-period
@@ -794,8 +820,8 @@ class NativePlaybackService : MediaSessionService() {
             logInfo("start_foreground_skip playback_suspended forceRefresh=$forceRefresh")
             return
         }
-        if (foregroundSuppressed && !hasActivePlayback()) {
-            logInfo("start_foreground_skip foreground_suppressed_no_active_playback")
+        if (foregroundSuppressed) {
+            logInfo("start_foreground_skip foreground_suppressed forceRefresh=$forceRefresh")
             return
         }
         val foregroundSession = sessions[focusedSessionId]
@@ -990,7 +1016,7 @@ class NativePlaybackService : MediaSessionService() {
     }
 
     private fun ensureForegroundWatchdog() {
-        if (foregroundSuppressed && !hasActivePlayback()) return
+        if (foregroundSuppressed) return
         if (foregroundWatchdogScheduled) return
         foregroundWatchdogScheduled = true
         mainHandler.postDelayed(foregroundWatchdog, FOREGROUND_WATCHDOG_INTERVAL_MS)

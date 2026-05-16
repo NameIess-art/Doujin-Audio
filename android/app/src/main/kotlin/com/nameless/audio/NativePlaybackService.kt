@@ -10,6 +10,7 @@ import android.content.pm.ServiceInfo
 import android.media.AudioAttributes as AndroidAudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
+import android.media.audiofx.LoudnessEnhancer
 import android.net.Uri
 import android.os.Build
 import android.os.Handler
@@ -710,6 +711,10 @@ class NativePlaybackService : MediaSessionService() {
                     persistSessionStateNow()
                     syncForegroundState()
                 }
+
+                override fun onAudioSessionIdChanged(audioSessionId: Int) {
+                    sessions[sessionId]?.onAudioSessionIdChanged(audioSessionId)
+                }
             })
         }
     }
@@ -1313,6 +1318,8 @@ class NativePlaybackService : MediaSessionService() {
         val sessionId: String
     ) {
         private val channelMappingAudioProcessor = ChannelMappingAudioProcessor()
+        private var loudnessEnhancer: LoudnessEnhancer? = null
+        private var loudnessEnhancerSessionId: Int = C.AUDIO_SESSION_ID_UNSET
         private var _player: ExoPlayer? = null
         var lastUsedMs: Long = System.currentTimeMillis()
         var path: String? = null
@@ -1363,7 +1370,7 @@ class NativePlaybackService : MediaSessionService() {
                     currentQueueIndexFor(descriptors),
                     lastPositionMs
                 )
-                p.volume = PlaybackVolumeMapper.normalize(volume)
+                applyVolumeToPlayer(p)
                 p.repeatMode = repeatModeFor(descriptors.size)
                 p.shuffleModeEnabled = shuffleModeEnabled && descriptors.size > 1
                 p.playWhenReady = lastPlayWhenReady
@@ -1386,6 +1393,7 @@ class NativePlaybackService : MediaSessionService() {
                 syncCurrentMediaItemFromPlayer()
                 p.release()
             }
+            releaseLoudnessEnhancer()
             _player = null
         }
 
@@ -1423,7 +1431,7 @@ class NativePlaybackService : MediaSessionService() {
                 queueStartIndex.coerceIn(0, this.queue.lastIndex),
                 startPositionMs.coerceAtLeast(0L)
             )
-            p.volume = PlaybackVolumeMapper.normalize(this.volume)
+            applyVolumeToPlayer(p)
             p.repeatMode = repeatModeFor(this.queue.size)
             p.shuffleModeEnabled = shuffleModeEnabled && this.queue.size > 1
             p.playWhenReady = autoPlay
@@ -1445,7 +1453,67 @@ class NativePlaybackService : MediaSessionService() {
 
         fun applyVolume(volume: Float) {
             this.volume = PlaybackVolumeMapper.normalize(volume)
-            playerOrNull()?.volume = this.volume
+            playerOrNull()?.let(::applyVolumeToPlayer)
+        }
+
+        private fun applyVolumeToPlayer(player: ExoPlayer) {
+            val normalizedVolume = PlaybackVolumeMapper.normalize(volume)
+            this.volume = normalizedVolume
+            player.volume = PlaybackVolumeMapper.playerVolume(normalizedVolume)
+            syncLoudnessEnhancer(player.audioSessionId)
+        }
+
+        fun onAudioSessionIdChanged(audioSessionId: Int) {
+            syncLoudnessEnhancer(audioSessionId)
+        }
+
+        private fun syncLoudnessEnhancer(audioSessionId: Int) {
+            val targetGain = PlaybackVolumeMapper.boostGainMillibels(volume)
+            if (targetGain <= 0 || audioSessionId == C.AUDIO_SESSION_ID_UNSET) {
+                releaseLoudnessEnhancer()
+                return
+            }
+
+            val enhancer = if (loudnessEnhancerSessionId == audioSessionId) {
+                loudnessEnhancer
+            } else {
+                releaseLoudnessEnhancer()
+                try {
+                    LoudnessEnhancer(audioSessionId).also {
+                        loudnessEnhancer = it
+                        loudnessEnhancerSessionId = audioSessionId
+                    }
+                } catch (e: RuntimeException) {
+                    logWarn(
+                        "loudness_enhancer_create_failed audioSessionId=$audioSessionId",
+                        this,
+                        e
+                    )
+                    null
+                }
+            } ?: return
+
+            try {
+                enhancer.setTargetGain(targetGain)
+                enhancer.setEnabled(true)
+            } catch (e: RuntimeException) {
+                logWarn("loudness_enhancer_apply_failed gain=$targetGain", this, e)
+                releaseLoudnessEnhancer()
+            }
+        }
+
+        private fun releaseLoudnessEnhancer() {
+            val enhancer = loudnessEnhancer ?: return
+            loudnessEnhancer = null
+            loudnessEnhancerSessionId = C.AUDIO_SESSION_ID_UNSET
+            try {
+                enhancer.setEnabled(false)
+            } catch (_: RuntimeException) {
+            }
+            try {
+                enhancer.release()
+            } catch (_: RuntimeException) {
+            }
         }
 
         fun updateQueue(

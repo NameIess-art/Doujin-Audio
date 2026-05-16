@@ -411,6 +411,31 @@ extension AudioProviderLibrary on AudioProvider {
     }
   }
 
+  /// Removes tracks from the in-memory library that are currently marked as
+  /// excluded in [_excludedLibraryFolders] or [_excludedLibraryTracks].
+  /// Called once during startup after both the library and exclusion maps have
+  /// been loaded, so that excluded items are not shown on the first render.
+  void _applyExclusionsToLibrary() {
+    _removeTracksWhere((track) {
+      for (final entry in _excludedLibraryFolders.entries) {
+        for (final folderPath in entry.value) {
+          if (PathMatcher.isWithinOrEqual(track.path, folderPath) ||
+              PathMatcher.isWithinOrEqual(track.groupKey, folderPath)) {
+            return true;
+          }
+        }
+      }
+      for (final entry in _excludedLibraryTracks.entries) {
+        for (final trackPath in entry.value) {
+          if (PathMatcher.equalsNormalized(track.path, trackPath)) {
+            return true;
+          }
+        }
+      }
+      return false;
+    });
+  }
+
   void _removeTracksWhere(bool Function(MusicTrack track) test) {
     final removedPaths = _library
         .where(test)

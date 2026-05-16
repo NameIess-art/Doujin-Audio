@@ -595,6 +595,25 @@ class LibraryService {
     }
   }
 
+  /// Rebuilds [excludedLibraryFolders] and [excludedLibraryTracks] from the
+  /// persisted [LibraryEntry] list.  Called after loading entries from the
+  /// database so that SQLite (the durable source of truth) always wins over
+  /// the SharedPreferences cache.
+  void rebuildExclusionsFromEntries(Iterable<LibraryEntry> entries) {
+    excludedLibraryFolders.clear();
+    excludedLibraryTracks.clear();
+    for (final entry in entries) {
+      if (!entry.isExcluded) continue;
+      final lib = PathMatcher.normalize(entry.libraryPath);
+      final p = PathMatcher.normalize(entry.path);
+      if (entry.isFolder) {
+        excludedLibraryFolders.putIfAbsent(lib, () => <String>{}).add(p);
+      } else {
+        excludedLibraryTracks.putIfAbsent(lib, () => <String>{}).add(p);
+      }
+    }
+  }
+
   List<String> removeLibraryEntriesMissingFromFolderScan(
     String libraryPath,
     String folderPath,

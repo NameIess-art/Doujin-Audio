@@ -278,6 +278,15 @@ extension AudioProviderPersistence on AudioProvider {
       final entries = await _audioDatabaseRepository.loadAllLibraryEntries();
       if (entries.isEmpty) return;
       _libraryService.replaceLibraryEntries(entries);
+      // Rebuild the in-memory exclusion maps from the database so that
+      // exclusions survive app restarts even if SharedPreferences is cleared.
+      // SQLite is the durable source of truth; this call overwrites whatever
+      // _loadLibraryExclusions() loaded from SharedPreferences.
+      _libraryService.rebuildExclusionsFromEntries(entries);
+      // Remove any tracks that are marked excluded in the database from the
+      // in-memory library.  _loadLibrary() loads all tracks unconditionally,
+      // so we must prune the excluded ones here.
+      _applyExclusionsToLibrary();
     } catch (e) {
       debugPrint('AudioProvider persistence error: $e');
     }

@@ -36,7 +36,8 @@ class SubtitleSettingsState {
   });
 
   bool isShowEnabled(String sessionId) => showSubtitlesMap[sessionId] ?? true;
-  bool isGlobalEnabled(String sessionId) => globalSubtitlesMap[sessionId] ?? false;
+  bool isGlobalEnabled(String sessionId) =>
+      globalSubtitlesMap[sessionId] ?? false;
 
   SubtitleSettingsState copyWith({
     Map<String, bool>? showSubtitlesMap,
@@ -60,8 +61,9 @@ class SubtitleSettingsState {
       fontColor: clearFontColor ? null : (fontColor ?? this.fontColor),
       backgroundBlur: backgroundBlur ?? this.backgroundBlur,
       backgroundOpacity: backgroundOpacity ?? this.backgroundOpacity,
-      backgroundColor:
-          clearBackgroundColor ? null : (backgroundColor ?? this.backgroundColor),
+      backgroundColor: clearBackgroundColor
+          ? null
+          : (backgroundColor ?? this.backgroundColor),
       borderDepth: borderDepth ?? this.borderDepth,
       fontSize: fontSize ?? this.fontSize,
     );
@@ -74,7 +76,8 @@ class SubtitleSettingsNotifier extends StateNotifier<SubtitleSettingsState> {
   }
 
   Future<void> _load() async {
-    final showList = await AppPreferences.getStringList('subtitle_show_map') ?? [];
+    final showList =
+        await AppPreferences.getStringList('subtitle_show_map') ?? [];
     final Map<String, bool> showMap = {};
     for (var s in showList) {
       final parts = s.split('|');
@@ -99,10 +102,13 @@ class SubtitleSettingsNotifier extends StateNotifier<SubtitleSettingsState> {
       }
     }
 
-    final opacityStr = await AppPreferences.getString('subtitle_background_opacity');
+    final opacityStr = await AppPreferences.getString(
+      'subtitle_background_opacity',
+    );
     final backgroundOpacity = double.tryParse(opacityStr ?? '') ?? 0.2;
 
-    final fontFamily = await AppPreferences.getString('subtitle_font_family') ?? '';
+    final fontFamily =
+        await AppPreferences.getString('subtitle_font_family') ?? '';
 
     Color? fontColor;
     final fontColorStr = await AppPreferences.getString('subtitle_font_color');
@@ -115,13 +121,17 @@ class SubtitleSettingsNotifier extends StateNotifier<SubtitleSettingsState> {
     final backgroundBlur = double.tryParse(blurStr ?? '') ?? 12;
 
     Color? backgroundColor;
-    final bgColorStr = await AppPreferences.getString('subtitle_background_color');
+    final bgColorStr = await AppPreferences.getString(
+      'subtitle_background_color',
+    );
     if (bgColorStr != null && bgColorStr.isNotEmpty) {
       final c = int.tryParse(bgColorStr, radix: 16);
       if (c != null) backgroundColor = Color(c);
     }
 
-    final borderDepthStr = await AppPreferences.getString('subtitle_border_depth');
+    final borderDepthStr = await AppPreferences.getString(
+      'subtitle_border_depth',
+    );
     final borderDepth = double.tryParse(borderDepthStr ?? '') ?? 0.5;
 
     final fontSizeStr = await AppPreferences.getString('subtitle_font_size');
@@ -143,8 +153,16 @@ class SubtitleSettingsNotifier extends StateNotifier<SubtitleSettingsState> {
 
   void toggleShowSubtitles(String sessionId) {
     final next = !state.isShowEnabled(sessionId);
-    final newMap = Map<String, bool>.from(state.showSubtitlesMap);
-    newMap[sessionId] = next;
+    final newShowMap = Map<String, bool>.from(state.showSubtitlesMap);
+    newShowMap[sessionId] = next;
+
+    // When disabling subtitles, also turn off global display so the overlay
+    // is hidden immediately without requiring a separate tap.
+    Map<String, bool>? newGlobalMap;
+    if (!next && state.isGlobalEnabled(sessionId)) {
+      newGlobalMap = Map<String, bool>.from(state.globalSubtitlesMap);
+      newGlobalMap[sessionId] = false;
+    }
 
     var newPositions = state.positions;
     if (next) {
@@ -153,16 +171,27 @@ class SubtitleSettingsNotifier extends StateNotifier<SubtitleSettingsState> {
     }
 
     state = state.copyWith(
-      showSubtitlesMap: newMap,
+      showSubtitlesMap: newShowMap,
+      globalSubtitlesMap: newGlobalMap,
       positions: newPositions,
     );
 
-    final strList = newMap.entries.map((e) => '${e.key}|${e.value}').toList();
+    final strList = newShowMap.entries
+        .map((e) => '${e.key}|${e.value}')
+        .toList();
     AppPreferences.setStringList('subtitle_show_map', strList);
 
+    if (newGlobalMap != null) {
+      final globalList = newGlobalMap.entries
+          .map((e) => '${e.key}|${e.value}')
+          .toList();
+      AppPreferences.setStringList('subtitle_global_map', globalList);
+    }
+
     if (next) {
-      final posList =
-          newPositions.entries.map((e) => '${e.key}|${e.value}').toList();
+      final posList = newPositions.entries
+          .map((e) => '${e.key}|${e.value}')
+          .toList();
       AppPreferences.setStringList('subtitle_positions', posList);
     }
   }
@@ -187,12 +216,14 @@ class SubtitleSettingsNotifier extends StateNotifier<SubtitleSettingsState> {
       globalSubtitlesMap: newGlobalMap,
     );
 
-    final showList =
-        newShowMap.entries.map((e) => '${e.key}|${e.value}').toList();
+    final showList = newShowMap.entries
+        .map((e) => '${e.key}|${e.value}')
+        .toList();
     AppPreferences.setStringList('subtitle_show_map', showList);
 
-    final globalList =
-        newGlobalMap.entries.map((e) => '${e.key}|${e.value}').toList();
+    final globalList = newGlobalMap.entries
+        .map((e) => '${e.key}|${e.value}')
+        .toList();
     AppPreferences.setStringList('subtitle_global_map', globalList);
   }
 

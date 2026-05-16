@@ -188,6 +188,15 @@ extension AudioProviderAudioDetails on AudioProvider {
     final name = oldTarget.isLibraryRootFolder
         ? safeName
         : '$safeName${_contentFileExtension(oldTarget.targetPath)}';
+    // If the document already has this name, skip the rename to avoid
+    // provider errors on some Android versions when the name is unchanged.
+    final currentName = PathMatcher.lastContentPathSegment(
+      oldTarget.targetPath,
+    );
+    if (currentName != null) {
+      final decodedCurrent = PathMatcher.safeDecodeComponent(currentName);
+      if (decodedCurrent == name) return oldTarget.targetPath;
+    }
     final raw = await AudioProvider._fileCacheChannel
         .invokeMapMethod<String, Object?>(FileCacheMethod.renameDocument, {
           'path': oldTarget.targetPath,

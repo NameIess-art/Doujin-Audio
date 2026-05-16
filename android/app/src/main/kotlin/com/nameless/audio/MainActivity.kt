@@ -1727,28 +1727,77 @@ class MainActivity : AudioServiceActivity() {
     }
 
     private fun readAudioDetailBackup(folderPath: String): String? {
-        val folder = resolveDocumentFileForFolderPath(folderPath) ?: return null
-        val backup = folder.listFiles().firstOrNull {
-            it.isFile && it.name == audioDetailBackupFileName
-        } ?: folder.listFiles().firstOrNull {
-            it.isFile && it.name == legacyAudioDetailBackupFileName
-        } ?: return null
-        return contentResolver.openInputStream(backup.uri)?.use { input ->
-            input.bufferedReader(Charsets.UTF_8).readText()
+        val folder = resolveDocumentFileForFolderPath(folderPath)
+        if (folder != null && folder.exists()) {
+            val backup = folder.listFiles().firstOrNull {
+                it.isFile && it.name == audioDetailBackupFileName
+            } ?: folder.listFiles().firstOrNull {
+                it.isFile && it.name == legacyAudioDetailBackupFileName
+            }
+            if (backup != null) {
+                return contentResolver.openInputStream(backup.uri)?.use { input ->
+                    input.bufferedReader(Charsets.UTF_8).readText()
+                }
+            }
         }
+        // SAF access failed (e.g. after a File.renameTo) — fall back to File I/O.
+        val filePath = contentUriToFilePath(folderPath) ?: return null
+        val backupFile = java.io.File(filePath, audioDetailBackupFileName)
+        if (backupFile.exists()) return backupFile.readText(Charsets.UTF_8)
+        val legacyFile = java.io.File(filePath, legacyAudioDetailBackupFileName)
+        if (legacyFile.exists()) return legacyFile.readText(Charsets.UTF_8)
+        return null
     }
 
     private fun writeAudioDetailBackup(folderPath: String, json: String): Boolean {
-        val folder = resolveDocumentFileForFolderPath(folderPath) ?: return false
-        val backup = folder.listFiles().firstOrNull {
-            it.isFile && it.name == audioDetailBackupFileName
-        } ?: folder.createFile("application/json", audioDetailBackupFileName)
-            ?: return false
-        contentResolver.openOutputStream(backup.uri, "wt")?.use { output ->
-            output.write(json.toByteArray(Charsets.UTF_8))
-            output.flush()
-        } ?: return false
-        return true
+        val folder = resolveDocumentFileForFolderPath(folderPath)
+        if (folder != null && folder.exists()) {
+            val backup = folder.listFiles().firstOrNull {
+                it.isFile && it.name == audioDetailBackupFileName
+            } ?: folder.createFile("application/json", audioDetailBackupFileName)
+            if (backup != null) {
+                contentResolver.openOutputStream(backup.uri, "wt")?.use { output ->
+                    output.write(json.toByteArray(Charsets.UTF_8))
+                    output.flush()
+                } ?: return false
+                return true
+            }
+        }
+        // SAF access failed — fall back to File I/O.
+        val filePath = contentUriToFilePath(folderPath) ?: return false
+        return try {
+            val backupFile = java.io.File(filePath, audioDetailBackupFileName)
+            backupFile.writeText(json, Charsets.UTF_8)
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    /**
+     * Converts a content URI (tree or document) to an actual file-system path
+     * by parsing the document ID (e.g. "primary:Music/MyFolder").
+     * Returns null if the URI cannot be resolved to a file path.
+     */
+    private fun contentUriToFilePath(contentUri: String): String? {
+        val trimmed = contentUri.trim()
+        if (!trimmed.startsWith("content://")) return null
+        val uri = Uri.parse(trimmed)
+        val documentId = try {
+            if (DocumentsContract.isDocumentUri(this, uri)) {
+                DocumentsContract.getDocumentId(uri)
+            } else {
+                DocumentsContract.getTreeDocumentId(uri)
+            }
+        } catch (_: Exception) {
+            return null
+        } ?: return null
+        val colonIndex = documentId.indexOf(':')
+        if (colonIndex < 0) return null
+        val volumeName = documentId.substring(0, colonIndex)
+        val relativePath = documentId.substring(colonIndex + 1)
+        val volumeRoot = resolveVolumeRoot(volumeName) ?: return null
+        return java.io.File(volumeRoot, relativePath).absolutePath
     }
 
     /**
@@ -2585,9 +2634,17 @@ class MainActivity : AudioServiceActivity() {
         }
 
         if (!rootFolder.isNullOrBlank() && rootFolder.startsWith("content://")) {
-            val coverDirectory = resolveDocumentFileForFolderPath(rootFolder) ?: return null
-            val cover = findPreferredCoverInDocumentTree(coverDirectory) ?: return null
-            return cacheDocumentCover(cover, rootFolder)
+            val coverDirectory = resolveDocumentFileForFolderPath(rootFolder)
+            if (coverDirectory != null && coverDirectory.exists()) {
+                val cover = findPreferredCoverInDocumentTree(coverDirectory)
+                if (cover != null) return cacheDocumentCover(cover, rootFolder)
+            }
+            // SAF fallback via File I/O.
+            val filePath = contentUriToFilePath(rootFolder)
+            if (filePath != null) {
+                return findPreferredCoverViaFile(filePath, trackPath)
+            }
+            return null
         }
 
         val rootTreeUri = when {
@@ -2604,19 +2661,67 @@ class MainActivity : AudioServiceActivity() {
 
         val treeRoot = DocumentFile.fromTreeUri(this, Uri.parse(rootTreeUri))
             ?: DocumentFile.fromSingleUri(this, Uri.parse(rootTreeUri))
-            ?: return null
-        if (!treeRoot.exists()) return null
-
-        val candidateDirectories = resolveCandidateDocumentDirectories(
-            treeRoot,
-            relativeDirectory
-        )
-
-        candidateDirectories.forEach { directory ->
-            val cover = findPreferredCoverInDocumentDirectory(directory) ?: return@forEach
-            return cacheDocumentCover(cover, trackPath)
+        if (treeRoot != null && treeRoot.exists()) {
+            val candidateDirectories = resolveCandidateDocumentDirectories(
+                treeRoot,
+                relativeDirectory
+            )
+            candidateDirectories.forEach { directory ->
+                val cover = findPreferredCoverInDocumentDirectory(directory) ?: return@forEach
+                return cacheDocumentCover(cover, trackPath)
+            }
+            return null
         }
-        return null
+
+        // SAF access failed (e.g. after a File.renameTo) — fall back to File I/O.
+        val folderPath = if (relativeDirectory.isBlank()) {
+            contentUriToFilePath(rootTreeUri)
+        } else {
+            val base = contentUriToFilePath(rootTreeUri) ?: return null
+            java.io.File(base, relativeDirectory).absolutePath
+        } ?: return null
+        return findPreferredCoverViaFile(folderPath, trackPath)
+    }
+
+    /**
+     * Finds the preferred cover image in [folderPath] using File I/O and
+     * caches it, returning the cached path.
+     */
+    private fun findPreferredCoverViaFile(folderPath: String, cacheKey: String): String? {
+        val dir = java.io.File(folderPath)
+        if (!dir.exists() || !dir.isDirectory) return null
+        val files = dir.listFiles() ?: return null
+        val imageExtensions = setOf("jpg", "jpeg", "png", "webp")
+        val preferredNames = listOf("cover", "folder", "front", "album", "artwork", "poster")
+        // Preferred names first, then any image.
+        val preferred = files.firstOrNull { f ->
+            val ext = f.extension.lowercase(Locale.US)
+            if (!imageExtensions.contains(ext)) return@firstOrNull false
+            val stem = f.nameWithoutExtension.lowercase(Locale.US)
+            preferredNames.any { stem == it || stem.startsWith(it) }
+        } ?: files.firstOrNull { f ->
+            imageExtensions.contains(f.extension.lowercase(Locale.US))
+        } ?: return null
+        return cacheFileAsCover(preferred, cacheKey)
+    }
+
+    /**
+     * Copies [imageFile] into the cover cache and returns the cached path.
+     */
+    private fun cacheFileAsCover(imageFile: java.io.File, cacheKey: String): String? {
+        val coverCacheDir = java.io.File(cacheDir, "nameless_audio_covers")
+        if (!coverCacheDir.exists()) coverCacheDir.mkdirs()
+        val outputFile = java.io.File(
+            coverCacheDir,
+            "cover_${kotlin.math.abs(cacheKey.hashCode())}.jpg"
+        )
+        if (outputFile.exists() && outputFile.length() > 0) return outputFile.absolutePath
+        return try {
+            imageFile.copyTo(outputFile, overwrite = true)
+            outputFile.absolutePath
+        } catch (_: Exception) {
+            null
+        }
     }
 
     private fun resolveVideoFrame(

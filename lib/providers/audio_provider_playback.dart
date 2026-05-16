@@ -2,7 +2,7 @@ part of 'audio_provider.dart';
 
 const PlaybackQueueResolver _playbackQueueResolver = PlaybackQueueResolver();
 const TimerRuntimeCalculator _timerRuntimeCalculator = TimerRuntimeCalculator();
-const double _maxSessionVolume = 1.2;
+const double _maxSessionVolume = 2.0;
 
 extension AudioProviderPlayback on AudioProvider {
   bool get _hasArmedTimerRuntime {

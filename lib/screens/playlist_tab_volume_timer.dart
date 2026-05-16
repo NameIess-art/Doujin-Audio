@@ -1,7 +1,7 @@
 part of 'playlist_tab.dart';
 
-const double _maxSessionVolume = 1.2;
-const int _maxSessionVolumePercent = 120;
+const double _maxSessionVolume = 2.0;
+const int _maxSessionVolumePercent = 200;
 
 class _SessionVolumeSlider extends StatefulWidget {
   const _SessionVolumeSlider({required this.session, required this.provider});

@@ -331,12 +331,15 @@ class AppDatabase {
   }
 
   Future<void> deleteTracks(List<String> paths) async {
+    if (paths.isEmpty) return;
     final db = await database;
-    final batch = db.batch();
-    for (final p in paths) {
-      batch.delete('tracks', where: 'path = ?', whereArgs: [p]);
-    }
-    await batch.commit(noResult: true);
+    // Use a single DELETE ... WHERE path IN (...) instead of N individual
+    // DELETE statements — much faster for large deletions.
+    final placeholders = List.filled(paths.length, '?').join(', ');
+    await db.rawDelete(
+      'DELETE FROM tracks WHERE path IN ($placeholders)',
+      paths,
+    );
   }
 
   Future<void> deleteAllTracks() async {

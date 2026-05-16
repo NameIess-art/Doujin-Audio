@@ -7,7 +7,9 @@ extension AudioProviderPersistence on AudioProvider {
       var tracks = await db.loadAllTracks();
       if (tracks.isNotEmpty) {
         _library.addAll(tracks);
-        _rebuildLibraryIndexes();
+        // Defer _rebuildLibraryIndexes — _loadLibraryEntries will call
+        // _applyExclusionsToLibrary which triggers a rebuild anyway.
+        // We do a single rebuild there instead of two here.
         _notifyListeners();
         // Clean up legacy SharedPreferences blob after successful migration.
         final prefs = await _prefs;
@@ -22,7 +24,6 @@ extension AudioProviderPersistence on AudioProvider {
         await db.saveAllTracks(migrated);
         await prefs.remove(_kLibraryKey);
         _library.addAll(migrated);
-        _rebuildLibraryIndexes();
         _notifyListeners();
       }
     } catch (e) {
@@ -276,6 +277,8 @@ extension AudioProviderPersistence on AudioProvider {
   Future<void> _loadLibraryEntries() async {
     try {
       final entries = await _audioDatabaseRepository.loadAllLibraryEntries();
+      // Always rebuild indexes once here — _loadLibrary deferred its rebuild.
+      _rebuildLibraryIndexes();
       if (entries.isEmpty) return;
       _libraryService.replaceLibraryEntries(entries);
       // Rebuild the in-memory exclusion maps from the database so that
@@ -285,7 +288,8 @@ extension AudioProviderPersistence on AudioProvider {
       _libraryService.rebuildExclusionsFromEntries(entries);
       // Remove any tracks that are marked excluded in the database from the
       // in-memory library.  _loadLibrary() loads all tracks unconditionally,
-      // so we must prune the excluded ones here.
+      // so we must prune the excluded ones here.  _removeTracksWhere will
+      // call _rebuildLibraryIndexes again, but only if there are exclusions.
       _applyExclusionsToLibrary();
     } catch (e) {
       debugPrint('AudioProvider persistence error: $e');

@@ -160,6 +160,8 @@ class AudioProvider with ChangeNotifier {
 
   List<MusicTrack> get _library => _libraryService.library;
   Map<String, MusicTrack> get _libraryByPath => _libraryService.libraryByPath;
+  Map<String, int> get _libraryIndexByPath =>
+      _libraryService.libraryIndexByPath;
   Map<String, List<MusicTrack>> get _tracksByGroup =>
       _libraryService.tracksByGroup;
   List<MusicTrack> get _sortedLibraryTracks =>

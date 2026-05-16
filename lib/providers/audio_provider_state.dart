@@ -134,10 +134,12 @@ extension AudioProviderCoreState on AudioProvider {
 
   void _rebuildLibraryIndexes() {
     final tracksByGroup = <String, List<MusicTrack>>{};
-    _libraryByPath
-      ..clear()
-      ..addEntries(_library.map((track) => MapEntry(track.path, track)));
-    for (final track in _library) {
+    _libraryByPath.clear();
+    _libraryIndexByPath.clear();
+    for (var i = 0; i < _library.length; i++) {
+      final track = _library[i];
+      _libraryByPath[track.path] = track;
+      _libraryIndexByPath[track.path] = i;
       tracksByGroup
           .putIfAbsent(track.groupKey, () => <MusicTrack>[])
           .add(track);

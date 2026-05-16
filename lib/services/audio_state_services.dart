@@ -288,6 +288,11 @@ class LibraryService {
 
   final List<MusicTrack> library = <MusicTrack>[];
   final Map<String, MusicTrack> libraryByPath = <String, MusicTrack>{};
+
+  /// Maps each track path to its index in [library].  Kept in sync by
+  /// [_rebuildLibraryIndexes] so that [addOrReplaceTracks] can update
+  /// existing entries in O(1) instead of O(n).
+  final Map<String, int> libraryIndexByPath = <String, int>{};
   final Map<String, List<MusicTrack>> tracksByGroup =
       <String, List<MusicTrack>>{};
   List<MusicTrack> sortedLibraryTracks = const <MusicTrack>[];
@@ -467,9 +472,9 @@ class LibraryService {
   bool isLibraryPathExcluded(String libraryPath, String entityPath) {
     final normalizedLibraryPath = PathMatcher.normalize(libraryPath);
     final normalizedPath = PathMatcher.normalize(entityPath);
-    if (excludedLibraryTracks[normalizedLibraryPath]?.any(
-          (trackPath) =>
-              PathMatcher.equalsNormalized(trackPath, normalizedPath),
+    // O(1) direct lookup for explicitly excluded tracks.
+    if (excludedLibraryTracks[normalizedLibraryPath]?.contains(
+          normalizedPath,
         ) ??
         false) {
       return true;
@@ -477,7 +482,8 @@ class LibraryService {
     final folders = excludedLibraryFolders[normalizedLibraryPath];
     if (folders == null) return false;
     return folders.any(
-      (folderPath) => PathMatcher.isWithinOrEqualNormalized(normalizedPath, folderPath),
+      (folderPath) =>
+          PathMatcher.isWithinOrEqualNormalized(normalizedPath, folderPath),
     );
   }
 
@@ -497,17 +503,17 @@ class LibraryService {
     String libraryPath,
     String folderPath,
   ) {
-    return excludedLibraryFolders[PathMatcher.normalize(libraryPath)]?.any(
-          (excludedFolder) =>
-              PathMatcher.equalsNormalized(excludedFolder, folderPath),
+    final normalizedFolderPath = PathMatcher.normalize(folderPath);
+    return excludedLibraryFolders[PathMatcher.normalize(libraryPath)]?.contains(
+          normalizedFolderPath,
         ) ??
         false;
   }
 
   bool isLibraryTrackExplicitlyExcluded(String libraryPath, String trackPath) {
-    return excludedLibraryTracks[PathMatcher.normalize(libraryPath)]?.any(
-          (excludedTrack) =>
-              PathMatcher.equalsNormalized(excludedTrack, trackPath),
+    final normalizedTrackPath = PathMatcher.normalize(trackPath);
+    return excludedLibraryTracks[PathMatcher.normalize(libraryPath)]?.contains(
+          normalizedTrackPath,
         ) ??
         false;
   }
@@ -530,7 +536,10 @@ class LibraryService {
     if (!changed) return false;
     if (!excluded) {
       excludedLibraryTracks[normalizedLibraryPath]?.removeWhere(
-        (trackPath) => PathMatcher.isWithinOrEqualNormalized(trackPath, normalizedFolderPath),
+        (trackPath) => PathMatcher.isWithinOrEqualNormalized(
+          trackPath,
+          normalizedFolderPath,
+        ),
       );
     }
     setLibraryEntriesSubtreeState(
@@ -575,7 +584,8 @@ class LibraryService {
   bool _removePathsWithin(Set<String> paths, String parentPath) {
     final beforeLength = paths.length;
     paths.removeWhere(
-      (pathValue) => PathMatcher.isWithinOrEqualNormalized(pathValue, parentPath),
+      (pathValue) =>
+          PathMatcher.isWithinOrEqualNormalized(pathValue, parentPath),
     );
     return paths.length != beforeLength;
   }
@@ -627,7 +637,10 @@ class LibraryService {
     final removedPaths = <String>[];
     entries.removeWhere((entryPath, entry) {
       if (entry.isFolder) return false;
-      if (!PathMatcher.isWithinOrEqualNormalized(entry.path, normalizedFolderPath)) {
+      if (!PathMatcher.isWithinOrEqualNormalized(
+        entry.path,
+        normalizedFolderPath,
+      )) {
         return false;
       }
       final retained = retainedPaths.contains(entry.path);
@@ -652,8 +665,15 @@ class LibraryService {
     final entries = libraryEntriesByLibrary[normalizedLibraryPath];
     if (entries == null) return const <String>[];
     final changedPaths = <String>[];
-    for (final entry in entries.values.toList(growable: false)) {
-      if (!PathMatcher.isWithinOrEqualNormalized(entry.path, normalizedRootPath)) continue;
+    // Iterating entries.values while updating existing keys (not adding/removing)
+    // is safe in Dart's LinkedHashMap.
+    for (final entry in entries.values) {
+      if (!PathMatcher.isWithinOrEqualNormalized(
+        entry.path,
+        normalizedRootPath,
+      )) {
+        continue;
+      }
       if (entry.state == state) continue;
       entries[entry.path] = entry.copyWith(state: state);
       changedPaths.add(entry.path);
@@ -734,8 +754,6 @@ class LibraryService {
     onSaveWatchedLibraries?.call();
     onSaveLibraryExclusions?.call();
   }
-
-
 
   void syncSlice({required bool isInitialized}) {
     slice.update(

@@ -416,20 +416,23 @@ extension AudioProviderLibrary on AudioProvider {
   /// Called once during startup after both the library and exclusion maps have
   /// been loaded, so that excluded items are not shown on the first render.
   void _applyExclusionsToLibrary() {
+    // Flatten all excluded track paths into a single Set for O(1) lookup.
+    final allExcludedTracks = <String>{};
+    for (final paths in _excludedLibraryTracks.values) {
+      allExcludedTracks.addAll(paths);
+    }
+    // Flatten all excluded folder paths into a flat list for prefix checks.
+    final allExcludedFolders = <String>[];
+    for (final paths in _excludedLibraryFolders.values) {
+      allExcludedFolders.addAll(paths);
+    }
+    if (allExcludedTracks.isEmpty && allExcludedFolders.isEmpty) return;
     _removeTracksWhere((track) {
-      for (final entry in _excludedLibraryFolders.entries) {
-        for (final folderPath in entry.value) {
-          if (PathMatcher.isWithinOrEqual(track.path, folderPath) ||
-              PathMatcher.isWithinOrEqual(track.groupKey, folderPath)) {
-            return true;
-          }
-        }
-      }
-      for (final entry in _excludedLibraryTracks.entries) {
-        for (final trackPath in entry.value) {
-          if (PathMatcher.equalsNormalized(track.path, trackPath)) {
-            return true;
-          }
+      if (allExcludedTracks.contains(track.path)) return true;
+      for (final folderPath in allExcludedFolders) {
+        if (PathMatcher.isWithinOrEqual(track.path, folderPath) ||
+            PathMatcher.isWithinOrEqual(track.groupKey, folderPath)) {
+          return true;
         }
       }
       return false;
@@ -480,7 +483,10 @@ extension AudioProviderLibrary on AudioProvider {
   ) {
     final normalizedFolder = PathMatcher.normalize(folderPath);
     _removeTracksWhere((track) {
-      if (!PathMatcher.isWithinOrEqualNormalized(track.path, normalizedFolder)) {
+      if (!PathMatcher.isWithinOrEqualNormalized(
+        track.path,
+        normalizedFolder,
+      )) {
         return false;
       }
       return !scannedPaths.contains(track.path);
@@ -634,13 +640,22 @@ extension AudioProviderLibrary on AudioProvider {
       if (existing == null) {
         _library.add(nextTrack);
       } else {
-        final index = _library.indexWhere(
-          (item) => item.path == nextTrack.path,
-        );
-        if (index >= 0) {
+        // Use the O(1) path index instead of an O(n) indexWhere scan.
+        final index = _libraryIndexByPath[nextTrack.path];
+        if (index != null &&
+            index < _library.length &&
+            _library[index].path == nextTrack.path) {
           _library[index] = nextTrack;
         } else {
-          _library.add(nextTrack);
+          // Index is stale — fall back to a linear scan and repair the index.
+          final fallbackIndex = _library.indexWhere(
+            (item) => item.path == nextTrack.path,
+          );
+          if (fallbackIndex >= 0) {
+            _library[fallbackIndex] = nextTrack;
+          } else {
+            _library.add(nextTrack);
+          }
         }
       }
       _libraryByPath[nextTrack.path] = nextTrack;

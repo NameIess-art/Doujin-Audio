@@ -645,6 +645,16 @@ class NativePlaybackService : MediaSessionService() {
             // WAKE_MODE_NETWORK keeps the CPU and WiFi lock while ExoPlayer is
             // actively decoding, covering both local files and network streams.
             player.setWakeMode(C.WAKE_MODE_NETWORK)
+            // Disable ExoPlayer's built-in audio focus management.  We manage
+            // focus ourselves via audioFocusChangeListener so that transient
+            // focus losses (e.g. OEM screen-off sounds) do not pause playback.
+            player.setAudioAttributes(
+                androidx.media3.common.AudioAttributes.Builder()
+                    .setUsage(androidx.media3.common.C.USAGE_MEDIA)
+                    .setContentType(androidx.media3.common.C.AUDIO_CONTENT_TYPE_MUSIC)
+                    .build(),
+                /* handleAudioFocus = */ false,
+            )
             player.addListener(object : Player.Listener {
                 override fun onPlaybackStateChanged(playbackState: Int) {
                     logInfo(

@@ -729,13 +729,6 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                                       context,
                                     ).moreButtonTooltip,
                                     entries: [
-                                      UnifiedMenuEntry<String>.action(
-                                        value: 'audio_detail',
-                                        icon: Icons.info_outline_rounded,
-                                        label: context
-                                            .read<AppLanguageProvider>()
-                                            .tr('audio_detail'),
-                                      ),
                                       if (hasSubtitle) ...[
                                         UnifiedMenuEntry<String>.action(
                                           value: 'toggle_subtitle',
@@ -765,9 +758,6 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                                                 .read<AppLanguageProvider>()
                                                 .tr('subtitle_global_display'),
                                           ),
-                                        const UnifiedMenuEntry<
-                                          String
-                                        >.divider(),
                                       ],
                                       UnifiedMenuEntry<String>.action(
                                         value: 'channel_swap',
@@ -777,6 +767,16 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                                         label: context
                                             .read<AppLanguageProvider>()
                                             .tr('channel_swap'),
+                                      ),
+                                      const UnifiedMenuEntry<
+                                        String
+                                      >.divider(),
+                                      UnifiedMenuEntry<String>.action(
+                                        value: 'audio_detail',
+                                        icon: Icons.info_outline_rounded,
+                                        label: context
+                                            .read<AppLanguageProvider>()
+                                            .tr('audio_detail'),
                                       ),
                                     ],
                                     onSelected: (value) {

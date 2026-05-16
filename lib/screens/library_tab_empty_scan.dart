@@ -121,45 +121,48 @@ class _LibraryEmptyState extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 28),
-                Wrap(
-                  spacing: 12,
-                  runSpacing: 12,
-                  alignment: WrapAlignment.center,
+                Column(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    FilledButton.icon(
-                      onPressed: onImportLibrary,
-                      icon: const Icon(Icons.library_add_rounded, size: 18),
-                      label: Text(i18n.tr('import_library')),
-                      style: FilledButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 10,
-                        ),
-                      ),
-                    ),
-                    FilledButton.icon(
+                    OutlinedButton.icon(
                       onPressed: onImportFolder,
                       icon: const Icon(
                         Icons.create_new_folder_rounded,
                         size: 18,
                       ),
                       label: Text(i18n.tr('import_folder')),
-                      style: FilledButton.styleFrom(
+                      style: OutlinedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 10,
+                          horizontal: 24,
+                          vertical: 12,
                         ),
+                        minimumSize: const Size(220, 48),
                       ),
                     ),
+                    const SizedBox(height: 12),
                     OutlinedButton.icon(
                       onPressed: onImportFile,
                       icon: const Icon(Icons.upload_file_rounded, size: 18),
                       label: Text(i18n.tr('import_file')),
                       style: OutlinedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 10,
+                          horizontal: 24,
+                          vertical: 12,
                         ),
+                        minimumSize: const Size(220, 48),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    OutlinedButton.icon(
+                      onPressed: onImportLibrary,
+                      icon: const Icon(Icons.library_add_rounded, size: 18),
+                      label: Text(i18n.tr('import_library')),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 24,
+                          vertical: 12,
+                        ),
+                        minimumSize: const Size(220, 48),
                       ),
                     ),
                   ],

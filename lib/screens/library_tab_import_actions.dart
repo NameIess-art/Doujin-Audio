@@ -95,7 +95,7 @@ extension _LibraryTabImportActions on _LibraryTabState {
             continue;
           }
           provider.addWatchedFolder(childFolder, notify: false);
-          await _prefillRjDetailForFolder(provider, childFolder);
+          unawaited(_prefillRjDetailForFolder(provider, childFolder));
         }
         // Deletion of missing tracks for library roots is handled below in
         // the watchedFolders loop, which processes each child folder.
@@ -154,22 +154,28 @@ extension _LibraryTabImportActions on _LibraryTabState {
             provider,
             effectiveLibraryRoot,
           );
-          // For file-system folders, prune missing tracks via File.exists check.
-          final existingPaths = provider.library
+          // For file-system folders, prune missing tracks via async File.exists
+          // check run in a background isolate to avoid blocking the UI thread.
+          final tracksInFolder = provider.library
               .where(
                 (t) =>
                     PathMatcher.isWithinOrEqual(t.path, folderPath) &&
                     !PathMatcher.isContentUri(t.path),
               )
-              .where((t) => File(t.path).existsSync())
               .map((t) => PathMatcher.normalize(t.path))
-              .toSet();
-          provider.removeTracksDeletedFromFolder(folderPath, existingPaths);
-          provider.removeLibraryEntriesDeletedFromFolder(
-            effectiveLibraryRoot,
-            folderPath,
-            existingPaths,
-          );
+              .toList(growable: false);
+          if (tracksInFolder.isNotEmpty) {
+            final existingPaths = await compute(
+              _checkExistingPaths,
+              tracksInFolder,
+            );
+            provider.removeTracksDeletedFromFolder(folderPath, existingPaths);
+            provider.removeLibraryEntriesDeletedFromFolder(
+              effectiveLibraryRoot,
+              folderPath,
+              existingPaths,
+            );
+          }
         } else {
           provider.setScanProgress(failureCount: provider.scanFailureCount + 1);
           debugPrint(
@@ -447,4 +453,14 @@ extension _LibraryTabImportActions on _LibraryTabState {
       );
     } catch (_) {}
   }
+}
+
+/// Top-level function for use with [compute]: checks which paths in [paths]
+/// still exist on the file system and returns the set of existing ones.
+Set<String> _checkExistingPaths(List<String> paths) {
+  final existing = <String>{};
+  for (final p in paths) {
+    if (File(p).existsSync()) existing.add(p);
+  }
+  return existing;
 }

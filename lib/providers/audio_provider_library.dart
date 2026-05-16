@@ -426,8 +426,14 @@ extension AudioProviderLibrary on AudioProvider {
     for (final trackPath in removedPaths) {
       _libraryByPath.remove(trackPath);
     }
-    _rebuildLibraryIndexes();
-    _syncLibraryNodeOrder(persist: false);
+    // Skip the expensive rebuild when inside a batch — endLibraryBatch will
+    // do a single consolidated rebuild when the batch closes.
+    if (_libraryBatchDepth <= 0) {
+      _rebuildLibraryIndexes();
+      _syncLibraryNodeOrder(persist: false);
+    } else {
+      _libraryBatchChanged = true;
+    }
     if (sessionsToRemove.isNotEmpty) {
       unawaited(
         _removeSessions(sessionsToRemove, persist: false, notify: false),
@@ -436,7 +442,9 @@ extension AudioProviderLibrary on AudioProvider {
     if (!_skipDisposePersistence) {
       unawaited(_audioDatabaseRepository.deleteTracks(removedPaths));
     }
-    unawaited(_saveLibraryNodeOrder());
+    if (_libraryBatchDepth <= 0) {
+      unawaited(_saveLibraryNodeOrder());
+    }
   }
 
   /// Removes tracks that belong to [folderPath] but whose paths are not in

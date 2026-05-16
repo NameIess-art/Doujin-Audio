@@ -1595,6 +1595,20 @@ class MainActivity : AudioServiceActivity() {
     private fun renameDocumentTarget(targetPath: String, newName: String): HashMap<String, String> {
         val target = resolveDocumentRenameTarget(targetPath)
             ?: throw IllegalArgumentException("Cannot resolve rename target.")
+
+        // For tree-root targets the SAF provider may refuse to rename the
+        // directory because the app only holds a grant on that root itself,
+        // not on its parent.  Fall back to java.io.File.renameTo which works
+        // when the app has MANAGE_EXTERNAL_STORAGE or the path is on primary
+        // external storage.
+        if (target.treeRoot) {
+            val fileRenamedPath = tryRenameTreeRootViaFile(target, newName)
+            if (fileRenamedPath != null) {
+                return hashMapOf("path" to fileRenamedPath)
+            }
+            // File rename not available — fall through to SAF rename.
+        }
+
         val renamedUri = DocumentsContract.renameDocument(contentResolver, target.uri, newName)
             ?: throw IllegalStateException("Provider did not return renamed document uri.")
         var renamedPermissionUri: Uri? = renamedUri
@@ -1621,6 +1635,76 @@ class MainActivity : AudioServiceActivity() {
         }
         renamedPermissionUri?.let { persistRenamedPermission(target.rootUri ?: target.uri, it) }
         return hashMapOf("path" to renamedPath)
+    }
+
+    /**
+     * Attempts to rename a tree-root directory using [java.io.File].
+     * This works when the app has MANAGE_EXTERNAL_STORAGE or the path is on
+     * primary external storage and the document ID encodes the relative path
+     * (e.g. "primary:Music/MyFolder").
+     *
+     * Returns the new content URI string on success, or null if the rename
+     * could not be performed via this path.
+     */
+    private fun tryRenameTreeRootViaFile(
+        target: DocumentRenameTarget,
+        newName: String
+    ): String? {
+        val rootUri = target.rootUri ?: return null
+        val documentId = documentIdForUri(target.uri) ?: return null
+        // Document IDs for primary external storage look like "primary:path/to/dir".
+        val colonIndex = documentId.indexOf(':')
+        if (colonIndex < 0) return null
+        val volumeName = documentId.substring(0, colonIndex)
+        val relativePath = documentId.substring(colonIndex + 1)
+        val volumeRoot = resolveVolumeRoot(volumeName) ?: return null
+        val oldFile = java.io.File(volumeRoot, relativePath)
+        if (!oldFile.exists() || !oldFile.isDirectory) return null
+        val parentFile = oldFile.parentFile ?: return null
+        val newFile = java.io.File(parentFile, newName)
+        if (!oldFile.renameTo(newFile)) return null
+
+        // Build the new tree URI with the updated document ID.
+        val newRelativePath = newFile.absolutePath.removePrefix(volumeRoot).trimStart('/')
+        val newDocumentId = "$volumeName:$newRelativePath"
+        val authority = rootUri.authority ?: return null
+        val newTreeUri = DocumentsContract.buildTreeDocumentUri(authority, newDocumentId)
+        try {
+            persistRenamedPermission(rootUri, newTreeUri)
+        } catch (_: Exception) {
+            // Permission migration is best-effort.
+        }
+        return newTreeUri.toString()
+    }
+
+    /**
+     * Resolves the root path for a storage volume name.
+     * "primary" maps to the primary external storage root.
+     */
+    private fun resolveVolumeRoot(volumeName: String): String? {
+        if (volumeName.equals("primary", ignoreCase = true)) {
+            return Environment.getExternalStorageDirectory().absolutePath
+        }
+        // For secondary volumes, try to find the mount point via StorageManager.
+        return try {
+            val storageManager = getSystemService(Context.STORAGE_SERVICE)
+                as? android.os.storage.StorageManager ?: return null
+            val volumes: List<android.os.storage.StorageVolume> =
+                storageManager.storageVolumes
+            val volume = volumes.firstOrNull { v ->
+                v.uuid?.equals(volumeName, ignoreCase = true) == true
+            } ?: return null
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                volume.directory?.absolutePath
+            } else {
+                @Suppress("DiscouragedPrivateApi")
+                val method = volume.javaClass.getDeclaredMethod("getPath")
+                method.isAccessible = true
+                method.invoke(volume) as? String
+            }
+        } catch (_: Exception) {
+            null
+        }
     }
 
     private fun persistRenamedPermission(oldUri: Uri, newUri: Uri) {

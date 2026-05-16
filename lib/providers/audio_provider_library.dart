@@ -110,10 +110,13 @@ extension AudioProviderLibrary on AudioProvider {
     bool excluded,
   ) {
     final normalizedLibraryPath = PathMatcher.normalize(libraryPath);
-    final normalizedFolderPath = PathMatcher.normalize(folderPath);
-    final changed = _libraryService.setLibraryFolderExcluded(
-      libraryPath,
+    final normalizedFolderPath = _canonicalLibraryFolderPath(
+      normalizedLibraryPath,
       folderPath,
+    );
+    final changed = _libraryService.setLibraryFolderExcluded(
+      normalizedLibraryPath,
+      normalizedFolderPath,
       excluded,
       onPersist: () => unawaited(_saveLibraryExclusions()),
     );
@@ -446,6 +449,28 @@ extension AudioProviderLibrary on AudioProvider {
       if (!PathMatcher.isWithinOrEqual(track.path, folderPath)) return false;
       return !scannedPaths.contains(PathMatcher.normalize(track.path));
     });
+  }
+
+  void removeLibraryEntriesDeletedFromFolder(
+    String libraryPath,
+    String folderPath,
+    Set<String> retainedPaths,
+  ) {
+    final removedPaths = _libraryService
+        .removeLibraryEntriesMissingFromFolderScan(
+          libraryPath,
+          folderPath,
+          retainedPaths,
+        );
+    if (removedPaths.isEmpty) return;
+    if (!_skipDisposePersistence) {
+      unawaited(
+        _audioDatabaseRepository.deleteLibraryEntries(
+          libraryPath,
+          removedPaths,
+        ),
+      );
+    }
   }
 
   void setScanning(bool scanning, {bool background = false}) {

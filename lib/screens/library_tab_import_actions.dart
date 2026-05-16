@@ -142,6 +142,11 @@ extension _LibraryTabImportActions on _LibraryTabState {
               .map((t) => PathMatcher.normalize(t.path))
               .toSet();
           provider.removeTracksDeletedFromFolder(folderPath, diskPaths);
+          provider.removeLibraryEntriesDeletedFromFolder(
+            effectiveLibraryRoot,
+            folderPath,
+            diskPaths,
+          );
         } else if (nativeScan.notSupported ||
             !PathMatcher.isContentUri(folderPath)) {
           totalAdded += await _importFolderIncrementally(
@@ -150,17 +155,20 @@ extension _LibraryTabImportActions on _LibraryTabState {
             effectiveLibraryRoot,
           );
           // For file-system folders, prune missing tracks via File.exists check.
-          provider.removeTracksDeletedFromFolder(
+          final existingPaths = provider.library
+              .where(
+                (t) =>
+                    PathMatcher.isWithinOrEqual(t.path, folderPath) &&
+                    !PathMatcher.isContentUri(t.path),
+              )
+              .where((t) => File(t.path).existsSync())
+              .map((t) => PathMatcher.normalize(t.path))
+              .toSet();
+          provider.removeTracksDeletedFromFolder(folderPath, existingPaths);
+          provider.removeLibraryEntriesDeletedFromFolder(
+            effectiveLibraryRoot,
             folderPath,
-            provider.library
-                .where(
-                  (t) =>
-                      PathMatcher.isWithinOrEqual(t.path, folderPath) &&
-                      !PathMatcher.isContentUri(t.path),
-                )
-                .where((t) => File(t.path).existsSync())
-                .map((t) => PathMatcher.normalize(t.path))
-                .toSet(),
+            existingPaths,
           );
         } else {
           provider.setScanProgress(failureCount: provider.scanFailureCount + 1);

@@ -595,6 +595,36 @@ class LibraryService {
     }
   }
 
+  List<String> removeLibraryEntriesMissingFromFolderScan(
+    String libraryPath,
+    String folderPath,
+    Set<String> retainedPaths,
+  ) {
+    final normalizedLibraryPath = PathMatcher.normalize(libraryPath);
+    final normalizedFolderPath = PathMatcher.normalize(folderPath);
+    final entries = libraryEntriesByLibrary[normalizedLibraryPath];
+    if (entries == null || entries.isEmpty) return const <String>[];
+
+    final removedPaths = <String>[];
+    entries.removeWhere((entryPath, entry) {
+      if (entry.isFolder) return false;
+      if (!_isPathWithinOrEqual(entry.path, normalizedFolderPath)) {
+        return false;
+      }
+      final retained = retainedPaths.any(
+        (pathValue) => PathMatcher.equalsNormalized(pathValue, entry.path),
+      );
+      if (retained) return false;
+      removedPaths.add(entry.path);
+      return true;
+    });
+
+    if (removedPaths.isNotEmpty) {
+      markStructureChanged();
+    }
+    return removedPaths;
+  }
+
   List<String> setLibraryEntriesSubtreeState(
     String libraryPath,
     String rootPath,

@@ -225,7 +225,27 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
     final nativeScan = await _scanFolderViaNative(libraryRoot);
     if (!nativeScan.ok) {
       if (nativeScan.notSupported || !PathMatcher.isContentUri(libraryRoot)) {
-        return _importFolderIncrementally(libraryRoot, provider, libraryRoot);
+        final added = await _importFolderIncrementally(
+          libraryRoot,
+          provider,
+          libraryRoot,
+        );
+        final existingPaths = provider.library
+            .where(
+              (track) =>
+                  PathMatcher.isWithinOrEqual(track.path, libraryRoot) &&
+                  !PathMatcher.isContentUri(track.path) &&
+                  File(track.path).existsSync(),
+            )
+            .map((track) => PathMatcher.normalize(track.path))
+            .toSet();
+        provider.removeTracksDeletedFromFolder(libraryRoot, existingPaths);
+        provider.removeLibraryEntriesDeletedFromFolder(
+          libraryRoot,
+          libraryRoot,
+          existingPaths,
+        );
+        return added;
       }
       provider.setScanProgress(failureCount: provider.scanFailureCount + 1);
       debugPrint(
@@ -253,6 +273,15 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
         })
         .toList(growable: false);
     provider.recordLibraryEntriesForTracks(libraryRoot, entryTracks);
+    final scannedPaths = nativeScan.tracks
+        .map((track) => PathMatcher.normalize(track.path))
+        .toSet();
+    provider.removeTracksDeletedFromFolder(libraryRoot, scannedPaths);
+    provider.removeLibraryEntriesDeletedFromFolder(
+      libraryRoot,
+      libraryRoot,
+      scannedPaths,
+    );
     if (candidates.isEmpty) return 0;
     final beforeCount = provider.library.length;
     provider.addOrReplaceTracks(candidates, notify: false);

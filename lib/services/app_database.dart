@@ -455,6 +455,24 @@ class AppDatabase {
     );
   }
 
+  Future<void> deleteLibraryEntries(
+    String libraryPath,
+    Iterable<String> paths,
+  ) async {
+    final normalizedPaths = paths.map(PathMatcher.normalize).toSet();
+    if (normalizedPaths.isEmpty) return;
+    final db = await database;
+    final batch = db.batch();
+    for (final entryPath in normalizedPaths) {
+      batch.delete(
+        'library_entries',
+        where: 'library_path = ? AND path = ?',
+        whereArgs: [PathMatcher.normalize(libraryPath), entryPath],
+      );
+    }
+    await batch.commit(noResult: true);
+  }
+
   Future<void> setLibraryEntriesState(
     String libraryPath,
     Iterable<String> entryPaths,

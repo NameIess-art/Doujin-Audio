@@ -127,9 +127,10 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage> {
     final excludedTracks = libraryService.excludedTracksForLibrary(
       widget.libraryPath,
     );
-    final excludedFolders = libraryService.excludedFoldersForLibrary(
-      widget.libraryPath,
-    );
+    final excludedFolders = libraryService
+        .excludedFoldersForLibrary(widget.libraryPath)
+        .map(_folderPathForLibraryChild)
+        .toList(growable: false);
     final persistedEntries = libraryService.libraryEntriesForLibrary(
       widget.libraryPath,
     );

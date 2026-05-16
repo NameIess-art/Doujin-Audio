@@ -581,6 +581,99 @@ void main() {
   });
 
   group('library folder restore', () {
+    test('folder rescan prunes tracks and entries deleted from disk', () async {
+      final libraryRoot = await Directory.systemTemp.createTemp(
+        'library_prune_',
+      );
+      addTearDown(() async {
+        if (await libraryRoot.exists()) {
+          await libraryRoot.delete(recursive: true);
+        }
+      });
+
+      final keptPath = '${libraryRoot.path}${Platform.pathSeparator}kept.mp3';
+      final deletedPath =
+          '${libraryRoot.path}${Platform.pathSeparator}deleted.mp3';
+
+      provider.addWatchedLibrary(libraryRoot.path, notify: false);
+      provider.addTracks(<MusicTrack>[
+        MusicTrack(
+          path: keptPath,
+          displayName: 'kept',
+          groupKey: libraryRoot.path,
+          groupTitle: 'library',
+          groupSubtitle: libraryRoot.path,
+          isSingle: false,
+        ),
+        MusicTrack(
+          path: deletedPath,
+          displayName: 'deleted',
+          groupKey: libraryRoot.path,
+          groupTitle: 'library',
+          groupSubtitle: libraryRoot.path,
+          isSingle: false,
+        ),
+      ], notify: false);
+
+      provider.removeTracksDeletedFromFolder(libraryRoot.path, {keptPath});
+      provider.removeLibraryEntriesDeletedFromFolder(
+        libraryRoot.path,
+        libraryRoot.path,
+        {keptPath},
+      );
+
+      expect(provider.trackByPath(keptPath), isNotNull);
+      expect(provider.trackByPath(deletedPath), isNull);
+      expect(
+        provider
+            .libraryEntriesForLibrary(libraryRoot.path)
+            .where((entry) => entry.path == deletedPath),
+        isEmpty,
+      );
+    });
+
+    test('content folder exclusion stores the canonical library child path', () {
+      const libraryRoot =
+          'content://com.android.externalstorage.documents/tree/primary%3AASMR';
+      const childFolder = '$libraryRoot/document/primary%3AASMR%2FWorkA';
+      const syntheticChildFolder = '$libraryRoot::WorkA';
+      const trackPath =
+          'content://com.android.externalstorage.documents/tree/primary%3AASMR/document/primary%3AASMR%2FWorkA%2F01.mp3';
+
+      provider.addWatchedLibrary(libraryRoot, notify: false);
+      provider.addWatchedFolder(childFolder, notify: false);
+      provider.addTracks(<MusicTrack>[
+        const MusicTrack(
+          path: trackPath,
+          displayName: '01',
+          groupKey: syntheticChildFolder,
+          groupTitle: 'WorkA',
+          groupSubtitle: syntheticChildFolder,
+          isSingle: false,
+        ),
+      ], notify: false);
+
+      provider.setLibraryFolderExcluded(libraryRoot, childFolder, true);
+
+      expect(provider.excludedFoldersForLibrary(libraryRoot), <String>[
+        syntheticChildFolder,
+      ]);
+      expect(
+        provider
+            .libraryEntriesForLibrary(libraryRoot)
+            .where((entry) => entry.path == syntheticChildFolder),
+        hasLength(1),
+      );
+      expect(
+        provider
+            .libraryEntriesForLibrary(libraryRoot)
+            .where((entry) => entry.path == syntheticChildFolder)
+            .single
+            .isExcluded,
+        isTrue,
+      );
+    });
+
     test(
       'folder exclusion keeps entry tree and restores tracks from it',
       () async {

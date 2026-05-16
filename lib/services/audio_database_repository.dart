@@ -88,6 +88,13 @@ class AudioDatabaseRepository {
     return _database.deleteLibraryEntriesForLibrary(libraryPath);
   }
 
+  Future<void> deleteLibraryEntries(
+    String libraryPath,
+    Iterable<String> paths,
+  ) {
+    return _database.deleteLibraryEntries(libraryPath, paths);
+  }
+
   Future<void> setLibraryEntriesState(
     String libraryPath,
     Iterable<String> entryPaths,

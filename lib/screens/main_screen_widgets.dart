@@ -332,10 +332,10 @@ class _TimerOverlaySheet extends StatelessWidget {
               SafeArea(
                 child: FadeTransition(
                   opacity: curved,
-                  child: SlideTransition(
-                    position: Tween<Offset>(
-                      begin: const Offset(0, 0.035),
-                      end: Offset.zero,
+                  child: ScaleTransition(
+                    scale: Tween<double>(
+                      begin: 0.88,
+                      end: 1.0,
                     ).animate(curved),
                     child: Padding(
                       padding: outerPadding,

@@ -37,10 +37,13 @@ class _CountdownCard extends StatelessWidget {
         ? cs.onSurface
         : cs.onPrimaryContainer;
 
-    return _TimerPanelCard(
-      accentColor: accent,
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(32),
+        color: cs.surfaceContainerLow.withValues(alpha: 0.5),
+      ),
       child: Padding(
-        padding: EdgeInsets.all(compact ? 14 : 22),
+        padding: EdgeInsets.all(compact ? 14 : 24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -192,9 +195,8 @@ class _DurationPicker extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10),
                   decoration: BoxDecoration(
-                    color: cs.surfaceContainerHigh,
+                    color: cs.surfaceContainerLow,
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: cs.outlineVariant),
                   ),
                   child: DropdownButtonHideUnderline(
                     child: DropdownButton<int>(

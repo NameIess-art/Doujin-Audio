@@ -26,56 +26,44 @@ class _ModeSelector extends StatelessWidget {
     ) {
       final selected = value == mode;
       return InkWell(
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(20),
         onTap: () {
           Feedback.forTap(context);
           onChanged(mode);
         },
-        child: Container(
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
           margin: EdgeInsets.only(bottom: compact ? 6 : 8),
           padding: EdgeInsets.symmetric(
             horizontal: compact ? 12 : 14,
             vertical: compact ? 10 : 12,
           ),
           decoration: BoxDecoration(
-            color: selected ? cs.primaryContainer : cs.surfaceContainerHigh,
-            borderRadius: BorderRadius.circular(18),
+            color: selected ? cs.primaryContainer.withValues(alpha: 0.7) : cs.surfaceContainerLow,
+            borderRadius: BorderRadius.circular(20),
             border: Border.all(
-              color: selected ? cs.primary : cs.outlineVariant,
-              width: 1.2,
+              color: selected ? cs.primary.withValues(alpha: 0.5) : Colors.transparent,
+              width: 1.5,
             ),
           ),
           child: Row(
             children: [
               Container(
-                width: compact ? 22 : 24,
-                height: compact ? 22 : 24,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: selected ? cs.primaryContainer : Colors.transparent,
-                  border: Border.all(
-                    color: selected ? cs.primary : cs.outline,
-                    width: selected ? 7 : 2,
-                  ),
-                ),
-              ),
-              SizedBox(width: compact ? 8 : 10),
-              Container(
-                width: compact ? 30 : 34,
-                height: compact ? 30 : 34,
+                width: compact ? 30 : 36,
+                height: compact ? 30 : 36,
                 decoration: BoxDecoration(
                   color: selected
-                      ? cs.primaryContainer
-                      : cs.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(12),
+                      ? cs.primary
+                      : cs.surfaceContainerHigh,
+                  borderRadius: BorderRadius.circular(10),
                 ),
                 child: Icon(
                   icon,
-                  size: compact ? 18 : 20,
-                  color: selected ? cs.primary : cs.onSurfaceVariant,
+                  size: compact ? 16 : 18,
+                  color: selected ? cs.onPrimary : cs.onSurfaceVariant,
                 ),
               ),
-              SizedBox(width: compact ? 8 : 10),
+              SizedBox(width: compact ? 10 : 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -83,9 +71,9 @@ class _ModeSelector extends StatelessWidget {
                     Text(
                       title,
                       style: TextStyle(
-                        fontSize: compact ? 14 : null,
-                        fontWeight: FontWeight.w700,
-                        color: selected ? cs.primary : null,
+                        fontSize: compact ? 13 : 15,
+                        fontWeight: FontWeight.w800,
+                        color: selected ? cs.onPrimaryContainer : cs.onSurface,
                       ),
                     ),
                     if (showSubtitle)
@@ -93,12 +81,14 @@ class _ModeSelector extends StatelessWidget {
                         subtitle,
                         style: TextStyle(
                           fontSize: compact ? 10 : 11,
-                          color: cs.onSurfaceVariant,
+                          color: selected ? cs.onPrimaryContainer.withValues(alpha: 0.7) : cs.onSurfaceVariant,
                         ),
                       ),
                   ],
                 ),
               ),
+              if (selected)
+                Icon(Icons.check_circle_rounded, color: cs.primary, size: 20),
             ],
           ),
         ),
@@ -137,12 +127,11 @@ class _TimerPanelCard extends StatelessWidget {
 
     return DecoratedBox(
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(24),
-        color: cs.surfaceContainerHigh,
-        border: Border.all(
-          color: accentColor == null ? cs.outlineVariant : accent,
-          width: 1.2,
-        ),
+        borderRadius: BorderRadius.circular(28),
+        color: cs.surfaceContainerLow.withValues(alpha: 0.6),
+        border: accentColor == null
+            ? null
+            : Border.all(color: accent.withValues(alpha: 0.3), width: 1.5),
       ),
       child: child,
     );

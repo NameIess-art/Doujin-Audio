@@ -72,11 +72,10 @@ extension _TimerTabDetailBody on _TimerTabState {
             else
               const SizedBox.shrink(),
             const SizedBox(height: 8),
-            DecoratedBox(
+            Container(
               decoration: BoxDecoration(
-                color: cs.surfaceContainerHigh,
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(color: cs.outlineVariant),
+                color: cs.surfaceContainerLow.withValues(alpha: 0.8),
+                borderRadius: BorderRadius.circular(20),
               ),
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(10, 8, 8, 8),
@@ -131,11 +130,10 @@ extension _TimerTabDetailBody on _TimerTabState {
                 child: InkWell(
                   onTap: pickAutoResumeTime,
                   borderRadius: BorderRadius.circular(16),
-                  child: Ink(
+                  child: Container(
                     decoration: BoxDecoration(
-                      color: cs.surfaceContainerHighest,
+                      color: cs.surfaceContainerLow.withValues(alpha: 0.6),
                       borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: cs.outlineVariant),
                     ),
                     child: Padding(
                       padding: const EdgeInsets.symmetric(

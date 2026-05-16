@@ -436,6 +436,18 @@ extension AudioProviderLibrary on AudioProvider {
     unawaited(_saveLibraryNodeOrder());
   }
 
+  /// Removes tracks that belong to [folderPath] but whose paths are not in
+  /// [scannedPaths].  Called after a successful rescan to prune deleted files.
+  void removeTracksDeletedFromFolder(
+    String folderPath,
+    Set<String> scannedPaths,
+  ) {
+    _removeTracksWhere((track) {
+      if (!PathMatcher.isWithinOrEqual(track.path, folderPath)) return false;
+      return !scannedPaths.contains(PathMatcher.normalize(track.path));
+    });
+  }
+
   void setScanning(bool scanning, {bool background = false}) {
     if (_isScanning == scanning && _isBackgroundScanning == background) return;
     _isScanning = scanning;

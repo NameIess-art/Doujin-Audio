@@ -97,6 +97,8 @@ extension _LibraryTabImportActions on _LibraryTabState {
           provider.addWatchedFolder(childFolder, notify: false);
           await _prefillRjDetailForFolder(provider, childFolder);
         }
+        // Deletion of missing tracks for library roots is handled below in
+        // the watchedFolders loop, which processes each child folder.
       }
 
       final totalFolders = foldersToRefresh.length;
@@ -135,12 +137,30 @@ extension _LibraryTabImportActions on _LibraryTabState {
             duplicateCount:
                 provider.scanDuplicateCount + (toAdd.length - added),
           );
+          // Remove tracks that were deleted from disk since the last scan.
+          final diskPaths = nativeScan.tracks
+              .map((t) => PathMatcher.normalize(t.path))
+              .toSet();
+          provider.removeTracksDeletedFromFolder(folderPath, diskPaths);
         } else if (nativeScan.notSupported ||
             !PathMatcher.isContentUri(folderPath)) {
           totalAdded += await _importFolderIncrementally(
             folderPath,
             provider,
             effectiveLibraryRoot,
+          );
+          // For file-system folders, prune missing tracks via File.exists check.
+          provider.removeTracksDeletedFromFolder(
+            folderPath,
+            provider.library
+                .where(
+                  (t) =>
+                      PathMatcher.isWithinOrEqual(t.path, folderPath) &&
+                      !PathMatcher.isContentUri(t.path),
+                )
+                .where((t) => File(t.path).existsSync())
+                .map((t) => PathMatcher.normalize(t.path))
+                .toSet(),
           );
         } else {
           provider.setScanProgress(failureCount: provider.scanFailureCount + 1);

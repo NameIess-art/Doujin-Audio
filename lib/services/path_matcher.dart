@@ -64,6 +64,20 @@ abstract final class PathMatcher {
         path.isWithin(normalizedParent, normalizedChild);
   }
 
+  static bool isWithinOrEqualNormalized(String normalizedChild, String normalizedParent) {
+    if (isContentUri(normalizedChild) || isContentUri(normalizedParent)) {
+      final childDoc = _documentPath(normalizedChild);
+      final parentDoc = _documentPath(normalizedParent);
+      if (childDoc != null && parentDoc != null) {
+        return childDoc == parentDoc || childDoc.startsWith('$parentDoc/');
+      }
+      return normalizedChild == normalizedParent ||
+          normalizedChild.startsWith('$normalizedParent/');
+    }
+    return normalizedChild == normalizedParent ||
+        path.isWithin(normalizedParent, normalizedChild);
+  }
+
   static String? relativeWithin(String child, String parent) {
     if (!isWithinOrEqual(child, parent)) return null;
     if (equalsNormalized(child, parent)) return '';

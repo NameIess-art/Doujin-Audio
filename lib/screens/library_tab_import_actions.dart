@@ -156,18 +156,18 @@ extension _LibraryTabImportActions on _LibraryTabState {
           );
           // For file-system folders, prune missing tracks via async File.exists
           // check run in a background isolate to avoid blocking the UI thread.
+          final normalizedFolderPath = PathMatcher.normalize(folderPath);
           final tracksInFolder = provider.library
               .where(
                 (t) =>
-                    PathMatcher.isWithinOrEqual(t.path, folderPath) &&
+                    PathMatcher.isWithinOrEqualNormalized(t.path, normalizedFolderPath) &&
                     !PathMatcher.isContentUri(t.path),
               )
-              .map((t) => PathMatcher.normalize(t.path))
+              .map((t) => t.path)
               .toList(growable: false);
           if (tracksInFolder.isNotEmpty) {
-            final existingPaths = await compute(
-              _checkExistingPaths,
-              tracksInFolder,
+            final existingPaths = await Isolate.run(
+              () => _checkExistingPaths(tracksInFolder),
             );
             provider.removeTracksDeletedFromFolder(folderPath, existingPaths);
             provider.removeLibraryEntriesDeletedFromFolder(

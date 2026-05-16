@@ -478,9 +478,12 @@ extension AudioProviderLibrary on AudioProvider {
     String folderPath,
     Set<String> scannedPaths,
   ) {
+    final normalizedFolder = PathMatcher.normalize(folderPath);
     _removeTracksWhere((track) {
-      if (!PathMatcher.isWithinOrEqual(track.path, folderPath)) return false;
-      return !scannedPaths.contains(PathMatcher.normalize(track.path));
+      if (!PathMatcher.isWithinOrEqualNormalized(track.path, normalizedFolder)) {
+        return false;
+      }
+      return !scannedPaths.contains(track.path);
     });
   }
 

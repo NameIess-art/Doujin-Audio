@@ -420,7 +420,6 @@ class _SessionDetailBackdrop extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final blurSigma = (lerpDouble(0, 32, progress) ?? 0).clamp(0.0, 32.0);
     final gradientAlpha = (lerpDouble(0, 0.8, progress) ?? 0).clamp(0.0, 1.0);
 
     return Stack(
@@ -443,9 +442,12 @@ class _SessionDetailBackdrop extends StatelessWidget {
           ),
         ),
         ClipRect(
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: blurSigma, sigmaY: blurSigma),
-            child: const SizedBox.expand(),
+          child: Opacity(
+            opacity: progress,
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 32, sigmaY: 32),
+              child: const SizedBox.expand(),
+            ),
           ),
         ),
       ],
@@ -636,12 +638,12 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                   widget.dismissAnimation.value.clamp(0.0, 1.0),
                 );
                 return Positioned.fill(
-                  child: BackdropFilter(
-                    filter: ImageFilter.blur(
-                      sigmaX: 32 * (1 - dismissProgress),
-                      sigmaY: 32 * (1 - dismissProgress),
+                  child: Opacity(
+                    opacity: 1 - dismissProgress,
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 32, sigmaY: 32),
+                      child: const SizedBox.expand(),
                     ),
-                    child: const SizedBox.expand(),
                   ),
                 );
               },

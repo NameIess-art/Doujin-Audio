@@ -428,7 +428,7 @@ class LibraryService {
     final normalizedLibraryPath = PathMatcher.normalize(libraryPath);
     return watchedFolders
         .where(
-          (folderPath) => _isPathWithinOrEqual(
+          (folderPath) => PathMatcher.isWithinOrEqualNormalized(
             PathMatcher.normalize(folderPath),
             normalizedLibraryPath,
           ),
@@ -477,7 +477,7 @@ class LibraryService {
     final folders = excludedLibraryFolders[normalizedLibraryPath];
     if (folders == null) return false;
     return folders.any(
-      (folderPath) => _isPathWithinOrEqual(normalizedPath, folderPath),
+      (folderPath) => PathMatcher.isWithinOrEqualNormalized(normalizedPath, folderPath),
     );
   }
 
@@ -488,8 +488,8 @@ class LibraryService {
     if (folders == null) return false;
     return folders.any(
       (folderPath) =>
-          !PathMatcher.equalsNormalized(folderPath, normalizedPath) &&
-          _isPathWithinOrEqual(normalizedPath, folderPath),
+          normalizedPath != folderPath &&
+          PathMatcher.isWithinOrEqualNormalized(normalizedPath, folderPath),
     );
   }
 
@@ -530,7 +530,7 @@ class LibraryService {
     if (!changed) return false;
     if (!excluded) {
       excludedLibraryTracks[normalizedLibraryPath]?.removeWhere(
-        (trackPath) => _isPathWithinOrEqual(trackPath, normalizedFolderPath),
+        (trackPath) => PathMatcher.isWithinOrEqualNormalized(trackPath, normalizedFolderPath),
       );
     }
     setLibraryEntriesSubtreeState(
@@ -575,7 +575,7 @@ class LibraryService {
   bool _removePathsWithin(Set<String> paths, String parentPath) {
     final beforeLength = paths.length;
     paths.removeWhere(
-      (pathValue) => _isPathWithinOrEqual(pathValue, parentPath),
+      (pathValue) => PathMatcher.isWithinOrEqualNormalized(pathValue, parentPath),
     );
     return paths.length != beforeLength;
   }
@@ -627,12 +627,10 @@ class LibraryService {
     final removedPaths = <String>[];
     entries.removeWhere((entryPath, entry) {
       if (entry.isFolder) return false;
-      if (!_isPathWithinOrEqual(entry.path, normalizedFolderPath)) {
+      if (!PathMatcher.isWithinOrEqualNormalized(entry.path, normalizedFolderPath)) {
         return false;
       }
-      final retained = retainedPaths.any(
-        (pathValue) => PathMatcher.equalsNormalized(pathValue, entry.path),
-      );
+      final retained = retainedPaths.contains(entry.path);
       if (retained) return false;
       removedPaths.add(entry.path);
       return true;
@@ -655,7 +653,7 @@ class LibraryService {
     if (entries == null) return const <String>[];
     final changedPaths = <String>[];
     for (final entry in entries.values.toList(growable: false)) {
-      if (!_isPathWithinOrEqual(entry.path, normalizedRootPath)) continue;
+      if (!PathMatcher.isWithinOrEqualNormalized(entry.path, normalizedRootPath)) continue;
       if (entry.state == state) continue;
       entries[entry.path] = entry.copyWith(state: state);
       changedPaths.add(entry.path);
@@ -706,7 +704,7 @@ class LibraryService {
     final normalizedLibraryPath = PathMatcher.normalize(libraryPath);
     final childFolders = watchedFolders
         .where(
-          (folderPath) => _isPathWithinOrEqual(
+          (folderPath) => PathMatcher.isWithinOrEqualNormalized(
             PathMatcher.normalize(folderPath),
             normalizedLibraryPath,
           ),
@@ -737,9 +735,7 @@ class LibraryService {
     onSaveLibraryExclusions?.call();
   }
 
-  bool _isPathWithinOrEqual(String childPath, String parentPath) {
-    return PathMatcher.isWithinOrEqual(childPath, parentPath);
-  }
+
 
   void syncSlice({required bool isInitialized}) {
     slice.update(

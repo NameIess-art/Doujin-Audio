@@ -198,7 +198,10 @@ extension _LibraryTabCategoryView on _LibraryTabState {
             ).colorScheme.surfaceContainerHighest,
             onRefresh: () async {
               unawaited(HapticFeedback.mediumImpact());
-              await _refreshWatchedFolders();
+              if (!provider.isScanning) {
+                unawaited(_refreshWatchedFolders());
+              }
+              await Future<void>.delayed(const Duration(milliseconds: 300));
             },
             edgeOffset: topPadding,
             displacement: 32,

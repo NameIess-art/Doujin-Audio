@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:collection';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
@@ -436,7 +437,10 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                     ).colorScheme.surfaceContainerHighest,
                     onRefresh: () async {
                       unawaited(HapticFeedback.mediumImpact());
-                      await _refreshWatchedFolders();
+                      if (!provider.isScanning) {
+                        unawaited(_refreshWatchedFolders());
+                      }
+                      await Future<void>.delayed(const Duration(milliseconds: 300));
                     },
                     edgeOffset: 150 + 4 + headerControlsFullHeight,
                     displacement: 32,

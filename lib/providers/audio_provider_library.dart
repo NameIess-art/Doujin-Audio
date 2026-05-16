@@ -453,6 +453,7 @@ extension AudioProviderLibrary on AudioProvider {
     _library.removeWhere((track) => removedSet.contains(track.path));
     for (final trackPath in removedPaths) {
       _libraryByPath.remove(trackPath);
+      _libraryIndexByPath.remove(trackPath);
     }
     // Skip the expensive rebuild when inside a batch — endLibraryBatch will
     // do a single consolidated rebuild when the batch closes.

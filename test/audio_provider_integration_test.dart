@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:audio_service/audio_service.dart';
@@ -645,6 +646,135 @@ void main() {
         expect(provider.getRootFolderName(trackFile.path), 'New Folder');
         expect(
           provider.coverPathForTrack(resolvedTrack, trackPath: trackFile.path),
+          newCoverPath,
+        );
+      },
+    );
+
+    test(
+      'restored session keeps renamed folder metadata when native snapshot still reports the old path',
+      () async {
+        final tempDir = await Directory.systemTemp.createTemp(
+          'detail_folder_playlist_restore_',
+        );
+        addTearDown(() async {
+          if (await tempDir.exists()) {
+            await tempDir.delete(recursive: true);
+          }
+        });
+
+        final newFolder = Directory(
+          '${tempDir.path}${Platform.pathSeparator}New Folder',
+        );
+        await newFolder.create();
+        final newTrackPath = '${newFolder.path}${Platform.pathSeparator}01.mp3';
+        final newCoverPath =
+            '${newFolder.path}${Platform.pathSeparator}cover.jpg';
+        await File(newTrackPath).writeAsBytes(const <int>[1, 2, 3]);
+        await File(newCoverPath).writeAsBytes(const <int>[4, 5, 6]);
+
+        const restoredSessionId = 'restored_session';
+        final oldTrackPath =
+            '${tempDir.path}${Platform.pathSeparator}Old Folder${Platform.pathSeparator}01.mp3';
+
+        final restoredRepository = AudioDatabaseRepository(
+          database: AppDatabase.test(db),
+        );
+        await restoredRepository.saveAllTracks(<MusicTrack>[
+          MusicTrack(
+            path: newTrackPath,
+            displayName: '01',
+            groupKey: newFolder.path,
+            groupTitle: 'New Folder',
+            groupSubtitle: newFolder.path,
+            isSingle: false,
+            manualCoverPath: newCoverPath,
+          ),
+        ]);
+        await restoredRepository.saveAllSessions(<PersistedSession>[
+          PersistedSession(
+            id: restoredSessionId,
+            trackPath: newTrackPath,
+            loopModeIndex: SessionLoopMode.folderSequential.index,
+            volume: 1.0,
+            positionMs: 0,
+            durationMs: 1000,
+            channelSwapEnabled: false,
+            sortOrder: 0,
+            createdAtMs: DateTime(2026).millisecondsSinceEpoch,
+          ),
+        ]);
+        SharedPreferences.setMockInitialValues(<String, Object>{
+          'watched_folders_v1': json.encode(<String>[newFolder.path]),
+          'session_order_v1': json.encode(<String>[restoredSessionId]),
+        });
+
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+              switch (call.method) {
+                case NativePlaybackMethod.prepareSession:
+                case NativePlaybackMethod.setForegroundEnabled:
+                  return <String, Object?>{'ok': true, 'value': null};
+                case NativePlaybackMethod.snapshot:
+                  return <String, Object?>{
+                    'ok': true,
+                    'value': <String, Object?>{
+                      'sessions': <Map<String, Object?>>[
+                        <String, Object?>{
+                          'sessionId': restoredSessionId,
+                          'uri': Uri.file(oldTrackPath).toString(),
+                          'path': oldTrackPath,
+                          'title': '01',
+                          'subtitle': 'Old Folder',
+                          'playing': false,
+                          'playWhenReady': false,
+                          'processingState': 'ready',
+                          'positionMs': 0,
+                          'bufferedPositionMs': 0,
+                          'durationMs': 1000,
+                          'volume': 1.0,
+                          'boostGain': 1.0,
+                          'channelSwap': false,
+                        },
+                      ],
+                    },
+                  };
+                default:
+                  return <String, Object?>{'ok': true};
+              }
+            });
+
+        final restoredProvider = AudioProvider(
+          notificationService: notificationService,
+          audioDatabaseRepository: restoredRepository,
+        );
+        addTearDown(restoredProvider.dispose);
+
+        for (var i = 0; i < 100; i++) {
+          if (restoredProvider.activeSessions.isNotEmpty) {
+            break;
+          }
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 120));
+
+        expect(restoredProvider.activeSessions, hasLength(1));
+        final restoredSession = restoredProvider.activeSessions.single;
+        expect(restoredSession.currentTrackPath, newTrackPath);
+        final restoredTrack = restoredProvider.trackByPath(
+          restoredSession.currentTrackPath,
+        );
+        expect(restoredTrack, isNotNull);
+        expect(restoredTrack?.displayName, '01');
+        expect(
+          restoredProvider.getRootFolderName(restoredSession.currentTrackPath),
+          'New Folder',
+        );
+        expect(
+          restoredProvider.coverPathForTrack(
+            restoredTrack,
+            trackPath: restoredSession.currentTrackPath,
+          ),
           newCoverPath,
         );
       },

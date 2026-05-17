@@ -104,7 +104,7 @@ internal object PlaybackKeepAlivePolicy {
         hasActiveTimer: Boolean,
         hasActivePlayback: Boolean
     ): Boolean {
-        return enabled && hasActiveTimer && !hasActivePlayback
+        return enabled && (hasActiveTimer || hasActivePlayback)
     }
 }
 
@@ -1098,13 +1098,8 @@ class MainActivity : AudioServiceActivity() {
         applicationContext.stopService(
             Intent(applicationContext, PlaybackKeepAliveService::class.java)
         )
-        // Only cancel the notification if the unified notification controller
-        // is NOT actively managing it; otherwise the cancel would remove the
-        // rich playback notification and cause a visible collapse/reappear.
-        if (!UnifiedPlaybackNotificationController.hasUnifiedNotifications()) {
-            val manager = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
-            manager?.cancel(UnifiedPlaybackNotificationController.foregroundServiceNotificationId)
-        }
+        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+        manager?.cancel(UnifiedPlaybackNotificationController.foregroundServiceNotificationId + 1)
     }
 
     private fun openNotificationSettings(): Boolean {

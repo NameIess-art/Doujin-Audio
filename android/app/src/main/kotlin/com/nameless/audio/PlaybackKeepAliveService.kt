@@ -29,7 +29,7 @@ class PlaybackKeepAliveService : Service() {
         private const val CHANNEL_NAME = "Playback"
         private const val GROUP_KEY = UnifiedPlaybackNotificationController.groupKey
         private const val NOTIFICATION_ID =
-            UnifiedPlaybackNotificationController.foregroundServiceNotificationId
+            UnifiedPlaybackNotificationController.foregroundServiceNotificationId + 1
     }
 
     private var wakeLock: PowerManager.WakeLock? = null
@@ -41,9 +41,7 @@ class PlaybackKeepAliveService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         return when (intent?.action) {
             ACTION_STOP -> {
-                val hasUnifiedNotifications =
-                    UnifiedPlaybackNotificationController.hasUnifiedNotifications()
-                stopForegroundCompat(detachOnly = hasUnifiedNotifications)
+                stopForegroundCompat(detachOnly = false)
                 releaseWakeLock()
                 currentForegroundSignature = null
                 currentNotificationId = null
@@ -67,9 +65,7 @@ class PlaybackKeepAliveService : Service() {
                     ) == true
 
                 if (!keepForegroundServiceAlive) {
-                    val hasUnifiedNotifications =
-                        UnifiedPlaybackNotificationController.hasUnifiedNotifications()
-                    stopForegroundCompat(detachOnly = hasUnifiedNotifications)
+                    stopForegroundCompat(detachOnly = false)
                     releaseWakeLock()
                     currentForegroundSignature = null
                     currentNotificationId = null
@@ -104,9 +100,7 @@ class PlaybackKeepAliveService : Service() {
                                 NOTIFICATION_ID,
                                 buildNotification(
                                     hasActivePlayback = hasActivePlayback,
-                                    hasActiveTimer = hasActiveTimer,
-                                    usesUnifiedPlaybackNotification =
-                                        usesUnifiedPlaybackNotification
+                                    hasActiveTimer = hasActiveTimer
                                 ),
                                 ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
                             )
@@ -124,9 +118,7 @@ class PlaybackKeepAliveService : Service() {
     }
 
     override fun onDestroy() {
-        val hasUnifiedNotifications =
-            UnifiedPlaybackNotificationController.hasUnifiedNotifications()
-        stopForegroundCompat(detachOnly = hasUnifiedNotifications)
+        stopForegroundCompat(detachOnly = false)
         releaseWakeLock()
         currentForegroundSignature = null
         currentNotificationId = null
@@ -135,14 +127,8 @@ class PlaybackKeepAliveService : Service() {
 
     private fun buildNotification(
         hasActivePlayback: Boolean,
-        hasActiveTimer: Boolean,
-        usesUnifiedPlaybackNotification: Boolean
+        hasActiveTimer: Boolean
     ): Notification {
-        if (usesUnifiedPlaybackNotification) {
-            UnifiedPlaybackNotificationController.lastRichSummaryNotification?.let {
-                return it
-            }
-        }
         val contentText = if (hasActiveTimer) {
             getString(R.string.keep_alive_timer_active)
         } else if (hasActivePlayback) {
@@ -165,7 +151,7 @@ class PlaybackKeepAliveService : Service() {
 
         val builder = NotificationCompat.Builder(
             this,
-            if (usesUnifiedPlaybackNotification) UNIFIED_CHANNEL_ID else CHANNEL_ID
+            CHANNEL_ID
         )
             .setContentTitle("Nameless Audio")
             .setSmallIcon(android.R.drawable.ic_media_play)
@@ -173,13 +159,7 @@ class PlaybackKeepAliveService : Service() {
             .setOnlyAlertOnce(true)
             .setSilent(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
-            .setCategory(
-                if (usesUnifiedPlaybackNotification) {
-                    NotificationCompat.CATEGORY_TRANSPORT
-                } else {
-                    NotificationCompat.CATEGORY_SERVICE
-                }
-            )
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
             .apply {
                 if (!contentText.isNullOrBlank()) {
@@ -187,11 +167,6 @@ class PlaybackKeepAliveService : Service() {
                 }
                 if (pendingIntent != null) {
                     setContentIntent(pendingIntent)
-                }
-                if (usesUnifiedPlaybackNotification) {
-                    setGroup(GROUP_KEY)
-                    setGroupSummary(true)
-                    setSortKey("0_summary")
                 }
             }
         return builder.build()

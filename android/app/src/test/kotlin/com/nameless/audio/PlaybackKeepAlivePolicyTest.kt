@@ -43,7 +43,7 @@ class PlaybackKeepAlivePolicyTest {
                 hasActivePlayback = true
             )
         )
-        assertFalse(
+        assertTrue(
             PlaybackKeepAlivePolicy.shouldHoldKeepAliveWakeLock(
                 enabled = true,
                 hasActiveTimer = true,
@@ -53,11 +53,22 @@ class PlaybackKeepAlivePolicyTest {
     }
 
     @Test
-    fun `playback wake lock ownership stays with native playback service`() {
-        assertFalse(
+    fun `active playback alone still keeps fallback wake lock active`() {
+        assertTrue(
             PlaybackKeepAlivePolicy.shouldHoldKeepAliveWakeLock(
                 enabled = true,
                 hasActiveTimer = false,
+                hasActivePlayback = true
+            )
+        )
+    }
+
+    @Test
+    fun `disabled keep alive never holds fallback wake lock`() {
+        assertFalse(
+            PlaybackKeepAlivePolicy.shouldHoldKeepAliveWakeLock(
+                enabled = false,
+                hasActiveTimer = true,
                 hasActivePlayback = true
             )
         )

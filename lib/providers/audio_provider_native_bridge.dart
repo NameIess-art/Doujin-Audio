@@ -1,6 +1,12 @@
 part of 'audio_provider.dart';
 
 extension AudioProviderNativeBridge on AudioProvider {
+  String _snapshotUriForPath(String pathValue) {
+    return PathMatcher.isContentUri(pathValue)
+        ? pathValue
+        : Uri.file(pathValue).toString();
+  }
+
   String? _nativeSnapshotPathFromUri(String? uriValue) {
     if (uriValue == null || uriValue.isEmpty) return null;
     final uri = Uri.tryParse(uriValue);
@@ -18,10 +24,31 @@ extension AudioProviderNativeBridge on AudioProvider {
       return snapshot;
     }
     final resolvedPath = _resolveRetargetedPath(rawPath);
-    if (PathMatcher.equalsNormalized(resolvedPath, rawPath)) {
+    if (!PathMatcher.equalsNormalized(resolvedPath, rawPath)) {
+      return snapshot.copyWith(
+        path: resolvedPath,
+        uri: _snapshotUriForPath(resolvedPath),
+      );
+    }
+
+    final currentSessionPath = _sessions[snapshot.sessionId]?.currentTrackPath;
+    if (currentSessionPath == null || currentSessionPath.isEmpty) {
       return snapshot;
     }
-    return snapshot.copyWith(path: resolvedPath);
+
+    final resolvedSessionPath = _resolveRetargetedPath(currentSessionPath);
+    if (PathMatcher.equalsNormalized(resolvedSessionPath, resolvedPath)) {
+      return snapshot;
+    }
+    if (trackByPath(resolvedPath) != null ||
+        trackByPath(resolvedSessionPath) == null) {
+      return snapshot;
+    }
+
+    return snapshot.copyWith(
+      path: resolvedSessionPath,
+      uri: _snapshotUriForPath(resolvedSessionPath),
+    );
   }
 
   void _handleNativePlaybackSnapshot(NativePlaybackSnapshot snapshot) {

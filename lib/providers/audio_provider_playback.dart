@@ -131,7 +131,9 @@ extension AudioProviderPlayback on AudioProvider {
     );
     final value = response.valueOrNull;
     if (value != null) {
-      session.applyNativeSnapshot(value);
+      _playbackService.applyNativeSnapshot(
+        _normalizeNativePlaybackSnapshot(value),
+      );
       _notifyListeners(); // Refresh with native state
     }
     _scheduleSaveSessionState();

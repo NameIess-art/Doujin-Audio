@@ -1422,6 +1422,30 @@ class MainActivity : AudioServiceActivity() {
 
         if (uri != null) {
             scanDocumentTree(uri, byPath)
+            if (byPath.isNotEmpty()) {
+                return byPath.values.toList()
+            }
+
+            // After a tree-root rename performed via File.renameTo, some ROMs
+            // keep the underlying directory readable while the new SAF tree URI
+            // is not yet queryable. Fall back to direct file scanning so a
+            // refresh does not incorrectly prune the folder from the library.
+            val filePath = contentUriToFilePath(folderTrimmed)
+            if (filePath != null) {
+                val root = File(filePath)
+                if (root.exists() && root.isDirectory) {
+                    scanFileSystemAsDocumentTree(
+                        rootUri = uri,
+                        root = root,
+                        output = byPath
+                    )
+                    if (byPath.isNotEmpty()) {
+                        return byPath.values.toList()
+                    }
+                    scanMediaStore(filePath, byPath)
+                    return byPath.values.toList()
+                }
+            }
             return byPath.values.toList()
         }
 
@@ -2428,6 +2452,88 @@ class MainActivity : AudioServiceActivity() {
                         groupTitle = parentName,
                         groupSubtitle = parentPath,
                         isVideo = isVideoFileName(child.name),
+                        fileSizeBytes = child.length().takeIf { it >= 0 },
+                        modifiedAtMs = child.lastModified().takeIf { it > 0 }
+                    )
+                )
+            }
+        }
+    }
+
+    private fun scanFileSystemAsDocumentTree(
+        rootUri: Uri,
+        root: File,
+        output: MutableMap<String, ScannedTrack>
+    ) {
+        val rootDocumentId = startDocumentIdForTreeUri(rootUri) ?: return
+        val rootName = normalizeDisplayName(root.name.ifBlank { "Folder" })
+        val pending = ArrayDeque<File>()
+        pending.add(root)
+
+        while (pending.isNotEmpty()) {
+            val current = pending.removeFirst()
+            val children = try {
+                current.listFiles()
+            } catch (_: Exception) {
+                null
+            } ?: continue
+
+            for (child in children) {
+                if (child.isDirectory) {
+                    pending.add(child)
+                    continue
+                }
+                if (!child.isFile || !isSupportedFileName(child.name)) {
+                    continue
+                }
+
+                val normalizedChildPath = child.absolutePath
+                val relativePath = root.toPath()
+                    .relativize(child.toPath())
+                    .joinToString("/") { segment -> segment.toString() }
+                if (relativePath.isBlank()) {
+                    continue
+                }
+
+                val parentRelative = relativePath.substringBeforeLast(
+                    '/',
+                    missingDelimiterValue = ""
+                )
+                val groupTitle = if (parentRelative.isEmpty()) {
+                    rootName
+                } else {
+                    parentRelative.substringAfterLast('/')
+                }
+                val groupSubtitle = if (parentRelative.isEmpty()) {
+                    rootName
+                } else {
+                    "$rootName/$parentRelative"
+                }
+                val groupKey = if (parentRelative.isEmpty()) {
+                    rootUri.toString()
+                } else {
+                    "${rootUri}::$parentRelative"
+                }
+                val documentId = if (parentRelative.isEmpty()) {
+                    "$rootDocumentId/${child.name}"
+                } else {
+                    "$rootDocumentId/$relativePath"
+                }
+                val documentUri = DocumentsContract.buildDocumentUriUsingTree(
+                    rootUri,
+                    documentId
+                ).toString()
+                val safeName = normalizeDisplayName(child.name.ifBlank { "audio_file" })
+                val title = safeName.substringBeforeLast('.', safeName)
+                output.putIfAbsent(
+                    documentUri,
+                    ScannedTrack(
+                        path = documentUri,
+                        title = title,
+                        groupKey = groupKey,
+                        groupTitle = groupTitle.ifBlank { rootName },
+                        groupSubtitle = groupSubtitle,
+                        isVideo = isVideoFileName(safeName),
                         fileSizeBytes = child.length().takeIf { it >= 0 },
                         modifiedAtMs = child.lastModified().takeIf { it > 0 }
                     )

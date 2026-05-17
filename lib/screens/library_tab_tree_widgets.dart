@@ -68,12 +68,7 @@ class _FolderNodeWidgetState extends State<_FolderNodeWidget> {
   }
 
   String? _findParentLibraryPath(AudioProvider provider) {
-    for (final libraryPath in provider.watchedLibraries) {
-      if (PathMatcher.isWithinOrEqual(widget.folder.path, libraryPath)) {
-        return libraryPath;
-      }
-    }
-    return null;
+    return provider.libraryRootForPath(widget.folder.path);
   }
 
   Future<void> _removeFolder(
@@ -315,13 +310,7 @@ class _TrackNodeWidget extends ConsumerWidget {
     MusicTrack track,
   ) async {
     final i18n = context.read<AppLanguageProvider>();
-    String? parentLibraryPath;
-    for (final libraryPath in provider.watchedLibraries) {
-      if (PathMatcher.isWithinOrEqual(track.path, libraryPath)) {
-        parentLibraryPath = libraryPath;
-        break;
-      }
-    }
+    final parentLibraryPath = provider.libraryRootForPath(track.path);
     if (parentLibraryPath != null) {
       provider.setLibraryTrackExcluded(parentLibraryPath, track.path, true);
       if (context.mounted) {

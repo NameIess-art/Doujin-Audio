@@ -161,29 +161,30 @@ extension AudioProviderPlaybackSessions on AudioProvider {
     }
 
     var prepared = false;
+    final resolvedNextPath = _resolveRetargetedPath(nextPath);
     try {
       if (!_sessions.containsKey(session.id) ||
           session.loadGeneration != generation) {
         return;
       }
 
-      session.currentTrackPath = nextPath;
+      session.currentTrackPath = resolvedNextPath;
       session.lastPersistedPositionBucket = 0;
-      _ensureSubtitleTrackLoaded(nextPath);
+      _ensureSubtitleTrackLoaded(resolvedNextPath);
       _refreshNotificationSubtitleForSession(
         session,
         position: Duration.zero,
         syncNotification: false,
       );
 
-      final uri = PathMatcher.isContentUri(nextPath)
-          ? Uri.parse(nextPath)
-          : Uri.file(nextPath);
+      final uri = PathMatcher.isContentUri(resolvedNextPath)
+          ? Uri.parse(resolvedNextPath)
+          : Uri.file(resolvedNextPath);
 
-      final track = trackByPath(nextPath);
+      final track = trackByPath(resolvedNextPath);
       final coverPath = await _resolveNotificationCoverPathForTrack(track);
 
-      final isNewTrack = session.loadedPath != nextPath;
+      final isNewTrack = session.loadedPath != resolvedNextPath;
       if (isNewTrack) {
         session.resetStreamsForNewTrack();
       } else {
@@ -194,7 +195,8 @@ extension AudioProviderPlaybackSessions on AudioProvider {
 
       if (isNewTrack) {
         final title =
-            track?.displayName ?? path.basenameWithoutExtension(nextPath);
+            track?.displayName ??
+            path.basenameWithoutExtension(resolvedNextPath);
         final artUri = coverPath == null ? null : Uri.file(coverPath);
         var ok = false;
         for (var attempt = 0; attempt < 2; attempt++) {
@@ -213,15 +215,18 @@ extension AudioProviderPlaybackSessions on AudioProvider {
             sessionId: session.id,
             uri: uri,
             title: title,
-            path: nextPath,
+            path: resolvedNextPath,
             subtitle: track?.groupTitle,
             artUri: artUri,
             volume: session.volume,
             repeatOne: session.loopMode == SessionLoopMode.single,
-            queue: _nativePlaybackQueueFor(session, currentPath: nextPath),
+            queue: _nativePlaybackQueueFor(
+              session,
+              currentPath: resolvedNextPath,
+            ),
             queueStartIndex: _nativePlaybackQueueStartIndexFor(
               session,
-              currentPath: nextPath,
+              currentPath: resolvedNextPath,
             ),
             repeatAll: session.loopMode != SessionLoopMode.single,
             shuffle: _isShuffleMode(session.loopMode),
@@ -240,7 +245,7 @@ extension AudioProviderPlaybackSessions on AudioProvider {
           );
         }
         if (!ok) return;
-        session.loadedPath = nextPath;
+        session.loadedPath = resolvedNextPath;
       } else {
         await _nativePlaybackRepository.seek(session.id, Duration.zero);
         if (!_sessions.containsKey(session.id) ||
@@ -292,11 +297,12 @@ extension AudioProviderPlaybackSessions on AudioProvider {
     PlaybackSession session, {
     required String currentPath,
   }) {
+    final resolvedCurrentPath = _resolveRetargetedPath(currentPath);
     final paths = _nativePlaybackQueuePathsFor(
       session,
-      currentPath: currentPath,
+      currentPath: resolvedCurrentPath,
     );
-    final index = paths.indexOf(currentPath);
+    final index = paths.indexOf(resolvedCurrentPath);
     return index < 0 ? 0 : index;
   }
 
@@ -304,14 +310,15 @@ extension AudioProviderPlaybackSessions on AudioProvider {
     PlaybackSession session, {
     required String currentPath,
   }) {
-    final currentTrack = trackByPath(currentPath);
+    final resolvedCurrentPath = _resolveRetargetedPath(currentPath);
+    final currentTrack = trackByPath(resolvedCurrentPath);
     switch (session.loopMode) {
       case SessionLoopMode.single:
-        return <String>[currentPath];
+        return <String>[resolvedCurrentPath];
       case SessionLoopMode.crossSequential:
       case SessionLoopMode.crossRandom:
         return _sortedLibraryTrackPaths.isEmpty
-            ? <String>[currentPath]
+            ? <String>[resolvedCurrentPath]
             : _sortedLibraryTrackPaths;
       case SessionLoopMode.folderSequential:
       case SessionLoopMode.folderRandom:
@@ -319,20 +326,23 @@ extension AudioProviderPlaybackSessions on AudioProvider {
             ? const <MusicTrack>[]
             : _tracksByGroup[currentTrack.groupKey] ?? const <MusicTrack>[];
         return groupTracks.isEmpty
-            ? <String>[currentPath]
+            ? <String>[resolvedCurrentPath]
             : groupTracks.map((track) => track.path).toList(growable: false);
     }
   }
 
   Map<String, Object?> _nativePlaybackQueueItemForPath(String trackPath) {
-    final track = trackByPath(trackPath);
+    final resolvedTrackPath = _resolveRetargetedPath(trackPath);
+    final track = trackByPath(resolvedTrackPath);
     final subtitle = track?.groupTitle;
     return <String, Object?>{
-      'path': trackPath,
-      'uri': PathMatcher.isContentUri(trackPath)
-          ? trackPath
-          : Uri.file(trackPath).toString(),
-      'title': track?.displayName ?? path.basenameWithoutExtension(trackPath),
+      'path': resolvedTrackPath,
+      'uri': PathMatcher.isContentUri(resolvedTrackPath)
+          ? resolvedTrackPath
+          : Uri.file(resolvedTrackPath).toString(),
+      'title':
+          track?.displayName ??
+          path.basenameWithoutExtension(resolvedTrackPath),
       // ignore: use_null_aware_elements
       if (subtitle != null) 'subtitle': subtitle,
     };

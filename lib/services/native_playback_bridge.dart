@@ -43,6 +43,51 @@ class NativePlaybackSnapshot {
   final bool channelSwapEnabled;
   final String? error;
 
+  NativePlaybackSnapshot copyWith({
+    String? sessionId,
+    String? uri,
+    bool clearUri = false,
+    String? path,
+    bool clearPath = false,
+    String? title,
+    bool clearTitle = false,
+    String? subtitle,
+    bool clearSubtitle = false,
+    String? artUri,
+    bool clearArtUri = false,
+    bool? playing,
+    bool? playWhenReady,
+    String? processingState,
+    Duration? position,
+    Duration? bufferedPosition,
+    Duration? duration,
+    bool clearDuration = false,
+    double? volume,
+    double? boostGain,
+    bool? channelSwapEnabled,
+    String? error,
+    bool clearError = false,
+  }) {
+    return NativePlaybackSnapshot(
+      sessionId: sessionId ?? this.sessionId,
+      uri: clearUri ? null : (uri ?? this.uri),
+      path: clearPath ? null : (path ?? this.path),
+      title: clearTitle ? null : (title ?? this.title),
+      subtitle: clearSubtitle ? null : (subtitle ?? this.subtitle),
+      artUri: clearArtUri ? null : (artUri ?? this.artUri),
+      playing: playing ?? this.playing,
+      playWhenReady: playWhenReady ?? this.playWhenReady,
+      processingState: processingState ?? this.processingState,
+      position: position ?? this.position,
+      bufferedPosition: bufferedPosition ?? this.bufferedPosition,
+      duration: clearDuration ? null : (duration ?? this.duration),
+      volume: volume ?? this.volume,
+      boostGain: boostGain ?? this.boostGain,
+      channelSwapEnabled: channelSwapEnabled ?? this.channelSwapEnabled,
+      error: clearError ? null : (error ?? this.error),
+    );
+  }
+
   factory NativePlaybackSnapshot.fromMap(Map<dynamic, dynamic> map) {
     final sessionId = map['sessionId'] as String?;
     if (sessionId == null || sessionId.trim().isEmpty) {

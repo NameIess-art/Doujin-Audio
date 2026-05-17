@@ -19,6 +19,7 @@ void main() {
   SharedPreferences.setMockInitialValues(const <String, Object>{});
 
   const fileCacheChannel = MethodChannel(FileCacheChannel.name);
+  const nativePlaybackChannel = MethodChannel(NativePlaybackChannel.name);
   late AudioProvider provider;
   late PlaybackNotificationHandler handler;
   late PlaybackNotificationService notificationService;
@@ -46,6 +47,8 @@ void main() {
   tearDown(() async {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(fileCacheChannel, null);
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(nativePlaybackChannel, null);
     provider.dispose();
     await db.close();
   });
@@ -491,6 +494,161 @@ void main() {
       expect(await Directory(result.detail.target.targetPath).exists(), isTrue);
       expect(await source.exists(), isFalse);
     });
+
+    test(
+      'renaming an imported folder retargets watched roots and exclusions',
+      () async {
+        final tempDir = await Directory.systemTemp.createTemp(
+          'detail_folder_retarget_',
+        );
+        addTearDown(() async {
+          if (await tempDir.exists()) {
+            await tempDir.delete(recursive: true);
+          }
+        });
+
+        final source = Directory(
+          '${tempDir.path}${Platform.pathSeparator}Old Folder',
+        );
+        final trackFile = File('${source.path}${Platform.pathSeparator}01.mp3');
+        await source.create();
+        await trackFile.writeAsBytes(const <int>[1, 2, 3]);
+
+        provider.addWatchedFolder(source.path, notify: false);
+        provider.addTracks(<MusicTrack>[
+          MusicTrack(
+            path: trackFile.path,
+            displayName: '01',
+            groupKey: source.path,
+            groupTitle: 'Old Folder',
+            groupSubtitle: source.path,
+            isSingle: false,
+          ),
+        ], notify: false);
+        provider.setLibraryTrackExcluded(source.path, trackFile.path, true);
+
+        final result = await provider.renameAudioDetailTargetToName(
+          AudioDetail.empty(AudioDetailTarget.libraryRootFolder(source.path)),
+          'New Folder',
+        );
+        final newFolderPath = result.detail.target.targetPath;
+        final newTrackPath = '$newFolderPath${Platform.pathSeparator}01.mp3';
+
+        expect(provider.watchedFolders, contains(newFolderPath));
+        expect(provider.watchedFolders, isNot(contains(source.path)));
+        expect(provider.excludedTracksForLibrary(newFolderPath), <String>[
+          newTrackPath,
+        ]);
+        expect(provider.excludedTracksForLibrary(source.path), isEmpty);
+        expect(
+          provider
+              .libraryEntriesForLibrary(newFolderPath)
+              .where((entry) => entry.path == newTrackPath),
+          hasLength(1),
+        );
+        expect(provider.trackByPath(newTrackPath), isNull);
+
+        provider.clearLibraryExclusions(newFolderPath);
+
+        expect(provider.trackByPath(newTrackPath), isNotNull);
+      },
+    );
+
+    test(
+      'renaming an active folder keeps playlist track lookups after stale native paths',
+      () async {
+        final tempDir = await Directory.systemTemp.createTemp(
+          'detail_folder_playlist_rename_',
+        );
+        addTearDown(() async {
+          if (await tempDir.exists()) {
+            await tempDir.delete(recursive: true);
+          }
+        });
+
+        final source = Directory(
+          '${tempDir.path}${Platform.pathSeparator}Old Folder',
+        );
+        final trackFile = File('${source.path}${Platform.pathSeparator}01.mp3');
+        final coverFile = File(
+          '${source.path}${Platform.pathSeparator}cover.jpg',
+        );
+        await source.create();
+        await trackFile.writeAsBytes(const <int>[1, 2, 3]);
+        await coverFile.writeAsBytes(const <int>[4, 5, 6]);
+
+        final track = MusicTrack(
+          path: trackFile.path,
+          displayName: '01',
+          groupKey: source.path,
+          groupTitle: 'Old Folder',
+          groupSubtitle: source.path,
+          isSingle: false,
+          manualCoverPath: coverFile.path,
+        );
+        provider.addWatchedFolder(source.path, notify: false);
+        provider.addTracks(<MusicTrack>[track], notify: false, persist: false);
+
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+              switch (call.method) {
+                case NativePlaybackMethod.prepareSession:
+                case NativePlaybackMethod.setChannelSwap:
+                  return <String, Object?>{
+                    'ok': true,
+                    'value': <String, Object?>{
+                      'sessionId':
+                          (call.arguments as Map<Object?, Object?>)['sessionId']
+                              as String,
+                      'uri': Uri.file(trackFile.path).toString(),
+                      'path': trackFile.path,
+                      'title': '01',
+                      'subtitle': 'Old Folder',
+                      'playing': false,
+                      'playWhenReady': false,
+                      'processingState': 'ready',
+                      'positionMs': 0,
+                      'bufferedPositionMs': 0,
+                      'durationMs': 1000,
+                      'volume': 1.0,
+                      'boostGain': 1.0,
+                      'channelSwap':
+                          call.method == NativePlaybackMethod.setChannelSwap,
+                    },
+                  };
+                default:
+                  return <String, Object?>{'ok': true};
+              }
+            });
+
+        await provider.spawnSession(track, autoPlay: false);
+        await Future<void>.delayed(Duration.zero);
+        final session = provider.activeSessions.single;
+
+        final result = await provider.renameAudioDetailTargetToName(
+          AudioDetail.empty(AudioDetailTarget.libraryRootFolder(source.path)),
+          'New Folder',
+        );
+        final newFolderPath = result.detail.target.targetPath;
+        final newTrackPath = '$newFolderPath${Platform.pathSeparator}01.mp3';
+        final newCoverPath = '$newFolderPath${Platform.pathSeparator}cover.jpg';
+
+        expect(session.currentTrackPath, newTrackPath);
+
+        await provider.setSessionChannelSwap(session.id, true);
+
+        expect(session.currentTrackPath, newTrackPath);
+        final resolvedTrack = provider.trackByPath(trackFile.path);
+        expect(resolvedTrack, isNotNull);
+        expect(resolvedTrack?.path, newTrackPath);
+        expect(resolvedTrack?.displayName, '01');
+        expect(provider.getRootFolderName(trackFile.path), 'New Folder');
+        expect(
+          provider.coverPathForTrack(resolvedTrack, trackPath: trackFile.path),
+          newCoverPath,
+        );
+      },
+    );
   });
 
   group('library card detail loading', () {
@@ -764,6 +922,59 @@ void main() {
       expect(restoredTrack, isNotNull);
       expect(restoredTrack!.groupKey, restoredFolder);
       expect(restoredTrack.isVideo, isTrue);
+    });
+
+    test('standalone imported folder exclusions survive refresh semantics '
+        'until cleared', () async {
+      final folder = await Directory.systemTemp.createTemp(
+        'standalone_folder_exclusion_',
+      );
+      addTearDown(() async {
+        if (await folder.exists()) {
+          await folder.delete(recursive: true);
+        }
+      });
+
+      final trackPath = '${folder.path}${Platform.pathSeparator}01.mp3';
+      await File(trackPath).writeAsBytes(const <int>[1, 2, 3]);
+
+      provider.addWatchedFolder(folder.path, notify: false);
+      provider.addTracks(<MusicTrack>[
+        MusicTrack(
+          path: trackPath,
+          displayName: '01',
+          groupKey: folder.path,
+          groupTitle: 'standalone',
+          groupSubtitle: folder.path,
+          isSingle: false,
+        ),
+      ], notify: false);
+
+      provider.setLibraryTrackExcluded(folder.path, trackPath, true);
+
+      expect(provider.trackByPath(trackPath), isNull);
+      expect(provider.hasLibraryExclusions(folder.path), isTrue);
+      expect(provider.isLibraryPathExcluded(folder.path, trackPath), isTrue);
+
+      if (!provider.isLibraryPathExcluded(folder.path, trackPath)) {
+        provider.addOrReplaceTracks(<MusicTrack>[
+          MusicTrack(
+            path: trackPath,
+            displayName: '01',
+            groupKey: folder.path,
+            groupTitle: 'standalone',
+            groupSubtitle: folder.path,
+            isSingle: false,
+          ),
+        ], notify: false);
+      }
+
+      expect(provider.trackByPath(trackPath), isNull);
+
+      provider.clearLibraryExclusions(folder.path);
+
+      expect(provider.trackByPath(trackPath), isNotNull);
+      expect(provider.hasLibraryExclusions(folder.path), isFalse);
     });
   });
 }

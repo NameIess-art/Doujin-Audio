@@ -348,12 +348,7 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
   final String secondaryText;
 
   String? _findParentLibraryPath(AudioProvider provider) {
-    for (final libraryPath in provider.watchedLibraries) {
-      if (PathMatcher.isWithinOrEqual(entry.path, libraryPath)) {
-        return libraryPath;
-      }
-    }
-    return null;
+    return provider.libraryRootForPath(entry.path);
   }
 
   Future<void> _remove(BuildContext context, AudioProvider provider) async {

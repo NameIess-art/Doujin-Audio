@@ -160,7 +160,10 @@ extension _LibraryTabImportActions on _LibraryTabState {
           final tracksInFolder = provider.library
               .where(
                 (t) =>
-                    PathMatcher.isWithinOrEqualNormalized(t.path, normalizedFolderPath) &&
+                    PathMatcher.isWithinOrEqualNormalized(
+                      t.path,
+                      normalizedFolderPath,
+                    ) &&
                     !PathMatcher.isContentUri(t.path),
               )
               .map((t) => t.path)
@@ -286,9 +289,22 @@ extension _LibraryTabImportActions on _LibraryTabState {
     final i18n = context.read<AppLanguageProvider>();
     final provider = context.read<AudioProvider>();
     if (!mounted) return;
+    final normalizedFolderPath = PathMatcher.normalize(folderPath);
     if (_isFolderAlreadyInLibrary(provider, folderPath)) {
-      _showAlreadyExistsSnack(i18n);
-      return;
+      final isExistingStandaloneFolder = provider.watchedFolders.any(
+        (value) => PathMatcher.equalsNormalized(value, normalizedFolderPath),
+      );
+      final isManagedByWatchedLibrary = provider.watchedLibraries.any(
+        (value) => PathMatcher.isWithinOrEqual(normalizedFolderPath, value),
+      );
+      if (isExistingStandaloneFolder &&
+          !isManagedByWatchedLibrary &&
+          provider.hasLibraryExclusions(normalizedFolderPath)) {
+        provider.clearLibraryExclusions(normalizedFolderPath);
+      } else {
+        _showAlreadyExistsSnack(i18n);
+        return;
+      }
     }
     provider.setScanning(true);
     provider.beginLibraryBatch();
@@ -300,7 +316,7 @@ extension _LibraryTabImportActions on _LibraryTabState {
       final nativeScan = await _scanFolderViaNative(folderPath);
       if (nativeScan.ok) {
         final toAdd = nativeScan.tracks.map(_trackFromScanned).toList();
-        provider.recordLibraryEntriesForTracks(folderPath, toAdd);
+        provider.recordLibraryEntriesForTracks(normalizedFolderPath, toAdd);
 
         final beforeCount = provider.library.length;
         provider.addOrReplaceTracks(toAdd, notify: false);
@@ -314,7 +330,7 @@ extension _LibraryTabImportActions on _LibraryTabState {
         added = await _importFolderIncrementally(
           folderPath,
           provider,
-          folderPath,
+          normalizedFolderPath,
         );
       } else {
         provider.setScanProgress(failureCount: provider.scanFailureCount + 1);
@@ -325,9 +341,12 @@ extension _LibraryTabImportActions on _LibraryTabState {
       }
     } finally {
       await provider.endLibraryBatch();
-      provider.addWatchedFolder(folderPath, notify: false);
-      provider.recordLibraryEntriesForTracks(folderPath, const <MusicTrack>[]);
-      await _prefillRjDetailForFolder(provider, folderPath);
+      provider.addWatchedFolder(normalizedFolderPath, notify: false);
+      provider.recordLibraryEntriesForTracks(
+        normalizedFolderPath,
+        const <MusicTrack>[],
+      );
+      await _prefillRjDetailForFolder(provider, normalizedFolderPath);
       provider.setScanning(false);
       if (mounted) {
         _showSnack(i18n.tr('import_done_added', {'count': added}));

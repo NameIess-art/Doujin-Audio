@@ -3,6 +3,46 @@ part of 'audio_provider.dart';
 extension AudioProviderLibrary on AudioProvider {
   static const LibraryOrganizer _libraryOrganizer = LibraryOrganizer();
 
+  void _rememberRetargetedPath(String oldPath, String newPath) {
+    final normalizedOldPath = PathMatcher.normalize(oldPath);
+    final normalizedNewPath = PathMatcher.normalize(newPath);
+    if (PathMatcher.equalsNormalized(normalizedOldPath, normalizedNewPath)) {
+      return;
+    }
+    _retargetedPathAliases[normalizedOldPath] = normalizedNewPath;
+  }
+
+  String _resolveRetargetedPath(String value) {
+    if (value.isEmpty || _retargetedPathAliases.isEmpty) {
+      return PathMatcher.normalize(value);
+    }
+
+    var current = PathMatcher.normalize(value);
+    final seen = <String>{current};
+    while (true) {
+      String? bestMatch;
+      String? nextValue;
+      for (final entry in _retargetedPathAliases.entries) {
+        if (!PathMatcher.isWithinOrEqual(current, entry.key)) continue;
+        if (bestMatch == null || entry.key.length > bestMatch.length) {
+          bestMatch = entry.key;
+          nextValue = entry.value;
+        }
+      }
+      if (bestMatch == null || nextValue == null) {
+        return current;
+      }
+      final resolved = PathMatcher.normalize(
+        PathMatcher.replaceWithinOrEqual(current, bestMatch, nextValue),
+      );
+      if (PathMatcher.equalsNormalized(resolved, current) ||
+          !seen.add(resolved)) {
+        return resolved;
+      }
+      current = resolved;
+    }
+  }
+
   void _syncLibraryNodeOrder({bool persist = true}) {
     _libraryService.syncLibraryNodeOrder(
       persist: persist,
@@ -72,6 +112,21 @@ extension AudioProviderLibrary on AudioProvider {
   List<String> childFoldersForLibrary(String libraryPath) =>
       _libraryService.childFoldersForLibrary(libraryPath);
 
+  String? libraryRootForPath(String entityPath) {
+    final resolvedPath = _resolveRetargetedPath(entityPath);
+    for (final libraryPath in _watchedLibraries) {
+      if (PathMatcher.isWithinOrEqual(resolvedPath, libraryPath)) {
+        return libraryPath;
+      }
+    }
+    for (final folderPath in _watchedFolders) {
+      if (PathMatcher.isWithinOrEqual(resolvedPath, folderPath)) {
+        return folderPath;
+      }
+    }
+    return null;
+  }
+
   List<String> excludedFoldersForLibrary(String libraryPath) =>
       _libraryService.excludedFoldersForLibrary(libraryPath);
 
@@ -102,6 +157,52 @@ extension AudioProviderLibrary on AudioProvider {
       libraryPath,
       trackPath,
     );
+  }
+
+  bool hasLibraryExclusions(String libraryPath) {
+    final normalizedLibraryPath = PathMatcher.normalize(libraryPath);
+    return (_excludedLibraryFolders[normalizedLibraryPath]?.isNotEmpty ??
+            false) ||
+        (_excludedLibraryTracks[normalizedLibraryPath]?.isNotEmpty ?? false);
+  }
+
+  void clearLibraryExclusions(String libraryPath) {
+    final normalizedLibraryPath = PathMatcher.normalize(libraryPath);
+    final removedFolders = _excludedLibraryFolders.remove(
+      normalizedLibraryPath,
+    );
+    final removedTracks = _excludedLibraryTracks.remove(normalizedLibraryPath);
+    if ((removedFolders == null || removedFolders.isEmpty) &&
+        (removedTracks == null || removedTracks.isEmpty)) {
+      return;
+    }
+
+    final restoredEntryPaths = _libraryService.setLibraryEntriesSubtreeState(
+      normalizedLibraryPath,
+      normalizedLibraryPath,
+      LibraryEntryState.active,
+    );
+    final restoredTracks = _libraryService
+        .libraryEntriesForLibrary(normalizedLibraryPath)
+        .where(
+          (entry) => entry.isTrack && !_libraryByPath.containsKey(entry.path),
+        )
+        .map((entry) => entry.toTrack())
+        .toList(growable: false);
+    if (restoredTracks.isNotEmpty) {
+      addOrReplaceTracks(restoredTracks, notify: false);
+    }
+    if (restoredEntryPaths.isNotEmpty && !_skipDisposePersistence) {
+      unawaited(
+        _audioDatabaseRepository.setLibraryEntriesState(
+          normalizedLibraryPath,
+          restoredEntryPaths,
+          LibraryEntryState.active,
+        ),
+      );
+    }
+    unawaited(_saveLibraryExclusions());
+    _notifyListeners();
   }
 
   void setLibraryFolderExcluded(
@@ -1039,14 +1140,20 @@ extension AudioProviderLibrary on AudioProvider {
     );
   }
 
-  MusicTrack? trackByPath(String trackPath) =>
-      _libraryService.trackByPath(trackPath);
+  MusicTrack? trackByPath(String trackPath) {
+    final resolvedPath = _resolveRetargetedPath(trackPath);
+    return _libraryService.trackByPath(resolvedPath);
+  }
 
   PlaybackSession? sessionById(String sessionId) =>
       _playbackService.sessionById(sessionId);
 
   String? sessionTrackPath(String sessionId) =>
-      _playbackService.sessionById(sessionId)?.currentTrackPath;
+      _playbackService.sessionById(sessionId)?.currentTrackPath == null
+      ? null
+      : _resolveRetargetedPath(
+          _playbackService.sessionById(sessionId)!.currentTrackPath,
+        );
 
   bool isTrackActive(String trackPath) =>
       _playbackService.isTrackActive(trackPath);
@@ -1058,13 +1165,14 @@ extension AudioProviderLibrary on AudioProvider {
   }
 
   String getRootFolderPath(String trackPath) {
+    final resolvedPath = _resolveRetargetedPath(trackPath);
     for (final folder in _watchedFolders) {
-      if (PathMatcher.isWithinOrEqual(trackPath, folder)) {
+      if (PathMatcher.isWithinOrEqual(resolvedPath, folder)) {
         return folder;
       }
     }
     for (final libraryPath in _watchedLibraries) {
-      if (PathMatcher.isWithinOrEqual(trackPath, libraryPath)) {
+      if (PathMatcher.isWithinOrEqual(resolvedPath, libraryPath)) {
         return libraryPath;
       }
     }
@@ -1072,13 +1180,14 @@ extension AudioProviderLibrary on AudioProvider {
   }
 
   String getRootFolderName(String trackPath) {
+    final resolvedPath = _resolveRetargetedPath(trackPath);
     for (final folder in _watchedFolders) {
-      if (PathMatcher.isWithinOrEqual(trackPath, folder)) {
+      if (PathMatcher.isWithinOrEqual(resolvedPath, folder)) {
         return PathDisplay.folderName(folder);
       }
     }
     for (final libraryPath in _watchedLibraries) {
-      if (PathMatcher.isWithinOrEqual(trackPath, libraryPath)) {
+      if (PathMatcher.isWithinOrEqual(resolvedPath, libraryPath)) {
         return PathDisplay.folderName(libraryPath);
       }
     }

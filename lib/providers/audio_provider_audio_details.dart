@@ -222,6 +222,7 @@ extension AudioProviderAudioDetails on AudioProvider {
     String newFolderPath,
     String folderName,
   ) async {
+    _rememberRetargetedPath(oldFolderPath, newFolderPath);
     final updatedTracks = <MusicTrack>[];
     for (var i = 0; i < _library.length; i++) {
       final track = _library[i];
@@ -291,16 +292,139 @@ extension AudioProviderAudioDetails on AudioProvider {
       }
     }
 
+    _retargetLibraryExclusions(oldFolderPath, newFolderPath);
+    final retargetedEntries = _retargetLibraryEntries(
+      oldFolderPath,
+      newFolderPath,
+      folderName,
+    );
     _retargetActiveSessions(oldFolderPath, newFolderPath);
     _clearResolvedCoverPaths();
     _syncGroupOrderFromLibrary();
     _rebuildLibraryIndexes();
     await _audioDatabaseRepository.saveAllTracks(_library);
+    await _audioDatabaseRepository.deleteLibraryEntriesForLibrary(
+      oldFolderPath,
+    );
+    if (retargetedEntries.isNotEmpty) {
+      await _audioDatabaseRepository.upsertLibraryEntries(retargetedEntries);
+    }
     await _saveWatchedFolders();
     await _saveWatchedLibraries();
+    await _saveLibraryExclusions();
     await _saveGroupOrder();
     await _saveLibraryNodeOrder();
     await _saveSessionState();
+  }
+
+  void _retargetLibraryExclusions(String oldRoot, String newRoot) {
+    if (_excludedLibraryFolders.isEmpty && _excludedLibraryTracks.isEmpty) {
+      return;
+    }
+
+    Map<String, Set<String>> retarget(Map<String, Set<String>> source) {
+      final result = <String, Set<String>>{};
+      for (final entry in source.entries) {
+        final nextKey = PathMatcher.equalsNormalized(entry.key, oldRoot)
+            ? newRoot
+            : entry.key;
+        final nextValues = entry.value
+            .map(
+              (value) => PathMatcher.isWithinOrEqual(value, oldRoot)
+                  ? _replacePathPrefix(value, oldRoot, newRoot)
+                  : value,
+            )
+            .toSet();
+        result.putIfAbsent(nextKey, () => <String>{}).addAll(nextValues);
+      }
+      return result;
+    }
+
+    final nextFolderExclusions = retarget(_excludedLibraryFolders);
+    final nextTrackExclusions = retarget(_excludedLibraryTracks);
+    _excludedLibraryFolders
+      ..clear()
+      ..addAll(nextFolderExclusions);
+    _excludedLibraryTracks
+      ..clear()
+      ..addAll(nextTrackExclusions);
+  }
+
+  List<LibraryEntry> _retargetLibraryEntries(
+    String oldRoot,
+    String newRoot,
+    String folderName,
+  ) {
+    final existingEntries = _libraryService.libraryEntriesByLibrary.remove(
+      oldRoot,
+    );
+    if (existingEntries == null || existingEntries.isEmpty) {
+      return const <LibraryEntry>[];
+    }
+
+    final retargetedEntries = existingEntries.values
+        .map(
+          (entry) => _retargetLibraryEntry(
+            entry,
+            oldRoot: oldRoot,
+            newRoot: newRoot,
+            folderName: folderName,
+          ),
+        )
+        .toList(growable: false);
+    _libraryService.libraryEntriesByLibrary[newRoot] = {
+      for (final entry in retargetedEntries) entry.path: entry,
+    };
+    _libraryService.markStructureChanged();
+    return retargetedEntries;
+  }
+
+  LibraryEntry _retargetLibraryEntry(
+    LibraryEntry entry, {
+    required String oldRoot,
+    required String newRoot,
+    required String folderName,
+  }) {
+    final nextPath = PathMatcher.isWithinOrEqual(entry.path, oldRoot)
+        ? _replacePathPrefix(entry.path, oldRoot, newRoot)
+        : entry.path;
+    final nextParentPath =
+        entry.parentPath != null &&
+            PathMatcher.isWithinOrEqual(entry.parentPath!, oldRoot)
+        ? _replacePathPrefix(entry.parentPath!, oldRoot, newRoot)
+        : entry.parentPath;
+    if (entry.isFolder) {
+      return LibraryEntry.folder(
+        libraryPath: newRoot,
+        path: nextPath,
+        parentPath: nextParentPath,
+        state: entry.state,
+        displayName: entry.displayName,
+      );
+    }
+
+    final nextGroupKey = PathMatcher.isWithinOrEqual(entry.groupKey, oldRoot)
+        ? _replacePathPrefix(entry.groupKey, oldRoot, newRoot)
+        : entry.groupKey;
+    final nextGroupTitle = PathMatcher.equalsNormalized(nextGroupKey, newRoot)
+        ? folderName
+        : PathDisplay.folderName(nextGroupKey);
+    return LibraryEntry(
+      libraryPath: newRoot,
+      path: nextPath,
+      kind: entry.kind,
+      state: entry.state,
+      parentPath: nextParentPath,
+      displayName: entry.displayName,
+      groupKey: nextGroupKey,
+      groupTitle: nextGroupTitle,
+      groupSubtitle: PathDisplay.displayPathFor(nextGroupKey),
+      isSingle: entry.isSingle,
+      isVideo: entry.isVideo,
+      scannedAt: entry.scannedAt,
+      fileSizeBytes: entry.fileSizeBytes,
+      modifiedAt: entry.modifiedAt,
+    );
   }
 
   Future<void> _retargetSingleTrack(
@@ -308,6 +432,7 @@ extension AudioProviderAudioDetails on AudioProvider {
     String newTrackPath,
     String displayName,
   ) async {
+    _rememberRetargetedPath(oldTrackPath, newTrackPath);
     final track = _libraryByPath[oldTrackPath];
     if (track != null) {
       final updatedTrack = _copyTrack(

@@ -139,6 +139,7 @@ const Map<AppLanguage, Map<String, String>> _localizedValues = {
     'audio_detail_title': '音频详细信息',
     'audio_detail_library_root': '音频库根文件夹',
     'audio_detail_single_file': '单独导入音频',
+    'audio_detail_cover_image': '封面图片',
     'audio_detail_folder_name': '文件夹名称',
     'audio_detail_file_name': '文件名称',
     'audio_detail_rj_code': 'RJ号',
@@ -158,6 +159,7 @@ const Map<AppLanguage, Map<String, String>> _localizedValues = {
     'audio_detail_fetch_confirm':
         '将优先通过RJ号从DLsite获取作品信息；RJ号未填写或格式不正确时，会改用文件夹/文件名称或作品标题相似匹配。获取后可在新页面修改并确认。',
     'audio_detail_fetch_missing_query': '请先填写RJ号、文件夹/文件名称或作品标题。',
+    'audio_detail_cover_swipe_hint': '左右滑动切换',
     'audio_detail_rename_file': '重命名文件',
     'audio_detail_rename_file_from_title': '作品标题\n作为文件名',
     'audio_detail_rename_folder_from_title': '作品标题\n作为文件夹名',
@@ -439,6 +441,7 @@ const Map<AppLanguage, Map<String, String>> _localizedValues = {
     'audio_detail_title': '音声詳細情報',
     'audio_detail_library_root': 'ライブラリのルートフォルダ',
     'audio_detail_single_file': '単独追加音声',
+    'audio_detail_cover_image': 'カバー画像',
     'audio_detail_rj_code': 'RJ番号',
     'audio_detail_work_title': '作品タイトル',
     'audio_detail_circle_name': 'サークル名',
@@ -456,6 +459,7 @@ const Map<AppLanguage, Map<String, String>> _localizedValues = {
     'audio_detail_fetch_confirm':
         'RJ番号を優先してDLsiteから作品情報を取得します。RJ番号が未入力または形式不正の場合は、フォルダ/ファイル名または作品タイトルで類似検索します。取得後、新しい画面で編集して確認できます。',
     'audio_detail_fetch_missing_query': 'RJ番号、フォルダ/ファイル名、または作品タイトルを入力してください。',
+    'audio_detail_cover_swipe_hint': '左右にスワイプして切り替え',
     'audio_detail_rename_file': 'ファイル名を変更',
     'audio_detail_rename_file_from_title': '作品タイトルを\nファイル名にする',
     'audio_detail_rename_folder_from_title': '作品タイトルを\nフォルダ名にする',
@@ -750,6 +754,7 @@ const Map<AppLanguage, Map<String, String>> _localizedValues = {
     'audio_detail_title': 'Audio details',
     'audio_detail_library_root': 'Library root folder',
     'audio_detail_single_file': 'Single imported audio',
+    'audio_detail_cover_image': 'Cover image',
     'audio_detail_folder_name': 'Folder name',
     'audio_detail_file_name': 'File name',
     'audio_detail_rj_code': 'RJ number',
@@ -773,6 +778,7 @@ const Map<AppLanguage, Map<String, String>> _localizedValues = {
         'Fetch work information from DLsite using the RJ number first. If the RJ number is empty or invalid, use the folder/file name or work title for a similar-title search. You can edit it on the next page before applying it.',
     'audio_detail_fetch_missing_query':
         'Fill in an RJ number, folder/file name, or work title first.',
+    'audio_detail_cover_swipe_hint': 'Swipe left or right to change',
     'audio_detail_rename_file': 'Rename file',
     'audio_detail_rename_file_from_title': 'Use work title\nas file name',
     'audio_detail_rename_folder_from_title': 'Use work title\nas folder name',

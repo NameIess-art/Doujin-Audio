@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -443,6 +444,10 @@ class _AudioDetailSheetState extends State<AudioDetailSheet> {
                 ),
               ),
               const SizedBox(height: 12),
+              if (_target.isLibraryRootFolder) ...[
+                _FolderCoverSelector(folderPath: _target.targetPath),
+                const SizedBox(height: 12),
+              ],
               ..._AudioDetailField.values.expand(
                 (field) => [
                   _AudioDetailRow(
@@ -468,6 +473,255 @@ String _renameWorkTitleLabel(AudioDetail detail, AppLanguageProvider i18n) {
   return detail.target.isLibraryRootFolder
       ? i18n.tr('audio_detail_rename_folder_from_title')
       : i18n.tr('audio_detail_rename_file_from_title');
+}
+
+class _FolderCoverSelector extends StatefulWidget {
+  const _FolderCoverSelector({required this.folderPath});
+
+  final String folderPath;
+
+  @override
+  State<_FolderCoverSelector> createState() => _FolderCoverSelectorState();
+}
+
+class _FolderCoverSelectorState extends State<_FolderCoverSelector> {
+  static const Duration _commitDelay = Duration(seconds: 1);
+
+  PageController? _pageController;
+  List<String> _images = const <String>[];
+  bool _loading = true;
+  bool _saving = false;
+  Object? _error;
+  int _currentIndex = 0;
+  Timer? _commitTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_load());
+  }
+
+  @override
+  void dispose() {
+    _commitTimer?.cancel();
+    _pageController?.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    try {
+      final provider = context.read<AudioProvider>();
+      final images = await provider.discoverImagesInFolder(widget.folderPath);
+      if (!mounted) return;
+      if (images.isEmpty) {
+        setState(() {
+          _images = const <String>[];
+          _loading = false;
+        });
+        return;
+      }
+
+      final currentCover = await provider.coverPathFutureForFolder(
+        widget.folderPath,
+      );
+      if (!mounted) return;
+      var initialIndex = 0;
+      if (currentCover != null) {
+        final foundIndex = images.indexOf(currentCover);
+        if (foundIndex >= 0) {
+          initialIndex = foundIndex;
+        }
+      }
+      final controller = PageController(initialPage: initialIndex);
+      _pageController?.dispose();
+      setState(() {
+        _images = images;
+        _currentIndex = initialIndex;
+        _pageController = controller;
+        _loading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _error = error;
+        _loading = false;
+      });
+    }
+  }
+
+  void _handlePageChanged(int index) {
+    if (index < 0 || index >= _images.length) return;
+    setState(() {
+      _currentIndex = index;
+    });
+    _commitTimer?.cancel();
+    _commitTimer = Timer(_commitDelay, () {
+      unawaited(_commitSelection(index));
+    });
+  }
+
+  Future<void> _commitSelection(int index) async {
+    if (!mounted || index < 0 || index >= _images.length) return;
+    setState(() {
+      _saving = true;
+    });
+    try {
+      await context.read<AudioProvider>().setFolderManualCover(
+        widget.folderPath,
+        _images[index],
+      );
+    } catch (_) {
+      if (!mounted) return;
+      showAppSnackBar(
+        context,
+        context.read<AppLanguageProvider>().tr('audio_detail_save_failed'),
+        tone: AppFeedbackTone.warning,
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _saving = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final i18n = context.watch<AppLanguageProvider>();
+    final cs = Theme.of(context).colorScheme;
+    final labelStyle = Theme.of(
+      context,
+    ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700);
+
+    if (_loading) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 20),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+    if (_error != null || _images.isEmpty || _pageController == null) {
+      return const SizedBox.shrink();
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(i18n.tr('audio_detail_cover_image'), style: labelStyle),
+        const SizedBox(height: 10),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(14),
+          child: AspectRatio(
+            aspectRatio: 1.45,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                DecoratedBox(
+                  decoration: BoxDecoration(color: cs.surfaceContainerHighest),
+                  child: PageView.builder(
+                    controller: _pageController,
+                    itemCount: _images.length,
+                    onPageChanged: _handlePageChanged,
+                    itemBuilder: (context, index) {
+                      return Image.file(
+                        File(_images[index]),
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, _, _) => DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: cs.surfaceContainerHighest,
+                          ),
+                          child: Icon(
+                            Icons.image_not_supported_rounded,
+                            color: cs.onSurfaceVariant,
+                            size: 42,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                Positioned(
+                  right: 12,
+                  top: 12,
+                  child: AnimatedOpacity(
+                    duration: const Duration(milliseconds: 160),
+                    opacity: _saving ? 1 : 0,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.58),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: const Padding(
+                        padding: EdgeInsets.all(8),
+                        child: SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  left: 12,
+                  right: 12,
+                  bottom: 12,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.58),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 6,
+                          ),
+                          child: Text(
+                            '${_currentIndex + 1} / ${_images.length}',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ),
+                      DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.58),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 6,
+                          ),
+                          child: Text(
+                            i18n.tr('audio_detail_cover_swipe_hint'),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 class _AudioDetailRow extends StatelessWidget {

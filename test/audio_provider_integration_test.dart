@@ -436,6 +436,86 @@ void main() {
       final resolved = await provider.coverPathFutureForFolder(workDir.path);
       expect(resolved, cover.path);
     });
+
+    test(
+      'discoverImagesInFolder scans the selected folder recursively',
+      () async {
+        final rootDir = await Directory.systemTemp.createTemp('folder_cover_');
+        addTearDown(() async {
+          if (await rootDir.exists()) {
+            await rootDir.delete(recursive: true);
+          }
+        });
+
+        final childDir = Directory(
+          '${rootDir.path}${Platform.pathSeparator}Disc1',
+        );
+        await childDir.create(recursive: true);
+        final coverA = File(
+          '${rootDir.path}${Platform.pathSeparator}cover_a.jpg',
+        );
+        final coverB = File(
+          '${childDir.path}${Platform.pathSeparator}cover_b.png',
+        );
+        final ignored = File(
+          '${rootDir.path}${Platform.pathSeparator}note.txt',
+        );
+        await coverA.writeAsBytes(const <int>[1, 2, 3]);
+        await coverB.writeAsBytes(const <int>[4, 5, 6]);
+        await ignored.writeAsString('ignore');
+
+        final images = await provider.discoverImagesInFolder(rootDir.path);
+
+        expect(images, hasLength(2));
+        expect(images, containsAll(<String>[coverA.path, coverB.path]));
+      },
+    );
+
+    test(
+      'setFolderManualCover updates all tracks under the folder scope',
+      () async {
+        final workDir = await Directory.systemTemp.createTemp('folder_manual_');
+        addTearDown(() async {
+          if (await workDir.exists()) {
+            await workDir.delete(recursive: true);
+          }
+        });
+
+        final discDir = Directory(
+          '${workDir.path}${Platform.pathSeparator}Disc1',
+        );
+        await discDir.create(recursive: true);
+        final trackPath = '${discDir.path}${Platform.pathSeparator}01.mp3';
+        await File(trackPath).writeAsBytes(const <int>[1, 2, 3]);
+        final coverPath = '${workDir.path}${Platform.pathSeparator}folder.jpg';
+        await File(coverPath).writeAsBytes(const <int>[4, 5, 6]);
+
+        provider.addWatchedFolder(workDir.path, notify: false);
+        provider.addTracks(
+          <MusicTrack>[
+            MusicTrack(
+              path: trackPath,
+              displayName: '01',
+              groupKey: discDir.path,
+              groupTitle: 'Disc1',
+              groupSubtitle: 'Disc1',
+              isSingle: false,
+            ),
+          ],
+          notify: false,
+          persist: false,
+        );
+
+        await provider.setFolderManualCover(workDir.path, coverPath);
+
+        final updatedTrack = provider.trackByPath(trackPath);
+        expect(updatedTrack?.manualCoverPath, coverPath);
+        expect(
+          await provider.coverPathFutureForFolder(workDir.path),
+          coverPath,
+        );
+      },
+    );
   });
 
   group('audio detail rename target name', () {

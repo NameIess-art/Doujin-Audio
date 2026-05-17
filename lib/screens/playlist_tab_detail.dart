@@ -307,7 +307,8 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
               MediaQuery.sizeOf(context).height * dismissProgress;
           final enterOffset =
               (1 - enterProgress) * MediaQuery.sizeOf(context).height;
-          final backdropCurve = dismissProgress; // Use linear for backdrop to avoid sudden changes
+          final backdropCurve =
+              dismissProgress; // Use linear for backdrop to avoid sudden changes
           final backdropProgress = (enterProgress * (1 - backdropCurve)).clamp(
             0.0,
             1.0,
@@ -768,9 +769,7 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                                             .read<AppLanguageProvider>()
                                             .tr('channel_swap'),
                                       ),
-                                      const UnifiedMenuEntry<
-                                        String
-                                      >.divider(),
+                                      const UnifiedMenuEntry<String>.divider(),
                                       UnifiedMenuEntry<String>.action(
                                         value: 'audio_detail',
                                         icon: Icons.info_outline_rounded,
@@ -843,10 +842,6 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                                   child: _SessionHeroArtwork(
                                     height: constraints.maxHeight,
                                     coverPathFuture: coverPathFuture,
-                                    title: '',
-                                    folderName: '',
-                                    isPlaying: session.state.playing,
-                                    trackPath: session.currentTrackPath,
                                   ),
                                 ),
                               ),

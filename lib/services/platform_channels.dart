@@ -96,6 +96,7 @@ abstract final class PowerMethod {
 // Method names — file_cache
 // ---------------------------------------------------------------------------
 abstract final class FileCacheMethod {
+  static const String discoverRootImages = 'discoverRootImages';
   static const String resolveTrackCover = 'resolveTrackCover';
   static const String resolveVideoFrame = 'resolveVideoFrame';
   static const String cacheFromUri = 'cacheFromUri';

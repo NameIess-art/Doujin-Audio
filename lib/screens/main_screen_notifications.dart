@@ -48,7 +48,30 @@ extension _MainScreenNotifications on _MainScreenState {
     );
     final ignoringBatteryOptimizations =
         await _isIgnoringBatteryOptimizations();
-    if (!mounted || ignoringBatteryOptimizations) return;
+    if (!mounted || ignoringBatteryOptimizations) {
+      if (ignoringBatteryOptimizations) {
+        _backgroundPlaybackPromptShownThisLaunch = true;
+      }
+      return;
+    }
+    _backgroundPlaybackPromptShownThisLaunch = true;
+    await _promptOpenBatteryOptimizationSettings();
+  }
+
+  Future<void> _maybePromptForBackgroundPlaybackReliability() async {
+    _backgroundPlaybackPromptQueued = false;
+    if (!mounted ||
+        !Platform.isAndroid ||
+        _backgroundPlaybackPromptShownThisLaunch) {
+      return;
+    }
+    final ignoringBatteryOptimizations =
+        await _isIgnoringBatteryOptimizations();
+    if (!mounted || ignoringBatteryOptimizations) {
+      _backgroundPlaybackPromptShownThisLaunch = true;
+      return;
+    }
+    _backgroundPlaybackPromptShownThisLaunch = true;
     await _promptOpenBatteryOptimizationSettings();
   }
 

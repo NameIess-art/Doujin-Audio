@@ -7,15 +7,28 @@ import org.json.JSONObject
 data class StoredNativePlaybackSession(
     val sessionId: String,
     val uri: String,
+    val path: String,
     val title: String,
     val subtitle: String?,
     val artUri: String?,
     val positionMs: Long,
     val volume: Float,
     val repeatOne: Boolean,
+    val repeatAll: Boolean,
+    val shuffleModeEnabled: Boolean,
+    val queueStartIndex: Int,
+    val queue: List<StoredNativePlaybackQueueItem>,
     val channelSwapEnabled: Boolean,
     val playing: Boolean,
     val playWhenReady: Boolean
+)
+
+data class StoredNativePlaybackQueueItem(
+    val path: String,
+    val uri: String,
+    val title: String,
+    val subtitle: String?,
+    val artUri: String?
 )
 
 data class StoredPlaybackTimerRuntimeState(
@@ -61,12 +74,31 @@ object NativePlaybackStateStore {
                 JSONObject()
                     .put("sessionId", session.sessionId)
                     .put("uri", session.uri)
+                    .put("path", session.path)
                     .put("title", session.title)
                     .put("subtitle", session.subtitle)
                     .put("artUri", session.artUri)
                     .put("positionMs", session.positionMs)
                     .put("volume", session.volume.toDouble())
                     .put("repeatOne", session.repeatOne)
+                    .put("repeatAll", session.repeatAll)
+                    .put("shuffleModeEnabled", session.shuffleModeEnabled)
+                    .put("queueStartIndex", session.queueStartIndex)
+                    .put(
+                        "queue",
+                        JSONArray().apply {
+                            session.queue.forEach { queueItem ->
+                                put(
+                                    JSONObject()
+                                        .put("path", queueItem.path)
+                                        .put("uri", queueItem.uri)
+                                        .put("title", queueItem.title)
+                                        .put("subtitle", queueItem.subtitle)
+                                        .put("artUri", queueItem.artUri)
+                                )
+                            }
+                        }
+                    )
                     .put("channelSwapEnabled", session.channelSwapEnabled)
                     .put("playing", session.playing)
                     .put("playWhenReady", session.playWhenReady)
@@ -102,12 +134,17 @@ object NativePlaybackStateStore {
                         StoredNativePlaybackSession(
                             sessionId = sessionId,
                             uri = uri,
+                            path = item.optString("path").takeIf { it.isNotBlank() } ?: uri,
                             title = item.optString("title", "Audio"),
                             subtitle = item.optNullableString("subtitle"),
                             artUri = item.optNullableString("artUri"),
                             positionMs = item.optLong("positionMs", 0L).coerceAtLeast(0L),
                             volume = item.optDouble("volume", 1.0).toFloat(),
                             repeatOne = item.optBoolean("repeatOne", false),
+                            repeatAll = item.optBoolean("repeatAll", false),
+                            shuffleModeEnabled = item.optBoolean("shuffleModeEnabled", false),
+                            queueStartIndex = item.optInt("queueStartIndex", 0).coerceAtLeast(0),
+                            queue = item.optQueueItems(),
                             channelSwapEnabled = item.optBoolean("channelSwapEnabled", false),
                             playing = item.optBoolean("playing", false),
                             playWhenReady = item.optBoolean("playWhenReady", false)
@@ -247,4 +284,24 @@ private fun JSONObject.optNullableInt(key: String): Int? {
 private fun JSONObject.optNullableLong(key: String): Long? {
     if (!has(key) || isNull(key)) return null
     return optLong(key)
+}
+
+private fun JSONObject.optQueueItems(): List<StoredNativePlaybackQueueItem> {
+    val array = optJSONArray("queue") ?: return emptyList()
+    return buildList {
+        for (index in 0 until array.length()) {
+            val item = array.optJSONObject(index) ?: continue
+            val uri = item.optString("uri").takeIf { it.isNotBlank() } ?: continue
+            val path = item.optString("path").takeIf { it.isNotBlank() } ?: uri
+            add(
+                StoredNativePlaybackQueueItem(
+                    path = path,
+                    uri = uri,
+                    title = item.optString("title", "Audio"),
+                    subtitle = item.optNullableString("subtitle"),
+                    artUri = item.optNullableString("artUri")
+                )
+            )
+        }
+    }
 }

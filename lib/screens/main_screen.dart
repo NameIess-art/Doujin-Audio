@@ -64,6 +64,8 @@ class _MainScreenState extends ConsumerState<MainScreen>
   bool _notificationPermissionCheckQueued = false;
   bool _notificationSettingsDialogVisible = false;
   bool _notificationSettingsOpened = false;
+  bool _backgroundPlaybackPromptShownThisLaunch = false;
+  bool _backgroundPlaybackPromptQueued = false;
   bool _manageFilesPermissionCheckDone = false;
   final PermissionActionController _permissionActionController =
       PermissionActionController();
@@ -246,6 +248,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
           );
     final playbackState = ref.watch(playbackStateProvider).valueOrNull;
     final settingsState = ref.watch(settingsStateProvider).valueOrNull;
+    final hasPlayingSession = (playbackState?.playingSessionCount ?? 0) > 0;
     final overlaySessions = _buildOverlaySessions(playbackState);
     final activeSessionCount = playbackState?.activeSessions.length ?? 0;
     final showCard = settingsState?.showPlaybackCard ?? false;
@@ -265,6 +268,14 @@ class _MainScreenState extends ConsumerState<MainScreen>
       _notificationPermissionCheckQueued = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _ensureNotificationPermission();
+      });
+    }
+    if (hasPlayingSession &&
+        !_backgroundPlaybackPromptShownThisLaunch &&
+        !_backgroundPlaybackPromptQueued) {
+      _backgroundPlaybackPromptQueued = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        unawaited(_maybePromptForBackgroundPlaybackReliability());
       });
     }
     final timerSlice =

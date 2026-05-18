@@ -3,10 +3,12 @@ part of 'playlist_tab.dart';
 class _SessionHeroArtwork extends StatelessWidget {
   const _SessionHeroArtwork({
     required this.height,
+    required this.track,
     required this.coverPathFuture,
   });
 
   final double height;
+  final MusicTrack? track;
   final Future<String?> coverPathFuture;
 
   @override
@@ -60,37 +62,44 @@ class _SessionHeroArtwork extends StatelessWidget {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  AsyncCoverImage(
-                    future: coverPathFuture,
-                    fallbackBuilder: (_) => fallback(),
-                    loadingBuilder: (_) => Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        fallback(),
-                        Center(
-                          child: CircularProgressIndicator(
-                            strokeWidth: 3,
-                            color: cs.onPrimaryContainer.withValues(
-                              alpha: 0.65,
+                  if (track?.remoteCoverUrl?.trim().isNotEmpty == true)
+                    Image.network(
+                      track!.remoteCoverUrl!,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, _, _) => fallback(),
+                    )
+                  else
+                    AsyncCoverImage(
+                      future: coverPathFuture,
+                      fallbackBuilder: (_) => fallback(),
+                      loadingBuilder: (_) => Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          fallback(),
+                          Center(
+                            child: CircularProgressIndicator(
+                              strokeWidth: 3,
+                              color: cs.onPrimaryContainer.withValues(
+                                alpha: 0.65,
+                              ),
                             ),
                           ),
-                        ),
-                      ],
-                    ),
-                    imageBuilder: (context, coverPath) {
-                      return RepaintBoundary(
-                        child: Image(
-                          image: resizeFileImageIfNeeded(
-                            path: coverPath,
-                            cacheWidth: cacheW,
+                        ],
+                      ),
+                      imageBuilder: (context, coverPath) {
+                        return RepaintBoundary(
+                          child: Image(
+                            image: resizeFileImageIfNeeded(
+                              path: coverPath,
+                              cacheWidth: cacheW,
+                            ),
+                            fit: BoxFit.cover,
+                            gaplessPlayback: true,
+                            errorBuilder: (_, _, _) => fallback(),
                           ),
-                          fit: BoxFit.cover,
-                          gaplessPlayback: true,
-                          errorBuilder: (_, _, _) => fallback(),
-                        ),
-                      );
-                    },
-                  ),
+                        );
+                      },
+                    ),
                   Positioned.fill(
                     child: DecoratedBox(
                       decoration: BoxDecoration(
@@ -118,12 +127,12 @@ class _SessionHeroArtwork extends StatelessWidget {
 
 class _SessionCoverThumbnail extends StatelessWidget {
   const _SessionCoverThumbnail({
+    required this.track,
     required this.coverPathFuture,
-    required this.title,
   });
 
+  final MusicTrack? track;
   final Future<String?> coverPathFuture;
-  final String title;
 
   @override
   Widget build(BuildContext context) {
@@ -156,38 +165,44 @@ class _SessionCoverThumbnail extends StatelessWidget {
       height: 72,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(14),
-        child: AsyncCoverImage(
-          future: coverPathFuture,
-          fallbackBuilder: (_) => fallback(),
-          loadingBuilder: (_) => Stack(
-            fit: StackFit.expand,
-            children: [
-              fallback(),
-              Center(
-                child: SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: cs.onPrimaryContainer.withValues(alpha: 0.65),
-                  ),
+        child: track?.remoteCoverUrl?.trim().isNotEmpty == true
+            ? Image.network(
+                track!.remoteCoverUrl!,
+                fit: BoxFit.cover,
+                errorBuilder: (_, _, _) => fallback(),
+              )
+            : AsyncCoverImage(
+                future: coverPathFuture,
+                fallbackBuilder: (_) => fallback(),
+                loadingBuilder: (_) => Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    fallback(),
+                    Center(
+                      child: SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: cs.onPrimaryContainer.withValues(alpha: 0.65),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
+                imageBuilder: (context, coverPath) {
+                  final dpr = MediaQuery.devicePixelRatioOf(context);
+                  return Image(
+                    image: resizeFileImageIfNeeded(
+                      path: coverPath,
+                      cacheWidth: (96 * dpr).round(),
+                    ),
+                    fit: BoxFit.cover,
+                    gaplessPlayback: true,
+                    errorBuilder: (_, _, _) => fallback(),
+                  );
+                },
               ),
-            ],
-          ),
-          imageBuilder: (context, coverPath) {
-            final dpr = MediaQuery.devicePixelRatioOf(context);
-            return Image(
-              image: resizeFileImageIfNeeded(
-                path: coverPath,
-                cacheWidth: (96 * dpr).round(),
-              ),
-              fit: BoxFit.cover,
-              gaplessPlayback: true,
-              errorBuilder: (_, _, _) => fallback(),
-            );
-          },
-        ),
       ),
     );
   }

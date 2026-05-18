@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../models/asmr_models.dart';
@@ -64,7 +65,7 @@ class _AsmrWorkDetailSheet extends StatelessWidget {
                   ],
                 ),
                 Text(
-                  '只读模式，不支持编辑或拖拽排序',
+                  '只读模式，不支持编辑或拖拽排序。',
                   style: Theme.of(
                     context,
                   ).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
@@ -89,20 +90,25 @@ class _AsmrWorkDetailSheet extends StatelessWidget {
                   _AsmrDetailSection(
                     title: '基础信息',
                     children: [
-                      _AsmrDetailRow(label: 'RJ号', value: effectiveWork.rjCode),
-                      _AsmrDetailRow(label: '作品标题', value: effectiveWork.title),
-                      _AsmrDetailRow(
+                      _CopyableValueRow(
+                        label: 'RJ号',
+                        value: effectiveWork.rjCode,
+                      ),
+                      _CopyableValueRow(
+                        label: '作品标题',
+                        value: effectiveWork.title,
+                      ),
+                      _CopyableValueRow(
                         label: '社团',
                         value: effectiveWork.circleName,
                       ),
-                      _AsmrDetailRow(
+                      _CopyableChipWrapRow(
                         label: '声优',
-                        value: _joinValues(effectiveWork.voiceActors),
+                        values: effectiveWork.voiceActors,
                       ),
-                      _AsmrDetailRow(
+                      _CopyableChipWrapRow(
                         label: '标签',
-                        value: _joinValues(effectiveWork.tags),
-                        multiline: true,
+                        values: effectiveWork.tags,
                       ),
                     ],
                   ),
@@ -110,38 +116,36 @@ class _AsmrWorkDetailSheet extends StatelessWidget {
                   _AsmrDetailSection(
                     title: '统计信息',
                     children: [
-                      _AsmrDetailRow(
+                      _CopyableValueRow(
                         label: '发售日期',
                         value: _formatDate(effectiveWork.releaseDate),
                       ),
-                      _AsmrDetailRow(
+                      _CopyableValueRow(
                         label: '时长',
                         value: _formatDuration(effectiveWork.duration),
                       ),
-                      _AsmrDetailRow(
+                      _CopyableValueRow(
                         label: '销量',
                         value: '${effectiveWork.dlCount}',
                       ),
-                      _AsmrDetailRow(
+                      _CopyableValueRow(
                         label: '评分',
                         value: effectiveWork.rating <= 0
                             ? '未评分'
                             : effectiveWork.rating.toStringAsFixed(2),
                       ),
-                      _AsmrDetailRow(
+                      _CopyableValueRow(
                         label: '评论数',
                         value: '${effectiveWork.reviewCount}',
                       ),
-                      _AsmrDetailRow(
+                      _CopyableValueRow(
                         label: '年龄分级',
                         value: detail?.ageCategory ?? '',
                       ),
-                      _AsmrDetailRow(
+                      _CopyableChipWrapRow(
                         label: '语言版本',
-                        value: _joinValues(
-                          detail?.languageEditionLabels ?? const <String>[],
-                        ),
-                        multiline: true,
+                        values:
+                            detail?.languageEditionLabels ?? const <String>[],
                       ),
                     ],
                   ),
@@ -150,14 +154,7 @@ class _AsmrWorkDetailSheet extends StatelessWidget {
                     _AsmrDetailSection(
                       title: '简介',
                       children: [
-                        Text(
-                          detail!.description.trim(),
-                          style: Theme.of(context).textTheme.bodyMedium
-                              ?.copyWith(
-                                height: 1.5,
-                                color: cs.onSurface.withValues(alpha: 0.88),
-                              ),
-                        ),
+                        _CopyableTextBlock(text: detail!.description.trim()),
                       ],
                     ),
                   ],
@@ -300,43 +297,120 @@ class _AsmrDetailSection extends StatelessWidget {
   }
 }
 
-class _AsmrDetailRow extends StatelessWidget {
-  const _AsmrDetailRow({
-    required this.label,
-    required this.value,
-    this.multiline = false,
-  });
+class _CopyableValueRow extends StatelessWidget {
+  const _CopyableValueRow({required this.label, required this.value});
 
   final String label;
   final String value;
-  final bool multiline;
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
+    final text = value.trim().isEmpty ? '未填写' : value.trim();
     return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.only(bottom: 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             label,
             style: Theme.of(context).textTheme.labelMedium?.copyWith(
-              color: cs.onSurfaceVariant,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
               fontWeight: FontWeight.w700,
             ),
           ),
-          const SizedBox(height: 3),
+          const SizedBox(height: 6),
+          _CopyableTextChip(text: text),
+        ],
+      ),
+    );
+  }
+}
+
+class _CopyableChipWrapRow extends StatelessWidget {
+  const _CopyableChipWrapRow({required this.label, required this.values});
+
+  final String label;
+  final List<String> values;
+
+  @override
+  Widget build(BuildContext context) {
+    final filtered = values.where((value) => value.trim().isNotEmpty).toList();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
           Text(
-            value.trim().isEmpty ? '未填写' : value.trim(),
+            label,
+            style: Theme.of(context).textTheme.labelMedium?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 8),
+          if (filtered.isEmpty)
+            const _CopyableTextChip(text: '未填写')
+          else
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final value in filtered) _CopyableTextChip(text: value),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CopyableTextBlock extends StatelessWidget {
+  const _CopyableTextBlock({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return _CopyableTextChip(text: text, multiline: true, compact: false);
+  }
+}
+
+class _CopyableTextChip extends StatelessWidget {
+  const _CopyableTextChip({
+    required this.text,
+    this.multiline = false,
+    this.compact = true,
+  });
+
+  final String text;
+  final bool multiline;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Material(
+      color: cs.surfaceContainerHighest,
+      borderRadius: BorderRadius.circular(multiline ? 16 : 999),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(multiline ? 16 : 999),
+        onLongPress: () => _copyText(context, text),
+        child: Padding(
+          padding: EdgeInsets.symmetric(
+            horizontal: compact ? 12 : 14,
+            vertical: multiline ? 12 : 9,
+          ),
+          child: Text(
+            text,
             maxLines: multiline ? null : 2,
             overflow: multiline ? null : TextOverflow.ellipsis,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
               fontWeight: FontWeight.w600,
               height: 1.35,
+              color: cs.onSurface,
             ),
           ),
-        ],
+        ),
       ),
     );
   }
@@ -378,9 +452,21 @@ class _AsmrInfoChip extends StatelessWidget {
   }
 }
 
-String _joinValues(List<String> values) {
-  final filtered = values.where((value) => value.trim().isNotEmpty).toList();
-  return filtered.isEmpty ? '' : filtered.join('、');
+Future<void> _copyText(BuildContext context, String value) async {
+  final text = value.trim();
+  if (text.isEmpty) {
+    return;
+  }
+  await Clipboard.setData(ClipboardData(text: text));
+  if (!context.mounted) {
+    return;
+  }
+  showAppSnackBar(
+    context,
+    '已复制：$text',
+    tone: AppFeedbackTone.success,
+    icon: Icons.copy_rounded,
+  );
 }
 
 String _formatDate(DateTime? value) {

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../models/asmr_models.dart';
@@ -10,8 +11,6 @@ import '../services/asmr_library_controller.dart';
 import '../widgets/app_feedback.dart';
 import '../widgets/library_like_cards.dart';
 import '../widgets/swipe_reveal_card.dart';
-import '../widgets/top_page_header.dart';
-import 'asmr_login_sheet.dart';
 import 'asmr_work_detail_sheet.dart';
 
 const List<_AsmrCategorySpec> _asmrCategories = <_AsmrCategorySpec>[
@@ -96,6 +95,7 @@ class _AsmrTabState extends State<AsmrTab>
     if (!mounted || _tabController.indexIsChanging) {
       return;
     }
+    setState(() {});
     unawaited(_ensureCategoryLoaded(_currentCategory));
   }
 
@@ -171,87 +171,156 @@ class _AsmrTabState extends State<AsmrTab>
   Widget build(BuildContext context) {
     super.build(context);
     final controller = context.watch<AsmrLibraryController>();
-    final authSession = controller.authSession;
     final currentCategory = _currentCategory;
-    final currentWorks = controller.filteredWorksFor(
-      currentCategory,
-      searchQuery: _searchQuery,
-    );
-    final totalCount = controller.totalCountFor(currentCategory);
-    final subtitleParts = <String>[
-      authSession.isLoggedIn
-          ? '已登录：${authSession.userName ?? '未命名用户'}'
-          : '登录后可同步收藏',
-      if (_searchQuery.isNotEmpty)
-        '搜索“$_searchQuery” ${currentWorks.length}/$totalCount'
-      else
-        '已显示 ${currentWorks.length}/$totalCount',
-    ];
+    final currentScrollController = _scrollControllers[currentCategory]!;
+    final currentCategoryLabel = _asmrCategories[_tabController.index].label;
 
     return Column(
       children: [
-        TopPageHeader(
-          icon: Icons.podcasts_rounded,
-          title: 'ASMR.ONE',
-          subtitle: subtitleParts.join(' · '),
-          trailing: FilledButton.tonalIcon(
-            onPressed: () => showAsmrLoginSheet(context),
-            icon: Icon(
-              authSession.isLoggedIn
-                  ? Icons.verified_user_rounded
-                  : Icons.login_rounded,
-            ),
-            label: const Text('登录'),
-          ),
-          additionalChild: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _AsmrSearchBar(
-                controller: _searchController,
-                query: _searchQuery,
-                onChanged: _onSearchChanged,
-                onClear: () {
-                  _searchController.clear();
-                  _searchDebounceTimer?.cancel();
-                  if (_searchQuery.isEmpty) {
-                    return;
-                  }
-                  setState(() {
-                    _searchQuery = '';
-                  });
-                  unawaited(_refreshCurrentCategory());
-                },
+        SafeArea(
+          bottom: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'ASMR.ONE',
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: -0.6,
+                ),
               ),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: TabBar(
-                  controller: _tabController,
-                  isScrollable: true,
-                  tabAlignment: TabAlignment.start,
-                  dividerColor: Colors.transparent,
-                  tabs: [
-                    for (final category in _asmrCategories)
-                      Tab(text: category.label),
-                  ],
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surfaceContainerHigh,
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                currentCategoryLabel,
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+          ),
+        ),
+        _AsmrSearchBar(
+          controller: _searchController,
+          query: _searchQuery,
+          onChanged: _onSearchChanged,
+          onClear: () {
+            _searchController.clear();
+            _searchDebounceTimer?.cancel();
+            if (_searchQuery.isEmpty) {
+              return;
+            }
+            setState(() {
+              _searchQuery = '';
+            });
+            unawaited(_refreshCurrentCategory());
+          },
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                for (
+                  var index = 0;
+                  index < _asmrCategories.length;
+                  index++
+                ) ...[
+                  if (index > 0) const SizedBox(width: 8),
+                  _AsmrCategoryButton(
+                    label: _asmrCategories[index].label,
+                    selected: _tabController.index == index,
+                    onTap: () {
+                      if (_tabController.index == index) {
+                        return;
+                      }
+                      _tabController.animateTo(index);
+                    },
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+        Expanded(
+          child: Stack(
+            children: [
+              controller.initialized
+                  ? TabBarView(
+                      controller: _tabController,
+                      children: [
+                        for (final category in _asmrCategories)
+                          _AsmrCategoryList(
+                            category: category.type,
+                            scrollController:
+                                _scrollControllers[category.type]!,
+                            searchQuery: _searchQuery,
+                          ),
+                      ],
+                    )
+                  : const Center(child: CircularProgressIndicator()),
+              Positioned(
+                right: 16,
+                bottom: 18,
+                child: AnimatedBuilder(
+                  animation: currentScrollController,
+                  builder: (context, _) {
+                    final visible =
+                        currentScrollController.hasClients &&
+                        currentScrollController.offset > 220;
+                    return IgnorePointer(
+                      ignoring: !visible,
+                      child: AnimatedOpacity(
+                        opacity: visible ? 1 : 0,
+                        duration: const Duration(milliseconds: 180),
+                        curve: Curves.easeOutCubic,
+                        child: AnimatedScale(
+                          scale: visible ? 1 : 0.92,
+                          duration: const Duration(milliseconds: 180),
+                          curve: Curves.easeOutCubic,
+                          child: FloatingActionButton.small(
+                            heroTag: 'asmr-one-back-to-top',
+                            backgroundColor: Theme.of(
+                              context,
+                            ).colorScheme.surface.withValues(alpha: 0.72),
+                            foregroundColor: Theme.of(
+                              context,
+                            ).colorScheme.onSurface,
+                            elevation: 0,
+                            onPressed: () {
+                              if (!currentScrollController.hasClients) {
+                                return;
+                              }
+                              currentScrollController.animateTo(
+                                0,
+                                duration: const Duration(milliseconds: 320),
+                                curve: Curves.easeOutCubic,
+                              );
+                            },
+                            child: const Icon(Icons.arrow_upward_rounded),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
                 ),
               ),
             ],
           ),
-        ),
-        Expanded(
-          child: controller.initialized
-              ? TabBarView(
-                  controller: _tabController,
-                  children: [
-                    for (final category in _asmrCategories)
-                      _AsmrCategoryList(
-                        category: category.type,
-                        scrollController: _scrollControllers[category.type]!,
-                        searchQuery: _searchQuery,
-                      ),
-                  ],
-                )
-              : const Center(child: CircularProgressIndicator()),
         ),
       ],
     );
@@ -274,6 +343,7 @@ class _AsmrSearchBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final hasText = query.isNotEmpty;
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
       child: SizedBox(
@@ -289,9 +359,8 @@ class _AsmrSearchBar extends StatelessWidget {
               color: cs.onSurfaceVariant,
               size: 18,
             ),
-            suffixIcon: query.isEmpty
-                ? null
-                : IconButton(
+            suffixIcon: hasText
+                ? IconButton(
                     icon: const Icon(Icons.clear_rounded, size: 18),
                     onPressed: onClear,
                     color: cs.onSurfaceVariant,
@@ -300,7 +369,8 @@ class _AsmrSearchBar extends StatelessWidget {
                       minWidth: 32,
                       minHeight: 32,
                     ),
-                  ),
+                  )
+                : null,
             hintText: '搜索作品名称、标签、声优、社团、RJ号',
             hintStyle: Theme.of(
               context,
@@ -353,18 +423,27 @@ class _AsmrCategoryList extends StatelessWidget {
     final hasMore = controller.hasMoreCategory(category);
     final lastError = controller.lastError;
     final theme = Theme.of(context);
-
     return RefreshIndicator(
-      onRefresh: () => context.read<AsmrLibraryController>().refreshCategory(
-        category,
-        searchQuery: searchQuery,
-      ),
+      color: Theme.of(context).colorScheme.primary,
+      backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+      displacement: 32,
+      triggerMode: RefreshIndicatorTriggerMode.anywhere,
+      onRefresh: () async {
+        unawaited(HapticFeedback.mediumImpact());
+        unawaited(
+          context.read<AsmrLibraryController>().refreshCategory(
+            category,
+            searchQuery: searchQuery,
+          ),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 300));
+      },
       child: ListView.builder(
         controller: scrollController,
         physics: const AlwaysScrollableScrollPhysics(
           parent: BouncingScrollPhysics(),
         ),
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+        padding: const EdgeInsets.fromLTRB(16, 6, 16, 24),
         itemCount: works.isEmpty
             ? 1
             : works.length + ((isLoadingMore || hasMore) ? 1 : 0),
@@ -416,6 +495,52 @@ class _AsmrCategoryList extends StatelessWidget {
             ),
           );
         },
+      ),
+    );
+  }
+}
+
+class _AsmrCategoryButton extends StatelessWidget {
+  const _AsmrCategoryButton({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Material(
+      color: selected ? cs.primaryContainer : cs.surfaceContainerHigh,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(
+          color: selected
+              ? cs.primary.withValues(alpha: 0.45)
+              : cs.outlineVariant,
+        ),
+      ),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: SizedBox(
+          height: 34,
+          child: Center(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                color: selected ? cs.onPrimaryContainer : cs.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -904,14 +1029,14 @@ List<LibraryLikeInfoLineData> _workInfoLines(AsmrWork work) {
     if (work.rjCode.trim().isNotEmpty)
       LibraryLikeInfoLineData('RJ', work.rjCode),
     if (work.voiceActors.isNotEmpty)
-      LibraryLikeInfoLineData('CV', work.voiceActors.join('，')),
+      LibraryLikeInfoLineData('CV', work.voiceActors.join('、')),
     if (work.circleName.trim().isNotEmpty)
       LibraryLikeInfoLineData('社团', work.circleName.trim()),
     if (work.tags.isNotEmpty)
       LibraryLikeInfoLineData(
         '标签',
-        work.tags.join('，'),
-        lines: shouldReserveTwoLibraryLikeInfoLines(work.tags.join('，'))
+        work.tags.join('、'),
+        lines: shouldReserveTwoLibraryLikeInfoLines(work.tags.join('、'))
             ? 2
             : 1,
       ),

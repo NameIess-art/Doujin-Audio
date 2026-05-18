@@ -54,7 +54,6 @@ class AsmrLibraryController extends ChangeNotifier {
 
   bool get initialized => _initialized;
   Object? get lastError => _lastError;
-  AsmrAuthSession get authSession => _authSession;
 
   bool isLoadingCategory(AsmrCategoryType category) =>
       _loadingByCategory[category] ?? false;
@@ -112,38 +111,6 @@ class AsmrLibraryController extends ChangeNotifier {
     if (_authSession.isLoggedIn) {
       await syncAuthSession();
     }
-  }
-
-  Future<void> updateAuthToken(String? token) async {
-    final trimmed = token?.trim();
-    _authSession = AsmrAuthSession(
-      token: trimmed?.isEmpty == true ? null : trimmed,
-    );
-    await AsmrPreferences.saveAuthSession(_authSession);
-    notifyListeners();
-    if (_authSession.isLoggedIn) {
-      await syncAuthSession();
-    }
-  }
-
-  Future<void> login({
-    required String userName,
-    required String password,
-  }) async {
-    final session = await _apiService.login(
-      userName: userName,
-      password: password,
-    );
-    _authSession = session;
-    await AsmrPreferences.saveAuthSession(_authSession);
-    notifyListeners();
-    await syncAuthSession();
-  }
-
-  Future<void> clearAuthSession() async {
-    _authSession = const AsmrAuthSession();
-    await AsmrPreferences.saveAuthSession(_authSession);
-    notifyListeners();
   }
 
   Future<void> syncAuthSession() async {
@@ -492,7 +459,14 @@ class AsmrLibraryController extends ChangeNotifier {
     void visit(Iterable<AsmrTrackFile> nodes) {
       for (final node in nodes) {
         if (node.isAudio) {
-          final track = node.toMusicTrack(groupTitleOverride: work.title);
+          final track = node.toMusicTrack(
+            groupTitleOverride: work.title,
+            remoteCoverUrl: work.mainCoverUrl.isNotEmpty
+                ? work.mainCoverUrl
+                : work.coverUrl,
+            remoteMetadataKind: 'asmr.one',
+            remoteMetadata: work.toJson(),
+          );
           if (track.path.isNotEmpty) {
             result.add(track);
           }
@@ -647,7 +621,14 @@ class AsmrLibraryController extends ChangeNotifier {
     if (tracks.isEmpty) {
       return;
     }
-    final targetTrack = target.toMusicTrack(groupTitleOverride: work.title);
+    final targetTrack = target.toMusicTrack(
+      groupTitleOverride: work.title,
+      remoteCoverUrl: work.mainCoverUrl.isNotEmpty
+          ? work.mainCoverUrl
+          : work.coverUrl,
+      remoteMetadataKind: 'asmr.one',
+      remoteMetadata: work.toJson(),
+    );
     final targetIndex = tracks.indexWhere(
       (track) => track.path == targetTrack.path,
     );

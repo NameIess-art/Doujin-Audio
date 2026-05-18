@@ -17,6 +17,9 @@ class MusicTrack {
     this.coverCachePath,
     this.lyricsPath,
     this.manualCoverPath,
+    this.remoteCoverUrl,
+    this.remoteMetadataKind,
+    this.remoteMetadata,
     this.duration = Duration.zero,
   });
 
@@ -37,6 +40,9 @@ class MusicTrack {
   final String? coverCachePath;
   final String? lyricsPath;
   final String? manualCoverPath;
+  final String? remoteCoverUrl;
+  final String? remoteMetadataKind;
+  final Map<String, Object?>? remoteMetadata;
   final Duration duration;
 
   MusicTrack copyWith({
@@ -48,6 +54,9 @@ class MusicTrack {
     String? coverCachePath,
     String? lyricsPath,
     String? manualCoverPath,
+    String? remoteCoverUrl,
+    String? remoteMetadataKind,
+    Map<String, Object?>? remoteMetadata,
     bool? isVideo,
   }) => MusicTrack(
     path: path,
@@ -67,6 +76,9 @@ class MusicTrack {
     coverCachePath: coverCachePath ?? this.coverCachePath,
     lyricsPath: lyricsPath ?? this.lyricsPath,
     manualCoverPath: manualCoverPath ?? this.manualCoverPath,
+    remoteCoverUrl: remoteCoverUrl ?? this.remoteCoverUrl,
+    remoteMetadataKind: remoteMetadataKind ?? this.remoteMetadataKind,
+    remoteMetadata: remoteMetadata ?? this.remoteMetadata,
     duration: duration ?? this.duration,
   );
 
@@ -88,6 +100,9 @@ class MusicTrack {
     'coverCachePath': coverCachePath,
     'lyricsPath': lyricsPath,
     'manualCoverPath': manualCoverPath,
+    'remoteCoverUrl': remoteCoverUrl,
+    'remoteMetadataKind': remoteMetadataKind,
+    'remoteMetadata': remoteMetadata,
     'durationMs': duration.inMilliseconds,
   };
 
@@ -113,6 +128,9 @@ class MusicTrack {
     coverCachePath: json['coverCachePath'] as String?,
     lyricsPath: json['lyricsPath'] as String?,
     manualCoverPath: json['manualCoverPath'] as String?,
+    remoteCoverUrl: json['remoteCoverUrl'] as String?,
+    remoteMetadataKind: json['remoteMetadataKind'] as String?,
+    remoteMetadata: json['remoteMetadata'] as Map<String, Object?>?,
     duration: Duration(
       milliseconds: (json['durationMs'] as num?)?.toInt() ?? 0,
     ),

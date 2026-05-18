@@ -270,8 +270,8 @@ class _SessionListCardState extends State<_SessionListCard> {
                     child: Row(
                       children: [
                         _SessionCoverThumbnail(
+                          track: track,
                           coverPathFuture: _coverPathFuture!,
-                          title: displayName,
                         ),
                         const SizedBox(width: 14),
                         Expanded(

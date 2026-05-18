@@ -12,25 +12,6 @@ class AsmrApiService {
   final HttpClient _httpClient;
   final Uri _baseUri;
 
-  Future<AsmrAuthSession> login({
-    required String userName,
-    required String password,
-  }) async {
-    final response = await _sendJsonRequest(
-      method: 'POST',
-      path: '/api/auth/me',
-      body: <String, Object?>{'name': userName, 'password': password},
-      allowNullAuthorizationHeader: true,
-    );
-    final token = (response['token'] as String?)?.trim();
-    final user = response['user'] as Map<String, dynamic>? ?? response;
-    return AsmrAuthSession(
-      token: token?.isEmpty == true ? null : token,
-      userId: (user['id'] as num?)?.toInt(),
-      userName: (user['name'] as String?) ?? (user['username'] as String?),
-    );
-  }
-
   Future<AsmrAuthSession> fetchAuthSession(String token) async {
     final response = await _sendJsonRequest(
       method: 'GET',

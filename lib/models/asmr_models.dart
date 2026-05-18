@@ -316,7 +316,12 @@ class AsmrTrackFile {
   bool get isFolder => type == 'folder';
   bool get isAudio => type == 'audio';
 
-  MusicTrack toMusicTrack({String? groupTitleOverride}) {
+  MusicTrack toMusicTrack({
+    String? groupTitleOverride,
+    String? remoteCoverUrl,
+    String? remoteMetadataKind,
+    Map<String, Object?>? remoteMetadata,
+  }) {
     final playbackUrl = (lowQualityUrl ?? streamUrl ?? downloadUrl ?? '')
         .trim();
     return MusicTrack(
@@ -326,6 +331,9 @@ class AsmrTrackFile {
       groupTitle: groupTitleOverride ?? workTitle,
       groupSubtitle: sourceId,
       isSingle: false,
+      remoteCoverUrl: remoteCoverUrl,
+      remoteMetadataKind: remoteMetadataKind,
+      remoteMetadata: remoteMetadata,
       duration: duration,
       fileSizeBytes: size,
     );

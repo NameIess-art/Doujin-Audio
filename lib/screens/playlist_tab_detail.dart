@@ -281,8 +281,8 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
         _lastCoverGeneration != currentCoverGen) {
       _lastTrackPath = detailState.trackPath;
       _lastCoverGeneration = currentCoverGen;
-      final track = provider.trackByPath(detailState.trackPath);
-      _coverPathFuture = _coverFutureForTrack(provider, track);
+      final detailTrack = provider.trackByPath(detailState.trackPath);
+      _coverPathFuture = _coverFutureForTrack(provider, detailTrack);
     }
     final coverPathFuture = _coverPathFuture!;
     _primeCoverArtwork(coverPathFuture);
@@ -596,6 +596,7 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
     final onVerticalDragCancel = widget.onVerticalDragCancel;
 
     final cs = Theme.of(context).colorScheme;
+    final track = provider.trackByPath(session.currentTrackPath);
 
     return Material(
       color: cs.surface,
@@ -780,17 +781,32 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                                     ],
                                     onSelected: (value) {
                                       if (value == 'audio_detail') {
-                                        final target = provider
-                                            .audioDetailTargetForSession(
-                                              session.id,
-                                            );
-                                        if (target != null) {
+                                        if (track?.remoteMetadataKind ==
+                                                'asmr.one' &&
+                                            track?.remoteMetadata != null) {
                                           unawaited(
-                                            showAudioDetailSheet(
+                                            showAsmrWorkDetailSheet(
                                               context,
-                                              target,
+                                              AsmrWork.fromJson(
+                                                Map<String, dynamic>.from(
+                                                  track!.remoteMetadata!,
+                                                ),
+                                              ),
                                             ),
                                           );
+                                        } else {
+                                          final target = provider
+                                              .audioDetailTargetForSession(
+                                                session.id,
+                                              );
+                                          if (target != null) {
+                                            unawaited(
+                                              showAudioDetailSheet(
+                                                context,
+                                                target,
+                                              ),
+                                            );
+                                          }
                                         }
                                         return;
                                       }
@@ -841,6 +857,7 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                                   ),
                                   child: _SessionHeroArtwork(
                                     height: constraints.maxHeight,
+                                    track: track,
                                     coverPathFuture: coverPathFuture,
                                   ),
                                 ),

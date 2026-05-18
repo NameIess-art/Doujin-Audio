@@ -1,8 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:provider/provider.dart';
-
-import '../i18n/app_language_provider.dart';
 
 class SwipeRevealCard extends StatefulWidget {
   const SwipeRevealCard({
@@ -18,6 +15,9 @@ class SwipeRevealCard extends StatefulWidget {
     this.secondaryActionLabel,
     this.secondaryActionTooltip,
     this.secondaryActionIcon = Icons.info_outline_rounded,
+    this.primaryActionIcon = Icons.delete_outline_rounded,
+    this.primaryActionTooltip,
+    this.destructive = true,
     this.verticalActions = false,
   });
 
@@ -32,6 +32,9 @@ class SwipeRevealCard extends StatefulWidget {
   final String? secondaryActionLabel;
   final String? secondaryActionTooltip;
   final IconData secondaryActionIcon;
+  final IconData primaryActionIcon;
+  final String? primaryActionTooltip;
+  final bool destructive;
   final bool verticalActions;
 
   @override
@@ -163,9 +166,19 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
 
   @override
   Widget build(BuildContext context) {
-    final i18n = context.watch<AppLanguageProvider>();
     final cs = Theme.of(context).colorScheme;
     final revealProgress = (_revealedWidth / _actionWidth).clamp(0.0, 1.0);
+    final paneStartColor = widget.destructive
+        ? cs.errorContainer.withValues(alpha: 0.94)
+        : cs.primaryContainer.withValues(alpha: 0.94);
+    final paneEndColor = widget.destructive
+        ? cs.errorContainer.withValues(alpha: 0.82)
+        : cs.secondaryContainer.withValues(alpha: 0.82);
+    final accentColor = widget.destructive ? cs.error : cs.primary;
+    final accentOnColor = widget.destructive ? cs.onError : cs.onPrimary;
+    final accentContainerOnColor = widget.destructive
+        ? cs.onErrorContainer
+        : cs.onPrimaryContainer;
     final actionLabel = _hasSecondaryAction
         ? '${widget.secondaryActionLabel ?? ''} / ${widget.actionLabel}'
         : widget.actionLabel;
@@ -193,10 +206,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                     gradient: LinearGradient(
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
-                      colors: [
-                        cs.errorContainer.withValues(alpha: 0.94),
-                        cs.errorContainer.withValues(alpha: 0.82),
-                      ],
+                      colors: [paneStartColor, paneEndColor],
                     ),
                     shape: widget.shape,
                   ),
@@ -225,10 +235,12 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                                     vertical: 5,
                                   ),
                                   decoration: BoxDecoration(
-                                    color: cs.error.withValues(alpha: 0.12),
+                                    color: accentColor.withValues(alpha: 0.12),
                                     borderRadius: BorderRadius.circular(999),
                                     border: Border.all(
-                                      color: cs.error.withValues(alpha: 0.18),
+                                      color: accentColor.withValues(
+                                        alpha: 0.18,
+                                      ),
                                     ),
                                   ),
                                   child: Row(
@@ -237,7 +249,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                                       Icon(
                                         Icons.swipe_left_rounded,
                                         size: 14,
-                                        color: cs.error,
+                                        color: accentColor,
                                       ),
                                       const SizedBox(width: 4),
                                       Text(
@@ -246,7 +258,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                                             .textTheme
                                             .labelMedium
                                             ?.copyWith(
-                                              color: cs.error,
+                                              color: accentColor,
                                               fontWeight: FontWeight.w800,
                                             ),
                                       ),
@@ -260,7 +272,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                                   overflow: TextOverflow.ellipsis,
                                   style: Theme.of(context).textTheme.bodySmall
                                       ?.copyWith(
-                                        color: cs.onErrorContainer,
+                                        color: accentContainerOnColor,
                                         fontWeight: FontWeight.w600,
                                       ),
                                 ),
@@ -304,10 +316,13 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                                           _closePane();
                                           widget.onRemove();
                                         },
-                                        backgroundColor: cs.error,
-                                        foregroundColor: cs.onError,
-                                        tooltip: i18n.tr('remove'),
-                                        icon: Icons.delete_outline_rounded,
+                                        backgroundColor: accentColor,
+                                        foregroundColor: accentOnColor,
+                                        tooltip:
+                                            widget.primaryActionTooltip ??
+                                            widget.removeTooltip,
+                                        icon: widget.primaryActionIcon,
+                                        tonal: !widget.destructive,
                                       ),
                                     ],
                                   )
@@ -340,10 +355,13 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                                           _closePane();
                                           widget.onRemove();
                                         },
-                                        backgroundColor: cs.error,
-                                        foregroundColor: cs.onError,
-                                        tooltip: i18n.tr('remove'),
-                                        icon: Icons.delete_outline_rounded,
+                                        backgroundColor: accentColor,
+                                        foregroundColor: accentOnColor,
+                                        tooltip:
+                                            widget.primaryActionTooltip ??
+                                            widget.removeTooltip,
+                                        icon: widget.primaryActionIcon,
+                                        tonal: !widget.destructive,
                                       ),
                                     ],
                                   ),

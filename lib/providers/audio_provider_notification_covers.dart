@@ -52,6 +52,9 @@ String? _resolveCoverScopeFolderPath(
   if (pathValue == null || pathValue.isEmpty) {
     return null;
   }
+  if (PathMatcher.isRemoteUri(pathValue)) {
+    return null;
+  }
 
   final groupKey = track?.groupKey.trim() ?? '';
 
@@ -204,6 +207,9 @@ extension AudioProviderNotificationCovers on AudioProvider {
   String? _notificationCoverSearchKey(MusicTrack? track, {String? trackPath}) {
     final pathValue = track?.path ?? trackPath;
     if (pathValue == null || pathValue.isEmpty) {
+      return null;
+    }
+    if (PathMatcher.isRemoteUri(pathValue)) {
       return null;
     }
     if (track?.isSingle == true && track?.isVideo == true) {

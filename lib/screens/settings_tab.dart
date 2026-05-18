@@ -89,8 +89,8 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
   void _handleScrollToTopSignal() {
     if (!mounted) return;
     final index = _scrollToTopListenable?.value;
-    if (index == 2) {
-      // 2 is SettingsTab
+    if (index == 3) {
+      // 3 is SettingsTab after inserting ASMR.ONE on the left.
       _jumpSettingsToTop();
     }
   }

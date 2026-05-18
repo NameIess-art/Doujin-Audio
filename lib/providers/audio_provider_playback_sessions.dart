@@ -14,10 +14,36 @@ extension AudioProviderPlaybackSessions on AudioProvider {
     );
   }
 
+  Future<void> spawnSessionWithQueue(
+    List<MusicTrack> tracks, {
+    int startIndex = 0,
+    bool? autoPlay,
+    SessionLoopMode loopMode = SessionLoopMode.folderSequential,
+  }) async {
+    if (tracks.isEmpty) return;
+    final clampedStartIndex = startIndex.clamp(0, tracks.length - 1);
+    final startTrack = tracks[clampedStartIndex];
+    final session = _createSessionForTrack(
+      startTrack,
+      loopMode: loopMode,
+      customQueueTracks: List<MusicTrack>.unmodifiable(tracks),
+    );
+    _registerSession(session);
+    _scheduleSessionPersistence();
+    unawaited(
+      _enqueueSessionPreparation(
+        session,
+        nextPath: startTrack.path,
+        autoPlay: autoPlay ?? _autoPlayAddedSessions,
+      ),
+    );
+  }
+
   PlaybackSession _createSessionForTrack(
     MusicTrack track, {
     SessionLoopMode loopMode = SessionLoopMode.folderSequential,
     double volume = 1.0,
+    List<MusicTrack>? customQueueTracks,
   }) {
     return PlaybackSession(
       id: _nextSessionId(),
@@ -29,6 +55,7 @@ extension AudioProviderPlaybackSessions on AudioProvider {
       volume: volume,
       createdAt: DateTime.now(),
       state: PlayerState(false, ProcessingState.idle),
+      customQueueTracks: customQueueTracks,
     );
   }
 
@@ -170,18 +197,22 @@ extension AudioProviderPlaybackSessions on AudioProvider {
 
       session.currentTrackPath = resolvedNextPath;
       session.lastPersistedPositionBucket = 0;
-      _ensureSubtitleTrackLoaded(resolvedNextPath);
-      _refreshNotificationSubtitleForSession(
-        session,
-        position: Duration.zero,
-        syncNotification: false,
-      );
+      if (!PathMatcher.isRemoteUri(resolvedNextPath)) {
+        _ensureSubtitleTrackLoaded(resolvedNextPath);
+        _refreshNotificationSubtitleForSession(
+          session,
+          position: Duration.zero,
+          syncNotification: false,
+        );
+      }
 
-      final uri = PathMatcher.isContentUri(resolvedNextPath)
+      final uri =
+          PathMatcher.isContentUri(resolvedNextPath) ||
+              PathMatcher.isRemoteUri(resolvedNextPath)
           ? Uri.parse(resolvedNextPath)
           : Uri.file(resolvedNextPath);
 
-      final track = trackByPath(resolvedNextPath);
+      final track = _sessionTrackForPath(session, resolvedNextPath);
       final coverPath = await _resolveNotificationCoverPathForTrack(track);
 
       final isNewTrack = session.loadedPath != resolvedNextPath;
@@ -311,6 +342,15 @@ extension AudioProviderPlaybackSessions on AudioProvider {
     required String currentPath,
   }) {
     final resolvedCurrentPath = _resolveRetargetedPath(currentPath);
+    final customQueueTracks = session.customQueueTracks;
+    if (customQueueTracks != null && customQueueTracks.isNotEmpty) {
+      if (session.loopMode == SessionLoopMode.single) {
+        return <String>[resolvedCurrentPath];
+      }
+      return customQueueTracks
+          .map((track) => _resolveRetargetedPath(track.path))
+          .toList(growable: false);
+    }
     final currentTrack = trackByPath(resolvedCurrentPath);
     switch (session.loopMode) {
       case SessionLoopMode.single:
@@ -333,11 +373,13 @@ extension AudioProviderPlaybackSessions on AudioProvider {
 
   Map<String, Object?> _nativePlaybackQueueItemForPath(String trackPath) {
     final resolvedTrackPath = _resolveRetargetedPath(trackPath);
-    final track = trackByPath(resolvedTrackPath);
+    final track = _trackForAnyPath(resolvedTrackPath);
     final subtitle = track?.groupTitle;
     return <String, Object?>{
       'path': resolvedTrackPath,
-      'uri': PathMatcher.isContentUri(resolvedTrackPath)
+      'uri':
+          PathMatcher.isContentUri(resolvedTrackPath) ||
+              PathMatcher.isRemoteUri(resolvedTrackPath)
           ? resolvedTrackPath
           : Uri.file(resolvedTrackPath).toString(),
       'title':
@@ -346,5 +388,30 @@ extension AudioProviderPlaybackSessions on AudioProvider {
       // ignore: use_null_aware_elements
       if (subtitle != null) 'subtitle': subtitle,
     };
+  }
+
+  MusicTrack? _trackForAnyPath(String trackPath) {
+    final resolvedPath = _resolveRetargetedPath(trackPath);
+    final libraryTrack = trackByPath(resolvedPath);
+    if (libraryTrack != null) {
+      return libraryTrack;
+    }
+    for (final session in _sessions.values) {
+      final track = _sessionTrackForPath(session, resolvedPath);
+      if (track != null) {
+        return track;
+      }
+    }
+    return null;
+  }
+
+  MusicTrack? _sessionTrackForPath(PlaybackSession session, String trackPath) {
+    final resolvedPath = _resolveRetargetedPath(trackPath);
+    for (final track in session.customQueueTracks ?? const <MusicTrack>[]) {
+      if (PathMatcher.equalsNormalized(track.path, resolvedPath)) {
+        return track;
+      }
+    }
+    return trackByPath(resolvedPath);
   }
 }

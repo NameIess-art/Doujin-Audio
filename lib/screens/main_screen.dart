@@ -17,6 +17,7 @@ import '../services/app_preferences.dart';
 import '../services/audio_state_services.dart';
 import '../services/permission_action_controller.dart';
 import '../services/platform_channels.dart';
+import 'asmr_tab.dart';
 import 'library_tab.dart';
 import 'playlist_tab.dart';
 import 'settings_tab.dart';
@@ -53,7 +54,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
     NotificationsChannel.name,
   );
 
-  int _currentIndex = 0;
+  int _currentIndex = 1;
   late final PageController _pageController;
   late final List<Widget> _pages;
   final GlobalKey _bottomDockKey = GlobalKey();
@@ -84,6 +85,11 @@ class _MainScreenState extends ConsumerState<MainScreen>
 
   static const List<_MainDestination> _destinations = [
     _MainDestination(
+      icon: Icons.podcasts_outlined,
+      selectedIcon: Icons.podcasts_rounded,
+      labelKey: 'ASMR.ONE',
+    ),
+    _MainDestination(
       icon: Icons.library_music_outlined,
       selectedIcon: Icons.library_music_rounded,
       labelKey: 'nav_library',
@@ -104,11 +110,12 @@ class _MainScreenState extends ConsumerState<MainScreen>
   void initState() {
     super.initState();
     _pages = [
+      const AsmrTab(),
       const LibraryTab(),
       PlaylistTab(onTimerTap: _openTimerFromPlaylist),
       const SettingsTab(),
     ];
-    _pageController = PageController();
+    _pageController = PageController(initialPage: _currentIndex);
     WidgetsBinding.instance.addObserver(this);
     _notificationsChannel.setMethodCallHandler(_handleNotificationsChannelCall);
     WidgetsBinding.instance.addPostFrameCallback((_) {

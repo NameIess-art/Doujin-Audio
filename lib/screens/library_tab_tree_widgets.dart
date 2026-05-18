@@ -1,8 +1,5 @@
 part of 'library_tab.dart';
 
-const double _libraryDetailInfoLineGap = 4;
-const double _singleAudioTitleInfoGap = 8;
-
 class _LibraryTreeItem extends StatelessWidget {
   const _LibraryTreeItem({
     super.key,
@@ -703,118 +700,14 @@ class _LibraryFeaturedCardContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final i18n = context.watch<AppLanguageProvider>();
-    final cs = Theme.of(context).colorScheme;
-    final titleStyle =
-        Theme.of(context).textTheme.titleMedium?.copyWith(
-          fontWeight: FontWeight.w900,
-          fontSize: 14,
-          height: 1.06,
-          color: cs.onSurface,
-        ) ??
-        const TextStyle();
-    final infoStyle =
-        Theme.of(context).textTheme.labelSmall?.copyWith(
-          fontWeight: FontWeight.w700,
-          fontSize: 10,
-          height: 1.05,
-          color: cs.onSurface.withValues(alpha: 0.82),
-        ) ??
-        TextStyle(
-          fontWeight: FontWeight.w700,
-          fontSize: 10,
-          height: 1.05,
-          color: cs.onSurface.withValues(alpha: 0.82),
-        );
-    final lines = _audioDetailInfoLines(detail, detailLoading);
-
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        const infoBlockHeight = 96.0;
-        const titleBlockHeight = 38.0;
-        const coverWidth = infoBlockHeight * 1.25;
-        return SizedBox(
-          height: 140,
-          child: Column(
-            children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  coverBuilder(coverWidth),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: SizedBox(
-                      height: infoBlockHeight,
-                      child: Column(
-                        children: [
-                          for (
-                            var index = 0;
-                            index < lines.length;
-                            index++
-                          ) ...[
-                            if (index > 0)
-                              const SizedBox(height: _libraryDetailInfoLineGap),
-                            _LibraryDetailInfoLine(
-                              label: lines[index].label,
-                              text: lines[index].text,
-                              style: infoStyle,
-                              loading: false,
-                              lines: lines[index].lines,
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              SizedBox(
-                height: titleBlockHeight,
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: _LibraryTwoLineMarqueeText(
-                        text: title,
-                        style: titleStyle,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    IconButton(
-                      onPressed: onPlay,
-                      visualDensity: VisualDensity.compact,
-                      tooltip: i18n.tr('play'),
-                      style: IconButton.styleFrom(
-                        foregroundColor: cs.primary,
-                        minimumSize: const Size(40, 44),
-                        maximumSize: const Size(40, 44),
-                        padding: EdgeInsets.zero,
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
-                      icon: const Icon(Icons.add_circle_rounded, size: 25),
-                    ),
-                    if (showExpandIndicator)
-                      Padding(
-                        padding: const EdgeInsets.only(right: 2),
-                        child: IgnorePointer(
-                          child: AnimatedRotation(
-                            turns: expanded ? 0.5 : 0,
-                            duration: const Duration(milliseconds: 180),
-                            curve: Curves.easeOutCubic,
-                            child: Icon(
-                              Icons.expand_more_rounded,
-                              color: cs.onSurfaceVariant,
-                              size: 21,
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        );
-      },
+    return LibraryLikeFeaturedCardContent(
+      title: title,
+      lines: _audioDetailInfoLines(detail, detailLoading),
+      coverBuilder: coverBuilder,
+      onPlay: onPlay,
+      expanded: expanded,
+      showExpandIndicator: showExpandIndicator,
+      playTooltip: i18n.tr('play'),
     );
   }
 }
@@ -832,56 +725,9 @@ class _SingleAudioFileCardContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final titleStyle =
-        Theme.of(context).textTheme.titleMedium?.copyWith(
-          fontWeight: FontWeight.w900,
-          fontSize: 14,
-          height: 1.06,
-          color: cs.onSurface,
-        ) ??
-        const TextStyle();
-    final infoStyle =
-        Theme.of(context).textTheme.labelSmall?.copyWith(
-          fontWeight: FontWeight.w700,
-          fontSize: 10,
-          height: 1.05,
-          color: cs.onSurface.withValues(alpha: 0.82),
-        ) ??
-        TextStyle(
-          fontWeight: FontWeight.w700,
-          fontSize: 10,
-          height: 1.05,
-          color: cs.onSurface.withValues(alpha: 0.82),
-        );
-    final d = detail;
-    final lines = _audioDetailInfoLines(d, detailLoading);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        _LibraryTwoLineMarqueeText(text: title, style: titleStyle),
-        if (lines.isNotEmpty) ...[
-          const SizedBox(height: _singleAudioTitleInfoGap),
-          Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              for (var i = 0; i < lines.length; i++) ...[
-                if (i > 0) const SizedBox(height: _libraryDetailInfoLineGap),
-                _LibraryDetailInfoLine(
-                  label: lines[i].label,
-                  text: lines[i].text,
-                  style: infoStyle,
-                  loading: false,
-                  lines: lines[i].lines,
-                ),
-              ],
-            ],
-          ),
-        ],
-      ],
+    return LibraryLikeSingleAudioCardContent(
+      title: title,
+      lines: _audioDetailInfoLines(detail, detailLoading),
     );
   }
 }
@@ -914,68 +760,8 @@ class _SingleVideoFileCardContent extends StatelessWidget {
   }
 }
 
-class _AudioDetailInfoLineData {
-  const _AudioDetailInfoLineData(this.label, this.text, {this.lines = 1});
-
-  final String label;
-  final String text;
-  final int lines;
-}
-
-class _LibraryDetailInfoLine extends StatelessWidget {
-  const _LibraryDetailInfoLine({
-    required this.label,
-    required this.text,
-    required this.style,
-    required this.loading,
-    this.lines = 1,
-  });
-
-  final String label;
-  final String text;
-  final TextStyle style;
-  final bool loading;
-  final int lines;
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final lineCount = lines.clamp(1, 2);
-    final content = Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(
-          width: 28,
-          child: Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.clip,
-            style: style.copyWith(
-              color: cs.primary,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-        ),
-        const SizedBox(width: 5),
-        Expanded(
-          child: loading
-              ? Align(
-                  alignment: Alignment.centerLeft,
-                  child: Icon(
-                    Icons.hourglass_top_rounded,
-                    size: 12,
-                    color: cs.primary,
-                  ),
-                )
-              : lineCount == 2
-              ? _LibraryTwoLineMarqueeText(text: text, style: style)
-              : MarqueeText(text: text, style: style, scrollSpeed: 24),
-        ),
-      ],
-    );
-
-    return SizedBox(height: lineCount == 2 ? 36 : 16, child: content);
-  }
+class _AudioDetailInfoLineData extends LibraryLikeInfoLineData {
+  const _AudioDetailInfoLineData(super.label, super.text, {super.lines = 1});
 }
 
 List<_AudioDetailInfoLineData> _audioDetailInfoLines(
@@ -1087,71 +873,6 @@ class _LibraryTertiaryInfoLine extends StatelessWidget {
       ),
     );
   }
-}
-
-class _LibraryMarqueeLine extends StatelessWidget {
-  const _LibraryMarqueeLine({required this.text, required this.style});
-
-  final String text;
-  final TextStyle style;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: double.infinity,
-      height: 16,
-      child: MarqueeText(text: text, style: style, scrollSpeed: 26),
-    );
-  }
-}
-
-class _LibraryTwoLineMarqueeText extends StatelessWidget {
-  const _LibraryTwoLineMarqueeText({required this.text, required this.style});
-
-  final String text;
-  final TextStyle style;
-
-  @override
-  Widget build(BuildContext context) {
-    final lines = _splitLibraryName(text);
-    return SizedBox(
-      width: double.infinity,
-      height: 34,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _LibraryMarqueeLine(text: lines.$1, style: style),
-          const SizedBox(height: 2),
-          _LibraryMarqueeLine(text: lines.$2, style: style),
-        ],
-      ),
-    );
-  }
-}
-
-(String, String) _splitLibraryName(String value) {
-  final text = value.trim();
-  if (text.length <= 18) return (text, '');
-
-  final middle = text.length ~/ 2;
-  var splitIndex = middle;
-  var bestDistance = text.length;
-  for (var i = 1; i < text.length - 1; i++) {
-    final char = text[i];
-    if (!RegExp(r'[\s_\-\.・、，,（）()\[\]【】]+').hasMatch(char)) {
-      continue;
-    }
-    final distance = (i - middle).abs();
-    if (distance < bestDistance) {
-      bestDistance = distance;
-      splitIndex = i + 1;
-    }
-  }
-
-  final first = text.substring(0, splitIndex).trim();
-  final second = text.substring(splitIndex).trim();
-  if (first.isEmpty || second.isEmpty) return (text, '');
-  return (first, second);
 }
 
 class _HighlightedText extends StatelessWidget {

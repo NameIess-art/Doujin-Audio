@@ -634,7 +634,10 @@ class _AudioLibraryCategoryEntryTitle extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              _LibraryTwoLineMarqueeText(text: entry.title, style: titleStyle),
+              LibraryLikeTwoLineMarqueeText(
+                text: entry.title,
+                style: titleStyle,
+              ),
               const SizedBox(height: 5),
               _LibrarySecondaryInfoLine(
                 icon: secondaryIcon,

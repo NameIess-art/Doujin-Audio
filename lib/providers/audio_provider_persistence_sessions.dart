@@ -150,6 +150,7 @@ extension AudioProviderPersistenceSessions on AudioProvider {
       final ordered = _sessionOrder
           .map((id) => _sessions[id])
           .whereType<PlaybackSession>()
+          .where((session) => session.customQueueTracks == null)
           .toList();
       final payload = ordered
           .asMap()

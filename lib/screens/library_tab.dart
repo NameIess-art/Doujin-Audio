@@ -26,6 +26,7 @@ import '../widgets/app_feedback.dart';
 import '../widgets/async_cover_image.dart';
 import '../widgets/confirm_action_dialog.dart';
 import '../widgets/content_bound_reorder_area.dart';
+import '../widgets/library_like_cards.dart';
 import '../widgets/marquee_text.dart';
 import '../widgets/mobile_overlay_inset.dart';
 import '../widgets/reorder_auto_scroller.dart';
@@ -158,8 +159,8 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   void _handleScrollToTopSignal() {
     if (!mounted) return;
     final index = _scrollToTopTabListenable?.value;
-    if (index == 0) {
-      // 0 is LibraryTab
+    if (index == 1) {
+      // 1 is LibraryTab after inserting ASMR.ONE on the left.
       _jumpLibraryListToTop();
     }
   }

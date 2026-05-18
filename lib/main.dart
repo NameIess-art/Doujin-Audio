@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:audio_session/audio_session.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
@@ -10,6 +12,7 @@ import 'i18n/app_language_provider.dart';
 import 'providers/audio_provider.dart';
 import 'providers/audio_provider_riverpod.dart';
 import 'screens/main_screen.dart';
+import 'services/asmr_library_controller.dart';
 import 'services/audio_database_repository.dart';
 import 'services/audio_state_services.dart';
 import 'services/playback_notification_handler.dart';
@@ -21,16 +24,21 @@ import 'services/app_preferences.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
+
   // Optimize image cache for mobile memory stability
-  PaintingBinding.instance.imageCache.maximumSizeBytes = 50 * 1024 * 1024; // 50MB
+  PaintingBinding.instance.imageCache.maximumSizeBytes =
+      50 * 1024 * 1024; // 50MB
   PaintingBinding.instance.imageCache.maximumSize = 200; // 200 images
-  
+
   // Start essential services in parallel to minimize blocking before runApp
   final initFutures = Future.wait([
-    SystemChrome.setPreferredOrientations(AppOrientationPolicy.current.allowedOrientations),
+    SystemChrome.setPreferredOrientations(
+      AppOrientationPolicy.current.allowedOrientations,
+    ),
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge),
-    AudioSession.instance.then((session) => session.configure(const AudioSessionConfiguration.music())),
+    AudioSession.instance.then(
+      (session) => session.configure(const AudioSessionConfiguration.music()),
+    ),
     AudioService.init(
       builder: PlaybackNotificationHandler.new,
       config: const AudioServiceConfig(
@@ -64,6 +72,8 @@ Future<void> main() async {
   final timerService = TimerService();
   final notificationCoordinatorService = NotificationCoordinatorService();
   final settingsRepository = SettingsRepository();
+  final asmrLibraryController = AsmrLibraryController();
+  unawaited(asmrLibraryController.initialize());
 
   final audioProvider = AudioProvider(
     notificationService: notificationService,
@@ -94,6 +104,7 @@ Future<void> main() async {
           ChangeNotifierProvider(create: (_) => ThemeProvider()),
           ChangeNotifierProvider(create: (_) => AppLanguageProvider()),
           ChangeNotifierProvider.value(value: audioProvider),
+          ChangeNotifierProvider.value(value: asmrLibraryController),
         ],
         child: const MusicPlayerApp(),
       ),
@@ -124,7 +135,9 @@ class MusicPlayerApp extends StatelessWidget {
         return MaterialApp(
           title: languageProvider.tr('app_title'),
           debugShowCheckedModeBanner: false,
-          color: themeProvider.isDarkMode ? const Color(0xFF121017) : const Color(0xFFF7F4EE),
+          color: themeProvider.isDarkMode
+              ? const Color(0xFF121017)
+              : const Color(0xFFF7F4EE),
           locale: languageProvider.locale,
           supportedLocales: AppLanguageProvider.supportedLocales,
           localizationsDelegates: const [

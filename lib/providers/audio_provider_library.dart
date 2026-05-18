@@ -1142,7 +1142,18 @@ extension AudioProviderLibrary on AudioProvider {
 
   MusicTrack? trackByPath(String trackPath) {
     final resolvedPath = _resolveRetargetedPath(trackPath);
-    return _libraryService.trackByPath(resolvedPath);
+    final libraryTrack = _libraryService.trackByPath(resolvedPath);
+    if (libraryTrack != null) {
+      return libraryTrack;
+    }
+    for (final session in _sessions.values) {
+      for (final track in session.customQueueTracks ?? const <MusicTrack>[]) {
+        if (PathMatcher.equalsNormalized(track.path, resolvedPath)) {
+          return track;
+        }
+      }
+    }
+    return null;
   }
 
   PlaybackSession? sessionById(String sessionId) =>

@@ -5,6 +5,12 @@ abstract final class PathMatcher {
 
   static bool isContentUri(String value) => value.startsWith('content://');
 
+  static bool isRemoteUri(String value) {
+    final uri = Uri.tryParse(value);
+    if (uri == null) return false;
+    return uri.scheme == 'http' || uri.scheme == 'https';
+  }
+
   static String safeDecodeComponent(String value) {
     final sanitized = value.replaceAll(_invalidPercentEscape, '%25');
     try {
@@ -30,13 +36,16 @@ abstract final class PathMatcher {
   }
 
   static String normalize(String value) {
-    if (isContentUri(value)) {
+    if (isContentUri(value) || isRemoteUri(value)) {
       return value.trimRightSlash();
     }
     return path.normalize(value);
   }
 
   static bool equalsNormalized(String first, String second) {
+    if (isRemoteUri(first) || isRemoteUri(second)) {
+      return normalize(first) == normalize(second);
+    }
     if (isContentUri(first) || isContentUri(second)) {
       final firstDoc = _documentPath(first);
       final secondDoc = _documentPath(second);
@@ -51,6 +60,9 @@ abstract final class PathMatcher {
   static bool isWithinOrEqual(String child, String parent) {
     final normalizedChild = normalize(child);
     final normalizedParent = normalize(parent);
+    if (isRemoteUri(normalizedChild) || isRemoteUri(normalizedParent)) {
+      return normalizedChild == normalizedParent;
+    }
     if (isContentUri(normalizedChild) || isContentUri(normalizedParent)) {
       final childDoc = _documentPath(normalizedChild);
       final parentDoc = _documentPath(normalizedParent);
@@ -64,7 +76,13 @@ abstract final class PathMatcher {
         path.isWithin(normalizedParent, normalizedChild);
   }
 
-  static bool isWithinOrEqualNormalized(String normalizedChild, String normalizedParent) {
+  static bool isWithinOrEqualNormalized(
+    String normalizedChild,
+    String normalizedParent,
+  ) {
+    if (isRemoteUri(normalizedChild) || isRemoteUri(normalizedParent)) {
+      return normalizedChild == normalizedParent;
+    }
     if (isContentUri(normalizedChild) || isContentUri(normalizedParent)) {
       final childDoc = _documentPath(normalizedChild);
       final parentDoc = _documentPath(normalizedParent);
@@ -81,6 +99,10 @@ abstract final class PathMatcher {
   static String? relativeWithin(String child, String parent) {
     if (!isWithinOrEqual(child, parent)) return null;
     if (equalsNormalized(child, parent)) return '';
+
+    if (isRemoteUri(child) || isRemoteUri(parent)) {
+      return null;
+    }
 
     if (isContentUri(child) || isContentUri(parent)) {
       final childDoc = _documentPath(child);
@@ -103,6 +125,12 @@ abstract final class PathMatcher {
   ) {
     if (equalsNormalized(value, oldParent)) return newParent;
     if (!isWithinOrEqual(value, oldParent)) return value;
+
+    if (isRemoteUri(value) ||
+        isRemoteUri(oldParent) ||
+        isRemoteUri(newParent)) {
+      return value;
+    }
 
     if (isContentUri(value) ||
         isContentUri(oldParent) ||

@@ -97,7 +97,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
 
   void _handleScrollToTopSignal() {
     if (!mounted) return;
-    if (_scrollToTopListenable?.value == 1) {
+    if (_scrollToTopListenable?.value == 2) {
       _jumpPlaylistToTop();
     }
   }

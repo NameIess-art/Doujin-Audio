@@ -247,6 +247,37 @@ extension AudioProviderPlaybackEngine on AudioProvider {
   }
 
   String? _nextPathFor(PlaybackSession session, {required bool forward}) {
+    final customQueueTracks = session.customQueueTracks;
+    if (customQueueTracks != null && customQueueTracks.isNotEmpty) {
+      if (session.loopMode == SessionLoopMode.single) {
+        return session.currentTrackPath;
+      }
+      final paths = customQueueTracks
+          .map((track) => _resolveRetargetedPath(track.path))
+          .toList(growable: false);
+      if (paths.isEmpty) {
+        return null;
+      }
+      if (paths.length == 1) {
+        return paths.first;
+      }
+      final currentIndex = paths.indexWhere(
+        (item) => PathMatcher.equalsNormalized(item, session.currentTrackPath),
+      );
+      if (_isShuffleMode(session.loopMode)) {
+        final fallbackIndex = currentIndex < 0 ? 0 : currentIndex;
+        var nextIndex = fallbackIndex;
+        while (nextIndex == fallbackIndex) {
+          nextIndex = _random.nextInt(paths.length);
+        }
+        return paths[nextIndex];
+      }
+      final baseIndex = currentIndex < 0 ? 0 : currentIndex;
+      final nextIndex = forward
+          ? (baseIndex + 1) % paths.length
+          : (baseIndex - 1 + paths.length) % paths.length;
+      return paths[nextIndex];
+    }
     final currentTrack = trackByPath(session.currentTrackPath);
     return _playbackQueueResolver.resolveNextPath(
       currentTrack: currentTrack,
@@ -259,6 +290,10 @@ extension AudioProviderPlaybackEngine on AudioProvider {
   }
 
   bool _hasAdjacentPathFor(PlaybackSession session, {required bool forward}) {
+    final customQueueTracks = session.customQueueTracks;
+    if (customQueueTracks != null) {
+      return customQueueTracks.length > 1;
+    }
     final currentTrack = trackByPath(session.currentTrackPath);
     return _playbackQueueResolver.hasAdjacentPath(
       currentTrack: currentTrack,

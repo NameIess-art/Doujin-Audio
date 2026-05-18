@@ -2,9 +2,11 @@ part of 'audio_provider.dart';
 
 extension AudioProviderNativeBridge on AudioProvider {
   String _snapshotUriForPath(String pathValue) {
-    return PathMatcher.isContentUri(pathValue)
-        ? pathValue
-        : Uri.file(pathValue).toString();
+    if (PathMatcher.isContentUri(pathValue) ||
+        PathMatcher.isRemoteUri(pathValue)) {
+      return pathValue;
+    }
+    return Uri.file(pathValue).toString();
   }
 
   String? _nativeSnapshotPathFromUri(String? uriValue) {
@@ -13,6 +15,7 @@ extension AudioProviderNativeBridge on AudioProvider {
     if (uri == null) return uriValue;
     if (uri.scheme == 'file') return uri.toFilePath(windows: false);
     if (uri.scheme == 'content') return uriValue;
+    if (uri.scheme == 'http' || uri.scheme == 'https') return uriValue;
     return null;
   }
 

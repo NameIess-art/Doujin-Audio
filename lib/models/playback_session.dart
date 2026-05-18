@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:just_audio/just_audio.dart';
 
+import 'music_track.dart';
 import '../services/native_playback_bridge.dart';
 import 'playback_mode.dart';
 
@@ -14,6 +15,7 @@ class PlaybackSession {
     required this.volume,
     required this.createdAt,
     required this.state,
+    this.customQueueTracks,
   });
 
   final String id;
@@ -27,6 +29,7 @@ class PlaybackSession {
       StreamController<Duration?>.broadcast();
   final StreamController<Duration> _bufferedPositionController =
       StreamController<Duration>.broadcast();
+  final List<MusicTrack>? customQueueTracks;
   String currentTrackPath;
   String? loadedPath;
   SessionLoopMode loopMode;
@@ -149,6 +152,7 @@ String? _pathFromUri(String? uriValue) {
   if (uri == null) return uriValue;
   if (uri.scheme == 'file') return uri.toFilePath(windows: false);
   if (uri.scheme == 'content') return uriValue;
+  if (uri.scheme == 'http' || uri.scheme == 'https') return uriValue;
   return null;
 }
 

@@ -440,7 +440,9 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                       if (!provider.isScanning) {
                         unawaited(_refreshWatchedFolders());
                       }
-                      await Future<void>.delayed(const Duration(milliseconds: 300));
+                      await Future<void>.delayed(
+                        const Duration(milliseconds: 300),
+                      );
                     },
                     edgeOffset: 150 + 4 + headerControlsFullHeight,
                     displacement: 32,

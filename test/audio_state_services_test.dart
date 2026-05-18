@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:nameless_audio/models/library_entry.dart';
 import 'package:nameless_audio/models/music_track.dart';
 import 'package:nameless_audio/models/playback_mode.dart';
 import 'package:nameless_audio/models/playback_session.dart';
@@ -333,6 +334,52 @@ void main() {
             .having((state) => state.scanFailureCount, 'failures', 2)
             .having((state) => state.structureRevision, 'revision', 1),
       );
+    });
+
+    test('replacing library entries does not invalidate the main tree', () {
+      final service = LibraryService();
+      addTearDown(service.dispose);
+
+      expect(service.structureRevision, 0);
+
+      service.replaceLibraryEntries([
+        LibraryEntry.folder(
+          libraryPath: '/library/root',
+          path: '/library/root/Album',
+          displayName: 'Album',
+          parentPath: '/library/root',
+          state: LibraryEntryState.active,
+        ),
+      ]);
+
+      expect(service.structureRevision, 0);
+    });
+
+    test('removing stale library entries leaves tree revision untouched', () {
+      final service = LibraryService();
+      addTearDown(service.dispose);
+
+      service.replaceLibraryEntries([
+        LibraryEntry.track(
+          libraryPath: '/library/root',
+          track: track(
+            '/library/root/Album/01.mp3',
+            groupKey: '/library/root/Album',
+          ),
+          parentPath: '/library/root/Album',
+          state: LibraryEntryState.active,
+        ),
+      ]);
+
+      final beforeRevision = service.structureRevision;
+      final removedPaths = service.removeLibraryEntriesMissingFromFolderScan(
+        '/library/root',
+        '/library/root/Album',
+        const <String>{},
+      );
+
+      expect(removedPaths, ['/library/root/Album/01.mp3']);
+      expect(service.structureRevision, beforeRevision);
     });
   });
 }

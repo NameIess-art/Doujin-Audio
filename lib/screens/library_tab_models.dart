@@ -24,4 +24,26 @@ class _ScannedTrack {
   final DateTime? scannedAt;
   final int? fileSizeBytes;
   final DateTime? modifiedAt;
+
+  factory _ScannedTrack.fromPayload(Map<Object?, Object?> payload) {
+    DateTime? dateFromPayload(Object? value) {
+      if (value is num) {
+        return DateTime.fromMillisecondsSinceEpoch(value.toInt());
+      }
+      return null;
+    }
+
+    return _ScannedTrack(
+      path: payload['path']?.toString() ?? '',
+      groupKey: payload['groupKey']?.toString() ?? '',
+      groupTitle: payload['groupTitle']?.toString() ?? '',
+      groupSubtitle: payload['groupSubtitle']?.toString() ?? '',
+      isSingle: payload['isSingle'] as bool? ?? false,
+      isVideo: payload['isVideo'] as bool? ?? false,
+      displayName: payload['displayName']?.toString(),
+      scannedAt: dateFromPayload(payload['scannedAtMs']),
+      fileSizeBytes: (payload['fileSizeBytes'] as num?)?.toInt(),
+      modifiedAt: dateFromPayload(payload['modifiedAtMs']),
+    );
+  }
 }

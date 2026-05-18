@@ -229,16 +229,20 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
           libraryRoot,
           provider,
           libraryRoot,
+          promoteRootTracksToSingles: true,
+          i18n: i18n,
         );
-        final existingPaths = provider.library
+        final candidatePaths = provider.library
             .where(
               (track) =>
                   PathMatcher.isWithinOrEqual(track.path, libraryRoot) &&
-                  !PathMatcher.isContentUri(track.path) &&
-                  File(track.path).existsSync(),
+                  !PathMatcher.isContentUri(track.path),
             )
             .map((track) => PathMatcher.normalize(track.path))
-            .toSet();
+            .toList(growable: false);
+        final existingPaths = candidatePaths.isEmpty
+            ? const <String>{}
+            : await Isolate.run(() => _checkExistingPaths(candidatePaths));
         provider.removeTracksDeletedFromFolder(libraryRoot, existingPaths);
         provider.removeLibraryEntriesDeletedFromFolder(
           libraryRoot,
@@ -301,8 +305,10 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
   Future<int> _importFolderIncrementally(
     String folderPath,
     AudioProvider provider,
-    String? libraryRoot,
-  ) async {
+    String? libraryRoot, {
+    bool promoteRootTracksToSingles = false,
+    AppLanguageProvider? i18n,
+  }) async {
     if (PathMatcher.isContentUri(folderPath)) {
       provider.setScanProgress(failureCount: provider.scanFailureCount + 1);
       return 0;
@@ -310,122 +316,120 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
     final folder = Directory(folderPath);
     if (!await folder.exists()) return 0;
 
-    final discoveredPaths = <String>{};
-    final pendingDirs = Queue<Directory>()..add(folder);
-    final batch = <MusicTrack>[];
-    final entryBatch = <MusicTrack>[];
-    const batchSize = 350;
+    final payload = await Isolate.run(
+      () => _scanFileSystemFolderPayload(folderPath),
+    );
+    if (!mounted || !provider.isScanning) return 0;
+
+    final scannedTracks =
+        ((payload['tracks'] as List<Object?>?) ?? const <Object?>[])
+            .whereType<Map<Object?, Object?>>()
+            .map(_ScannedTrack.fromPayload)
+            .toList(growable: false);
+    final discoveredPaths = scannedTracks
+        .map((track) => PathMatcher.normalize(track.path))
+        .toSet();
+    final discoveredFolders =
+        ((payload['folderPaths'] as List<Object?>?) ?? const <Object?>[])
+            .whereType<String>()
+            .toList(growable: false);
+    const batchSize = 220;
     final baseFoundCount = provider.scanFoundCount;
     final baseDuplicateCount = provider.scanDuplicateCount;
     final baseFailureCount = provider.scanFailureCount;
     var added = 0;
     var duplicates = 0;
-    var failures = 0;
-    var dirsProcessed = 0;
+    final failures = (payload['failureCount'] as int?) ?? 0;
 
-    while (pendingDirs.isNotEmpty && mounted && provider.isScanning) {
-      final currentDir = pendingDirs.removeFirst();
-      late final Stream<FileSystemEntity> stream;
-      try {
-        stream = currentDir.list(followLinks: false);
-      } catch (_) {
-        failures++;
-        continue;
-      }
+    if (libraryRoot != null && discoveredFolders.isNotEmpty) {
+      provider.recordLibraryEntriesForTracks(
+        libraryRoot,
+        const <MusicTrack>[],
+        folderPaths: discoveredFolders,
+      );
+    }
 
-      dirsProcessed++;
-      if (dirsProcessed % 8 == 0) {
-        provider.setScanProgress(
-          currentFolder: path.basename(currentDir.path),
-          foundCount: baseFoundCount + added,
-          duplicateCount: baseDuplicateCount + duplicates,
-          failureCount: baseFailureCount + failures,
+    for (var index = 0; index < scannedTracks.length; index += batchSize) {
+      if (!mounted || !provider.isScanning) break;
+      final endIndex = index + batchSize < scannedTracks.length
+          ? index + batchSize
+          : scannedTracks.length;
+      final chunk = scannedTracks.sublist(index, endIndex);
+      final entryBatch = <MusicTrack>[];
+      final trackBatch = <MusicTrack>[];
+
+      for (final scanned in chunk) {
+        final converted = _convertScannedTrack(
+          scanned,
+          libraryRoot: libraryRoot,
+          promoteRootTracksToSingles: promoteRootTracksToSingles,
+          i18n: i18n,
         );
-      }
-
-      try {
-        await for (final entity in stream.handleError((_) {})) {
-          if (!provider.isScanning) break;
-          if (entity is Directory) {
-            final directoryPath = path.normalize(entity.path);
-            pendingDirs.add(Directory(directoryPath));
-            if (libraryRoot != null) {
-              provider.recordLibraryEntriesForTracks(
-                libraryRoot,
-                const <MusicTrack>[],
-                folderPaths: [directoryPath],
-              );
-            }
+        if (libraryRoot != null) {
+          entryBatch.add(converted);
+          if (provider.isLibraryPathExcluded(libraryRoot, scanned.path)) {
             continue;
-          }
-          if (entity is! File) continue;
-
-          final absolutePath = path.normalize(entity.path);
-          if (!isSupportedMediaFile(absolutePath)) continue;
-          if (provider.trackByPath(absolutePath) != null ||
-              discoveredPaths.contains(absolutePath)) {
-            duplicates++;
-            continue;
-          }
-          discoveredPaths.add(absolutePath);
-
-          final parentFolder = path.dirname(absolutePath);
-          final folderName = path.basename(parentFolder);
-          final fileStat = await entity.stat().catchError(
-            (_) => FileStat.statSync(absolutePath),
-          );
-
-          final scannedTrack = MusicTrack(
-            path: absolutePath,
-            displayName: path.basenameWithoutExtension(absolutePath),
-            groupKey: parentFolder,
-            groupTitle: folderName.isEmpty ? parentFolder : folderName,
-            groupSubtitle: parentFolder,
-            isSingle: false,
-            isVideo: isVideoMediaFile(absolutePath),
-            scannedAt: DateTime.now(),
-            fileSizeBytes: fileStat.size,
-            modifiedAt: fileStat.modified,
-          );
-          if (libraryRoot != null) {
-            entryBatch.add(scannedTrack);
-          }
-          if (libraryRoot != null &&
-              provider.isLibraryPathExcluded(libraryRoot, absolutePath)) {
-            if (entryBatch.length >= batchSize) {
-              provider.recordLibraryEntriesForTracks(libraryRoot, entryBatch);
-              entryBatch.clear();
-            }
-            continue;
-          }
-
-          batch.add(scannedTrack);
-          added++;
-
-          if (batch.length >= batchSize) {
-            provider.addTracks(batch, notify: false);
-            batch.clear();
-            if (libraryRoot != null && entryBatch.isNotEmpty) {
-              provider.recordLibraryEntriesForTracks(libraryRoot, entryBatch);
-              entryBatch.clear();
-            }
-            await Future<void>.delayed(Duration.zero);
           }
         }
-      } catch (_) {
-        failures++;
+        if (provider.trackByPath(scanned.path) != null) {
+          duplicates++;
+          continue;
+        }
+        trackBatch.add(converted);
       }
+
+      if (libraryRoot != null && entryBatch.isNotEmpty) {
+        provider.recordLibraryEntriesForTracks(libraryRoot, entryBatch);
+      }
+      if (trackBatch.isNotEmpty) {
+        final before = provider.library.length;
+        provider.addTracks(trackBatch, notify: false);
+        final batchAdded = provider.library.length - before;
+        added += batchAdded;
+        duplicates += trackBatch.length - batchAdded;
+      }
+
+      provider.setScanProgress(
+        currentFolder:
+            '[$endIndex/${scannedTracks.length}] '
+            '${_displaySourceName(folderPath)}',
+        foundCount: baseFoundCount + added,
+        duplicateCount: baseDuplicateCount + duplicates,
+        failureCount: baseFailureCount + failures,
+      );
+      await Future<void>.delayed(Duration.zero);
     }
-    if (libraryRoot != null && entryBatch.isNotEmpty) {
-      provider.recordLibraryEntriesForTracks(libraryRoot, entryBatch);
+
+    if (mounted && provider.isScanning) {
+      provider.removeTracksDeletedFromFolder(folderPath, discoveredPaths);
+      if (libraryRoot != null) {
+        provider.removeLibraryEntriesDeletedFromFolder(
+          libraryRoot,
+          folderPath,
+          discoveredPaths,
+        );
+      }
+      provider.setScanProgress(
+        foundCount: baseFoundCount + added,
+        duplicateCount: baseDuplicateCount + duplicates,
+        failureCount: baseFailureCount + failures,
+      );
     }
-    provider.addTracks(batch, notify: false);
-    provider.setScanProgress(
-      foundCount: baseFoundCount + added,
-      duplicateCount: baseDuplicateCount + duplicates,
-      failureCount: baseFailureCount + failures,
-    );
     return added;
+  }
+
+  MusicTrack _convertScannedTrack(
+    _ScannedTrack track, {
+    required String? libraryRoot,
+    required bool promoteRootTracksToSingles,
+    AppLanguageProvider? i18n,
+  }) {
+    if (promoteRootTracksToSingles &&
+        libraryRoot != null &&
+        _trackIsDirectlyInFolder(libraryRoot, track)) {
+      return _singleTrackFromScanned(track, i18n!);
+    }
+    return _trackFromScanned(track);
   }
 
   MusicTrack _trackFromScanned(_ScannedTrack track) {
@@ -536,4 +540,73 @@ class _NativeScanResult {
   final String? errorCode;
   final String? errorMessage;
   final bool notSupported;
+}
+
+Map<String, Object?> _scanFileSystemFolderPayload(String folderPath) {
+  final folder = Directory(folderPath);
+  if (!folder.existsSync()) {
+    return const <String, Object?>{
+      'tracks': <Object?>[],
+      'folderPaths': <Object?>[],
+      'failureCount': 0,
+    };
+  }
+
+  final pendingDirs = Queue<Directory>()..add(folder);
+  final folderPaths = <String>[];
+  final tracks = <Map<String, Object?>>[];
+  final seenPaths = <String>{};
+  var failures = 0;
+
+  while (pendingDirs.isNotEmpty) {
+    final currentDir = pendingDirs.removeFirst();
+    List<FileSystemEntity> children;
+    try {
+      children = currentDir.listSync(followLinks: false);
+    } catch (_) {
+      failures++;
+      continue;
+    }
+
+    for (final entity in children) {
+      if (entity is Directory) {
+        final directoryPath = path.normalize(entity.path);
+        pendingDirs.add(Directory(directoryPath));
+        folderPaths.add(directoryPath);
+        continue;
+      }
+      if (entity is! File) continue;
+
+      final absolutePath = path.normalize(entity.path);
+      if (!isSupportedMediaFile(absolutePath) || !seenPaths.add(absolutePath)) {
+        continue;
+      }
+
+      FileStat? fileStat;
+      try {
+        fileStat = entity.statSync();
+      } catch (_) {}
+
+      final parentFolder = path.dirname(absolutePath);
+      final folderName = path.basename(parentFolder);
+      tracks.add(<String, Object?>{
+        'path': absolutePath,
+        'displayName': path.basenameWithoutExtension(absolutePath),
+        'groupKey': parentFolder,
+        'groupTitle': folderName.isEmpty ? parentFolder : folderName,
+        'groupSubtitle': parentFolder,
+        'isSingle': false,
+        'isVideo': isVideoMediaFile(absolutePath),
+        'scannedAtMs': DateTime.now().millisecondsSinceEpoch,
+        'fileSizeBytes': fileStat?.size,
+        'modifiedAtMs': fileStat?.modified.millisecondsSinceEpoch,
+      });
+    }
+  }
+
+  return <String, Object?>{
+    'tracks': tracks,
+    'folderPaths': folderPaths,
+    'failureCount': failures,
+  };
 }

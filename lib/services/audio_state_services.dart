@@ -600,9 +600,10 @@ class LibraryService {
       )[normalizedPath] = entry
           .copyWith();
     }
-    if (entries.isNotEmpty) {
-      markStructureChanged();
-    }
+    // Library entries back the edit/exclusion metadata tree, not the main
+    // audio library tree. Refresh scans can replace many entry rows while the
+    // visible library content is still unchanged, so avoid invalidating the
+    // main tree on every metadata write.
   }
 
   /// Rebuilds [excludedLibraryFolders] and [excludedLibraryTracks] from the
@@ -649,9 +650,6 @@ class LibraryService {
       return true;
     });
 
-    if (removedPaths.isNotEmpty) {
-      markStructureChanged();
-    }
     return removedPaths;
   }
 

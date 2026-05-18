@@ -79,7 +79,9 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   final Set<String> _selectedTagTerms = <String>{};
   final Set<String> _selectedVoiceActorTerms = <String>{};
   final Set<String> _selectedCircleTerms = <String>{};
+  Future<void>? _activeRefreshTask;
   bool _refreshTriggeredInCurrentScroll = false;
+  DateTime? _lastBatchFlushTime;
   bool _isReordering = false;
 
   final GlobalKey<RefreshIndicatorState> _refreshIndicatorKey =
@@ -143,7 +145,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        _refreshWatchedFolders(silent: true);
+        unawaited(_scheduleWatchedFoldersRefresh(silent: true));
         _measureHeader();
         _scrollToTopTabListenable = ref
             .read(audioProviderFacadeProvider)
@@ -358,7 +360,8 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
         onRefresh: () async {
           unawaited(HapticFeedback.mediumImpact());
-          await _refreshWatchedFolders();
+          unawaited(_scheduleWatchedFoldersRefresh());
+          await Future<void>.delayed(const Duration(milliseconds: 300));
         },
         // Adjust edgeOffset because RefreshIndicator is now inside the restricted Positioned.
         edgeOffset: 150 + 4 + headerControlsFullHeight,
@@ -437,9 +440,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                     ).colorScheme.surfaceContainerHighest,
                     onRefresh: () async {
                       unawaited(HapticFeedback.mediumImpact());
-                      if (!provider.isScanning) {
-                        unawaited(_refreshWatchedFolders());
-                      }
+                      unawaited(_scheduleWatchedFoldersRefresh());
                       await Future<void>.delayed(
                         const Duration(milliseconds: 300),
                       );

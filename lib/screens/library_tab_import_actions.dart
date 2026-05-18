@@ -1,6 +1,46 @@
 part of 'library_tab.dart';
 
 extension _LibraryTabImportActions on _LibraryTabState {
+  Future<void> _scheduleWatchedFoldersRefresh({bool silent = false}) {
+    final activeTask = _activeRefreshTask;
+    if (activeTask != null) {
+      return activeTask;
+    }
+
+    late final Future<void> trackedTask;
+    trackedTask = _refreshWatchedFolders(silent: silent).whenComplete(() {
+      if (identical(_activeRefreshTask, trackedTask)) {
+        _activeRefreshTask = null;
+      }
+    });
+    _activeRefreshTask = trackedTask;
+    return trackedTask;
+  }
+
+  Future<bool> _flushRefreshBatch(AudioProvider provider) async {
+    final now = DateTime.now();
+    final lastFlush = _lastBatchFlushTime;
+    // 节流：两次 flush 之间至少间隔 400ms，避免高频触发 _rebuildLibraryIndexes。
+    // 若距上次 flush 不足 400ms，仅让出事件循环而不提交批次，保持 UI 响应。
+    if (lastFlush != null &&
+        now.difference(lastFlush) < const Duration(milliseconds: 400)) {
+      await Future<void>.delayed(Duration.zero);
+      if (!mounted || !provider.isScanning) {
+        await provider.endLibraryBatch();
+        return false;
+      }
+      return true;
+    }
+    _lastBatchFlushTime = now;
+    await provider.endLibraryBatch();
+    await Future<void>.delayed(Duration.zero);
+    if (!mounted || !provider.isScanning) {
+      return false;
+    }
+    provider.beginLibraryBatch();
+    return true;
+  }
+
   bool _pathsOverlap(String first, String second) {
     return PathMatcher.isWithinOrEqual(first, second) ||
         PathMatcher.isWithinOrEqual(second, first);
@@ -69,12 +109,15 @@ extension _LibraryTabImportActions on _LibraryTabState {
     }
 
     if (!mounted) return;
+    _lastBatchFlushTime = null;
     provider.setScanning(true, background: true);
     provider.beginLibraryBatch();
+    var batchOpen = true;
     var totalAdded = 0;
     try {
       final foldersToRefresh = LinkedHashSet<String>.from(watchedFolders);
       for (final libraryRoot in watchedLibraries) {
+        if (!batchOpen || !provider.isScanning) break;
         foldersToRefresh.removeWhere(
           (folderPath) => PathMatcher.isWithinOrEqual(folderPath, libraryRoot),
         );
@@ -89,6 +132,7 @@ extension _LibraryTabImportActions on _LibraryTabState {
           libraryRoot,
           provider,
           i18n,
+          onChunkCommitted: () => _flushRefreshBatch(provider),
         );
         for (final childFolder in childFolders) {
           if (provider.isLibraryPathExcluded(libraryRoot, childFolder)) {
@@ -97,6 +141,7 @@ extension _LibraryTabImportActions on _LibraryTabState {
           provider.addWatchedFolder(childFolder, notify: false);
           unawaited(_prefillRjDetailForFolder(provider, childFolder));
         }
+        batchOpen = await _flushRefreshBatch(provider);
         // Deletion of missing tracks for library roots is handled below in
         // the watchedFolders loop, which processes each child folder.
       }
@@ -104,7 +149,7 @@ extension _LibraryTabImportActions on _LibraryTabState {
       final totalFolders = foldersToRefresh.length;
       var processedFolders = 0;
       for (final folderPath in foldersToRefresh) {
-        if (!provider.isScanning) break;
+        if (!batchOpen || !provider.isScanning) break;
         processedFolders++;
         provider.setScanProgress(
           currentFolder:
@@ -119,23 +164,12 @@ extension _LibraryTabImportActions on _LibraryTabState {
             : libraryRoot;
         final nativeScan = await _scanFolderViaNative(folderPath);
         if (nativeScan.ok) {
-          provider.recordLibraryEntriesForTracks(
-            effectiveLibraryRoot,
-            nativeScan.tracks.map(_trackFromScanned).toList(growable: false),
-          );
-          final toAdd = _filterExcludedScannedTracks(
-            provider,
-            effectiveLibraryRoot,
-            nativeScan.tracks,
-          ).map(_trackFromScanned).toList();
-          final before = provider.library.length;
-          provider.addOrReplaceTracks(toAdd, notify: false);
-          final added = provider.library.length - before;
-          totalAdded += added;
-          provider.setScanProgress(
-            foundCount: provider.scanFoundCount + added,
-            duplicateCount:
-                provider.scanDuplicateCount + (toAdd.length - added),
+          totalAdded += await _mergeScannedTracksIncrementally(
+            sourceFolderPath: folderPath,
+            provider: provider,
+            scannedTracks: nativeScan.tracks,
+            libraryRoot: effectiveLibraryRoot,
+            onChunkCommitted: () => _flushRefreshBatch(provider),
           );
           // Remove tracks that were deleted from disk since the last scan.
           final diskPaths = nativeScan.tracks
@@ -153,6 +187,7 @@ extension _LibraryTabImportActions on _LibraryTabState {
             folderPath,
             provider,
             effectiveLibraryRoot,
+            onChunkCommitted: () => _flushRefreshBatch(provider),
           );
           // For file-system folders, prune missing tracks via async File.exists
           // check run in a background isolate to avoid blocking the UI thread.
@@ -186,9 +221,12 @@ extension _LibraryTabImportActions on _LibraryTabState {
             'code=${nativeScan.errorCode} message=${nativeScan.errorMessage}',
           );
         }
+        batchOpen = await _flushRefreshBatch(provider);
       }
     } finally {
-      await provider.endLibraryBatch();
+      if (batchOpen) {
+        await provider.endLibraryBatch();
+      }
       provider.setScanning(false);
       if (mounted) {
         if (!silent || totalAdded > 0) {

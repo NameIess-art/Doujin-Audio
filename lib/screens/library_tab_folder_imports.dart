@@ -219,8 +219,9 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
   Future<int> _importLibraryWithSingleScan(
     String libraryRoot,
     AudioProvider provider,
-    AppLanguageProvider i18n,
-  ) async {
+    AppLanguageProvider i18n, {
+    Future<bool> Function()? onChunkCommitted,
+  }) async {
     provider.setScanProgress(currentFolder: _displaySourceName(libraryRoot));
     final nativeScan = await _scanFolderViaNative(libraryRoot);
     if (!nativeScan.ok) {
@@ -231,6 +232,7 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
           libraryRoot,
           promoteRootTracksToSingles: true,
           i18n: i18n,
+          onChunkCommitted: onChunkCommitted,
         );
         final candidatePaths = provider.library
             .where(
@@ -259,24 +261,15 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
       return 0;
     }
 
-    final candidates =
-        _filterExcludedScannedTracks(provider, libraryRoot, nativeScan.tracks)
-            .map((track) {
-              if (_trackIsDirectlyInFolder(libraryRoot, track)) {
-                return _singleTrackFromScanned(track, i18n);
-              }
-              return _trackFromScanned(track);
-            })
-            .toList(growable: false);
-    final entryTracks = nativeScan.tracks
-        .map((track) {
-          if (_trackIsDirectlyInFolder(libraryRoot, track)) {
-            return _singleTrackFromScanned(track, i18n);
-          }
-          return _trackFromScanned(track);
-        })
-        .toList(growable: false);
-    provider.recordLibraryEntriesForTracks(libraryRoot, entryTracks);
+    final added = await _mergeScannedTracksIncrementally(
+      sourceFolderPath: libraryRoot,
+      provider: provider,
+      scannedTracks: nativeScan.tracks,
+      libraryRoot: libraryRoot,
+      promoteRootTracksToSingles: true,
+      i18n: i18n,
+      onChunkCommitted: onChunkCommitted,
+    );
     final scannedPaths = nativeScan.tracks
         .map((track) => PathMatcher.normalize(track.path))
         .toSet();
@@ -285,14 +278,6 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
       libraryRoot,
       libraryRoot,
       scannedPaths,
-    );
-    if (candidates.isEmpty) return 0;
-    final beforeCount = provider.library.length;
-    provider.addOrReplaceTracks(candidates, notify: false);
-    final added = provider.library.length - beforeCount;
-    provider.setScanProgress(
-      foundCount: provider.scanFoundCount + added,
-      duplicateCount: provider.scanDuplicateCount + (candidates.length - added),
     );
     return added;
   }
@@ -308,6 +293,7 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
     String? libraryRoot, {
     bool promoteRootTracksToSingles = false,
     AppLanguageProvider? i18n,
+    Future<bool> Function()? onChunkCommitted,
   }) async {
     if (PathMatcher.isContentUri(folderPath)) {
       provider.setScanProgress(failureCount: provider.scanFailureCount + 1);
@@ -397,7 +383,14 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
         duplicateCount: baseDuplicateCount + duplicates,
         failureCount: baseFailureCount + failures,
       );
-      await Future<void>.delayed(Duration.zero);
+      if (onChunkCommitted != null) {
+        final keepGoing = await onChunkCommitted();
+        if (!keepGoing) {
+          break;
+        }
+      } else {
+        await Future<void>.delayed(Duration.zero);
+      }
     }
 
     if (mounted && provider.isScanning) {
@@ -415,6 +408,84 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
         failureCount: baseFailureCount + failures,
       );
     }
+    return added;
+  }
+
+  Future<int> _mergeScannedTracksIncrementally({
+    required String sourceFolderPath,
+    required AudioProvider provider,
+    required List<_ScannedTrack> scannedTracks,
+    required String? libraryRoot,
+    bool promoteRootTracksToSingles = false,
+    AppLanguageProvider? i18n,
+    Future<bool> Function()? onChunkCommitted,
+  }) async {
+    if (scannedTracks.isEmpty) {
+      return 0;
+    }
+
+    const chunkSize = 180;
+    final baseFoundCount = provider.scanFoundCount;
+    final baseDuplicateCount = provider.scanDuplicateCount;
+    final baseFailureCount = provider.scanFailureCount;
+    var added = 0;
+    var duplicates = 0;
+
+    for (var index = 0; index < scannedTracks.length; index += chunkSize) {
+      if (!mounted || !provider.isScanning) break;
+      final endIndex = index + chunkSize < scannedTracks.length
+          ? index + chunkSize
+          : scannedTracks.length;
+      final chunk = scannedTracks.sublist(index, endIndex);
+      final entryBatch = <MusicTrack>[];
+      final trackBatch = <MusicTrack>[];
+
+      for (final scanned in chunk) {
+        final converted = _convertScannedTrack(
+          scanned,
+          libraryRoot: libraryRoot,
+          promoteRootTracksToSingles: promoteRootTracksToSingles,
+          i18n: i18n,
+        );
+        if (libraryRoot != null) {
+          entryBatch.add(converted);
+          if (provider.isLibraryPathExcluded(libraryRoot, scanned.path)) {
+            continue;
+          }
+        }
+        trackBatch.add(converted);
+      }
+
+      if (libraryRoot != null && entryBatch.isNotEmpty) {
+        provider.recordLibraryEntriesForTracks(libraryRoot, entryBatch);
+      }
+      if (trackBatch.isNotEmpty) {
+        final beforeCount = provider.library.length;
+        provider.addOrReplaceTracks(trackBatch, notify: false);
+        final batchAdded = provider.library.length - beforeCount;
+        added += batchAdded;
+        duplicates += trackBatch.length - batchAdded;
+      }
+
+      provider.setScanProgress(
+        currentFolder:
+            '[$endIndex/${scannedTracks.length}] '
+            '${_displaySourceName(sourceFolderPath)}',
+        foundCount: baseFoundCount + added,
+        duplicateCount: baseDuplicateCount + duplicates,
+        failureCount: baseFailureCount,
+      );
+
+      if (onChunkCommitted != null) {
+        final keepGoing = await onChunkCommitted();
+        if (!keepGoing) {
+          break;
+        }
+      } else {
+        await Future<void>.delayed(Duration.zero);
+      }
+    }
+
     return added;
   }
 
@@ -467,19 +538,6 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
       fileSizeBytes: track.fileSizeBytes,
       modifiedAt: track.modifiedAt,
     );
-  }
-
-  List<_ScannedTrack> _filterExcludedScannedTracks(
-    AudioProvider provider,
-    String? libraryRoot,
-    List<_ScannedTrack> tracks,
-  ) {
-    if (libraryRoot == null) return tracks;
-    return tracks
-        .where(
-          (track) => !provider.isLibraryPathExcluded(libraryRoot, track.path),
-        )
-        .toList(growable: false);
   }
 
   Future<bool> _ensureReadPermissionForSources({

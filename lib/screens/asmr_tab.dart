@@ -8,12 +8,14 @@ import 'package:provider/provider.dart';
 import '../i18n/app_language_provider.dart';
 import '../models/asmr_models.dart';
 import '../providers/audio_provider.dart';
+import '../services/asmr_download_manager.dart';
 import '../services/asmr_library_controller.dart';
 import '../widgets/app_feedback.dart';
 import '../widgets/library_like_cards.dart';
 import '../widgets/mobile_overlay_inset.dart';
 import '../widgets/swipe_reveal_card.dart';
 import '../widgets/top_page_header.dart';
+import 'asmr_download_page.dart';
 import 'asmr_work_detail_sheet.dart';
 
 const List<_AsmrCategorySpec> _asmrCategories = <_AsmrCategorySpec>[
@@ -229,6 +231,7 @@ class _AsmrTabState extends State<AsmrTab>
   Widget build(BuildContext context) {
     super.build(context);
     final controller = context.watch<AsmrLibraryController>();
+    final downloadManager = context.watch<AsmrDownloadManager>();
     final currentCategory = _currentCategory;
     final currentScrollController = _scrollControllers[currentCategory]!;
     final bottomInset = MobileOverlayInset.of(context);
@@ -322,6 +325,68 @@ class _AsmrTabState extends State<AsmrTab>
             bottomSpacing: 4,
             padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
             additionalChild: collapsingHeaderControls(),
+          ),
+        ),
+        Positioned(
+          right: 76,
+          bottom: bottomInset + 18,
+          child: AnimatedBuilder(
+            animation: downloadManager,
+            builder: (context, _) {
+              final task = downloadManager.currentTask;
+              final visible = downloadManager.hasLiveTask && task != null;
+              final progress = task?.progress;
+              return IgnorePointer(
+                ignoring: !visible,
+                child: AnimatedOpacity(
+                  opacity: visible ? 1 : 0,
+                  duration: const Duration(milliseconds: 180),
+                  curve: Curves.easeOutCubic,
+                  child: AnimatedScale(
+                    scale: visible ? 1 : 0.92,
+                    duration: const Duration(milliseconds: 180),
+                    curve: Curves.easeOutCubic,
+                    child: FloatingActionButton.small(
+                      heroTag: 'asmr-one-download-progress',
+                      backgroundColor: Theme.of(
+                        context,
+                      ).colorScheme.secondaryContainer,
+                      foregroundColor: Theme.of(
+                        context,
+                      ).colorScheme.onSecondaryContainer,
+                      elevation: 0,
+                      onPressed: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => const AsmrDownloadTaskPage(),
+                          ),
+                        );
+                      },
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          const Icon(Icons.downloading_rounded),
+                          if (progress != null)
+                            SizedBox(
+                              width: 34,
+                              height: 34,
+                              child: CircularProgressIndicator(
+                                value: progress,
+                                strokeWidth: 2.4,
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSecondaryContainer.withValues(
+                                      alpha: 0.78,
+                                    ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
           ),
         ),
         Positioned(
@@ -705,6 +770,14 @@ class _AsmrWorkTreeCardState extends State<_AsmrWorkTreeCard> {
     );
   }
 
+  Future<void> _openDownloadPage(BuildContext context) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => AsmrDownloadPage(work: widget.work),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final asmrController = context.watch<AsmrLibraryController>();
@@ -731,7 +804,10 @@ class _AsmrWorkTreeCardState extends State<_AsmrWorkTreeCard> {
       secondaryActionIcon: widget.work.isFavorite
           ? Icons.favorite_rounded
           : Icons.favorite_border_rounded,
+      tertiaryActionLabel: '涓嬭浇',
+      tertiaryActionTooltip: '涓嬭浇浣滃搧',
       verticalActions: true,
+      onTertiaryAction: () => unawaited(_openDownloadPage(context)),
       onSecondaryAction: () => unawaited(_toggleFavorite(context)),
       onRemove: () => unawaited(showAsmrWorkDetailSheet(context, widget.work)),
       onWillReveal: _expansionController.collapse,

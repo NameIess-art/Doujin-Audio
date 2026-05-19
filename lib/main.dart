@@ -13,6 +13,7 @@ import 'providers/audio_provider.dart';
 import 'providers/audio_provider_riverpod.dart';
 import 'screens/main_screen.dart';
 import 'services/asmr_library_controller.dart';
+import 'services/asmr_download_manager.dart';
 import 'services/audio_database_repository.dart';
 import 'services/audio_state_services.dart';
 import 'services/playback_notification_handler.dart';
@@ -73,7 +74,9 @@ Future<void> main() async {
   final notificationCoordinatorService = NotificationCoordinatorService();
   final settingsRepository = SettingsRepository();
   final asmrLibraryController = AsmrLibraryController();
+  final asmrDownloadManager = AsmrDownloadManager();
   unawaited(asmrLibraryController.initialize());
+  unawaited(asmrDownloadManager.initialize());
 
   final audioProvider = AudioProvider(
     notificationService: notificationService,
@@ -105,6 +108,7 @@ Future<void> main() async {
           ChangeNotifierProvider(create: (_) => AppLanguageProvider()),
           ChangeNotifierProvider.value(value: audioProvider),
           ChangeNotifierProvider.value(value: asmrLibraryController),
+          ChangeNotifierProvider.value(value: asmrDownloadManager),
         ],
         child: const MusicPlayerApp(),
       ),

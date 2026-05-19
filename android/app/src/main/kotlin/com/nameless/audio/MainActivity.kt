@@ -689,6 +689,90 @@ class MainActivity : AudioServiceActivity() {
                             }
                         }.start()
                     }
+                    "ensureFolderPath" -> {
+                        val folder = call.argument<String>("folder")
+                        val relativePath = call.argument<String>("relativePath")
+                        val overwrite = call.argument<Boolean>("overwrite") ?: false
+                        if (folder.isNullOrBlank() || relativePath == null) {
+                            result.error(
+                                "invalid_args",
+                                "folder and relativePath are required",
+                                null
+                            )
+                            return@setMethodCallHandler
+                        }
+                        Thread {
+                            try {
+                                val ensured = ensureFolderPath(folder, relativePath, overwrite)
+                                runOnUiThread { result.success(ensured) }
+                            } catch (e: Exception) {
+                                runOnUiThread {
+                                    result.error(
+                                        "ensure_folder_failed",
+                                        e.message ?: "unknown error",
+                                        null
+                                    )
+                                }
+                            }
+                        }.start()
+                    }
+                    "copyFileToFolder" -> {
+                        val sourcePath = call.argument<String>("sourcePath")
+                        val folder = call.argument<String>("folder")
+                        val relativePath = call.argument<String>("relativePath")
+                        val overwrite = call.argument<Boolean>("overwrite") ?: false
+                        if (sourcePath.isNullOrBlank() ||
+                            folder.isNullOrBlank() ||
+                            relativePath.isNullOrBlank()
+                        ) {
+                            result.error(
+                                "invalid_args",
+                                "sourcePath, folder and relativePath are required",
+                                null
+                            )
+                            return@setMethodCallHandler
+                        }
+                        Thread {
+                            try {
+                                val saved = copyFileToFolder(
+                                    sourcePath,
+                                    folder,
+                                    relativePath,
+                                    overwrite
+                                )
+                                runOnUiThread { result.success(saved) }
+                            } catch (e: Exception) {
+                                runOnUiThread {
+                                    result.error(
+                                        "copy_file_failed",
+                                        e.message ?: "unknown error",
+                                        null
+                                    )
+                                }
+                            }
+                        }.start()
+                    }
+                    "deleteDocumentPath" -> {
+                        val targetPath = call.argument<String>("path")
+                        if (targetPath.isNullOrBlank()) {
+                            result.error("invalid_args", "path is required", null)
+                            return@setMethodCallHandler
+                        }
+                        Thread {
+                            try {
+                                val deleted = deleteDocumentPath(targetPath)
+                                runOnUiThread { result.success(deleted) }
+                            } catch (e: Exception) {
+                                runOnUiThread {
+                                    result.error(
+                                        "delete_document_failed",
+                                        e.message ?: "unknown error",
+                                        null
+                                    )
+                                }
+                            }
+                        }.start()
+                    }
                     "resolveTrackCover" -> {
                         val trackPath = call.argument<String>("path")
                         val groupKey = call.argument<String>("groupKey")
@@ -1926,6 +2010,72 @@ class MainActivity : AudioServiceActivity() {
         return cacheDocumentCover(file, "$folderPath/$name")
     }
 
+    private fun ensureFolderPath(
+        folderPath: String,
+        relativePath: String,
+        overwrite: Boolean
+    ): Boolean {
+        val folder = ensureDocumentFileForFolderPath(folderPath, relativePath, overwrite)
+            ?: return false
+        return folder.exists()
+    }
+
+    private fun copyFileToFolder(
+        sourcePath: String,
+        folderPath: String,
+        relativePath: String,
+        overwrite: Boolean
+    ): Boolean {
+        val source = java.io.File(sourcePath)
+        if (!source.exists() || !source.isFile) return false
+
+        val normalizedRelative = relativePath.trim().replace('\\', '/')
+        if (normalizedRelative.isBlank()) return false
+
+        val folder = resolveDocumentFileForFolderPath(folderPath) ?: return false
+        val targetFolder = ensureRelativeDocumentDirectory(
+            folder,
+            normalizedRelative.substringBeforeLast('/', missingDelimiterValue = ""),
+            overwrite
+        ) ?: return false
+
+        val targetName = normalizedRelative.substringAfterLast('/')
+        var existing = targetFolder.listFiles().firstOrNull {
+            it.isFile && normalizeDisplayName(it.name?.trim().orEmpty()) == targetName
+        }
+        if (existing != null) {
+            if (!overwrite) return false
+            if (!existing.delete()) return false
+            existing = null
+        }
+
+        val mimeType = MimeTypeMap.getSingleton()
+            .getMimeTypeFromExtension(targetName.substringAfterLast('.', "").lowercase(Locale.US))
+            ?: "application/octet-stream"
+        val target = existing ?: targetFolder.createFile(mimeType, targetName) ?: return false
+        java.io.FileInputStream(source).use { input ->
+            contentResolver.openOutputStream(target.uri, "w")?.use { output ->
+                input.copyTo(output)
+                output.flush()
+            } ?: return false
+        }
+        return true
+    }
+
+    private fun deleteDocumentPath(targetPath: String): Boolean {
+        val target = resolveDocumentFileForFolderPath(targetPath) ?: return false
+        return target.delete()
+    }
+
+    private fun ensureDocumentFileForFolderPath(
+        folderPath: String,
+        relativePath: String,
+        overwrite: Boolean
+    ): DocumentFile? {
+        val folder = resolveDocumentFileForFolderPath(folderPath) ?: return null
+        return ensureRelativeDocumentDirectory(folder, relativePath, overwrite)
+    }
+
     private fun resolveDocumentFileForFolderPath(folderPath: String): DocumentFile? {
         val trimmed = folderPath.trim()
         if (!trimmed.startsWith("content://")) return null
@@ -1939,6 +2089,31 @@ class MainActivity : AudioServiceActivity() {
         val uri = Uri.parse(trimmed)
         return DocumentFile.fromTreeUri(this, uri)
             ?: DocumentFile.fromSingleUri(this, uri)?.takeIf { it.isDirectory }
+    }
+
+    private fun ensureRelativeDocumentDirectory(
+        root: DocumentFile,
+        relativeDirectory: String,
+        overwrite: Boolean
+    ): DocumentFile? {
+        if (relativeDirectory.isBlank()) return root
+        var current: DocumentFile? = root
+        for (segment in relativeDirectory.split('/')) {
+            if (segment.isBlank()) continue
+            val next = current?.listFiles()?.firstOrNull {
+                normalizeDisplayName(it.name?.trim().orEmpty()) == segment
+            }
+            current = when {
+                next == null -> current?.createDirectory(segment)
+                next.isDirectory -> next
+                overwrite -> {
+                    if (!next.delete()) return null
+                    current?.createDirectory(segment)
+                }
+                else -> return null
+            } ?: return null
+        }
+        return current
     }
 
     private fun resolveDocumentRenameTarget(targetPath: String): DocumentRenameTarget? {

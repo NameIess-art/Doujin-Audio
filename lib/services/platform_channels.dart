@@ -109,6 +109,9 @@ abstract final class FileCacheMethod {
   static const String writeSingleFileDetailBackup =
       'writeSingleFileDetailBackup';
   static const String writeFileBytesToFolder = 'writeFileBytesToFolder';
+  static const String ensureFolderPath = 'ensureFolderPath';
+  static const String copyFileToFolder = 'copyFileToFolder';
+  static const String deleteDocumentPath = 'deleteDocumentPath';
   static const String pickAudioSource = 'pickAudioSource';
   static const String pickAudioFiles = 'pickAudioFiles';
   static const String pickAudioFolder = 'pickAudioFolder';

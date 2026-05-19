@@ -296,7 +296,12 @@ internal object UnifiedPlaybackNotificationController {
         item: UnifiedPlaybackNotificationItem
     ): android.app.Notification {
         val subtitle = item.subtitle?.takeIf { it.isNotBlank() }
-        val builder = basePlaybackNotificationBuilder(context, item, summaryNotificationId)
+        val builder = basePlaybackNotificationBuilder(
+            context,
+            item,
+            summaryNotificationId,
+            ongoing = item.playing
+        )
             .setContentText(subtitle)
             .setSubText(null)
             .setContentIntent(buildLaunchIntent(context, sessionId = item.id))
@@ -325,7 +330,12 @@ internal object UnifiedPlaybackNotificationController {
         val inboxStyle = NotificationCompat.InboxStyle()
             .setBigContentTitle(mainItem.title)
         childLines.forEach(inboxStyle::addLine)
-        val builder = basePlaybackNotificationBuilder(context, mainItem, summaryNotificationId)
+        val builder = basePlaybackNotificationBuilder(
+            context,
+            mainItem,
+            summaryNotificationId,
+            ongoing = items.any { it.playing }
+        )
             .setContentText(summaryText ?: "${items.size} sessions")
             .setSubText("${items.size} sessions")
             .setContentIntent(buildLaunchIntent(context, sessionId = mainItem.id))
@@ -345,7 +355,12 @@ internal object UnifiedPlaybackNotificationController {
     ): android.app.Notification {
         val subtitle = item.subtitle?.takeIf { it.isNotBlank() }
         val notificationId = notificationIdFor(item.id)
-        val builder = basePlaybackNotificationBuilder(context, item, notificationId)
+        val builder = basePlaybackNotificationBuilder(
+            context,
+            item,
+            notificationId,
+            ongoing = item.playing
+        )
             .setContentText(subtitle)
             .setSubText(null)
             .setContentIntent(buildLaunchIntent(context, sessionId = item.id))
@@ -365,22 +380,25 @@ internal object UnifiedPlaybackNotificationController {
     private fun basePlaybackNotificationBuilder(
         context: Context,
         item: UnifiedPlaybackNotificationItem,
-        notificationId: Int
+        notificationId: Int,
+        ongoing: Boolean
     ): NotificationCompat.Builder {
         val builder = NotificationCompat.Builder(context, channelId)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle(item.title)
-            .setDeleteIntent(buildDismissIntent(context, notificationId))
             .setShowWhen(false)
             .setOnlyAlertOnce(true)
             .setSilent(true)
-            .setOngoing(false)
+            .setOngoing(ongoing)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setCategory(NotificationCompat.CATEGORY_TRANSPORT)
             .addExtras(Bundle().apply {
                 putBoolean(unifiedNotificationExtra, true)
             })
+        if (!ongoing) {
+            builder.setDeleteIntent(buildDismissIntent(context, notificationId))
+        }
         resolveLargeIcon(item.artPath)?.let(builder::setLargeIcon)
         return builder
     }

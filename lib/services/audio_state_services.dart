@@ -214,6 +214,7 @@ class SettingsState {
     this.notificationsEnabled = true,
     this.showPlaybackCard = true,
     this.autoPlayAddedSessions = true,
+    this.maxCacheBytes = 300 * 1024 * 1024,
     this.isPageTransitioning = false,
   });
 
@@ -223,6 +224,7 @@ class SettingsState {
   final bool notificationsEnabled;
   final bool showPlaybackCard;
   final bool autoPlayAddedSessions;
+  final int maxCacheBytes;
   final bool isPageTransitioning;
 
   @override
@@ -234,6 +236,7 @@ class SettingsState {
         other.notificationsEnabled == notificationsEnabled &&
         other.showPlaybackCard == showPlaybackCard &&
         other.autoPlayAddedSessions == autoPlayAddedSessions &&
+        other.maxCacheBytes == maxCacheBytes &&
         other.isPageTransitioning == isPageTransitioning;
   }
 
@@ -245,6 +248,7 @@ class SettingsState {
     notificationsEnabled,
     showPlaybackCard,
     autoPlayAddedSessions,
+    maxCacheBytes,
     isPageTransitioning,
   );
 }
@@ -1175,6 +1179,7 @@ class SettingsRepository {
   bool notificationsEnabled = true;
   bool showPlaybackCard = true;
   bool autoPlayAddedSessions = true;
+  int maxCacheBytes = 300 * 1024 * 1024;
   bool isPageTransitioning = false;
   bool keepCpuAwake = false;
   bool keepAliveHasPlayback = false;
@@ -1194,6 +1199,7 @@ class SettingsRepository {
         notificationsEnabled: notificationsEnabled,
         showPlaybackCard: showPlaybackCard,
         autoPlayAddedSessions: autoPlayAddedSessions,
+        maxCacheBytes: maxCacheBytes,
         isPageTransitioning: isPageTransitioning,
       ),
     );

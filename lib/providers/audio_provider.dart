@@ -19,6 +19,7 @@ import '../models/library_node.dart';
 import '../models/music_track.dart';
 import '../models/playback_mode.dart';
 import '../models/playback_session.dart';
+import '../services/app_cache_service.dart';
 import '../services/audio_database_repository.dart';
 import '../services/audio_detail_repository.dart';
 import '../services/audio_state_services.dart';
@@ -375,6 +376,11 @@ class AudioProvider with ChangeNotifier {
   bool get _autoPlayAddedSessions => _settingsRepository.autoPlayAddedSessions;
   set _autoPlayAddedSessions(bool value) {
     _settingsRepository.autoPlayAddedSessions = value;
+  }
+
+  int get _maxCacheBytes => _settingsRepository.maxCacheBytes;
+  set _maxCacheBytes(int value) {
+    _settingsRepository.maxCacheBytes = value;
   }
 
   bool get _isPageTransitioning => _settingsRepository.isPageTransitioning;

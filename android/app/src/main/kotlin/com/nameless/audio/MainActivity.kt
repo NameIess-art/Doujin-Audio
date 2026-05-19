@@ -478,6 +478,29 @@ class MainActivity : AudioServiceActivity() {
                             result.error("cache_failed", e.message ?: "unknown error", null)
                         }
                     }
+                    "clearApplicationCache" -> {
+                        Thread {
+                            val deletedBytes = clearApplicationCache()
+                            runOnUiThread { result.success(deletedBytes) }
+                        }.start()
+                    }
+                    "setApplicationCacheLimit" -> {
+                        val maxBytes = call.argument<Number>("maxBytes")?.toLong()
+                            ?: defaultMaxApplicationCacheBytes
+                        setMaxApplicationCacheBytes(maxBytes)
+                        Thread {
+                            enforceApplicationCacheLimit(maxBytes)
+                            runOnUiThread { result.success(null) }
+                        }.start()
+                    }
+                    "enforceApplicationCacheLimit" -> {
+                        val maxBytes = call.argument<Number>("maxBytes")?.toLong()
+                            ?: maxApplicationCacheBytes()
+                        Thread {
+                            enforceApplicationCacheLimit(maxBytes)
+                            runOnUiThread { result.success(null) }
+                        }.start()
+                    }
                     "scanFolder" -> {
                         val folder = call.argument<String>("folder")
                         if (folder.isNullOrBlank()) {
@@ -2964,6 +2987,122 @@ class MainActivity : AudioServiceActivity() {
         return findPreferredCoverViaFile(folderPath, trackPath)
     }
 
+    private val defaultMaxApplicationCacheBytes: Long = 300L * 1024L * 1024L
+    private val cachePolicyPrefsName = "app_cache_policy"
+    private val maxCacheBytesKey = "max_cache_bytes"
+
+    private fun maxApplicationCacheBytes(): Long {
+        return getSharedPreferences(cachePolicyPrefsName, Context.MODE_PRIVATE)
+            .getLong(maxCacheBytesKey, defaultMaxApplicationCacheBytes)
+            .coerceAtLeast(1L)
+    }
+
+    private fun setMaxApplicationCacheBytes(maxBytes: Long) {
+        getSharedPreferences(cachePolicyPrefsName, Context.MODE_PRIVATE)
+            .edit()
+            .putLong(maxCacheBytesKey, maxBytes.coerceAtLeast(1L))
+            .apply()
+    }
+
+    private fun clearApplicationCache(): Long {
+        var deletedBytes = 0L
+        applicationCacheRoots().forEach { root ->
+            if (!root.exists()) return@forEach
+            root.listFiles()?.forEach { child ->
+                deletedBytes += deleteCacheEntity(child)
+            }
+        }
+        return deletedBytes.coerceAtMost(Int.MAX_VALUE.toLong())
+    }
+
+    private fun deleteCacheEntity(entity: File): Long {
+        val size = cacheEntitySize(entity)
+        try {
+            if (entity.isDirectory) {
+                entity.deleteRecursively()
+            } else {
+                entity.delete()
+            }
+        } catch (_: Exception) {
+        }
+        return if (entity.exists()) 0L else size
+    }
+
+    private fun enforceApplicationCacheLimit(
+        maxBytes: Long = maxApplicationCacheBytes()
+    ) {
+        val files = applicationCacheRoots()
+            .filter { it.exists() }
+            .flatMap(::collectCacheFiles)
+            .distinctBy { it.absolutePath }
+        if (files.size <= 1) return
+
+        var totalBytes = files.sumOf { file -> file.length().coerceAtLeast(0L) }
+        var remainingFiles = files.size
+        files.sortedBy { it.lastModified() }.forEach { file ->
+            if (totalBytes <= maxBytes || remainingFiles <= 1) return@forEach
+            val size = file.length().coerceAtLeast(0L)
+            try {
+                if (file.delete()) {
+                    totalBytes -= size
+                    remainingFiles -= 1
+                }
+            } catch (_: Exception) {
+            }
+        }
+        applicationCacheRoots().forEach(::deleteEmptyCacheDirectories)
+    }
+
+    private fun applicationCacheRoots(): List<File> {
+        return listOfNotNull(cacheDir, externalCacheDir)
+    }
+
+    private fun collectCacheFiles(root: File): List<File> {
+        val children = root.listFiles() ?: return emptyList()
+        val result = mutableListOf<File>()
+        children.forEach { child ->
+            if (child.isDirectory) {
+                result.addAll(collectCacheFiles(child))
+            } else if (child.isFile) {
+                result.add(child)
+            }
+        }
+        return result
+    }
+
+    private fun cacheEntitySize(entity: File): Long {
+        return try {
+            if (entity.isFile) {
+                entity.length().coerceAtLeast(0L)
+            } else {
+                entity.listFiles()?.sumOf(::cacheEntitySize) ?: 0L
+            }
+        } catch (_: Exception) {
+            0L
+        }
+    }
+
+    private fun deleteEmptyCacheDirectories(root: File) {
+        root.listFiles()?.forEach { child ->
+            if (child.isDirectory) {
+                deleteEmptyCacheDirectories(child)
+                if (child.listFiles()?.isEmpty() == true) {
+                    try {
+                        child.delete()
+                    } catch (_: Exception) {
+                    }
+                }
+            }
+        }
+    }
+
+    private fun touchCacheFile(file: File) {
+        try {
+            file.setLastModified(System.currentTimeMillis())
+        } catch (_: Exception) {
+        }
+    }
+
     /**
      * Finds the preferred cover image in [folderPath] using File I/O and
      * caches it, returning the cached path.
@@ -2996,9 +3135,14 @@ class MainActivity : AudioServiceActivity() {
             coverCacheDir,
             "cover_${kotlin.math.abs(cacheKey.hashCode())}.jpg"
         )
-        if (outputFile.exists() && outputFile.length() > 0) return outputFile.absolutePath
+        if (outputFile.exists() && outputFile.length() > 0) {
+            touchCacheFile(outputFile)
+            return outputFile.absolutePath
+        }
         return try {
             imageFile.copyTo(outputFile, overwrite = true)
+            touchCacheFile(outputFile)
+            enforceApplicationCacheLimit()
             outputFile.absolutePath
         } catch (_: Exception) {
             null
@@ -3025,6 +3169,7 @@ class MainActivity : AudioServiceActivity() {
             "video_frame_${kotlin.math.abs(cacheKey.hashCode())}.jpg"
         )
         if (outputFile.exists() && outputFile.length() > 0) {
+            touchCacheFile(outputFile)
             return outputFile.absolutePath
         }
 
@@ -3044,6 +3189,8 @@ class MainActivity : AudioServiceActivity() {
                 bitmap.compress(Bitmap.CompressFormat.JPEG, 88, output)
                 output.flush()
             }
+            touchCacheFile(outputFile)
+            enforceApplicationCacheLimit()
             bitmap.recycle()
             return outputFile.absolutePath
         } catch (_: Exception) {
@@ -3373,6 +3520,7 @@ class MainActivity : AudioServiceActivity() {
             "cover_${kotlin.math.abs(trackPath.hashCode())}.$extension"
         )
         if (outputFile.exists() && outputFile.length() > 0) {
+            touchCacheFile(outputFile)
             return outputFile.absolutePath
         }
 
@@ -3383,6 +3531,8 @@ class MainActivity : AudioServiceActivity() {
                     output.flush()
                 }
             } ?: return null
+            touchCacheFile(outputFile)
+            enforceApplicationCacheLimit()
             outputFile.absolutePath
         } catch (_: Exception) {
             if (outputFile.exists()) {
@@ -3403,6 +3553,7 @@ class MainActivity : AudioServiceActivity() {
             "cover_${kotlin.math.abs(cacheKey.hashCode())}.$extension"
         )
         if (outputFile.exists() && outputFile.length() > 0) {
+            touchCacheFile(outputFile)
             return outputFile.absolutePath
         }
 
@@ -3413,6 +3564,8 @@ class MainActivity : AudioServiceActivity() {
                     output.flush()
                 }
             } ?: return null
+            touchCacheFile(outputFile)
+            enforceApplicationCacheLimit()
             outputFile.absolutePath
         } catch (_: Exception) {
             if (outputFile.exists()) {

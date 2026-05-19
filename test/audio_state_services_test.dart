@@ -19,6 +19,7 @@ void main() {
         ..notificationsEnabled = false
         ..showPlaybackCard = false
         ..autoPlayAddedSessions = false
+        ..maxCacheBytes = 500 * 1024 * 1024
         ..isPageTransitioning = true;
       repository.syncSlice();
 
@@ -42,6 +43,11 @@ void main() {
               (state) => state.autoPlayAddedSessions,
               'auto play',
               isFalse,
+            )
+            .having(
+              (state) => state.maxCacheBytes,
+              'max cache',
+              500 * 1024 * 1024,
             )
             .having(
               (state) => state.isPageTransitioning,

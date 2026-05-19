@@ -178,6 +178,10 @@ extension AudioProviderPersistence on AudioProvider {
       _notificationsEnabled = map['notificationsEnabled'] as bool? ?? true;
       _showPlaybackCard = map['showPlaybackCard'] as bool? ?? true;
       _autoPlayAddedSessions = map['autoPlayAddedSessions'] as bool? ?? true;
+      _maxCacheBytes =
+          (map['maxCacheBytes'] as num?)?.toInt() ??
+          AppCacheService.defaultMaxCacheBytes;
+      unawaited(AppCacheService.setMaxCacheBytes(_maxCacheBytes));
     } catch (e) {
       debugPrint('AudioProvider persistence error: $e');
     }
@@ -191,6 +195,7 @@ extension AudioProviderPersistence on AudioProvider {
         'notificationsEnabled': _notificationsEnabled,
         'showPlaybackCard': _showPlaybackCard,
         'autoPlayAddedSessions': _autoPlayAddedSessions,
+        'maxCacheBytes': _maxCacheBytes,
       });
       await prefs.setString(_kPlaybackSettingsKey, encoded);
     } catch (e) {
@@ -440,6 +445,17 @@ extension AudioProviderPersistence on AudioProvider {
     if (_autoPlayAddedSessions == enabled) return;
     _autoPlayAddedSessions = enabled;
     _notifyListeners();
+    unawaited(_savePlaybackSettings());
+  }
+
+  Future<void> setMaxCacheBytes(int bytes) async {
+    final normalized = bytes <= 0
+        ? AppCacheService.defaultMaxCacheBytes
+        : bytes;
+    if (_maxCacheBytes == normalized) return;
+    _maxCacheBytes = normalized;
+    _notifyListeners();
+    await AppCacheService.setMaxCacheBytes(normalized);
     unawaited(_savePlaybackSettings());
   }
 }

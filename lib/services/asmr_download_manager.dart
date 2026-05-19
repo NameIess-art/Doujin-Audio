@@ -10,6 +10,7 @@ import 'package:flutter/services.dart';
 
 import '../models/audio_detail.dart';
 import '../models/asmr_models.dart';
+import 'app_cache_service.dart';
 import 'app_preferences.dart';
 import 'path_display.dart';
 import 'path_matcher.dart';
@@ -539,6 +540,8 @@ class AsmrDownloadManager extends ChangeNotifier {
         await sink.close();
       }
 
+      await tempFile.setLastModified(DateTime.now());
+      await AppCacheService.enforceLimit();
       return _TemporaryDownloadResult(file: tempFile, bytesDownloaded: received);
     } on _DownloadCancelled {
       rethrow;

@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 
+import 'app_cache_service.dart';
 import 'path_display.dart';
 
 class AppVersionInfo {
@@ -171,6 +172,8 @@ class AppUpdateService {
       } finally {
         await sink.close();
       }
+      await file.setLastModified(DateTime.now());
+      await AppCacheService.enforceLimit();
       onProgress(1);
       return file;
     } finally {

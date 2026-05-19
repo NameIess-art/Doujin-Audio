@@ -5,18 +5,19 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:path/path.dart' as path;
 import 'package:provider/provider.dart' hide Consumer;
 
 import '../i18n/app_language_provider.dart';
 import '../providers/audio_provider.dart';
 import '../providers/audio_provider_riverpod.dart';
+import '../services/app_cache_service.dart';
 import '../services/app_update_service.dart';
 import '../services/audio_state_services.dart';
 import '../services/permission_action_controller.dart';
 import '../services/platform_channels.dart';
 import '../theme/theme_provider.dart';
 import '../widgets/app_feedback.dart';
+import '../widgets/confirm_action_dialog.dart';
 import '../widgets/mobile_overlay_inset.dart';
 import '../widgets/top_page_header.dart';
 import '../providers/subtitle_settings_provider.dart';
@@ -37,6 +38,13 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
   static const MethodChannel _notificationsChannel = MethodChannel(
     NotificationsChannel.name,
   );
+  static const List<int> _cacheLimitOptions = <int>[
+    100 * 1024 * 1024,
+    300 * 1024 * 1024,
+    500 * 1024 * 1024,
+    1024 * 1024 * 1024,
+    2 * 1024 * 1024 * 1024,
+  ];
 
   bool _checkingUpdate = false;
   bool _downloadingUpdate = false;
@@ -450,10 +458,67 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                     _SectionHeader(title: i18n.tr('section_other')),
                     const SizedBox(height: 2),
                     ListTile(
-                      onTap: () => _clearTempCache(context),
-                      title: Text(i18n.tr('clear_temp_cache')),
+                      title: Text(i18n.tr('max_cache_size')),
                       subtitle: Text(
-                        i18n.tr('clear_temp_cache_subtitle'),
+                        i18n.tr('max_cache_size_subtitle', {
+                          'size': AppCacheService.formatBytes(
+                            playbackSettings.maxCacheBytes,
+                          ),
+                        }),
+                        style: descStyle,
+                      ),
+                      leading: Container(
+                        width: 38,
+                        height: 38,
+                        decoration: BoxDecoration(
+                          color: cs.primaryContainer,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Icon(
+                          Icons.storage_rounded,
+                          color: cs.onPrimaryContainer,
+                        ),
+                      ),
+                      trailing: DropdownButtonHideUnderline(
+                        child: DropdownButton<int>(
+                          value:
+                              _cacheLimitOptions.contains(
+                                playbackSettings.maxCacheBytes,
+                              )
+                              ? playbackSettings.maxCacheBytes
+                              : AppCacheService.defaultMaxCacheBytes,
+                          borderRadius: BorderRadius.circular(12),
+                          onChanged: (value) {
+                            if (value != null) {
+                              audioProvider.setMaxCacheBytes(value);
+                            }
+                          },
+                          items: _cacheLimitOptions
+                              .map(
+                                (value) => DropdownMenuItem<int>(
+                                  value: value,
+                                  child: Text(
+                                    AppCacheService.formatBytes(value),
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ),
+                              )
+                              .toList(),
+                        ),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 2,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    ListTile(
+                      onTap: () => _clearApplicationCache(context),
+                      title: Text(i18n.tr('clear_app_cache')),
+                      subtitle: Text(
+                        i18n.tr('clear_app_cache_subtitle'),
                         style: descStyle,
                       ),
                       leading: Container(

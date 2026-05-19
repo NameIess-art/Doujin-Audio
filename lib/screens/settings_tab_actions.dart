@@ -56,31 +56,38 @@ extension _SettingsTabActions on _SettingsTabState {
     }
   }
 
-  Future<void> _clearTempCache(BuildContext context) async {
+  Future<void> _clearApplicationCache(BuildContext context) async {
     final i18n = context.read<AppLanguageProvider>();
-    final cacheDir = Directory(
-      path.join(Directory.systemTemp.path, 'nameless_audio_imports'),
+    final confirmed = await showConfirmActionDialog(
+      context: context,
+      title: i18n.tr('clear_app_cache'),
+      message: i18n.tr('clear_app_cache_confirm'),
+      cancelLabel: i18n.tr('cancel'),
+      confirmLabel: i18n.tr('clear'),
+      icon: Icons.cleaning_services_rounded,
+      confirmColor: Theme.of(context).colorScheme.error,
     );
-    if (await cacheDir.exists()) {
-      await cacheDir.delete(recursive: true);
-      if (context.mounted) {
-        showAppSnackBar(
-          context,
-          i18n.tr('temp_cache_cleaned'),
-          tone: AppFeedbackTone.success,
-          icon: Icons.cleaning_services_rounded,
-        );
-      }
+    if (!confirmed) return;
+
+    final deletedBytes = await AppCacheService.clearAllCaches();
+    if (!context.mounted) return;
+    if (deletedBytes > 0) {
+      showAppSnackBar(
+        context,
+        i18n.tr('app_cache_cleaned', {
+          'size': AppCacheService.formatBytes(deletedBytes),
+        }),
+        tone: AppFeedbackTone.success,
+        icon: Icons.cleaning_services_rounded,
+      );
       return;
     }
 
-    if (context.mounted) {
-      showAppSnackBar(
-        context,
-        i18n.tr('temp_cache_none'),
-        icon: Icons.info_outline_rounded,
-      );
-    }
+    showAppSnackBar(
+      context,
+      i18n.tr('app_cache_none'),
+      icon: Icons.info_outline_rounded,
+    );
   }
 
   Future<bool> _isIgnoringBatteryOptimizations() async {

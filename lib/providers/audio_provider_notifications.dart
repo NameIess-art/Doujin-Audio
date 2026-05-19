@@ -199,6 +199,12 @@ extension AudioProviderNotifications on AudioProvider {
   Future<void> dismissNotificationsAfterPauseAll() async {
     _notificationsDismissedWhilePaused = true;
     await _nativePlaybackRepository.dismissNotifications();
+    if (_hasPlaybackToKeepAlive) {
+      await _clearUnifiedPlaybackNotificationsOnPlatform();
+      _syncKeepCpuAwake();
+      _notifyListeners();
+      return;
+    }
     // Clear unified notifications before stopping the keep-alive service
     // so that activeNotificationCount is 0, which causes the keep-alive
     // service to use STOP_FOREGROUND_REMOVE instead of DETACH.

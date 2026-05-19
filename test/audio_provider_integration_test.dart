@@ -21,6 +21,7 @@ void main() {
 
   const fileCacheChannel = MethodChannel(FileCacheChannel.name);
   const nativePlaybackChannel = MethodChannel(NativePlaybackChannel.name);
+  const notificationsChannel = MethodChannel(NotificationsChannel.name);
   late AudioProvider provider;
   late PlaybackNotificationHandler handler;
   late PlaybackNotificationService notificationService;
@@ -50,6 +51,8 @@ void main() {
         .setMockMethodCallHandler(fileCacheChannel, null);
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(nativePlaybackChannel, null);
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(notificationsChannel, null);
     provider.dispose();
     await db.close();
   });
@@ -287,6 +290,48 @@ void main() {
         handler.playbackState.value.controls.single.action,
         MediaAction.play,
       );
+    });
+
+    test('dismissing active playback keeps session playing', () async {
+      final nativeCalls = <String>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+            nativeCalls.add(call.method);
+            if (call.method == NativePlaybackMethods.prepareSession ||
+                call.method == NativePlaybackMethods.dismissNotifications) {
+              return <String, Object?>{'ok': true, 'value': null};
+            }
+            if (call.method == NativePlaybackMethods.pauseAll) {
+              return <String, Object?>{'ok': true, 'value': null};
+            }
+            return <String, Object?>{'ok': true, 'value': null};
+          });
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(notificationsChannel, (call) async {
+            return null;
+          });
+
+      await provider.spawnSession(
+        const MusicTrack(
+          path: '/music/keep-playing.mp3',
+          displayName: 'Keep Playing',
+          groupKey: '/music',
+          groupTitle: 'Music',
+          groupSubtitle: '',
+          isSingle: true,
+        ),
+        autoPlay: false,
+      );
+      final session = provider.activeSessions.single;
+      session
+        ..loadedPath = session.currentTrackPath
+        ..setOptimisticState(playing: true);
+
+      await provider.dismissNotificationsAfterPauseAll();
+
+      expect(session.state.playing, isTrue);
+      expect(nativeCalls, contains(NativePlaybackMethods.dismissNotifications));
+      expect(nativeCalls, isNot(contains(NativePlaybackMethods.pauseAll)));
     });
   });
 

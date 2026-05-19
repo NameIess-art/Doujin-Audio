@@ -244,10 +244,13 @@ const Map<AppLanguage, Map<String, String>> _localizedValues = {
     'exact_alarm_permission_missing': '精确定时未开启，长时间后台后的自动恢复可能不可靠。',
     'exact_alarm_permission_checking': '正在检查精确定时状态...',
     'exact_alarm_settings_open_failed': '无法打开精确定时设置，请手动进入系统设置调整。',
-    'clear_temp_cache': '清理临时缓存',
-    'clear_temp_cache_subtitle': '删除导入过程中生成的临时文件。',
-    'temp_cache_cleaned': '临时缓存已清理。',
-    'temp_cache_none': '没有可清理的临时缓存。',
+    'clear_app_cache': '清理应用缓存',
+    'clear_app_cache_subtitle': '删除封面、视频帧、更新包和下载临时文件等缓存。',
+    'clear_app_cache_confirm': '将清理当前应用产生的缓存文件，不会删除音乐库源文件。是否继续？',
+    'app_cache_cleaned': '已清理 {size} 缓存。',
+    'app_cache_none': '没有可清理的应用缓存。',
+    'max_cache_size': '最大允许缓存',
+    'max_cache_size_subtitle': '当前上限：{size}。新缓存会优先淘汰旧缓存。',
     'check': '检查',
     'check_updates': '检查更新',
     'check_updates_subtitle': '从 GitHub Releases 自动检查并下载最新版 APK。',
@@ -557,10 +560,14 @@ const Map<AppLanguage, Map<String, String>> _localizedValues = {
     'exact_alarm_permission_checking': '正確なアラームの状態を確認しています...',
     'exact_alarm_settings_open_failed':
         '正確なアラーム設定を開けませんでした。システム設定から手動で変更してください。',
-    'clear_temp_cache': '一時キャッシュを削除',
-    'clear_temp_cache_subtitle': '取り込み時に作成された一時ファイルを削除します。',
-    'temp_cache_cleaned': '一時キャッシュを削除しました。',
-    'temp_cache_none': '削除できる一時キャッシュはありません。',
+    'clear_app_cache': 'アプリキャッシュを削除',
+    'clear_app_cache_subtitle': 'カバー、動画フレーム、更新 APK、ダウンロード一時ファイルを削除します。',
+    'clear_app_cache_confirm':
+        'このアプリが作成したキャッシュを削除します。ライブラリの元ファイルは削除されません。続行しますか？',
+    'app_cache_cleaned': '{size} のキャッシュを削除しました。',
+    'app_cache_none': '削除できるアプリキャッシュはありません。',
+    'max_cache_size': '最大キャッシュ容量',
+    'max_cache_size_subtitle': '現在の上限：{size}。新しいキャッシュは古いキャッシュを優先して置き換えます。',
     'check': '確認',
     'check_updates': '更新を確認',
     'check_updates_subtitle': 'GitHub Releases から最新版 APK を確認してダウンロードします。',
@@ -894,11 +901,16 @@ const Map<AppLanguage, Map<String, String>> _localizedValues = {
     'exact_alarm_permission_checking': 'Checking exact alarm status...',
     'exact_alarm_settings_open_failed':
         'Could not open exact alarm settings. Please change it manually in system settings.',
-    'clear_temp_cache': 'Clear temp cache',
-    'clear_temp_cache_subtitle':
-        'Delete temporary files created during import.',
-    'temp_cache_cleaned': 'Temporary cache has been cleared.',
-    'temp_cache_none': 'No temporary cache to clear.',
+    'clear_app_cache': 'Clear app cache',
+    'clear_app_cache_subtitle':
+        'Delete cached covers, video frames, update APKs, and download temp files.',
+    'clear_app_cache_confirm':
+        'This clears cache files created by the app. Library source files will not be deleted. Continue?',
+    'app_cache_cleaned': 'Cleared {size} of cache.',
+    'app_cache_none': 'No app cache to clear.',
+    'max_cache_size': 'Max cache size',
+    'max_cache_size_subtitle':
+        'Current limit: {size}. New cache replaces older cache first.',
     'check': 'Check',
     'check_updates': 'Check for updates',
     'check_updates_subtitle':

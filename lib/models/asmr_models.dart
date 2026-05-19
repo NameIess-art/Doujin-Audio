@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:path/path.dart' as path;
 
 import 'music_track.dart';
 
@@ -189,6 +190,7 @@ class AsmrWork {
   factory AsmrWork.fromJson(Map<String, dynamic> json) {
     final circle = json['circle'];
     final circleName =
+        (json['circleName'] as String?) ??
         (json['name'] as String?) ??
         (circle is Map<String, dynamic> ? circle['name'] as String? : null) ??
         '';
@@ -201,37 +203,62 @@ class AsmrWork {
         })
         .where((item) => item.isNotEmpty)
         .toList(growable: false);
-    final voiceActors = (json['vas'] as List<dynamic>? ?? const <dynamic>[])
-        .map((dynamic item) {
-          if (item is Map<String, dynamic>) {
-            return (item['name'] as String?) ?? '';
-          }
-          return item.toString();
-        })
-        .where((item) => item.isNotEmpty)
-        .toList(growable: false);
+    final voiceActors =
+        (json['voiceActors'] as List<dynamic>? ??
+                json['vas'] as List<dynamic>? ??
+                const <dynamic>[])
+            .map((dynamic item) {
+              if (item is Map<String, dynamic>) {
+                return (item['name'] as String?) ?? '';
+              }
+              return item.toString();
+            })
+            .where((item) => item.isNotEmpty)
+            .toList(growable: false);
     return AsmrWork(
       id: (json['id'] as num?)?.toInt() ?? 0,
       title: (json['title'] as String?) ?? '',
       circleName: circleName,
-      sourceId: (json['source_id'] as String?) ?? '',
-      sourceType: (json['source_type'] as String?) ?? '',
-      sourceUrl: (json['source_url'] as String?) ?? '',
-      coverUrl: (json['samCoverUrl'] as String?) ?? '',
-      thumbnailUrl: (json['thumbnailCoverUrl'] as String?) ?? '',
+      sourceId:
+          (json['sourceId'] as String?) ?? (json['source_id'] as String?) ?? '',
+      sourceType:
+          (json['sourceType'] as String?) ??
+          (json['source_type'] as String?) ??
+          '',
+      sourceUrl:
+          (json['sourceUrl'] as String?) ??
+          (json['source_url'] as String?) ??
+          '',
+      coverUrl:
+          (json['coverUrl'] as String?) ??
+          (json['samCoverUrl'] as String?) ??
+          '',
+      thumbnailUrl:
+          (json['thumbnailUrl'] as String?) ??
+          (json['thumbnailCoverUrl'] as String?) ??
+          '',
       mainCoverUrl: (json['mainCoverUrl'] as String?) ?? '',
-      releaseDate: _dateTimeOrNull(json['release']),
-      createDate: _dateTimeOrNull(json['create_date']),
-      duration: Duration(
-        milliseconds: (((json['duration'] as num?)?.toDouble() ?? 0) * 1000)
-            .round(),
-      ),
-      dlCount: (json['dl_count'] as num?)?.toInt() ?? 0,
-      reviewCount: (json['review_count'] as num?)?.toInt() ?? 0,
-      rating: (json['rate_average_2dp'] as num?)?.toDouble() ?? 0,
+      releaseDate: _dateTimeOrNull(json['releaseDate'] ?? json['release']),
+      createDate: _dateTimeOrNull(json['createDate'] ?? json['create_date']),
+      duration: _durationFromJson(json),
+      dlCount:
+          (json['dlCount'] as num?)?.toInt() ??
+          (json['dl_count'] as num?)?.toInt() ??
+          0,
+      reviewCount:
+          (json['reviewCount'] as num?)?.toInt() ??
+          (json['review_count'] as num?)?.toInt() ??
+          0,
+      rating:
+          (json['rating'] as num?)?.toDouble() ??
+          (json['rate_average_2dp'] as num?)?.toDouble() ??
+          0,
       voiceActors: voiceActors,
       tags: tags,
-      hasSubtitle: json['has_subtitle'] as bool? ?? false,
+      hasSubtitle:
+          json['hasSubtitle'] as bool? ??
+          json['has_subtitle'] as bool? ??
+          false,
       isFavorite: json['isFavorite'] as bool? ?? false,
     );
   }
@@ -241,6 +268,17 @@ class AsmrWork {
       return DateTime.tryParse(value);
     }
     return null;
+  }
+
+  static Duration _durationFromJson(Map<String, dynamic> json) {
+    final durationMs = (json['durationMs'] as num?)?.toInt();
+    if (durationMs != null && durationMs > 0) {
+      return Duration(milliseconds: durationMs);
+    }
+    return Duration(
+      milliseconds: (((json['duration'] as num?)?.toDouble() ?? 0) * 1000)
+          .round(),
+    );
   }
 }
 
@@ -315,6 +353,11 @@ class AsmrTrackFile {
 
   bool get isFolder => type == 'folder';
   bool get isAudio => type == 'audio';
+  bool get isSubtitle =>
+      type == 'text' &&
+      _asmrSubtitleExtensions.contains(path.extension(title).toLowerCase());
+  String get stemKey => _asmrStemKey(relativePath);
+  String get baseNameStem => path.basenameWithoutExtension(title).toLowerCase();
 
   MusicTrack toMusicTrack({
     String? groupTitleOverride,
@@ -370,3 +413,15 @@ class AsmrTrackFile {
     );
   }
 }
+
+const Set<String> _asmrSubtitleExtensions = <String>{
+  '.vtt',
+  '.webvtt',
+  '.lrc',
+  '.srt',
+  '.ass',
+  '.ssa',
+};
+
+String _asmrStemKey(String relativePath) =>
+    path.withoutExtension(relativePath).toLowerCase();

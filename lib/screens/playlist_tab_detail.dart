@@ -50,7 +50,32 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
     super.dispose();
   }
 
-  void _primeCoverArtwork(Future<String?> coverPathFuture) {
+  Future<void> _precacheImageProvider(
+    ImageProvider<Object> imageProvider,
+    ImageConfiguration configuration,
+  ) {
+    final completer = Completer<void>();
+    final stream = imageProvider.resolve(configuration);
+    late final ImageStreamListener listener;
+    listener = ImageStreamListener(
+      (image, syncCall) {
+        if (!completer.isCompleted) {
+          completer.complete();
+        }
+        stream.removeListener(listener);
+      },
+      onError: (error, stackTrace) {
+        if (!completer.isCompleted) {
+          completer.complete();
+        }
+        stream.removeListener(listener);
+      },
+    );
+    stream.addListener(listener);
+    return completer.future;
+  }
+
+  void _primeCoverArtwork(MusicTrack? track, Future<String?> coverPathFuture) {
     final mediaSize = MediaQuery.sizeOf(context);
     final heroHeight = min(250.0, max(180.0, mediaSize.height * 0.28));
     final dpr = MediaQuery.devicePixelRatioOf(context);
@@ -67,23 +92,34 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
       return;
     }
     _lastPrecachingCoverKey = precacheKey;
+    final imageConfiguration = createLocalImageConfiguration(context);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       unawaited(
         Future<void>(() async {
+          final remoteCoverUrl = track?.remoteCoverUrl?.trim();
+          if (remoteCoverUrl != null && remoteCoverUrl.isNotEmpty) {
+            try {
+              await _precacheImageProvider(
+                NetworkImage(remoteCoverUrl),
+                imageConfiguration,
+              );
+            } catch (_) {}
+            return;
+          }
           final coverPath = await coverPathFuture;
           if (!mounted || coverPath == null || coverPath.isEmpty) {
             return;
           }
           try {
-            await precacheImage(
+            await _precacheImageProvider(
               ResizeImage.resizeIfNeeded(
                 cacheWidth,
                 null,
                 FileImage(File(coverPath)),
               ),
-              context,
+              imageConfiguration,
             );
           } catch (_) {}
         }),
@@ -100,6 +136,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
     if (currentIndex < 0) return;
     final dpr = MediaQuery.devicePixelRatioOf(context);
     final cacheWidth = (96 * dpr).round();
+    final imageConfiguration = createLocalImageConfiguration(context);
 
     for (final index in <int>[currentIndex - 1, currentIndex + 1]) {
       if (index < 0 || index >= sessions.length) continue;
@@ -119,16 +156,26 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
         if (!mounted) return;
         unawaited(
           Future<void>(() async {
+            final remoteCoverUrl = track?.remoteCoverUrl?.trim();
+            if (remoteCoverUrl != null && remoteCoverUrl.isNotEmpty) {
+              try {
+                await _precacheImageProvider(
+                  NetworkImage(remoteCoverUrl),
+                  imageConfiguration,
+                );
+              } catch (_) {}
+              return;
+            }
             final coverPath = await future;
             if (!mounted || coverPath == null || coverPath.isEmpty) return;
             try {
-              await precacheImage(
+              await _precacheImageProvider(
                 ResizeImage.resizeIfNeeded(
                   cacheWidth,
                   cacheWidth,
                   FileImage(File(coverPath)),
                 ),
-                context,
+                imageConfiguration,
               );
             } catch (_) {}
           }),
@@ -285,7 +332,8 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
       _coverPathFuture = _coverFutureForTrack(provider, detailTrack);
     }
     final coverPathFuture = _coverPathFuture!;
-    _primeCoverArtwork(coverPathFuture);
+    final detailTrack = provider.trackByPath(detailState.trackPath);
+    _primeCoverArtwork(detailTrack, coverPathFuture);
     _primeAdjacentCoverArtworks(provider, currentCoverGen);
     final routeAnimation = ModalRoute.of(context)?.animation;
     final animatedListenable = routeAnimation == null
@@ -613,25 +661,35 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
           children: [
             // Dynamic Blurred Background
             Positioned.fill(
-              child: AsyncCoverImage(
-                future: coverPathFuture,
-                fallbackBuilder: (_) => ColoredBox(color: cs.surfaceDim),
-                imageBuilder: (context, coverPath) {
-                  final mediaSize = MediaQuery.sizeOf(context);
-                  final dpr = MediaQuery.devicePixelRatioOf(context);
-                  return Image(
-                    image: resizeFileImageIfNeeded(
-                      path: coverPath,
-                      cacheWidth: (mediaSize.width * dpr).round(),
+              child: track?.remoteCoverUrl?.trim().isNotEmpty == true
+                  ? Image.network(
+                      track!.remoteCoverUrl!.trim(),
+                      fit: BoxFit.cover,
+                      color: cs.surface.withValues(alpha: 0.45),
+                      colorBlendMode: BlendMode.darken,
+                      errorBuilder: (_, _, _) =>
+                          ColoredBox(color: cs.surfaceDim),
+                    )
+                  : AsyncCoverImage(
+                      future: coverPathFuture,
+                      fallbackBuilder: (_) => ColoredBox(color: cs.surfaceDim),
+                      imageBuilder: (context, coverPath) {
+                        final mediaSize = MediaQuery.sizeOf(context);
+                        final dpr = MediaQuery.devicePixelRatioOf(context);
+                        return Image(
+                          image: resizeFileImageIfNeeded(
+                            path: coverPath,
+                            cacheWidth: (mediaSize.width * dpr).round(),
+                          ),
+                          fit: BoxFit.cover,
+                          gaplessPlayback: true,
+                          color: cs.surface.withValues(alpha: 0.45),
+                          colorBlendMode: BlendMode.darken,
+                          errorBuilder: (_, _, _) =>
+                              ColoredBox(color: cs.surfaceDim),
+                        );
+                      },
                     ),
-                    fit: BoxFit.cover,
-                    gaplessPlayback: true,
-                    color: cs.surface.withValues(alpha: 0.45),
-                    colorBlendMode: BlendMode.darken,
-                    errorBuilder: (_, _, _) => ColoredBox(color: cs.surfaceDim),
-                  );
-                },
-              ),
             ),
             AnimatedBuilder(
               animation: widget.dismissAnimation,

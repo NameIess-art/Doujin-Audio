@@ -185,7 +185,6 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
             child: RepaintBoundary(
               child: _ActiveSessionCard(
                 session: session,
-                track: track,
                 provider: provider,
                 coverPathFuture: _sessionCoverFutureForTrack(provider, track),
                 onOpen: () => _openSessionDetail(context, session),

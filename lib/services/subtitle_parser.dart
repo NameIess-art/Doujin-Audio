@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:isolate';
 import 'dart:io';
 
@@ -73,14 +74,49 @@ Future<SubtitleTrack?> loadSubtitleTrackForAudio(String audioPath) async {
   );
 }
 
+Future<SubtitleTrack?> loadSubtitleTrackFromUrl({
+  required String url,
+  String? sourcePath,
+  String? extension,
+}) async {
+  final uri = Uri.tryParse(url);
+  if (uri == null) return null;
+
+  final resolvedSourcePath = (sourcePath == null || sourcePath.trim().isEmpty)
+      ? uri.path
+      : sourcePath.trim();
+  final resolvedExtension = _normalizedSubtitleExtension(
+    extension ?? path.extension(resolvedSourcePath),
+  );
+  if (!_supportedSubtitleExtensions.contains(resolvedExtension)) {
+    return null;
+  }
+
+  final client = HttpClient();
+  try {
+    final request = await client.getUrl(uri);
+    final response = await request.close();
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      return null;
+    }
+    final raw = await response.transform(utf8.decoder).join();
+    if (raw.trim().isEmpty) return null;
+    return parseSubtitleTrackFromRaw(
+      sourcePath: resolvedSourcePath,
+      raw: raw,
+      extension: resolvedExtension,
+    );
+  } finally {
+    client.close(force: true);
+  }
+}
+
 Future<SubtitleTrack?> parseSubtitleTrackFromRaw({
   required String sourcePath,
   required String raw,
   required String extension,
 }) async {
-  final normalizedExtension = extension.startsWith('.')
-      ? extension.toLowerCase()
-      : '.${extension.toLowerCase()}';
+  final normalizedExtension = _normalizedSubtitleExtension(extension);
   return Isolate.run(
     () => _parseSubtitleTrack(
       sourcePath: sourcePath,
@@ -146,6 +182,11 @@ Future<File?> _findSubtitleFile(String audioPath) async {
   final best = candidates.first;
   return rank(best) >= 10 ? null : best;
 }
+
+String _normalizedSubtitleExtension(String extension) =>
+    extension.startsWith('.')
+    ? extension.toLowerCase()
+    : '.${extension.toLowerCase()}';
 
 List<SubtitleCue> _parseLrc(String raw) {
   final timestampPattern = RegExp(r'\[(\d{1,2}):(\d{1,2})(?:[.:](\d{1,3}))?\]');

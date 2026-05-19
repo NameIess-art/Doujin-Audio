@@ -5,12 +5,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../i18n/app_language_provider.dart';
 import '../models/asmr_models.dart';
 import '../providers/audio_provider.dart';
 import '../services/asmr_library_controller.dart';
 import '../widgets/app_feedback.dart';
 import '../widgets/library_like_cards.dart';
+import '../widgets/mobile_overlay_inset.dart';
 import '../widgets/swipe_reveal_card.dart';
+import '../widgets/top_page_header.dart';
 import 'asmr_work_detail_sheet.dart';
 
 const List<_AsmrCategorySpec> _asmrCategories = <_AsmrCategorySpec>[
@@ -44,12 +47,16 @@ class _AsmrTabState extends State<AsmrTab>
   Timer? _searchDebounceTimer;
   ValueListenable<int?>? _scrollToTopTabListenable;
   String _searchQuery = '';
+  final GlobalKey _headerKey = GlobalKey();
+  double _headerHeight = 72;
 
   @override
   bool get wantKeepAlive => true;
 
   AsmrCategoryType get _currentCategory =>
       _asmrCategories[_tabController.index].type;
+
+  double get _headerControlsFullHeight => 86.0;
 
   @override
   void initState() {
@@ -64,6 +71,7 @@ class _AsmrTabState extends State<AsmrTab>
           .read<AudioProvider>()
           .scrollToTopTabListenable;
       _scrollToTopTabListenable?.addListener(_handleScrollToTopSignal);
+      _measureHeader();
       unawaited(
         asmrController.initialize().then((_) {
           if (!mounted) {
@@ -99,6 +107,16 @@ class _AsmrTabState extends State<AsmrTab>
     unawaited(_ensureCategoryLoaded(_currentCategory));
   }
 
+  void _measureHeader() {
+    final box = _headerKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box != null && mounted) {
+      final h = box.size.height - _headerControlsFullHeight;
+      if (h > 0 && h != _headerHeight) {
+        setState(() => _headerHeight = h);
+      }
+    }
+  }
+
   void _handleScrollToTopSignal() {
     if (!mounted || _scrollToTopTabListenable?.value != 0) {
       return;
@@ -129,6 +147,46 @@ class _AsmrTabState extends State<AsmrTab>
     return context.read<AsmrLibraryController>().refreshCategory(
       _currentCategory,
       searchQuery: _searchQuery,
+    );
+  }
+
+  Future<void> _refreshCategoryWithFeedback(AsmrCategoryType category) async {
+    final controller = context.read<AsmrLibraryController>();
+    final i18n = context.read<AppLanguageProvider>();
+    final beforeIds = controller
+        .filteredWorksFor(category, searchQuery: _searchQuery)
+        .map((work) => work.id)
+        .toList(growable: false);
+
+    await controller.refreshCategory(category, searchQuery: _searchQuery);
+    if (!mounted) {
+      return;
+    }
+
+    if (controller.lastError != null) {
+      showAppSnackBar(
+        context,
+        i18n.tr('asmr_refresh_failed'),
+        tone: AppFeedbackTone.warning,
+        icon: Icons.sync_problem_rounded,
+      );
+      return;
+    }
+
+    final afterIds = controller
+        .filteredWorksFor(category, searchQuery: _searchQuery)
+        .map((work) => work.id)
+        .toList(growable: false);
+    final hasUpdates = !listEquals(beforeIds, afterIds);
+    showAppSnackBar(
+      context,
+      i18n.tr(
+        hasUpdates ? 'asmr_refresh_done_updated' : 'asmr_refresh_no_updates',
+      ),
+      tone: hasUpdates ? AppFeedbackTone.success : AppFeedbackTone.info,
+      icon: hasUpdates
+          ? Icons.sync_rounded
+          : Icons.check_circle_outline_rounded,
     );
   }
 
@@ -173,156 +231,179 @@ class _AsmrTabState extends State<AsmrTab>
     final controller = context.watch<AsmrLibraryController>();
     final currentCategory = _currentCategory;
     final currentScrollController = _scrollControllers[currentCategory]!;
-    final currentCategoryLabel = _asmrCategories[_tabController.index].label;
+    final bottomInset = MobileOverlayInset.of(context);
+    final headerControlsFullHeight = _headerControlsFullHeight;
+    final topTotalHeight = _headerHeight + 4;
+    final headerContentHeight = topTotalHeight + headerControlsFullHeight;
 
-    return Column(
-      children: [
-        SafeArea(
-          bottom: false,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                'ASMR.ONE',
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: -0.6,
-                ),
-              ),
-            ),
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceContainerHigh,
-                borderRadius: BorderRadius.circular(999),
-              ),
-              child: Text(
-                currentCategoryLabel,
-                style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  fontWeight: FontWeight.w800,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ),
-          ),
-        ),
-        _AsmrSearchBar(
-          controller: _searchController,
-          query: _searchQuery,
-          onChanged: _onSearchChanged,
-          onClear: () {
-            _searchController.clear();
-            _searchDebounceTimer?.cancel();
-            if (_searchQuery.isEmpty) {
-              return;
-            }
-            setState(() {
-              _searchQuery = '';
-            });
-            unawaited(_refreshCurrentCategory());
-          },
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                for (
-                  var index = 0;
-                  index < _asmrCategories.length;
-                  index++
-                ) ...[
-                  if (index > 0) const SizedBox(width: 8),
-                  _AsmrCategoryButton(
-                    label: _asmrCategories[index].label,
-                    selected: _tabController.index == index,
-                    onTap: () {
-                      if (_tabController.index == index) {
-                        return;
-                      }
-                      _tabController.animateTo(index);
-                    },
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ),
-        Expanded(
-          child: Stack(
-            children: [
-              controller.initialized
-                  ? TabBarView(
-                      controller: _tabController,
-                      children: [
-                        for (final category in _asmrCategories)
-                          _AsmrCategoryList(
-                            category: category.type,
-                            scrollController:
-                                _scrollControllers[category.type]!,
-                            searchQuery: _searchQuery,
-                          ),
-                      ],
-                    )
-                  : const Center(child: CircularProgressIndicator()),
-              Positioned(
-                right: 16,
-                bottom: 18,
-                child: AnimatedBuilder(
-                  animation: currentScrollController,
-                  builder: (context, _) {
-                    final visible =
-                        currentScrollController.hasClients &&
-                        currentScrollController.offset > 220;
-                    return IgnorePointer(
-                      ignoring: !visible,
-                      child: AnimatedOpacity(
-                        opacity: visible ? 1 : 0,
-                        duration: const Duration(milliseconds: 180),
-                        curve: Curves.easeOutCubic,
-                        child: AnimatedScale(
-                          scale: visible ? 1 : 0.92,
-                          duration: const Duration(milliseconds: 180),
-                          curve: Curves.easeOutCubic,
-                          child: FloatingActionButton.small(
-                            heroTag: 'asmr-one-back-to-top',
-                            backgroundColor: Theme.of(
-                              context,
-                            ).colorScheme.surface.withValues(alpha: 0.72),
-                            foregroundColor: Theme.of(
-                              context,
-                            ).colorScheme.onSurface,
-                            elevation: 0,
-                            onPressed: () {
-                              if (!currentScrollController.hasClients) {
+    Widget collapsingHeaderControls() {
+      return _AsmrCollapsingHeaderControls(
+        controller: currentScrollController,
+        height: headerControlsFullHeight,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              height: 42,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 1, 12, 7),
+                child: Row(
+                  children: [
+                    for (var index = 0; index < _asmrCategories.length; index++)
+                      Expanded(
+                        child: Padding(
+                          padding: EdgeInsets.only(left: index == 0 ? 0 : 8),
+                          child: _AsmrCategoryButton(
+                            label: _asmrCategories[index].label,
+                            selected: _tabController.index == index,
+                            onTap: () {
+                              if (_tabController.index == index) {
                                 return;
                               }
-                              currentScrollController.animateTo(
-                                0,
-                                duration: const Duration(milliseconds: 320),
-                                curve: Curves.easeOutCubic,
-                              );
+                              FocusScope.of(context).unfocus();
+                              _tabController.animateTo(index);
                             },
-                            child: const Icon(Icons.arrow_upward_rounded),
                           ),
                         ),
                       ),
-                    );
-                  },
+                  ],
                 ),
               ),
-            ],
+            ),
+            _AsmrSearchBar(
+              controller: _searchController,
+              query: _searchQuery,
+              onChanged: _onSearchChanged,
+              onClear: () {
+                _searchController.clear();
+                _searchDebounceTimer?.cancel();
+                if (_searchQuery.isEmpty) {
+                  return;
+                }
+                setState(() {
+                  _searchQuery = '';
+                });
+                unawaited(_refreshCurrentCategory());
+              },
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        controller.initialized
+            ? TabBarView(
+                controller: _tabController,
+                children: [
+                  for (final category in _asmrCategories)
+                    _AsmrCategoryList(
+                      category: category.type,
+                      scrollController: _scrollControllers[category.type]!,
+                      searchQuery: _searchQuery,
+                      topInset: headerContentHeight,
+                      bottomInset: bottomInset,
+                      onRefresh: () =>
+                          _refreshCategoryWithFeedback(category.type),
+                    ),
+                ],
+              )
+            : const Center(child: CircularProgressIndicator()),
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          child: TopPageHeader(
+            key: _headerKey,
+            title: 'ASMR.ONE',
+            isLoading: !controller.initialized,
+            bottomSpacing: 4,
+            padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+            additionalChild: collapsingHeaderControls(),
+          ),
+        ),
+        Positioned(
+          right: 16,
+          bottom: bottomInset + 18,
+          child: AnimatedBuilder(
+            animation: currentScrollController,
+            builder: (context, _) {
+              final visible =
+                  currentScrollController.hasClients &&
+                  currentScrollController.offset > 220;
+              return IgnorePointer(
+                ignoring: !visible,
+                child: AnimatedOpacity(
+                  opacity: visible ? 1 : 0,
+                  duration: const Duration(milliseconds: 180),
+                  curve: Curves.easeOutCubic,
+                  child: AnimatedScale(
+                    scale: visible ? 1 : 0.92,
+                    duration: const Duration(milliseconds: 180),
+                    curve: Curves.easeOutCubic,
+                    child: FloatingActionButton.small(
+                      heroTag: 'asmr-one-back-to-top',
+                      backgroundColor: Theme.of(
+                        context,
+                      ).colorScheme.surface.withValues(alpha: 0.72),
+                      foregroundColor: Theme.of(context).colorScheme.onSurface,
+                      elevation: 0,
+                      onPressed: () {
+                        if (!currentScrollController.hasClients) {
+                          return;
+                        }
+                        currentScrollController.animateTo(
+                          0,
+                          duration: const Duration(milliseconds: 320),
+                          curve: Curves.easeOutCubic,
+                        );
+                      },
+                      child: const Icon(Icons.arrow_upward_rounded),
+                    ),
+                  ),
+                ),
+              );
+            },
           ),
         ),
       ],
+    );
+  }
+}
+
+class _AsmrCollapsingHeaderControls extends StatelessWidget {
+  const _AsmrCollapsingHeaderControls({
+    required this.controller,
+    required this.height,
+    required this.child,
+  });
+
+  final ScrollController controller;
+  final double height;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: controller,
+      child: child,
+      builder: (context, child) {
+        final offset = controller.positions.length == 1
+            ? controller.positions.single.pixels
+            : 0.0;
+        final hidden = offset.clamp(0.0, height);
+        return SizedBox(
+          height: height - hidden,
+          child: ClipRect(
+            child: Transform.translate(
+              offset: Offset(0, -hidden),
+              child: child,
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -400,101 +481,133 @@ class _AsmrSearchBar extends StatelessWidget {
   }
 }
 
-class _AsmrCategoryList extends StatelessWidget {
+class _AsmrCategoryList extends StatefulWidget {
   const _AsmrCategoryList({
     required this.category,
     required this.scrollController,
     required this.searchQuery,
+    required this.topInset,
+    required this.bottomInset,
+    required this.onRefresh,
   });
 
   final AsmrCategoryType category;
   final ScrollController scrollController;
   final String searchQuery;
+  final double topInset;
+  final double bottomInset;
+  final Future<void> Function() onRefresh;
+
+  @override
+  State<_AsmrCategoryList> createState() => _AsmrCategoryListState();
+}
+
+class _AsmrCategoryListState extends State<_AsmrCategoryList> {
+  final GlobalKey<RefreshIndicatorState> _refreshIndicatorKey =
+      GlobalKey<RefreshIndicatorState>();
+  bool _refreshTriggeredInCurrentScroll = false;
 
   @override
   Widget build(BuildContext context) {
     final controller = context.watch<AsmrLibraryController>();
     final works = controller.filteredWorksFor(
-      category,
-      searchQuery: searchQuery,
+      widget.category,
+      searchQuery: widget.searchQuery,
     );
-    final isLoading = controller.isLoadingCategory(category);
-    final isLoadingMore = controller.isLoadingMoreCategory(category);
-    final hasMore = controller.hasMoreCategory(category);
+    final isLoading = controller.isLoadingCategory(widget.category);
+    final isLoadingMore = controller.isLoadingMoreCategory(widget.category);
+    final hasMore = controller.hasMoreCategory(widget.category);
     final lastError = controller.lastError;
     final theme = Theme.of(context);
-    return RefreshIndicator(
-      color: Theme.of(context).colorScheme.primary,
-      backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
-      displacement: 32,
-      triggerMode: RefreshIndicatorTriggerMode.anywhere,
-      onRefresh: () async {
-        unawaited(HapticFeedback.mediumImpact());
-        unawaited(
-          context.read<AsmrLibraryController>().refreshCategory(
-            category,
-            searchQuery: searchQuery,
-          ),
-        );
-        await Future<void>.delayed(const Duration(milliseconds: 300));
+    return NotificationListener<ScrollNotification>(
+      onNotification: (notification) {
+        if (notification is ScrollUpdateNotification &&
+            notification.dragDetails != null &&
+            notification.metrics.pixels < -68 &&
+            !_refreshTriggeredInCurrentScroll) {
+          _refreshTriggeredInCurrentScroll = true;
+          unawaited(HapticFeedback.mediumImpact());
+          _refreshIndicatorKey.currentState?.show();
+        } else if (notification is ScrollEndNotification) {
+          _refreshTriggeredInCurrentScroll = false;
+        }
+        return false;
       },
-      child: ListView.builder(
-        controller: scrollController,
-        physics: const AlwaysScrollableScrollPhysics(
-          parent: BouncingScrollPhysics(),
-        ),
-        padding: const EdgeInsets.fromLTRB(16, 6, 16, 24),
-        itemCount: works.isEmpty
-            ? 1
-            : works.length + ((isLoadingMore || hasMore) ? 1 : 0),
-        itemBuilder: (context, index) {
-          if (works.isEmpty) {
-            if (isLoading) {
-              return const Padding(
-                padding: EdgeInsets.only(top: 80),
-                child: Center(child: CircularProgressIndicator()),
+      child: RefreshIndicator(
+        key: _refreshIndicatorKey,
+        color: Theme.of(context).colorScheme.primary,
+        backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+        edgeOffset: widget.topInset,
+        displacement: 32,
+        triggerMode: RefreshIndicatorTriggerMode.anywhere,
+        onRefresh: () async {
+          unawaited(HapticFeedback.mediumImpact());
+          await widget.onRefresh();
+          await Future<void>.delayed(const Duration(milliseconds: 300));
+        },
+        child: ListView.builder(
+          controller: widget.scrollController,
+          physics: const AlwaysScrollableScrollPhysics(
+            parent: BouncingScrollPhysics(),
+          ),
+          padding: EdgeInsets.fromLTRB(
+            16,
+            widget.topInset + 6,
+            16,
+            widget.bottomInset + 24,
+          ),
+          itemCount: works.isEmpty
+              ? 1
+              : works.length + ((isLoadingMore || hasMore) ? 1 : 0),
+          itemBuilder: (context, index) {
+            if (works.isEmpty) {
+              if (isLoading) {
+                return const Padding(
+                  padding: EdgeInsets.only(top: 80),
+                  child: Center(child: CircularProgressIndicator()),
+                );
+              }
+              return Padding(
+                padding: const EdgeInsets.only(top: 80),
+                child: Center(
+                  child: Text(
+                    lastError == null ? '当前分类暂无内容。' : '同步失败，请下拉重试。',
+                    style: theme.textTheme.bodyLarge?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              );
+            }
+            if (index >= works.length) {
+              return Padding(
+                padding: const EdgeInsets.only(top: 4, bottom: 4),
+                child: Center(
+                  child: isLoadingMore
+                      ? const SizedBox(
+                          width: 22,
+                          height: 22,
+                          child: CircularProgressIndicator(strokeWidth: 2.2),
+                        )
+                      : Text(
+                          '继续上拉加载更多',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                ),
               );
             }
             return Padding(
-              padding: const EdgeInsets.only(top: 80),
-              child: Center(
-                child: Text(
-                  lastError == null ? '当前分类暂无内容。' : '同步失败，请下拉重试。',
-                  style: theme.textTheme.bodyLarge?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
+              padding: const EdgeInsets.only(bottom: 8),
+              child: _AsmrWorkTreeCard(
+                work: works[index],
+                searchQuery: widget.searchQuery,
               ),
             );
-          }
-          if (index >= works.length) {
-            return Padding(
-              padding: const EdgeInsets.only(top: 4, bottom: 4),
-              child: Center(
-                child: isLoadingMore
-                    ? const SizedBox(
-                        width: 22,
-                        height: 22,
-                        child: CircularProgressIndicator(strokeWidth: 2.2),
-                      )
-                    : Text(
-                        '继续上拉加载更多',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-              ),
-            );
-          }
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: _AsmrWorkTreeCard(
-              work: works[index],
-              searchQuery: searchQuery,
-            ),
-          );
-        },
+          },
+        ),
       ),
     );
   }
@@ -577,14 +690,12 @@ class _AsmrWorkTreeCardState extends State<_AsmrWorkTreeCard> {
 
   Future<void> _toggleFavorite(BuildContext context) async {
     final controller = context.read<AsmrLibraryController>();
+    final i18n = context.read<AppLanguageProvider>();
     final shouldFavorite = !widget.work.isFavorite;
-    await controller.toggleFavorite(widget.work);
-    if (!context.mounted) {
-      return;
-    }
+    unawaited(controller.toggleFavorite(widget.work));
     showAppSnackBar(
       context,
-      shouldFavorite ? '已加入收藏。' : '已取消收藏。',
+      i18n.tr(shouldFavorite ? 'asmr_favorite_added' : 'asmr_favorite_removed'),
       tone: shouldFavorite ? AppFeedbackTone.success : AppFeedbackTone.warning,
       icon: shouldFavorite
           ? Icons.favorite_rounded

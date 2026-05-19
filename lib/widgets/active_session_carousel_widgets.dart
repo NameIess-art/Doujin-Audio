@@ -3,14 +3,12 @@ part of 'active_session_carousel.dart';
 class _ActiveSessionCard extends StatelessWidget {
   const _ActiveSessionCard({
     required this.session,
-    required this.track,
     required this.provider,
     required this.coverPathFuture,
     required this.onOpen,
   });
 
   final PlaybackSession session;
-  final MusicTrack? track;
   final AudioProvider provider;
   final Future<String?> coverPathFuture;
   final VoidCallback onOpen;
@@ -87,6 +85,7 @@ class _ActiveSessionCard extends StatelessWidget {
                 cs,
                 isPlaying,
                 view,
+                currentTrack,
                 displayName,
               ),
             ),
@@ -101,6 +100,7 @@ class _ActiveSessionCard extends StatelessWidget {
     ColorScheme cs,
     bool isPlaying,
     ({bool playing, bool loading, String trackPath}) view,
+    MusicTrack? currentTrack,
     String displayName,
   ) {
     return Column(
@@ -110,7 +110,10 @@ class _ActiveSessionCard extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(10, 6, 8, 4),
           child: Row(
             children: [
-              _ActiveSessionCover(coverPathFuture: coverPathFuture),
+              _ActiveSessionCover(
+                track: currentTrack,
+                coverPathFuture: coverPathFuture,
+              ),
               const SizedBox(width: 12),
               Expanded(
                 child: _ActiveSessionTitleSubtitle(
@@ -466,8 +469,12 @@ class _ActiveSessionProgressStripState
 }
 
 class _ActiveSessionCover extends StatelessWidget {
-  const _ActiveSessionCover({required this.coverPathFuture});
+  const _ActiveSessionCover({
+    required this.track,
+    required this.coverPathFuture,
+  });
 
+  final MusicTrack? track;
   final Future<String?> coverPathFuture;
 
   @override
@@ -501,26 +508,32 @@ class _ActiveSessionCover extends StatelessWidget {
       height: 58,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(14),
-        child: AsyncCoverImage(
-          future: coverPathFuture,
-          fallbackBuilder: (_) => fallback(),
-          loadingBuilder: (_) => PulsingPlaceholder(
-            borderRadius: BorderRadius.circular(14),
-            child: fallback(),
-          ),
-          imageBuilder: (context, coverPath) {
-            final dpr = MediaQuery.devicePixelRatioOf(context);
-            return Image(
-              image: resizeFileImageIfNeeded(
-                path: coverPath,
-                cacheWidth: (58 * dpr).round(),
+        child: track?.remoteCoverUrl?.trim().isNotEmpty == true
+            ? Image.network(
+                track!.remoteCoverUrl!.trim(),
+                fit: BoxFit.cover,
+                errorBuilder: (_, _, _) => fallback(),
+              )
+            : AsyncCoverImage(
+                future: coverPathFuture,
+                fallbackBuilder: (_) => fallback(),
+                loadingBuilder: (_) => PulsingPlaceholder(
+                  borderRadius: BorderRadius.circular(14),
+                  child: fallback(),
+                ),
+                imageBuilder: (context, coverPath) {
+                  final dpr = MediaQuery.devicePixelRatioOf(context);
+                  return Image(
+                    image: resizeFileImageIfNeeded(
+                      path: coverPath,
+                      cacheWidth: (58 * dpr).round(),
+                    ),
+                    fit: BoxFit.cover,
+                    gaplessPlayback: true,
+                    errorBuilder: (_, _, _) => fallback(),
+                  );
+                },
               ),
-              fit: BoxFit.cover,
-              gaplessPlayback: true,
-              errorBuilder: (_, _, _) => fallback(),
-            );
-          },
-        ),
       ),
     );
   }

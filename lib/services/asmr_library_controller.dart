@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'package:path/path.dart' as path;
 
 import '../models/asmr_models.dart';
 import '../providers/audio_provider.dart';
@@ -456,6 +457,46 @@ class AsmrLibraryController extends ChangeNotifier {
     Iterable<AsmrTrackFile> roots,
   ) {
     final result = <MusicTrack>[];
+    final subtitleByStem = <String, AsmrTrackFile>{};
+    final subtitlesByBaseName = <String, List<AsmrTrackFile>>{};
+
+    void indexSubtitles(Iterable<AsmrTrackFile> nodes) {
+      for (final node in nodes) {
+        if (node.isSubtitle) {
+          subtitleByStem.putIfAbsent(node.stemKey, () => node);
+          subtitlesByBaseName
+              .putIfAbsent(node.baseNameStem, () => <AsmrTrackFile>[])
+              .add(node);
+        }
+        if (node.children.isNotEmpty) {
+          indexSubtitles(node.children);
+        }
+      }
+    }
+
+    Map<String, Object?> remoteMetadataForTrack(AsmrTrackFile node) {
+      final metadata = Map<String, Object?>.from(work.toJson());
+      final subtitle =
+          subtitleByStem[node.stemKey] ??
+          switch (subtitlesByBaseName[node.baseNameStem]) {
+            final List<AsmrTrackFile> matches when matches.length == 1 =>
+              matches.first,
+            _ => null,
+          };
+      final subtitleUrl = (subtitle?.streamUrl ?? subtitle?.downloadUrl ?? '')
+          .trim();
+      if (subtitleUrl.isEmpty) {
+        return metadata;
+      }
+      metadata['subtitleUrl'] = subtitleUrl;
+      metadata['subtitleExtension'] = path.extension(subtitle!.title);
+      metadata['subtitleSourcePath'] = subtitle.relativePath;
+      metadata['subtitleTitle'] = subtitle.title;
+      return metadata;
+    }
+
+    indexSubtitles(roots);
+
     void visit(Iterable<AsmrTrackFile> nodes) {
       for (final node in nodes) {
         if (node.isAudio) {
@@ -465,7 +506,7 @@ class AsmrLibraryController extends ChangeNotifier {
                 ? work.mainCoverUrl
                 : work.coverUrl,
             remoteMetadataKind: 'asmr.one',
-            remoteMetadata: work.toJson(),
+            remoteMetadata: remoteMetadataForTrack(node),
           );
           if (track.path.isNotEmpty) {
             result.add(track);

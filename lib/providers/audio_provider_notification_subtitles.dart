@@ -11,9 +11,15 @@ extension AudioProviderNotificationSubtitles on AudioProvider {
 
     return _subtitleTrackFutures.putIfAbsent(trackPath, () async {
       try {
-        final subtitleTrack = trackPath.startsWith('content://')
-            ? await _loadContentSubtitleTrack(trackPath)
-            : await loadSubtitleTrackForAudio(trackPath);
+        final track = trackByPath(trackPath);
+        final SubtitleTrack? subtitleTrack;
+        if (trackPath.startsWith('content://')) {
+          subtitleTrack = await _loadContentSubtitleTrack(trackPath);
+        } else if (track?.remoteMetadataKind == 'asmr.one' && track != null) {
+          subtitleTrack = await _loadAsmrSubtitleTrack(track);
+        } else {
+          subtitleTrack = await loadSubtitleTrackForAudio(trackPath);
+        }
         _subtitleTracks[trackPath] = subtitleTrack;
         _subtitleTrackResultFutures[trackPath] =
             SynchronousFuture<SubtitleTrack?>(subtitleTrack);
@@ -153,6 +159,30 @@ extension AudioProviderNotificationSubtitles on AudioProvider {
       return null;
     } catch (e) {
       debugPrint('AudioProvider._loadContentSubtitleTrack error: $e');
+      return null;
+    }
+  }
+
+  Future<SubtitleTrack?> _loadAsmrSubtitleTrack(MusicTrack track) async {
+    final metadata = track.remoteMetadata;
+    if (metadata == null) return null;
+    final subtitleUrl = metadata['subtitleUrl']?.toString().trim() ?? '';
+    final subtitleExtension =
+        metadata['subtitleExtension']?.toString().trim() ?? '';
+    if (subtitleUrl.isEmpty || subtitleExtension.isEmpty) {
+      return null;
+    }
+    try {
+      return loadSubtitleTrackFromUrl(
+        url: subtitleUrl,
+        sourcePath:
+            metadata['subtitleSourcePath']?.toString().trim().isNotEmpty == true
+            ? metadata['subtitleSourcePath']!.toString().trim()
+            : metadata['subtitleTitle']?.toString().trim(),
+        extension: subtitleExtension,
+      );
+    } catch (e) {
+      debugPrint('AudioProvider._loadAsmrSubtitleTrack error: $e');
       return null;
     }
   }

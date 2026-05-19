@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../i18n/app_language_provider.dart';
 import '../models/asmr_models.dart';
 import '../services/asmr_download_manager.dart';
 import '../services/asmr_download_selection.dart';
@@ -47,7 +48,10 @@ class _AsmrDownloadPageState extends State<AsmrDownloadPage> {
 
   Future<void> _chooseDestination() async {
     final downloadManager = context.read<AsmrDownloadManager>();
-    final folder = await downloadManager.pickDestinationFolder();
+    final i18n = context.read<AppLanguageProvider>();
+    final folder = await downloadManager.pickDestinationFolder(
+      dialogTitle: i18n.tr('asmr_download_choose_path'),
+    );
     if (!mounted || folder == null || folder.trim().isEmpty) {
       return;
     }
@@ -67,24 +71,29 @@ class _AsmrDownloadPageState extends State<AsmrDownloadPage> {
     return showDialog<AsmrDownloadConflictPolicy?>(
       context: context,
       builder: (dialogContext) {
+        final i18n = dialogContext.read<AppLanguageProvider>();
         final isDark = Theme.of(dialogContext).brightness == Brightness.dark;
-        final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
-        final onAsmrBlue = isDark ? const Color(0xFF0F172A) : const Color(0xFFFFFFFF);
+        final asmrBlue = isDark
+            ? const Color(0xFF60A5FA)
+            : const Color(0xFF1D4ED8);
+        final onAsmrBlue = isDark
+            ? const Color(0xFF0F172A)
+            : const Color(0xFFFFFFFF);
         return AlertDialog(
-          title: const Text('同名项处理'),
-          content: const Text('目标路径里如果有同名文件或文件夹，要怎么处理？'),
+          title: Text(i18n.tr('asmr_download_conflict_title')),
+          content: Text(i18n.tr('asmr_download_conflict_message')),
           actions: [
             TextButton(
               style: TextButton.styleFrom(foregroundColor: asmrBlue),
               onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('取消'),
+              child: Text(i18n.tr('cancel')),
             ),
             TextButton(
               style: TextButton.styleFrom(foregroundColor: asmrBlue),
               onPressed: () => Navigator.of(
                 dialogContext,
               ).pop(AsmrDownloadConflictPolicy.skip),
-              child: const Text('跳过'),
+              child: Text(i18n.tr('asmr_download_conflict_skip')),
             ),
             FilledButton(
               style: FilledButton.styleFrom(
@@ -94,7 +103,7 @@ class _AsmrDownloadPageState extends State<AsmrDownloadPage> {
               onPressed: () => Navigator.of(
                 dialogContext,
               ).pop(AsmrDownloadConflictPolicy.overwrite),
-              child: const Text('覆盖'),
+              child: Text(i18n.tr('asmr_download_conflict_overwrite')),
             ),
           ],
         );
@@ -110,8 +119,14 @@ class _AsmrDownloadPageState extends State<AsmrDownloadPage> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
     final downloadManager = context.read<AsmrDownloadManager>();
+    final i18n = context.read<AppLanguageProvider>();
     if (downloadManager.hasLiveTask) {
-      showAppSnackBar(context, '当前已有下载任务在运行', icon: Icons.downloading_rounded, iconColor: asmrBlue);
+      showAppSnackBar(
+        context,
+        i18n.tr('asmr_download_task_running'),
+        icon: Icons.downloading_rounded,
+        iconColor: asmrBlue,
+      );
       return;
     }
 
@@ -119,7 +134,7 @@ class _AsmrDownloadPageState extends State<AsmrDownloadPage> {
     if (selectedRoots.isEmpty) {
       showAppSnackBar(
         context,
-        '请先选择要下载的文件或文件夹',
+        i18n.tr('asmr_download_select_required'),
         tone: AppFeedbackTone.warning,
         icon: Icons.check_box_outline_blank_rounded,
         iconColor: asmrBlue,
@@ -158,7 +173,7 @@ class _AsmrDownloadPageState extends State<AsmrDownloadPage> {
       } else if (task != null && task.failedFiles > 0) {
         showAppSnackBar(
           context,
-          '下载完成，但有部分文件失败',
+          i18n.tr('asmr_download_completed_with_failures'),
           tone: AppFeedbackTone.warning,
           icon: Icons.error_outline_rounded,
           iconColor: asmrBlue,
@@ -168,7 +183,7 @@ class _AsmrDownloadPageState extends State<AsmrDownloadPage> {
       if (!mounted) return;
       showAppSnackBar(
         context,
-        '下载失败：$error',
+        i18n.tr('asmr_download_failed', {'error': error}),
         tone: AppFeedbackTone.destructive,
         icon: Icons.error_outline_rounded,
         iconColor: asmrBlue,
@@ -185,10 +200,13 @@ class _AsmrDownloadPageState extends State<AsmrDownloadPage> {
   @override
   Widget build(BuildContext context) {
     final selection = _selection;
+    final i18n = context.watch<AppLanguageProvider>();
     final selectedLeafCount = selection?.selectedLeafCount() ?? 0;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
-    final onAsmrBlue = isDark ? const Color(0xFF0F172A) : const Color(0xFFFFFFFF);
+    final onAsmrBlue = isDark
+        ? const Color(0xFF0F172A)
+        : const Color(0xFFFFFFFF);
     final totalFileCount = selection == null
         ? 0
         : selection.rootNodes.fold<int>(
@@ -205,12 +223,18 @@ class _AsmrDownloadPageState extends State<AsmrDownloadPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('下载'),
+        title: Text(i18n.tr('asmr_download_title')),
         actions: [
           TextButton(
             style: TextButton.styleFrom(foregroundColor: asmrBlue),
             onPressed: _starting ? null : _chooseDestination,
-            child: Text(hasDestination ? '更改路径' : '选择路径'),
+            child: Text(
+              i18n.tr(
+                hasDestination
+                    ? 'asmr_download_change_path'
+                    : 'asmr_download_choose_path',
+              ),
+            ),
           ),
         ],
       ),
@@ -257,12 +281,14 @@ class _AsmrDownloadPageState extends State<AsmrDownloadPage> {
                         child: OutlinedButton(
                           style: OutlinedButton.styleFrom(
                             foregroundColor: asmrBlue,
-                            side: BorderSide(color: asmrBlue.withValues(alpha: 0.5)),
+                            side: BorderSide(
+                              color: asmrBlue.withValues(alpha: 0.5),
+                            ),
                           ),
                           onPressed: _starting
                               ? null
                               : () => Navigator.of(context).maybePop(),
-                          child: const Text('取消'),
+                          child: Text(i18n.tr('cancel')),
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -283,7 +309,13 @@ class _AsmrDownloadPageState extends State<AsmrDownloadPage> {
                                   ),
                                 )
                               : const Icon(Icons.download_rounded),
-                          label: Text(_starting ? '下载中' : '确认下载'),
+                          label: Text(
+                            i18n.tr(
+                              _starting
+                                  ? 'asmr_download_starting'
+                                  : 'asmr_download_confirm',
+                            ),
+                          ),
                         ),
                       ),
                     ],
@@ -302,10 +334,11 @@ class AsmrDownloadTaskPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final manager = context.watch<AsmrDownloadManager>();
     final task = manager.currentTask;
+    final i18n = context.watch<AppLanguageProvider>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
     return Scaffold(
-      appBar: AppBar(title: const Text('下载任务')),
+      appBar: AppBar(title: Text(i18n.tr('asmr_download_task_title'))),
       bottomNavigationBar: task == null || !task.isActive
           ? null
           : SafeArea(
@@ -318,35 +351,47 @@ class AsmrDownloadTaskPage extends StatelessWidget {
                   foregroundColor: Theme.of(context).colorScheme.onError,
                   minimumSize: const Size.fromHeight(52),
                 ),
-                label: const Text('取消下载并清除已下载内容'),
+                label: Text(i18n.tr('asmr_download_cancel_and_clear')),
               ),
             ),
       body: task == null
-          ? const Center(child: Text('暂无下载任务'))
+          ? Center(child: Text(i18n.tr('asmr_download_no_tasks')))
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
                 _TaskInfoCard(
                   title: task.work.title,
-                  subtitle: task.currentItemPath ?? task.message ?? '等待中',
+                  subtitle: _taskSubtitle(i18n, task),
                 ),
                 const SizedBox(height: 12),
                 LinearProgressIndicator(value: task.progress, color: asmrBlue),
                 const SizedBox(height: 12),
-                _TaskInfoRow(label: '状态', value: _statusText(task.status)),
-                _TaskInfoRow(label: '目标', value: task.displayDestinationPath),
                 _TaskInfoRow(
-                  label: '进度',
+                  label: i18n.tr('asmr_download_status'),
+                  value: _statusText(i18n, task.status),
+                ),
+                _TaskInfoRow(
+                  label: i18n.tr('asmr_download_destination'),
+                  value: task.displayDestinationPath,
+                ),
+                _TaskInfoRow(
+                  label: i18n.tr('asmr_download_progress'),
                   value: '${task.completedFiles}/${task.totalFiles}',
                 ),
-                _TaskInfoRow(label: '已跳过', value: '${task.skippedFiles}'),
-                _TaskInfoRow(label: '失败', value: '${task.failedFiles}'),
                 _TaskInfoRow(
-                  label: '已下载',
+                  label: i18n.tr('asmr_download_skipped'),
+                  value: '${task.skippedFiles}',
+                ),
+                _TaskInfoRow(
+                  label: i18n.tr('asmr_download_failed_count'),
+                  value: '${task.failedFiles}',
+                ),
+                _TaskInfoRow(
+                  label: i18n.tr('asmr_download_downloaded'),
                   value: _formatBytes(task.downloadedBytes),
                 ),
                 _TaskInfoRow(
-                  label: '总大小',
+                  label: i18n.tr('asmr_download_total_size'),
                   value: _formatBytes(task.totalBytes),
                 ),
                 if (task.error != null) ...[
@@ -374,9 +419,10 @@ Future<void> _cancelTask(
   }
   final isDark = Theme.of(context).brightness == Brightness.dark;
   final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
+  final i18n = context.read<AppLanguageProvider>();
   showAppSnackBar(
     context,
-    '已取消下载并清除已下载内容',
+    i18n.tr('asmr_download_cancelled_and_cleared'),
     tone: AppFeedbackTone.warning,
     icon: Icons.delete_sweep_rounded,
     iconColor: asmrBlue,
@@ -399,6 +445,7 @@ class _DownloadSummaryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final i18n = context.watch<AppLanguageProvider>();
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
@@ -418,14 +465,19 @@ class _DownloadSummaryCard extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            '已选择 $selectedLeafCount 个文件，下载时会保留原目录结构',
+            i18n.tr('asmr_download_summary_selected', {
+              'count': selectedLeafCount,
+            }),
             style: Theme.of(
               context,
             ).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
           ),
           const SizedBox(height: 6),
           Text(
-            '共 $totalFileCount 个文件、$totalFolderCount 个文件夹，包含音频、字幕、图片、文档等所有文件节点',
+            i18n.tr('asmr_download_summary_total', {
+              'fileCount': totalFileCount,
+              'folderCount': totalFolderCount,
+            }),
             style: Theme.of(
               context,
             ).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
@@ -476,6 +528,7 @@ class _AsmrDownloadNodeTileState extends State<_AsmrDownloadNodeTile> {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
+    final i18n = context.watch<AppLanguageProvider>();
     final value = widget.selection.stateForPath(widget.node.track.relativePath);
     final indent = _indentWidth * widget.depth;
 
@@ -550,7 +603,7 @@ class _AsmrDownloadNodeTileState extends State<_AsmrDownloadNodeTile> {
                       bottom: 4,
                     ),
                     child: Text(
-                      '空文件夹',
+                      i18n.tr('asmr_download_empty_folder'),
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: cs.onSurfaceVariant,
                       ),
@@ -709,19 +762,50 @@ class _TaskInfoRow extends StatelessWidget {
   }
 }
 
-String _statusText(AsmrDownloadTaskStatus status) {
+String _statusText(AppLanguageProvider i18n, AsmrDownloadTaskStatus status) {
   switch (status) {
     case AsmrDownloadTaskStatus.preparing:
-      return '准备中';
+      return i18n.tr('asmr_download_status_preparing');
     case AsmrDownloadTaskStatus.downloading:
-      return '下载中';
+      return i18n.tr('asmr_download_status_downloading');
     case AsmrDownloadTaskStatus.completed:
-      return '已完成';
+      return i18n.tr('asmr_download_status_completed');
     case AsmrDownloadTaskStatus.failed:
-      return '失败';
+      return i18n.tr('asmr_download_status_failed');
     case AsmrDownloadTaskStatus.idle:
-      return '空闲';
+      return i18n.tr('asmr_download_status_idle');
   }
+}
+
+String _taskSubtitle(AppLanguageProvider i18n, AsmrDownloadTaskSnapshot task) {
+  final currentItemPath = task.currentItemPath;
+  if (task.isActive &&
+      currentItemPath != null &&
+      currentItemPath.trim().isNotEmpty) {
+    return currentItemPath;
+  }
+  if (task.failedFiles > 0 &&
+      task.status == AsmrDownloadTaskStatus.failed &&
+      task.completedFiles > 0) {
+    return i18n.tr('asmr_download_completed_with_failures');
+  }
+  final error = task.error;
+  if (error != null && error.trim().isNotEmpty) {
+    return i18n.tr('asmr_download_failed', {'error': error});
+  }
+  return switch (task.status) {
+    AsmrDownloadTaskStatus.preparing => i18n.tr(
+      'asmr_download_status_preparing',
+    ),
+    AsmrDownloadTaskStatus.downloading => i18n.tr(
+      'asmr_download_status_downloading',
+    ),
+    AsmrDownloadTaskStatus.completed => i18n.tr(
+      'asmr_download_status_completed',
+    ),
+    AsmrDownloadTaskStatus.failed => i18n.tr('asmr_download_status_failed'),
+    AsmrDownloadTaskStatus.idle => i18n.tr('asmr_download_waiting'),
+  };
 }
 
 String _formatFileSize(int bytes) {

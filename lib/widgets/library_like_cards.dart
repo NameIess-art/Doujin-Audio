@@ -17,9 +17,9 @@ class LibraryLikeFeaturedCardContent extends StatelessWidget {
     required this.lines,
     required this.coverBuilder,
     required this.onPlay,
+    required this.playTooltip,
     this.expanded = false,
     this.showExpandIndicator = false,
-    this.playTooltip = '播放',
     this.accentColor,
   });
 

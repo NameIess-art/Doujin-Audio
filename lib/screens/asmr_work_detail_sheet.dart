@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../i18n/app_language_provider.dart';
 import '../models/asmr_models.dart';
 import '../providers/audio_provider.dart';
 import '../services/asmr_library_controller.dart';
@@ -30,6 +31,7 @@ class _AsmrWorkDetailSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final controller = context.read<AsmrLibraryController>();
+    final i18n = context.watch<AppLanguageProvider>();
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
@@ -51,7 +53,7 @@ class _AsmrWorkDetailSheet extends StatelessWidget {
                   children: [
                     Expanded(
                       child: Text(
-                        '详细信息',
+                        i18n.tr('asmr_detail_title'),
                         style: Theme.of(context).textTheme.titleLarge?.copyWith(
                           fontWeight: FontWeight.w800,
                         ),
@@ -67,7 +69,7 @@ class _AsmrWorkDetailSheet extends StatelessWidget {
                   ],
                 ),
                 Text(
-                  '只读模式，不支持编辑或拖拽排序。',
+                  i18n.tr('asmr_detail_readonly_hint'),
                   style: Theme.of(
                     context,
                   ).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
@@ -82,7 +84,7 @@ class _AsmrWorkDetailSheet extends StatelessWidget {
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 24),
                     child: Text(
-                      '读取作品信息失败，请稍后重试。',
+                      i18n.tr('asmr_detail_load_failed'),
                       style: TextStyle(color: cs.error),
                     ),
                   )
@@ -90,62 +92,62 @@ class _AsmrWorkDetailSheet extends StatelessWidget {
                   _AsmrDetailHero(work: effectiveWork),
                   const SizedBox(height: 20),
                   _AsmrDetailSection(
-                    title: '基础信息',
+                    title: i18n.tr('asmr_detail_basic_info'),
                     children: [
                       _CopyableValueRow(
-                        label: 'RJ号',
+                        label: i18n.tr('audio_detail_rj_code'),
                         value: effectiveWork.rjCode,
                       ),
                       _CopyableValueRow(
-                        label: '作品标题',
+                        label: i18n.tr('audio_detail_work_title'),
                         value: effectiveWork.title,
                       ),
                       _CopyableValueRow(
-                        label: '社团',
+                        label: i18n.tr('asmr_circle_label'),
                         value: effectiveWork.circleName,
                       ),
                       _CopyableChipWrapRow(
-                        label: '声优',
+                        label: i18n.tr('audio_detail_voice_actors'),
                         values: effectiveWork.voiceActors,
                       ),
                       _CopyableChipWrapRow(
-                        label: '标签',
+                        label: i18n.tr('asmr_tags_label'),
                         values: effectiveWork.tags,
                       ),
                     ],
                   ),
                   const SizedBox(height: 14),
                   _AsmrDetailSection(
-                    title: '统计信息',
+                    title: i18n.tr('asmr_detail_statistics'),
                     children: [
                       _CopyableValueRow(
-                        label: '发售日期',
-                        value: _formatDate(effectiveWork.releaseDate),
+                        label: i18n.tr('asmr_detail_release_date'),
+                        value: _formatDate(i18n, effectiveWork.releaseDate),
                       ),
                       _CopyableValueRow(
-                        label: '时长',
-                        value: _formatDuration(effectiveWork.duration),
+                        label: i18n.tr('asmr_detail_duration'),
+                        value: _formatDuration(i18n, effectiveWork.duration),
                       ),
                       _CopyableValueRow(
-                        label: '销量',
+                        label: i18n.tr('asmr_detail_sales'),
                         value: '${effectiveWork.dlCount}',
                       ),
                       _CopyableValueRow(
-                        label: '评分',
+                        label: i18n.tr('asmr_detail_rating'),
                         value: effectiveWork.rating <= 0
-                            ? '未评分'
+                            ? i18n.tr('asmr_detail_unrated')
                             : effectiveWork.rating.toStringAsFixed(2),
                       ),
                       _CopyableValueRow(
-                        label: '评论数',
+                        label: i18n.tr('asmr_detail_reviews'),
                         value: '${effectiveWork.reviewCount}',
                       ),
                       _CopyableValueRow(
-                        label: '年龄分级',
+                        label: i18n.tr('asmr_detail_age_rating'),
                         value: detail?.ageCategory ?? '',
                       ),
                       _CopyableChipWrapRow(
-                        label: '语言版本',
+                        label: i18n.tr('asmr_detail_language_editions'),
                         values:
                             detail?.languageEditionLabels ?? const <String>[],
                       ),
@@ -154,7 +156,7 @@ class _AsmrWorkDetailSheet extends StatelessWidget {
                   if ((detail?.description.trim().isNotEmpty ?? false)) ...[
                     const SizedBox(height: 14),
                     _AsmrDetailSection(
-                      title: '简介',
+                      title: i18n.tr('asmr_detail_description'),
                       children: [
                         _CopyableTextBlock(text: detail!.description.trim()),
                       ],
@@ -163,7 +165,9 @@ class _AsmrWorkDetailSheet extends StatelessWidget {
                   const SizedBox(height: 18),
                   FilledButton.tonalIcon(
                     style: FilledButton.styleFrom(
-                      backgroundColor: isDark ? const Color(0xFF1E2E4A) : const Color(0xFFE6F0FA),
+                      backgroundColor: isDark
+                          ? const Color(0xFF1E2E4A)
+                          : const Color(0xFFE6F0FA),
                       foregroundColor: asmrBlue,
                     ),
                     onPressed: () async {
@@ -174,7 +178,9 @@ class _AsmrWorkDetailSheet extends StatelessWidget {
                       if (context.mounted) {
                         showAppSnackBar(
                           context,
-                          '已添加到播放列表：${effectiveWork.title}',
+                          i18n.tr('asmr_added_to_playlist', {
+                            'title': effectiveWork.title,
+                          }),
                           tone: AppFeedbackTone.success,
                           icon: Icons.add_circle_rounded,
                           iconColor: asmrBlue,
@@ -182,7 +188,7 @@ class _AsmrWorkDetailSheet extends StatelessWidget {
                       }
                     },
                     icon: const Icon(Icons.add_circle_rounded),
-                    label: const Text('添加到播放列表'),
+                    label: Text(i18n.tr('asmr_add_to_playlist')),
                   ),
                 ],
               ],
@@ -203,6 +209,7 @@ class _AsmrDetailHero extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
+    final i18n = context.watch<AppLanguageProvider>();
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -220,8 +227,13 @@ class _AsmrDetailHero extends StatelessWidget {
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                     colors: [
-                      isDark ? const Color(0xFF16253D) : const Color(0xFFE8F1FC),
-                      (isDark ? const Color(0xFF1A365D) : const Color(0xFFD0E1FD)).withValues(alpha: 0.92),
+                      isDark
+                          ? const Color(0xFF16253D)
+                          : const Color(0xFFE8F1FC),
+                      (isDark
+                              ? const Color(0xFF1A365D)
+                              : const Color(0xFFD0E1FD))
+                          .withValues(alpha: 0.92),
                     ],
                   ),
                 ),
@@ -249,18 +261,22 @@ class _AsmrDetailHero extends StatelessWidget {
               const SizedBox(height: 10),
               _AsmrInfoChip(
                 icon: Icons.album_rounded,
-                label: work.circleName.isEmpty ? '未知社团' : work.circleName,
+                label: work.circleName.isEmpty
+                    ? i18n.tr('asmr_unknown_circle')
+                    : work.circleName,
               ),
               const SizedBox(height: 8),
               _AsmrInfoChip(
                 icon: Icons.confirmation_number_rounded,
-                label: work.rjCode.isEmpty ? '未提供 RJ 号' : work.rjCode,
+                label: work.rjCode.isEmpty
+                    ? i18n.tr('asmr_missing_rj')
+                    : work.rjCode,
               ),
               if (work.hasSubtitle) ...[
                 const SizedBox(height: 8),
-                const _AsmrInfoChip(
+                _AsmrInfoChip(
                   icon: Icons.subtitles_rounded,
-                  label: '包含字幕',
+                  label: i18n.tr('asmr_has_subtitle'),
                 ),
               ],
             ],
@@ -313,7 +329,10 @@ class _CopyableValueRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final text = value.trim().isEmpty ? '未填写' : value.trim();
+    final i18n = context.watch<AppLanguageProvider>();
+    final text = value.trim().isEmpty
+        ? i18n.tr('audio_detail_empty')
+        : value.trim();
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Column(
@@ -343,6 +362,7 @@ class _CopyableChipWrapRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final filtered = values.where((value) => value.trim().isNotEmpty).toList();
+    final i18n = context.watch<AppLanguageProvider>();
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Column(
@@ -357,7 +377,7 @@ class _CopyableChipWrapRow extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           if (filtered.isEmpty)
-            const _CopyableTextChip(text: '未填写')
+            _CopyableTextChip(text: i18n.tr('audio_detail_empty'))
           else
             Wrap(
               spacing: 8,
@@ -473,18 +493,19 @@ Future<void> _copyText(BuildContext context, String value) async {
   }
   final isDark = Theme.of(context).brightness == Brightness.dark;
   final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
+  final i18n = context.read<AppLanguageProvider>();
   showAppSnackBar(
     context,
-    '已复制：$text',
+    i18n.tr('copied_to_clipboard', {'value': text}),
     tone: AppFeedbackTone.success,
     icon: Icons.copy_rounded,
     iconColor: asmrBlue,
   );
 }
 
-String _formatDate(DateTime? value) {
+String _formatDate(AppLanguageProvider i18n, DateTime? value) {
   if (value == null) {
-    return '未知';
+    return i18n.tr('asmr_unknown');
   }
   final local = value.toLocal();
   return '${local.year.toString().padLeft(4, '0')}-'
@@ -492,9 +513,9 @@ String _formatDate(DateTime? value) {
       '${local.day.toString().padLeft(2, '0')}';
 }
 
-String _formatDuration(Duration value) {
+String _formatDuration(AppLanguageProvider i18n, Duration value) {
   if (value == Duration.zero) {
-    return '未知';
+    return i18n.tr('asmr_unknown');
   }
   final hours = value.inHours;
   final minutes = value.inMinutes.remainder(60);

@@ -19,11 +19,11 @@ import 'asmr_download_page.dart';
 import 'asmr_work_detail_sheet.dart';
 
 const List<_AsmrCategorySpec> _asmrCategories = <_AsmrCategorySpec>[
-  _AsmrCategorySpec(AsmrCategoryType.sales, '销量'),
-  _AsmrCategorySpec(AsmrCategoryType.rating, '评价'),
-  _AsmrCategorySpec(AsmrCategoryType.release, '发售'),
-  _AsmrCategorySpec(AsmrCategoryType.favorites, '收藏'),
-  _AsmrCategorySpec(AsmrCategoryType.history, '历史'),
+  _AsmrCategorySpec(AsmrCategoryType.sales, 'asmr_category_sales'),
+  _AsmrCategorySpec(AsmrCategoryType.rating, 'asmr_category_rating'),
+  _AsmrCategorySpec(AsmrCategoryType.release, 'asmr_category_release'),
+  _AsmrCategorySpec(AsmrCategoryType.favorites, 'asmr_category_favorites'),
+  _AsmrCategorySpec(AsmrCategoryType.history, 'asmr_category_history'),
 ];
 
 class AsmrTab extends StatefulWidget {
@@ -236,6 +236,7 @@ class _AsmrTabState extends State<AsmrTab>
     super.build(context);
     final controller = context.watch<AsmrLibraryController>();
     final downloadManager = context.watch<AsmrDownloadManager>();
+    final i18n = context.watch<AppLanguageProvider>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
     final currentCategory = _currentCategory;
@@ -263,7 +264,7 @@ class _AsmrTabState extends State<AsmrTab>
                         child: Padding(
                           padding: EdgeInsets.only(left: index == 0 ? 0 : 8),
                           child: _AsmrCategoryButton(
-                            label: _asmrCategories[index].label,
+                            label: i18n.tr(_asmrCategories[index].labelKey),
                             selected: _tabController.index == index,
                             onTap: () {
                               if (_tabController.index == index) {
@@ -379,11 +380,10 @@ class _AsmrTabState extends State<AsmrTab>
                               child: CircularProgressIndicator(
                                 value: progress,
                                 strokeWidth: 2.4,
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.onSecondaryContainer.withValues(
-                                      alpha: 0.78,
-                                    ),
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSecondaryContainer
+                                    .withValues(alpha: 0.78),
                               ),
                             ),
                         ],
@@ -497,6 +497,7 @@ class _AsmrSearchBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final i18n = context.watch<AppLanguageProvider>();
     final hasText = query.isNotEmpty;
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
@@ -525,7 +526,7 @@ class _AsmrSearchBar extends StatelessWidget {
                     ),
                   )
                 : null,
-            hintText: '搜索作品名称、标签、声优、社团、RJ号',
+            hintText: i18n.tr('asmr_search_hint'),
             hintStyle: Theme.of(
               context,
             ).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
@@ -591,6 +592,7 @@ class _AsmrCategoryListState extends State<_AsmrCategoryList> {
     final isLoadingMore = controller.isLoadingMoreCategory(widget.category);
     final hasMore = controller.hasMoreCategory(widget.category);
     final lastError = controller.lastError;
+    final i18n = context.watch<AppLanguageProvider>();
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
@@ -639,14 +641,18 @@ class _AsmrCategoryListState extends State<_AsmrCategoryList> {
               if (isLoading) {
                 return Padding(
                   padding: const EdgeInsets.only(top: 80),
-                  child: Center(child: CircularProgressIndicator(color: asmrBlue)),
+                  child: Center(
+                    child: CircularProgressIndicator(color: asmrBlue),
+                  ),
                 );
               }
               return Padding(
                 padding: const EdgeInsets.only(top: 80),
                 child: Center(
                   child: Text(
-                    lastError == null ? '当前分类暂无内容。' : '同步失败，请下拉重试。',
+                    lastError == null
+                        ? i18n.tr('asmr_empty_category')
+                        : i18n.tr('asmr_refresh_failed'),
                     style: theme.textTheme.bodyLarge?.copyWith(
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
@@ -668,7 +674,7 @@ class _AsmrCategoryListState extends State<_AsmrCategoryList> {
                           ),
                         )
                       : Text(
-                          '继续上拉加载更多',
+                          i18n.tr('asmr_load_more_hint'),
                           style: theme.textTheme.bodySmall?.copyWith(
                             color: theme.colorScheme.onSurfaceVariant,
                             fontWeight: FontWeight.w600,
@@ -707,8 +713,12 @@ class _AsmrCategoryButton extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
-    final asmrBlueContainer = isDark ? const Color(0xFF1E3A8A) : const Color(0xFFDBEAFE);
-    final onAsmrBlueContainer = isDark ? const Color(0xFFBFDBFE) : const Color(0xFF1E40AF);
+    final asmrBlueContainer = isDark
+        ? const Color(0xFF1E3A8A)
+        : const Color(0xFFDBEAFE);
+    final onAsmrBlueContainer = isDark
+        ? const Color(0xFFBFDBFE)
+        : const Color(0xFF1E40AF);
 
     return Material(
       color: selected ? asmrBlueContainer : cs.surfaceContainerHigh,
@@ -765,9 +775,10 @@ class _AsmrWorkTreeCardState extends State<_AsmrWorkTreeCard> {
     }
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
+    final i18n = context.read<AppLanguageProvider>();
     showAppSnackBar(
       context,
-      '已添加到播放列表：${widget.work.title}',
+      i18n.tr('asmr_added_to_playlist', {'title': widget.work.title}),
       tone: AppFeedbackTone.success,
       icon: Icons.add_circle_rounded,
       iconColor: asmrBlue,
@@ -808,6 +819,7 @@ class _AsmrWorkTreeCardState extends State<_AsmrWorkTreeCard> {
         ?.where((node) => node.hasBrowsableContent)
         .toList(growable: false);
     final isTreeLoading = asmrController.isTrackTreeLoading(widget.work.id);
+    final i18n = context.watch<AppLanguageProvider>();
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
@@ -818,18 +830,26 @@ class _AsmrWorkTreeCardState extends State<_AsmrWorkTreeCard> {
 
     return SwipeRevealCard(
       shape: cardShape,
-      actionLabel: '详细信息',
-      removeTooltip: '查看作品详细信息',
-      primaryActionTooltip: '详细信息',
+      actionLabel: i18n.tr('asmr_detail_action'),
+      removeTooltip: i18n.tr('asmr_detail_tooltip'),
+      primaryActionTooltip: i18n.tr('asmr_detail_action'),
       primaryActionIcon: Icons.info_outline_rounded,
       destructive: false,
-      secondaryActionLabel: widget.work.isFavorite ? '取消收藏' : '收藏',
-      secondaryActionTooltip: widget.work.isFavorite ? '取消收藏' : '加入收藏',
+      secondaryActionLabel: i18n.tr(
+        widget.work.isFavorite
+            ? 'asmr_unfavorite_action'
+            : 'asmr_favorite_action',
+      ),
+      secondaryActionTooltip: i18n.tr(
+        widget.work.isFavorite
+            ? 'asmr_unfavorite_action'
+            : 'asmr_add_favorite_tooltip',
+      ),
       secondaryActionIcon: widget.work.isFavorite
           ? Icons.favorite_rounded
           : Icons.favorite_border_rounded,
-      tertiaryActionLabel: '涓嬭浇',
-      tertiaryActionTooltip: '涓嬭浇浣滃搧',
+      tertiaryActionLabel: i18n.tr('asmr_download_action'),
+      tertiaryActionTooltip: i18n.tr('asmr_download_work_tooltip'),
       verticalActions: true,
       onTertiaryAction: () => unawaited(_openDownloadPage(context)),
       onSecondaryAction: () => unawaited(_toggleFavorite(context)),
@@ -890,7 +910,7 @@ class _AsmrWorkTreeCardState extends State<_AsmrWorkTreeCard> {
                 Padding(
                   padding: const EdgeInsets.only(top: 4, bottom: 12),
                   child: Text(
-                    '当前作品没有可展开的音频树。',
+                    i18n.tr('asmr_empty_track_tree'),
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: cs.onSurfaceVariant,
                       fontWeight: FontWeight.w600,
@@ -932,9 +952,10 @@ class _AsmrRootCardContent extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
+    final i18n = context.watch<AppLanguageProvider>();
     return LibraryLikeFeaturedCardContent(
       title: work.title,
-      lines: _workInfoLines(work),
+      lines: _workInfoLines(context, work),
       coverBuilder: (coverWidth) => _AsmrWorkCover(
         url: work.mainCoverUrl.isNotEmpty ? work.mainCoverUrl : work.coverUrl,
         width: coverWidth,
@@ -942,7 +963,7 @@ class _AsmrRootCardContent extends StatelessWidget {
       onPlay: onPlay,
       expanded: expanded,
       showExpandIndicator: hasChildren,
-      playTooltip: '添加到播放列表',
+      playTooltip: i18n.tr('asmr_add_to_playlist'),
       accentColor: asmrBlue,
     );
   }
@@ -977,7 +998,9 @@ class _AsmrTrackTreeNodeState extends State<_AsmrTrackTreeNode> {
           .toList(growable: false);
       final cs = Theme.of(context).colorScheme;
       final isDark = Theme.of(context).brightness == Brightness.dark;
-      final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
+      final asmrBlue = isDark
+          ? const Color(0xFF60A5FA)
+          : const Color(0xFF1D4ED8);
       return Theme(
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
@@ -1037,7 +1060,9 @@ class _AsmrTrackTreeNodeState extends State<_AsmrTrackTreeNode> {
                 IconButton(
                   onPressed: () => unawaited(_playFolder(context)),
                   visualDensity: VisualDensity.compact,
-                  tooltip: '添加到播放列表',
+                  tooltip: context.watch<AppLanguageProvider>().tr(
+                    'asmr_add_to_playlist',
+                  ),
                   style: IconButton.styleFrom(
                     foregroundColor: asmrBlue,
                     minimumSize: const Size(40, 44),
@@ -1107,9 +1132,10 @@ class _AsmrTrackTreeNodeState extends State<_AsmrTrackTreeNode> {
     }
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
+    final i18n = context.read<AppLanguageProvider>();
     showAppSnackBar(
       context,
-      '已添加到播放列表：${widget.node.displayTitle}',
+      i18n.tr('asmr_added_to_playlist', {'title': widget.node.displayTitle}),
       tone: AppFeedbackTone.success,
       icon: Icons.add_circle_rounded,
       iconColor: asmrBlue,
@@ -1188,9 +1214,10 @@ class _AsmrTrackLeafRow extends StatelessWidget {
     }
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
+    final i18n = context.read<AppLanguageProvider>();
     showAppSnackBar(
       context,
-      '已添加到播放列表：${node.displayTitle}',
+      i18n.tr('asmr_added_to_playlist', {'title': node.displayTitle}),
       tone: AppFeedbackTone.success,
       icon: Icons.add_circle_rounded,
       iconColor: asmrBlue,
@@ -1253,23 +1280,30 @@ class _AsmrCoverFallback extends StatelessWidget {
 }
 
 class _AsmrCategorySpec {
-  const _AsmrCategorySpec(this.type, this.label);
+  const _AsmrCategorySpec(this.type, this.labelKey);
 
   final AsmrCategoryType type;
-  final String label;
+  final String labelKey;
 }
 
-List<LibraryLikeInfoLineData> _workInfoLines(AsmrWork work) {
+List<LibraryLikeInfoLineData> _workInfoLines(
+  BuildContext context,
+  AsmrWork work,
+) {
+  final i18n = context.read<AppLanguageProvider>();
   return <LibraryLikeInfoLineData>[
     if (work.rjCode.trim().isNotEmpty)
       LibraryLikeInfoLineData('RJ', work.rjCode),
     if (work.voiceActors.isNotEmpty)
       LibraryLikeInfoLineData('CV', work.voiceActors.join('、')),
     if (work.circleName.trim().isNotEmpty)
-      LibraryLikeInfoLineData('社团', work.circleName.trim()),
+      LibraryLikeInfoLineData(
+        i18n.tr('asmr_circle_label'),
+        work.circleName.trim(),
+      ),
     if (work.tags.isNotEmpty)
       LibraryLikeInfoLineData(
-        '标签',
+        i18n.tr('asmr_tags_label'),
         work.tags.join('、'),
         lines: shouldReserveTwoLibraryLikeInfoLines(work.tags.join('、'))
             ? 2

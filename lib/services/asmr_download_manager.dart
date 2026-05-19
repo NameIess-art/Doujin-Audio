@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -57,7 +57,10 @@ class AsmrDownloadTaskSnapshot {
 
   String get workRootPath {
     if (PathMatcher.isContentUri(destinationRoot)) {
-      final normalizedRoot = destinationRoot.trim().replaceAll(RegExp(r'/+$'), '');
+      final normalizedRoot = destinationRoot.trim().replaceAll(
+        RegExp(r'/+$'),
+        '',
+      );
       return '$normalizedRoot::$workFolderName';
     }
     return path.join(destinationRoot, workFolderName);
@@ -143,7 +146,7 @@ class AsmrDownloadManager extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<String?> pickDestinationFolder() async {
+  Future<String?> pickDestinationFolder({String? dialogTitle}) async {
     try {
       if (Platform.isAndroid) {
         final raw = await _fileCacheChannel.invokeMapMethod<String, Object?>(
@@ -160,7 +163,7 @@ class AsmrDownloadManager extends ChangeNotifier {
 
     if (!Platform.isAndroid || kIsWeb) {
       final directory = await FilePicker.platform.getDirectoryPath(
-        dialogTitle: '閫夋嫨涓嬭浇鐩綍',
+        dialogTitle: dialogTitle ?? 'Choose download folder',
       );
       if (directory != null && directory.trim().isNotEmpty) {
         return directory.trim();
@@ -191,7 +194,7 @@ class AsmrDownloadManager extends ChangeNotifier {
 
     _cancelRequested = true;
     if (task.isActive) {
-      _currentTask = task.copyWith(message: '姝ｅ湪鍙栨秷涓嬭浇');
+      _currentTask = task.copyWith(message: 'canceling');
       notifyListeners();
     }
 
@@ -230,9 +233,9 @@ class AsmrDownloadManager extends ChangeNotifier {
     final workFolderName = _buildWorkFolderName(work);
     final workRootPath = _joinFolderPath(normalizedDestination, workFolderName);
     final backup = _buildBackupDetail(work, workRootPath);
-    final backupJson = const JsonEncoder.withIndent('  ').convert(
-      backup.toBackupJson(),
-    );
+    final backupJson = const JsonEncoder.withIndent(
+      '  ',
+    ).convert(backup.toBackupJson());
     final backupBytes = utf8.encode(backupJson).length;
     final plannedFiles = _collectPlannedFiles(selectedRoots);
     final plannedFolders = _collectPlannedFolders(selectedRoots);
@@ -254,7 +257,7 @@ class AsmrDownloadManager extends ChangeNotifier {
       totalBytes: totalBytes,
       downloadedBytes: 0,
       startedAt: DateTime.now(),
-      message: '姝ｅ湪鍑嗗涓嬭浇',
+      message: 'preparing',
     );
     notifyListeners();
 
@@ -275,7 +278,7 @@ class AsmrDownloadManager extends ChangeNotifier {
         status: AsmrDownloadTaskStatus.downloading,
         completedFiles: 1,
         downloadedBytes: backupBytes,
-        message: '姝ｅ湪涓嬭浇浣滃搧鏂囦欢',
+        message: 'downloading_work_detail',
       );
       notifyListeners();
 
@@ -341,22 +344,20 @@ class AsmrDownloadManager extends ChangeNotifier {
         skippedFiles: skipped,
         failedFiles: failed,
         downloadedBytes: totalBytes,
-        message: failed > 0
-            ? '下载完成，但有部分文件失败'
-            : '下载完成',
+        message: failed > 0 ? 'completed_with_failures' : 'completed',
       );
       notifyListeners();
     } on _DownloadCancelled {
       _currentTask = _currentTask?.copyWith(
         status: AsmrDownloadTaskStatus.failed,
-        message: '下载已取消',
+        message: 'cancelled',
       );
       notifyListeners();
     } catch (error) {
       _currentTask = _currentTask?.copyWith(
         status: AsmrDownloadTaskStatus.failed,
         error: error.toString(),
-        message: '涓嬭浇澶辫触',
+        message: 'failed',
       );
       notifyListeners();
     } finally {
@@ -369,9 +370,7 @@ class AsmrDownloadManager extends ChangeNotifier {
     }
   }
 
-  List<_PlannedDownloadFile> _collectPlannedFiles(
-    List<AsmrTrackFile> roots,
-  ) {
+  List<_PlannedDownloadFile> _collectPlannedFiles(List<AsmrTrackFile> roots) {
     final result = <_PlannedDownloadFile>[];
     for (final root in roots) {
       _collectPlannedFilesRecursively(root, result);
@@ -444,16 +443,15 @@ class AsmrDownloadManager extends ChangeNotifier {
     try {
       _throwIfCancelled();
       if (PathMatcher.isContentUri(workRootPath)) {
-        final saved = await _fileCacheChannel.invokeMethod<bool>(
-              FileCacheMethod.copyFileToFolder,
-              {
-                'sourcePath': tempResult.file.path,
-                'folder': workRootPath,
-                'relativePath': item.relativePath,
-                'overwrite': conflictPolicy ==
-                    AsmrDownloadConflictPolicy.overwrite,
-              },
-            ) ??
+        final saved =
+            await _fileCacheChannel
+                .invokeMethod<bool>(FileCacheMethod.copyFileToFolder, {
+                  'sourcePath': tempResult.file.path,
+                  'folder': workRootPath,
+                  'relativePath': item.relativePath,
+                  'overwrite':
+                      conflictPolicy == AsmrDownloadConflictPolicy.overwrite,
+                }) ??
             false;
         if (!saved) {
           return conflictPolicy == AsmrDownloadConflictPolicy.skip
@@ -464,11 +462,16 @@ class AsmrDownloadManager extends ChangeNotifier {
                   bytesDownloaded: tempResult.bytesDownloaded,
                 );
         }
-        return _WriteResult.success(bytesDownloaded: tempResult.bytesDownloaded);
+        return _WriteResult.success(
+          bytesDownloaded: tempResult.bytesDownloaded,
+        );
       }
 
       final targetFile = File(
-        path.join(workRootPath, item.relativePath.replaceAll('/', path.separator)),
+        path.join(
+          workRootPath,
+          item.relativePath.replaceAll('/', path.separator),
+        ),
       );
       await targetFile.parent.create(recursive: true);
       if (await targetFile.exists()) {
@@ -542,11 +545,17 @@ class AsmrDownloadManager extends ChangeNotifier {
 
       await tempFile.setLastModified(DateTime.now());
       await AppCacheService.enforceLimit();
-      return _TemporaryDownloadResult(file: tempFile, bytesDownloaded: received);
+      return _TemporaryDownloadResult(
+        file: tempFile,
+        bytesDownloaded: received,
+      );
     } on _DownloadCancelled {
       rethrow;
     } catch (_) {
-      return _TemporaryDownloadResult(file: tempFile, bytesDownloaded: received);
+      return _TemporaryDownloadResult(
+        file: tempFile,
+        bytesDownloaded: received,
+      );
     } finally {
       client.close(force: true);
     }
@@ -556,11 +565,12 @@ class AsmrDownloadManager extends ChangeNotifier {
     AudioDetail detail,
     String workRootPath,
   ) async {
-    final payload = const JsonEncoder.withIndent('  ').convert(
-      detail.toBackupJson(),
-    );
+    final payload = const JsonEncoder.withIndent(
+      '  ',
+    ).convert(detail.toBackupJson());
     if (PathMatcher.isContentUri(workRootPath)) {
-      final saved = await _fileCacheChannel.invokeMethod<bool>(
+      final saved =
+          await _fileCacheChannel.invokeMethod<bool>(
             FileCacheMethod.writeAudioDetailBackup,
             {'folder': workRootPath, 'json': payload},
           ) ??

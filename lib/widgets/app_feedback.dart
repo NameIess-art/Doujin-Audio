@@ -14,6 +14,7 @@ void showAppSnackBar(
   String message, {
   AppFeedbackTone tone = AppFeedbackTone.info,
   IconData? icon,
+  Color? iconColor,
   Duration duration = const Duration(milliseconds: 1100),
 }) {
   _showTopFeedback(
@@ -21,6 +22,7 @@ void showAppSnackBar(
     message,
     tone: tone,
     icon: icon,
+    iconColor: iconColor,
     duration: duration,
   );
 }
@@ -31,9 +33,17 @@ void showAppToast(
   String message, {
   AppFeedbackTone tone = AppFeedbackTone.info,
   IconData? icon,
+  Color? iconColor,
   Duration duration = const Duration(milliseconds: 1100),
 }) {
-  showAppSnackBar(context, message, tone: tone, icon: icon, duration: duration);
+  showAppSnackBar(
+    context,
+    message,
+    tone: tone,
+    icon: icon,
+    iconColor: iconColor,
+    duration: duration,
+  );
 }
 
 void _showTopFeedback(
@@ -41,6 +51,7 @@ void _showTopFeedback(
   String message, {
   required AppFeedbackTone tone,
   IconData? icon,
+  Color? iconColor,
   required Duration duration,
 }) {
   final overlay = Overlay.of(context, rootOverlay: true);
@@ -76,6 +87,7 @@ void _showTopFeedback(
                   child: AppFeedbackSurface(
                     tone: tone,
                     icon: resolvedIcon,
+                    iconColor: iconColor,
                     message: message,
                   ),
                 ),
@@ -166,6 +178,7 @@ class AppFeedbackSurface extends StatelessWidget {
     this.trailing,
     this.padding = const EdgeInsets.fromLTRB(16, 14, 16, 14),
     this.borderRadius = 22,
+    this.iconColor,
   });
 
   final AppFeedbackTone tone;
@@ -175,12 +188,13 @@ class AppFeedbackSurface extends StatelessWidget {
   final Widget? trailing;
   final EdgeInsets padding;
   final double borderRadius;
+  final Color? iconColor;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
-    final accent = _accentColor(context, tone);
+    final accent = iconColor ?? _accentColor(context, tone);
     final chipBackground = accent.withValues(alpha: 0.12);
 
     final isDark = theme.brightness == Brightness.dark;

@@ -31,6 +31,8 @@ class _AsmrWorkDetailSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     final controller = context.read<AsmrLibraryController>();
     final cs = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
     return FutureBuilder<AsmrWorkDetail>(
       future: controller.loadWorkDetail(work),
       builder: (context, snapshot) {
@@ -160,6 +162,10 @@ class _AsmrWorkDetailSheet extends StatelessWidget {
                   ],
                   const SizedBox(height: 18),
                   FilledButton.tonalIcon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: isDark ? const Color(0xFF1E2E4A) : const Color(0xFFE6F0FA),
+                      foregroundColor: asmrBlue,
+                    ),
                     onPressed: () async {
                       await controller.playWork(
                         context.read<AudioProvider>(),
@@ -171,6 +177,7 @@ class _AsmrWorkDetailSheet extends StatelessWidget {
                           '已添加到播放列表：${effectiveWork.title}',
                           tone: AppFeedbackTone.success,
                           icon: Icons.add_circle_rounded,
+                          iconColor: asmrBlue,
                         );
                       }
                     },
@@ -194,7 +201,8 @@ class _AsmrDetailHero extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -212,14 +220,14 @@ class _AsmrDetailHero extends StatelessWidget {
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                     colors: [
-                      cs.primaryContainer,
-                      cs.secondaryContainer.withValues(alpha: 0.92),
+                      isDark ? const Color(0xFF16253D) : const Color(0xFFE8F1FC),
+                      (isDark ? const Color(0xFF1A365D) : const Color(0xFFD0E1FD)).withValues(alpha: 0.92),
                     ],
                   ),
                 ),
                 child: Icon(
                   Icons.graphic_eq_rounded,
-                  color: cs.onPrimaryContainer,
+                  color: asmrBlue,
                   size: 36,
                 ),
               ),
@@ -425,6 +433,8 @@ class _AsmrInfoChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
@@ -434,7 +444,7 @@ class _AsmrInfoChip extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 15, color: cs.primary),
+          Icon(icon, size: 15, color: asmrBlue),
           const SizedBox(width: 6),
           Flexible(
             child: Text(
@@ -461,11 +471,14 @@ Future<void> _copyText(BuildContext context, String value) async {
   if (!context.mounted) {
     return;
   }
+  final isDark = Theme.of(context).brightness == Brightness.dark;
+  final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
   showAppSnackBar(
     context,
     '已复制：$text',
     tone: AppFeedbackTone.success,
     icon: Icons.copy_rounded,
+    iconColor: asmrBlue,
   );
 }
 

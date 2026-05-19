@@ -209,6 +209,11 @@ class _SessionListCardState extends State<_SessionListCard> {
         : i18n.tr('imported_files');
 
     final isPlaying = sessionView.isPlaying;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isAsmrOne = track?.remoteMetadataKind == 'asmr.one';
+    final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
+    final asmrBlueContainer = isDark ? const Color(0xFF1E3A8A) : const Color(0xFFDBEAFE);
+
     final cardShape = RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(14),
     );
@@ -230,7 +235,9 @@ class _SessionListCardState extends State<_SessionListCard> {
             shape: cardShape,
             color: isPlaying
                 ? cs.surfaceContainerHigh
-                : cs.surfaceContainerHigh,
+                : (isAsmrOne
+                    ? (isDark ? const Color(0xFF121625) : const Color(0xFFF2F6FA))
+                    : cs.surfaceContainerHigh),
             elevation: 0,
             shadowColor: Colors.transparent,
             child: Container(
@@ -238,21 +245,31 @@ class _SessionListCardState extends State<_SessionListCard> {
                 borderRadius: BorderRadius.circular(14),
                 border: isPlaying
                     ? Border.all(
-                        color: cs.primary.withValues(alpha: 0.25),
+                        color: isAsmrOne
+                            ? asmrBlue.withValues(alpha: 0.35)
+                            : cs.primary.withValues(alpha: 0.25),
                         width: 1.2,
                       )
                     : Border.all(
-                        color: cs.outlineVariant.withValues(alpha: 0.15),
-                        width: 0.5,
+                        color: isAsmrOne
+                            ? asmrBlue.withValues(alpha: 0.18)
+                            : cs.outlineVariant.withValues(alpha: 0.15),
+                        width: isAsmrOne ? 0.8 : 0.5,
                       ),
                 gradient: isPlaying
                     ? LinearGradient(
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
                         colors: [
-                          cs.primaryContainer.withValues(alpha: 0.3),
-                          cs.surfaceContainerHigh,
-                          cs.surfaceContainerHigh,
+                          isAsmrOne
+                              ? asmrBlueContainer.withValues(alpha: 0.35)
+                              : cs.primaryContainer.withValues(alpha: 0.3),
+                          isAsmrOne
+                              ? (isDark ? const Color(0xFF121625) : const Color(0xFFF2F6FA))
+                              : cs.surfaceContainerHigh,
+                          isAsmrOne
+                              ? (isDark ? const Color(0xFF121625) : const Color(0xFFF2F6FA))
+                              : cs.surfaceContainerHigh,
                         ],
                       )
                     : null,
@@ -328,7 +345,7 @@ class _SessionListCardState extends State<_SessionListCard> {
                                     },
                               style: IconButton.styleFrom(
                                 foregroundColor: isPlaying
-                                    ? cs.primary
+                                    ? (isAsmrOne ? asmrBlue : cs.primary)
                                     : cs.onSurface,
                                 minimumSize: const Size(44, 44),
                                 maximumSize: const Size(44, 44),
@@ -358,7 +375,7 @@ class _SessionListCardState extends State<_SessionListCard> {
                                         child: CircularProgressIndicator(
                                           strokeWidth: 2.5,
                                           color: isPlaying
-                                              ? cs.primary
+                                              ? (isAsmrOne ? asmrBlue : cs.primary)
                                               : cs.onSurface,
                                         ),
                                       )
@@ -392,7 +409,7 @@ class _SessionListCardState extends State<_SessionListCard> {
                                         Icon(
                                           Icons.subtitles_rounded,
                                           size: 10,
-                                          color: cs.primary,
+                                          color: isAsmrOne ? asmrBlue : cs.primary,
                                         ),
                                       if (showSub &&
                                           sessionView.channelSwapEnabled)
@@ -401,7 +418,7 @@ class _SessionListCardState extends State<_SessionListCard> {
                                         Icon(
                                           Icons.swap_horiz_rounded,
                                           size: 10,
-                                          color: cs.primary,
+                                          color: isAsmrOne ? asmrBlue : cs.primary,
                                         ),
                                     ],
                                   ),

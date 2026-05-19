@@ -39,10 +39,10 @@ class _ModeSelector extends StatelessWidget {
             vertical: compact ? 10 : 12,
           ),
           decoration: BoxDecoration(
-            color: selected ? cs.primaryContainer.withValues(alpha: 0.7) : cs.surfaceContainerLow,
+            color: selected ? cs.primaryContainer : cs.surfaceContainerLow,
             borderRadius: BorderRadius.circular(20),
             border: Border.all(
-              color: selected ? cs.primary.withValues(alpha: 0.5) : Colors.transparent,
+              color: selected ? cs.primary : Colors.transparent,
               width: 1.5,
             ),
           ),
@@ -81,7 +81,7 @@ class _ModeSelector extends StatelessWidget {
                         subtitle,
                         style: TextStyle(
                           fontSize: compact ? 10 : 11,
-                          color: selected ? cs.onPrimaryContainer.withValues(alpha: 0.7) : cs.onSurfaceVariant,
+                          color: selected ? cs.onPrimaryContainer : cs.onSurfaceVariant,
                         ),
                       ),
                   ],
@@ -128,10 +128,10 @@ class _TimerPanelCard extends StatelessWidget {
     return DecoratedBox(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(28),
-        color: cs.surfaceContainerLow.withValues(alpha: 0.6),
+        color: cs.surfaceContainerLow,
         border: accentColor == null
             ? null
-            : Border.all(color: accent.withValues(alpha: 0.3), width: 1.5),
+            : Border.all(color: accent, width: 1.5),
       ),
       child: child,
     );

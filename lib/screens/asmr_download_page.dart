@@ -67,16 +67,20 @@ class _AsmrDownloadPageState extends State<AsmrDownloadPage> {
     return showDialog<AsmrDownloadConflictPolicy?>(
       context: context,
       builder: (dialogContext) {
-        final cs = Theme.of(dialogContext).colorScheme;
+        final isDark = Theme.of(dialogContext).brightness == Brightness.dark;
+        final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
+        final onAsmrBlue = isDark ? const Color(0xFF0F172A) : const Color(0xFFFFFFFF);
         return AlertDialog(
           title: const Text('同名项处理'),
           content: const Text('目标路径里如果有同名文件或文件夹，要怎么处理？'),
           actions: [
             TextButton(
+              style: TextButton.styleFrom(foregroundColor: asmrBlue),
               onPressed: () => Navigator.of(dialogContext).pop(),
               child: const Text('取消'),
             ),
             TextButton(
+              style: TextButton.styleFrom(foregroundColor: asmrBlue),
               onPressed: () => Navigator.of(
                 dialogContext,
               ).pop(AsmrDownloadConflictPolicy.skip),
@@ -84,8 +88,8 @@ class _AsmrDownloadPageState extends State<AsmrDownloadPage> {
             ),
             FilledButton(
               style: FilledButton.styleFrom(
-                backgroundColor: cs.primary,
-                foregroundColor: cs.onPrimary,
+                backgroundColor: asmrBlue,
+                foregroundColor: onAsmrBlue,
               ),
               onPressed: () => Navigator.of(
                 dialogContext,
@@ -103,9 +107,11 @@ class _AsmrDownloadPageState extends State<AsmrDownloadPage> {
     if (selection == null) return;
     if (_starting) return;
 
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
     final downloadManager = context.read<AsmrDownloadManager>();
     if (downloadManager.hasLiveTask) {
-      showAppSnackBar(context, '当前已有下载任务在运行', icon: Icons.downloading_rounded);
+      showAppSnackBar(context, '当前已有下载任务在运行', icon: Icons.downloading_rounded, iconColor: asmrBlue);
       return;
     }
 
@@ -116,6 +122,7 @@ class _AsmrDownloadPageState extends State<AsmrDownloadPage> {
         '请先选择要下载的文件或文件夹',
         tone: AppFeedbackTone.warning,
         icon: Icons.check_box_outline_blank_rounded,
+        iconColor: asmrBlue,
       );
       return;
     }
@@ -154,6 +161,7 @@ class _AsmrDownloadPageState extends State<AsmrDownloadPage> {
           '下载完成，但有部分文件失败',
           tone: AppFeedbackTone.warning,
           icon: Icons.error_outline_rounded,
+          iconColor: asmrBlue,
         );
       }
     } catch (error) {
@@ -163,6 +171,7 @@ class _AsmrDownloadPageState extends State<AsmrDownloadPage> {
         '下载失败：$error',
         tone: AppFeedbackTone.destructive,
         icon: Icons.error_outline_rounded,
+        iconColor: asmrBlue,
       );
     } finally {
       if (mounted) {
@@ -177,6 +186,9 @@ class _AsmrDownloadPageState extends State<AsmrDownloadPage> {
   Widget build(BuildContext context) {
     final selection = _selection;
     final selectedLeafCount = selection?.selectedLeafCount() ?? 0;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
+    final onAsmrBlue = isDark ? const Color(0xFF0F172A) : const Color(0xFFFFFFFF);
     final totalFileCount = selection == null
         ? 0
         : selection.rootNodes.fold<int>(
@@ -196,13 +208,14 @@ class _AsmrDownloadPageState extends State<AsmrDownloadPage> {
         title: const Text('下载'),
         actions: [
           TextButton(
+            style: TextButton.styleFrom(foregroundColor: asmrBlue),
             onPressed: _starting ? null : _chooseDestination,
             child: Text(hasDestination ? '更改路径' : '选择路径'),
           ),
         ],
       ),
       body: _loading || selection == null
-          ? const Center(child: CircularProgressIndicator())
+          ? Center(child: CircularProgressIndicator(color: asmrBlue))
           : Column(
               children: [
                 Padding(
@@ -242,6 +255,10 @@ class _AsmrDownloadPageState extends State<AsmrDownloadPage> {
                     children: [
                       Expanded(
                         child: OutlinedButton(
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: asmrBlue,
+                            side: BorderSide(color: asmrBlue.withValues(alpha: 0.5)),
+                          ),
                           onPressed: _starting
                               ? null
                               : () => Navigator.of(context).maybePop(),
@@ -251,13 +268,18 @@ class _AsmrDownloadPageState extends State<AsmrDownloadPage> {
                       const SizedBox(width: 12),
                       Expanded(
                         child: FilledButton.icon(
+                          style: FilledButton.styleFrom(
+                            backgroundColor: asmrBlue,
+                            foregroundColor: onAsmrBlue,
+                          ),
                           onPressed: _starting ? null : _startDownload,
                           icon: _starting
-                              ? const SizedBox(
+                              ? SizedBox(
                                   width: 16,
                                   height: 16,
                                   child: CircularProgressIndicator(
                                     strokeWidth: 2,
+                                    color: onAsmrBlue,
                                   ),
                                 )
                               : const Icon(Icons.download_rounded),
@@ -280,6 +302,8 @@ class AsmrDownloadTaskPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final manager = context.watch<AsmrDownloadManager>();
     final task = manager.currentTask;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
     return Scaffold(
       appBar: AppBar(title: const Text('下载任务')),
       bottomNavigationBar: task == null || !task.isActive
@@ -307,7 +331,7 @@ class AsmrDownloadTaskPage extends StatelessWidget {
                   subtitle: task.currentItemPath ?? task.message ?? '等待中',
                 ),
                 const SizedBox(height: 12),
-                LinearProgressIndicator(value: task.progress),
+                LinearProgressIndicator(value: task.progress, color: asmrBlue),
                 const SizedBox(height: 12),
                 _TaskInfoRow(label: '状态', value: _statusText(task.status)),
                 _TaskInfoRow(label: '目标', value: task.displayDestinationPath),
@@ -348,11 +372,14 @@ Future<void> _cancelTask(
   if (!context.mounted) {
     return;
   }
+  final isDark = Theme.of(context).brightness == Brightness.dark;
+  final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
   showAppSnackBar(
     context,
     '已取消下载并清除已下载内容',
     tone: AppFeedbackTone.warning,
     icon: Icons.delete_sweep_rounded,
+    iconColor: asmrBlue,
   );
 }
 
@@ -447,6 +474,8 @@ class _AsmrDownloadNodeTileState extends State<_AsmrDownloadNodeTile> {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
     final value = widget.selection.stateForPath(widget.node.track.relativePath);
     final indent = _indentWidth * widget.depth;
 
@@ -473,7 +502,7 @@ class _AsmrDownloadNodeTileState extends State<_AsmrDownloadNodeTile> {
               Icon(
                 _expanded ? Icons.folder_open_rounded : Icons.folder_rounded,
                 size: 20,
-                color: cs.primary.withValues(alpha: 0.8),
+                color: asmrBlue.withValues(alpha: 0.8),
               ),
               const SizedBox(width: 6),
               Expanded(
@@ -590,6 +619,8 @@ class _CompactNodeCheckbox extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
     return SizedBox(
       width: 28,
       height: 28,
@@ -597,6 +628,7 @@ class _CompactNodeCheckbox extends StatelessWidget {
         tristate: true,
         value: value,
         onChanged: onChanged,
+        activeColor: asmrBlue,
         materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
         visualDensity: VisualDensity.compact,
       ),

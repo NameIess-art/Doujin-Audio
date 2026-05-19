@@ -20,6 +20,7 @@ class LibraryLikeFeaturedCardContent extends StatelessWidget {
     this.expanded = false,
     this.showExpandIndicator = false,
     this.playTooltip = '播放',
+    this.accentColor,
   });
 
   final String title;
@@ -29,6 +30,7 @@ class LibraryLikeFeaturedCardContent extends StatelessWidget {
   final bool expanded;
   final bool showExpandIndicator;
   final String playTooltip;
+  final Color? accentColor;
 
   @override
   Widget build(BuildContext context) {
@@ -86,6 +88,7 @@ class LibraryLikeFeaturedCardContent extends StatelessWidget {
                               style: infoStyle,
                               loading: false,
                               lines: lines[index].lines,
+                              accentColor: accentColor,
                             ),
                           ],
                         ],
@@ -111,7 +114,7 @@ class LibraryLikeFeaturedCardContent extends StatelessWidget {
                       visualDensity: VisualDensity.compact,
                       tooltip: playTooltip,
                       style: IconButton.styleFrom(
-                        foregroundColor: cs.primary,
+                        foregroundColor: accentColor ?? cs.primary,
                         minimumSize: const Size(40, 44),
                         maximumSize: const Size(40, 44),
                         padding: EdgeInsets.zero,
@@ -151,10 +154,12 @@ class LibraryLikeSingleAudioCardContent extends StatelessWidget {
     super.key,
     required this.title,
     required this.lines,
+    this.accentColor,
   });
 
   final String title;
   final List<LibraryLikeInfoLineData> lines;
+  final Color? accentColor;
 
   @override
   Widget build(BuildContext context) {
@@ -200,6 +205,7 @@ class LibraryLikeSingleAudioCardContent extends StatelessWidget {
                   style: infoStyle,
                   loading: false,
                   lines: lines[i].lines,
+                  accentColor: accentColor,
                 ),
               ],
             ],
@@ -218,6 +224,7 @@ class LibraryLikeDetailInfoLine extends StatelessWidget {
     required this.style,
     required this.loading,
     this.lines = 1,
+    this.accentColor,
   });
 
   final String label;
@@ -225,6 +232,7 @@ class LibraryLikeDetailInfoLine extends StatelessWidget {
   final TextStyle style;
   final bool loading;
   final int lines;
+  final Color? accentColor;
 
   @override
   Widget build(BuildContext context) {
@@ -240,7 +248,7 @@ class LibraryLikeDetailInfoLine extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.clip,
             style: style.copyWith(
-              color: cs.primary,
+              color: accentColor ?? cs.primary,
               fontWeight: FontWeight.w900,
             ),
           ),
@@ -253,7 +261,7 @@ class LibraryLikeDetailInfoLine extends StatelessWidget {
                   child: Icon(
                     Icons.hourglass_top_rounded,
                     size: 12,
-                    color: cs.primary,
+                    color: accentColor ?? cs.primary,
                   ),
                 )
               : lineCount == 2

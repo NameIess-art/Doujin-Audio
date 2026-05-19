@@ -40,7 +40,7 @@ class _CountdownCard extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(32),
-        color: cs.surfaceContainerLow.withValues(alpha: 0.5),
+        color: cs.surfaceContainerLow,
       ),
       child: Padding(
         padding: EdgeInsets.all(compact ? 14 : 24),

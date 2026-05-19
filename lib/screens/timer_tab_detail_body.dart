@@ -74,7 +74,7 @@ extension _TimerTabDetailBody on _TimerTabState {
             const SizedBox(height: 8),
             Container(
               decoration: BoxDecoration(
-                color: cs.surfaceContainerLow.withValues(alpha: 0.8),
+                color: cs.surfaceContainerLow,
                 borderRadius: BorderRadius.circular(20),
               ),
               child: Padding(
@@ -132,7 +132,7 @@ extension _TimerTabDetailBody on _TimerTabState {
                   borderRadius: BorderRadius.circular(16),
                   child: Container(
                     decoration: BoxDecoration(
-                      color: cs.surfaceContainerLow.withValues(alpha: 0.6),
+                      color: cs.surfaceContainerLow,
                       borderRadius: BorderRadius.circular(16),
                     ),
                     child: Padding(

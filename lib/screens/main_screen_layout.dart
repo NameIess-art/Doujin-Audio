@@ -153,6 +153,9 @@ extension _MainScreenLayout on _MainScreenState {
       final selected = index == _currentIndex;
       final label = i18n.tr(item.labelKey);
       final inactive = cs.onSurfaceVariant.withValues(alpha: 0.6);
+      final isDark = Theme.of(context).brightness == Brightness.dark;
+      final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
+      final activeColor = (index == 0) ? asmrBlue : cs.primary;
 
       return Expanded(
         child: Semantics(
@@ -175,7 +178,7 @@ extension _MainScreenLayout on _MainScreenState {
                       height: 28,
                       decoration: BoxDecoration(
                         color: selected
-                            ? cs.primary.withValues(alpha: 0.14)
+                            ? activeColor.withValues(alpha: 0.14)
                             : Colors.transparent,
                         borderRadius: BorderRadius.circular(16),
                       ),
@@ -183,7 +186,7 @@ extension _MainScreenLayout on _MainScreenState {
                     Icon(
                       selected ? item.selectedIcon : item.icon,
                       size: 20,
-                      color: selected ? cs.primary : inactive,
+                      color: selected ? activeColor : inactive,
                     ),
                   ],
                 ),
@@ -195,7 +198,7 @@ extension _MainScreenLayout on _MainScreenState {
                   style: Theme.of(context).textTheme.labelSmall?.copyWith(
                     fontSize: 10,
                     fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
-                    color: selected ? cs.primary : inactive,
+                    color: selected ? activeColor : inactive,
                     letterSpacing: 0.1,
                   ),
                 ),
@@ -270,6 +273,8 @@ extension _MainScreenLayout on _MainScreenState {
     AppLanguageProvider i18n,
   ) {
     final cs = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
 
     return Container(
       width: 292,
@@ -321,23 +326,50 @@ extension _MainScreenLayout on _MainScreenState {
             ),
           ),
           Expanded(
-            child: NavigationRail(
-              backgroundColor: Colors.transparent,
-              selectedIndex: _currentIndex,
-              onDestinationSelected: _switchPage,
-              extended: true,
-              minExtendedWidth: 256,
-              useIndicator: true,
-              groupAlignment: -0.86,
-              destinations: _MainScreenState._destinations
-                  .map(
-                    (item) => NavigationRailDestination(
-                      icon: Icon(item.icon),
-                      selectedIcon: Icon(item.selectedIcon),
-                      label: Text(i18n.tr(item.labelKey)),
-                    ),
-                  )
-                  .toList(),
+            child: Theme(
+              data: Theme.of(context).copyWith(
+                navigationRailTheme: Theme.of(context).navigationRailTheme.copyWith(
+                  indicatorColor: _currentIndex == 0
+                      ? (isDark ? const Color(0xFF1E3A8A) : const Color(0xFFDBEAFE))
+                      : null,
+                ),
+              ),
+              child: NavigationRail(
+                backgroundColor: Colors.transparent,
+                selectedIndex: _currentIndex,
+                onDestinationSelected: _switchPage,
+                extended: true,
+                minExtendedWidth: 256,
+                useIndicator: true,
+                groupAlignment: -0.86,
+                destinations: _MainScreenState._destinations.asMap().entries
+                    .map(
+                      (entry) {
+                        final idx = entry.key;
+                        final item = entry.value;
+                        final isAsmr = idx == 0;
+                        final isSelected = idx == _currentIndex;
+                        
+                        return NavigationRailDestination(
+                          icon: Icon(
+                            item.icon,
+                            color: isSelected && isAsmr ? asmrBlue : null,
+                          ),
+                          selectedIcon: Icon(
+                            item.selectedIcon,
+                            color: isAsmr ? asmrBlue : null,
+                          ),
+                          label: Text(
+                            i18n.tr(item.labelKey),
+                            style: isSelected && isAsmr
+                                ? TextStyle(color: asmrBlue, fontWeight: FontWeight.w800)
+                                : null,
+                          ),
+                        );
+                      },
+                    )
+                    .toList(),
+              ),
             ),
           ),
           Padding(

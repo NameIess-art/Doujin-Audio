@@ -153,6 +153,8 @@ class _AsmrTabState extends State<AsmrTab>
   }
 
   Future<void> _refreshCategoryWithFeedback(AsmrCategoryType category) async {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
     final controller = context.read<AsmrLibraryController>();
     final i18n = context.read<AppLanguageProvider>();
     final beforeIds = controller
@@ -171,6 +173,7 @@ class _AsmrTabState extends State<AsmrTab>
         i18n.tr('asmr_refresh_failed'),
         tone: AppFeedbackTone.warning,
         icon: Icons.sync_problem_rounded,
+        iconColor: asmrBlue,
       );
       return;
     }
@@ -189,6 +192,7 @@ class _AsmrTabState extends State<AsmrTab>
       icon: hasUpdates
           ? Icons.sync_rounded
           : Icons.check_circle_outline_rounded,
+      iconColor: asmrBlue,
     );
   }
 
@@ -232,6 +236,8 @@ class _AsmrTabState extends State<AsmrTab>
     super.build(context);
     final controller = context.watch<AsmrLibraryController>();
     final downloadManager = context.watch<AsmrDownloadManager>();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
     final currentCategory = _currentCategory;
     final currentScrollController = _scrollControllers[currentCategory]!;
     final bottomInset = MobileOverlayInset.of(context);
@@ -313,7 +319,7 @@ class _AsmrTabState extends State<AsmrTab>
                     ),
                 ],
               )
-            : const Center(child: CircularProgressIndicator()),
+            : Center(child: CircularProgressIndicator(color: asmrBlue)),
         Positioned(
           top: 0,
           left: 0,
@@ -586,6 +592,8 @@ class _AsmrCategoryListState extends State<_AsmrCategoryList> {
     final hasMore = controller.hasMoreCategory(widget.category);
     final lastError = controller.lastError;
     final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
     return NotificationListener<ScrollNotification>(
       onNotification: (notification) {
         if (notification is ScrollUpdateNotification &&
@@ -602,7 +610,7 @@ class _AsmrCategoryListState extends State<_AsmrCategoryList> {
       },
       child: RefreshIndicator(
         key: _refreshIndicatorKey,
-        color: Theme.of(context).colorScheme.primary,
+        color: asmrBlue,
         backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
         edgeOffset: widget.topInset,
         displacement: 32,
@@ -629,9 +637,9 @@ class _AsmrCategoryListState extends State<_AsmrCategoryList> {
           itemBuilder: (context, index) {
             if (works.isEmpty) {
               if (isLoading) {
-                return const Padding(
-                  padding: EdgeInsets.only(top: 80),
-                  child: Center(child: CircularProgressIndicator()),
+                return Padding(
+                  padding: const EdgeInsets.only(top: 80),
+                  child: Center(child: CircularProgressIndicator(color: asmrBlue)),
                 );
               }
               return Padding(
@@ -651,10 +659,13 @@ class _AsmrCategoryListState extends State<_AsmrCategoryList> {
                 padding: const EdgeInsets.only(top: 4, bottom: 4),
                 child: Center(
                   child: isLoadingMore
-                      ? const SizedBox(
+                      ? SizedBox(
                           width: 22,
                           height: 22,
-                          child: CircularProgressIndicator(strokeWidth: 2.2),
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.2,
+                            color: asmrBlue,
+                          ),
                         )
                       : Text(
                           '继续上拉加载更多',
@@ -694,13 +705,18 @@ class _AsmrCategoryButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
+    final asmrBlueContainer = isDark ? const Color(0xFF1E3A8A) : const Color(0xFFDBEAFE);
+    final onAsmrBlueContainer = isDark ? const Color(0xFFBFDBFE) : const Color(0xFF1E40AF);
+
     return Material(
-      color: selected ? cs.primaryContainer : cs.surfaceContainerHigh,
+      color: selected ? asmrBlueContainer : cs.surfaceContainerHigh,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
         side: BorderSide(
           color: selected
-              ? cs.primary.withValues(alpha: 0.45)
+              ? asmrBlue.withValues(alpha: 0.45)
               : cs.outlineVariant,
         ),
       ),
@@ -716,7 +732,7 @@ class _AsmrCategoryButton extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: Theme.of(context).textTheme.labelMedium?.copyWith(
                 fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
-                color: selected ? cs.onPrimaryContainer : cs.onSurfaceVariant,
+                color: selected ? onAsmrBlueContainer : cs.onSurfaceVariant,
               ),
             ),
           ),
@@ -747,17 +763,22 @@ class _AsmrWorkTreeCardState extends State<_AsmrWorkTreeCard> {
     if (!context.mounted) {
       return;
     }
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
     showAppSnackBar(
       context,
       '已添加到播放列表：${widget.work.title}',
       tone: AppFeedbackTone.success,
       icon: Icons.add_circle_rounded,
+      iconColor: asmrBlue,
     );
   }
 
   Future<void> _toggleFavorite(BuildContext context) async {
     final controller = context.read<AsmrLibraryController>();
     final i18n = context.read<AppLanguageProvider>();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
     final shouldFavorite = !widget.work.isFavorite;
     unawaited(controller.toggleFavorite(widget.work));
     showAppSnackBar(
@@ -767,6 +788,7 @@ class _AsmrWorkTreeCardState extends State<_AsmrWorkTreeCard> {
       icon: shouldFavorite
           ? Icons.favorite_rounded
           : Icons.favorite_border_rounded,
+      iconColor: asmrBlue,
     );
   }
 
@@ -787,6 +809,8 @@ class _AsmrWorkTreeCardState extends State<_AsmrWorkTreeCard> {
         .toList(growable: false);
     final isTreeLoading = asmrController.isTrackTreeLoading(widget.work.id);
     final cs = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
     final cardShape = RoundedRectangleBorder(
       side: BorderSide(color: cs.outlineVariant),
       borderRadius: BorderRadius.circular(14),
@@ -853,10 +877,13 @@ class _AsmrWorkTreeCardState extends State<_AsmrWorkTreeCard> {
             ),
             children: [
               if (isTreeLoading && visibleTree == null)
-                const Padding(
-                  padding: EdgeInsets.only(top: 8, bottom: 12),
+                Padding(
+                  padding: const EdgeInsets.only(top: 8, bottom: 12),
                   child: Center(
-                    child: CircularProgressIndicator(strokeWidth: 2.2),
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.2,
+                      color: asmrBlue,
+                    ),
                   ),
                 )
               else if (visibleTree == null || visibleTree.isEmpty)
@@ -903,6 +930,8 @@ class _AsmrRootCardContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
     return LibraryLikeFeaturedCardContent(
       title: work.title,
       lines: _workInfoLines(work),
@@ -914,6 +943,7 @@ class _AsmrRootCardContent extends StatelessWidget {
       expanded: expanded,
       showExpandIndicator: hasChildren,
       playTooltip: '添加到播放列表',
+      accentColor: asmrBlue,
     );
   }
 }
@@ -946,6 +976,8 @@ class _AsmrTrackTreeNodeState extends State<_AsmrTrackTreeNode> {
           .where((child) => child.hasBrowsableContent)
           .toList(growable: false);
       final cs = Theme.of(context).colorScheme;
+      final isDark = Theme.of(context).brightness == Brightness.dark;
+      final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
       return Theme(
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
@@ -969,7 +1001,7 @@ class _AsmrTrackTreeNodeState extends State<_AsmrTrackTreeNode> {
               Icon(
                 _expanded ? Icons.folder_open_rounded : Icons.folder_rounded,
                 size: 20,
-                color: cs.primary.withValues(alpha: 0.8),
+                color: asmrBlue.withValues(alpha: 0.8),
               ),
               const SizedBox(width: 10),
               Expanded(
@@ -1007,7 +1039,7 @@ class _AsmrTrackTreeNodeState extends State<_AsmrTrackTreeNode> {
                   visualDensity: VisualDensity.compact,
                   tooltip: '添加到播放列表',
                   style: IconButton.styleFrom(
-                    foregroundColor: cs.primary,
+                    foregroundColor: asmrBlue,
                     minimumSize: const Size(40, 44),
                     maximumSize: const Size(40, 44),
                     padding: EdgeInsets.zero,
@@ -1073,11 +1105,14 @@ class _AsmrTrackTreeNodeState extends State<_AsmrTrackTreeNode> {
     if (!context.mounted) {
       return;
     }
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
     showAppSnackBar(
       context,
       '已添加到播放列表：${widget.node.displayTitle}',
       tone: AppFeedbackTone.success,
       icon: Icons.add_circle_rounded,
+      iconColor: asmrBlue,
     );
   }
 }
@@ -1091,6 +1126,8 @@ class _AsmrTrackLeafRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
     return SizedBox(
       height: 48,
       child: Padding(
@@ -1126,7 +1163,7 @@ class _AsmrTrackLeafRow extends StatelessWidget {
             IconButton(
               onPressed: () => unawaited(_playTrack(context)),
               style: IconButton.styleFrom(
-                foregroundColor: cs.primary,
+                foregroundColor: asmrBlue,
                 minimumSize: const Size(36, 36),
                 maximumSize: const Size(36, 36),
                 padding: EdgeInsets.zero,
@@ -1149,11 +1186,14 @@ class _AsmrTrackLeafRow extends StatelessWidget {
     if (!context.mounted) {
       return;
     }
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
     showAppSnackBar(
       context,
       '已添加到播放列表：${node.displayTitle}',
       tone: AppFeedbackTone.success,
       icon: Icons.add_circle_rounded,
+      iconColor: asmrBlue,
     );
   }
 }

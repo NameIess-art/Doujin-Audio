@@ -75,6 +75,103 @@ void main() {
     });
   });
 
+  group('custom queue session restore', () {
+    test('restores ASMR custom queues and exposes sibling tracks', () async {
+      const sessionId = 'asmr_session';
+      const firstTrack = MusicTrack(
+        path: 'https://example.com/asmr/01.mp3',
+        displayName: '01',
+        groupKey: 'asmr-work-1',
+        groupTitle: 'ASMR Work',
+        groupSubtitle: 'RJ000001',
+        isSingle: false,
+        remoteCoverUrl: 'https://example.com/cover.jpg',
+        remoteMetadataKind: 'asmr.one',
+        remoteMetadata: <String, Object?>{
+          'trackRelativePath': '01_mp3/01.mp3',
+          'subtitleUrl': 'https://example.com/asmr/01.vtt',
+          'subtitleExtension': '.vtt',
+        },
+      );
+      const secondTrack = MusicTrack(
+        path: 'https://example.com/asmr/02.mp3',
+        displayName: '02',
+        groupKey: 'asmr-work-1',
+        groupTitle: 'ASMR Work',
+        groupSubtitle: 'RJ000001',
+        isSingle: false,
+        remoteCoverUrl: 'https://example.com/cover.jpg',
+        remoteMetadataKind: 'asmr.one',
+        remoteMetadata: <String, Object?>{'trackRelativePath': '01_mp3/02.mp3'},
+      );
+
+      final restoredRepository = AudioDatabaseRepository(
+        database: AppDatabase.test(db),
+      );
+      await restoredRepository.saveAllSessions(<PersistedSession>[
+        const PersistedSession(
+          id: sessionId,
+          trackPath: 'https://example.com/asmr/01.mp3',
+          loopModeIndex: 1,
+          volume: 1.0,
+          positionMs: 0,
+          durationMs: 0,
+          customQueueTracks: <MusicTrack>[firstTrack, secondTrack],
+          channelSwapEnabled: false,
+          sortOrder: 0,
+          createdAtMs: 1,
+        ),
+      ]);
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        'session_order_v1': json.encode(<String>[sessionId]),
+      });
+
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+            switch (call.method) {
+              case NativePlaybackMethod.prepareSession:
+              case NativePlaybackMethod.setForegroundEnabled:
+                return <String, Object?>{'ok': true, 'value': null};
+              case NativePlaybackMethod.snapshot:
+                return <String, Object?>{
+                  'ok': true,
+                  'value': <String, Object?>{'sessions': <Object?>[]},
+                };
+              default:
+                return <String, Object?>{'ok': true};
+            }
+          });
+
+      final restoredProvider = AudioProvider(
+        notificationService: notificationService,
+        audioDatabaseRepository: restoredRepository,
+      );
+
+      for (var i = 0; i < 100; i++) {
+        if (restoredProvider.activeSessions.isNotEmpty) break;
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+
+      expect(restoredProvider.activeSessions, hasLength(1));
+      expect(
+        restoredProvider
+            .trackByPath('https://example.com/asmr/01.mp3')
+            ?.toJson(),
+        firstTrack.toJson(),
+      );
+      final siblings = restoredProvider.tracksInSameGroup(
+        'https://example.com/asmr/01.mp3',
+      );
+      expect(siblings.map((track) => track.path), <String>[
+        'https://example.com/asmr/01.mp3',
+        'https://example.com/asmr/02.mp3',
+      ]);
+
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      restoredProvider.dispose();
+    });
+  });
+
   // ── native snapshot isolation ──────────────────────────────────
 
   group('native bridge session isolation', () {
@@ -779,6 +876,7 @@ void main() {
             volume: 1.0,
             positionMs: 0,
             durationMs: 1000,
+            customQueueTracks: null,
             channelSwapEnabled: false,
             sortOrder: 0,
             createdAtMs: DateTime(2026).millisecondsSinceEpoch,

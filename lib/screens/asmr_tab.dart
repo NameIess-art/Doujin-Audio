@@ -347,8 +347,10 @@ class _AsmrTabState extends State<AsmrTab>
                       heroTag: 'asmr-one-back-to-top',
                       backgroundColor: Theme.of(
                         context,
-                      ).colorScheme.surface.withValues(alpha: 0.72),
-                      foregroundColor: Theme.of(context).colorScheme.onSurface,
+                      ).colorScheme.surfaceContainerHigh,
+                      foregroundColor: Theme.of(
+                        context,
+                      ).colorScheme.onSurfaceVariant,
                       elevation: 0,
                       onPressed: () {
                         if (!currentScrollController.hasClients) {
@@ -707,6 +709,9 @@ class _AsmrWorkTreeCardState extends State<_AsmrWorkTreeCard> {
   Widget build(BuildContext context) {
     final asmrController = context.watch<AsmrLibraryController>();
     final tree = asmrController.trackTreeFor(widget.work.id);
+    final visibleTree = tree
+        ?.where((node) => node.hasBrowsableContent)
+        .toList(growable: false);
     final isTreeLoading = asmrController.isTrackTreeLoading(widget.work.id);
     final cs = Theme.of(context).colorScheme;
     final cardShape = RoundedRectangleBorder(
@@ -767,18 +772,18 @@ class _AsmrWorkTreeCardState extends State<_AsmrWorkTreeCard> {
             title: _AsmrRootCardContent(
               work: widget.work,
               expanded: _expanded,
-              hasChildren: true,
+              hasChildren: (visibleTree?.isNotEmpty ?? false) || isTreeLoading,
               onPlay: () => unawaited(_playWork(context)),
             ),
             children: [
-              if (isTreeLoading && tree == null)
+              if (isTreeLoading && visibleTree == null)
                 const Padding(
                   padding: EdgeInsets.only(top: 8, bottom: 12),
                   child: Center(
                     child: CircularProgressIndicator(strokeWidth: 2.2),
                   ),
                 )
-              else if (tree == null || tree.isEmpty)
+              else if (visibleTree == null || visibleTree.isEmpty)
                 Padding(
                   padding: const EdgeInsets.only(top: 4, bottom: 12),
                   child: Text(
@@ -790,7 +795,7 @@ class _AsmrWorkTreeCardState extends State<_AsmrWorkTreeCard> {
                   ),
                 )
               else
-                for (final node in tree)
+                for (final node in visibleTree)
                   Padding(
                     padding: const EdgeInsets.only(top: 6),
                     child: _AsmrTrackTreeNode(
@@ -861,6 +866,9 @@ class _AsmrTrackTreeNodeState extends State<_AsmrTrackTreeNode> {
   @override
   Widget build(BuildContext context) {
     if (widget.node.isFolder) {
+      final visibleChildren = widget.node.children
+          .where((child) => child.hasBrowsableContent)
+          .toList(growable: false);
       final cs = Theme.of(context).colorScheme;
       return Theme(
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
@@ -932,7 +940,7 @@ class _AsmrTrackTreeNodeState extends State<_AsmrTrackTreeNode> {
                   icon: const Icon(Icons.add_circle_rounded, size: 25),
                 ),
                 const SizedBox(width: 2),
-                if (widget.node.children.isNotEmpty)
+                if (visibleChildren.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.only(right: 6),
                     child: IgnorePointer(
@@ -952,7 +960,7 @@ class _AsmrTrackTreeNodeState extends State<_AsmrTrackTreeNode> {
             ),
           ),
           children: [
-            for (final child in widget.node.children)
+            for (final child in visibleChildren)
               Padding(
                 padding: const EdgeInsets.only(top: 2),
                 child: _AsmrTrackTreeNode(
@@ -991,7 +999,7 @@ class _AsmrTrackTreeNodeState extends State<_AsmrTrackTreeNode> {
     }
     showAppSnackBar(
       context,
-      '已添加到播放列表：${widget.node.title}',
+      '已添加到播放列表：${widget.node.displayTitle}',
       tone: AppFeedbackTone.success,
       icon: Icons.add_circle_rounded,
     );
@@ -1021,7 +1029,7 @@ class _AsmrTrackLeafRow extends StatelessWidget {
             const SizedBox(width: 10),
             Expanded(
               child: Text(
-                node.title,
+                node.displayTitle,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
@@ -1067,7 +1075,7 @@ class _AsmrTrackLeafRow extends StatelessWidget {
     }
     showAppSnackBar(
       context,
-      '已添加到播放列表：${node.title}',
+      '已添加到播放列表：${node.displayTitle}',
       tone: AppFeedbackTone.success,
       icon: Icons.add_circle_rounded,
     );

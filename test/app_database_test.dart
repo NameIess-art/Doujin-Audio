@@ -191,6 +191,45 @@ void main() {
     expect(indexNames, contains('idx_tracks_scan_generation'));
   });
 
+  test('sessions persist custom queue tracks', () async {
+    const queueTrack = MusicTrack(
+      path: 'https://example.com/track.mp3',
+      displayName: 'Track',
+      groupKey: 'asmr-work-1',
+      groupTitle: 'ASMR Work',
+      groupSubtitle: 'RJ000001',
+      isSingle: false,
+      remoteMetadataKind: 'asmr.one',
+      remoteMetadata: <String, Object?>{
+        'trackRelativePath': '01_mp3/track.mp3',
+        'subtitleUrl': 'https://example.com/track.vtt',
+      },
+    );
+
+    await appDatabase.saveAllSessions(<PersistedSession>[
+      const PersistedSession(
+        id: 'session_1',
+        trackPath: 'https://example.com/track.mp3',
+        loopModeIndex: 1,
+        volume: 0.8,
+        positionMs: 1200,
+        durationMs: 3200,
+        customQueueTracks: <MusicTrack>[queueTrack],
+        channelSwapEnabled: false,
+        sortOrder: 0,
+      ),
+    ]);
+
+    final loaded = await appDatabase.loadAllSessions();
+    expect(loaded, hasLength(1));
+    expect(loaded.single.trackPath, 'https://example.com/track.mp3');
+    expect(loaded.single.customQueueTracks, hasLength(1));
+    expect(
+      loaded.single.customQueueTracks!.single.toJson(),
+      queueTrack.toJson(),
+    );
+  });
+
   test('audio details round-trip and delete by target', () async {
     final target = AudioDetailTarget.libraryRootFolder('/library/root');
     final detail = AudioDetail(

@@ -454,8 +454,9 @@ class AsmrLibraryController extends ChangeNotifier {
 
   List<MusicTrack> _flattenTracks(
     AsmrWork work,
-    Iterable<AsmrTrackFile> roots,
-  ) {
+    Iterable<AsmrTrackFile> roots, {
+    bool Function(AsmrTrackFile node)? includeAudioNode,
+  }) {
     final result = <MusicTrack>[];
     final subtitleByStem = <String, AsmrTrackFile>{};
     final subtitlesByBaseName = <String, List<AsmrTrackFile>>{};
@@ -476,6 +477,8 @@ class AsmrLibraryController extends ChangeNotifier {
 
     Map<String, Object?> remoteMetadataForTrack(AsmrTrackFile node) {
       final metadata = Map<String, Object?>.from(work.toJson());
+      metadata['trackRelativePath'] = node.relativePath;
+      metadata['trackDirectoryPath'] = path.dirname(node.relativePath);
       final subtitle =
           subtitleByStem[node.stemKey] ??
           switch (subtitlesByBaseName[node.baseNameStem]) {
@@ -489,7 +492,7 @@ class AsmrLibraryController extends ChangeNotifier {
         return metadata;
       }
       metadata['subtitleUrl'] = subtitleUrl;
-      metadata['subtitleExtension'] = path.extension(subtitle!.title);
+      metadata['subtitleExtension'] = subtitle!.resolvedExtension;
       metadata['subtitleSourcePath'] = subtitle.relativePath;
       metadata['subtitleTitle'] = subtitle.title;
       return metadata;
@@ -500,6 +503,9 @@ class AsmrLibraryController extends ChangeNotifier {
     void visit(Iterable<AsmrTrackFile> nodes) {
       for (final node in nodes) {
         if (node.isAudio) {
+          if (includeAudioNode != null && !includeAudioNode(node)) {
+            continue;
+          }
           final track = node.toMusicTrack(
             groupTitleOverride: work.title,
             remoteCoverUrl: work.mainCoverUrl.isNotEmpty
@@ -670,14 +676,22 @@ class AsmrLibraryController extends ChangeNotifier {
       remoteMetadataKind: 'asmr.one',
       remoteMetadata: work.toJson(),
     );
-    final targetIndex = tracks.indexWhere(
+    final siblingDirectoryPath = path.dirname(target.relativePath);
+    final siblingTracks = _flattenTracks(
+      work,
+      _trackCache[work.id] ?? const <AsmrTrackFile>[],
+      includeAudioNode: (node) =>
+          path.dirname(node.relativePath) == siblingDirectoryPath,
+    );
+    final effectiveTracks = siblingTracks.isNotEmpty ? siblingTracks : tracks;
+    final effectiveTargetIndex = effectiveTracks.indexWhere(
       (track) => track.path == targetTrack.path,
     );
-    final queue = targetIndex <= 0
-        ? tracks
+    final queue = effectiveTargetIndex <= 0
+        ? effectiveTracks
         : <MusicTrack>[
-            ...tracks.skip(targetIndex),
-            ...tracks.take(targetIndex),
+            ...effectiveTracks.skip(effectiveTargetIndex),
+            ...effectiveTracks.take(effectiveTargetIndex),
           ];
     await recordHistory(work);
     await provider.spawnSessionWithQueue(

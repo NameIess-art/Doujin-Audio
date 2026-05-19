@@ -352,12 +352,22 @@ class AsmrTrackFile {
   final String relativePath;
 
   bool get isFolder => type == 'folder';
-  bool get isAudio => type == 'audio';
+  bool get isAudio =>
+      type == 'audio' && _asmrAudioExtensions.contains(resolvedExtension);
   bool get isSubtitle =>
-      type == 'text' &&
-      _asmrSubtitleExtensions.contains(path.extension(title).toLowerCase());
-  String get stemKey => _asmrStemKey(relativePath);
-  String get baseNameStem => path.basenameWithoutExtension(title).toLowerCase();
+      !isFolder && _asmrSubtitleExtensions.contains(resolvedExtension);
+  bool get hasBrowsableContent =>
+      isAudio || children.any((child) => child.hasBrowsableContent);
+  String get stemKey => _asmrMatchingStem(relativePath);
+  String get baseNameStem => _asmrMatchingStem(title);
+  String get resolvedExtension => _resolvedExtensionForCandidates(<String?>[
+    title,
+    streamUrl,
+    downloadUrl,
+    lowQualityUrl,
+  ]);
+  String get displayTitle =>
+      isAudio ? path.basenameWithoutExtension(title) : title;
 
   MusicTrack toMusicTrack({
     String? groupTitleOverride,
@@ -369,7 +379,7 @@ class AsmrTrackFile {
         .trim();
     return MusicTrack(
       path: playbackUrl,
-      displayName: title,
+      displayName: displayTitle,
       groupKey: 'asmr-work-$workId',
       groupTitle: groupTitleOverride ?? workTitle,
       groupSubtitle: sourceId,
@@ -414,6 +424,17 @@ class AsmrTrackFile {
   }
 }
 
+const Set<String> _asmrAudioExtensions = <String>{
+  '.mp3',
+  '.aac',
+  '.m4a',
+  '.ogg',
+  '.oga',
+  '.opus',
+  '.wav',
+  '.flac',
+};
+
 const Set<String> _asmrSubtitleExtensions = <String>{
   '.vtt',
   '.webvtt',
@@ -423,5 +444,35 @@ const Set<String> _asmrSubtitleExtensions = <String>{
   '.ssa',
 };
 
-String _asmrStemKey(String relativePath) =>
-    path.withoutExtension(relativePath).toLowerCase();
+String _asmrMatchingStem(String value) {
+  var current = value.toLowerCase();
+  while (current.isNotEmpty) {
+    final extension = path.extension(current);
+    if (extension.isEmpty) break;
+    if (!_asmrSubtitleExtensions.contains(extension) &&
+        !_asmrAudioExtensions.contains(extension)) {
+      break;
+    }
+    current = path.withoutExtension(current);
+  }
+  return current;
+}
+
+String _resolvedExtensionForCandidates(List<String?> candidates) {
+  for (final candidate in candidates) {
+    final extension = _pathExtensionFromCandidate(candidate);
+    if (extension.isNotEmpty) {
+      return extension;
+    }
+  }
+  return '';
+}
+
+String _pathExtensionFromCandidate(String? candidate) {
+  if (candidate == null) return '';
+  final trimmed = candidate.trim();
+  if (trimmed.isEmpty) return '';
+  final uri = Uri.tryParse(trimmed);
+  final sourcePath = uri != null && uri.hasScheme ? uri.path : trimmed;
+  return path.extension(sourcePath).toLowerCase();
+}

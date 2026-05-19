@@ -57,6 +57,24 @@ const Set<String> _supportedSubtitleExtensions = {
   '.ssa',
 };
 
+const Set<String> _subtitleMatchMediaExtensions = {
+  '.mp3',
+  '.aac',
+  '.m4a',
+  '.ogg',
+  '.oga',
+  '.opus',
+  '.wav',
+  '.flac',
+  '.mp4',
+  '.mkv',
+  '.webm',
+  '.mov',
+  '.m4v',
+  '.avi',
+  '.3gp',
+};
+
 Future<SubtitleTrack?> loadSubtitleTrackForAudio(String audioPath) async {
   if (audioPath.startsWith('content://')) return null;
 
@@ -88,10 +106,6 @@ Future<SubtitleTrack?> loadSubtitleTrackFromUrl({
   final resolvedExtension = _normalizedSubtitleExtension(
     extension ?? path.extension(resolvedSourcePath),
   );
-  if (!_supportedSubtitleExtensions.contains(resolvedExtension)) {
-    return null;
-  }
-
   final client = HttpClient();
   try {
     final request = await client.getUrl(uri);
@@ -139,8 +153,29 @@ SubtitleTrack? _parseSubtitleTrack({
     _ => const <SubtitleCue>[],
   };
 
-  if (cues.isEmpty) return null;
-  return SubtitleTrack(sourcePath: sourcePath, cues: cues);
+  final resolvedCues = cues.isNotEmpty
+      ? cues
+      : _parseSubtitleTrackByContent(raw);
+  if (resolvedCues.isEmpty) return null;
+  return SubtitleTrack(sourcePath: sourcePath, cues: resolvedCues);
+}
+
+List<SubtitleCue> _parseSubtitleTrackByContent(String raw) {
+  final parsers = <List<SubtitleCue> Function()>[
+    () => _parseWebVtt(raw),
+    () => _parseSrt(raw),
+    () => _parseAss(raw),
+    () => _parseLrc(raw),
+  ];
+
+  for (final parse in parsers) {
+    final cues = parse();
+    if (cues.isNotEmpty) {
+      return cues;
+    }
+  }
+
+  return const <SubtitleCue>[];
 }
 
 Future<File?> _findSubtitleFile(String audioPath) async {
@@ -148,7 +183,7 @@ Future<File?> _findSubtitleFile(String audioPath) async {
   if (!await audioFile.exists()) return null;
 
   final directory = audioFile.parent;
-  final stem = path.basenameWithoutExtension(audioPath).toLowerCase();
+  final stem = _subtitleMatchStem(audioPath);
   final candidates = <File>[];
 
   try {
@@ -165,7 +200,7 @@ Future<File?> _findSubtitleFile(String audioPath) async {
   if (candidates.isEmpty) return null;
 
   int rank(File file) {
-    final fileStem = path.basenameWithoutExtension(file.path).toLowerCase();
+    final fileStem = _subtitleMatchStem(file.path);
     if (fileStem == stem) return 0;
     if (fileStem.startsWith('$stem.')) return 1;
     if (fileStem.startsWith('${stem}_')) return 2;
@@ -187,6 +222,22 @@ String _normalizedSubtitleExtension(String extension) =>
     extension.startsWith('.')
     ? extension.toLowerCase()
     : '.${extension.toLowerCase()}';
+
+String _subtitleMatchStem(String value) {
+  var current = path.basename(value.toLowerCase());
+  while (current.isNotEmpty) {
+    final extension = path.extension(current);
+    if (extension.isEmpty) {
+      break;
+    }
+    if (!_supportedSubtitleExtensions.contains(extension) &&
+        !_subtitleMatchMediaExtensions.contains(extension)) {
+      break;
+    }
+    current = path.withoutExtension(current);
+  }
+  return current;
+}
 
 List<SubtitleCue> _parseLrc(String raw) {
   final timestampPattern = RegExp(r'\[(\d{1,2}):(\d{1,2})(?:[.:](\d{1,3}))?\]');

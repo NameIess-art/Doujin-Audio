@@ -1172,7 +1172,22 @@ extension AudioProviderLibrary on AudioProvider {
   List<MusicTrack> tracksInSameGroup(String trackPath) {
     final track = trackByPath(trackPath);
     if (track == null) return [];
-    return _tracksByGroup[track.groupKey] ?? const <MusicTrack>[];
+    final libraryGroupTracks = _tracksByGroup[track.groupKey];
+    if (libraryGroupTracks != null && libraryGroupTracks.isNotEmpty) {
+      return libraryGroupTracks;
+    }
+    final resolvedPath = _resolveRetargetedPath(trackPath);
+    for (final session in _sessions.values) {
+      final customQueueTracks = session.customQueueTracks;
+      if (customQueueTracks == null || customQueueTracks.isEmpty) continue;
+      if (customQueueTracks.any(
+        (candidate) =>
+            PathMatcher.equalsNormalized(candidate.path, resolvedPath),
+      )) {
+        return customQueueTracks;
+      }
+    }
+    return const <MusicTrack>[];
   }
 
   String getRootFolderPath(String trackPath) {

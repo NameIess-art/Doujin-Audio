@@ -30,7 +30,7 @@ class AppDatabase {
     final dbPath = await getDatabasesPath();
     final db = await openDatabase(
       p.join(dbPath, 'audio_player.db'),
-      version: 10,
+      version: 11,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -70,6 +70,7 @@ class AppDatabase {
         volume REAL NOT NULL,
         position_ms INTEGER NOT NULL DEFAULT 0,
         duration_ms INTEGER NOT NULL DEFAULT 0,
+        custom_queue_tracks_json TEXT,
         channel_swap INTEGER NOT NULL DEFAULT 0,
         created_at_ms INTEGER,
         updated_at_ms INTEGER,
@@ -171,6 +172,14 @@ class AppDatabase {
     }
     if (oldVersion < 10) {
       await _createLibraryEntriesTable(db);
+    }
+    if (oldVersion < 11) {
+      await _addColumnIfMissing(
+        db,
+        'sessions',
+        'custom_queue_tracks_json',
+        'TEXT',
+      );
     }
     await _createTrackIndexes(db);
   }
@@ -533,6 +542,7 @@ class AppDatabase {
             volume: (item['volume'] as num?)?.toDouble() ?? 1.0,
             positionMs: (item['positionMs'] as num?)?.toInt() ?? 0,
             durationMs: (item['durationMs'] as num?)?.toInt() ?? 0,
+            customQueueTracks: null,
             channelSwapEnabled: item['channelSwap'] as bool? ?? false,
             createdAtMs: (item['createdAtMs'] as num?)?.toInt(),
             updatedAtMs: (item['updatedAtMs'] as num?)?.toInt(),
@@ -651,6 +661,7 @@ class AppDatabase {
     'volume': session.volume,
     'position_ms': session.positionMs,
     'duration_ms': session.durationMs,
+    'custom_queue_tracks_json': _encodeTracks(session.customQueueTracks),
     'channel_swap': session.channelSwapEnabled ? 1 : 0,
     'created_at_ms': session.createdAtMs,
     'updated_at_ms': session.updatedAtMs,
@@ -666,6 +677,7 @@ class AppDatabase {
         volume: (row['volume'] as num).toDouble(),
         positionMs: row['position_ms'] as int,
         durationMs: row['duration_ms'] as int? ?? 0,
+        customQueueTracks: _decodeTracks(row['custom_queue_tracks_json']),
         channelSwapEnabled: (row['channel_swap'] as int? ?? 0) == 1,
         createdAtMs: (row['created_at_ms'] as num?)?.toInt(),
         updatedAtMs: (row['updated_at_ms'] as num?)?.toInt(),
@@ -692,6 +704,28 @@ List<String> _decodeTags(Object? value) {
   }
 }
 
+String? _encodeTracks(List<MusicTrack>? tracks) {
+  if (tracks == null || tracks.isEmpty) return null;
+  return json.encode(
+    tracks.map((track) => track.toJson()).toList(growable: false),
+  );
+}
+
+List<MusicTrack>? _decodeTracks(Object? value) {
+  if (value is! String || value.isEmpty) return null;
+  try {
+    final raw = json.decode(value);
+    if (raw is! List<dynamic>) return null;
+    final tracks = raw
+        .whereType<Map<String, dynamic>>()
+        .map(MusicTrack.fromJson)
+        .toList(growable: false);
+    return tracks.isEmpty ? null : tracks;
+  } catch (_) {
+    return null;
+  }
+}
+
 class PersistedSession {
   const PersistedSession({
     required this.id,
@@ -700,6 +734,7 @@ class PersistedSession {
     required this.volume,
     required this.positionMs,
     required this.durationMs,
+    required this.customQueueTracks,
     required this.channelSwapEnabled,
     required this.sortOrder,
     this.createdAtMs,
@@ -713,6 +748,7 @@ class PersistedSession {
   final double volume;
   final int positionMs;
   final int durationMs;
+  final List<MusicTrack>? customQueueTracks;
   final bool channelSwapEnabled;
   final int sortOrder;
   final int? createdAtMs;

@@ -167,9 +167,13 @@ extension AudioProviderNotificationSubtitles on AudioProvider {
     final metadata = track.remoteMetadata;
     if (metadata == null) return null;
     final subtitleUrl = metadata['subtitleUrl']?.toString().trim() ?? '';
-    final subtitleExtension =
-        metadata['subtitleExtension']?.toString().trim() ?? '';
-    if (subtitleUrl.isEmpty || subtitleExtension.isEmpty) {
+    final subtitleExtension = _resolveAsmrSubtitleExtension(
+      metadata['subtitleExtension']?.toString().trim(),
+      subtitleUrl: subtitleUrl,
+      subtitleSourcePath: metadata['subtitleSourcePath']?.toString(),
+      subtitleTitle: metadata['subtitleTitle']?.toString(),
+    );
+    if (subtitleUrl.isEmpty) {
       return null;
     }
     try {
@@ -185,5 +189,48 @@ extension AudioProviderNotificationSubtitles on AudioProvider {
       debugPrint('AudioProvider._loadAsmrSubtitleTrack error: $e');
       return null;
     }
+  }
+
+  String _resolveAsmrSubtitleExtension(
+    String? metadataExtension, {
+    required String subtitleUrl,
+    String? subtitleSourcePath,
+    String? subtitleTitle,
+  }) {
+    final normalizedMetadataExtension = _normalizedSubtitleExtension(
+      metadataExtension ?? '',
+    );
+    if (normalizedMetadataExtension.isNotEmpty) {
+      return normalizedMetadataExtension;
+    }
+
+    for (final candidate in <String?>[
+      subtitleSourcePath,
+      subtitleTitle,
+      subtitleUrl,
+    ]) {
+      final resolved = _normalizedSubtitleExtension(
+        _subtitleExtensionFromCandidate(candidate),
+      );
+      if (resolved.isNotEmpty) {
+        return resolved;
+      }
+    }
+    return '';
+  }
+
+  String _normalizedSubtitleExtension(String extension) {
+    final trimmed = extension.trim().toLowerCase();
+    if (trimmed.isEmpty) return '';
+    return trimmed.startsWith('.') ? trimmed : '.$trimmed';
+  }
+
+  String _subtitleExtensionFromCandidate(String? candidate) {
+    if (candidate == null) return '';
+    final trimmed = candidate.trim();
+    if (trimmed.isEmpty) return '';
+    final uri = Uri.tryParse(trimmed);
+    final sourcePath = uri != null && uri.hasScheme ? uri.path : trimmed;
+    return path.extension(sourcePath);
   }
 }

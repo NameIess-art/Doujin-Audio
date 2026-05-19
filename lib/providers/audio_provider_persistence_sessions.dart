@@ -22,7 +22,16 @@ extension AudioProviderPersistenceSessions on AudioProvider {
       final restoredIds = <String>[];
       for (final item in persistedSessions) {
         final trackPath = item.trackPath;
-        final track = trackByPath(trackPath);
+        final customQueueTracks = item.customQueueTracks == null
+            ? null
+            : List<MusicTrack>.unmodifiable(item.customQueueTracks!);
+        final track =
+            customQueueTracks?.firstWhere(
+              (candidate) =>
+                  PathMatcher.equalsNormalized(candidate.path, trackPath),
+              orElse: () => customQueueTracks.first,
+            ) ??
+            trackByPath(trackPath);
         if (track == null) continue;
 
         final loopModeIndex = item.loopModeIndex;
@@ -48,6 +57,7 @@ extension AudioProviderPersistenceSessions on AudioProvider {
           volume: volume,
           createdAt: createdAt,
           state: PlayerState(false, ProcessingState.idle),
+          customQueueTracks: customQueueTracks,
         );
         session.lastKnownPosition = restoredPosition;
         session.setOptimisticDuration(Duration(milliseconds: item.durationMs));
@@ -86,7 +96,9 @@ extension AudioProviderPersistenceSessions on AudioProvider {
           final track = trackByPath(session.currentTrackPath);
           if (track == null) continue;
 
-          final uri = track.path.startsWith('content://')
+          final uri =
+              track.path.startsWith('content://') ||
+                  PathMatcher.isRemoteUri(track.path)
               ? Uri.parse(track.path)
               : Uri.file(track.path);
           final prepareResult = await _nativePlaybackRepository.prepareSession(
@@ -150,7 +162,6 @@ extension AudioProviderPersistenceSessions on AudioProvider {
       final ordered = _sessionOrder
           .map((id) => _sessions[id])
           .whereType<PlaybackSession>()
-          .where((session) => session.customQueueTracks == null)
           .toList();
       final payload = ordered
           .asMap()
@@ -169,6 +180,7 @@ extension AudioProviderPersistenceSessions on AudioProvider {
                 ),
               ),
               durationMs: entry.value.duration?.inMilliseconds ?? 0,
+              customQueueTracks: entry.value.customQueueTracks,
               channelSwapEnabled: entry.value.channelSwapEnabled,
               createdAtMs: entry.value.createdAt.millisecondsSinceEpoch,
               updatedAtMs: DateTime.now().millisecondsSinceEpoch,

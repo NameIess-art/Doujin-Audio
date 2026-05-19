@@ -49,6 +49,45 @@ hello
     expect(cached, same(track));
   });
 
+  test(
+    'subtitle track discovery matches double-extension subtitle files',
+    () async {
+      final tempDir = await Directory.systemTemp.createTemp(
+        'subtitle_cache_double_',
+      );
+      addTearDown(() async {
+        if (await tempDir.exists()) {
+          await tempDir.delete(recursive: true);
+        }
+      });
+
+      final audioFile = File(
+        '${tempDir.path}${Platform.pathSeparator}track.mp3',
+      );
+      final subtitleFile = File(
+        '${tempDir.path}${Platform.pathSeparator}track.mp3.vtt',
+      );
+      await audioFile.writeAsBytes(const <int>[]);
+      await subtitleFile.writeAsString('''
+WEBVTT
+
+00:00:01.000 --> 00:00:02.000
+hello
+''');
+
+      final provider = AudioProvider.test(
+        notificationService: PlaybackNotificationService(
+          PlaybackNotificationHandler(),
+        ),
+      );
+      addTearDown(provider.dispose);
+
+      final track = await provider.subtitleTrackForPath(audioFile.path);
+      expect(track, isNotNull);
+      expect(track!.cues.single.text, 'hello');
+    },
+  );
+
   test('content uri subtitle requests cache the null result', () async {
     final provider = AudioProvider.test(
       notificationService: PlaybackNotificationService(

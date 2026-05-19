@@ -116,6 +116,11 @@ private val supportedSubtitleExtensions = setOf(
     "vtt", "webvtt", "lrc", "srt", "ass", "ssa"
 )
 
+private val subtitleMatchMediaExtensions = setOf(
+    "mp3", "aac", "m4a", "ogg", "oga", "opus", "wav", "flac",
+    "mp4", "mkv", "webm", "mov", "m4v", "avi", "3gp"
+)
+
 private val supportedVideoExtensions = setOf(
     "mp4", "mkv", "webm", "mov", "m4v", "avi", "3gp"
 )
@@ -2327,9 +2332,9 @@ class MainActivity : AudioServiceActivity() {
         } else {
             rootDocumentId
         }
-        val audioStem = normalizeDisplayName(
-            trackDocumentId.substringAfterLast('/').substringBeforeLast('.')
-        ).lowercase(Locale.US)
+        val audioStem = normalizeSubtitleMatchStem(
+            trackDocumentId.substringAfterLast('/')
+        )
         val childUri = DocumentsContract.buildChildDocumentsUriUsingTree(
             rootUri,
             parentDocumentId
@@ -2367,7 +2372,7 @@ class MainActivity : AudioServiceActivity() {
                         normalizeDisplayName(documentId.substringAfterLast('/'))
                     }
                     if (!isSupportedSubtitleEntry(name, mime)) continue
-                    val stem = name.substringBeforeLast('.', name).lowercase(Locale.US)
+                    val stem = normalizeSubtitleMatchStem(name)
                     val rank = when {
                         stem == audioStem -> 0
                         stem.startsWith("$audioStem.") -> 1
@@ -3137,6 +3142,23 @@ class MainActivity : AudioServiceActivity() {
         }
         val extension = name.substringAfterLast('.', "").lowercase(Locale.US)
         return extension in supportedSubtitleExtensions
+    }
+
+    private fun normalizeSubtitleMatchStem(name: String): String {
+        var current = normalizeDisplayName(name).lowercase(Locale.US)
+        while (current.isNotEmpty()) {
+            val extension = current.substringAfterLast('.', "")
+            if (extension.isEmpty()) {
+                break
+            }
+            if (extension !in supportedSubtitleExtensions &&
+                extension !in subtitleMatchMediaExtensions
+            ) {
+                break
+            }
+            current = current.substringBeforeLast('.')
+        }
+        return current
     }
 
     private fun compareCoverNames(leftNameRaw: String, rightNameRaw: String): Int {

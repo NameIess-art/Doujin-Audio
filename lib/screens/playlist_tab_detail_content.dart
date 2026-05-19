@@ -1,4 +1,4 @@
-﻿part of 'playlist_tab.dart';
+part of 'playlist_tab.dart';
 
 class _SessionDetailContent extends StatefulWidget {
   const _SessionDetailContent({
@@ -53,10 +53,13 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
     final displayName =
         track?.displayName ??
         path.basenameWithoutExtension(session.currentTrackPath);
+    final i18n = context.read<AppLanguageProvider>();
     final rootFolderName = provider.getRootFolderName(session.currentTrackPath);
-    final folderName = rootFolderName.isNotEmpty
+    final folderName = track?.remoteMetadataKind == 'asmr.one'
+        ? i18n.tr('asmr_online_playback')
+        : rootFolderName.isNotEmpty
         ? rootFolderName
-        : context.read<AppLanguageProvider>().tr('imported_files');
+        : i18n.tr('imported_files');
     final hasSiblings =
         provider.tracksInSameGroup(session.currentTrackPath).length > 1;
 
@@ -122,139 +125,139 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
               final loadingSize = compact ? 38.0 : 44.0;
 
               return Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    IconButton(
-                      constraints: BoxConstraints.tightFor(
-                        width: compact ? 56 : 64,
-                        height: compact ? 56 : 64,
-                      ),
-                      padding: EdgeInsets.zero,
-                      onPressed: session.isLoading
-                          ? null
-                          : () {
-                              HapticFeedback.selectionClick();
-                              provider.seekSessionToPrev(session.id);
-                            },
-                      icon: Icon(
-                        Icons.skip_previous_rounded,
-                        size: skipIconSize,
-                        color: cs.onSurface,
-                      ),
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  IconButton(
+                    constraints: BoxConstraints.tightFor(
+                      width: compact ? 56 : 64,
+                      height: compact ? 56 : 64,
                     ),
-                    IconButton(
-                      constraints: BoxConstraints.tightFor(
-                        width: compact ? 56 : 64,
-                        height: compact ? 56 : 64,
-                      ),
-                      padding: EdgeInsets.zero,
-                      onPressed: session.isLoading
-                          ? null
-                          : () {
-                              HapticFeedback.selectionClick();
-                              final newPos =
-                                  session.position - const Duration(seconds: 5);
-                              provider.seekSession(
-                                session.id,
-                                newPos < Duration.zero ? Duration.zero : newPos,
-                              );
-                            },
-                      icon: Icon(
-                        Icons.replay_5_rounded,
-                        size: skipIconSize * 0.8,
-                        color: cs.onSurface,
-                      ),
+                    padding: EdgeInsets.zero,
+                    onPressed: session.isLoading
+                        ? null
+                        : () {
+                            HapticFeedback.selectionClick();
+                            provider.seekSessionToPrev(session.id);
+                          },
+                    icon: Icon(
+                      Icons.skip_previous_rounded,
+                      size: skipIconSize,
+                      color: cs.onSurface,
                     ),
-                    IconButton(
-                      constraints: BoxConstraints.tightFor(
-                        width: compact ? 80 : 92,
-                        height: compact ? 80 : 92,
-                      ),
-                      padding: EdgeInsets.zero,
-                      onPressed: session.isLoading
-                          ? null
-                          : () {
-                              HapticFeedback.mediumImpact();
-                              provider.toggleSessionPlayPause(session.id);
-                            },
-                      iconSize: playIconSize,
-                      icon: AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 150),
-                        switchInCurve: Curves.easeOutCubic,
-                        switchOutCurve: Curves.easeInCubic,
-                        transitionBuilder: (child, animation) {
-                          return FadeTransition(
-                            opacity: animation,
-                            child: ScaleTransition(
-                              scale: Tween<double>(
-                                begin: 0.92,
-                                end: 1,
-                              ).animate(animation),
-                              child: child,
-                            ),
-                          );
-                        },
-                        child: session.isLoading
-                            ? SizedBox(
-                                key: const ValueKey('loading'),
-                                width: loadingSize,
-                                height: loadingSize,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 3,
-                                  color: cs.onSurface,
-                                ),
-                              )
-                            : Icon(
-                                session.state.playing
-                                    ? Icons.pause_rounded
-                                    : Icons.play_arrow_rounded,
-                                key: ValueKey(session.state.playing),
-                                size: playIconSize,
+                  ),
+                  IconButton(
+                    constraints: BoxConstraints.tightFor(
+                      width: compact ? 56 : 64,
+                      height: compact ? 56 : 64,
+                    ),
+                    padding: EdgeInsets.zero,
+                    onPressed: session.isLoading
+                        ? null
+                        : () {
+                            HapticFeedback.selectionClick();
+                            final newPos =
+                                session.position - const Duration(seconds: 5);
+                            provider.seekSession(
+                              session.id,
+                              newPos < Duration.zero ? Duration.zero : newPos,
+                            );
+                          },
+                    icon: Icon(
+                      Icons.replay_5_rounded,
+                      size: skipIconSize * 0.8,
+                      color: cs.onSurface,
+                    ),
+                  ),
+                  IconButton(
+                    constraints: BoxConstraints.tightFor(
+                      width: compact ? 80 : 92,
+                      height: compact ? 80 : 92,
+                    ),
+                    padding: EdgeInsets.zero,
+                    onPressed: session.isLoading
+                        ? null
+                        : () {
+                            HapticFeedback.mediumImpact();
+                            provider.toggleSessionPlayPause(session.id);
+                          },
+                    iconSize: playIconSize,
+                    icon: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 150),
+                      switchInCurve: Curves.easeOutCubic,
+                      switchOutCurve: Curves.easeInCubic,
+                      transitionBuilder: (child, animation) {
+                        return FadeTransition(
+                          opacity: animation,
+                          child: ScaleTransition(
+                            scale: Tween<double>(
+                              begin: 0.92,
+                              end: 1,
+                            ).animate(animation),
+                            child: child,
+                          ),
+                        );
+                      },
+                      child: session.isLoading
+                          ? SizedBox(
+                              key: const ValueKey('loading'),
+                              width: loadingSize,
+                              height: loadingSize,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 3,
                                 color: cs.onSurface,
                               ),
-                      ),
+                            )
+                          : Icon(
+                              session.state.playing
+                                  ? Icons.pause_rounded
+                                  : Icons.play_arrow_rounded,
+                              key: ValueKey(session.state.playing),
+                              size: playIconSize,
+                              color: cs.onSurface,
+                            ),
                     ),
-                    IconButton(
-                      constraints: BoxConstraints.tightFor(
-                        width: compact ? 56 : 64,
-                        height: compact ? 56 : 64,
-                      ),
-                      padding: EdgeInsets.zero,
-                      onPressed: session.isLoading
-                          ? null
-                          : () {
-                              HapticFeedback.selectionClick();
-                              provider.seekSession(
-                                session.id,
-                                session.position + const Duration(seconds: 5),
-                              );
-                            },
-                      icon: Icon(
-                        Icons.forward_5_rounded,
-                        size: skipIconSize * 0.8,
-                        color: cs.onSurface,
-                      ),
+                  ),
+                  IconButton(
+                    constraints: BoxConstraints.tightFor(
+                      width: compact ? 56 : 64,
+                      height: compact ? 56 : 64,
                     ),
-                    IconButton(
-                      constraints: BoxConstraints.tightFor(
-                        width: compact ? 56 : 64,
-                        height: compact ? 56 : 64,
-                      ),
-                      padding: EdgeInsets.zero,
-                      onPressed: session.isLoading
-                          ? null
-                          : () {
-                              HapticFeedback.selectionClick();
-                              provider.seekSessionToNext(session.id);
-                            },
-                      icon: Icon(
-                        Icons.skip_next_rounded,
-                        size: skipIconSize,
-                        color: cs.onSurface,
-                      ),
+                    padding: EdgeInsets.zero,
+                    onPressed: session.isLoading
+                        ? null
+                        : () {
+                            HapticFeedback.selectionClick();
+                            provider.seekSession(
+                              session.id,
+                              session.position + const Duration(seconds: 5),
+                            );
+                          },
+                    icon: Icon(
+                      Icons.forward_5_rounded,
+                      size: skipIconSize * 0.8,
+                      color: cs.onSurface,
                     ),
-                  ],
-                );
+                  ),
+                  IconButton(
+                    constraints: BoxConstraints.tightFor(
+                      width: compact ? 56 : 64,
+                      height: compact ? 56 : 64,
+                    ),
+                    padding: EdgeInsets.zero,
+                    onPressed: session.isLoading
+                        ? null
+                        : () {
+                            HapticFeedback.selectionClick();
+                            provider.seekSessionToNext(session.id);
+                          },
+                    icon: Icon(
+                      Icons.skip_next_rounded,
+                      size: skipIconSize,
+                      color: cs.onSurface,
+                    ),
+                  ),
+                ],
+              );
             },
           ),
         ),
@@ -296,10 +299,7 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
             height: 52,
             child: Row(
               children: [
-                _ExpandableLoopOptions(
-                  session: session,
-                  provider: provider,
-                ),
+                _ExpandableLoopOptions(session: session, provider: provider),
                 const SizedBox(width: 8),
                 IconButton(
                   constraints: const BoxConstraints.tightFor(
@@ -313,7 +313,9 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
                           _showTrackSwitcher(context);
                         }
                       : null,
-                  tooltip: context.read<AppLanguageProvider>().tr('switch_audio'),
+                  tooltip: context.read<AppLanguageProvider>().tr(
+                    'switch_audio',
+                  ),
                   icon: Icon(
                     Icons.queue_music_rounded,
                     size: 24,

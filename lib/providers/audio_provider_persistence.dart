@@ -416,9 +416,8 @@ extension AudioProviderPersistence on AudioProvider {
     _unifiedNotificationSyncKey = null;
     _notifyListeners();
     await _notificationService.setEnabled(enabled);
-    // setForegroundEnabled drives both the foreground-service state and the
-    // notificationsDismissed flag on the native side.  When disabling, this
-    // stops the foreground notification entirely (not just strips buttons).
+    // setForegroundEnabled drives the native notification preference. During
+    // active playback, Android still keeps a minimal foreground notification.
     // When enabling, setForegroundEnabled(true) is already called inside
     // _notificationService.setEnabled(true), so we only need the disable path.
     if (!enabled) {

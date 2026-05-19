@@ -535,15 +535,11 @@ class NativePlaybackService : MediaSessionService() {
         if (!enabled) {
             notificationsDismissed = true
             if (hasPlaybackToKeepAlive()) {
-                // Keep the wake lock and ExoPlayer running, but stop the
-                // foreground service so no notification is shown.
                 acquireWakeLock()
                 updateMediaSessionPlayer()
-                stopForegroundWatchdog()
-                stopPlaybackForeground(
-                    reason = "foreground_disabled_active_playback",
-                    removeNotification = true
-                )
+                requestAudioFocusIfNeeded()
+                startPlaybackForeground(forceRefresh = true)
+                ensureForegroundWatchdog()
             } else {
                 stopForegroundWatchdog()
                 stopPlaybackForeground(
@@ -900,8 +896,7 @@ class NativePlaybackService : MediaSessionService() {
             return
         }
         if (foregroundSuppressed) {
-            logInfo("start_foreground_skip foreground_suppressed forceRefresh=$forceRefresh")
-            return
+            logInfo("start_foreground_minimal foreground_suppressed forceRefresh=$forceRefresh")
         }
         val foregroundSession = sessions[focusedSessionId]
             ?: sessions.values.firstOrNull { session ->
@@ -1095,7 +1090,6 @@ class NativePlaybackService : MediaSessionService() {
     }
 
     private fun ensureForegroundWatchdog() {
-        if (foregroundSuppressed) return
         if (foregroundWatchdogScheduled) return
         foregroundWatchdogScheduled = true
         mainHandler.postDelayed(foregroundWatchdog, FOREGROUND_WATCHDOG_INTERVAL_MS)
@@ -1354,9 +1348,7 @@ class NativePlaybackService : MediaSessionService() {
                 "$packageName:native_playback"
             )?.apply {
                 setReferenceCounted(false)
-                // Use a generous timeout (24 h) as a safety net against leaks.
-                // The lock is released explicitly when playback stops.
-                acquire(24 * 60 * 60 * 1000L)
+                acquire()
             }
             logInfo("wakelock_acquired held=${wakeLock?.isHeld == true}")
         } catch (e: Exception) {

@@ -88,7 +88,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   final GlobalKey<RefreshIndicatorState> _refreshIndicatorKey =
       GlobalKey<RefreshIndicatorState>();
   final GlobalKey _headerKey = GlobalKey();
-  double _headerHeight = 72;
+  double _headerHeight = 90;
 
   final ScrollController _scrollController = ScrollController();
   ValueListenable<int?>? _scrollToTopTabListenable;
@@ -540,15 +540,11 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
               icon: Icons.library_music_rounded,
               title: i18n.tr('music_library'),
               isLoading: !libraryHeaderState.isInitialized,
-              titleSuffix: Text(
-                i18n.tr('audio_count', {
-                  'count': libraryHeaderState.audioCount,
-                }),
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
+              subtitle: i18n.tr('audio_count', {
+                'count': libraryHeaderState.audioCount,
+              }),
+              subtitleFontSize: 11,
+              fitSubtitleToWidth: true,
               trailing: SizedBox(
                 width: listState.watchedLibraries.isEmpty ? 52 : 104,
                 height: 44,

@@ -2,8 +2,12 @@ part of 'library_tab.dart';
 
 extension _LibraryTabImportActions on _LibraryTabState {
   Future<void> _scheduleWatchedFoldersRefresh({bool silent = false}) {
+    final i18n = context.read<AppLanguageProvider>();
     final activeTask = _activeRefreshTask;
     if (activeTask != null) {
+      if (!silent) {
+        _showSnack(i18n.tr('scanning_title'));
+      }
       return activeTask;
     }
 
@@ -14,6 +18,9 @@ extension _LibraryTabImportActions on _LibraryTabState {
       }
     });
     _activeRefreshTask = trackedTask;
+    if (!silent) {
+      _showSnack(i18n.tr('scanning_title'));
+    }
     return trackedTask;
   }
 

@@ -430,6 +430,12 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
     final baseFailureCount = provider.scanFailureCount;
     var added = 0;
     var duplicates = 0;
+    final existingLibraryEntriesByPath = libraryRoot == null
+        ? const <String, LibraryEntry>{}
+        : {
+            for (final entry in provider.libraryEntriesForLibrary(libraryRoot))
+              if (entry.isTrack) PathMatcher.normalize(entry.path): entry,
+          };
 
     for (var index = 0; index < scannedTracks.length; index += chunkSize) {
       if (!mounted || !provider.isScanning) break;
@@ -447,13 +453,23 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
           promoteRootTracksToSingles: promoteRootTracksToSingles,
           i18n: i18n,
         );
+        final needsRefresh = _scannedTrackNeedsRefresh(provider, converted);
         if (libraryRoot != null) {
-          entryBatch.add(converted);
+          if (_libraryEntryNeedsRefresh(
+            existingLibraryEntriesByPath,
+            converted,
+          )) {
+            entryBatch.add(converted);
+          }
           if (provider.isLibraryPathExcluded(libraryRoot, scanned.path)) {
             continue;
           }
         }
-        trackBatch.add(converted);
+        if (needsRefresh) {
+          trackBatch.add(converted);
+        } else {
+          duplicates++;
+        }
       }
 
       if (libraryRoot != null && entryBatch.isNotEmpty) {
@@ -487,6 +503,39 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
     }
 
     return added;
+  }
+
+  bool _scannedTrackNeedsRefresh(AudioProvider provider, MusicTrack nextTrack) {
+    final existing = provider.trackByPath(nextTrack.path);
+    if (existing == null) {
+      return true;
+    }
+    return existing.displayName != nextTrack.displayName ||
+        existing.groupKey != nextTrack.groupKey ||
+        existing.groupTitle != nextTrack.groupTitle ||
+        existing.groupSubtitle != nextTrack.groupSubtitle ||
+        existing.isSingle != nextTrack.isSingle ||
+        existing.isVideo != nextTrack.isVideo ||
+        existing.fileSizeBytes != nextTrack.fileSizeBytes ||
+        existing.modifiedAt != nextTrack.modifiedAt;
+  }
+
+  bool _libraryEntryNeedsRefresh(
+    Map<String, LibraryEntry> entriesByPath,
+    MusicTrack nextTrack,
+  ) {
+    final existing = entriesByPath[PathMatcher.normalize(nextTrack.path)];
+    if (existing == null) {
+      return true;
+    }
+    return existing.displayName != nextTrack.displayName ||
+        existing.groupKey != nextTrack.groupKey ||
+        existing.groupTitle != nextTrack.groupTitle ||
+        existing.groupSubtitle != nextTrack.groupSubtitle ||
+        existing.isSingle != nextTrack.isSingle ||
+        existing.isVideo != nextTrack.isVideo ||
+        existing.fileSizeBytes != nextTrack.fileSizeBytes ||
+        existing.modifiedAt != nextTrack.modifiedAt;
   }
 
   MusicTrack _convertScannedTrack(

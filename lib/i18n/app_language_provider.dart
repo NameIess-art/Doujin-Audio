@@ -69,7 +69,7 @@ class AppLanguageProvider with ChangeNotifier {
 const Map<AppLanguage, Map<String, String>> _localizedValues = {
   AppLanguage.zh: {
     'app_title': 'NL Audio',
-    'nav_library': '音频库',
+    'nav_library': '本地音频库',
     'nav_sessions': '播放列表',
     'nav_settings': '设置',
     'timer': '计时器',
@@ -78,7 +78,7 @@ const Map<AppLanguage, Map<String, String>> _localizedValues = {
     'open_timer_settings': '打开计时器设置',
     'timer_play_plus': '播放 + {time}',
     'asmr_player': 'NL Audio',
-    'music_library': '音频库',
+    'music_library': '本地音频库',
     'playback_sessions': '播放列表',
     'settings': '设置',
     'video_to_audio': '视频转音频',
@@ -192,7 +192,7 @@ const Map<AppLanguage, Map<String, String>> _localizedValues = {
     'pause_all_sessions': '暂停全部会话',
     'all_paused': '已暂停全部会话。',
     'sessions_count': '{count} 个会话',
-    'playing_count': '播放中 {count} 个',
+    'playing_count': '{count}个播放中',
     'no_active_sessions': '当前没有活跃会话',
     'go_library_hint': '请先到音乐库播放音频，再创建并发会话。',
     'single_loop': '单曲循环',

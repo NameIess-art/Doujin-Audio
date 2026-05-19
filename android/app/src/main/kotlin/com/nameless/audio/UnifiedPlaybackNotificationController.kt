@@ -300,7 +300,7 @@ internal object UnifiedPlaybackNotificationController {
             context,
             item,
             summaryNotificationId,
-            ongoing = item.playing
+            ongoing = true
         )
             .setContentText(subtitle)
             .setSubText(null)
@@ -334,7 +334,7 @@ internal object UnifiedPlaybackNotificationController {
             context,
             mainItem,
             summaryNotificationId,
-            ongoing = items.any { it.playing }
+            ongoing = true
         )
             .setContentText(summaryText ?: "${items.size} sessions")
             .setSubText("${items.size} sessions")
@@ -359,7 +359,7 @@ internal object UnifiedPlaybackNotificationController {
             context,
             item,
             notificationId,
-            ongoing = item.playing
+            ongoing = true
         )
             .setContentText(subtitle)
             .setSubText(null)

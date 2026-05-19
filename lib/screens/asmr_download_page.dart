@@ -7,7 +7,6 @@ import '../models/asmr_models.dart';
 import '../services/asmr_download_manager.dart';
 import '../services/asmr_download_selection.dart';
 import '../services/asmr_library_controller.dart';
-import '../services/path_display.dart';
 import '../widgets/app_feedback.dart';
 
 class AsmrDownloadPage extends StatefulWidget {
@@ -78,8 +77,9 @@ class _AsmrDownloadPageState extends State<AsmrDownloadPage> {
               child: const Text('取消'),
             ),
             TextButton(
-              onPressed: () =>
-                  Navigator.of(dialogContext).pop(AsmrDownloadConflictPolicy.skip),
+              onPressed: () => Navigator.of(
+                dialogContext,
+              ).pop(AsmrDownloadConflictPolicy.skip),
               child: const Text('跳过'),
             ),
             FilledButton(
@@ -87,8 +87,9 @@ class _AsmrDownloadPageState extends State<AsmrDownloadPage> {
                 backgroundColor: cs.primary,
                 foregroundColor: cs.onPrimary,
               ),
-              onPressed: () => Navigator.of(dialogContext)
-                  .pop(AsmrDownloadConflictPolicy.overwrite),
+              onPressed: () => Navigator.of(
+                dialogContext,
+              ).pop(AsmrDownloadConflictPolicy.overwrite),
               child: const Text('覆盖'),
             ),
           ],
@@ -104,11 +105,7 @@ class _AsmrDownloadPageState extends State<AsmrDownloadPage> {
 
     final downloadManager = context.read<AsmrDownloadManager>();
     if (downloadManager.hasLiveTask) {
-      showAppSnackBar(
-        context,
-        '当前已有下载任务在运行',
-        icon: Icons.downloading_rounded,
-      );
+      showAppSnackBar(context, '当前已有下载任务在运行', icon: Icons.downloading_rounded);
       return;
     }
 
@@ -200,7 +197,7 @@ class _AsmrDownloadPageState extends State<AsmrDownloadPage> {
         actions: [
           TextButton(
             onPressed: _starting ? null : _chooseDestination,
-            child: const Text('更改路径'),
+            child: Text(hasDestination ? '更改路径' : '选择路径'),
           ),
         ],
       ),
@@ -217,20 +214,13 @@ class _AsmrDownloadPageState extends State<AsmrDownloadPage> {
                     totalFolderCount: totalFolderCount,
                   ),
                 ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                  child: _DestinationCard(
-                    pathText: hasDestination ? _destinationRoot! : '未选择',
-                    onChange: _starting ? null : _chooseDestination,
-                  ),
-                ),
                 Expanded(
                   child: ListView(
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
                     children: [
                       for (final node in selection.rootNodes)
                         Padding(
-                          padding: const EdgeInsets.only(bottom: 8),
+                          padding: const EdgeInsets.only(bottom: 2),
                           child: _AsmrDownloadNodeTile(
                             node: node,
                             depth: 0,
@@ -252,7 +242,9 @@ class _AsmrDownloadPageState extends State<AsmrDownloadPage> {
                     children: [
                       Expanded(
                         child: OutlinedButton(
-                          onPressed: _starting ? null : () => Navigator.of(context).maybePop(),
+                          onPressed: _starting
+                              ? null
+                              : () => Navigator.of(context).maybePop(),
                           child: const Text('取消'),
                         ),
                       ),
@@ -318,22 +310,13 @@ class AsmrDownloadTaskPage extends StatelessWidget {
                 LinearProgressIndicator(value: task.progress),
                 const SizedBox(height: 12),
                 _TaskInfoRow(label: '状态', value: _statusText(task.status)),
-                _TaskInfoRow(
-                  label: '目标',
-                  value: task.displayDestinationPath,
-                ),
+                _TaskInfoRow(label: '目标', value: task.displayDestinationPath),
                 _TaskInfoRow(
                   label: '进度',
                   value: '${task.completedFiles}/${task.totalFiles}',
                 ),
-                _TaskInfoRow(
-                  label: '已跳过',
-                  value: '${task.skippedFiles}',
-                ),
-                _TaskInfoRow(
-                  label: '失败',
-                  value: '${task.failedFiles}',
-                ),
+                _TaskInfoRow(label: '已跳过', value: '${task.skippedFiles}'),
+                _TaskInfoRow(label: '失败', value: '${task.failedFiles}'),
                 _TaskInfoRow(
                   label: '已下载',
                   value: _formatBytes(task.downloadedBytes),
@@ -346,7 +329,9 @@ class AsmrDownloadTaskPage extends StatelessWidget {
                   const SizedBox(height: 12),
                   Text(
                     task.error!,
-                    style: TextStyle(color: Theme.of(context).colorScheme.error),
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
                   ),
                 ],
               ],
@@ -400,81 +385,23 @@ class _DownloadSummaryCard extends StatelessWidget {
         children: [
           Text(
             work.title,
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w800,
-            ),
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 6),
           Text(
             '已选择 $selectedLeafCount 个文件，下载时会保留原目录结构',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: cs.onSurfaceVariant,
-            ),
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
           ),
           const SizedBox(height: 6),
           Text(
             '共 $totalFileCount 个文件、$totalFolderCount 个文件夹，包含音频、字幕、图片、文档等所有文件节点',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: cs.onSurfaceVariant,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _DestinationCard extends StatelessWidget {
-  const _DestinationCard({
-    required this.pathText,
-    required this.onChange,
-  });
-
-  final String pathText;
-  final VoidCallback? onChange;
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final displayPath = PathDisplay.displayPathFor(pathText);
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: cs.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: cs.outlineVariant),
-      ),
-      child: Row(
-        children: [
-          Icon(Icons.folder_open_rounded, color: cs.primary),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '下载路径',
-                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  displayPath,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: cs.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 12),
-          TextButton(
-            onPressed: onChange,
-            child: const Text('更改'),
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
           ),
         ],
       ),
@@ -500,6 +427,10 @@ class _AsmrDownloadNodeTile extends StatefulWidget {
 }
 
 class _AsmrDownloadNodeTileState extends State<_AsmrDownloadNodeTile> {
+  static const double _indentWidth = 14;
+  static const double _folderRowHeight = 44;
+  static const double _fileRowHeight = 46;
+
   late bool _expanded;
 
   @override
@@ -508,147 +439,166 @@ class _AsmrDownloadNodeTileState extends State<_AsmrDownloadNodeTile> {
     _expanded = widget.depth == 0;
   }
 
+  void _toggleSelection(bool? next) {
+    widget.selection.togglePath(widget.node.track.relativePath, next);
+    widget.onSelectionChanged();
+  }
+
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final value = widget.selection.stateForPath(widget.node.track.relativePath);
-    final indent = 12.0 * widget.depth;
+    final indent = _indentWidth * widget.depth;
 
     if (widget.node.track.isFolder) {
       final hasChildren = widget.node.children.isNotEmpty;
-      return Container(
-        decoration: BoxDecoration(
-          color: cs.surfaceContainerLow,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: cs.outlineVariant),
-        ),
-        child: Theme(
-          data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-          child: ExpansionTile(
-            initiallyExpanded: _expanded,
-            onExpansionChanged: (expanded) {
-              setState(() {
-                _expanded = expanded;
-              });
-            },
-            tilePadding: EdgeInsetsDirectional.only(
-              start: 10 + indent,
-              end: 12,
-            ),
-            childrenPadding: EdgeInsetsDirectional.only(
-              start: 12 + indent,
-              end: 12,
-              bottom: 8,
-            ),
-            leading: Checkbox(
-              tristate: true,
-              value: value,
-              onChanged: (next) {
-                widget.selection.togglePath(widget.node.track.relativePath, next);
-                widget.onSelectionChanged();
-              },
-            ),
-            title: Row(
-              children: [
-                Icon(
-                  _expanded ? Icons.folder_open_rounded : Icons.folder_rounded,
-                  color: cs.primary,
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    widget.node.track.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+      return Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          initiallyExpanded: _expanded,
+          minTileHeight: _folderRowHeight,
+          shape: const RoundedRectangleBorder(),
+          collapsedShape: const RoundedRectangleBorder(),
+          tilePadding: EdgeInsetsDirectional.only(start: indent, end: 2),
+          childrenPadding: EdgeInsets.zero,
+          onExpansionChanged: (expanded) {
+            setState(() {
+              _expanded = expanded;
+            });
+          },
+          title: Row(
+            children: [
+              _CompactNodeCheckbox(value: value, onChanged: _toggleSelection),
+              const SizedBox(width: 4),
+              Icon(
+                _expanded ? Icons.folder_open_rounded : Icons.folder_rounded,
+                size: 20,
+                color: cs.primary.withValues(alpha: 0.8),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  widget.node.track.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13,
+                    height: 1.06,
+                    color: cs.onSurface.withValues(alpha: 0.9),
                   ),
                 ),
-              ],
-            ),
-            trailing: hasChildren
-                ? AnimatedRotation(
-                    turns: _expanded ? 0.5 : 0,
-                    duration: const Duration(milliseconds: 180),
-                    curve: Curves.easeOutCubic,
-                    child: const Icon(Icons.expand_more_rounded),
-                  )
-                : null,
-            children: hasChildren
-                ? [
-                    for (final child in widget.node.children)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 6),
-                        child: _AsmrDownloadNodeTile(
-                          node: child,
-                          depth: widget.depth + 1,
-                          selection: widget.selection,
-                          onSelectionChanged: widget.onSelectionChanged,
-                        ),
-                      ),
-                  ]
-                : [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-                      child: Text(
-                        '空文件夹',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: cs.onSurfaceVariant,
-                        ),
+              ),
+            ],
+          ),
+          trailing: hasChildren
+              ? AnimatedRotation(
+                  turns: _expanded ? 0.5 : 0,
+                  duration: const Duration(milliseconds: 180),
+                  curve: Curves.easeOutCubic,
+                  child: Icon(
+                    Icons.expand_more_rounded,
+                    color: cs.onSurfaceVariant,
+                    size: 20,
+                  ),
+                )
+              : const SizedBox(width: 20),
+          children: hasChildren
+              ? [
+                  for (final child in widget.node.children)
+                    _AsmrDownloadNodeTile(
+                      node: child,
+                      depth: widget.depth + 1,
+                      selection: widget.selection,
+                      onSelectionChanged: widget.onSelectionChanged,
+                    ),
+                ]
+              : [
+                  Padding(
+                    padding: EdgeInsetsDirectional.only(
+                      start: indent + _indentWidth + 40,
+                      end: 8,
+                      bottom: 4,
+                    ),
+                    child: Text(
+                      '空文件夹',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: cs.onSurfaceVariant,
                       ),
                     ),
-                  ],
-          ),
+                  ),
+                ],
         ),
       );
     }
 
-    return Container(
-      decoration: BoxDecoration(
-        color: cs.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: cs.outlineVariant),
-      ),
-      child: ListTile(
-        contentPadding: EdgeInsetsDirectional.only(
-          start: 10 + indent,
-          end: 12,
-        ),
-        leading: Checkbox(
-          tristate: true,
-          value: value,
-          onChanged: (next) {
-            widget.selection.togglePath(widget.node.track.relativePath, next);
-            widget.onSelectionChanged();
-          },
-        ),
-        title: Text(
-          widget.node.track.title,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-        subtitle: Row(
-          children: [
-            Icon(
-              _fileIconFor(widget.node.track),
-              size: 14,
-              color: cs.onSurfaceVariant,
-            ),
-            const SizedBox(width: 6),
-            Expanded(
-              child: Text(
-                '${_fileTypeLabel(widget.node.track)} · ${widget.node.track.relativePath}',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+    return InkWell(
+      onTap: () => _toggleSelection(value == true ? false : true),
+      borderRadius: BorderRadius.circular(4),
+      child: SizedBox(
+        height: _fileRowHeight,
+        child: Padding(
+          padding: EdgeInsetsDirectional.only(start: indent, end: 4),
+          child: Row(
+            children: [
+              _CompactNodeCheckbox(value: value, onChanged: _toggleSelection),
+              const SizedBox(width: 4),
+              Icon(
+                _fileIconFor(widget.node.track),
+                size: 18,
+                color: cs.onSurfaceVariant.withValues(alpha: 0.7),
               ),
-            ),
-          ],
-        ),
-        trailing: Text(
-          _formatFileSize(widget.node.track.size),
-          style: Theme.of(context).textTheme.labelSmall?.copyWith(
-            color: cs.onSurfaceVariant,
-            fontWeight: FontWeight.w700,
+              const SizedBox(width: 6),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      widget.node.track.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                _formatFileSize(widget.node.track.size),
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: cs.onSurfaceVariant,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _CompactNodeCheckbox extends StatelessWidget {
+  const _CompactNodeCheckbox({required this.value, required this.onChanged});
+
+  final bool? value;
+  final ValueChanged<bool?> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 28,
+      height: 28,
+      child: Checkbox(
+        tristate: true,
+        value: value,
+        onChanged: onChanged,
+        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        visualDensity: VisualDensity.compact,
       ),
     );
   }
@@ -676,16 +626,16 @@ class _TaskInfoCard extends StatelessWidget {
         children: [
           Text(
             title,
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w800,
-            ),
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 4),
           Text(
             subtitle,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: cs.onSurfaceVariant,
-            ),
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
           ),
         ],
       ),
@@ -710,9 +660,9 @@ class _TaskInfoRow extends StatelessWidget {
             width: 72,
             child: Text(
               label,
-              style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                fontWeight: FontWeight.w700,
-              ),
+              style: Theme.of(
+                context,
+              ).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w700),
             ),
           ),
           Expanded(
@@ -801,33 +751,5 @@ IconData _fileIconFor(AsmrTrackFile track) {
       return track.isAudio
           ? Icons.audio_file_rounded
           : Icons.insert_drive_file_rounded;
-  }
-}
-
-String _fileTypeLabel(AsmrTrackFile track) {
-  if (track.isSubtitle) {
-    return '字幕';
-  }
-  if (track.isAudio) {
-    return '音频';
-  }
-  switch (track.resolvedExtension) {
-    case '.jpg':
-    case '.jpeg':
-    case '.png':
-    case '.webp':
-    case '.gif':
-      return '图片';
-    case '.txt':
-    case '.md':
-    case '.json':
-    case '.cue':
-      return '文档';
-    case '.zip':
-    case '.7z':
-    case '.rar':
-      return '压缩包';
-    default:
-      return '文件';
   }
 }

@@ -49,4 +49,33 @@ class NativePlaybackFocusRecoveryPolicyTest {
             )
         )
     }
+
+    @Test
+    fun `resumes pending focus pause when focus is already held again`() {
+        assertTrue(
+            shouldResumePendingAudioFocusPause(
+                audioFocusHeld = true,
+                hasPendingAudioFocusResume = true,
+                playbackSuspended = false
+            )
+        )
+    }
+
+    @Test
+    fun `does not resume pending focus pause without focus or while suspended`() {
+        assertFalse(
+            shouldResumePendingAudioFocusPause(
+                audioFocusHeld = false,
+                hasPendingAudioFocusResume = true,
+                playbackSuspended = false
+            )
+        )
+        assertFalse(
+            shouldResumePendingAudioFocusPause(
+                audioFocusHeld = true,
+                hasPendingAudioFocusResume = true,
+                playbackSuspended = true
+            )
+        )
+    }
 }

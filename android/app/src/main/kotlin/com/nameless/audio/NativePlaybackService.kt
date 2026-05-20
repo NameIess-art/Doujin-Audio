@@ -141,18 +141,8 @@ class NativePlaybackService : MediaSessionService() {
             }
             AudioManager.AUDIOFOCUS_GAIN -> {
                 audioFocusHeld = true
-                val sessionIdsToResume = pendingAudioFocusResumeSessionIds
-                    .filter(sessions::containsKey)
-                pendingAudioFocusResumeSessionIds.clear()
                 transientAudioFocusLossActive = false
-                if (sessionIdsToResume.isNotEmpty() && !playbackSuspended) {
-                    logInfo("audio_focus_gain_resume sessionCount=${sessionIdsToResume.size}")
-                    sessionIdsToResume.forEach { sessionId ->
-                        val session = sessions[sessionId] ?: return@forEach
-                        focusSession(sessionId)
-                        session.ensurePlayer().play()
-                    }
-                    publishAllSessionStates()
+                if (resumePendingAudioFocusSessionsIfPossible("audio_focus_gain")) {
                     schedulePersistSessionState()
                     syncForegroundState()
                 }
@@ -853,6 +843,9 @@ class NativePlaybackService : MediaSessionService() {
             cancelForegroundStopGrace()
             acquireWakeLock()
             requestAudioFocusIfNeeded()
+            if (resumePendingAudioFocusSessionsIfPossible("foreground_sync_focus_available")) {
+                schedulePersistSessionState()
+            }
             startPlaybackForeground()
             ensureForegroundWatchdog()
             ensureStatePersistenceTicker()
@@ -1312,6 +1305,33 @@ class NativePlaybackService : MediaSessionService() {
             "audio_focus_request_result result=${audioFocusRequestResultName(result)} " +
                 "held=$audioFocusHeld"
         )
+    }
+
+    private fun resumePendingAudioFocusSessionsIfPossible(trigger: String): Boolean {
+        if (!shouldResumePendingAudioFocusPause(
+                audioFocusHeld = audioFocusHeld,
+                hasPendingAudioFocusResume = hasPendingAudioFocusResume(),
+                playbackSuspended = playbackSuspended
+            )
+        ) {
+            return false
+        }
+        val sessionIdsToResume = pendingAudioFocusResumeSessionIds
+            .filter(sessions::containsKey)
+        pendingAudioFocusResumeSessionIds.clear()
+        if (sessionIdsToResume.isEmpty()) return false
+        logInfo(
+            "audio_focus_pending_resume trigger=$trigger " +
+                "sessionCount=${sessionIdsToResume.size}"
+        )
+        sessionIdsToResume.forEach { sessionId ->
+            val session = sessions[sessionId] ?: return@forEach
+            focusSession(sessionId)
+            session.ensurePlayer().play()
+        }
+        publishAllSessionStates()
+        ensureTicker()
+        return true
     }
 
     private fun abandonAudioFocus(reason: String) {
@@ -1886,6 +1906,16 @@ internal fun shouldTrackTransientAudioFocusPause(
     return !playWhenReady &&
         reason == Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_FOCUS_LOSS &&
         focusLossMayResume &&
+        !playbackSuspended
+}
+
+internal fun shouldResumePendingAudioFocusPause(
+    audioFocusHeld: Boolean,
+    hasPendingAudioFocusResume: Boolean,
+    playbackSuspended: Boolean
+): Boolean {
+    return audioFocusHeld &&
+        hasPendingAudioFocusResume &&
         !playbackSuspended
 }
 

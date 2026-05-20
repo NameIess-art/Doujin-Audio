@@ -41,6 +41,42 @@ void main() {
     expect(metadata.coverUrl, 'https://img.dlsite.jp/path/cover.jpg');
   });
 
+  test('decodes DLsite product json wrapped as list or object', () {
+    final fromList = decodeDlsiteProductJsonResponse('''
+      [
+        {"workno":"RJ01014447","work_name":"List title"}
+      ]
+    ''');
+    final fromObject = decodeDlsiteProductJsonResponse('''
+      {
+        "products": {
+          "RJ01014448": {
+            "product_id": "RJ01014448",
+            "product_name": "Object title"
+          }
+        }
+      }
+    ''');
+
+    expect(fromList?['workno'], 'RJ01014447');
+    expect(fromObject?['product_id'], 'RJ01014448');
+  });
+
+  test('decodes DLsite work page html as product metadata fallback', () {
+    final metadata = decodeDlsiteProductHtml('''
+      <meta property="og:title" content="Fallback title [Circle B] | DLsite">
+      <meta property="og:image" content="//img.dlsite.jp/path/fallback.jpg">
+      <h1 id="work_name">Fallback title</h1>
+      <template data-product-name="Fallback title"
+        data-maker-name="Circle A"></template>
+      ''', fallbackRjCode: 'RJ01014449');
+
+    expect(metadata?.rjCode, 'RJ01014449');
+    expect(metadata?.workTitle, 'Fallback title');
+    expect(metadata?.circleName, 'Circle A');
+    expect(metadata?.coverUrl, 'https://img.dlsite.jp/path/fallback.jpg');
+  });
+
   test('extracts unique RJ product ids from DLsite search html', () {
     final ids = extractDlsiteProductIdsFromSearchHtml('''
       <a href="/maniax/work/=/product_id/RJ01014447.html">A</a>

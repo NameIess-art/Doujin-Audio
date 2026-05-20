@@ -9,7 +9,8 @@ class LibraryEditPage extends ConsumerStatefulWidget {
   ConsumerState<LibraryEditPage> createState() => _LibraryEditPageState();
 }
 
-class _LibraryEditPageState extends ConsumerState<LibraryEditPage> {
+class _LibraryEditPageState extends ConsumerState<LibraryEditPage>
+    with WidgetsBindingObserver {
   final TextEditingController _searchController = TextEditingController();
   List<String> _diskAudioFilePaths = const <String>[];
   Set<String> _diskAudioFilePathSet = const <String>{};
@@ -28,11 +29,20 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadDiskLibrarySnapshot();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_loadDiskLibrarySnapshot());
+    }
   }
 
   Future<void> _loadDiskLibrarySnapshot() async {
     if (PathMatcher.isContentUri(widget.libraryPath)) {
+      if (await _loadNativeLibrarySnapshot()) return;
       if (!mounted) return;
       setState(() {
         _diskAudioFilePaths = const <String>[];
@@ -64,7 +74,6 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage> {
       return;
     }
     final audioFiles = <String>{};
-    final folderPaths = <String>{};
     final pendingDirs = Queue<Directory>()..add(directory);
     var processedEntities = 0;
 
@@ -84,7 +93,6 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage> {
           }
           final normalizedPath = PathMatcher.normalize(entity.path);
           if (entity is Directory) {
-            folderPaths.add(normalizedPath);
             pendingDirs.add(entity);
             continue;
           }
@@ -95,8 +103,7 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage> {
       }
     } catch (_) {}
     final liveFolderPaths = _buildLiveDiskFolderPathSet(
-      folderPaths,
-      audioFiles,
+      scannedTrackPaths: audioFiles,
     );
 
     final sortedAudioFiles = audioFiles.toList(growable: false)
@@ -125,6 +132,7 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _searchDebounceTimer?.cancel();
     _searchController.dispose();
     super.dispose();
@@ -155,6 +163,66 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage> {
       );
       await Navigator.of(context).maybePop();
     }
+  }
+
+  Future<bool> _loadNativeLibrarySnapshot() async {
+    if (!Platform.isAndroid) return false;
+    final audioFiles = <String>{};
+    final folderPaths = <String>{};
+    try {
+      final data = await _LibraryTabState._fileCacheChannel
+          .invokeMethod<List<dynamic>>(FileCacheMethod.scanFolder, {
+            'folder': widget.libraryPath,
+          });
+      if (data == null) return false;
+      for (final item in data) {
+        if (item is! Map) continue;
+        final map = item.cast<Object?, Object?>();
+        final scannedPath = map['path']?.toString().trim();
+        if (scannedPath == null ||
+            scannedPath.isEmpty ||
+            !isSupportedMediaFile(scannedPath)) {
+          continue;
+        }
+        audioFiles.add(PathMatcher.normalize(scannedPath));
+        final groupKey = map['groupKey']?.toString().trim();
+        if (groupKey != null &&
+            groupKey.isNotEmpty &&
+            !PathMatcher.equalsNormalized(groupKey, widget.libraryPath)) {
+          folderPaths.add(PathMatcher.normalize(groupKey));
+        }
+      }
+    } catch (_) {
+      return false;
+    }
+
+    if (!mounted) return true;
+    final liveFolderPaths = _buildLiveDiskFolderPathSet(
+      scannedTrackPaths: audioFiles,
+      scannedFolderPaths: folderPaths,
+    );
+    final sortedAudioFiles = audioFiles.toList(growable: false)
+      ..sort(
+        (a, b) => compareNatural(
+          path.basenameWithoutExtension(a),
+          path.basenameWithoutExtension(b),
+        ),
+      );
+    final retainedPaths = <String>{...sortedAudioFiles, ...liveFolderPaths};
+    final provider = ref.read(audioProviderFacadeProvider);
+    provider.removeTracksDeletedFromFolder(widget.libraryPath, audioFiles);
+    provider.removeLibraryEntriesDeletedFromFolder(
+      widget.libraryPath,
+      widget.libraryPath,
+      retainedPaths,
+    );
+    setState(() {
+      _diskAudioFilePaths = sortedAudioFiles;
+      _diskAudioFilePathSet = audioFiles;
+      _diskLiveFolderPaths = liveFolderPaths;
+      _diskSnapshotLoaded = true;
+    });
+    return true;
   }
 
   @override
@@ -380,13 +448,12 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage> {
     );
   }
 
-  bool get _hasAuthoritativeDiskSnapshot =>
-      !PathMatcher.isContentUri(widget.libraryPath) && _diskSnapshotLoaded;
+  bool get _hasAuthoritativeDiskSnapshot => _diskSnapshotLoaded;
 
-  Set<String> _buildLiveDiskFolderPathSet(
-    Set<String> scannedFolderPaths,
-    Set<String> scannedTrackPaths,
-  ) {
+  Set<String> _buildLiveDiskFolderPathSet({
+    required Set<String> scannedTrackPaths,
+    Iterable<String> scannedFolderPaths = const <String>[],
+  }) {
     final rootPath = PathMatcher.normalize(widget.libraryPath);
     final liveFolders = <String>{};
 
@@ -395,8 +462,13 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage> {
       while (!PathMatcher.equalsNormalized(current, rootPath) &&
           PathMatcher.isWithinOrEqualNormalized(current, rootPath)) {
         liveFolders.add(current);
-        final parent = path.dirname(current);
-        if (parent == current || parent == '.' || parent.isEmpty) break;
+        final parent = _parentFolderPath(current, rootPath);
+        if (parent == null ||
+            parent == current ||
+            parent == '.' ||
+            parent.isEmpty) {
+          break;
+        }
         current = parent;
       }
     }

@@ -26,6 +26,14 @@ class DlsiteMetadataService {
   static const MethodChannel _fileCacheChannel = MethodChannel(
     FileCacheChannel.name,
   );
+  static const List<String> _productSites = <String>[
+    'maniax',
+    'home',
+    'girls',
+    'bl',
+    'books',
+    'pro',
+  ];
 
   final HttpClient _httpClient;
 
@@ -38,22 +46,45 @@ class DlsiteMetadataService {
       throw const DlsiteMetadataException('Invalid RJ code');
     }
 
-    final uri = Uri.https('www.dlsite.com', '/maniax/api/=/product.json', {
-      'workno': normalized,
-    });
-    final response = await _get(uri, language: language);
-    final decoded = json.decode(response);
-    if (decoded is! List || decoded.isEmpty || decoded.first is! Map) {
-      throw const DlsiteMetadataException('No DLsite metadata found');
+    final languages = <AppLanguage>[
+      language,
+      if (language != AppLanguage.ja) AppLanguage.ja,
+    ];
+    Object? lastError;
+    for (final candidateLanguage in languages) {
+      for (final site in _productSites) {
+        try {
+          final uri = Uri.https('www.dlsite.com', '/$site/api/=/product.json', {
+            'workno': normalized,
+          });
+          return await _fetchProductMetadata(uri, language: candidateLanguage);
+        } catch (error) {
+          lastError = error;
+        }
+      }
+      for (final site in _productSites) {
+        try {
+          final uri = Uri.https(
+            'www.dlsite.com',
+            '/$site/work/=/product_id/$normalized.html',
+          );
+          final html = await _get(uri, language: candidateLanguage);
+          final metadata = decodeDlsiteProductHtml(
+            html,
+            fallbackRjCode: normalized,
+          );
+          if (metadata != null &&
+              metadata.rjCode.isNotEmpty &&
+              metadata.workTitle.isNotEmpty) {
+            return metadata;
+          }
+        } catch (error) {
+          lastError = error;
+        }
+      }
     }
-
-    final metadata = DlsiteMetadata.fromProductJson(
-      (decoded.first as Map).cast<String, dynamic>(),
-    );
-    if (metadata.rjCode.isEmpty || metadata.workTitle.isEmpty) {
-      throw const DlsiteMetadataException('Incomplete DLsite metadata');
-    }
-    return metadata;
+    if (lastError is DlsiteMetadataException) throw lastError;
+    throw const DlsiteMetadataException('No DLsite metadata found');
   }
 
   Future<List<DlsiteMetadata>> searchByTitleCandidates(
@@ -61,12 +92,27 @@ class DlsiteMetadataService {
     int limit = 10,
     AppLanguage language = AppLanguage.ja,
   }) async {
-    final queries = buildDlsiteTitleSearchQueries(titles);
-    final keywords = titles
+    final titleList = titles.toList(growable: false);
+    final queries = buildDlsiteTitleSearchQueries(titleList);
+    final keywords = titleList
         .expand(extractDlsiteTitleKeywords)
         .map((keyword) => keyword.toLowerCase())
         .toSet();
     final resultsByRjCode = <String, _ScoredDlsiteMetadata>{};
+
+    for (final title in titleList) {
+      final rjCode = AudioDetail.findRjCodeInText(title);
+      if (rjCode == null || resultsByRjCode.containsKey(rjCode)) continue;
+      try {
+        final metadata = await fetchByRjCode(rjCode, language: language);
+        resultsByRjCode[rjCode] = _ScoredDlsiteMetadata(
+          metadata,
+          keywords.length + 100,
+        );
+      } catch (_) {
+        // Fall through to title search if an embedded RJ code is stale.
+      }
+    }
 
     for (final query in queries) {
       final rjCodes = await _searchProductIdsByTitle(query, language: language);
@@ -102,30 +148,34 @@ class DlsiteMetadataService {
     String query, {
     required AppLanguage language,
   }) async {
-    final suggestUri = Uri.https('www.dlsite.com', '/suggest/', {
-      'term': query,
-      'site': 'maniax',
-      'time': DateTime.now().millisecondsSinceEpoch.toString(),
-      'touch': '0',
-    });
-    try {
-      final response = await _get(suggestUri, language: language);
-      final rjCodes = extractDlsiteProductIdsFromSuggestResponse(response);
-      if (rjCodes.isNotEmpty) return rjCodes;
-    } catch (_) {
-      // Keep title search resilient when DLsite changes or blocks one endpoint.
+    for (final site in _productSites) {
+      final suggestUri = Uri.https('www.dlsite.com', '/suggest/', {
+        'term': query,
+        'site': site,
+        'time': DateTime.now().millisecondsSinceEpoch.toString(),
+        'touch': '0',
+      });
+      try {
+        final response = await _get(suggestUri, language: language);
+        final rjCodes = extractDlsiteProductIdsFromSuggestResponse(response);
+        if (rjCodes.isNotEmpty) return rjCodes;
+      } catch (_) {
+        // Keep title search resilient when DLsite changes or blocks one endpoint.
+      }
     }
 
     final encodedTitle = Uri.encodeComponent(query);
-    final searchUri = Uri.parse(
-      'https://www.dlsite.com/maniax/fsr/=/keyword/$encodedTitle',
-    );
-    try {
-      final response = await _get(searchUri, language: language);
-      return extractDlsiteProductIdsFromSearchHtml(response);
-    } catch (_) {
-      return const <String>[];
+    for (final site in _productSites) {
+      final searchUri = Uri.parse(
+        'https://www.dlsite.com/$site/fsr/=/keyword/$encodedTitle',
+      );
+      try {
+        final response = await _get(searchUri, language: language);
+        final rjCodes = extractDlsiteProductIdsFromSearchHtml(response);
+        if (rjCodes.isNotEmpty) return rjCodes;
+      } catch (_) {}
     }
+    return const <String>[];
   }
 
   Future<String> downloadCover({
@@ -174,30 +224,71 @@ class DlsiteMetadataService {
   }
 
   Future<String> _get(Uri uri, {required AppLanguage language}) async {
-    final request = await _httpClient.getUrl(uri);
-    _applyHeaders(request, language);
-    final response = await request.close();
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw DlsiteMetadataException(
-        'DLsite request failed: ${response.statusCode}',
-      );
+    Object? lastError;
+    for (var attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        final request = await _httpClient.getUrl(uri);
+        _applyHeaders(request, language);
+        final response = await request.close();
+        final bytes = await response.fold<List<int>>(
+          <int>[],
+          (buffer, chunk) => buffer..addAll(chunk),
+        );
+        if (response.statusCode >= 200 && response.statusCode < 300) {
+          return utf8.decode(bytes);
+        }
+        final error = DlsiteMetadataException(
+          'DLsite request failed: ${response.statusCode}',
+        );
+        if (!_shouldRetryStatus(response.statusCode) || attempt == 2) {
+          throw error;
+        }
+        lastError = error;
+      } on IOException catch (error) {
+        if (attempt == 2) rethrow;
+        lastError = error;
+      }
+      await Future<void>.delayed(Duration(milliseconds: 250 * (attempt + 1)));
     }
-    return utf8.decode(
-      await response.fold<List<int>>(
-        <int>[],
-        (buffer, chunk) => buffer..addAll(chunk),
-      ),
-    );
+    if (lastError is DlsiteMetadataException) throw lastError;
+    throw const DlsiteMetadataException('DLsite request failed');
+  }
+
+  Future<DlsiteMetadata> _fetchProductMetadata(
+    Uri uri, {
+    required AppLanguage language,
+  }) async {
+    final response = await _get(uri, language: language);
+    final product = decodeDlsiteProductJsonResponse(response);
+    if (product == null) {
+      throw const DlsiteMetadataException('No DLsite metadata found');
+    }
+
+    final metadata = DlsiteMetadata.fromProductJson(product);
+    if (metadata.rjCode.isEmpty || metadata.workTitle.isEmpty) {
+      throw const DlsiteMetadataException('Incomplete DLsite metadata');
+    }
+    return metadata;
+  }
+
+  bool _shouldRetryStatus(int statusCode) {
+    return statusCode == HttpStatus.requestTimeout ||
+        statusCode == HttpStatus.tooManyRequests ||
+        statusCode == HttpStatus.internalServerError ||
+        statusCode == HttpStatus.badGateway ||
+        statusCode == HttpStatus.serviceUnavailable ||
+        statusCode == HttpStatus.gatewayTimeout;
   }
 
   void _applyHeaders(HttpClientRequest request, AppLanguage language) {
     request.headers.set(
       HttpHeaders.userAgentHeader,
-      'Mozilla/5.0 NamelessAudio/0.9.1',
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+      '(KHTML, like Gecko) Chrome/124.0 Safari/537.36',
     );
     request.headers.set(
       HttpHeaders.acceptHeader,
-      'application/json,text/*,*/*',
+      'application/json,text/javascript,text/html,text/*,*/*',
     );
     request.headers.set(
       HttpHeaders.acceptLanguageHeader,
@@ -208,6 +299,8 @@ class DlsiteMetadataService {
       'adultchecked=1; __dlsite_com_share_adultchecked=1; '
       'locale=${dlsiteLocaleForLanguage(language)}',
     );
+    request.headers.set(HttpHeaders.refererHeader, 'https://www.dlsite.com/');
+    request.headers.set('X-Requested-With', 'XMLHttpRequest');
   }
 
   String _coverExtension(Uri uri) {
@@ -226,6 +319,152 @@ class DlsiteMetadataService {
       '.jpg' => 'image/jpeg',
       _ => 'image/jpeg',
     };
+  }
+}
+
+Map<String, dynamic>? decodeDlsiteProductJsonResponse(String response) {
+  final decoded = json.decode(response);
+  final product = _firstDlsiteProductObject(decoded);
+  return product?.cast<String, dynamic>();
+}
+
+DlsiteMetadata? decodeDlsiteProductHtml(
+  String html, {
+  required String fallbackRjCode,
+}) {
+  final rjCode =
+      AudioDetail.findRjCodeInText(fallbackRjCode) ??
+      AudioDetail.findRjCodeInText(html) ??
+      fallbackRjCode.toUpperCase();
+  final title =
+      _htmlCapture(
+        html,
+        RegExp(
+          r'<h1[^>]*id=["'
+          ']work_name["'
+          '][^>]*>(.*?)</h1>',
+          caseSensitive: false,
+          dotAll: true,
+        ),
+      ) ??
+      _htmlMetaContent(
+        html,
+        'og:title',
+      )?.replaceFirst(RegExp(r'\s*\[[^\]]+\]\s*\|\s*DLsite.*$'), '') ??
+      _htmlAttribute(html, 'data-product-name');
+  if (title == null || title.isEmpty) return null;
+
+  final circleName =
+      _htmlAttribute(html, 'data-maker-name') ??
+      _htmlCapture(
+        html,
+        RegExp(
+          r"""class=["']maker_name["'][\s\S]*?<a[^>]*>(.*?)</a>""",
+          caseSensitive: false,
+          dotAll: true,
+        ),
+      ) ??
+      _htmlMetaContent(
+        html,
+        'og:title',
+      )?.replaceFirst(RegExp(r'^.*\[([^\]]+)\]\s*\|\s*DLsite.*$'), r'$1');
+  final coverUrl = _normalizeDlsiteUrl(_htmlMetaContent(html, 'og:image'));
+
+  return DlsiteMetadata(
+    rjCode: rjCode,
+    workTitle: title,
+    circleName: circleName ?? '',
+    voiceActors: const <String>[],
+    tags: const <String>[],
+    coverUrl: coverUrl,
+  );
+}
+
+String? _htmlMetaContent(String html, String property) {
+  return _htmlCapture(
+    html,
+    RegExp(
+      '<meta[^>]+(?:property|name)=["\\\']${RegExp.escape(property)}["\\\']'
+      '[^>]+content=["\\\']([^"\\\']*)["\\\']',
+      caseSensitive: false,
+      dotAll: true,
+    ),
+    decodeTags: false,
+  );
+}
+
+String? _htmlAttribute(String html, String attributeName) {
+  return _htmlCapture(
+    html,
+    RegExp(
+      '${RegExp.escape(attributeName)}=["\\\']([^"\\\']*)["\\\']',
+      caseSensitive: false,
+      dotAll: true,
+    ),
+    decodeTags: false,
+  );
+}
+
+String? _htmlCapture(String html, RegExp pattern, {bool decodeTags = true}) {
+  final raw = pattern.firstMatch(html)?.group(1);
+  if (raw == null) return null;
+  final withoutTags = decodeTags
+      ? raw.replaceAll(RegExp(r'<[^>]+>'), ' ')
+      : raw;
+  final decoded = _decodeHtmlEntities(
+    withoutTags.replaceAll(RegExp(r'\s+'), ' ').trim(),
+  );
+  return decoded.isEmpty ? null : decoded;
+}
+
+String _decodeHtmlEntities(String value) {
+  return value
+      .replaceAll('&amp;', '&')
+      .replaceAll('&lt;', '<')
+      .replaceAll('&gt;', '>')
+      .replaceAll('&quot;', '"')
+      .replaceAll('&#39;', "'")
+      .replaceAll('&nbsp;', ' ');
+}
+
+String? _normalizeDlsiteUrl(String? rawUrl) {
+  if (rawUrl == null || rawUrl.isEmpty) return null;
+  if (rawUrl.startsWith('//')) return 'https:$rawUrl';
+  if (rawUrl.startsWith('/')) return 'https://www.dlsite.com$rawUrl';
+  return rawUrl;
+}
+
+Map<Object?, Object?>? _firstDlsiteProductObject(Object? decoded) {
+  if (decoded is List) {
+    return decoded.whereType<Map>().cast<Map<Object?, Object?>>().firstOrNull;
+  }
+  if (decoded is Map) {
+    final map = decoded.cast<Object?, Object?>();
+    if (_looksLikeDlsiteProduct(map)) return map;
+    for (final key in const <String>['work', 'works', 'products', 'result']) {
+      final nested = _firstDlsiteProductObject(map[key]);
+      if (nested != null) return nested;
+    }
+    for (final value in map.values) {
+      final nested = _firstDlsiteProductObject(value);
+      if (nested != null) return nested;
+    }
+  }
+  return null;
+}
+
+bool _looksLikeDlsiteProduct(Map<Object?, Object?> value) {
+  return value.containsKey('workno') ||
+      value.containsKey('product_id') ||
+      value.containsKey('work_name') ||
+      value.containsKey('product_name');
+}
+
+extension _FirstOrNull<T> on Iterable<T> {
+  T? get firstOrNull {
+    final iterator = this.iterator;
+    if (!iterator.moveNext()) return null;
+    return iterator.current;
   }
 }
 

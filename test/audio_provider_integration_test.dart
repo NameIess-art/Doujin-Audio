@@ -1092,6 +1092,71 @@ void main() {
   });
 
   group('library folder restore', () {
+    test('addOrReplaceTracks ignores unchanged rescan metadata', () {
+      final initialModifiedAt = DateTime.fromMillisecondsSinceEpoch(1000);
+      final initialScannedAt = DateTime.fromMillisecondsSinceEpoch(2000);
+      final refreshedScannedAt = DateTime.fromMillisecondsSinceEpoch(3000);
+      const trackPath = '/library/work/01.mp3';
+
+      provider.addTracks(
+        <MusicTrack>[
+          MusicTrack(
+            path: trackPath,
+            displayName: '01',
+            groupKey: '/library/work',
+            groupTitle: 'work',
+            groupSubtitle: '/library/work',
+            isSingle: false,
+            scannedAt: initialScannedAt,
+            fileSizeBytes: 123,
+            modifiedAt: initialModifiedAt,
+          ),
+        ],
+        notify: false,
+        persist: false,
+      );
+
+      final beforeRefresh = provider.library.single;
+      var notificationCount = 0;
+      provider.addListener(() {
+        notificationCount++;
+      });
+
+      provider.addOrReplaceTracks(<MusicTrack>[
+        MusicTrack(
+          path: trackPath,
+          displayName: '01',
+          groupKey: '/library/work',
+          groupTitle: 'work',
+          groupSubtitle: '/library/work',
+          isSingle: false,
+          scannedAt: refreshedScannedAt,
+          fileSizeBytes: 123,
+          modifiedAt: initialModifiedAt,
+        ),
+      ], persist: false);
+
+      expect(notificationCount, 0);
+      expect(provider.library.single, same(beforeRefresh));
+
+      provider.addOrReplaceTracks(<MusicTrack>[
+        MusicTrack(
+          path: trackPath,
+          displayName: '01 renamed',
+          groupKey: '/library/work',
+          groupTitle: 'work',
+          groupSubtitle: '/library/work',
+          isSingle: false,
+          scannedAt: refreshedScannedAt,
+          fileSizeBytes: 123,
+          modifiedAt: initialModifiedAt,
+        ),
+      ], persist: false);
+
+      expect(notificationCount, 1);
+      expect(provider.library.single.displayName, '01 renamed');
+    });
+
     test('folder rescan prunes tracks and entries deleted from disk', () async {
       final libraryRoot = await Directory.systemTemp.createTemp(
         'library_prune_',

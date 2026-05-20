@@ -506,18 +506,7 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
   }
 
   bool _scannedTrackNeedsRefresh(AudioProvider provider, MusicTrack nextTrack) {
-    final existing = provider.trackByPath(nextTrack.path);
-    if (existing == null) {
-      return true;
-    }
-    return existing.displayName != nextTrack.displayName ||
-        existing.groupKey != nextTrack.groupKey ||
-        existing.groupTitle != nextTrack.groupTitle ||
-        existing.groupSubtitle != nextTrack.groupSubtitle ||
-        existing.isSingle != nextTrack.isSingle ||
-        existing.isVideo != nextTrack.isVideo ||
-        existing.fileSizeBytes != nextTrack.fileSizeBytes ||
-        existing.modifiedAt != nextTrack.modifiedAt;
+    return provider.libraryTrackNeedsRefresh(nextTrack);
   }
 
   bool _libraryEntryNeedsRefresh(

@@ -735,7 +735,9 @@ extension AudioProviderLibrary on AudioProvider {
       final nextTrack = existing == null
           ? track
           : _mergeExistingTrackState(existing, track);
-      if (existing == nextTrack) continue;
+      if (existing != null && !_mergedTrackHasChanges(existing, track)) {
+        continue;
+      }
       if (existing != null && existing.groupKey != nextTrack.groupKey) {
         didReplaceGroup = true;
       }
@@ -798,6 +800,26 @@ extension AudioProviderLibrary on AudioProvider {
       }
       _saveLibraryNodeOrder();
     }
+  }
+
+  bool libraryTrackNeedsRefresh(MusicTrack nextTrack) {
+    final existing = _libraryByPath[nextTrack.path];
+    return existing == null || _mergedTrackHasChanges(existing, nextTrack);
+  }
+
+  bool _mergedTrackHasChanges(MusicTrack existing, MusicTrack scanned) {
+    return existing.displayName != scanned.displayName ||
+        existing.groupKey != scanned.groupKey ||
+        existing.groupTitle != scanned.groupTitle ||
+        existing.groupSubtitle != scanned.groupSubtitle ||
+        existing.isSingle != scanned.isSingle ||
+        existing.isVideo != scanned.isVideo ||
+        existing.fileSizeBytes != scanned.fileSizeBytes ||
+        existing.modifiedAt != scanned.modifiedAt ||
+        existing.coverCachePath == null && scanned.coverCachePath != null ||
+        existing.lyricsPath == null && scanned.lyricsPath != null ||
+        existing.manualCoverPath == null && scanned.manualCoverPath != null ||
+        existing.duration == Duration.zero && scanned.duration != Duration.zero;
   }
 
   MusicTrack _mergeExistingTrackState(MusicTrack existing, MusicTrack scanned) {

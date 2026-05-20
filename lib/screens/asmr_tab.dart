@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -15,16 +16,9 @@ import '../widgets/library_like_cards.dart';
 import '../widgets/mobile_overlay_inset.dart';
 import '../widgets/swipe_reveal_card.dart';
 import '../widgets/top_page_header.dart';
+import '../widgets/unified_popup_menu.dart';
 import 'asmr_download_page.dart';
 import 'asmr_work_detail_sheet.dart';
-
-const List<_AsmrCategorySpec> _asmrCategories = <_AsmrCategorySpec>[
-  _AsmrCategorySpec(AsmrCategoryType.sales, 'asmr_category_sales'),
-  _AsmrCategorySpec(AsmrCategoryType.rating, 'asmr_category_rating'),
-  _AsmrCategorySpec(AsmrCategoryType.release, 'asmr_category_release'),
-  _AsmrCategorySpec(AsmrCategoryType.favorites, 'asmr_category_favorites'),
-  _AsmrCategorySpec(AsmrCategoryType.history, 'asmr_category_history'),
-];
 
 class AsmrTab extends StatefulWidget {
   const AsmrTab({super.key});
@@ -33,17 +27,21 @@ class AsmrTab extends StatefulWidget {
   State<AsmrTab> createState() => _AsmrTabState();
 }
 
+const Color _kAsmrBlueLight = Color(0xFF1D4ED8);
+const Color _kAsmrBlueDark = Color(0xFF60A5FA);
+
 class _AsmrTabState extends State<AsmrTab>
     with AutomaticKeepAliveClientMixin, TickerProviderStateMixin {
-  late final TabController _tabController = TabController(
-    length: _asmrCategories.length,
+  List<AsmrCategoryType> _categories = kDefaultVisibleAsmrCategories;
+  late TabController _tabController = TabController(
+    length: _categories.length,
     vsync: this,
   );
   late final Map<AsmrCategoryType, ScrollController> _scrollControllers =
       <AsmrCategoryType, ScrollController>{
-        for (final category in _asmrCategories)
-          category.type: ScrollController()
-            ..addListener(() => _handleCategoryScroll(category.type)),
+        for (final category in _categories)
+          category: ScrollController()
+            ..addListener(() => _handleCategoryScroll(category)),
       };
   final TextEditingController _searchController = TextEditingController();
   Timer? _searchDebounceTimer;
@@ -55,8 +53,13 @@ class _AsmrTabState extends State<AsmrTab>
   @override
   bool get wantKeepAlive => true;
 
-  AsmrCategoryType get _currentCategory =>
-      _asmrCategories[_tabController.index].type;
+  AsmrCategoryType get _currentCategory {
+    final index = _tabController.index;
+    if (index < 0 || index >= _categories.length) {
+      return _categories.first;
+    }
+    return _categories[index];
+  }
 
   double get _headerControlsFullHeight => 86.0;
 
@@ -74,15 +77,56 @@ class _AsmrTabState extends State<AsmrTab>
           .scrollToTopTabListenable;
       _scrollToTopTabListenable?.addListener(_handleScrollToTopSignal);
       _measureHeader();
+      final defaultLanguage = AsmrContentLanguage.fromAppLanguageName(
+        context.read<AppLanguageProvider>().language.name,
+      );
       unawaited(
-        asmrController.initialize().then((_) {
+        asmrController.initialize(defaultLanguage: defaultLanguage).then((_) {
           if (!mounted) {
             return;
           }
+          _syncCategoryTabs(asmrController.visibleCategories);
           unawaited(_ensureCategoryLoaded(_currentCategory));
         }),
       );
     });
+  }
+
+  void _syncCategoryTabs(List<AsmrCategoryType> categories) {
+    final nextCategories = categories.isEmpty
+        ? kDefaultVisibleAsmrCategories
+        : categories.toList(growable: false);
+    if (listEquals(_categories, nextCategories)) {
+      return;
+    }
+    final previousCategory = _currentCategory;
+    for (final category in nextCategories) {
+      _scrollControllers.putIfAbsent(
+        category,
+        () =>
+            ScrollController()
+              ..addListener(() => _handleCategoryScroll(category)),
+      );
+    }
+    final removed = _scrollControllers.keys
+        .where((category) => !nextCategories.contains(category))
+        .toList(growable: false);
+    for (final category in removed) {
+      _scrollControllers.remove(category)?.dispose();
+    }
+    _tabController
+      ..removeListener(_handleTabChanged)
+      ..dispose();
+    final nextIndex = nextCategories.indexOf(previousCategory);
+    _categories = nextCategories;
+    _tabController = TabController(
+      length: _categories.length,
+      initialIndex: nextIndex < 0 ? 0 : nextIndex,
+      vsync: this,
+    )..addListener(_handleTabChanged);
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   void _handleCategoryScroll(AsmrCategoryType category) {
@@ -217,6 +261,277 @@ class _AsmrTabState extends State<AsmrTab>
     });
   }
 
+  Future<T?> _showAsmrPanel<T>({required WidgetBuilder builder}) {
+    final i18n = context.read<AppLanguageProvider>();
+    return showGeneralDialog<T>(
+      context: context,
+      barrierLabel: i18n.tr('close'),
+      barrierDismissible: true,
+      barrierColor: Colors.transparent,
+      transitionDuration: const Duration(milliseconds: 240),
+      pageBuilder: (dialogContext, animation, secondaryAnimation) {
+        return _AsmrPanelOverlay(animation: animation, builder: builder);
+      },
+      transitionBuilder: (context, animation, secondaryAnimation, child) {
+        return child;
+      },
+    );
+  }
+
+  Future<void> _showLoginDialog() async {
+    final controller = context.read<AsmrLibraryController>();
+    final i18n = context.read<AppLanguageProvider>();
+    final nameController = TextEditingController();
+    final passwordController = TextEditingController();
+    try {
+      final loggedIn = await _showAsmrPanel<bool>(
+        builder: (dialogContext) {
+          var loading = false;
+          final session = controller.authSession;
+          return StatefulBuilder(
+            builder: (context, setDialogState) {
+              if (session.isLoggedIn) {
+                return _AsmrPanelCard(
+                  icon: Icons.login_rounded,
+                  title: i18n.tr('asmr_login_title'),
+                  actions: [
+                    _AsmrPanelAction(
+                      label: i18n.tr('close'),
+                      onPressed: () => Navigator.of(context).pop(false),
+                    ),
+                    _AsmrPanelAction(
+                      label: i18n.tr('asmr_logout_action'),
+                      filled: true,
+                      loading: loading,
+                      onPressed: loading
+                          ? null
+                          : () async {
+                              setDialogState(() => loading = true);
+                              await controller.logout();
+                              if (context.mounted) {
+                                Navigator.of(context).pop(true);
+                              }
+                            },
+                    ),
+                  ],
+                  child: Text(
+                    i18n.tr('asmr_logged_in_as', {
+                      'name': session.userName ?? session.userId ?? '',
+                    }),
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                );
+              }
+              return _AsmrPanelCard(
+                icon: Icons.login_rounded,
+                title: i18n.tr('asmr_login_title'),
+                actions: [
+                  _AsmrPanelAction(
+                    label: i18n.tr('close'),
+                    onPressed: loading
+                        ? null
+                        : () => Navigator.of(context).pop(false),
+                  ),
+                  _AsmrPanelAction(
+                    label: i18n.tr('asmr_login_action'),
+                    filled: true,
+                    loading: loading,
+                    onPressed: loading
+                        ? null
+                        : () async {
+                            final name = nameController.text.trim();
+                            final password = passwordController.text;
+                            if (name.isEmpty || password.isEmpty) {
+                              return;
+                            }
+                            setDialogState(() => loading = true);
+                            try {
+                              await controller.login(
+                                name: name,
+                                password: password,
+                              );
+                              if (context.mounted) {
+                                Navigator.of(context).pop(true);
+                              }
+                            } catch (_) {
+                              if (context.mounted) {
+                                setDialogState(() => loading = false);
+                              }
+                              if (mounted) {
+                                showAppSnackBar(
+                                  this.context,
+                                  i18n.tr('asmr_login_failed'),
+                                  tone: AppFeedbackTone.warning,
+                                  icon: Icons.error_outline_rounded,
+                                );
+                              }
+                            }
+                          },
+                  ),
+                ],
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      controller: nameController,
+                      enabled: !loading,
+                      textInputAction: TextInputAction.next,
+                      decoration: InputDecoration(
+                        labelText: i18n.tr('asmr_login_account'),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: passwordController,
+                      enabled: !loading,
+                      obscureText: true,
+                      decoration: InputDecoration(
+                        labelText: i18n.tr('asmr_login_password'),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          );
+        },
+      );
+      if (!mounted || loggedIn != true) {
+        return;
+      }
+      unawaited(_ensureCategoryLoaded(_currentCategory));
+      showAppSnackBar(
+        context,
+        i18n.tr(
+          controller.authSession.isLoggedIn
+              ? 'asmr_login_success'
+              : 'asmr_logout_success',
+        ),
+        tone: AppFeedbackTone.success,
+        icon: controller.authSession.isLoggedIn
+            ? Icons.login_rounded
+            : Icons.logout_rounded,
+      );
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      showAppSnackBar(
+        context,
+        i18n.tr('asmr_login_failed'),
+        tone: AppFeedbackTone.warning,
+        icon: Icons.error_outline_rounded,
+      );
+    } finally {
+      nameController.dispose();
+      passwordController.dispose();
+    }
+  }
+
+  Future<void> _showCategoryDialog() async {
+    final controller = context.read<AsmrLibraryController>();
+    final i18n = context.read<AppLanguageProvider>();
+    final selected = controller.visibleCategories.toSet();
+    final result = await _showAsmrPanel<List<AsmrCategoryType>>(
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return _AsmrPanelCard(
+              icon: Icons.category_rounded,
+              title: i18n.tr('asmr_categories_title'),
+              actions: [
+                _AsmrPanelAction(
+                  label: i18n.tr('close'),
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+                _AsmrPanelAction(
+                  label: i18n.tr('done'),
+                  filled: true,
+                  onPressed: selected.isEmpty
+                      ? null
+                      : () {
+                          final ordered = kAsmrSelectableCategories
+                              .where(selected.contains)
+                              .toList(growable: false);
+                          Navigator.of(context).pop(ordered);
+                        },
+                ),
+              ],
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (final category in kAsmrSelectableCategories)
+                      CheckboxListTile(
+                        value: selected.contains(category),
+                        onChanged:
+                            !selected.contains(category) && selected.length >= 5
+                            ? null
+                            : (checked) {
+                                setDialogState(() {
+                                  if (checked == true) {
+                                    selected.add(category);
+                                  } else if (selected.length > 1) {
+                                    selected.remove(category);
+                                  }
+                                });
+                              },
+                        title: Text(i18n.tr(_asmrCategoryLabelKey(category))),
+                        controlAffinity: ListTileControlAffinity.leading,
+                        dense: true,
+                      ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+    if (!mounted || result == null) {
+      return;
+    }
+    await controller.setVisibleCategories(result);
+    if (!mounted) {
+      return;
+    }
+    _syncCategoryTabs(controller.visibleCategories);
+    unawaited(_ensureCategoryLoaded(_currentCategory));
+  }
+
+  Future<void> _showLanguageDialog() async {
+    final controller = context.read<AsmrLibraryController>();
+    final i18n = context.read<AppLanguageProvider>();
+    final result = await _showAsmrPanel<AsmrContentLanguage>(
+      builder: (context) => _AsmrPanelCard(
+        icon: Icons.language_rounded,
+        title: i18n.tr('asmr_language_title'),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final language in AsmrContentLanguage.values)
+              _AsmrSelectionTile(
+                label: i18n.tr(_asmrLanguageLabelKey(language)),
+                selected: controller.contentLanguage == language,
+                onTap: () => Navigator.of(context).pop(language),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted || result == null) {
+      return;
+    }
+    await controller.setContentLanguage(result);
+    if (!mounted) {
+      return;
+    }
+    unawaited(_refreshCurrentCategory());
+  }
+
   @override
   void dispose() {
     _scrollToTopTabListenable?.removeListener(_handleScrollToTopSignal);
@@ -259,12 +574,14 @@ class _AsmrTabState extends State<AsmrTab>
                 padding: const EdgeInsets.fromLTRB(12, 1, 12, 7),
                 child: Row(
                   children: [
-                    for (var index = 0; index < _asmrCategories.length; index++)
+                    for (var index = 0; index < _categories.length; index++)
                       Expanded(
                         child: Padding(
                           padding: EdgeInsets.only(left: index == 0 ? 0 : 8),
                           child: _AsmrCategoryButton(
-                            label: i18n.tr(_asmrCategories[index].labelKey),
+                            label: i18n.tr(
+                              _asmrCategoryLabelKey(_categories[index]),
+                            ),
                             selected: _tabController.index == index,
                             onTap: () {
                               if (_tabController.index == index) {
@@ -308,15 +625,14 @@ class _AsmrTabState extends State<AsmrTab>
             ? TabBarView(
                 controller: _tabController,
                 children: [
-                  for (final category in _asmrCategories)
+                  for (final category in _categories)
                     _AsmrCategoryList(
-                      category: category.type,
-                      scrollController: _scrollControllers[category.type]!,
+                      category: category,
+                      scrollController: _scrollControllers[category]!,
                       searchQuery: _searchQuery,
                       topInset: headerContentHeight,
                       bottomInset: bottomInset,
-                      onRefresh: () =>
-                          _refreshCategoryWithFeedback(category.type),
+                      onRefresh: () => _refreshCategoryWithFeedback(category),
                     ),
                 ],
               )
@@ -328,6 +644,11 @@ class _AsmrTabState extends State<AsmrTab>
           child: TopPageHeader(
             key: _headerKey,
             title: 'ASMR.ONE',
+            trailing: _AsmrMoreMenuButton(
+              onLogin: _showLoginDialog,
+              onCategories: _showCategoryDialog,
+              onLanguage: _showLanguageDialog,
+            ),
             isLoading: !controller.initialized,
             bottomSpacing: 4,
             padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
@@ -751,6 +1072,372 @@ class _AsmrCategoryButton extends StatelessWidget {
     );
   }
 }
+
+class _AsmrPanelOverlay extends StatelessWidget {
+  const _AsmrPanelOverlay({required this.animation, required this.builder});
+
+  final Animation<double> animation;
+  final WidgetBuilder builder;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final mediaSize = MediaQuery.sizeOf(context);
+    final isDesktop = mediaSize.width >= 760;
+    final maxWidth = isDesktop ? 472.0 : 404.0;
+    final outerPadding = EdgeInsets.fromLTRB(
+      isDesktop ? 28 : 16,
+      isDesktop ? 28 : 176,
+      isDesktop ? 28 : 16,
+      isDesktop ? 28 : 132,
+    );
+    final curved = CurvedAnimation(
+      parent: animation,
+      curve: Curves.easeOutCubic,
+      reverseCurve: Curves.easeInCubic,
+    );
+
+    return Material(
+      color: Colors.transparent,
+      child: AnimatedBuilder(
+        animation: curved,
+        builder: (context, child) {
+          final progress = curved.value.clamp(0.0, 1.0);
+          final showBackdrop = animation.status != AnimationStatus.reverse;
+          return Stack(
+            fit: StackFit.expand,
+            children: [
+              Positioned.fill(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => Navigator.of(context).maybePop(),
+                  child: showBackdrop
+                      ? ClipRect(
+                          child: BackdropFilter(
+                            filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: cs.scrim.withValues(
+                                  alpha: 0.12 + (0.10 * progress),
+                                ),
+                              ),
+                            ),
+                          ),
+                        )
+                      : const SizedBox.expand(),
+                ),
+              ),
+              SafeArea(
+                child: FadeTransition(
+                  opacity: curved,
+                  child: ScaleTransition(
+                    scale: Tween<double>(begin: 0.88, end: 1.0).animate(curved),
+                    child: Padding(
+                      padding: outerPadding,
+                      child: Align(
+                        alignment: isDesktop
+                            ? Alignment.center
+                            : Alignment.topCenter,
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(maxWidth: maxWidth),
+                          child: Theme(
+                            data: _asmrPanelTheme(context),
+                            child: Builder(builder: builder),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+ThemeData _asmrPanelTheme(BuildContext context) {
+  final base = Theme.of(context);
+  final isDark = base.brightness == Brightness.dark;
+  final blue = isDark ? _kAsmrBlueDark : _kAsmrBlueLight;
+  final blueContainer = isDark
+      ? const Color(0xFF1E3A8A)
+      : const Color(0xFFDBEAFE);
+  final onBlueContainer = isDark
+      ? const Color(0xFFBFDBFE)
+      : const Color(0xFF1E40AF);
+  final scheme = base.colorScheme.copyWith(
+    primary: blue,
+    onPrimary: Colors.white,
+    primaryContainer: blueContainer,
+    onPrimaryContainer: onBlueContainer,
+    secondary: blue,
+    onSecondary: Colors.white,
+    secondaryContainer: blueContainer,
+    onSecondaryContainer: onBlueContainer,
+  );
+  return base.copyWith(
+    colorScheme: scheme,
+    checkboxTheme: CheckboxThemeData(
+      fillColor: WidgetStateProperty.resolveWith((states) {
+        if (states.contains(WidgetState.selected)) {
+          return blue;
+        }
+        return null;
+      }),
+      checkColor: WidgetStateProperty.all(Colors.white),
+    ),
+    filledButtonTheme: FilledButtonThemeData(
+      style: FilledButton.styleFrom(
+        backgroundColor: blue,
+        foregroundColor: Colors.white,
+      ),
+    ),
+    textButtonTheme: TextButtonThemeData(
+      style: TextButton.styleFrom(foregroundColor: blue),
+    ),
+    iconTheme: base.iconTheme.copyWith(color: blue),
+    inputDecorationTheme: base.inputDecorationTheme.copyWith(
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: BorderSide(color: blue, width: 1.5),
+      ),
+    ),
+  );
+}
+
+class _AsmrPanelCard extends StatelessWidget {
+  const _AsmrPanelCard({
+    required this.icon,
+    required this.title,
+    required this.child,
+    this.actions = const <_AsmrPanelAction>[],
+  });
+
+  final IconData icon;
+  final String title;
+  final Widget child;
+  final List<_AsmrPanelAction> actions;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final maxHeight = (MediaQuery.sizeOf(context).height - 96).clamp(
+      280.0,
+      560.0,
+    );
+
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxHeight: maxHeight),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(28),
+          color: cs.surfaceContainerLow.withValues(alpha: 0.96),
+          border: Border.all(color: cs.primary.withValues(alpha: 0.45)),
+          boxShadow: [
+            BoxShadow(
+              color: cs.shadow.withValues(alpha: 0.22),
+              blurRadius: 32,
+              offset: const Offset(0, 18),
+            ),
+          ],
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _AsmrPanelTitle(icon: icon, title: title),
+              const SizedBox(height: 18),
+              Flexible(child: child),
+              if (actions.isNotEmpty) ...[
+                const SizedBox(height: 18),
+                Wrap(
+                  alignment: WrapAlignment.end,
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: actions,
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AsmrPanelTitle extends StatelessWidget {
+  const _AsmrPanelTitle({required this.icon, required this.title});
+
+  final IconData icon;
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Row(
+      children: [
+        Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: cs.primaryContainer,
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Icon(icon, color: cs.onPrimaryContainer, size: 20),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _AsmrPanelAction extends StatelessWidget {
+  const _AsmrPanelAction({
+    required this.label,
+    required this.onPressed,
+    this.filled = false,
+    this.loading = false,
+  });
+
+  final String label;
+  final VoidCallback? onPressed;
+  final bool filled;
+  final bool loading;
+
+  @override
+  Widget build(BuildContext context) {
+    final child = loading
+        ? const SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          )
+        : Text(label);
+    if (filled) {
+      return FilledButton(onPressed: onPressed, child: child);
+    }
+    return TextButton(onPressed: onPressed, child: child);
+  }
+}
+
+class _AsmrSelectionTile extends StatelessWidget {
+  const _AsmrSelectionTile({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Material(
+      color: selected
+          ? cs.primaryContainer.withValues(alpha: 0.72)
+          : Colors.transparent,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          child: Row(
+            children: [
+              Icon(
+                selected ? Icons.check_circle_rounded : Icons.circle_outlined,
+                size: 20,
+                color: selected ? cs.primary : cs.onSurfaceVariant,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  label,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                    color: selected ? cs.onPrimaryContainer : cs.onSurface,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AsmrMoreMenuButton extends StatelessWidget {
+  const _AsmrMoreMenuButton({
+    required this.onLogin,
+    required this.onCategories,
+    required this.onLanguage,
+  });
+
+  final VoidCallback onLogin;
+  final VoidCallback onCategories;
+  final VoidCallback onLanguage;
+
+  @override
+  Widget build(BuildContext context) {
+    final i18n = context.watch<AppLanguageProvider>();
+    return UnifiedPopupMenuButton<_AsmrMoreAction>(
+      icon: Icons.more_horiz_rounded,
+      tooltip: i18n.tr('asmr_more'),
+      menuWidth: 220,
+      selectAfterDismiss: false,
+      entries: [
+        UnifiedMenuEntry<_AsmrMoreAction>.action(
+          value: _AsmrMoreAction.login,
+          icon: Icons.login_rounded,
+          label: i18n.tr('asmr_login_title'),
+        ),
+        UnifiedMenuEntry<_AsmrMoreAction>.action(
+          value: _AsmrMoreAction.categories,
+          icon: Icons.category_rounded,
+          label: i18n.tr('asmr_categories_title'),
+        ),
+        UnifiedMenuEntry<_AsmrMoreAction>.action(
+          value: _AsmrMoreAction.language,
+          icon: Icons.language_rounded,
+          label: i18n.tr('asmr_language_title'),
+        ),
+      ],
+      onSelected: (value) {
+        switch (value) {
+          case _AsmrMoreAction.login:
+            onLogin();
+            break;
+          case _AsmrMoreAction.categories:
+            onCategories();
+            break;
+          case _AsmrMoreAction.language:
+            onLanguage();
+            break;
+        }
+      },
+    );
+  }
+}
+
+enum _AsmrMoreAction { login, categories, language }
 
 class _AsmrWorkTreeCard extends StatefulWidget {
   const _AsmrWorkTreeCard({required this.work, required this.searchQuery});
@@ -1279,11 +1966,24 @@ class _AsmrCoverFallback extends StatelessWidget {
   }
 }
 
-class _AsmrCategorySpec {
-  const _AsmrCategorySpec(this.type, this.labelKey);
+String _asmrCategoryLabelKey(AsmrCategoryType category) {
+  return switch (category) {
+    AsmrCategoryType.collected => 'asmr_category_collected',
+    AsmrCategoryType.recommendation => 'asmr_category_recommendation',
+    AsmrCategoryType.sales => 'asmr_category_sales',
+    AsmrCategoryType.rating => 'asmr_category_rating',
+    AsmrCategoryType.release => 'asmr_category_release',
+    AsmrCategoryType.favorites => 'asmr_category_favorites',
+    AsmrCategoryType.history => 'asmr_category_history',
+  };
+}
 
-  final AsmrCategoryType type;
-  final String labelKey;
+String _asmrLanguageLabelKey(AsmrContentLanguage language) {
+  return switch (language) {
+    AsmrContentLanguage.zh => 'asmr_language_zh',
+    AsmrContentLanguage.ja => 'asmr_language_ja',
+    AsmrContentLanguage.en => 'asmr_language_en',
+  };
 }
 
 List<LibraryLikeInfoLineData> _workInfoLines(

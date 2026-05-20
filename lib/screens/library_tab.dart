@@ -359,11 +359,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         key: _refreshIndicatorKey,
         color: Theme.of(context).colorScheme.primary,
         backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
-        onRefresh: () async {
-          unawaited(HapticFeedback.mediumImpact());
-          unawaited(_scheduleWatchedFoldersRefresh());
-          await Future<void>.delayed(const Duration(milliseconds: 300));
-        },
+        onRefresh: _runLibraryPullRefresh,
         // Adjust edgeOffset because RefreshIndicator is now inside the restricted Positioned.
         edgeOffset: 150 + 4 + headerControlsFullHeight,
         displacement: 32,
@@ -439,13 +435,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                     backgroundColor: Theme.of(
                       context,
                     ).colorScheme.surfaceContainerHighest,
-                    onRefresh: () async {
-                      unawaited(HapticFeedback.mediumImpact());
-                      unawaited(_scheduleWatchedFoldersRefresh());
-                      await Future<void>.delayed(
-                        const Duration(milliseconds: 300),
-                      );
-                    },
+                    onRefresh: _runLibraryPullRefresh,
                     edgeOffset: 150 + 4 + headerControlsFullHeight,
                     displacement: 32,
                     triggerMode: RefreshIndicatorTriggerMode.anywhere,

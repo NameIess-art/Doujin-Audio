@@ -46,6 +46,7 @@ class UnifiedPopupMenuButton<T> extends StatefulWidget {
     this.iconSize = 28,
     this.menuWidth = 236,
     this.enabled = true,
+    this.selectAfterDismiss = true,
   });
 
   final IconData icon;
@@ -56,6 +57,7 @@ class UnifiedPopupMenuButton<T> extends StatefulWidget {
   final double iconSize;
   final double menuWidth;
   final bool enabled;
+  final bool selectAfterDismiss;
 
   @override
   State<UnifiedPopupMenuButton<T>> createState() =>
@@ -117,7 +119,12 @@ class _UnifiedPopupMenuButtonState<T> extends State<UnifiedPopupMenuButton<T>>
           entries: widget.entries,
           onDismiss: _removeOverlay,
           onSelected: (value) async {
-            await _removeOverlay();
+            if (widget.selectAfterDismiss) {
+              await _removeOverlay();
+              widget.onSelected(value);
+              return;
+            }
+            await _removeOverlay(immediate: true);
             widget.onSelected(value);
           },
           onTrailingSelected: (value) async {

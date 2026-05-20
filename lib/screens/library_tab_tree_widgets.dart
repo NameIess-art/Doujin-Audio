@@ -702,7 +702,7 @@ class _LibraryFeaturedCardContent extends StatelessWidget {
     final i18n = context.watch<AppLanguageProvider>();
     return LibraryLikeFeaturedCardContent(
       title: title,
-      lines: _audioDetailInfoLines(detail, detailLoading),
+      lines: _audioDetailInfoLines(i18n, detail, detailLoading),
       coverBuilder: coverBuilder,
       onPlay: onPlay,
       expanded: expanded,
@@ -725,9 +725,10 @@ class _SingleAudioFileCardContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final i18n = context.watch<AppLanguageProvider>();
     return LibraryLikeSingleAudioCardContent(
       title: title,
-      lines: _audioDetailInfoLines(detail, detailLoading),
+      lines: _audioDetailInfoLines(i18n, detail, detailLoading),
     );
   }
 }
@@ -765,6 +766,7 @@ class _AudioDetailInfoLineData extends LibraryLikeInfoLineData {
 }
 
 List<_AudioDetailInfoLineData> _audioDetailInfoLines(
+  AppLanguageProvider i18n,
   AudioDetail? detail,
   bool detailLoading,
 ) {
@@ -782,15 +784,21 @@ List<_AudioDetailInfoLineData> _audioDetailInfoLines(
         AudioDetail.normalizeList(d.voiceActors).join('\uFF0C'),
       ),
     if (d.circleName.trim().isNotEmpty)
-      _AudioDetailInfoLineData('\u793e\u56e2', d.circleName.trim()),
-    if (d.tags.isNotEmpty) _tagsDetailInfoLine(d.tags),
+      _AudioDetailInfoLineData(
+        i18n.tr('library_category_circles'),
+        d.circleName.trim(),
+      ),
+    if (d.tags.isNotEmpty) _tagsDetailInfoLine(i18n, d.tags),
   ];
 }
 
-_AudioDetailInfoLineData _tagsDetailInfoLine(List<String> tags) {
+_AudioDetailInfoLineData _tagsDetailInfoLine(
+  AppLanguageProvider i18n,
+  List<String> tags,
+) {
   final text = AudioDetail.normalizeList(tags).join('\uFF0C');
   return _AudioDetailInfoLineData(
-    '\u6807\u7b7e',
+    i18n.tr('library_category_tags'),
     text,
     lines: _shouldReserveTwoInfoLines(text) ? 2 : 1,
   );

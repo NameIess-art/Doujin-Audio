@@ -12,6 +12,24 @@ class AsmrApiService {
   final HttpClient _httpClient;
   final Uri _baseUri;
 
+  Future<AsmrAuthSession> login({
+    required String name,
+    required String password,
+  }) async {
+    final response = await _sendJsonRequest(
+      method: 'POST',
+      path: '/api/auth/me',
+      body: <String, Object?>{'name': name, 'password': password},
+    );
+    final token = response['token'] as String? ?? '';
+    final user = response['user'] as Map<String, dynamic>? ?? response;
+    return AsmrAuthSession(
+      token: token,
+      userId: (user['id'] as num?)?.toInt(),
+      userName: (user['name'] as String?) ?? (user['username'] as String?),
+    );
+  }
+
   Future<AsmrAuthSession> fetchAuthSession(String token) async {
     final response = await _sendJsonRequest(
       method: 'GET',
@@ -42,6 +60,7 @@ class AsmrApiService {
     int page = 1,
     int pageSize = 40,
     String? token,
+    AsmrContentLanguage language = AsmrContentLanguage.zh,
   }) async {
     final query = <String, String>{
       'order': order,
@@ -56,7 +75,7 @@ class AsmrApiService {
       queryParameters: query,
       token: token,
     );
-    return AsmrWorkPage.fromJson(response);
+    return AsmrWorkPage.fromJson(response, language: language);
   }
 
   Future<AsmrWorkPage> searchWorks({
@@ -66,6 +85,7 @@ class AsmrApiService {
     int page = 1,
     int pageSize = 40,
     String? token,
+    AsmrContentLanguage language = AsmrContentLanguage.zh,
   }) async {
     final response = await _sendJsonRequest(
       method: 'POST',
@@ -81,16 +101,45 @@ class AsmrApiService {
         'includeTranslationWorks': true,
       },
     );
-    return AsmrWorkPage.fromJson(response);
+    return AsmrWorkPage.fromJson(response, language: language);
   }
 
-  Future<AsmrWorkDetail> fetchWorkDetail(int workId, {String? token}) async {
+  Future<AsmrWorkPage> fetchRecommendedWorks({
+    required String recommenderUuid,
+    String keyword = '',
+    int page = 1,
+    int pageSize = 40,
+    String? token,
+    AsmrContentLanguage language = AsmrContentLanguage.zh,
+  }) async {
+    final response = await _sendJsonRequest(
+      method: 'POST',
+      path: '/api/recommender/recommend-for-user',
+      token: token,
+      body: <String, Object?>{
+        'keyword': keyword,
+        'recommenderUuid': recommenderUuid,
+        'page': page,
+        'pageSize': pageSize,
+        'subtitle': 0,
+        'localSubtitledWorks': const <int>[],
+        'withPlaylistStatus': const <int>[],
+      },
+    );
+    return AsmrWorkPage.fromJson(response, language: language);
+  }
+
+  Future<AsmrWorkDetail> fetchWorkDetail(
+    int workId, {
+    String? token,
+    AsmrContentLanguage language = AsmrContentLanguage.zh,
+  }) async {
     final response = await _sendJsonRequest(
       method: 'GET',
       path: '/api/workInfo/$workId',
       token: token,
     );
-    return AsmrWorkDetail.fromJson(response);
+    return AsmrWorkDetail.fromJson(response, language: language);
   }
 
   Future<List<AsmrTrackFile>> fetchTrackTree(
@@ -111,6 +160,7 @@ class AsmrApiService {
   Future<List<AsmrWork>> fetchFavoriteWorks({
     required String token,
     required int playlistId,
+    AsmrContentLanguage language = AsmrContentLanguage.zh,
   }) async {
     final response = await _sendJsonRequest(
       method: 'GET',
@@ -142,7 +192,7 @@ class AsmrApiService {
     collect(response);
     final seenIds = <int>{};
     return workMaps
-        .map(AsmrWork.fromJson)
+        .map((json) => AsmrWork.fromJson(json, language: language))
         .where((work) => work.id > 0 && seenIds.add(work.id))
         .toList(growable: false);
   }
@@ -185,7 +235,6 @@ class AsmrApiService {
     Map<String, String>? queryParameters,
     String? token,
     Object? body,
-    bool allowNullAuthorizationHeader = false,
   }) async {
     final response = await _send(
       method: method,
@@ -193,7 +242,6 @@ class AsmrApiService {
       queryParameters: queryParameters,
       token: token,
       body: body,
-      allowNullAuthorizationHeader: allowNullAuthorizationHeader,
     );
     if (response is Map<String, dynamic>) {
       return response;
@@ -207,7 +255,6 @@ class AsmrApiService {
     Map<String, String>? queryParameters,
     String? token,
     Object? body,
-    bool allowNullAuthorizationHeader = false,
   }) async {
     final response = await _send(
       method: method,
@@ -215,7 +262,6 @@ class AsmrApiService {
       queryParameters: queryParameters,
       token: token,
       body: body,
-      allowNullAuthorizationHeader: allowNullAuthorizationHeader,
     );
     if (response is List<dynamic>) {
       return response;
@@ -229,7 +275,6 @@ class AsmrApiService {
     Map<String, String>? queryParameters,
     String? token,
     Object? body,
-    bool allowNullAuthorizationHeader = false,
   }) async {
     await _send(
       method: method,
@@ -237,7 +282,6 @@ class AsmrApiService {
       queryParameters: queryParameters,
       token: token,
       body: body,
-      allowNullAuthorizationHeader: allowNullAuthorizationHeader,
     );
   }
 
@@ -247,7 +291,6 @@ class AsmrApiService {
     Map<String, String>? queryParameters,
     String? token,
     Object? body,
-    bool allowNullAuthorizationHeader = false,
   }) async {
     final uri = _baseUri.replace(path: path, queryParameters: queryParameters);
     final request = await _httpClient.openUrl(method, uri);

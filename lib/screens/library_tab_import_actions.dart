@@ -24,6 +24,38 @@ extension _LibraryTabImportActions on _LibraryTabState {
     return trackedTask;
   }
 
+  Future<void> _waitForCurrentScan(AudioProvider provider) {
+    if (!provider.isScanning) {
+      return Future<void>.value();
+    }
+    final completer = Completer<void>();
+    void listener() {
+      if (!provider.isScanning && !completer.isCompleted) {
+        completer.complete();
+      }
+    }
+
+    provider.addListener(listener);
+    return completer.future.whenComplete(() {
+      provider.removeListener(listener);
+    });
+  }
+
+  Future<void> _runLibraryPullRefresh() async {
+    unawaited(HapticFeedback.mediumImpact());
+    final activeTask = _activeRefreshTask;
+    if (activeTask != null) {
+      await activeTask;
+      return;
+    }
+    final provider = context.read<AudioProvider>();
+    if (provider.isScanning) {
+      await _waitForCurrentScan(provider);
+      return;
+    }
+    await _scheduleWatchedFoldersRefresh();
+  }
+
   Future<bool> _flushRefreshBatch(AudioProvider provider) async {
     final now = DateTime.now();
     final lastFlush = _lastBatchFlushTime;

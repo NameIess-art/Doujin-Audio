@@ -3,7 +3,58 @@ import 'package:path/path.dart' as path;
 
 import 'music_track.dart';
 
-enum AsmrCategoryType { sales, rating, release, favorites, history }
+enum AsmrCategoryType {
+  collected,
+  recommendation,
+  sales,
+  rating,
+  release,
+  favorites,
+  history,
+}
+
+const List<AsmrCategoryType> kAsmrSelectableCategories = <AsmrCategoryType>[
+  AsmrCategoryType.collected,
+  AsmrCategoryType.recommendation,
+  AsmrCategoryType.sales,
+  AsmrCategoryType.rating,
+  AsmrCategoryType.release,
+  AsmrCategoryType.favorites,
+  AsmrCategoryType.history,
+];
+
+const List<AsmrCategoryType> kDefaultVisibleAsmrCategories = <AsmrCategoryType>[
+  AsmrCategoryType.collected,
+  AsmrCategoryType.recommendation,
+  AsmrCategoryType.rating,
+  AsmrCategoryType.favorites,
+  AsmrCategoryType.history,
+];
+
+enum AsmrContentLanguage {
+  zh('zh-cn'),
+  ja('ja-jp'),
+  en('en-us');
+
+  const AsmrContentLanguage(this.locale);
+
+  final String locale;
+
+  static AsmrContentLanguage fromName(String? name) {
+    return AsmrContentLanguage.values.firstWhere(
+      (language) => language.name == name || language.locale == name,
+      orElse: () => AsmrContentLanguage.zh,
+    );
+  }
+
+  static AsmrContentLanguage fromAppLanguageName(String name) {
+    return switch (name) {
+      'ja' => AsmrContentLanguage.ja,
+      'en' => AsmrContentLanguage.en,
+      _ => AsmrContentLanguage.zh,
+    };
+  }
+}
 
 @immutable
 class AsmrWorkPage {
@@ -21,13 +72,16 @@ class AsmrWorkPage {
 
   bool get hasMore => currentPage * pageSize < totalCount;
 
-  factory AsmrWorkPage.fromJson(Map<String, dynamic> json) {
+  factory AsmrWorkPage.fromJson(
+    Map<String, dynamic> json, {
+    AsmrContentLanguage language = AsmrContentLanguage.zh,
+  }) {
     final pagination =
         json['pagination'] as Map<String, dynamic>? ??
         const <String, dynamic>{};
     final works = (json['works'] as List<dynamic>? ?? const <dynamic>[])
         .whereType<Map<String, dynamic>>()
-        .map(AsmrWork.fromJson)
+        .map((json) => AsmrWork.fromJson(json, language: language))
         .toList(growable: false);
     final pageSize = (pagination['pageSize'] as num?)?.toInt() ?? works.length;
     final currentPage = (pagination['currentPage'] as num?)?.toInt() ?? 1;
@@ -187,7 +241,10 @@ class AsmrWork {
     'isFavorite': isFavorite,
   };
 
-  factory AsmrWork.fromJson(Map<String, dynamic> json) {
+  factory AsmrWork.fromJson(
+    Map<String, dynamic> json, {
+    AsmrContentLanguage language = AsmrContentLanguage.zh,
+  }) {
     final circle = json['circle'];
     final circleName =
         (json['circleName'] as String?) ??
@@ -197,7 +254,7 @@ class AsmrWork {
     final tags = (json['tags'] as List<dynamic>? ?? const <dynamic>[])
         .map((dynamic item) {
           if (item is Map<String, dynamic>) {
-            return (item['name'] as String?) ?? '';
+            return _localizedText(item, language, 'name');
           }
           return item.toString();
         })
@@ -217,7 +274,7 @@ class AsmrWork {
             .toList(growable: false);
     return AsmrWork(
       id: (json['id'] as num?)?.toInt() ?? 0,
-      title: (json['title'] as String?) ?? '',
+      title: _localizedText(json, language, 'title'),
       circleName: circleName,
       sourceId:
           (json['sourceId'] as String?) ?? (json['source_id'] as String?) ?? '',
@@ -298,7 +355,10 @@ class AsmrWorkDetail {
   final List<String> languageEditionLabels;
   final double? userRating;
 
-  factory AsmrWorkDetail.fromJson(Map<String, dynamic> json) {
+  factory AsmrWorkDetail.fromJson(
+    Map<String, dynamic> json, {
+    AsmrContentLanguage language = AsmrContentLanguage.zh,
+  }) {
     final editions =
         (json['language_editions'] as List<dynamic>? ?? const <dynamic>[])
             .map((dynamic item) {
@@ -310,13 +370,35 @@ class AsmrWorkDetail {
             .where((label) => label.isNotEmpty)
             .toList(growable: false);
     return AsmrWorkDetail(
-      work: AsmrWork.fromJson(json),
-      description: (json['description'] as String?) ?? '',
+      work: AsmrWork.fromJson(json, language: language),
+      description: _localizedText(json, language, 'description'),
       ageCategory: (json['age_category_string'] as String?) ?? '',
       languageEditionLabels: editions,
       userRating: (json['userRating'] as num?)?.toDouble(),
     );
   }
+}
+
+String _localizedText(
+  Map<String, dynamic> json,
+  AsmrContentLanguage language,
+  String key,
+) {
+  final localized = json['i18n'];
+  if (localized is Map) {
+    final languageJson = localized[language.locale];
+    if (languageJson is Map) {
+      final value = languageJson[key];
+      if (value is String && value.trim().isNotEmpty) {
+        return value;
+      }
+    }
+  }
+  final fallback = json[key];
+  if (fallback is String) {
+    return fallback;
+  }
+  return '';
 }
 
 @immutable

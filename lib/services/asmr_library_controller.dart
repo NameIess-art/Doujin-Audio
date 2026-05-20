@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:math';
+
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as path;
 
@@ -13,6 +15,8 @@ class AsmrLibraryController extends ChangeNotifier {
 
   static const int _historyLimit = 60;
   static const Map<AsmrCategoryType, int> _pageSizes = <AsmrCategoryType, int>{
+    AsmrCategoryType.collected: 40,
+    AsmrCategoryType.recommendation: 40,
     AsmrCategoryType.sales: 40,
     AsmrCategoryType.rating: 40,
     AsmrCategoryType.release: 40,
@@ -48,6 +52,9 @@ class AsmrLibraryController extends ChangeNotifier {
   final Set<int> _loadingTrackWorkIds = <int>{};
 
   AsmrAuthSession _authSession = const AsmrAuthSession();
+  List<AsmrCategoryType> _visibleCategories = kDefaultVisibleAsmrCategories;
+  AsmrContentLanguage _contentLanguage = AsmrContentLanguage.zh;
+  String _recommenderUuid = '';
   List<AsmrWork> _favoriteWorks = const <AsmrWork>[];
   List<AsmrWork> _historyWorks = const <AsmrWork>[];
   bool _initialized = false;
@@ -55,6 +62,9 @@ class AsmrLibraryController extends ChangeNotifier {
 
   bool get initialized => _initialized;
   Object? get lastError => _lastError;
+  AsmrAuthSession get authSession => _authSession;
+  List<AsmrCategoryType> get visibleCategories => _visibleCategories;
+  AsmrContentLanguage get contentLanguage => _contentLanguage;
 
   bool isLoadingCategory(AsmrCategoryType category) =>
       _loadingByCategory[category] ?? false;
@@ -98,9 +108,16 @@ class AsmrLibraryController extends ChangeNotifier {
         .toList(growable: false);
   }
 
-  Future<void> initialize() async {
+  Future<void> initialize({AsmrContentLanguage? defaultLanguage}) async {
     if (_initialized) return;
     _authSession = await AsmrPreferences.loadAuthSession();
+    _visibleCategories = await AsmrPreferences.loadVisibleCategories();
+    _contentLanguage = await AsmrPreferences.loadContentLanguage(
+      defaultLanguage ?? AsmrContentLanguage.zh,
+    );
+    _recommenderUuid =
+        await AsmrPreferences.loadRecommenderUuid() ?? _createRecommenderUuid();
+    await AsmrPreferences.saveRecommenderUuid(_recommenderUuid);
     _favoriteWorks = await AsmrPreferences.loadFavoriteWorks();
     _historyWorks = await AsmrPreferences.loadHistoryWorks();
     for (final work in _favoriteWorks.followedBy(_historyWorks)) {
@@ -136,6 +153,67 @@ class AsmrLibraryController extends ChangeNotifier {
       _lastError = error;
       notifyListeners();
     }
+  }
+
+  Future<void> login({required String name, required String password}) async {
+    final loggedIn = await _apiService.login(name: name, password: password);
+    final favoritePlaylistId = loggedIn.token?.isNotEmpty == true
+        ? await _apiService.fetchFavoritePlaylistId(loggedIn.token!)
+        : null;
+    _authSession = loggedIn.copyWith(favoritePlaylistId: favoritePlaylistId);
+    await AsmrPreferences.saveAuthSession(_authSession);
+    if (_authSession.token != null && favoritePlaylistId != null) {
+      await _syncFavoriteWorksFromRemote(
+        token: _authSession.token!,
+        playlistId: favoritePlaylistId,
+      );
+    }
+    _worksByCategory.remove(AsmrCategoryType.recommendation);
+    _lastError = null;
+    notifyListeners();
+  }
+
+  Future<void> logout() async {
+    _authSession = const AsmrAuthSession();
+    await AsmrPreferences.saveAuthSession(_authSession);
+    _worksByCategory.remove(AsmrCategoryType.recommendation);
+    _applyFavoriteFlags();
+    notifyListeners();
+  }
+
+  Future<void> setVisibleCategories(List<AsmrCategoryType> categories) async {
+    final next = _sanitizeVisibleCategories(categories);
+    if (listEquals(next, _visibleCategories)) {
+      return;
+    }
+    _visibleCategories = next;
+    await AsmrPreferences.saveVisibleCategories(next);
+    notifyListeners();
+  }
+
+  Future<void> setContentLanguage(AsmrContentLanguage language) async {
+    if (_contentLanguage == language) {
+      return;
+    }
+    _contentLanguage = language;
+    await AsmrPreferences.saveContentLanguage(language);
+    _worksByCategory.clear();
+    _detailCache.clear();
+    _trackCache.clear();
+    _queryByCategory.removeWhere(
+      (category, _) =>
+          category != AsmrCategoryType.favorites &&
+          category != AsmrCategoryType.history,
+    );
+    if (_authSession.isLoggedIn &&
+        _authSession.token != null &&
+        _authSession.favoritePlaylistId != null) {
+      await _syncFavoriteWorksFromRemote(
+        token: _authSession.token!,
+        playlistId: _authSession.favoritePlaylistId!,
+      );
+    }
+    notifyListeners();
   }
 
   Future<void> refreshCategory(
@@ -237,6 +315,20 @@ class AsmrLibraryController extends ChangeNotifier {
     notifyListeners();
     try {
       switch (category) {
+        case AsmrCategoryType.collected:
+          await _loadWorks(
+            category,
+            searchQuery: normalizedQuery,
+            requestId: requestId,
+          );
+          break;
+        case AsmrCategoryType.recommendation:
+          await _loadWorks(
+            category,
+            searchQuery: normalizedQuery,
+            requestId: requestId,
+          );
+          break;
         case AsmrCategoryType.sales:
           await _loadWorks(
             category,
@@ -322,6 +414,16 @@ class AsmrLibraryController extends ChangeNotifier {
   }) {
     final spec = _sortSpecFor(category);
     final pageSize = _pageSizes[category] ?? 40;
+    if (category == AsmrCategoryType.recommendation) {
+      return _apiService.fetchRecommendedWorks(
+        keyword: searchQuery,
+        recommenderUuid: _recommenderUuid,
+        page: page,
+        pageSize: pageSize,
+        token: _authSession.token,
+        language: _contentLanguage,
+      );
+    }
     if (searchQuery.isNotEmpty) {
       return _apiService.searchWorks(
         keyword: searchQuery,
@@ -330,6 +432,7 @@ class AsmrLibraryController extends ChangeNotifier {
         page: page,
         pageSize: pageSize,
         token: _authSession.token,
+        language: _contentLanguage,
       );
     }
     return _apiService.fetchWorks(
@@ -338,11 +441,16 @@ class AsmrLibraryController extends ChangeNotifier {
       page: page,
       pageSize: pageSize,
       token: _authSession.token,
+      language: _contentLanguage,
     );
   }
 
   ({String order, String sort}) _sortSpecFor(AsmrCategoryType category) {
     switch (category) {
+      case AsmrCategoryType.collected:
+        return (order: 'create_date', sort: 'desc');
+      case AsmrCategoryType.recommendation:
+        return (order: 'create_date', sort: 'desc');
       case AsmrCategoryType.sales:
         return (order: 'dl_count', sort: 'desc');
       case AsmrCategoryType.rating:
@@ -378,6 +486,7 @@ class AsmrLibraryController extends ChangeNotifier {
     final remoteWorks = await _apiService.fetchFavoriteWorks(
       token: token,
       playlistId: playlistId,
+      language: _contentLanguage,
     );
     final decorated = remoteWorks
         .map((work) => work.copyWith(isFavorite: true))
@@ -424,6 +533,7 @@ class AsmrLibraryController extends ChangeNotifier {
     final detail = await _apiService.fetchWorkDetail(
       work.id,
       token: _authSession.token,
+      language: _contentLanguage,
     );
     final merged = AsmrWorkDetail(
       work: _decorateWork(detail.work),
@@ -731,5 +841,33 @@ class AsmrLibraryController extends ChangeNotifier {
         searchQuery: query,
       ).length;
     }
+  }
+
+  static List<AsmrCategoryType> _sanitizeVisibleCategories(
+    List<AsmrCategoryType> categories,
+  ) {
+    final result = <AsmrCategoryType>[];
+    for (final category in categories) {
+      if (!kAsmrSelectableCategories.contains(category) ||
+          result.contains(category)) {
+        continue;
+      }
+      result.add(category);
+      if (result.length == 5) {
+        break;
+      }
+    }
+    return result.isEmpty
+        ? kDefaultVisibleAsmrCategories
+        : result.toList(growable: false);
+  }
+
+  static String _createRecommenderUuid() {
+    final random = Random.secure();
+    String hex(int length) => List<int>.generate(
+      length,
+      (_) => random.nextInt(16),
+    ).map((value) => value.toRadixString(16)).join();
+    return '${hex(8)}-${hex(4)}-${hex(4)}-${hex(4)}-${hex(12)}';
   }
 }

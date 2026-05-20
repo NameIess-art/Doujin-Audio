@@ -196,13 +196,7 @@ extension _LibraryTabCategoryView on _LibraryTabState {
             backgroundColor: Theme.of(
               context,
             ).colorScheme.surfaceContainerHighest,
-            onRefresh: () async {
-              unawaited(HapticFeedback.mediumImpact());
-              if (!provider.isScanning) {
-                unawaited(_refreshWatchedFolders());
-              }
-              await Future<void>.delayed(const Duration(milliseconds: 300));
-            },
+            onRefresh: _runLibraryPullRefresh,
             edgeOffset: topPadding,
             displacement: 32,
             triggerMode: RefreshIndicatorTriggerMode.anywhere,

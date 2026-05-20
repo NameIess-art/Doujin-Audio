@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -10,6 +9,7 @@ import '../providers/subtitle_settings_provider.dart';
 import '../services/audio_state_services.dart';
 import '../services/subtitle_parser.dart';
 import '../services/subtitle_overlay_controller.dart';
+import 'subtitle_window_visual.dart';
 
 class FloatingSubtitleWindow extends ConsumerStatefulWidget {
   final bool isCrossPage;
@@ -30,8 +30,8 @@ class FloatingSubtitleWindow extends ConsumerStatefulWidget {
       _FloatingSubtitleWindowState();
 }
 
-class _FloatingSubtitleWindowState
-    extends ConsumerState<FloatingSubtitleWindow> with WidgetsBindingObserver {
+class _FloatingSubtitleWindowState extends ConsumerState<FloatingSubtitleWindow>
+    with WidgetsBindingObserver {
   ProviderSubscription<AsyncValue<PlaybackStateSliceData>>? _playbackStateSub;
   StreamSubscription<Duration>? _positionSub;
   SubtitleTrack? _subtitleTrack;
@@ -48,9 +48,10 @@ class _FloatingSubtitleWindowState
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _isAppInBackground = WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed &&
+    _isAppInBackground =
+        WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed &&
         WidgetsBinding.instance.lifecycleState != null;
-    
+
     _playbackStateSub = ref.listenManual<AsyncValue<PlaybackStateSliceData>>(
       playbackStateProvider,
       (previous, next) {
@@ -86,9 +87,10 @@ class _FloatingSubtitleWindowState
   void didChangeAppLifecycleState(AppLifecycleState state) {
     // On Android, inactive can be triggered by notifications or dialogs.
     // We only want the system overlay when the app is actually in background (paused).
-    final isBg = (state == AppLifecycleState.paused ||
+    final isBg =
+        (state == AppLifecycleState.paused ||
         state == AppLifecycleState.detached);
-    
+
     if (isBg != _isAppInBackground) {
       _isAppInBackground = isBg;
       _syncOverlayState();
@@ -117,7 +119,7 @@ class _FloatingSubtitleWindowState
 
     if (await SubtitleOverlayController.canDrawOverlays()) {
       await SubtitleOverlayController.startOverlay();
-      
+
       final bg = settings.backgroundColor ?? const Color(0xFF000000);
       final bgColor = bg.withValues(alpha: settings.backgroundOpacity);
       final txtColor = settings.fontColor ?? const Color(0xFFFFFFFF);
@@ -175,7 +177,9 @@ class _FloatingSubtitleWindowState
     _positionSub = null;
 
     if (_currentSession != null) {
-      _positionSub = _currentSession!.positionStream.listen(_updateSubtitleText);
+      _positionSub = _currentSession!.positionStream.listen(
+        _updateSubtitleText,
+      );
       _loadSubtitleTrack();
       if (_isAppInBackground) {
         _syncOverlayState();
@@ -290,28 +294,6 @@ class _FloatingSubtitleWindowState
     top = top.clamp(40.0, screenHeight - 60.0);
     final isTinyWindow = screenWidth < 300 || screenHeight < 300;
 
-    Widget buildContainer() => Container(
-      constraints: const BoxConstraints(minHeight: 34),
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-      decoration: BoxDecoration(
-        color: settings.backgroundColor != null
-            ? settings.backgroundColor!.withValues(alpha: settings.backgroundOpacity)
-            : Theme.of(context).colorScheme.surface.withValues(alpha: settings.backgroundOpacity),
-        border: Border(
-          top: BorderSide(
-            color: Colors.white.withValues(alpha: 0.1 * settings.borderDepth),
-            width: settings.borderDepth,
-          ),
-          bottom: BorderSide(
-            color: Colors.white.withValues(alpha: 0.1 * settings.borderDepth),
-            width: settings.borderDepth,
-          ),
-        ),
-      ),
-      child: _buildSubtitleContent(context, settings, screenWidth),
-    );
-
     return Positioned(
       top: top,
       left: 0,
@@ -330,7 +312,9 @@ class _FloatingSubtitleWindowState
               onVerticalDragUpdate: (details) {
                 setState(() {
                   var newY = (_dragY ?? top) + (details.primaryDelta ?? 0);
-                  final defaultTop = widget.isCrossPage ? null : (widget.defaultTop ?? screenHeight * 0.60);
+                  final defaultTop = widget.isCrossPage
+                      ? null
+                      : (widget.defaultTop ?? screenHeight * 0.60);
                   if (defaultTop != null) {
                     final dist = (newY - defaultTop).abs();
                     if (dist < 25) {
@@ -349,56 +333,39 @@ class _FloatingSubtitleWindowState
               },
               onVerticalDragEnd: (details) {
                 if (_dragY != null && _currentSession != null) {
-                  final defaultTop = widget.isCrossPage ? null : (widget.defaultTop ?? screenHeight * 0.60);
+                  final defaultTop = widget.isCrossPage
+                      ? null
+                      : (widget.defaultTop ?? screenHeight * 0.60);
                   final currentY = _dragY!;
-                  final snapToDefault = defaultTop != null && (currentY - defaultTop).abs() < 30;
+                  final snapToDefault =
+                      defaultTop != null && (currentY - defaultTop).abs() < 30;
                   if (snapToDefault) {
-                    ref.read(subtitleSettingsProvider.notifier).updatePosition(_currentSession!.id, -1);
+                    ref
+                        .read(subtitleSettingsProvider.notifier)
+                        .updatePosition(_currentSession!.id, -1);
                   } else {
-                    ref.read(subtitleSettingsProvider.notifier).updatePosition(_currentSession!.id, currentY);
+                    ref
+                        .read(subtitleSettingsProvider.notifier)
+                        .updatePosition(_currentSession!.id, currentY);
                   }
-                  setState(() { _dragY = null; });
+                  setState(() {
+                    _dragY = null;
+                  });
                 }
               },
-              onVerticalDragCancel: () { setState(() { _dragY = null; }); },
-              child: ClipRect(
-                child: isTinyWindow
-                    ? buildContainer()
-                    : BackdropFilter(
-                        filter: ImageFilter.blur(
-                          sigmaX: settings.backgroundBlur,
-                          sigmaY: settings.backgroundBlur,
-                        ),
-                        child: buildContainer(),
-                      ),
+              onVerticalDragCancel: () {
+                setState(() {
+                  _dragY = null;
+                });
+              },
+              child: SubtitleWindowVisual(
+                settings: settings,
+                text: _subtitleText ?? '',
+                maxTextWidth: screenWidth * 0.8,
+                enableBackdropBlur: !isTinyWindow,
               ),
             ),
           ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSubtitleContent(BuildContext context, SubtitleSettingsState settings, double screenWidth) {
-    return Center(
-      child: ConstrainedBox(
-        constraints: BoxConstraints(maxWidth: screenWidth * 0.8),
-        child: Text(
-          _subtitleText ?? '',
-          textAlign: TextAlign.center,
-          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-            color: settings.fontColor ?? Theme.of(context).colorScheme.onSurface,
-            fontWeight: FontWeight.w700,
-            fontSize: settings.fontSize,
-            fontFamily: settings.fontFamily.isEmpty ? null : settings.fontFamily,
-            shadows: [
-              Shadow(
-                color: Colors.black.withValues(alpha: 0.5),
-                blurRadius: 4,
-                offset: const Offset(0, 1),
-              ),
-            ],
-          ),
         ),
       ),
     );

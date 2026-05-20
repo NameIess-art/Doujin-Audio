@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../models/library_node.dart';
 import '../models/playback_session.dart';
 import '../services/audio_state_services.dart';
+import '../services/search_query_utils.dart';
 
 @immutable
 class LibraryHeaderState {
@@ -251,7 +252,8 @@ class LibrarySearchIndex {
     required String query,
     required int structureRevision,
   }) {
-    final normalizedQuery = query.trim().toLowerCase();
+    final searchTerms = extractSearchTerms(query);
+    final normalizedQuery = searchTerms.join(' ');
     if (_cachedRevision != structureRevision) {
       _cache.clear();
       _cachedRevision = structureRevision;
@@ -263,7 +265,7 @@ class LibrarySearchIndex {
       return cached;
     }
 
-    final result = _buildFilteredTree(tree, normalizedQuery);
+    final result = _buildFilteredTree(tree, searchTerms);
     _cache[normalizedQuery] = result;
     if (_cache.length > _maxEntries) {
       _cache.remove(_cache.keys.first);
@@ -273,9 +275,9 @@ class LibrarySearchIndex {
 
   FilteredLibraryTreeResult _buildFilteredTree(
     List<LibraryNode> tree,
-    String normalizedQuery,
+    List<String> searchTerms,
   ) {
-    if (normalizedQuery.isEmpty) {
+    if (searchTerms.isEmpty) {
       return FilteredLibraryTreeResult(
         tree: tree,
         matchCount: _countTrackNodes(tree),
@@ -287,7 +289,7 @@ class LibrarySearchIndex {
 
     for (final node in tree) {
       if (node is FolderNode) {
-        final folderResult = _filterFolderNode(node, normalizedQuery);
+        final folderResult = _filterFolderNode(node, searchTerms);
         if (folderResult == null) continue;
         resultNodes.add(folderResult.node);
         totalMatches += folderResult.matchCount;
@@ -295,7 +297,7 @@ class LibrarySearchIndex {
       }
 
       final trackNode = node as TrackNode;
-      if (_trackMatchesQuery(trackNode, normalizedQuery)) {
+      if (_trackMatchesQuery(trackNode, searchTerms)) {
         resultNodes.add(trackNode);
         totalMatches++;
       }
@@ -309,10 +311,12 @@ class LibrarySearchIndex {
 
   _FilteredFolderNodeResult? _filterFolderNode(
     FolderNode folder,
-    String normalizedQuery,
+    List<String> searchTerms,
   ) {
-    final matchesFolderName = folder.name.toLowerCase().contains(
-      normalizedQuery,
+    final matchesFolderName = matchesSearchTerms(
+      <String>[folder.name],
+      '',
+      terms: searchTerms,
     );
     if (matchesFolderName) {
       return _FilteredFolderNodeResult(
@@ -326,7 +330,7 @@ class LibrarySearchIndex {
 
     for (final child in folder.children) {
       if (child is FolderNode) {
-        final nestedResult = _filterFolderNode(child, normalizedQuery);
+        final nestedResult = _filterFolderNode(child, searchTerms);
         if (nestedResult == null) continue;
         filteredChildren.add(nestedResult.node);
         matchCount += nestedResult.matchCount;
@@ -334,7 +338,7 @@ class LibrarySearchIndex {
       }
 
       final trackNode = child as TrackNode;
-      if (_trackMatchesQuery(trackNode, normalizedQuery)) {
+      if (_trackMatchesQuery(trackNode, searchTerms)) {
         filteredChildren.add(trackNode);
         matchCount++;
       }
@@ -353,12 +357,18 @@ class LibrarySearchIndex {
     );
   }
 
-  bool _trackMatchesQuery(TrackNode trackNode, String normalizedQuery) {
+  bool _trackMatchesQuery(TrackNode trackNode, List<String> searchTerms) {
     final track = trackNode.track;
-    return track.displayName.toLowerCase().contains(normalizedQuery) ||
-        track.groupTitle.toLowerCase().contains(normalizedQuery) ||
-        track.groupSubtitle.toLowerCase().contains(normalizedQuery) ||
-        track.path.toLowerCase().contains(normalizedQuery);
+    return matchesSearchTerms(
+      <String>[
+        track.displayName,
+        track.groupTitle,
+        track.groupSubtitle,
+        track.path,
+      ],
+      '',
+      terms: searchTerms,
+    );
   }
 
   int _countTrackNodes(List<LibraryNode> nodes) {

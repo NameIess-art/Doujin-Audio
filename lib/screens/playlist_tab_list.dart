@@ -212,7 +212,31 @@ class _SessionListCardState extends State<_SessionListCard> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final isAsmrOne = track?.remoteMetadataKind == 'asmr.one';
     final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
-    final asmrBlueContainer = isDark ? const Color(0xFF1E3A8A) : const Color(0xFFDBEAFE);
+    final asmrBlueContainer = isDark
+        ? const Color(0xFF1E3A8A)
+        : const Color(0xFFDBEAFE);
+    final localPlayRose = isDark
+        ? const Color(0xFFF472B6)
+        : const Color(0xFFDB2777);
+    final localPlayRoseContainer = isDark
+        ? const Color(0xFF4A1833)
+        : const Color(0xFFFCE7F3);
+    final localPauseRose = isDark
+        ? const Color(0xFFD9468B)
+        : const Color(0xFFDB2777);
+    final localCardSurface = isDark
+        ? Color.alphaBlend(
+            localPauseRose.withValues(alpha: 0.035),
+            cs.surfaceContainerHigh,
+          )
+        : Color.alphaBlend(
+            localPlayRoseContainer.withValues(alpha: 0.45),
+            cs.surface,
+          );
+    final localRightRoseSurface = Color.alphaBlend(
+      localPlayRoseContainer.withValues(alpha: isDark ? 0.14 : 0.22),
+      localCardSurface,
+    );
 
     final cardShape = RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(14),
@@ -234,28 +258,19 @@ class _SessionListCardState extends State<_SessionListCard> {
             clipBehavior: Clip.antiAlias,
             shape: cardShape,
             color: isPlaying
-                ? cs.surfaceContainerHigh
+                ? (isAsmrOne
+                      ? cs.surfaceContainerHigh
+                      : localCardSurface)
                 : (isAsmrOne
-                    ? (isDark ? const Color(0xFF121625) : const Color(0xFFF2F6FA))
-                    : cs.surfaceContainerHigh),
+                      ? (isDark
+                            ? const Color(0xFF121625)
+                            : const Color(0xFFF2F6FA))
+                      : localCardSurface),
             elevation: 0,
             shadowColor: Colors.transparent,
             child: Container(
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(14),
-                border: isPlaying
-                    ? Border.all(
-                        color: isAsmrOne
-                            ? asmrBlue.withValues(alpha: 0.35)
-                            : cs.primary.withValues(alpha: 0.25),
-                        width: 1.2,
-                      )
-                    : Border.all(
-                        color: isAsmrOne
-                            ? asmrBlue.withValues(alpha: 0.18)
-                            : cs.outlineVariant.withValues(alpha: 0.15),
-                        width: isAsmrOne ? 0.8 : 0.5,
-                      ),
                 gradient: isPlaying
                     ? LinearGradient(
                         begin: Alignment.topLeft,
@@ -263,16 +278,39 @@ class _SessionListCardState extends State<_SessionListCard> {
                         colors: [
                           isAsmrOne
                               ? asmrBlueContainer.withValues(alpha: 0.35)
-                              : cs.primaryContainer.withValues(alpha: 0.3),
+                              : localPlayRoseContainer.withValues(
+                                  alpha: isDark ? 0.55 : 0.7,
+                                ),
                           isAsmrOne
-                              ? (isDark ? const Color(0xFF121625) : const Color(0xFFF2F6FA))
-                              : cs.surfaceContainerHigh,
+                              ? (isDark
+                                    ? const Color(0xFF121625)
+                                    : const Color(0xFFF2F6FA))
+                              : localCardSurface,
                           isAsmrOne
-                              ? (isDark ? const Color(0xFF121625) : const Color(0xFFF2F6FA))
-                              : cs.surfaceContainerHigh,
+                              ? (isDark
+                                    ? const Color(0xFF121625)
+                                    : const Color(0xFFF2F6FA))
+                              : localRightRoseSurface,
+                          isAsmrOne
+                              ? (isDark
+                                    ? const Color(0xFF121625)
+                                    : const Color(0xFFF2F6FA))
+                              : localRightRoseSurface,
                         ],
                       )
-                    : null,
+                    : (!isAsmrOne
+                          ? LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [
+                                localPlayRoseContainer.withValues(
+                                  alpha: isDark ? 0.08 : 0.16,
+                                ),
+                                localCardSurface,
+                                localRightRoseSurface,
+                              ],
+                            )
+                          : null),
               ),
               child: Semantics(
                 button: true,
@@ -345,7 +383,7 @@ class _SessionListCardState extends State<_SessionListCard> {
                                     },
                               style: IconButton.styleFrom(
                                 foregroundColor: isPlaying
-                                    ? (isAsmrOne ? asmrBlue : cs.primary)
+                                    ? (isAsmrOne ? asmrBlue : localPlayRose)
                                     : cs.onSurface,
                                 minimumSize: const Size(44, 44),
                                 maximumSize: const Size(44, 44),
@@ -375,7 +413,9 @@ class _SessionListCardState extends State<_SessionListCard> {
                                         child: CircularProgressIndicator(
                                           strokeWidth: 2.5,
                                           color: isPlaying
-                                              ? (isAsmrOne ? asmrBlue : cs.primary)
+                                              ? (isAsmrOne
+                                                    ? asmrBlue
+                                                    : localPlayRose)
                                               : cs.onSurface,
                                         ),
                                       )
@@ -409,7 +449,9 @@ class _SessionListCardState extends State<_SessionListCard> {
                                         Icon(
                                           Icons.subtitles_rounded,
                                           size: 10,
-                                          color: isAsmrOne ? asmrBlue : cs.primary,
+                                          color: isAsmrOne
+                                              ? asmrBlue
+                                              : localPlayRose,
                                         ),
                                       if (showSub &&
                                           sessionView.channelSwapEnabled)
@@ -418,7 +460,9 @@ class _SessionListCardState extends State<_SessionListCard> {
                                         Icon(
                                           Icons.swap_horiz_rounded,
                                           size: 10,
-                                          color: isAsmrOne ? asmrBlue : cs.primary,
+                                          color: isAsmrOne
+                                              ? asmrBlue
+                                              : localPlayRose,
                                         ),
                                     ],
                                   ),

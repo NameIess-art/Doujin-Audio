@@ -70,7 +70,7 @@ const Map<String, String> appLanguageEn = {
   'asmr_language_ja': 'Japanese',
   'asmr_language_en': 'English',
   'asmr_search_hint':
-      'Search work titles, tags, voice actors, circles, RJ numbers',
+      'Search titles, tags, voice actors, circles, RJ numbers; separate terms with "," or "/"',
   'asmr_empty_category': 'No content in this category yet.',
   'asmr_load_more_hint': 'Pull up to load more',
   'asmr_add_to_playlist': 'Add to playlist',
@@ -421,6 +421,11 @@ const Map<String, String> appLanguageEn = {
   'subtitle_window_settings': 'Subtitle Floating Window',
   'subtitle_window_settings_subtitle':
       'Adjust font, color and background effects',
+  'subtitle_window_preview': 'Live preview',
+  'subtitle_window_preview_hint':
+      'Pinned in place while you tune the controls below.',
+  'subtitle_preview_sample':
+      'The ocean comes closer, and your breathing settles with it.',
   'font_setting': 'Font Setting',
   'system_default': 'System Default',
   'font_color': 'Font Color',

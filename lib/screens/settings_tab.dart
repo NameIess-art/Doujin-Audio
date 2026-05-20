@@ -19,6 +19,7 @@ import '../theme/theme_provider.dart';
 import '../widgets/app_feedback.dart';
 import '../widgets/confirm_action_dialog.dart';
 import '../widgets/mobile_overlay_inset.dart';
+import '../widgets/subtitle_window_visual.dart';
 import '../widgets/top_page_header.dart';
 import '../providers/subtitle_settings_provider.dart';
 

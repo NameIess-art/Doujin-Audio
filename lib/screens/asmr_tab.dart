@@ -11,6 +11,7 @@ import '../models/asmr_models.dart';
 import '../providers/audio_provider.dart';
 import '../services/asmr_download_manager.dart';
 import '../services/asmr_library_controller.dart';
+import '../services/search_query_utils.dart';
 import '../widgets/app_feedback.dart';
 import '../widgets/library_like_cards.dart';
 import '../widgets/mobile_overlay_inset.dart';
@@ -28,7 +29,7 @@ class AsmrTab extends StatefulWidget {
 }
 
 const Color _kAsmrBlueLight = Color(0xFF1D4ED8);
-const Color _kAsmrBlueDark = Color(0xFF60A5FA);
+const Color _kAsmrBlueDark = Color(0xFF3B82F6);
 
 class _AsmrTabState extends State<AsmrTab>
     with AutomaticKeepAliveClientMixin, TickerProviderStateMixin {
@@ -60,6 +61,8 @@ class _AsmrTabState extends State<AsmrTab>
     }
     return _categories[index];
   }
+
+  String get _normalizedSearchQuery => normalizeSearchQuery(_searchQuery);
 
   double get _headerControlsFullHeight => 86.0;
 
@@ -182,7 +185,7 @@ class _AsmrTabState extends State<AsmrTab>
     final controller = context.read<AsmrLibraryController>();
     final needsRefresh =
         controller.worksFor(category).isEmpty ||
-        controller.activeQueryFor(category) != _searchQuery;
+        controller.activeQueryFor(category) != _normalizedSearchQuery;
     if (!needsRefresh) {
       return;
     }
@@ -818,6 +821,8 @@ class _AsmrSearchBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final asmrBlue = isDark ? _kAsmrBlueDark : _kAsmrBlueLight;
     final i18n = context.watch<AppLanguageProvider>();
     final hasText = query.isNotEmpty;
     return Padding(
@@ -826,6 +831,7 @@ class _AsmrSearchBar extends StatelessWidget {
         height: 34,
         child: TextField(
           controller: controller,
+          cursorColor: asmrBlue,
           style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 13),
           decoration: InputDecoration(
             filled: true,
@@ -1033,12 +1039,12 @@ class _AsmrCategoryButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
+    final asmrBlue = isDark ? const Color(0xFF3B82F6) : const Color(0xFF1D4ED8);
     final asmrBlueContainer = isDark
-        ? const Color(0xFF1E3A8A)
+        ? const Color(0xFF172554)
         : const Color(0xFFDBEAFE);
     final onAsmrBlueContainer = isDark
-        ? const Color(0xFFBFDBFE)
+        ? const Color(0xFFDBEAFE)
         : const Color(0xFF1E40AF);
 
     return Material(
@@ -1047,8 +1053,8 @@ class _AsmrCategoryButton extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         side: BorderSide(
           color: selected
-              ? asmrBlue.withValues(alpha: 0.45)
-              : cs.outlineVariant,
+              ? asmrBlue.withValues(alpha: isDark ? 0.58 : 0.45)
+              : cs.outlineVariant.withValues(alpha: isDark ? 0.68 : 1),
         ),
       ),
       child: InkWell(

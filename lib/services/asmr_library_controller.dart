@@ -8,6 +8,7 @@ import '../models/asmr_models.dart';
 import '../providers/audio_provider.dart';
 import 'asmr_api_service.dart';
 import 'asmr_preferences.dart';
+import 'search_query_utils.dart';
 
 class AsmrLibraryController extends ChangeNotifier {
   AsmrLibraryController({AsmrApiService? apiService})
@@ -95,7 +96,7 @@ class AsmrLibraryController extends ChangeNotifier {
     String searchQuery = '',
   }) {
     final works = worksFor(category);
-    final normalizedQuery = searchQuery.trim();
+    final normalizedQuery = normalizeSearchQuery(searchQuery);
     if (normalizedQuery.isEmpty) {
       return works;
     }
@@ -104,7 +105,7 @@ class AsmrLibraryController extends ChangeNotifier {
       return works;
     }
     return works
-        .where((work) => _matchesQuery(work, normalizedQuery))
+        .where((work) => _matchesQuery(work, searchQuery))
         .toList(growable: false);
   }
 
@@ -221,7 +222,7 @@ class AsmrLibraryController extends ChangeNotifier {
     String searchQuery = '',
   }) {
     final existing = _refreshTasks[category];
-    final normalizedQuery = searchQuery.trim();
+    final normalizedQuery = normalizeSearchQuery(searchQuery);
     if (existing != null && _refreshTaskQueries[category] == normalizedQuery) {
       return existing;
     }
@@ -248,7 +249,7 @@ class AsmrLibraryController extends ChangeNotifier {
     AsmrCategoryType category, {
     String searchQuery = '',
   }) async {
-    final normalizedQuery = searchQuery.trim();
+    final normalizedQuery = normalizeSearchQuery(searchQuery);
     if (category == AsmrCategoryType.favorites ||
         category == AsmrCategoryType.history) {
       return;
@@ -309,7 +310,7 @@ class AsmrLibraryController extends ChangeNotifier {
     required String searchQuery,
     required int requestId,
   }) async {
-    final normalizedQuery = searchQuery.trim();
+    final normalizedQuery = normalizeSearchQuery(searchQuery);
     _loadingByCategory[category] = true;
     _lastError = null;
     notifyListeners();
@@ -814,10 +815,6 @@ class AsmrLibraryController extends ChangeNotifier {
   }
 
   bool _matchesQuery(AsmrWork work, String query) {
-    final lowerQuery = query.trim().toLowerCase();
-    if (lowerQuery.isEmpty) {
-      return true;
-    }
     final haystacks = <String>[
       work.title,
       work.circleName,
@@ -825,9 +822,7 @@ class AsmrLibraryController extends ChangeNotifier {
       ...work.tags,
       ...work.voiceActors,
     ];
-    return haystacks.any(
-      (value) => value.trim().toLowerCase().contains(lowerQuery),
-    );
+    return matchesSearchTerms(haystacks, query);
   }
 
   void _updateLocalCategoryCounts() {

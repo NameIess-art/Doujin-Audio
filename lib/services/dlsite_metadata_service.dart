@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as path;
 
+import '../i18n/app_language_provider.dart';
 import '../models/audio_detail.dart';
 import '../models/dlsite_metadata.dart';
 import 'path_matcher.dart';
@@ -28,7 +29,10 @@ class DlsiteMetadataService {
 
   final HttpClient _httpClient;
 
-  Future<DlsiteMetadata> fetchByRjCode(String rjCode) async {
+  Future<DlsiteMetadata> fetchByRjCode(
+    String rjCode, {
+    AppLanguage language = AppLanguage.ja,
+  }) async {
     final normalized = AudioDetail.findRjCodeInText(rjCode);
     if (normalized == null) {
       throw const DlsiteMetadataException('Invalid RJ code');
@@ -37,7 +41,7 @@ class DlsiteMetadataService {
     final uri = Uri.https('www.dlsite.com', '/maniax/api/=/product.json', {
       'workno': normalized,
     });
-    final response = await _get(uri);
+    final response = await _get(uri, language: language);
     final decoded = json.decode(response);
     if (decoded is! List || decoded.isEmpty || decoded.first is! Map) {
       throw const DlsiteMetadataException('No DLsite metadata found');
@@ -55,6 +59,7 @@ class DlsiteMetadataService {
   Future<List<DlsiteMetadata>> searchByTitleCandidates(
     Iterable<String> titles, {
     int limit = 10,
+    AppLanguage language = AppLanguage.ja,
   }) async {
     final queries = buildDlsiteTitleSearchQueries(titles);
     final keywords = titles
@@ -64,11 +69,11 @@ class DlsiteMetadataService {
     final resultsByRjCode = <String, _ScoredDlsiteMetadata>{};
 
     for (final query in queries) {
-      final rjCodes = await _searchProductIdsByTitle(query);
+      final rjCodes = await _searchProductIdsByTitle(query, language: language);
       for (final rjCode in rjCodes) {
         if (resultsByRjCode.containsKey(rjCode)) continue;
         try {
-          final metadata = await fetchByRjCode(rjCode);
+          final metadata = await fetchByRjCode(rjCode, language: language);
           final score = scoreDlsiteMetadataTitleMatch(metadata, keywords);
           if (score <= 0) continue;
           resultsByRjCode[rjCode] = _ScoredDlsiteMetadata(metadata, score);
@@ -93,7 +98,10 @@ class DlsiteMetadataService {
     );
   }
 
-  Future<List<String>> _searchProductIdsByTitle(String query) async {
+  Future<List<String>> _searchProductIdsByTitle(
+    String query, {
+    required AppLanguage language,
+  }) async {
     final suggestUri = Uri.https('www.dlsite.com', '/suggest/', {
       'term': query,
       'site': 'maniax',
@@ -101,7 +109,7 @@ class DlsiteMetadataService {
       'touch': '0',
     });
     try {
-      final response = await _get(suggestUri);
+      final response = await _get(suggestUri, language: language);
       final rjCodes = extractDlsiteProductIdsFromSuggestResponse(response);
       if (rjCodes.isNotEmpty) return rjCodes;
     } catch (_) {
@@ -113,7 +121,7 @@ class DlsiteMetadataService {
       'https://www.dlsite.com/maniax/fsr/=/keyword/$encodedTitle',
     );
     try {
-      final response = await _get(searchUri);
+      final response = await _get(searchUri, language: language);
       return extractDlsiteProductIdsFromSearchHtml(response);
     } catch (_) {
       return const <String>[];
@@ -124,12 +132,13 @@ class DlsiteMetadataService {
     required String coverUrl,
     required String folderPath,
     required String rjCode,
+    AppLanguage language = AppLanguage.ja,
   }) async {
     final uri = Uri.parse(coverUrl);
     final extension = _coverExtension(uri);
     final fileName = 'dlsite_${rjCode.toUpperCase()}_cover$extension';
     final request = await _httpClient.getUrl(uri);
-    _applyHeaders(request);
+    _applyHeaders(request, language);
     final response = await request.close();
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw DlsiteMetadataException(
@@ -164,9 +173,9 @@ class DlsiteMetadataService {
     return destination.path;
   }
 
-  Future<String> _get(Uri uri) async {
+  Future<String> _get(Uri uri, {required AppLanguage language}) async {
     final request = await _httpClient.getUrl(uri);
-    _applyHeaders(request);
+    _applyHeaders(request, language);
     final response = await request.close();
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw DlsiteMetadataException(
@@ -181,10 +190,10 @@ class DlsiteMetadataService {
     );
   }
 
-  void _applyHeaders(HttpClientRequest request) {
+  void _applyHeaders(HttpClientRequest request, AppLanguage language) {
     request.headers.set(
       HttpHeaders.userAgentHeader,
-      'Mozilla/5.0 NamelessAudio/0.8.5',
+      'Mozilla/5.0 NamelessAudio/0.9.1',
     );
     request.headers.set(
       HttpHeaders.acceptHeader,
@@ -192,11 +201,12 @@ class DlsiteMetadataService {
     );
     request.headers.set(
       HttpHeaders.acceptLanguageHeader,
-      'ja-JP,ja;q=0.9,zh-CN;q=0.8,en;q=0.7',
+      dlsiteAcceptLanguageForLanguage(language),
     );
     request.headers.set(
       HttpHeaders.cookieHeader,
-      'adultchecked=1; __dlsite_com_share_adultchecked=1; locale=ja-jp',
+      'adultchecked=1; __dlsite_com_share_adultchecked=1; '
+      'locale=${dlsiteLocaleForLanguage(language)}',
     );
   }
 
@@ -217,6 +227,22 @@ class DlsiteMetadataService {
       _ => 'image/jpeg',
     };
   }
+}
+
+String dlsiteLocaleForLanguage(AppLanguage language) {
+  return switch (language) {
+    AppLanguage.zh => 'zh-cn',
+    AppLanguage.ja => 'ja-jp',
+    AppLanguage.en => 'en-us',
+  };
+}
+
+String dlsiteAcceptLanguageForLanguage(AppLanguage language) {
+  return switch (language) {
+    AppLanguage.zh => 'zh-CN,zh;q=0.9,ja-JP;q=0.8,en;q=0.7',
+    AppLanguage.ja => 'ja-JP,ja;q=0.9,zh-CN;q=0.8,en;q=0.7',
+    AppLanguage.en => 'en-US,en;q=0.9,ja-JP;q=0.8,zh-CN;q=0.7',
+  };
 }
 
 List<String> extractDlsiteProductIdsFromSearchHtml(String html) {

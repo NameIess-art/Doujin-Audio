@@ -59,13 +59,19 @@ extension AudioProviderAudioDetails on AudioProvider {
   }
 
   Future<DlsiteMetadata> fetchDlsiteMetadata(String rjCode) {
-    return _dlsiteMetadataService.fetchByRjCode(rjCode);
+    return _dlsiteMetadataService.fetchByRjCode(
+      rjCode,
+      language: _dlsiteMetadataLanguage,
+    );
   }
 
   Future<List<DlsiteMetadata>> searchDlsiteMetadataByTitles(
     Iterable<String> titles,
   ) {
-    return _dlsiteMetadataService.searchByTitleCandidates(titles);
+    return _dlsiteMetadataService.searchByTitleCandidates(
+      titles,
+      language: _dlsiteMetadataLanguage,
+    );
   }
 
   Future<DlsiteMetadataApplyResult> applyDlsiteMetadata(
@@ -93,6 +99,7 @@ extension AudioProviderAudioDetails on AudioProvider {
           coverUrl: coverUrl,
           folderPath: nextDetail.target.targetPath,
           rjCode: metadata.rjCode,
+          language: _dlsiteMetadataLanguage,
         );
         await _setFolderManualCover(nextDetail.target.targetPath, coverPath);
       } catch (error) {

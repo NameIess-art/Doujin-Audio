@@ -1,8 +1,19 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:nameless_audio/i18n/app_language_provider.dart';
 import 'package:nameless_audio/models/dlsite_metadata.dart';
 import 'package:nameless_audio/services/dlsite_metadata_service.dart';
 
 void main() {
+  test('maps selected DLsite metadata language to locale headers', () {
+    expect(dlsiteLocaleForLanguage(AppLanguage.zh), 'zh-cn');
+    expect(dlsiteLocaleForLanguage(AppLanguage.ja), 'ja-jp');
+    expect(dlsiteLocaleForLanguage(AppLanguage.en), 'en-us');
+    expect(
+      dlsiteAcceptLanguageForLanguage(AppLanguage.en),
+      'en-US,en;q=0.9,ja-JP;q=0.8,zh-CN;q=0.7',
+    );
+  });
+
   test('parses DLsite product json into editable metadata', () {
     final metadata = DlsiteMetadata.fromProductJson({
       'workno': 'RJ01014447',

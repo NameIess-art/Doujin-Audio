@@ -11,6 +11,7 @@ import 'package:just_audio/just_audio.dart';
 import 'package:path/path.dart' as path;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../i18n/app_language_provider.dart';
 import '../models/audio_detail.dart';
 import '../models/audio_library_category.dart';
 import '../models/dlsite_metadata.dart';
@@ -376,6 +377,12 @@ class AudioProvider with ChangeNotifier {
   bool get _autoPlayAddedSessions => _settingsRepository.autoPlayAddedSessions;
   set _autoPlayAddedSessions(bool value) {
     _settingsRepository.autoPlayAddedSessions = value;
+  }
+
+  AppLanguage get _dlsiteMetadataLanguage =>
+      _settingsRepository.dlsiteMetadataLanguage;
+  set _dlsiteMetadataLanguage(AppLanguage value) {
+    _settingsRepository.dlsiteMetadataLanguage = value;
   }
 
   int get _maxCacheBytes => _settingsRepository.maxCacheBytes;

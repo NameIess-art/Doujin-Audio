@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:nameless_audio/i18n/app_language_provider.dart';
 import 'package:nameless_audio/models/library_entry.dart';
 import 'package:nameless_audio/models/music_track.dart';
 import 'package:nameless_audio/models/playback_mode.dart';
@@ -19,6 +20,7 @@ void main() {
         ..notificationsEnabled = false
         ..showPlaybackCard = false
         ..autoPlayAddedSessions = false
+        ..dlsiteMetadataLanguage = AppLanguage.en
         ..maxCacheBytes = 500 * 1024 * 1024
         ..isPageTransitioning = true;
       repository.syncSlice();
@@ -43,6 +45,11 @@ void main() {
               (state) => state.autoPlayAddedSessions,
               'auto play',
               isFalse,
+            )
+            .having(
+              (state) => state.dlsiteMetadataLanguage,
+              'dlsite language',
+              AppLanguage.en,
             )
             .having(
               (state) => state.maxCacheBytes,

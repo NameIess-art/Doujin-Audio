@@ -3,6 +3,7 @@ import 'dart:collection';
 
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
+import '../i18n/app_language_provider.dart';
 import '../models/library_node.dart';
 import '../models/library_entry.dart';
 import '../models/music_track.dart';
@@ -214,6 +215,7 @@ class SettingsState {
     this.notificationsEnabled = true,
     this.showPlaybackCard = true,
     this.autoPlayAddedSessions = true,
+    this.dlsiteMetadataLanguage = AppLanguage.ja,
     this.maxCacheBytes = 300 * 1024 * 1024,
     this.isPageTransitioning = false,
   });
@@ -224,6 +226,7 @@ class SettingsState {
   final bool notificationsEnabled;
   final bool showPlaybackCard;
   final bool autoPlayAddedSessions;
+  final AppLanguage dlsiteMetadataLanguage;
   final int maxCacheBytes;
   final bool isPageTransitioning;
 
@@ -236,6 +239,7 @@ class SettingsState {
         other.notificationsEnabled == notificationsEnabled &&
         other.showPlaybackCard == showPlaybackCard &&
         other.autoPlayAddedSessions == autoPlayAddedSessions &&
+        other.dlsiteMetadataLanguage == dlsiteMetadataLanguage &&
         other.maxCacheBytes == maxCacheBytes &&
         other.isPageTransitioning == isPageTransitioning;
   }
@@ -248,6 +252,7 @@ class SettingsState {
     notificationsEnabled,
     showPlaybackCard,
     autoPlayAddedSessions,
+    dlsiteMetadataLanguage,
     maxCacheBytes,
     isPageTransitioning,
   );
@@ -1179,6 +1184,7 @@ class SettingsRepository {
   bool notificationsEnabled = true;
   bool showPlaybackCard = true;
   bool autoPlayAddedSessions = true;
+  AppLanguage dlsiteMetadataLanguage = AppLanguage.ja;
   int maxCacheBytes = 300 * 1024 * 1024;
   bool isPageTransitioning = false;
   bool keepCpuAwake = false;
@@ -1199,6 +1205,7 @@ class SettingsRepository {
         notificationsEnabled: notificationsEnabled,
         showPlaybackCard: showPlaybackCard,
         autoPlayAddedSessions: autoPlayAddedSessions,
+        dlsiteMetadataLanguage: dlsiteMetadataLanguage,
         maxCacheBytes: maxCacheBytes,
         isPageTransitioning: isPageTransitioning,
       ),

@@ -320,6 +320,54 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                     const SizedBox(height: 12),
                     _SectionHeader(title: i18n.tr('section_playback')),
                     const SizedBox(height: 2),
+                    ListTile(
+                      title: Text(i18n.tr('dlsite_metadata_language')),
+                      subtitle: Text(
+                        i18n.tr('dlsite_metadata_language_subtitle'),
+                        style: descStyle,
+                      ),
+                      leading: Container(
+                        width: 38,
+                        height: 38,
+                        decoration: BoxDecoration(
+                          color: cs.secondaryContainer,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Icon(
+                          Icons.public_rounded,
+                          color: cs.onSecondaryContainer,
+                        ),
+                      ),
+                      trailing: DropdownButtonHideUnderline(
+                        child: DropdownButton<AppLanguage>(
+                          value: playbackSettings.dlsiteMetadataLanguage,
+                          borderRadius: BorderRadius.circular(12),
+                          onChanged: (value) {
+                            if (value != null) {
+                              audioProvider.setDlsiteMetadataLanguage(value);
+                            }
+                          },
+                          items: AppLanguage.values
+                              .map(
+                                (lang) => DropdownMenuItem<AppLanguage>(
+                                  value: lang,
+                                  child: Text(
+                                    i18n.languageName(lang),
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ),
+                              )
+                              .toList(),
+                        ),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 2,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
                     SwitchListTile(
                       value: playbackSettings.multiThreadPlaybackEnabled,
                       onChanged: (value) {

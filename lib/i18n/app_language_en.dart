@@ -269,7 +269,7 @@ const Map<String, String> appLanguageEn = {
   'auto_play_added_sessions_subtitle':
       'Create library-added audio sessions in the playing state.',
   'section_appearance': 'Appearance',
-  'section_playback': 'Playback',
+  'section_playback': 'Features',
   'section_notification': 'Notifications',
   'section_other': 'Other',
   'section_danger_zone': 'Other',
@@ -340,10 +340,13 @@ const Map<String, String> appLanguageEn = {
   'bitrate_not_used':
       '{format} uses built-in encoding parameters. Bitrate setting is ignored.',
   'about': 'About',
-  'app_version': 'NL Audio v0.9.0',
+  'app_version': 'NL Audio v0.9.1',
   'app_desc': 'Supports concurrent sessions and high-fidelity audio playback.',
   'language': 'Language',
   'language_subtitle': 'Switch UI language',
+  'dlsite_metadata_language': 'DLsite metadata language',
+  'dlsite_metadata_language_subtitle':
+      'Choose the language used when reading titles, circles, voice actors, and tags from DLsite.',
   'timer_title': 'Timer',
   'set_countdown': 'Set countdown',
   'start_mode': 'Start mode',

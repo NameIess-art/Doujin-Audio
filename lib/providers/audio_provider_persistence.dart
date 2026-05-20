@@ -178,6 +178,9 @@ extension AudioProviderPersistence on AudioProvider {
       _notificationsEnabled = map['notificationsEnabled'] as bool? ?? true;
       _showPlaybackCard = map['showPlaybackCard'] as bool? ?? true;
       _autoPlayAddedSessions = map['autoPlayAddedSessions'] as bool? ?? true;
+      _dlsiteMetadataLanguage = _decodeDlsiteMetadataLanguage(
+        map['dlsiteMetadataLanguage'],
+      );
       _maxCacheBytes =
           (map['maxCacheBytes'] as num?)?.toInt() ??
           AppCacheService.defaultMaxCacheBytes;
@@ -195,12 +198,21 @@ extension AudioProviderPersistence on AudioProvider {
         'notificationsEnabled': _notificationsEnabled,
         'showPlaybackCard': _showPlaybackCard,
         'autoPlayAddedSessions': _autoPlayAddedSessions,
+        'dlsiteMetadataLanguage': _dlsiteMetadataLanguage.name,
         'maxCacheBytes': _maxCacheBytes,
       });
       await prefs.setString(_kPlaybackSettingsKey, encoded);
     } catch (e) {
       debugPrint('AudioProvider persistence error: $e');
     }
+  }
+
+  AppLanguage _decodeDlsiteMetadataLanguage(Object? value) {
+    if (value is! String) return AppLanguage.ja;
+    for (final language in AppLanguage.values) {
+      if (language.name == value) return language;
+    }
+    return AppLanguage.ja;
   }
 
   Future<void> _loadWatchedFolders() async {
@@ -444,6 +456,13 @@ extension AudioProviderPersistence on AudioProvider {
   Future<void> setAutoPlayAddedSessions(bool enabled) async {
     if (_autoPlayAddedSessions == enabled) return;
     _autoPlayAddedSessions = enabled;
+    _notifyListeners();
+    unawaited(_savePlaybackSettings());
+  }
+
+  Future<void> setDlsiteMetadataLanguage(AppLanguage language) async {
+    if (_dlsiteMetadataLanguage == language) return;
+    _dlsiteMetadataLanguage = language;
     _notifyListeners();
     unawaited(_savePlaybackSettings());
   }

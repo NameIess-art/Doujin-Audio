@@ -284,6 +284,8 @@ class _AsmrTabState extends State<AsmrTab>
   Future<void> _showLoginDialog() async {
     final controller = context.read<AsmrLibraryController>();
     final i18n = context.read<AppLanguageProvider>();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final asmrBlue = isDark ? _kAsmrBlueDark : _kAsmrBlueLight;
     final nameController = TextEditingController();
     final passwordController = TextEditingController();
     try {
@@ -381,6 +383,7 @@ class _AsmrTabState extends State<AsmrTab>
                     TextField(
                       controller: nameController,
                       enabled: !loading,
+                      cursorColor: asmrBlue,
                       textInputAction: TextInputAction.next,
                       decoration: InputDecoration(
                         labelText: i18n.tr('asmr_login_account'),
@@ -390,6 +393,7 @@ class _AsmrTabState extends State<AsmrTab>
                     TextField(
                       controller: passwordController,
                       enabled: !loading,
+                      cursorColor: asmrBlue,
                       obscureText: true,
                       decoration: InputDecoration(
                         labelText: i18n.tr('asmr_login_password'),
@@ -829,53 +833,62 @@ class _AsmrSearchBar extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
       child: SizedBox(
         height: 34,
-        child: TextField(
-          controller: controller,
-          cursorColor: asmrBlue,
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 13),
-          decoration: InputDecoration(
-            filled: true,
-            fillColor: cs.surfaceContainerHigh,
-            prefixIcon: Icon(
-              Icons.search_rounded,
-              color: cs.onSurfaceVariant,
-              size: 18,
-            ),
-            suffixIcon: hasText
-                ? IconButton(
-                    icon: const Icon(Icons.clear_rounded, size: 18),
-                    onPressed: onClear,
-                    color: cs.onSurfaceVariant,
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(
-                      minWidth: 32,
-                      minHeight: 32,
-                    ),
-                  )
-                : null,
-            hintText: i18n.tr('asmr_search_hint'),
-            hintStyle: Theme.of(
-              context,
-            ).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(17),
-              borderSide: BorderSide.none,
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(17),
-              borderSide: BorderSide.none,
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(17),
-              borderSide: BorderSide.none,
-            ),
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 12,
-              vertical: 7,
-            ),
-            isDense: true,
+        child: TextSelectionTheme(
+          data: TextSelectionThemeData(
+            cursorColor: asmrBlue,
+            selectionColor: asmrBlue.withValues(alpha: 0.28),
+            selectionHandleColor: asmrBlue,
           ),
-          onChanged: onChanged,
+          child: TextField(
+            controller: controller,
+            cursorColor: asmrBlue,
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(fontSize: 13),
+            decoration: InputDecoration(
+              filled: true,
+              fillColor: cs.surfaceContainerHigh,
+              prefixIcon: Icon(
+                Icons.search_rounded,
+                color: cs.onSurfaceVariant,
+                size: 18,
+              ),
+              suffixIcon: hasText
+                  ? IconButton(
+                      icon: const Icon(Icons.clear_rounded, size: 18),
+                      onPressed: onClear,
+                      color: cs.onSurfaceVariant,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(
+                        minWidth: 32,
+                        minHeight: 32,
+                      ),
+                    )
+                  : null,
+              hintText: i18n.tr('asmr_search_hint'),
+              hintStyle: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(17),
+                borderSide: BorderSide.none,
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(17),
+                borderSide: BorderSide.none,
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(17),
+                borderSide: BorderSide.none,
+              ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 7,
+              ),
+              isDense: true,
+            ),
+            onChanged: onChanged,
+          ),
         ),
       ),
     );

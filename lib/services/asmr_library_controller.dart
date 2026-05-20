@@ -137,18 +137,15 @@ class AsmrLibraryController extends ChangeNotifier {
     if (token == null || token.isEmpty) return;
     try {
       final synced = await _apiService.fetchAuthSession(token);
-      final favoritePlaylistId = await _apiService.fetchFavoritePlaylistId(
-        token,
-      );
+      final favoritePlaylistId = await _fetchFavoritePlaylistId(token);
       _authSession = synced.copyWith(favoritePlaylistId: favoritePlaylistId);
       await AsmrPreferences.saveAuthSession(_authSession);
       if (favoritePlaylistId != null) {
-        await _syncFavoriteWorksFromRemote(
+        await _syncFavoriteWorksFromRemoteIfAvailable(
           token: token,
           playlistId: favoritePlaylistId,
         );
       }
-      _lastError = null;
       notifyListeners();
     } catch (error) {
       _lastError = error;
@@ -159,12 +156,12 @@ class AsmrLibraryController extends ChangeNotifier {
   Future<void> login({required String name, required String password}) async {
     final loggedIn = await _apiService.login(name: name, password: password);
     final favoritePlaylistId = loggedIn.token?.isNotEmpty == true
-        ? await _apiService.fetchFavoritePlaylistId(loggedIn.token!)
+        ? await _fetchFavoritePlaylistId(loggedIn.token!)
         : null;
     _authSession = loggedIn.copyWith(favoritePlaylistId: favoritePlaylistId);
     await AsmrPreferences.saveAuthSession(_authSession);
     if (_authSession.token != null && favoritePlaylistId != null) {
-      await _syncFavoriteWorksFromRemote(
+      await _syncFavoriteWorksFromRemoteIfAvailable(
         token: _authSession.token!,
         playlistId: favoritePlaylistId,
       );
@@ -499,6 +496,29 @@ class AsmrLibraryController extends ChangeNotifier {
     _applyFavoriteFlags();
     _updateLocalCategoryCounts();
     await AsmrPreferences.saveFavoriteWorks(_favoriteWorks);
+  }
+
+  Future<int?> _fetchFavoritePlaylistId(String token) async {
+    try {
+      final playlistId = await _apiService.fetchFavoritePlaylistId(token);
+      _lastError = null;
+      return playlistId;
+    } catch (error) {
+      _lastError = error;
+      return null;
+    }
+  }
+
+  Future<void> _syncFavoriteWorksFromRemoteIfAvailable({
+    required String token,
+    required int playlistId,
+  }) async {
+    try {
+      await _syncFavoriteWorksFromRemote(token: token, playlistId: playlistId);
+      _lastError = null;
+    } catch (error) {
+      _lastError = error;
+    }
   }
 
   void _applyFavoriteFlags() {

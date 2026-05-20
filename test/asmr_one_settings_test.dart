@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/models/asmr_models.dart';
 import 'package:nameless_audio/services/app_preferences.dart';
@@ -103,13 +105,32 @@ void main() {
       );
     },
   );
+
+  test(
+    'ASMR controller keeps login when favorite playlist lookup fails',
+    () async {
+      await resetPrefs();
+      final api = _FakeAsmrApiService(failFavoritePlaylist: true);
+      final controller = AsmrLibraryController(apiService: api);
+      await controller.initialize(defaultLanguage: AsmrContentLanguage.en);
+
+      await controller.login(name: 'alice', password: 'secret');
+
+      expect(controller.authSession.isLoggedIn, isTrue);
+      expect(controller.authSession.token, 'token-alice');
+      expect(controller.authSession.favoritePlaylistId, isNull);
+      expect(controller.lastError, isNull);
+    },
+  );
 }
 
 class _FakeAsmrApiService extends AsmrApiService {
-  _FakeAsmrApiService() : super(baseUri: Uri.parse('https://example.test'));
+  _FakeAsmrApiService({this.failFavoritePlaylist = false})
+    : super(baseUri: Uri.parse('https://example.test'));
 
   String? recommendationUuid;
   String? recommendationToken;
+  final bool failFavoritePlaylist;
 
   @override
   Future<AsmrAuthSession> login({
@@ -120,7 +141,12 @@ class _FakeAsmrApiService extends AsmrApiService {
   }
 
   @override
-  Future<int?> fetchFavoritePlaylistId(String token) async => 42;
+  Future<int?> fetchFavoritePlaylistId(String token) async {
+    if (failFavoritePlaylist) {
+      throw const HttpException('Favorite playlist unavailable.');
+    }
+    return 42;
+  }
 
   @override
   Future<List<AsmrWork>> fetchFavoriteWorks({

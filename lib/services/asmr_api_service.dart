@@ -7,7 +7,7 @@ import '../models/asmr_models.dart';
 class AsmrApiService {
   AsmrApiService({HttpClient? httpClient, Uri? baseUri})
     : _httpClient = httpClient ?? HttpClient(),
-      _baseUri = baseUri ?? Uri.parse('https://api.asmr.one');
+      _baseUri = baseUri ?? Uri.parse('https://api.asmr-200.com');
 
   final HttpClient _httpClient;
   final Uri _baseUri;

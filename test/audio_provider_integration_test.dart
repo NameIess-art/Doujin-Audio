@@ -1103,10 +1103,20 @@ void main() {
       });
 
       final keptPath = '${libraryRoot.path}${Platform.pathSeparator}kept.mp3';
+      final keptFolderPath =
+          '${libraryRoot.path}${Platform.pathSeparator}kept_folder';
+      final deletedFolderPath =
+          '${libraryRoot.path}${Platform.pathSeparator}deleted_folder';
       final deletedPath =
-          '${libraryRoot.path}${Platform.pathSeparator}deleted.mp3';
+          '$deletedFolderPath${Platform.pathSeparator}deleted.mp3';
 
       provider.addWatchedLibrary(libraryRoot.path, notify: false);
+      provider.recordLibraryEntriesForTracks(
+        libraryRoot.path,
+        const <MusicTrack>[],
+        folderPaths: <String>[keptFolderPath, deletedFolderPath],
+        persist: false,
+      );
       provider.addTracks(<MusicTrack>[
         MusicTrack(
           path: keptPath,
@@ -1130,7 +1140,7 @@ void main() {
       provider.removeLibraryEntriesDeletedFromFolder(
         libraryRoot.path,
         libraryRoot.path,
-        {keptPath},
+        {keptPath, keptFolderPath},
       );
 
       expect(provider.trackByPath(keptPath), isNotNull);
@@ -1140,6 +1150,18 @@ void main() {
             .libraryEntriesForLibrary(libraryRoot.path)
             .where((entry) => entry.path == deletedPath),
         isEmpty,
+      );
+      expect(
+        provider
+            .libraryEntriesForLibrary(libraryRoot.path)
+            .where((entry) => entry.path == deletedFolderPath),
+        isEmpty,
+      );
+      expect(
+        provider
+            .libraryEntriesForLibrary(libraryRoot.path)
+            .where((entry) => entry.path == keptFolderPath),
+        hasLength(1),
       );
     });
 

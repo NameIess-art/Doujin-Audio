@@ -12,6 +12,9 @@ class LibraryEditPage extends ConsumerStatefulWidget {
 class _LibraryEditPageState extends ConsumerState<LibraryEditPage> {
   final TextEditingController _searchController = TextEditingController();
   List<String> _diskAudioFilePaths = const <String>[];
+  Set<String> _diskAudioFilePathSet = const <String>{};
+  Set<String> _diskLiveFolderPaths = const <String>{};
+  bool _diskSnapshotLoaded = false;
   Timer? _searchDebounceTimer;
   String _searchQuery = '';
   final Map<String, _LibraryEditFolderTreeNode> _folderStructureSnapshots =
@@ -33,12 +36,35 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage> {
       if (!mounted) return;
       setState(() {
         _diskAudioFilePaths = const <String>[];
+        _diskAudioFilePathSet = const <String>{};
+        _diskLiveFolderPaths = const <String>{};
+        _diskSnapshotLoaded = false;
       });
       return;
     }
     final directory = Directory(widget.libraryPath);
-    if (!await directory.exists()) return;
+    if (!await directory.exists()) {
+      if (!mounted) return;
+      final provider = ref.read(audioProviderFacadeProvider);
+      provider.removeTracksDeletedFromFolder(
+        widget.libraryPath,
+        const <String>{},
+      );
+      provider.removeLibraryEntriesDeletedFromFolder(
+        widget.libraryPath,
+        widget.libraryPath,
+        const <String>{},
+      );
+      setState(() {
+        _diskAudioFilePaths = const <String>[];
+        _diskAudioFilePathSet = const <String>{};
+        _diskLiveFolderPaths = const <String>{};
+        _diskSnapshotLoaded = true;
+      });
+      return;
+    }
     final audioFiles = <String>{};
+    final folderPaths = <String>{};
     final pendingDirs = Queue<Directory>()..add(directory);
     var processedEntities = 0;
 
@@ -58,15 +84,20 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage> {
           }
           final normalizedPath = PathMatcher.normalize(entity.path);
           if (entity is Directory) {
+            folderPaths.add(normalizedPath);
             pendingDirs.add(entity);
             continue;
           }
-          if (entity is File && _isSupportedLibraryMediaFile(normalizedPath)) {
+          if (entity is File && isSupportedMediaFile(normalizedPath)) {
             audioFiles.add(normalizedPath);
           }
         }
       }
     } catch (_) {}
+    final liveFolderPaths = _buildLiveDiskFolderPathSet(
+      folderPaths,
+      audioFiles,
+    );
 
     final sortedAudioFiles = audioFiles.toList(growable: false)
       ..sort(
@@ -76,13 +107,21 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage> {
         ),
       );
     if (!mounted) return;
+    final retainedPaths = <String>{...sortedAudioFiles, ...liveFolderPaths};
+    final provider = ref.read(audioProviderFacadeProvider);
+    provider.removeTracksDeletedFromFolder(widget.libraryPath, audioFiles);
+    provider.removeLibraryEntriesDeletedFromFolder(
+      widget.libraryPath,
+      widget.libraryPath,
+      retainedPaths,
+    );
     setState(() {
       _diskAudioFilePaths = sortedAudioFiles;
+      _diskAudioFilePathSet = audioFiles;
+      _diskLiveFolderPaths = liveFolderPaths;
+      _diskSnapshotLoaded = true;
     });
   }
-
-  bool _isSupportedLibraryMediaFile(String filePath) =>
-      isSupportedMediaFile(filePath);
 
   @override
   void dispose() {
@@ -124,28 +163,39 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage> {
     final i18n = context.watch<AppLanguageProvider>();
     final libraryService = ref.read(libraryServiceProvider);
     final cs = Theme.of(context).colorScheme;
-    final excludedTracks = libraryService.excludedTracksForLibrary(
-      widget.libraryPath,
-    );
+    final excludedTracks = libraryService
+        .excludedTracksForLibrary(widget.libraryPath)
+        .where(_trackExistsInDiskSnapshot)
+        .toList(growable: false);
     final excludedFolders = libraryService
         .excludedFoldersForLibrary(widget.libraryPath)
         .map(_folderPathForLibraryChild)
+        .where(_folderExistsInDiskSnapshot)
         .toList(growable: false);
-    final persistedEntries = libraryService.libraryEntriesForLibrary(
-      widget.libraryPath,
-    );
+    final persistedEntries = libraryService
+        .libraryEntriesForLibrary(widget.libraryPath)
+        .where(_libraryEntryExistsInDiskSnapshot)
+        .toList(growable: false);
     final childFolders = libraryService
         .childFoldersForLibrary(widget.libraryPath)
         .map(_folderPathForLibraryChild)
+        .where(_folderExistsInDiskSnapshot)
+        .toList(growable: false);
+    final folderStructureSnapshots = _folderStructureSnapshots.entries
+        .where((entry) => _folderExistsInDiskSnapshot(entry.key))
+        .map((entry) => entry.value)
         .toList(growable: false);
     final cacheKey = Object.hash(
-      libraryService.library,
-      _diskAudioFilePaths,
+      _libraryTrackPathsHash(libraryService),
+      Object.hashAll(_diskAudioFilePaths),
       _folderStructureSnapshotRevision,
-      childFolders,
-      excludedTracks,
-      excludedFolders,
-      persistedEntries,
+      Object.hashAll(childFolders),
+      Object.hashAll(excludedTracks),
+      Object.hashAll(excludedFolders),
+      _libraryEntriesHash(persistedEntries),
+      Object.hashAll(
+        folderStructureSnapshots.map((folder) => folder.folderPath),
+      ),
       _searchQuery,
     );
     if (_editTreeCacheKey != cacheKey) {
@@ -163,9 +213,8 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage> {
             ...excludedFolders,
             for (final entry in persistedEntries)
               if (entry.isFolder) _folderPathForLibraryChild(entry.path),
-            ..._folderStructureSnapshots.keys,
           }.toList(growable: false),
-          _folderStructureSnapshots.values.toList(growable: false),
+          folderStructureSnapshots,
         ),
         _searchQuery,
       );
@@ -322,6 +371,83 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage> {
     );
   }
 
+  int _libraryTrackPathsHash(LibraryService libraryService) {
+    return Object.hashAll(
+      libraryService.library
+          .where((track) => _trackBelongsToLibrary(track.path))
+          .where((track) => _trackExistsInDiskSnapshot(track.path))
+          .map((track) => PathMatcher.normalize(track.path)),
+    );
+  }
+
+  bool get _hasAuthoritativeDiskSnapshot =>
+      !PathMatcher.isContentUri(widget.libraryPath) && _diskSnapshotLoaded;
+
+  Set<String> _buildLiveDiskFolderPathSet(
+    Set<String> scannedFolderPaths,
+    Set<String> scannedTrackPaths,
+  ) {
+    final rootPath = PathMatcher.normalize(widget.libraryPath);
+    final liveFolders = <String>{};
+
+    void addFolderAndAncestors(String folderPath) {
+      var current = PathMatcher.normalize(folderPath);
+      while (!PathMatcher.equalsNormalized(current, rootPath) &&
+          PathMatcher.isWithinOrEqualNormalized(current, rootPath)) {
+        liveFolders.add(current);
+        final parent = path.dirname(current);
+        if (parent == current || parent == '.' || parent.isEmpty) break;
+        current = parent;
+      }
+    }
+
+    for (final folderPath in scannedFolderPaths) {
+      addFolderAndAncestors(folderPath);
+    }
+    for (final trackPath in scannedTrackPaths) {
+      addFolderAndAncestors(path.dirname(trackPath));
+    }
+    return liveFolders;
+  }
+
+  bool _trackExistsInDiskSnapshot(String trackPath) {
+    if (!_hasAuthoritativeDiskSnapshot) return true;
+    return _diskAudioFilePathSet.contains(PathMatcher.normalize(trackPath));
+  }
+
+  bool _folderExistsInDiskSnapshot(String folderPath) {
+    if (!_hasAuthoritativeDiskSnapshot) return true;
+    final normalizedFolderPath = PathMatcher.normalize(folderPath);
+    return PathMatcher.equalsNormalized(
+          normalizedFolderPath,
+          widget.libraryPath,
+        ) ||
+        _diskLiveFolderPaths.contains(normalizedFolderPath);
+  }
+
+  bool _libraryEntryExistsInDiskSnapshot(LibraryEntry entry) {
+    if (entry.isFolder) {
+      return _folderExistsInDiskSnapshot(
+        _folderPathForLibraryChild(entry.path),
+      );
+    }
+    return _trackExistsInDiskSnapshot(entry.path);
+  }
+
+  int _libraryEntriesHash(List<LibraryEntry> entries) {
+    return Object.hashAll(
+      entries.map(
+        (entry) => Object.hash(
+          entry.path,
+          entry.kind,
+          entry.state,
+          entry.parentPath,
+          entry.displayName,
+        ),
+      ),
+    );
+  }
+
   List<String> _collectLibraryEditTrackPaths(
     LibraryService libraryService,
     List<String> diskAudioFilePaths,
@@ -330,7 +456,8 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage> {
   ) {
     final tracks = <String>{
       for (final track in libraryService.library)
-        if (_trackBelongsToLibrary(track.path))
+        if (_trackBelongsToLibrary(track.path) &&
+            _trackExistsInDiskSnapshot(track.path))
           PathMatcher.normalize(track.path),
       for (final entry in persistedEntries)
         if (entry.isTrack && _trackBelongsToLibrary(entry.path))

@@ -177,7 +177,7 @@ class _ActiveSessionCard extends StatelessWidget {
   }
 }
 
-class _ActiveSessionPlayPauseButton extends StatelessWidget {
+class _ActiveSessionPlayPauseButton extends StatefulWidget {
   const _ActiveSessionPlayPauseButton({
     required this.isPlaying,
     required this.enabled,
@@ -189,6 +189,47 @@ class _ActiveSessionPlayPauseButton extends StatelessWidget {
   final VoidCallback onPressed;
 
   @override
+  State<_ActiveSessionPlayPauseButton> createState() =>
+      _ActiveSessionPlayPauseButtonState();
+}
+
+class _ActiveSessionPlayPauseButtonState
+    extends State<_ActiveSessionPlayPauseButton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _playPauseController;
+  late bool _wasPlaying;
+
+  @override
+  void initState() {
+    super.initState();
+    _wasPlaying = widget.isPlaying;
+    _playPauseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+      value: _wasPlaying ? 1.0 : 0.0,
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant _ActiveSessionPlayPauseButton oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_wasPlaying != widget.isPlaying) {
+      _wasPlaying = widget.isPlaying;
+      if (widget.isPlaying) {
+        _playPauseController.forward();
+      } else {
+        _playPauseController.reverse();
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _playPauseController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     return SizedBox.square(
@@ -196,36 +237,16 @@ class _ActiveSessionPlayPauseButton extends StatelessWidget {
       child: Material(
         color: Colors.transparent,
         child: InkResponse(
-          onTap: enabled ? onPressed : null,
+          onTap: widget.enabled ? widget.onPressed : null,
           containedInkWell: true,
           radius: 24,
           customBorder: const CircleBorder(),
           child: Center(
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 180),
-              switchInCurve: Curves.easeOutCubic,
-              switchOutCurve: Curves.easeInCubic,
-              transitionBuilder: (child, animation) {
-                return FadeTransition(
-                  opacity: animation,
-                  child: ScaleTransition(
-                    scale: Tween<double>(
-                      begin: 0.92,
-                      end: 1,
-                    ).animate(animation),
-                    child: child,
-                  ),
-                );
-              },
-              child: Transform.translate(
-                key: ValueKey(isPlaying),
-                offset: isPlaying ? Offset.zero : const Offset(1, 0),
-                child: Icon(
-                  isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                  size: 36,
-                  color: isPlaying ? cs.primary : cs.onSurface,
-                ),
-              ),
+            child: AnimatedIcon(
+              icon: AnimatedIcons.play_pause,
+              progress: _playPauseController,
+              size: 36,
+              color: widget.isPlaying ? cs.primary : cs.onSurface,
             ),
           ),
         ),

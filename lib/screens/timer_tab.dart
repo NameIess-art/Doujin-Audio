@@ -36,7 +36,8 @@ class TimerTab extends ConsumerStatefulWidget {
   ConsumerState<TimerTab> createState() => _TimerTabState();
 }
 
-class _TimerTabState extends ConsumerState<TimerTab> {
+class _TimerTabState extends ConsumerState<TimerTab>
+    with WidgetsBindingObserver {
   static const MethodChannel _powerChannel = MethodChannel(PowerChannel.name);
   static const MethodChannel _notificationsChannel = MethodChannel(
     NotificationsChannel.name,
@@ -49,13 +50,36 @@ class _TimerTabState extends ConsumerState<TimerTab> {
   bool _draftInitialized = false;
   String? _lastSyncedDraftKey;
   int _lastTimerHash = 0;
+  late Future<_TimerReliabilityStatus> _reliabilityStatusFuture;
 
   void _setLocalState(VoidCallback fn) => setState(fn);
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _showCompactDetail = widget.initialCompactDetail;
+    _reliabilityStatusFuture = _loadReliabilityStatus();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _refreshReliabilityStatus();
+    }
+  }
+
+  void _refreshReliabilityStatus() {
+    if (!mounted) return;
+    setState(() {
+      _reliabilityStatusFuture = _loadReliabilityStatus();
+    });
   }
 
   Duration get _pickedDuration =>

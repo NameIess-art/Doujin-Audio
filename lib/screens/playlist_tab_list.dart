@@ -110,15 +110,30 @@ class _SessionListCard extends StatefulWidget {
   State<_SessionListCard> createState() => _SessionListCardState();
 }
 
-class _SessionListCardState extends State<_SessionListCard> {
+class _SessionListCardState extends State<_SessionListCard>
+    with SingleTickerProviderStateMixin {
   Future<String?>? _coverPathFuture;
   String? _lastTrackPath;
   int _lastCoverGeneration = -1;
+  late final AnimationController _playPauseController;
+  bool _wasPlaying = false;
 
   @override
   void initState() {
     super.initState();
+    _wasPlaying = widget.session.state.playing;
+    _playPauseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+      value: _wasPlaying ? 1.0 : 0.0,
+    );
     _updateFutureIfNeeded();
+  }
+
+  @override
+  void dispose() {
+    _playPauseController.dispose();
+    super.dispose();
   }
 
   @override
@@ -209,6 +224,15 @@ class _SessionListCardState extends State<_SessionListCard> {
         : i18n.tr('imported_files');
 
     final isPlaying = sessionView.isPlaying;
+    if (_wasPlaying != isPlaying) {
+      _wasPlaying = isPlaying;
+      if (isPlaying) {
+        _playPauseController.forward();
+      } else {
+        _playPauseController.reverse();
+      }
+    }
+    
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final isAsmrOne = track?.remoteMetadataKind == 'asmr.one';
     final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
@@ -218,25 +242,18 @@ class _SessionListCardState extends State<_SessionListCard> {
     final localPlayRose = isDark
         ? const Color(0xFFF472B6)
         : const Color(0xFFDB2777);
-    final localPlayRoseContainer = isDark
-        ? const Color(0xFF4A1833)
-        : const Color(0xFFFCE7F3);
-    final localPauseRose = isDark
-        ? const Color(0xFFD9468B)
-        : const Color(0xFFDB2777);
-    final localCardSurface = isDark
-        ? Color.alphaBlend(
-            localPauseRose.withValues(alpha: 0.035),
-            cs.surfaceContainerHigh,
-          )
-        : Color.alphaBlend(
-            localPlayRoseContainer.withValues(alpha: 0.45),
-            cs.surface,
-          );
-    final localRightRoseSurface = Color.alphaBlend(
-      localPlayRoseContainer.withValues(alpha: isDark ? 0.14 : 0.22),
-      localCardSurface,
-    );
+
+    final baseBgColor = isAsmrOne
+        ? (isDark ? const Color(0xFF121625) : const Color(0xFFF2F6FA))
+        : (isDark ? const Color(0xFF2C1A22) : const Color(0xFFFAF2F5));
+
+    final highlightColor = isAsmrOne
+        ? (isDark
+            ? asmrBlueContainer.withValues(alpha: 0.35)
+            : const Color(0xFF93C5FD).withValues(alpha: 0.45))
+        : (isDark
+            ? const Color(0xFF851A46).withValues(alpha: 0.55)
+            : const Color(0xFFE898BA).withValues(alpha: 0.5));
 
     final cardShape = RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(14),
@@ -257,15 +274,7 @@ class _SessionListCardState extends State<_SessionListCard> {
             margin: EdgeInsets.zero,
             clipBehavior: Clip.antiAlias,
             shape: cardShape,
-            color: isPlaying
-                ? (isAsmrOne
-                      ? cs.surfaceContainerHigh
-                      : localCardSurface)
-                : (isAsmrOne
-                      ? (isDark
-                            ? const Color(0xFF121625)
-                            : const Color(0xFFF2F6FA))
-                      : localCardSurface),
+            color: isPlaying ? cs.surfaceContainerHigh : baseBgColor,
             elevation: 0,
             shadowColor: Colors.transparent,
             child: Container(
@@ -276,41 +285,13 @@ class _SessionListCardState extends State<_SessionListCard> {
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
                         colors: [
-                          isAsmrOne
-                              ? asmrBlueContainer.withValues(alpha: 0.35)
-                              : localPlayRoseContainer.withValues(
-                                  alpha: isDark ? 0.55 : 0.7,
-                                ),
-                          isAsmrOne
-                              ? (isDark
-                                    ? const Color(0xFF121625)
-                                    : const Color(0xFFF2F6FA))
-                              : localCardSurface,
-                          isAsmrOne
-                              ? (isDark
-                                    ? const Color(0xFF121625)
-                                    : const Color(0xFFF2F6FA))
-                              : localRightRoseSurface,
-                          isAsmrOne
-                              ? (isDark
-                                    ? const Color(0xFF121625)
-                                    : const Color(0xFFF2F6FA))
-                              : localRightRoseSurface,
+                          highlightColor,
+                          baseBgColor,
+                          baseBgColor,
+                          baseBgColor,
                         ],
                       )
-                    : (!isAsmrOne
-                          ? LinearGradient(
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                              colors: [
-                                localPlayRoseContainer.withValues(
-                                  alpha: isDark ? 0.08 : 0.16,
-                                ),
-                                localCardSurface,
-                                localRightRoseSurface,
-                              ],
-                            )
-                          : null),
+                    : null,
               ),
               child: Semantics(
                 button: true,
@@ -419,11 +400,10 @@ class _SessionListCardState extends State<_SessionListCard> {
                                               : cs.onSurface,
                                         ),
                                       )
-                                    : Icon(
-                                        isPlaying
-                                            ? Icons.pause_rounded
-                                            : Icons.play_arrow_rounded,
-                                        key: ValueKey(isPlaying),
+                                    : AnimatedIcon(
+                                        icon: AnimatedIcons.play_pause,
+                                        progress: _playPauseController,
+                                        key: const ValueKey('play_pause_anim'),
                                         size: 26,
                                       ),
                               ),

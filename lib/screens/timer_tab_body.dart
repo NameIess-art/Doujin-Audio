@@ -73,7 +73,7 @@ extension _TimerTabBody on _TimerTabState {
 
     Widget buildReliabilityCard() {
       return FutureBuilder<_TimerReliabilityStatus>(
-        future: _loadReliabilityStatus(),
+        future: _reliabilityStatusFuture,
         builder: (context, snapshot) {
           final status = snapshot.data;
           if (snapshot.connectionState != ConnectionState.done &&

@@ -646,18 +646,30 @@ class LibraryService {
 
     final removedPaths = <String>[];
     entries.removeWhere((entryPath, entry) {
-      if (entry.isFolder) return false;
       if (!PathMatcher.isWithinOrEqualNormalized(
         entry.path,
         normalizedFolderPath,
       )) {
         return false;
       }
-      final retained = retainedPaths.contains(entry.path);
+      final retained = entry.isFolder
+          ? retainedPaths.any(
+              (path) => PathMatcher.isWithinOrEqualNormalized(path, entry.path),
+            )
+          : retainedPaths.contains(entry.path);
       if (retained) return false;
       removedPaths.add(entry.path);
       return true;
     });
+
+    if (removedPaths.isNotEmpty) {
+      final folders = excludedLibraryFolders[normalizedLibraryPath];
+      final tracks = excludedLibraryTracks[normalizedLibraryPath];
+      for (final removedPath in removedPaths) {
+        if (folders != null) _removePathsWithin(folders, removedPath);
+        if (tracks != null) _removePathsWithin(tracks, removedPath);
+      }
+    }
 
     return removedPaths;
   }

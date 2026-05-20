@@ -399,7 +399,7 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
         provider.removeLibraryEntriesDeletedFromFolder(
           libraryRoot,
           folderPath,
-          discoveredPaths,
+          <String>{...discoveredPaths, ...discoveredFolders},
         );
       }
       provider.setScanProgress(

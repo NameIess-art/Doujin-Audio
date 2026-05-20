@@ -19,7 +19,28 @@ class _SessionDetailContent extends StatefulWidget {
   State<_SessionDetailContent> createState() => _SessionDetailContentState();
 }
 
-class _SessionDetailContentState extends State<_SessionDetailContent> {
+class _SessionDetailContentState extends State<_SessionDetailContent>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _playPauseController;
+  bool _wasPlaying = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _wasPlaying = widget.session.state.playing;
+    _playPauseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+      value: _wasPlaying ? 1.0 : 0.0,
+    );
+  }
+
+  @override
+  void dispose() {
+    _playPauseController.dispose();
+    super.dispose();
+  }
+
   bool _isSingleLoop(SessionLoopMode mode) => mode == SessionLoopMode.single;
 
   bool _isShuffleLoop(SessionLoopMode mode) {
@@ -49,6 +70,17 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
     final cs = Theme.of(context).colorScheme;
     final provider = widget.provider;
     final session = widget.session;
+    
+    final isPlaying = session.state.playing;
+    if (_wasPlaying != isPlaying) {
+      _wasPlaying = isPlaying;
+      if (isPlaying) {
+        _playPauseController.forward();
+      } else {
+        _playPauseController.reverse();
+      }
+    }
+    
     final track = provider.trackByPath(session.currentTrackPath);
     final displayName =
         track?.displayName ??
@@ -207,11 +239,10 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
                                 color: cs.onSurface,
                               ),
                             )
-                          : Icon(
-                              session.state.playing
-                                  ? Icons.pause_rounded
-                                  : Icons.play_arrow_rounded,
-                              key: ValueKey(session.state.playing),
+                          : AnimatedIcon(
+                              icon: AnimatedIcons.play_pause,
+                              progress: _playPauseController,
+                              key: const ValueKey('play_pause_anim'),
                               size: playIconSize,
                               color: cs.onSurface,
                             ),

@@ -286,6 +286,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
             key: _headerKey,
             icon: Icons.graphic_eq_rounded,
             title: i18n.tr('playback_sessions'),
+            marqueeTitle: true,
             isLoading: !listState.isInitialized,
             subtitle: sessionSummary,
             subtitleFontSize: 11,

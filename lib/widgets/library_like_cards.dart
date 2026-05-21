@@ -242,8 +242,13 @@ class LibraryLikeDetailInfoLine extends StatelessWidget {
       color: accentColor ?? cs.primary,
       fontWeight: FontWeight.w900,
     );
-    final labelWidget = label == 'サークル'
-        ? MarqueeText(text: label, style: labelStyle, scrollSpeed: 18)
+    final labelWidget = label.characters.length > 3
+        ? MarqueeText(
+            text: label,
+            style: labelStyle,
+            scrollSpeed: 18,
+            edgePadding: 2,
+          )
         : Text(
             label,
             maxLines: 1,
@@ -335,7 +340,7 @@ class LibraryLikeTwoLineMarqueeText extends StatelessWidget {
   var bestDistance = text.length;
   for (var i = 1; i < text.length - 1; i++) {
     final char = text[i];
-    if (!RegExp(r'[\s_\-\.,，、（）()\[\]【】]+').hasMatch(char)) {
+    if (!_isLibraryLikeSplitChar(char)) {
       continue;
     }
     final distance = (i - middle).abs();
@@ -351,6 +356,29 @@ class LibraryLikeTwoLineMarqueeText extends StatelessWidget {
     return (text, '');
   }
   return (first, second);
+}
+
+bool _isLibraryLikeSplitChar(String char) {
+  const separators = <String>{
+    ' ',
+    '_',
+    '-',
+    '.',
+    ',',
+    '/',
+    '\uFF0C',
+    '\u3001',
+    '\uFF08',
+    '\uFF09',
+    '(',
+    ')',
+    '[',
+    ']',
+    '\u3010',
+    '\u3011',
+    '+',
+  };
+  return separators.contains(char);
 }
 
 bool shouldReserveTwoLibraryLikeInfoLines(String text) =>

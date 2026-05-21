@@ -6,6 +6,7 @@ class MarqueeText extends StatefulWidget {
   final TextStyle? style;
   final Duration pauseDuration;
   final double scrollSpeed;
+  final double edgePadding;
 
   const MarqueeText({
     super.key,
@@ -13,6 +14,7 @@ class MarqueeText extends StatefulWidget {
     this.style,
     this.pauseDuration = const Duration(milliseconds: 1500),
     this.scrollSpeed = 30.0,
+    this.edgePadding = 8.0,
   });
 
   @override
@@ -126,7 +128,7 @@ class _MarqueeTextState extends State<MarqueeText> {
         controller: _scrollController,
         scrollDirection: Axis.horizontal,
         physics: const NeverScrollableScrollPhysics(),
-        padding: const EdgeInsets.symmetric(horizontal: 8),
+        padding: EdgeInsets.symmetric(horizontal: widget.edgePadding),
         child: Text(widget.text, style: widget.style),
       ),
     );

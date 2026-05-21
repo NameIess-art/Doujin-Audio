@@ -2,7 +2,9 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
 import '../i18n/app_language_provider.dart';
+import 'marquee_text.dart';
 
 class TopPageHeader extends StatelessWidget {
   const TopPageHeader({
@@ -20,6 +22,7 @@ class TopPageHeader extends StatelessWidget {
     this.useSafeAreaTop = true,
     this.additionalChild,
     this.isLoading = false,
+    this.marqueeTitle = false,
   });
 
   final IconData? icon;
@@ -35,6 +38,7 @@ class TopPageHeader extends StatelessWidget {
   final bool useSafeAreaTop;
   final Widget? additionalChild;
   final bool isLoading;
+  final bool marqueeTitle;
 
   @override
   Widget build(BuildContext context) {
@@ -43,6 +47,13 @@ class TopPageHeader extends StatelessWidget {
     final screenSize = MediaQuery.sizeOf(context);
     final isSmallWindow = screenSize.width < 450 || screenSize.height < 400;
     final topPadding = useSafeAreaTop ? MediaQuery.paddingOf(context).top : 0.0;
+    final resolvedTitle = isLoading ? i18n.tr('loading_dot') : title;
+    final titleStyle = Theme.of(context).textTheme.headlineMedium?.copyWith(
+      fontWeight: FontWeight.w800,
+      letterSpacing: 0,
+    );
+    final titleHeight =
+        (titleStyle?.fontSize ?? 28) * (titleStyle?.height ?? 1.2);
 
     final headerContent = Padding(
       padding: padding,
@@ -52,15 +63,22 @@ class TopPageHeader extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: Text(
-                  isLoading ? i18n.tr('loading_dot') : title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: -0.5,
-                  ),
-                ),
+                child: marqueeTitle
+                    ? SizedBox(
+                        height: titleHeight,
+                        child: MarqueeText(
+                          text: resolvedTitle,
+                          style: titleStyle,
+                          scrollSpeed: 24,
+                          edgePadding: 2,
+                        ),
+                      )
+                    : Text(
+                        resolvedTitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: titleStyle,
+                      ),
               ),
               if (titleSuffix != null) ...[
                 const SizedBox(width: 8),

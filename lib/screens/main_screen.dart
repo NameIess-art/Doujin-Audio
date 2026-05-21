@@ -84,8 +84,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
   DateTime? _lastOpenedNotificationAt;
 
   int? _pendingTargetIndex;
-  int? _overrideTargetIndex;
-  int? _overrideSourceIndex;
   void _setLocalState(VoidCallback fn) => setState(fn);
 
   static const List<_MainDestination> _destinations = [
@@ -368,33 +366,25 @@ class _MainScreenState extends ConsumerState<MainScreen>
     if (withFeedback) {
       Feedback.forTap(context);
     }
-    
-    int? nextOverrideTarget;
-    int? nextOverrideSource;
+
+    int? adjacentPageIndex;
     if (_pageController.hasClients) {
       final int previousIndex = _pageController.page?.round() ?? _currentIndex;
       if ((index - previousIndex).abs() > 1) {
-        final int adjacent = index > previousIndex ? index - 1 : index + 1;
-        nextOverrideTarget = adjacent;
-        nextOverrideSource = previousIndex;
+        adjacentPageIndex = index > previousIndex ? index - 1 : index + 1;
       }
     }
 
     _pendingTargetIndex = index;
     setState(() {
-      if (nextOverrideTarget != null) {
-        _overrideTargetIndex = nextOverrideTarget;
-        _overrideSourceIndex = nextOverrideSource;
-      }
       _currentIndex = index;
     });
 
-    if (nextOverrideTarget != null && _pageController.hasClients) {
-      _pageController.jumpToPage(nextOverrideTarget);
+    if (adjacentPageIndex != null && _pageController.hasClients) {
+      _pageController.jumpToPage(adjacentPageIndex);
     }
 
     if (!_pageController.hasClients) return;
-    provider.setPageTransitioning(true);
     _pageController
         .animateToPage(
           index,
@@ -403,13 +393,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
         )
         .whenComplete(() {
           if (!mounted) return;
-          if (_overrideTargetIndex != null) {
-            setState(() {
-              _overrideTargetIndex = null;
-              _overrideSourceIndex = null;
-            });
-          }
-          provider.setPageTransitioning(false);
           provider.scheduleUiWarmup(currentPageIndex: index);
         });
   }

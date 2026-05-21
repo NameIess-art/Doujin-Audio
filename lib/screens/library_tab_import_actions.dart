@@ -1,7 +1,7 @@
 part of 'library_tab.dart';
 
 extension _LibraryTabImportActions on _LibraryTabState {
-  Future<void> _scheduleWatchedFoldersRefresh({bool silent = false}) {
+  Future<void> _scheduleWatchedFoldersRefresh({bool silent = false, bool forceShowResult = false}) {
     final i18n = context.read<AppLanguageProvider>();
     final activeTask = _activeRefreshTask;
     if (activeTask != null) {
@@ -12,7 +12,7 @@ extension _LibraryTabImportActions on _LibraryTabState {
     }
 
     late final Future<void> trackedTask;
-    trackedTask = _refreshWatchedFolders(silent: silent).whenComplete(() {
+    trackedTask = _refreshWatchedFolders(silent: silent, forceShowResult: forceShowResult).whenComplete(() {
       if (identical(_activeRefreshTask, trackedTask)) {
         _activeRefreshTask = null;
       }
@@ -53,7 +53,7 @@ extension _LibraryTabImportActions on _LibraryTabState {
       await _waitForCurrentScan(provider);
       return;
     }
-    await _scheduleWatchedFoldersRefresh();
+    await _scheduleWatchedFoldersRefresh(silent: true, forceShowResult: true);
   }
 
   Future<bool> _flushRefreshBatch(AudioProvider provider) async {
@@ -132,7 +132,7 @@ extension _LibraryTabImportActions on _LibraryTabState {
     _showSnack(i18n.tr('library_item_exists'));
   }
 
-  Future<void> _refreshWatchedFolders({bool silent = false}) async {
+  Future<void> _refreshWatchedFolders({bool silent = false, bool forceShowResult = false}) async {
     final i18n = context.read<AppLanguageProvider>();
     final provider = context.read<AudioProvider>();
     final watchedFolders = provider.watchedFolders;
@@ -268,7 +268,7 @@ extension _LibraryTabImportActions on _LibraryTabState {
       }
       provider.setScanning(false);
       if (mounted) {
-        if (!silent || totalAdded > 0) {
+        if (!silent || forceShowResult || totalAdded > 0) {
           _showSnack(
             totalAdded > 0
                 ? i18n.tr('refresh_done_added', {'count': totalAdded})

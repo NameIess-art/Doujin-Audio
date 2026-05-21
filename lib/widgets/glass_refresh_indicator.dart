@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-/// @docImport 'color_scheme.dart';
 library;
 
 import 'dart:async';
@@ -333,16 +332,23 @@ class GlassRefreshIndicatorState extends State<GlassRefreshIndicator>
   late Future<void> _pendingRefreshFuture;
   bool? _isIndicatorAtTop;
   double? _dragOffset;
-  late Color _effectiveValueColor = widget.color ?? Theme.of(context).colorScheme.primary;
+  late Color _effectiveValueColor =
+      widget.color ?? Theme.of(context).colorScheme.primary;
 
-  static final Animatable<double> _threeQuarterTween = Tween<double>(begin: 0.0, end: 0.75);
+  static final Animatable<double> _threeQuarterTween = Tween<double>(
+    begin: 0.0,
+    end: 0.75,
+  );
 
   static final Animatable<double> _kDragSizeFactorLimitTween = Tween<double>(
     begin: 0.0,
     end: _kDragSizeFactorLimit,
   );
 
-  static final Animatable<double> _oneToZeroTween = Tween<double>(begin: 1.0, end: 0.0);
+  static final Animatable<double> _oneToZeroTween = Tween<double>(
+    begin: 1.0,
+    end: 0.0,
+  );
 
   @protected
   @override
@@ -384,9 +390,11 @@ class GlassRefreshIndicatorState extends State<GlassRefreshIndicator>
 
   void _setupColorTween() {
     // Reset the current value color.
-    _effectiveValueColor = widget.color ?? Theme.of(context).colorScheme.primary;
+    _effectiveValueColor =
+        widget.color ?? Theme.of(context).colorScheme.primary;
     final Color color = _effectiveValueColor;
-    if (color.alpha == 0x00) {
+    final int colorAlpha = (color.a * 255.0).round().clamp(0, 255);
+    if (colorAlpha == 0) {
       // Set an always stopped animation instead of a driven tween.
       _valueColor = AlwaysStoppedAnimation<Color>(color);
     } else {
@@ -394,8 +402,10 @@ class GlassRefreshIndicatorState extends State<GlassRefreshIndicator>
       _valueColor = _positionController.drive(
         ColorTween(
           begin: color.withAlpha(0),
-          end: color.withAlpha(color.alpha),
-        ).chain(CurveTween(curve: const Interval(0.0, 1.0 / _kDragSizeFactorLimit))),
+          end: color.withAlpha(colorAlpha),
+        ).chain(
+          CurveTween(curve: const Interval(0.0, 1.0 / _kDragSizeFactorLimit)),
+        ),
       );
     }
   }
@@ -404,10 +414,12 @@ class GlassRefreshIndicatorState extends State<GlassRefreshIndicator>
     // If the notification.dragDetails is null, this scroll is not triggered by
     // user dragging. It may be a result of ScrollController.jumpTo or ballistic scroll.
     // In this case, we don't want to trigger the refresh indicator.
-    return ((notification is ScrollStartNotification && notification.dragDetails != null) ||
+    return ((notification is ScrollStartNotification &&
+                notification.dragDetails != null) ||
             (notification is ScrollUpdateNotification &&
                 notification.dragDetails != null &&
-                widget.triggerMode == GlassRefreshIndicatorTriggerMode.anywhere)) &&
+                widget.triggerMode ==
+                    GlassRefreshIndicatorTriggerMode.anywhere)) &&
         ((notification.metrics.axisDirection == AxisDirection.up &&
                 notification.metrics.extentAfter == 0.0) ||
             (notification.metrics.axisDirection == AxisDirection.down &&
@@ -427,16 +439,19 @@ class GlassRefreshIndicatorState extends State<GlassRefreshIndicator>
       });
       return false;
     }
-    final bool? indicatorAtTopNow = switch (notification.metrics.axisDirection) {
-      AxisDirection.down || AxisDirection.up => true,
-      AxisDirection.left || AxisDirection.right => null,
-    };
+    final bool? indicatorAtTopNow =
+        switch (notification.metrics.axisDirection) {
+          AxisDirection.down || AxisDirection.up => true,
+          AxisDirection.left || AxisDirection.right => null,
+        };
     if (indicatorAtTopNow != _isIndicatorAtTop) {
-      if (_status == GlassGlassRefreshIndicatorStatus.drag || _status == GlassGlassRefreshIndicatorStatus.armed) {
+      if (_status == GlassGlassRefreshIndicatorStatus.drag ||
+          _status == GlassGlassRefreshIndicatorStatus.armed) {
         _dismiss(GlassGlassRefreshIndicatorStatus.canceled);
       }
     } else if (notification is ScrollUpdateNotification) {
-      if (_status == GlassGlassRefreshIndicatorStatus.drag || _status == GlassGlassRefreshIndicatorStatus.armed) {
+      if (_status == GlassGlassRefreshIndicatorStatus.drag ||
+          _status == GlassGlassRefreshIndicatorStatus.armed) {
         if (notification.metrics.axisDirection == AxisDirection.down) {
           _dragOffset = _dragOffset! - notification.scrollDelta!;
         } else if (notification.metrics.axisDirection == AxisDirection.up) {
@@ -444,14 +459,16 @@ class GlassRefreshIndicatorState extends State<GlassRefreshIndicator>
         }
         _checkDragOffset(notification.metrics.viewportDimension);
       }
-      if (_status == GlassGlassRefreshIndicatorStatus.armed && notification.dragDetails == null) {
+      if (_status == GlassGlassRefreshIndicatorStatus.armed &&
+          notification.dragDetails == null) {
         // On iOS start the refresh when the Scrollable bounces back from the
         // overscroll (ScrollNotification indicating this don't have dragDetails
         // because the scroll activity is not directly triggered by a drag).
         _show();
       }
     } else if (notification is OverscrollNotification) {
-      if (_status == GlassGlassRefreshIndicatorStatus.drag || _status == GlassGlassRefreshIndicatorStatus.armed) {
+      if (_status == GlassGlassRefreshIndicatorStatus.drag ||
+          _status == GlassGlassRefreshIndicatorStatus.armed) {
         if (notification.metrics.axisDirection == AxisDirection.down) {
           _dragOffset = _dragOffset! - notification.overscroll;
         } else if (notification.metrics.axisDirection == AxisDirection.up) {
@@ -481,7 +498,9 @@ class GlassRefreshIndicatorState extends State<GlassRefreshIndicator>
     return false;
   }
 
-  bool _handleIndicatorNotification(OverscrollIndicatorNotification notification) {
+  bool _handleIndicatorNotification(
+    OverscrollIndicatorNotification notification,
+  ) {
     if (notification.depth != 0 || !notification.leading) {
       return false;
     }
@@ -513,14 +532,30 @@ class GlassRefreshIndicatorState extends State<GlassRefreshIndicator>
   }
 
   void _checkDragOffset(double containerExtent) {
-    assert(_status == GlassGlassRefreshIndicatorStatus.drag || _status == GlassGlassRefreshIndicatorStatus.armed);
-    double newValue = _dragOffset! / (containerExtent * _kDragContainerExtentPercentage);
+    assert(
+      _status == GlassGlassRefreshIndicatorStatus.drag ||
+          _status == GlassGlassRefreshIndicatorStatus.armed,
+    );
+    double newValue =
+        _dragOffset! / (containerExtent * _kDragContainerExtentPercentage);
     if (_status == GlassGlassRefreshIndicatorStatus.armed) {
       newValue = math.max(newValue, 1.0 / _kDragSizeFactorLimit);
     }
-    _positionController.value = clampDouble(newValue, 0.0, 1.0); // This triggers various rebuilds.
+    _positionController.value = clampDouble(
+      newValue,
+      0.0,
+      1.0,
+    ); // This triggers various rebuilds.
+    final int currentAlpha = (_valueColor.value!.a * 255.0).round().clamp(
+      0,
+      255,
+    );
+    final int effectiveAlpha = (_effectiveValueColor.a * 255.0).round().clamp(
+      0,
+      255,
+    );
     if (_status == GlassGlassRefreshIndicatorStatus.drag &&
-        _valueColor.value!.alpha == _effectiveValueColor.alpha) {
+        currentAlpha == effectiveAlpha) {
       _status = GlassGlassRefreshIndicatorStatus.armed;
       widget.onStatusChange?.call(_status);
     }
@@ -532,16 +567,25 @@ class GlassRefreshIndicatorState extends State<GlassRefreshIndicator>
     // This can only be called from _show() when refreshing and
     // _handleScrollNotification in response to a ScrollEndNotification or
     // direction change.
-    assert(newMode == GlassGlassRefreshIndicatorStatus.canceled || newMode == GlassGlassRefreshIndicatorStatus.done);
+    assert(
+      newMode == GlassGlassRefreshIndicatorStatus.canceled ||
+          newMode == GlassGlassRefreshIndicatorStatus.done,
+    );
     setState(() {
       _status = newMode;
       widget.onStatusChange?.call(_status);
     });
     switch (_status!) {
       case GlassGlassRefreshIndicatorStatus.done:
-        await _scaleController.animateTo(1.0, duration: _kIndicatorScaleDuration);
+        await _scaleController.animateTo(
+          1.0,
+          duration: _kIndicatorScaleDuration,
+        );
       case GlassGlassRefreshIndicatorStatus.canceled:
-        await _positionController.animateTo(0.0, duration: _kIndicatorScaleDuration);
+        await _positionController.animateTo(
+          0.0,
+          duration: _kIndicatorScaleDuration,
+        );
       case GlassGlassRefreshIndicatorStatus.armed:
       case GlassGlassRefreshIndicatorStatus.drag:
       case GlassGlassRefreshIndicatorStatus.refresh:
@@ -565,7 +609,10 @@ class GlassRefreshIndicatorState extends State<GlassRefreshIndicator>
     _status = GlassGlassRefreshIndicatorStatus.snap;
     widget.onStatusChange?.call(_status);
     _positionController
-        .animateTo(1.0 / _kDragSizeFactorLimit, duration: _kIndicatorSnapDuration)
+        .animateTo(
+          1.0 / _kDragSizeFactorLimit,
+          duration: _kIndicatorSnapDuration,
+        )
         .then<void>((void value) {
           if (mounted && _status == GlassGlassRefreshIndicatorStatus.snap) {
             setState(() {
@@ -575,7 +622,8 @@ class GlassRefreshIndicatorState extends State<GlassRefreshIndicator>
 
             final Future<void> refreshResult = widget.onRefresh();
             refreshResult.whenComplete(() {
-              if (mounted && _status == GlassGlassRefreshIndicatorStatus.refresh) {
+              if (mounted &&
+                  _status == GlassGlassRefreshIndicatorStatus.refresh) {
                 completer.complete();
                 _dismiss(GlassGlassRefreshIndicatorStatus.done);
               }
@@ -601,7 +649,8 @@ class GlassRefreshIndicatorState extends State<GlassRefreshIndicator>
   /// actual scroll view. It defaults to showing the indicator at the top. To
   /// show it at the bottom, set `atTop` to false.
   Future<void> show({bool atTop = true}) {
-    if (_status != GlassGlassRefreshIndicatorStatus.refresh && _status != GlassGlassRefreshIndicatorStatus.snap) {
+    if (_status != GlassGlassRefreshIndicatorStatus.refresh &&
+        _status != GlassGlassRefreshIndicatorStatus.snap) {
       if (_status == null) {
         _start(atTop ? AxisDirection.down : AxisDirection.up);
       }
@@ -633,7 +682,8 @@ class GlassRefreshIndicatorState extends State<GlassRefreshIndicator>
     }());
 
     final bool showIndeterminateIndicator =
-        _status == GlassGlassRefreshIndicatorStatus.refresh || _status == GlassGlassRefreshIndicatorStatus.done;
+        _status == GlassGlassRefreshIndicatorStatus.refresh ||
+        _status == GlassGlassRefreshIndicatorStatus.done;
 
     return Stack(
       children: <Widget>[
@@ -652,7 +702,9 @@ class GlassRefreshIndicatorState extends State<GlassRefreshIndicator>
                     ? EdgeInsets.only(top: widget.displacement)
                     : EdgeInsets.only(bottom: widget.displacement),
                 child: Align(
-                  alignment: _isIndicatorAtTop! ? Alignment.topCenter : Alignment.bottomCenter,
+                  alignment: _isIndicatorAtTop!
+                      ? Alignment.topCenter
+                      : Alignment.bottomCenter,
                   child: ScaleTransition(
                     scale: _scaleFactor,
                     child: AnimatedBuilder(
@@ -662,9 +714,13 @@ class GlassRefreshIndicatorState extends State<GlassRefreshIndicator>
                         final Widget innerIndicator = RefreshProgressIndicator(
                           semanticsLabel:
                               widget.semanticsLabel ??
-                              MaterialLocalizations.of(context).refreshIndicatorSemanticLabel,
+                              MaterialLocalizations.of(
+                                context,
+                              ).refreshIndicatorSemanticLabel,
                           semanticsValue: widget.semanticsValue,
-                          value: showIndeterminateIndicator ? null : _value.value,
+                          value: showIndeterminateIndicator
+                              ? null
+                              : _value.value,
                           valueColor: _valueColor,
                           backgroundColor: Colors.transparent,
                           strokeWidth: widget.strokeWidth,
@@ -685,18 +741,24 @@ class GlassRefreshIndicatorState extends State<GlassRefreshIndicator>
                           ),
                           child: ClipOval(
                             child: BackdropFilter(
-                              filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                              filter: ui.ImageFilter.blur(
+                                sigmaX: 12,
+                                sigmaY: 12,
+                              ),
                               child: Container(
-                                color: widget.backgroundColor ?? cs.surfaceContainerHigh.withValues(alpha: 0.6),
+                                color:
+                                    widget.backgroundColor ??
+                                    cs.surfaceContainerHigh.withValues(
+                                      alpha: 0.6,
+                                    ),
                                 child: innerIndicator,
                               ),
                             ),
                           ),
                         );
 
-                        final Widget cupertinoIndicator = CupertinoActivityIndicator(
-                          color: widget.color,
-                        );
+                        final Widget cupertinoIndicator =
+                            CupertinoActivityIndicator(color: widget.color);
 
                         switch (widget._indicatorType) {
                           case _IndicatorType.material:
@@ -717,7 +779,6 @@ class GlassRefreshIndicatorState extends State<GlassRefreshIndicator>
 
                           case _IndicatorType.noSpinner:
                             return Container();
-                          default: return materialIndicator;
                         }
                       },
                     ),

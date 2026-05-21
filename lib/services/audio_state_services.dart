@@ -218,7 +218,6 @@ class SettingsState {
     this.autoCheckUpdates = false,
     this.dlsiteMetadataLanguage = AppLanguage.ja,
     this.maxCacheBytes = 300 * 1024 * 1024,
-    this.isPageTransitioning = false,
   });
 
   final String converterFormat;
@@ -230,7 +229,6 @@ class SettingsState {
   final bool autoCheckUpdates;
   final AppLanguage dlsiteMetadataLanguage;
   final int maxCacheBytes;
-  final bool isPageTransitioning;
 
   @override
   bool operator ==(Object other) {
@@ -243,8 +241,7 @@ class SettingsState {
         other.autoPlayAddedSessions == autoPlayAddedSessions &&
         other.autoCheckUpdates == autoCheckUpdates &&
         other.dlsiteMetadataLanguage == dlsiteMetadataLanguage &&
-        other.maxCacheBytes == maxCacheBytes &&
-        other.isPageTransitioning == isPageTransitioning;
+        other.maxCacheBytes == maxCacheBytes;
   }
 
   @override
@@ -258,7 +255,6 @@ class SettingsState {
     autoCheckUpdates,
     dlsiteMetadataLanguage,
     maxCacheBytes,
-    isPageTransitioning,
   );
 }
 
@@ -1203,7 +1199,6 @@ class SettingsRepository {
   bool autoCheckUpdates = false;
   AppLanguage dlsiteMetadataLanguage = AppLanguage.ja;
   int maxCacheBytes = 300 * 1024 * 1024;
-  bool isPageTransitioning = false;
   bool keepCpuAwake = false;
   bool keepAliveHasPlayback = false;
   bool keepAliveHasTimer = false;
@@ -1225,7 +1220,6 @@ class SettingsRepository {
         autoCheckUpdates: autoCheckUpdates,
         dlsiteMetadataLanguage: dlsiteMetadataLanguage,
         maxCacheBytes: maxCacheBytes,
-        isPageTransitioning: isPageTransitioning,
       ),
     );
   }

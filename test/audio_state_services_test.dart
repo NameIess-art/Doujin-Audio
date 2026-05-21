@@ -22,8 +22,7 @@ void main() {
         ..autoPlayAddedSessions = false
         ..autoCheckUpdates = true
         ..dlsiteMetadataLanguage = AppLanguage.en
-        ..maxCacheBytes = 500 * 1024 * 1024
-        ..isPageTransitioning = true;
+        ..maxCacheBytes = 500 * 1024 * 1024;
       repository.syncSlice();
 
       expect(
@@ -61,11 +60,6 @@ void main() {
               (state) => state.maxCacheBytes,
               'max cache',
               500 * 1024 * 1024,
-            )
-            .having(
-              (state) => state.isPageTransitioning,
-              'page transition',
-              isTrue,
             ),
       );
     });

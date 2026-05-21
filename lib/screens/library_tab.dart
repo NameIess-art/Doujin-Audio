@@ -94,6 +94,8 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
 
   final ScrollController _scrollController = ScrollController();
   ValueListenable<int?>? _scrollToTopTabListenable;
+  int? _categorySnapshotRequestStructureRevision;
+  int? _categorySnapshotRequestDetailRevision;
 
   double get _headerControlsFullHeight =>
       _categoryType == AudioLibraryCategoryType.all ? 86.0 : 46.0;
@@ -186,6 +188,32 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     }
   }
 
+  void _ensureCategorySnapshot({
+    required AudioProvider provider,
+    required int structureRevision,
+    required int detailRevision,
+  }) {
+    final snapshot = provider.audioLibraryCategorySnapshotSync;
+    if (snapshot != null &&
+        snapshot.structureRevision == structureRevision &&
+        snapshot.detailRevision == detailRevision) {
+      return;
+    }
+    if (_categorySnapshotRequestStructureRevision == structureRevision &&
+        _categorySnapshotRequestDetailRevision == detailRevision) {
+      return;
+    }
+
+    _categorySnapshotRequestStructureRevision = structureRevision;
+    _categorySnapshotRequestDetailRevision = detailRevision;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(
+        ref.read(audioProviderFacadeProvider).audioLibraryCategorySnapshot(),
+      );
+    });
+  }
+
   @override
   void dispose() {
     _scrollToTopTabListenable?.removeListener(_handleScrollToTopSignal);
@@ -203,7 +231,6 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     final detailRevision = context.select<AudioProvider, int>(
       (value) => value.audioDetailRevision,
     );
-    unawaited(provider.audioLibraryCategorySnapshot());
     final sliceState =
         ref.watch(libraryStateProvider).valueOrNull ?? const LibraryState();
     final libraryHeaderState = context
@@ -232,6 +259,11 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         structureRevision: sliceState.structureRevision,
         isInitialized: sliceState.isInitialized,
       ),
+    );
+    _ensureCategorySnapshot(
+      provider: provider,
+      structureRevision: listState.structureRevision,
+      detailRevision: detailRevision,
     );
     final filteredResult = _searchIndex.resolve(
       tree: listState.rawTree,
@@ -360,7 +392,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
       return GlassRefreshIndicator(
         key: _refreshIndicatorKey,
         color: Theme.of(context).colorScheme.primary,
-        backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+        backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
         onRefresh: _runLibraryPullRefresh,
         // Adjust edgeOffset because RefreshIndicator is now inside the restricted Positioned.
         edgeOffset: 150 + 4 + headerControlsFullHeight,
@@ -436,7 +468,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                     color: Theme.of(context).colorScheme.primary,
                     backgroundColor: Theme.of(
                       context,
-                    ).colorScheme.surfaceContainerHighest,
+                    ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
                     onRefresh: _runLibraryPullRefresh,
                     edgeOffset: 150 + 4 + headerControlsFullHeight,
                     displacement: 32,

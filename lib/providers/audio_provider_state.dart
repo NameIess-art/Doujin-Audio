@@ -34,7 +34,6 @@ extension AudioProviderState on AudioProvider {
   bool get autoPlayAddedSessions => _autoPlayAddedSessions;
   AppLanguage get dlsiteMetadataLanguage => _dlsiteMetadataLanguage;
   int get maxCacheBytes => _maxCacheBytes;
-  bool get isPageTransitioning => _isPageTransitioning;
   int get audioDetailRevision => _audioDetailRevision;
 
   List<MusicTrack> get library => List.unmodifiable(_library);
@@ -114,12 +113,6 @@ extension AudioProviderState on AudioProvider {
     _isScanning = false;
     _scanProgressNotifyTimer?.cancel();
     _scanProgressNotifyTimer = null;
-    _notifyListeners();
-  }
-
-  void setPageTransitioning(bool value) {
-    if (_isPageTransitioning == value) return;
-    _isPageTransitioning = value;
     _notifyListeners();
   }
 }

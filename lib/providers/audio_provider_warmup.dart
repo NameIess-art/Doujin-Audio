@@ -1,8 +1,8 @@
 part of 'audio_provider.dart';
 
 extension AudioProviderWarmup on AudioProvider {
-  static const int _mainTabIndexLibrary = 0;
-  static const int _mainTabIndexPlayback = 1;
+  static const int _mainTabIndexLibrary = 1;
+  static const int _mainTabIndexPlayback = 2;
 
   void scheduleUiWarmup({
     required int currentPageIndex,

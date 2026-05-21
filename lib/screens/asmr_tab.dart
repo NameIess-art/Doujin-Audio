@@ -75,7 +75,10 @@ class _AsmrTabState extends State<AsmrTab>
       if (!mounted) {
         return;
       }
-      final asmrController = context.read<AsmrLibraryController>();
+      final asmrController = context.read<AsmrLibraryController?>();
+      if (asmrController == null) {
+        return;
+      }
       _scrollToTopTabListenable = context
           .read<AudioProvider>()
           .scrollToTopTabListenable;
@@ -557,8 +560,8 @@ class _AsmrTabState extends State<AsmrTab>
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    final controller = context.watch<AsmrLibraryController>();
-    final downloadManager = context.watch<AsmrDownloadManager>();
+    final controller = context.watch<AsmrLibraryController?>();
+    final downloadManager = context.watch<AsmrDownloadManager?>();
     final i18n = context.watch<AppLanguageProvider>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
@@ -625,6 +628,27 @@ class _AsmrTabState extends State<AsmrTab>
       );
     }
 
+    if (controller == null) {
+      return Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Center(child: CircularProgressIndicator(color: asmrBlue)),
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: TopPageHeader(
+              key: _headerKey,
+              title: 'ASMR.ONE',
+              isLoading: true,
+              bottomSpacing: 4,
+              padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+            ),
+          ),
+        ],
+      );
+    }
+
     return Stack(
       clipBehavior: Clip.none,
       children: [
@@ -662,67 +686,68 @@ class _AsmrTabState extends State<AsmrTab>
             additionalChild: collapsingHeaderControls(),
           ),
         ),
-        Positioned(
-          right: 76,
-          bottom: bottomInset + 18,
-          child: AnimatedBuilder(
-            animation: downloadManager,
-            builder: (context, _) {
-              final task = downloadManager.currentTask;
-              final visible = downloadManager.hasLiveTask && task != null;
-              final progress = task?.progress;
-              return IgnorePointer(
-                ignoring: !visible,
-                child: AnimatedOpacity(
-                  opacity: visible ? 1 : 0,
-                  duration: const Duration(milliseconds: 180),
-                  curve: Curves.easeOutCubic,
-                  child: AnimatedScale(
-                    scale: visible ? 1 : 0.92,
+        if (downloadManager != null)
+          Positioned(
+            right: 76,
+            bottom: bottomInset + 18,
+            child: AnimatedBuilder(
+              animation: downloadManager,
+              builder: (context, _) {
+                final task = downloadManager.currentTask;
+                final visible = downloadManager.hasLiveTask && task != null;
+                final progress = task?.progress;
+                return IgnorePointer(
+                  ignoring: !visible,
+                  child: AnimatedOpacity(
+                    opacity: visible ? 1 : 0,
                     duration: const Duration(milliseconds: 180),
                     curve: Curves.easeOutCubic,
-                    child: FloatingActionButton.small(
-                      heroTag: 'asmr-one-download-progress',
-                      backgroundColor: Theme.of(
-                        context,
-                      ).colorScheme.secondaryContainer,
-                      foregroundColor: Theme.of(
-                        context,
-                      ).colorScheme.onSecondaryContainer,
-                      elevation: 0,
-                      onPressed: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute<void>(
-                            builder: (_) => const AsmrDownloadTaskPage(),
-                          ),
-                        );
-                      },
-                      child: Stack(
-                        alignment: Alignment.center,
-                        children: [
-                          const Icon(Icons.downloading_rounded),
-                          if (progress != null)
-                            SizedBox(
-                              width: 34,
-                              height: 34,
-                              child: CircularProgressIndicator(
-                                value: progress,
-                                strokeWidth: 2.4,
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .onSecondaryContainer
-                                    .withValues(alpha: 0.78),
-                              ),
+                    child: AnimatedScale(
+                      scale: visible ? 1 : 0.92,
+                      duration: const Duration(milliseconds: 180),
+                      curve: Curves.easeOutCubic,
+                      child: FloatingActionButton.small(
+                        heroTag: 'asmr-one-download-progress',
+                        backgroundColor: Theme.of(
+                          context,
+                        ).colorScheme.secondaryContainer,
+                        foregroundColor: Theme.of(
+                          context,
+                        ).colorScheme.onSecondaryContainer,
+                        elevation: 0,
+                        onPressed: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => const AsmrDownloadTaskPage(),
                             ),
-                        ],
+                          );
+                        },
+                        child: Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            const Icon(Icons.downloading_rounded),
+                            if (progress != null)
+                              SizedBox(
+                                width: 34,
+                                height: 34,
+                                child: CircularProgressIndicator(
+                                  value: progress,
+                                  strokeWidth: 2.4,
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSecondaryContainer
+                                      .withValues(alpha: 0.78),
+                                ),
+                              ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
-                ),
-              );
-            },
+                );
+              },
+            ),
           ),
-        ),
         Positioned(
           right: 16,
           bottom: bottomInset + 18,
@@ -956,7 +981,7 @@ class _AsmrCategoryListState extends State<_AsmrCategoryList> {
       child: GlassRefreshIndicator(
         key: _refreshIndicatorKey,
         color: asmrBlue,
-        backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+        backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
         edgeOffset: widget.topInset,
         displacement: 32,
         triggerMode: GlassRefreshIndicatorTriggerMode.anywhere,

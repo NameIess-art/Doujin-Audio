@@ -5,11 +5,12 @@ extension _MainScreenLayout on _MainScreenState {
     final cs = Theme.of(context).colorScheme;
     final radius = BorderRadius.circular(isDesktop ? 28 : 24);
 
-    Widget pageShell(int renderIndex, int actualIndex) {
-      final page = TickerMode(
+    Widget pageShell(int actualIndex) {
+      final Widget page = TickerMode(
         enabled: actualIndex == _currentIndex,
         child: _pages[actualIndex],
       );
+
       return Align(
         alignment: Alignment.topCenter,
         child: isDesktop
@@ -43,45 +44,27 @@ extension _MainScreenLayout on _MainScreenState {
       );
     }
 
-    return NotificationListener<ScrollNotification>(
-      onNotification: (notification) {
-        // Only respond to horizontal PageView movement. Vertical library/search
-        // scrolling must never leave the app in a "transitioning" visual state.
-        if (notification.metrics.axis != Axis.horizontal) return false;
-        if (notification.depth != 0) return false;
-        if (notification is ScrollStartNotification) {
-          ref.read(audioProviderFacadeProvider).setPageTransitioning(true);
-        } else if (notification is ScrollEndNotification) {
-          ref.read(audioProviderFacadeProvider).setPageTransitioning(false);
+    return PageView.builder(
+      controller: _pageController,
+      clipBehavior: Clip.none,
+      physics: const SnapScrollPhysics(parent: ClampingScrollPhysics()),
+      onPageChanged: (index) {
+        if (_pendingTargetIndex != null && index != _pendingTargetIndex) {
+          return;
         }
-        return false;
+        _pendingTargetIndex = null;
+        if (_currentIndex == index) return;
+        _setLocalState(() {
+          _currentIndex = index;
+        });
+        ref
+            .read(audioProviderFacadeProvider)
+            .scheduleUiWarmup(currentPageIndex: index);
       },
-      child: PageView.builder(
-        controller: _pageController,
-        clipBehavior: Clip.none,
-        physics: const SnapScrollPhysics(parent: ClampingScrollPhysics()),
-        onPageChanged: (index) {
-          if (_pendingTargetIndex != null && index != _pendingTargetIndex) {
-            return;
-          }
-          _pendingTargetIndex = null;
-          if (_currentIndex == index) return;
-          _setLocalState(() {
-            _currentIndex = index;
-          });
-          ref
-              .read(audioProviderFacadeProvider)
-              .scheduleUiWarmup(currentPageIndex: index);
-        },
-        itemCount: _pages.length,
-        itemBuilder: (context, i) {
-          int actualIndex = i;
-          if (_overrideTargetIndex == i && _overrideSourceIndex != null) {
-            actualIndex = _overrideSourceIndex!;
-          }
-          return pageShell(i, actualIndex);
-        },
-      ),
+      itemCount: _pages.length,
+      itemBuilder: (context, i) {
+        return pageShell(i);
+      },
     );
   }
 
@@ -161,7 +144,9 @@ extension _MainScreenLayout on _MainScreenState {
       final label = i18n.tr(item.labelKey);
       final inactive = cs.onSurfaceVariant.withValues(alpha: 0.6);
       final isDark = Theme.of(context).brightness == Brightness.dark;
-      final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
+      final asmrBlue = isDark
+          ? const Color(0xFF60A5FA)
+          : const Color(0xFF1D4ED8);
       final activeColor = (index == 0) ? asmrBlue : cs.primary;
 
       return Expanded(
@@ -335,11 +320,14 @@ extension _MainScreenLayout on _MainScreenState {
           Expanded(
             child: Theme(
               data: Theme.of(context).copyWith(
-                navigationRailTheme: Theme.of(context).navigationRailTheme.copyWith(
-                  indicatorColor: _currentIndex == 0
-                      ? (isDark ? const Color(0xFF1E3A8A) : const Color(0xFFDBEAFE))
-                      : null,
-                ),
+                navigationRailTheme: Theme.of(context).navigationRailTheme
+                    .copyWith(
+                      indicatorColor: _currentIndex == 0
+                          ? (isDark
+                                ? const Color(0xFF1E3A8A)
+                                : const Color(0xFFDBEAFE))
+                          : null,
+                    ),
               ),
               child: NavigationRail(
                 backgroundColor: Colors.transparent,
@@ -349,32 +337,35 @@ extension _MainScreenLayout on _MainScreenState {
                 minExtendedWidth: 256,
                 useIndicator: true,
                 groupAlignment: -0.86,
-                destinations: _MainScreenState._destinations.asMap().entries
-                    .map(
-                      (entry) {
-                        final idx = entry.key;
-                        final item = entry.value;
-                        final isAsmr = idx == 0;
-                        final isSelected = idx == _currentIndex;
-                        
-                        return NavigationRailDestination(
-                          icon: Icon(
-                            item.icon,
-                            color: isSelected && isAsmr ? asmrBlue : null,
-                          ),
-                          selectedIcon: Icon(
-                            item.selectedIcon,
-                            color: isAsmr ? asmrBlue : null,
-                          ),
-                          label: Text(
-                            i18n.tr(item.labelKey),
-                            style: isSelected && isAsmr
-                                ? TextStyle(color: asmrBlue, fontWeight: FontWeight.w800)
-                                : null,
-                          ),
-                        );
-                      },
-                    )
+                destinations: _MainScreenState._destinations
+                    .asMap()
+                    .entries
+                    .map((entry) {
+                      final idx = entry.key;
+                      final item = entry.value;
+                      final isAsmr = idx == 0;
+                      final isSelected = idx == _currentIndex;
+
+                      return NavigationRailDestination(
+                        icon: Icon(
+                          item.icon,
+                          color: isSelected && isAsmr ? asmrBlue : null,
+                        ),
+                        selectedIcon: Icon(
+                          item.selectedIcon,
+                          color: isAsmr ? asmrBlue : null,
+                        ),
+                        label: Text(
+                          i18n.tr(item.labelKey),
+                          style: isSelected && isAsmr
+                              ? TextStyle(
+                                  color: asmrBlue,
+                                  fontWeight: FontWeight.w800,
+                                )
+                              : null,
+                        ),
+                      );
+                    })
                     .toList(),
               ),
             ),

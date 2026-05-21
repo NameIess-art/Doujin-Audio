@@ -395,11 +395,6 @@ class AudioProvider with ChangeNotifier {
     _settingsRepository.maxCacheBytes = value;
   }
 
-  bool get _isPageTransitioning => _settingsRepository.isPageTransitioning;
-  set _isPageTransitioning(bool value) {
-    _settingsRepository.isPageTransitioning = value;
-  }
-
   bool get _keepCpuAwake => _settingsRepository.keepCpuAwake;
   set _keepCpuAwake(bool value) => _settingsRepository.keepCpuAwake = value;
   bool get _keepAliveHasPlayback => _settingsRepository.keepAliveHasPlayback;

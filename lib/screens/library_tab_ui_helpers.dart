@@ -83,9 +83,6 @@ extension _LibraryTabUiHelpers on _LibraryTabState {
                         onPressed: () {
                           _searchController.clear();
                           _searchDebounceTimer?.cancel();
-                          context.read<AudioProvider>().setPageTransitioning(
-                            false,
-                          );
                           _jumpLibraryListToTop();
                           _setLocalState(() => _searchQuery = '');
                         },
@@ -127,7 +124,6 @@ extension _LibraryTabUiHelpers on _LibraryTabState {
                     if (!mounted) return;
                     final nextQuery = value.trim();
                     if (_searchQuery == nextQuery) return;
-                    context.read<AudioProvider>().setPageTransitioning(false);
                     _jumpLibraryListToTop();
                     _setLocalState(() => _searchQuery = nextQuery);
                   },

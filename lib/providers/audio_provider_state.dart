@@ -91,6 +91,7 @@ extension AudioProviderState on AudioProvider {
     if (foundCount != null) _scanFoundCount = foundCount;
     if (duplicateCount != null) _scanDuplicateCount = duplicateCount;
     if (failureCount != null) _scanFailureCount = failureCount;
+    if (_isBackgroundScanning) return;
     _scheduleScanProgressNotify();
   }
 

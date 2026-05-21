@@ -1123,6 +1123,42 @@ void main() {
   });
 
   group('library folder restore', () {
+    test(
+      'background scan progress does not notify visible library UI',
+      () async {
+        var notificationCount = 0;
+        provider.addListener(() {
+          notificationCount++;
+        });
+
+        provider.setScanning(true, background: true);
+        final afterBackgroundStart = notificationCount;
+
+        provider.setScanProgress(
+          currentFolder: 'background-folder',
+          foundCount: 1,
+          duplicateCount: 2,
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 180));
+
+        expect(notificationCount, afterBackgroundStart);
+
+        provider.setScanning(false);
+        provider.setScanning(true);
+        final afterForegroundStart = notificationCount;
+
+        provider.setScanProgress(
+          currentFolder: 'foreground-folder',
+          foundCount: 3,
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 180));
+
+        expect(notificationCount, greaterThan(afterForegroundStart));
+
+        provider.setScanning(false);
+      },
+    );
+
     test('addOrReplaceTracks ignores unchanged rescan metadata', () {
       final initialModifiedAt = DateTime.fromMillisecondsSinceEpoch(1000);
       final initialScannedAt = DateTime.fromMillisecondsSinceEpoch(2000);

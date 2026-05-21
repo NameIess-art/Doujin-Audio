@@ -688,7 +688,7 @@ class _AsmrTabState extends State<AsmrTab>
         ),
         if (downloadManager != null)
           Positioned(
-            right: 76,
+            right: 16,
             bottom: bottomInset + 18,
             child: AnimatedBuilder(
               animation: downloadManager,
@@ -748,52 +748,6 @@ class _AsmrTabState extends State<AsmrTab>
               },
             ),
           ),
-        Positioned(
-          right: 16,
-          bottom: bottomInset + 18,
-          child: AnimatedBuilder(
-            animation: currentScrollController,
-            builder: (context, _) {
-              final visible =
-                  currentScrollController.hasClients &&
-                  currentScrollController.offset > 220;
-              return IgnorePointer(
-                ignoring: !visible,
-                child: AnimatedOpacity(
-                  opacity: visible ? 1 : 0,
-                  duration: const Duration(milliseconds: 180),
-                  curve: Curves.easeOutCubic,
-                  child: AnimatedScale(
-                    scale: visible ? 1 : 0.92,
-                    duration: const Duration(milliseconds: 180),
-                    curve: Curves.easeOutCubic,
-                    child: FloatingActionButton.small(
-                      heroTag: 'asmr-one-back-to-top',
-                      backgroundColor: Theme.of(
-                        context,
-                      ).colorScheme.surfaceContainerHigh,
-                      foregroundColor: Theme.of(
-                        context,
-                      ).colorScheme.onSurfaceVariant,
-                      elevation: 0,
-                      onPressed: () {
-                        if (!currentScrollController.hasClients) {
-                          return;
-                        }
-                        currentScrollController.animateTo(
-                          0,
-                          duration: const Duration(milliseconds: 320),
-                          curve: Curves.easeOutCubic,
-                        );
-                      },
-                      child: const Icon(Icons.arrow_upward_rounded),
-                    ),
-                  ),
-                ),
-              );
-            },
-          ),
-        ),
       ],
     );
   }
@@ -981,7 +935,9 @@ class _AsmrCategoryListState extends State<_AsmrCategoryList> {
       child: GlassRefreshIndicator(
         key: _refreshIndicatorKey,
         color: asmrBlue,
-        backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
+        backgroundColor: Theme.of(
+          context,
+        ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
         edgeOffset: widget.topInset,
         displacement: 32,
         triggerMode: GlassRefreshIndicatorTriggerMode.anywhere,

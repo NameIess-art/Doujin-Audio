@@ -1,18 +1,25 @@
 import 'dart:async';
-import 'dart:math';
-
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as path;
 
 import '../models/asmr_models.dart';
 import '../providers/audio_provider.dart';
+import 'audio_database_repository.dart';
 import 'asmr_api_service.dart';
 import 'asmr_preferences.dart';
+import 'asmr_recommendation_engine.dart';
 import 'search_query_utils.dart';
 
 class AsmrLibraryController extends ChangeNotifier {
-  AsmrLibraryController({AsmrApiService? apiService})
-    : _apiService = apiService ?? AsmrApiService();
+  AsmrLibraryController({
+    AsmrApiService? apiService,
+    AudioDatabaseRepository? audioDatabaseRepository,
+    AsmrRecommendationEngine recommendationEngine =
+        const AsmrRecommendationEngine(),
+  }) : _apiService = apiService ?? AsmrApiService(),
+       _audioDatabaseRepository =
+           audioDatabaseRepository ?? AudioDatabaseRepository(),
+       _recommendationEngine = recommendationEngine;
 
   static const int _historyLimit = 60;
   static const Map<AsmrCategoryType, int> _pageSizes = <AsmrCategoryType, int>{
@@ -24,8 +31,18 @@ class AsmrLibraryController extends ChangeNotifier {
     AsmrCategoryType.favorites: 60,
     AsmrCategoryType.history: 60,
   };
+  static const List<AsmrCategoryType> _recommendationCandidateCategories =
+      <AsmrCategoryType>[
+        AsmrCategoryType.collected,
+        AsmrCategoryType.sales,
+        AsmrCategoryType.rating,
+        AsmrCategoryType.release,
+      ];
+  static const int _recommendationCandidatePageLimit = 2;
 
   final AsmrApiService _apiService;
+  final AudioDatabaseRepository _audioDatabaseRepository;
+  final AsmrRecommendationEngine _recommendationEngine;
   final Map<AsmrCategoryType, Future<void>> _refreshTasks =
       <AsmrCategoryType, Future<void>>{};
   final Map<AsmrCategoryType, String> _refreshTaskQueries =
@@ -55,7 +72,6 @@ class AsmrLibraryController extends ChangeNotifier {
   AsmrAuthSession _authSession = const AsmrAuthSession();
   List<AsmrCategoryType> _visibleCategories = kDefaultVisibleAsmrCategories;
   AsmrContentLanguage _contentLanguage = AsmrContentLanguage.zh;
-  String _recommenderUuid = '';
   List<AsmrWork> _favoriteWorks = const <AsmrWork>[];
   List<AsmrWork> _historyWorks = const <AsmrWork>[];
   bool _initialized = false;
@@ -116,9 +132,6 @@ class AsmrLibraryController extends ChangeNotifier {
     _contentLanguage = await AsmrPreferences.loadContentLanguage(
       defaultLanguage ?? AsmrContentLanguage.zh,
     );
-    _recommenderUuid =
-        await AsmrPreferences.loadRecommenderUuid() ?? _createRecommenderUuid();
-    await AsmrPreferences.saveRecommenderUuid(_recommenderUuid);
     _favoriteWorks = await AsmrPreferences.loadFavoriteWorks();
     _historyWorks = await AsmrPreferences.loadHistoryWorks();
     for (final work in _favoriteWorks.followedBy(_historyWorks)) {
@@ -248,7 +261,8 @@ class AsmrLibraryController extends ChangeNotifier {
   }) async {
     final normalizedQuery = normalizeSearchQuery(searchQuery);
     if (category == AsmrCategoryType.favorites ||
-        category == AsmrCategoryType.history) {
+        category == AsmrCategoryType.history ||
+        category == AsmrCategoryType.recommendation) {
       return;
     }
     if (isLoadingCategory(category) || isLoadingMoreCategory(category)) {
@@ -321,7 +335,7 @@ class AsmrLibraryController extends ChangeNotifier {
           );
           break;
         case AsmrCategoryType.recommendation:
-          await _loadWorks(
+          await _loadRecommendedWorks(
             category,
             searchQuery: normalizedQuery,
             requestId: requestId,
@@ -405,6 +419,90 @@ class AsmrLibraryController extends ChangeNotifier {
     }
   }
 
+  Future<void> _loadRecommendedWorks(
+    AsmrCategoryType category, {
+    required String searchQuery,
+    required int requestId,
+  }) async {
+    final pageSize = _pageSizes[category] ?? 40;
+    final pageGroups = await Future.wait(<Future<List<AsmrWorkPage>>>[
+      for (final sourceCategory in _recommendationCandidateCategories)
+        _loadRecommendationCandidatePages(
+          sourceCategory,
+          searchQuery: searchQuery,
+        ),
+    ]);
+    if (_refreshRequestSerial[category] != requestId) {
+      return;
+    }
+    final candidatesById = <int, AsmrWork>{};
+    for (final page in pageGroups.expand((group) => group)) {
+      for (final work in page.works) {
+        candidatesById.putIfAbsent(work.id, () => work);
+      }
+    }
+    final localTracks = await _loadLocalTracksForRecommendation();
+    if (_refreshRequestSerial[category] != requestId) {
+      return;
+    }
+    final ranked = _recommendationEngine.rank(
+      candidates: candidatesById.values.map(_decorateWork).toList(),
+      localTracks: localTracks,
+      favoriteWorks: _favoriteWorks,
+      historyWorks: _historyWorks,
+      refreshSeed: requestId,
+      limit: pageSize,
+    );
+    _worksByCategory[category] = ranked;
+    _applyPageResult(
+      category,
+      query: searchQuery,
+      pageResult: AsmrWorkPage(
+        works: ranked,
+        currentPage: 1,
+        pageSize: ranked.length,
+        totalCount: ranked.length,
+      ),
+    );
+    _hasMoreByCategory[category] = false;
+    for (final work in ranked) {
+      _workCache[work.id] = work;
+    }
+  }
+
+  Future<List<AsmrWorkPage>> _loadRecommendationCandidatePages(
+    AsmrCategoryType category, {
+    required String searchQuery,
+  }) async {
+    final pages = <AsmrWorkPage>[];
+    var page = await _loadRemotePage(
+      category,
+      searchQuery: searchQuery,
+      page: 1,
+    );
+    pages.add(page);
+    while (page.hasMore && pages.length < _recommendationCandidatePageLimit) {
+      page = await _loadRemotePage(
+        category,
+        searchQuery: searchQuery,
+        page: pages.length + 1,
+      );
+      pages.add(page);
+    }
+    return pages;
+  }
+
+  Future<List<MusicTrack>> _loadLocalTracksForRecommendation() async {
+    try {
+      return await _audioDatabaseRepository.loadAllTracks();
+    } catch (error) {
+      debugPrint(
+        'AsmrLibraryController recommendation local load error: $error',
+      );
+      return const <MusicTrack>[];
+    }
+  }
+
   Future<AsmrWorkPage> _loadRemotePage(
     AsmrCategoryType category, {
     required String searchQuery,
@@ -412,16 +510,6 @@ class AsmrLibraryController extends ChangeNotifier {
   }) {
     final spec = _sortSpecFor(category);
     final pageSize = _pageSizes[category] ?? 40;
-    if (category == AsmrCategoryType.recommendation) {
-      return _apiService.fetchRecommendedWorks(
-        keyword: searchQuery,
-        recommenderUuid: _recommenderUuid,
-        page: page,
-        pageSize: pageSize,
-        token: _authSession.token,
-        language: _contentLanguage,
-      );
-    }
     if (searchQuery.isNotEmpty) {
       return _apiService.searchWorks(
         keyword: searchQuery,
@@ -875,14 +963,5 @@ class AsmrLibraryController extends ChangeNotifier {
     return result.isEmpty
         ? kDefaultVisibleAsmrCategories
         : result.toList(growable: false);
-  }
-
-  static String _createRecommenderUuid() {
-    final random = Random.secure();
-    String hex(int length) => List<int>.generate(
-      length,
-      (_) => random.nextInt(16),
-    ).map((value) => value.toRadixString(16)).join();
-    return '${hex(8)}-${hex(4)}-${hex(4)}-${hex(4)}-${hex(12)}';
   }
 }

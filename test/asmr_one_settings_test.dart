@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/models/asmr_models.dart';
+import 'package:nameless_audio/models/music_track.dart';
+import 'package:nameless_audio/services/audio_database_repository.dart';
 import 'package:nameless_audio/services/app_preferences.dart';
 import 'package:nameless_audio/services/asmr_api_service.dart';
 import 'package:nameless_audio/services/asmr_library_controller.dart';
@@ -85,11 +87,16 @@ void main() {
   });
 
   test(
-    'ASMR controller logs in and requests recommendations with uuid',
+    'ASMR controller ranks recommendations from ordinary work lists',
     () async {
       await resetPrefs();
       final api = _FakeAsmrApiService();
-      final controller = AsmrLibraryController(apiService: api);
+      final controller = AsmrLibraryController(
+        apiService: api,
+        audioDatabaseRepository: _FakeAudioDatabaseRepository(<MusicTrack>[
+          _track(groupTitle: 'Dream Circle', tags: <String>['sleep']),
+        ]),
+      );
       await controller.initialize(defaultLanguage: AsmrContentLanguage.en);
 
       await controller.login(name: 'alice', password: 'secret');
@@ -97,11 +104,135 @@ void main() {
 
       expect(controller.authSession.token, 'token-alice');
       expect(controller.authSession.favoritePlaylistId, 42);
-      expect(api.recommendationUuid, isNotEmpty);
-      expect(api.recommendationToken, 'token-alice');
+      expect(api.fetchWorkOrders, contains('create_date:desc'));
+      expect(api.fetchWorkOrders, contains('dl_count:desc'));
+      expect(api.fetchWorkOrders, contains('rate_average_2dp:desc'));
+      expect(api.fetchWorkOrders, contains('release:desc'));
       expect(
-        controller.worksFor(AsmrCategoryType.recommendation).single.title,
-        'Recommended',
+        controller.hasMoreCategory(AsmrCategoryType.recommendation),
+        isFalse,
+      );
+      expect(
+        controller.worksFor(AsmrCategoryType.recommendation).first.title,
+        'Sleep Match',
+      );
+    },
+  );
+
+  test('ASMR recommendation search uses ordinary search candidates', () async {
+    await resetPrefs();
+    final api = _FakeAsmrApiService();
+    final controller = AsmrLibraryController(
+      apiService: api,
+      audioDatabaseRepository: _FakeAudioDatabaseRepository(
+        const <MusicTrack>[],
+      ),
+    );
+    await controller.initialize(defaultLanguage: AsmrContentLanguage.en);
+
+    await controller.refreshCategory(
+      AsmrCategoryType.recommendation,
+      searchQuery: 'sleep',
+    );
+
+    expect(api.searchKeywords, everyElement('sleep'));
+    expect(controller.activeQueryFor(AsmrCategoryType.recommendation), 'sleep');
+    expect(
+      controller
+          .worksFor(AsmrCategoryType.recommendation)
+          .map((work) => work.id),
+      contains(21),
+    );
+  });
+
+  test('ASMR recommendation refresh changes limited content', () async {
+    await resetPrefs();
+    final api = _FakeAsmrApiService(largeRecommendationPool: true);
+    final controller = AsmrLibraryController(
+      apiService: api,
+      audioDatabaseRepository: _FakeAudioDatabaseRepository(
+        const <MusicTrack>[],
+      ),
+    );
+    await controller.initialize(defaultLanguage: AsmrContentLanguage.en);
+
+    await controller.refreshCategory(AsmrCategoryType.recommendation);
+    final firstIds = controller
+        .worksFor(AsmrCategoryType.recommendation)
+        .map((work) => work.id)
+        .toList(growable: false);
+
+    await controller.refreshCategory(AsmrCategoryType.recommendation);
+    final secondIds = controller
+        .worksFor(AsmrCategoryType.recommendation)
+        .map((work) => work.id)
+        .toList(growable: false);
+
+    expect(firstIds, isNot(secondIds));
+  });
+
+  test('ASMR recommendation loads extra candidate pages', () async {
+    await resetPrefs();
+    final api = _FakeAsmrApiService(largeRecommendationPool: true);
+    final controller = AsmrLibraryController(
+      apiService: api,
+      audioDatabaseRepository: _FakeAudioDatabaseRepository(
+        const <MusicTrack>[],
+      ),
+    );
+    await controller.initialize(defaultLanguage: AsmrContentLanguage.en);
+
+    await controller.refreshCategory(AsmrCategoryType.recommendation);
+
+    expect(api.fetchWorkRequests, contains('create_date:desc:2'));
+    expect(api.fetchWorkRequests, contains('dl_count:desc:2'));
+    expect(api.fetchWorkRequests, contains('rate_average_2dp:desc:2'));
+    expect(api.fetchWorkRequests, contains('release:desc:2'));
+  });
+
+  test(
+    'ASMR recommendation hides favorite history and local-owned works',
+    () async {
+      await resetPrefs();
+      final favorite = _work(
+        id: 31,
+        title: 'Favorite Sleep',
+        tags: <String>['sleep'],
+      );
+      final history = _work(
+        id: 32,
+        title: 'History Sleep',
+        tags: <String>['sleep'],
+      );
+      await AsmrPreferences.saveFavoriteWorks(<AsmrWork>[favorite]);
+      await AsmrPreferences.saveHistoryWorks(<AsmrWork>[history]);
+      final api = _FakeAsmrApiService(
+        recommendationWorks: <AsmrWork>[
+          favorite,
+          history,
+          _work(id: 33, title: 'Local Sleep', tags: <String>['sleep']),
+          _work(id: 34, title: 'Visible Sleep', tags: <String>['sleep']),
+        ],
+      );
+      final controller = AsmrLibraryController(
+        apiService: api,
+        audioDatabaseRepository: _FakeAudioDatabaseRepository(<MusicTrack>[
+          _track(
+            groupTitle: 'Local Circle',
+            groupSubtitle: 'RJ000033',
+            tags: <String>['sleep'],
+          ),
+        ]),
+      );
+      await controller.initialize(defaultLanguage: AsmrContentLanguage.en);
+
+      await controller.refreshCategory(AsmrCategoryType.recommendation);
+
+      expect(
+        controller
+            .worksFor(AsmrCategoryType.recommendation)
+            .map((work) => work.id),
+        <int>[34],
       );
     },
   );
@@ -125,12 +256,18 @@ void main() {
 }
 
 class _FakeAsmrApiService extends AsmrApiService {
-  _FakeAsmrApiService({this.failFavoritePlaylist = false})
-    : super(baseUri: Uri.parse('https://example.test'));
+  _FakeAsmrApiService({
+    this.failFavoritePlaylist = false,
+    this.largeRecommendationPool = false,
+    this.recommendationWorks,
+  }) : super(baseUri: Uri.parse('https://example.test'));
 
-  String? recommendationUuid;
-  String? recommendationToken;
+  final List<String> fetchWorkOrders = <String>[];
+  final List<String> fetchWorkRequests = <String>[];
+  final List<String> searchKeywords = <String>[];
   final bool failFavoritePlaylist;
+  final bool largeRecommendationPool;
+  final List<AsmrWork>? recommendationWorks;
 
   @override
   Future<AsmrAuthSession> login({
@@ -158,25 +295,146 @@ class _FakeAsmrApiService extends AsmrApiService {
   }
 
   @override
-  Future<AsmrWorkPage> fetchRecommendedWorks({
-    required String recommenderUuid,
-    String keyword = '',
+  Future<AsmrWorkPage> fetchWorks({
+    required String order,
+    required String sort,
     int page = 1,
     int pageSize = 40,
     String? token,
     AsmrContentLanguage language = AsmrContentLanguage.zh,
   }) async {
-    recommendationUuid = recommenderUuid;
-    recommendationToken = token;
-    return AsmrWorkPage.fromJson(const <String, dynamic>{
-      'works': <Map<String, Object?>>[
-        <String, Object?>{'id': 9, 'title': 'Recommended'},
+    fetchWorkOrders.add('$order:$sort');
+    fetchWorkRequests.add('$order:$sort:$page');
+    final explicitWorks = recommendationWorks;
+    if (explicitWorks != null) {
+      return AsmrWorkPage(
+        works: explicitWorks,
+        currentPage: page,
+        pageSize: pageSize,
+        totalCount: explicitWorks.length,
+      );
+    }
+    if (largeRecommendationPool) {
+      final offset = switch (order) {
+        'create_date' => 0,
+        'dl_count' => 1000,
+        'rate_average_2dp' => 2000,
+        'release' => 3000,
+        _ => 4000,
+      };
+      final pageOffset = (page - 1) * pageSize;
+      return AsmrWorkPage(
+        works: <AsmrWork>[
+          for (var index = 1; index <= pageSize; index++)
+            _work(
+              id: offset + pageOffset + index,
+              title: 'Candidate ${offset + pageOffset + index}',
+            ),
+        ],
+        currentPage: page,
+        pageSize: pageSize,
+        totalCount: pageSize * 2,
+      );
+    }
+    return AsmrWorkPage(
+      works: <AsmrWork>[
+        if (order == 'create_date')
+          _work(id: 9, title: 'General New', tags: <String>['rain']),
+        if (order == 'dl_count')
+          _work(
+            id: 10,
+            title: 'Sleep Match',
+            circleName: 'Dream Circle',
+            tags: <String>['sleep'],
+            rating: 4.7,
+            dlCount: 9000,
+            reviewCount: 300,
+          ),
+        if (order == 'rate_average_2dp')
+          _work(id: 11, title: 'Highly Rated', rating: 4.9),
+        if (order == 'release')
+          _work(id: 12, title: 'Latest', releaseDate: DateTime(2026, 5)),
       ],
-      'pagination': <String, Object?>{
-        'currentPage': 1,
-        'pageSize': 40,
-        'totalCount': 1,
-      },
-    }, language: language);
+      currentPage: page,
+      pageSize: pageSize,
+      totalCount: pageSize,
+    );
   }
+
+  @override
+  Future<AsmrWorkPage> searchWorks({
+    required String keyword,
+    required String order,
+    required String sort,
+    int page = 1,
+    int pageSize = 40,
+    String? token,
+    AsmrContentLanguage language = AsmrContentLanguage.zh,
+  }) async {
+    searchKeywords.add(keyword);
+    return AsmrWorkPage(
+      works: <AsmrWork>[
+        _work(id: 21, title: 'Search Sleep', tags: <String>['sleep']),
+      ],
+      currentPage: page,
+      pageSize: pageSize,
+      totalCount: 1,
+    );
+  }
+}
+
+class _FakeAudioDatabaseRepository extends AudioDatabaseRepository {
+  _FakeAudioDatabaseRepository(this.tracks);
+
+  final List<MusicTrack> tracks;
+
+  @override
+  Future<List<MusicTrack>> loadAllTracks() async => tracks;
+}
+
+AsmrWork _work({
+  required int id,
+  required String title,
+  String circleName = 'Circle',
+  DateTime? releaseDate,
+  int dlCount = 0,
+  int reviewCount = 0,
+  double rating = 0,
+  List<String> tags = const <String>[],
+}) {
+  return AsmrWork(
+    id: id,
+    title: title,
+    circleName: circleName,
+    sourceId: 'RJ${id.toString().padLeft(6, '0')}',
+    sourceType: 'DLSITE',
+    sourceUrl: 'https://example.test/$id',
+    coverUrl: '',
+    thumbnailUrl: '',
+    mainCoverUrl: '',
+    releaseDate: releaseDate,
+    createDate: null,
+    duration: Duration.zero,
+    dlCount: dlCount,
+    reviewCount: reviewCount,
+    rating: rating,
+    voiceActors: const <String>[],
+    tags: tags,
+  );
+}
+
+MusicTrack _track({
+  required String groupTitle,
+  String groupSubtitle = 'RJ999999',
+  required List<String> tags,
+}) {
+  return MusicTrack(
+    path: '/library/$groupSubtitle/track.mp3',
+    displayName: 'track.mp3',
+    groupKey: groupSubtitle,
+    groupTitle: groupTitle,
+    groupSubtitle: groupSubtitle,
+    isSingle: false,
+    tags: tags,
+  );
 }

@@ -7,7 +7,6 @@ abstract final class AsmrPreferences {
   static const String _historyWorksKey = 'asmr_history_works_v1';
   static const String _visibleCategoriesKey = 'asmr_visible_categories_v1';
   static const String _contentLanguageKey = 'asmr_content_language_v1';
-  static const String _recommenderUuidKey = 'asmr_recommender_uuid_v1';
 
   static Future<AsmrAuthSession> loadAuthSession() async {
     return (await AppPreferences.readJson(
@@ -49,14 +48,6 @@ abstract final class AsmrPreferences {
 
   static Future<void> saveContentLanguage(AsmrContentLanguage language) async {
     await AppPreferences.setString(_contentLanguageKey, language.name);
-  }
-
-  static Future<String?> loadRecommenderUuid() {
-    return AppPreferences.getString(_recommenderUuidKey);
-  }
-
-  static Future<void> saveRecommenderUuid(String uuid) async {
-    await AppPreferences.setString(_recommenderUuidKey, uuid);
   }
 
   static Future<List<AsmrWork>> loadFavoriteWorks() async {

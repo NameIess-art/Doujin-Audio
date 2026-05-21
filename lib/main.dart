@@ -73,7 +73,9 @@ Future<void> main() async {
   final timerService = TimerService();
   final notificationCoordinatorService = NotificationCoordinatorService();
   final settingsRepository = SettingsRepository();
-  final asmrLibraryController = AsmrLibraryController();
+  final asmrLibraryController = AsmrLibraryController(
+    audioDatabaseRepository: audioDatabaseRepository,
+  );
   final asmrDownloadManager = AsmrDownloadManager();
   unawaited(asmrLibraryController.initialize());
   unawaited(asmrDownloadManager.initialize());

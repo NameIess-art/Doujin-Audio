@@ -104,31 +104,6 @@ class AsmrApiService {
     return AsmrWorkPage.fromJson(response, language: language);
   }
 
-  Future<AsmrWorkPage> fetchRecommendedWorks({
-    required String recommenderUuid,
-    String keyword = '',
-    int page = 1,
-    int pageSize = 40,
-    String? token,
-    AsmrContentLanguage language = AsmrContentLanguage.zh,
-  }) async {
-    final response = await _sendJsonRequest(
-      method: 'POST',
-      path: '/api/recommender/recommend-for-user',
-      token: token,
-      body: <String, Object?>{
-        'keyword': keyword,
-        'recommenderUuid': recommenderUuid,
-        'page': page,
-        'pageSize': pageSize,
-        'subtitle': 0,
-        'localSubtitledWorks': const <int>[],
-        'withPlaylistStatus': const <int>[],
-      },
-    );
-    return AsmrWorkPage.fromJson(response, language: language);
-  }
-
   Future<AsmrWorkDetail> fetchWorkDetail(
     int workId, {
     String? token,

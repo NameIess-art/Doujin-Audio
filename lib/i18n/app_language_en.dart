@@ -340,7 +340,7 @@ const Map<String, String> appLanguageEn = {
   'bitrate_not_used':
       '{format} uses built-in encoding parameters. Bitrate setting is ignored.',
   'about': 'About',
-  'app_version': 'NL Audio v0.9.1',
+  'app_version': 'NL Audio v0.9.2',
   'app_desc': 'Supports concurrent sessions and high-fidelity audio playback.',
   'language': 'Language',
   'language_subtitle': 'Switch UI language',

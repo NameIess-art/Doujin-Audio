@@ -296,7 +296,7 @@ const Map<String, String> appLanguageZh = {
   'bitrate_used': 'MP3 / AAC / OGG 输出会使用该码率。',
   'bitrate_not_used': '{format} 使用格式内置编码参数，码率设置不生效。',
   'about': '关于',
-  'app_version': 'NL Audio v0.9.1',
+  'app_version': 'NL Audio v0.9.2',
   'app_desc': '支持并发会话与高保真音频播放。',
   'language': '语言',
   'language_subtitle': '切换界面语言',

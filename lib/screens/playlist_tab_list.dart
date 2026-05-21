@@ -244,7 +244,7 @@ class _SessionListCardState extends State<_SessionListCard>
         : const Color(0xFFDB2777);
 
     final baseBgColor = isAsmrOne
-        ? (isDark ? const Color(0xFF121625) : const Color(0xFFF2F6FA))
+        ? (isDark ? const Color(0xFF1A2035) : const Color(0xFFF2F6FA))
         : (isDark ? const Color(0xFF2C1A22) : const Color(0xFFFAF2F5));
 
     final highlightColor = isAsmrOne

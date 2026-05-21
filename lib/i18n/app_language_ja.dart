@@ -303,7 +303,7 @@ const Map<String, String> appLanguageJa = {
   'bitrate_used': 'MP3 / AAC / OGG 出力でこのビットレートを使用します。',
   'bitrate_not_used': '{format} は形式内蔵のエンコードを使うため、ビットレート設定は無効です。',
   'about': '情報',
-  'app_version': 'NL Audio v0.9.1',
+  'app_version': 'NL Audio v0.9.2',
   'app_desc': '並行セッションと高音質再生に対応。',
   'language': '言語',
   'language_subtitle': '表示言語を切り替え',

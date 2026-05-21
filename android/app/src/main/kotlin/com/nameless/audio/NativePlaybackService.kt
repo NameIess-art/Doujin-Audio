@@ -31,6 +31,7 @@ import androidx.media3.exoplayer.audio.ChannelMappingAudioProcessor
 import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import androidx.media3.session.MediaNotification
 import java.util.concurrent.ConcurrentHashMap
 
 private data class NativeMediaItemDescriptor(
@@ -234,6 +235,14 @@ class NativePlaybackService : MediaSessionService() {
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? {
         return ensureMediaSession()
+    }
+
+    override fun onUpdateNotification(session: MediaSession, startInForeground: Boolean) {
+        // We manage the foreground service and notification manually using
+        // UnifiedPlaybackNotificationController and startPlaybackForeground().
+        // Doing nothing here prevents Media3 from automatically posting notifications
+        // and accidentally calling stopForeground(), which drops the foreground
+        // status and causes Doze mode to suspend the app during screen-off.
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {

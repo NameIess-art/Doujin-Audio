@@ -1,8 +1,26 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/models/asmr_models.dart';
 import 'package:nameless_audio/services/asmr_download_manager.dart';
 
 void main() {
+  test('destinationExists checks local download folders', () async {
+    final tempDir = await Directory.systemTemp.createTemp(
+      'asmr_download_destination_',
+    );
+    final manager = AsmrDownloadManager();
+    try {
+      expect(await manager.destinationExists(tempDir.path), isTrue);
+      await tempDir.delete(recursive: true);
+      expect(await manager.destinationExists(tempDir.path), isFalse);
+    } finally {
+      if (await tempDir.exists()) {
+        await tempDir.delete(recursive: true);
+      }
+    }
+  });
+
   test('task snapshot exposes a decoded destination path for SAF folders', () {
     const destinationRoot =
         'content://com.android.externalstorage.documents/tree/primary%3ADownload';

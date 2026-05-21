@@ -186,6 +186,23 @@ class AsmrDownloadManager extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<bool> destinationExists(String folderPath) async {
+    final normalized = folderPath.trim();
+    if (normalized.isEmpty) return false;
+    if (PathMatcher.isContentUri(normalized)) {
+      try {
+        return await _fileCacheChannel.invokeMethod<bool>(
+              FileCacheMethod.documentPathExists,
+              {'path': normalized},
+            ) ??
+            false;
+      } catch (_) {
+        return false;
+      }
+    }
+    return Directory(normalized).exists();
+  }
+
   Future<void> cancelCurrentDownload() async {
     final task = _currentTask;
     if (task == null) {

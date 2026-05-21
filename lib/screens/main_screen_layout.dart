@@ -47,7 +47,7 @@ extension _MainScreenLayout on _MainScreenState {
     return PageView.builder(
       controller: _pageController,
       clipBehavior: Clip.none,
-      physics: const SnapScrollPhysics(parent: ClampingScrollPhysics()),
+      physics: const ClampingScrollPhysics(),
       onPageChanged: (index) {
         if (_pendingTargetIndex != null && index != _pendingTargetIndex) {
           return;

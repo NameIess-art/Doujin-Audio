@@ -102,6 +102,7 @@ const Map<String, String> appLanguageZh = {
   'asmr_download_title': '下载',
   'asmr_download_choose_path': '选择路径',
   'asmr_download_change_path': '更改路径',
+  'asmr_download_path_missing': '已保存的下载路径不存在，请重新选择路径。',
   'asmr_download_conflict_title': '同名项处理',
   'asmr_download_conflict_message': '目标路径里如果有同名文件或文件夹，要怎么处理？',
   'asmr_download_conflict_skip': '跳过',

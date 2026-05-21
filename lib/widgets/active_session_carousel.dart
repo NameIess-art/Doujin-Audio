@@ -15,7 +15,6 @@ import '../providers/subtitle_settings_provider.dart';
 import '../services/subtitle_parser.dart';
 import '../screens/playlist_tab.dart';
 import 'async_cover_image.dart';
-import 'snap_scroll_physics.dart';
 
 part 'active_session_carousel_widgets.dart';
 
@@ -170,10 +169,9 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
       height: 88,
       child: PageView.builder(
         controller: _pageController,
-        pageSnapping: false,
         physics: sessions.length == 1
             ? const NeverScrollableScrollPhysics()
-            : const SnapScrollPhysics(parent: BouncingScrollPhysics()),
+            : const BouncingScrollPhysics(),
         itemCount: sessions.length,
         itemBuilder: (context, index) {
           final session = sessions[index];

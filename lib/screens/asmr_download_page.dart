@@ -38,12 +38,34 @@ class _AsmrDownloadPageState extends State<AsmrDownloadPage> {
     final downloadManager = context.read<AsmrDownloadManager>();
     final tree = await libraryController.ensureTrackTree(widget.work);
     await downloadManager.initialize();
+    final savedDestination = downloadManager.defaultDestinationRoot;
+    final destinationMissing =
+        savedDestination != null &&
+        savedDestination.trim().isNotEmpty &&
+        !await downloadManager.destinationExists(savedDestination);
+    if (destinationMissing) {
+      await downloadManager.clearDefaultDestination();
+    }
     if (!mounted) return;
     setState(() {
       _selection = AsmrDownloadSelectionModel(tree);
-      _destinationRoot = downloadManager.defaultDestinationRoot;
+      _destinationRoot = destinationMissing ? null : savedDestination;
       _loading = false;
     });
+    if (destinationMissing) {
+      final i18n = context.read<AppLanguageProvider>();
+      final isDark = Theme.of(context).brightness == Brightness.dark;
+      final asmrBlue = isDark
+          ? const Color(0xFF60A5FA)
+          : const Color(0xFF1D4ED8);
+      showAppSnackBar(
+        context,
+        i18n.tr('asmr_download_path_missing'),
+        tone: AppFeedbackTone.warning,
+        icon: Icons.folder_off_rounded,
+        iconColor: asmrBlue,
+      );
+    }
   }
 
   Future<void> _chooseDestination() async {
@@ -144,6 +166,25 @@ class _AsmrDownloadPageState extends State<AsmrDownloadPage> {
 
     var destination = _destinationRoot?.trim();
     if (destination == null || destination.isEmpty) {
+      await _chooseDestination();
+      destination = _destinationRoot?.trim();
+      if (!mounted || destination == null || destination.isEmpty) {
+        return;
+      }
+    }
+    if (!await downloadManager.destinationExists(destination)) {
+      await downloadManager.clearDefaultDestination();
+      if (!mounted) return;
+      setState(() {
+        _destinationRoot = null;
+      });
+      showAppSnackBar(
+        context,
+        i18n.tr('asmr_download_path_missing'),
+        tone: AppFeedbackTone.warning,
+        icon: Icons.folder_off_rounded,
+        iconColor: asmrBlue,
+      );
       await _chooseDestination();
       destination = _destinationRoot?.trim();
       if (!mounted || destination == null || destination.isEmpty) {

@@ -102,6 +102,7 @@ const Map<String, String> appLanguageJa = {
   'asmr_download_title': 'ダウンロード',
   'asmr_download_choose_path': '保存先を選択',
   'asmr_download_change_path': '保存先を変更',
+  'asmr_download_path_missing': '保存済みのダウンロード先が見つかりません。保存先を選び直してください。',
   'asmr_download_conflict_title': '同名項目の処理',
   'asmr_download_conflict_message': '保存先に同名のファイルやフォルダがある場合、どう処理しますか？',
   'asmr_download_conflict_skip': 'スキップ',

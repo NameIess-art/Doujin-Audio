@@ -7,6 +7,7 @@ import 'package:path/path.dart' as path;
 import '../models/audio_detail.dart';
 import 'audio_database_repository.dart';
 import 'path_matcher.dart';
+import 'path_display.dart';
 import 'platform_channels.dart';
 
 class AudioDetailLoadResult {
@@ -208,22 +209,36 @@ class AudioDetailRepository {
       final decoded = json.decode(raw);
       // New format: array of entries.
       if (decoded is List) {
+        Map<String, dynamic>? matchedEntry;
+        var matchedScore = 0;
+        var hasTie = false;
         for (final item in decoded) {
-          if (item is! Map<String, dynamic>) continue;
-          final entryPath = item['targetPath'] as String?;
+          final entry = _stringKeyedMap(item);
+          if (entry == null) continue;
+          final entryPath = entry['targetPath'] as String?;
           if (entryPath == null) continue;
-          if (PathMatcher.normalize(entryPath) ==
-              PathMatcher.normalize(target.targetPath)) {
-            final detail = AudioDetail.fromBackupJson(target, item);
-            if (detail.target.targetType != target.targetType) continue;
+          final score = _singleFileEntryMatchScore(target, entryPath);
+          if (score <= 0) continue;
+          if (score > matchedScore) {
+            matchedEntry = entry;
+            matchedScore = score;
+            hasTie = false;
+          } else if (score == matchedScore) {
+            hasTie = true;
+          }
+        }
+        if (matchedEntry != null && !hasTie) {
+          final detail = AudioDetail.fromBackupJson(target, matchedEntry);
+          if (detail.target.targetType == target.targetType) {
             return detail.copyWith(target: target);
           }
         }
         return null;
       }
       // Legacy single-object format (folder-style or old sidecar content).
-      if (decoded is Map<String, dynamic>) {
-        final detail = AudioDetail.fromBackupJson(target, decoded);
+      final entry = _stringKeyedMap(decoded);
+      if (entry != null) {
+        final detail = AudioDetail.fromBackupJson(target, entry);
         if (detail.target.targetType != target.targetType) return null;
         return detail.copyWith(target: target);
       }
@@ -241,8 +256,9 @@ class AudioDetailRepository {
       final raw = await sidecar.readAsString();
       if (raw.isEmpty) return null;
       final decoded = json.decode(raw);
-      if (decoded is! Map<String, dynamic>) return null;
-      final detail = AudioDetail.fromBackupJson(target, decoded);
+      final entry = _stringKeyedMap(decoded);
+      if (entry == null) return null;
+      final detail = AudioDetail.fromBackupJson(target, entry);
       if (detail.target.targetType != target.targetType) return null;
       return detail.copyWith(target: target);
     } catch (_) {
@@ -258,7 +274,6 @@ class AudioDetailRepository {
       return;
     }
     final backupFile = _singleDirBackupFile(detail.target.targetPath);
-    final normalizedPath = PathMatcher.normalize(detail.target.targetPath);
 
     // Read existing entries from the file (if any).
     List<Map<String, dynamic>> entries = [];
@@ -268,10 +283,11 @@ class AudioDetailRepository {
         if (raw.isNotEmpty) {
           final decoded = json.decode(raw);
           if (decoded is List) {
-            entries = decoded.whereType<Map<String, dynamic>>().toList();
-          } else if (decoded is Map<String, dynamic>) {
+            entries = _stringKeyedMapList(decoded);
+          } else if (decoded is Map) {
             // Migrate a legacy single-object file to array format.
-            entries = [decoded];
+            final entry = _stringKeyedMap(decoded);
+            if (entry != null) entries = [entry];
           }
         }
       } catch (_) {
@@ -282,10 +298,7 @@ class AudioDetailRepository {
 
     // Update the matching entry or append a new one.
     final newEntry = detail.toBackupJson();
-    final idx = entries.indexWhere((e) {
-      final p = e['targetPath'] as String?;
-      return p != null && PathMatcher.normalize(p) == normalizedPath;
-    });
+    final idx = _singleFileBackupEntryIndex(detail.target, entries);
     if (idx >= 0) {
       entries[idx] = newEntry;
     } else {
@@ -298,8 +311,6 @@ class AudioDetailRepository {
 
   /// Writes the backup via the native channel for content URI paths.
   Future<void> _writeSingleFileBackupViaChannel(AudioDetail detail) async {
-    final normalizedPath = PathMatcher.normalize(detail.target.targetPath);
-
     // Read the existing backup from the native side first so we can merge.
     String? existingRaw;
     try {
@@ -316,9 +327,10 @@ class AudioDetailRepository {
       try {
         final decoded = json.decode(existingRaw);
         if (decoded is List) {
-          entries = decoded.whereType<Map<String, dynamic>>().toList();
-        } else if (decoded is Map<String, dynamic>) {
-          entries = [decoded];
+          entries = _stringKeyedMapList(decoded);
+        } else if (decoded is Map) {
+          final entry = _stringKeyedMap(decoded);
+          if (entry != null) entries = [entry];
         }
       } catch (_) {
         entries = [];
@@ -326,10 +338,7 @@ class AudioDetailRepository {
     }
 
     final newEntry = detail.toBackupJson();
-    final idx = entries.indexWhere((e) {
-      final p = e['targetPath'] as String?;
-      return p != null && PathMatcher.normalize(p) == normalizedPath;
-    });
+    final idx = _singleFileBackupEntryIndex(detail.target, entries);
     if (idx >= 0) {
       entries[idx] = newEntry;
     } else {
@@ -395,6 +404,66 @@ class AudioDetailRepository {
       targetType: target.targetType,
       targetPath: PathMatcher.normalize(target.targetPath),
     );
+  }
+
+  int _singleFileBackupEntryIndex(
+    AudioDetailTarget target,
+    List<Map<String, dynamic>> entries,
+  ) {
+    var bestIndex = -1;
+    var bestScore = 0;
+    var hasTie = false;
+    for (var i = 0; i < entries.length; i++) {
+      final entryPath = entries[i]['targetPath'] as String?;
+      if (entryPath == null) continue;
+      final score = _singleFileEntryMatchScore(target, entryPath);
+      if (score <= 0) continue;
+      if (score > bestScore) {
+        bestIndex = i;
+        bestScore = score;
+        hasTie = false;
+      } else if (score == bestScore) {
+        hasTie = true;
+      }
+    }
+    return hasTie ? -1 : bestIndex;
+  }
+
+  int _singleFileEntryMatchScore(AudioDetailTarget target, String entryPath) {
+    if (PathMatcher.equalsNormalized(entryPath, target.targetPath)) {
+      return 3;
+    }
+    final entryName = PathDisplay.fileName(entryPath).trim();
+    final targetName = PathDisplay.fileName(target.targetPath).trim();
+    if (entryName.isEmpty || targetName.isEmpty) return 0;
+    if (entryName == targetName) return 2;
+    return _singleFileCopyKey(entryName) == _singleFileCopyKey(targetName)
+        ? 1
+        : 0;
+  }
+
+  String _singleFileCopyKey(String fileName) {
+    final extension = path.extension(fileName);
+    final stem = extension.isEmpty
+        ? fileName
+        : fileName.substring(0, fileName.length - extension.length);
+    final stableStem = stem.replaceFirst(RegExp(r'\s+\(\d+\)$'), '');
+    return '${stableStem.toLowerCase()}${extension.toLowerCase()}';
+  }
+
+  List<Map<String, dynamic>> _stringKeyedMapList(List<dynamic> values) {
+    final entries = <Map<String, dynamic>>[];
+    for (final value in values) {
+      final entry = _stringKeyedMap(value);
+      if (entry != null) entries.add(entry);
+    }
+    return entries;
+  }
+
+  Map<String, dynamic>? _stringKeyedMap(Object? value) {
+    if (value is Map<String, dynamic>) return value;
+    if (value is! Map) return null;
+    return value.map((key, value) => MapEntry(key.toString(), value));
   }
 
   File _folderBackupFile(String folderPath, {bool legacy = false}) {

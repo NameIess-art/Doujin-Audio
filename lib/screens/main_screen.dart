@@ -27,7 +27,7 @@ import '../widgets/active_session_carousel.dart';
 import '../widgets/app_feedback.dart';
 import '../widgets/confirm_action_dialog.dart';
 import '../widgets/mobile_overlay_inset.dart';
-import '../widgets/snap_scroll_physics.dart';
+
 import '../widgets/floating_subtitle_window.dart';
 
 part 'main_screen_notifications.dart';

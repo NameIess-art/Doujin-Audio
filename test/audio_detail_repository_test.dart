@@ -271,6 +271,86 @@ void main() {
   );
 
   test(
+    'single audio load matches shared backup entry by decoded file name',
+    () async {
+      const fileName = '#羊娘めめ 20260326 nico 【限定ASMR┊睡眠導入】ゆっくりはむちゅ.mp3';
+      final target = AudioDetailTarget.singleAudioFile(
+        '${tempDir.path}${Platform.pathSeparator}$fileName',
+      );
+      final backupFile = File(
+        '${tempDir.path}${Platform.pathSeparator}${AudioDetailRepository.backupFileName}',
+      );
+      const backedUpFileName =
+          '#羊娘めめ 20260326 nico 【限定ASMR┊睡眠導入】ゆっくりはむちゅ (1).mp3';
+      final contentPath =
+          'content://com.android.externalstorage.documents/tree/'
+          'primary%3ADocuments%2F.ASMR/document/'
+          '${Uri.encodeComponent('primary:Documents/.ASMR/$backedUpFileName')}';
+
+      await backupFile.writeAsString(
+        json.encode([
+          {
+            'schemaVersion': 1,
+            'type': 'audio-detail',
+            'targetType': 'single-audio-file',
+            'targetPath': contentPath,
+            'rjCode': 'RJ112233',
+            'workTitle': 'Decoded file backup',
+            'voiceActors': ['羊娘めめ'],
+            'tags': ['ASMR'],
+          },
+        ]),
+      );
+
+      final result = await repository.load(target);
+
+      expect(result.restoredFromBackup, isTrue);
+      expect(result.detail.rjCode, 'RJ112233');
+      expect(result.detail.workTitle, 'Decoded file backup');
+      expect(result.detail.voiceActors, const <String>['羊娘めめ']);
+      expect((await appDatabase.loadAudioDetail(target))?.rjCode, 'RJ112233');
+    },
+  );
+
+  test('single audio save updates decoded file-name backup entry', () async {
+    const fileName = 'single.mp3';
+    final target = AudioDetailTarget.singleAudioFile(
+      '${tempDir.path}${Platform.pathSeparator}$fileName',
+    );
+    final backupFile = File(
+      '${tempDir.path}${Platform.pathSeparator}${AudioDetailRepository.backupFileName}',
+    );
+    final contentPath =
+        'content://com.android.externalstorage.documents/tree/'
+        'primary%3AMusic/document/'
+        '${Uri.encodeComponent('primary:Music/$fileName')}';
+
+    await backupFile.writeAsString(
+      json.encode([
+        {
+          'schemaVersion': 1,
+          'type': 'audio-detail',
+          'targetType': 'single-audio-file',
+          'targetPath': contentPath,
+          'workTitle': 'Old',
+        },
+      ]),
+    );
+
+    await repository.save(
+      AudioDetail.empty(target).copyWith(workTitle: 'Updated'),
+    );
+
+    final decoded = json.decode(await backupFile.readAsString()) as List;
+    expect(decoded.length, 1);
+    expect((decoded.single as Map<String, dynamic>)['workTitle'], 'Updated');
+    expect(
+      (decoded.single as Map<String, dynamic>)['targetPath'],
+      target.targetPath,
+    );
+  });
+
+  test(
     'single audio load restores from legacy sidecar when no directory backup exists',
     () async {
       final target = AudioDetailTarget.singleAudioFile(

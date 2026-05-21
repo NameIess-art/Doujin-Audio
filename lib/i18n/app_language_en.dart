@@ -108,6 +108,8 @@ const Map<String, String> appLanguageEn = {
   'asmr_download_title': 'Download',
   'asmr_download_choose_path': 'Choose path',
   'asmr_download_change_path': 'Change path',
+  'asmr_download_path_missing':
+      'The saved download path no longer exists. Choose a new path.',
   'asmr_download_conflict_title': 'Handle duplicate names',
   'asmr_download_conflict_message':
       'What should happen if the target path has a file or folder with the same name?',

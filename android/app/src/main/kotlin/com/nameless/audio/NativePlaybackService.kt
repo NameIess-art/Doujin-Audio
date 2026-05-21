@@ -169,13 +169,25 @@ class NativePlaybackService : MediaSessionService() {
             logInfo("foreground_stop_grace_expired playback_resumed_skip")
         }
     }
+    private var lastPublishedTimeMs = 0L
+
     private val positionTicker = object : Runnable {
         override fun run() {
             if (stateListeners.isEmpty() || sessions.isEmpty()) {
                 tickerScheduled = false
                 return
             }
-            publishAllSessionStates()
+            
+            val now = System.currentTimeMillis()
+            val powerManager = getSystemService(POWER_SERVICE) as? PowerManager
+            val isScreenOn = powerManager?.isInteractive ?: true
+            
+            // Throttle UI updates over the MethodChannel when screen is off to save battery
+            if (isScreenOn || now - lastPublishedTimeMs >= 5000L) {
+                publishAllSessionStates()
+                lastPublishedTimeMs = now
+            }
+            
             mainHandler.postDelayed(this, 750L)
         }
     }
@@ -681,9 +693,9 @@ class NativePlaybackService : MediaSessionService() {
         }
 
         return ExoPlayer.Builder(this, renderersFactory).build().also { player ->
-            // WAKE_MODE_NETWORK keeps the CPU and WiFi lock while ExoPlayer is
-            // actively decoding, covering both local files and network streams.
-            player.setWakeMode(C.WAKE_MODE_NETWORK)
+            // WAKE_MODE_LOCAL keeps the CPU wake lock without forcing a WifiLock,
+            // saving power for local files while maintaining background stability.
+            player.setWakeMode(C.WAKE_MODE_LOCAL)
             // Disable ExoPlayer's built-in audio focus management.  We manage
             // focus ourselves via audioFocusChangeListener so that transient
             // focus losses (e.g. OEM screen-off sounds) do not pause playback.

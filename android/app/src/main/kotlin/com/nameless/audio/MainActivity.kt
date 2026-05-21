@@ -712,6 +712,27 @@ class MainActivity : AudioServiceActivity() {
                             }
                         }.start()
                     }
+                    "documentPathExists" -> {
+                        val targetPath = call.argument<String>("path")
+                        if (targetPath.isNullOrBlank()) {
+                            result.error("invalid_args", "path is required", null)
+                            return@setMethodCallHandler
+                        }
+                        Thread {
+                            try {
+                                val exists = documentPathExists(targetPath)
+                                runOnUiThread { result.success(exists) }
+                            } catch (e: Exception) {
+                                runOnUiThread {
+                                    result.error(
+                                        "document_path_exists_failed",
+                                        e.message ?: "unknown error",
+                                        null
+                                    )
+                                }
+                            }
+                        }.start()
+                    }
                     "ensureFolderPath" -> {
                         val folder = call.argument<String>("folder")
                         val relativePath = call.argument<String>("relativePath")
@@ -2040,6 +2061,11 @@ class MainActivity : AudioServiceActivity() {
     ): Boolean {
         val folder = ensureDocumentFileForFolderPath(folderPath, relativePath, overwrite)
             ?: return false
+        return folder.exists()
+    }
+
+    private fun documentPathExists(targetPath: String): Boolean {
+        val folder = resolveDocumentFileForFolderPath(targetPath) ?: return false
         return folder.exists()
     }
 

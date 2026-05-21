@@ -14,6 +14,7 @@ import '../providers/audio_provider.dart';
 import '../providers/audio_provider_riverpod.dart';
 import '../providers/subtitle_settings_provider.dart';
 import '../services/app_preferences.dart';
+import '../services/app_update_service.dart';
 import '../services/audio_state_services.dart';
 import '../services/permission_action_controller.dart';
 import '../services/platform_channels.dart';
@@ -68,6 +69,8 @@ class _MainScreenState extends ConsumerState<MainScreen>
   bool _backgroundPlaybackPromptShownThisLaunch = false;
   bool _backgroundPlaybackPromptQueued = false;
   bool _manageFilesPermissionCheckDone = false;
+  bool _autoUpdateCheckQueued = false;
+  bool _autoUpdateCheckRunning = false;
   final PermissionActionController _permissionActionController =
       PermissionActionController();
   bool _timerOverlayPrimed = false;
@@ -140,6 +143,173 @@ class _MainScreenState extends ConsumerState<MainScreen>
       mode: provider.timerMode,
     );
     _openTimerSettingsPage(context, timerState);
+  }
+
+  Future<bool> _ensureInstallPermissionThenRun(
+    BuildContext context,
+    Future<void> Function() onGranted,
+  ) {
+    final i18n = context.read<AppLanguageProvider>();
+    return _permissionActionController.ensureGrantedAndRun(
+      context: context,
+      title: i18n.tr('install_permission_title'),
+      message: i18n.tr('install_permission_message'),
+      confirmLabel: i18n.tr('go_settings'),
+      cancelLabel: i18n.tr('cancel'),
+      isGranted: AppUpdateService.canInstallUnknownApps,
+      openSettings: AppUpdateService.openInstallPermissionSettings,
+      onGranted: onGranted,
+    );
+  }
+
+  Future<void> _checkForUpdatesOnLaunch() async {
+    if (_autoUpdateCheckRunning || !mounted) return;
+    _autoUpdateCheckRunning = true;
+    try {
+      final info = await AppUpdateService.checkLatest();
+      if (!mounted || !info.isUpdateAvailable) return;
+      await _showUpdateDialog(info);
+    } catch (_) {
+      // Automatic checks stay silent unless an update is actually available.
+    } finally {
+      _autoUpdateCheckRunning = false;
+    }
+  }
+
+  Future<void> _showUpdateDialog(AppUpdateInfo info) async {
+    if (!mounted) return;
+    final i18n = context.read<AppLanguageProvider>();
+    final shouldDownload = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: Text(i18n.tr('latest_version_available')),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                i18n.tr('current_version_label', {
+                  'version': info.currentVersion.versionName,
+                }),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                i18n.tr('latest_version_label', {
+                  'version': info.latestVersionName,
+                }),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                info.assetName,
+                style: Theme.of(dialogContext).textTheme.bodySmall,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: Text(i18n.tr('later')),
+            ),
+            FilledButton.icon(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              icon: const Icon(Icons.download_rounded),
+              label: Text(i18n.tr('download_update')),
+            ),
+          ],
+        );
+      },
+    );
+    if (shouldDownload == true && mounted) {
+      await _ensureInstallPermissionThenRun(
+        context,
+        () => _downloadAndInstallUpdate(info),
+      );
+    }
+  }
+
+  Future<void> _downloadAndInstallUpdate(AppUpdateInfo info) async {
+    final i18n = context.read<AppLanguageProvider>();
+    File apkFile;
+    try {
+      apkFile = await AppUpdateService.downloadUpdate(info, onProgress: (_) {});
+    } catch (_) {
+      if (!mounted) return;
+      showAppSnackBar(
+        context,
+        i18n.tr('update_download_failed'),
+        tone: AppFeedbackTone.destructive,
+        icon: Icons.error_outline_rounded,
+      );
+      return;
+    }
+
+    try {
+      final result = await AppUpdateService.installApk(apkFile);
+      if (!mounted) return;
+      if (result.needsPermission) {
+        await _ensureInstallPermissionThenRun(
+          context,
+          () => _installDownloadedApk(apkFile),
+        );
+        return;
+      }
+      if (!result.ok) {
+        showAppSnackBar(
+          context,
+          result.message ?? i18n.tr('update_install_failed'),
+          tone: AppFeedbackTone.destructive,
+          icon: Icons.error_outline_rounded,
+        );
+        return;
+      }
+      showAppSnackBar(
+        context,
+        i18n.tr('update_ready_install'),
+        tone: AppFeedbackTone.success,
+        icon: Icons.install_mobile_rounded,
+      );
+    } catch (_) {
+      if (!mounted) return;
+      showAppSnackBar(
+        context,
+        i18n.tr('update_install_failed'),
+        tone: AppFeedbackTone.destructive,
+        icon: Icons.error_outline_rounded,
+      );
+    }
+  }
+
+  Future<void> _installDownloadedApk(File apkFile) async {
+    if (!mounted) return;
+    final i18n = context.read<AppLanguageProvider>();
+    try {
+      final result = await AppUpdateService.installApk(apkFile);
+      if (!mounted) return;
+      if (!result.ok) {
+        showAppSnackBar(
+          context,
+          result.message ?? i18n.tr('update_install_failed'),
+          tone: AppFeedbackTone.destructive,
+          icon: Icons.error_outline_rounded,
+        );
+        return;
+      }
+      showAppSnackBar(
+        context,
+        i18n.tr('update_ready_install'),
+        tone: AppFeedbackTone.success,
+        icon: Icons.install_mobile_rounded,
+      );
+    } catch (_) {
+      if (!mounted) return;
+      showAppSnackBar(
+        context,
+        i18n.tr('update_install_failed'),
+        tone: AppFeedbackTone.destructive,
+        icon: Icons.error_outline_rounded,
+      );
+    }
   }
 
   @override
@@ -255,6 +425,14 @@ class _MainScreenState extends ConsumerState<MainScreen>
           );
     final playbackState = ref.watch(playbackStateProvider).valueOrNull;
     final settingsState = ref.watch(settingsStateProvider).valueOrNull;
+    if ((settingsState?.autoCheckUpdates ?? false) &&
+        (playbackState?.isInitialized ?? false) &&
+        !_autoUpdateCheckQueued) {
+      _autoUpdateCheckQueued = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        unawaited(_checkForUpdatesOnLaunch());
+      });
+    }
     final hasPlayingSession = (playbackState?.playingSessionCount ?? 0) > 0;
     final overlaySessions = _buildOverlaySessions(playbackState);
     final activeSessionCount = playbackState?.activeSessions.length ?? 0;

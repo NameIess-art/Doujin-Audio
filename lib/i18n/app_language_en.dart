@@ -312,6 +312,9 @@ const Map<String, String> appLanguageEn = {
   'check_updates': 'Check for updates',
   'check_updates_subtitle':
       'Automatically check GitHub Releases and download the latest APK.',
+  'auto_check_updates': 'Automatically check for updates',
+  'auto_check_updates_subtitle':
+      'When enabled, checks on app launch and only prompts when a new version is available.',
   'check_updates_subtitle_latest': 'You are on the latest version: {version}',
   'checking_updates': 'Checking the latest GitHub release...',
   'latest_version_available': 'New version available',

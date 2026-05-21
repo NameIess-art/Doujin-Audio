@@ -3,7 +3,6 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../i18n/app_language_provider.dart';
-import 'marquee_text.dart';
 
 class TopPageHeader extends StatelessWidget {
   const TopPageHeader({
@@ -53,16 +52,13 @@ class TopPageHeader extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: SizedBox(
-                  height: 40,
-                  child: MarqueeText(
-                    text: isLoading ? i18n.tr('loading_dot') : title,
-                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: -0.5,
-                    ),
-                    scrollSpeed: 28,
-                    fadeColor: cs.surface,
+                child: Text(
+                  isLoading ? i18n.tr('loading_dot') : title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.5,
                   ),
                 ),
               ),

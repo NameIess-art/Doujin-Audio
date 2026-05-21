@@ -596,6 +596,32 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                       textStyle: descStyle,
                       onCheck: () => _checkForUpdates(context),
                     ),
+                    const SizedBox(height: 2),
+                    SwitchListTile(
+                      value: playbackSettings.autoCheckUpdates,
+                      onChanged: audioProvider.setAutoCheckUpdates,
+                      title: Text(i18n.tr('auto_check_updates')),
+                      subtitle: Text(
+                        i18n.tr('auto_check_updates_subtitle'),
+                        style: descStyle,
+                      ),
+                      secondary: Container(
+                        width: 38,
+                        height: 38,
+                        decoration: BoxDecoration(
+                          color: cs.secondaryContainer,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Icon(
+                          Icons.update_rounded,
+                          color: cs.onSecondaryContainer,
+                        ),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
                   ],
                 ),
               ),

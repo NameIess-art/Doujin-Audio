@@ -238,23 +238,22 @@ class LibraryLikeDetailInfoLine extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final lineCount = lines.clamp(1, 2);
+    final labelStyle = style.copyWith(
+      color: accentColor ?? cs.primary,
+      fontWeight: FontWeight.w900,
+    );
+    final labelWidget = label == 'サークル'
+        ? MarqueeText(text: label, style: labelStyle, scrollSpeed: 18)
+        : Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.clip,
+            style: labelStyle,
+          );
     final content = Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SizedBox(
-          width: 28,
-          child: SizedBox(
-            height: 16,
-            child: MarqueeText(
-              text: label,
-              style: style.copyWith(
-                color: accentColor ?? cs.primary,
-                fontWeight: FontWeight.w900,
-              ),
-              scrollSpeed: 18,
-            ),
-          ),
-        ),
+        SizedBox(width: 28, child: SizedBox(height: 16, child: labelWidget)),
         const SizedBox(width: 5),
         Expanded(
           child: loading

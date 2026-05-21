@@ -6,7 +6,6 @@ class MarqueeText extends StatefulWidget {
   final TextStyle? style;
   final Duration pauseDuration;
   final double scrollSpeed;
-  final Color? fadeColor;
 
   const MarqueeText({
     super.key,
@@ -14,7 +13,6 @@ class MarqueeText extends StatefulWidget {
     this.style,
     this.pauseDuration = const Duration(milliseconds: 1500),
     this.scrollSpeed = 30.0,
-    this.fadeColor,
   });
 
   @override
@@ -111,15 +109,14 @@ class _MarqueeTextState extends State<MarqueeText> {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final fadeColor = widget.fadeColor ?? cs.surface;
     return ShaderMask(
       shaderCallback: (Rect bounds) {
         return LinearGradient(
           colors: [
-            fadeColor.withValues(alpha: 0.0),
-            fadeColor,
-            fadeColor,
-            fadeColor.withValues(alpha: 0.0),
+            cs.surface.withValues(alpha: 0.0),
+            cs.surface,
+            cs.surface,
+            cs.surface.withValues(alpha: 0.0),
           ],
           stops: const [0.0, 0.05, 0.95, 1.0],
         ).createShader(bounds);
@@ -131,50 +128,6 @@ class _MarqueeTextState extends State<MarqueeText> {
         physics: const NeverScrollableScrollPhysics(),
         padding: const EdgeInsets.symmetric(horizontal: 8),
         child: Text(widget.text, style: widget.style),
-      ),
-    );
-  }
-}
-
-class MarqueeTextFieldHint extends StatelessWidget {
-  const MarqueeTextFieldHint({
-    super.key,
-    required this.visible,
-    required this.text,
-    required this.style,
-    required this.fillColor,
-    this.padding = const EdgeInsets.only(left: 44, right: 12),
-  });
-
-  final bool visible;
-  final String text;
-  final TextStyle? style;
-  final Color fillColor;
-  final EdgeInsetsGeometry padding;
-
-  @override
-  Widget build(BuildContext context) {
-    return Positioned.fill(
-      child: IgnorePointer(
-        child: AnimatedOpacity(
-          opacity: visible ? 1 : 0,
-          duration: const Duration(milliseconds: 120),
-          child: Padding(
-            padding: padding,
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: SizedBox(
-                height: 20,
-                child: MarqueeText(
-                  text: text,
-                  style: style,
-                  scrollSpeed: 24,
-                  fadeColor: fillColor,
-                ),
-              ),
-            ),
-          ),
-        ),
       ),
     );
   }

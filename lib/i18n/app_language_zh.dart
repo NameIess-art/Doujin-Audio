@@ -274,6 +274,8 @@ const Map<String, String> appLanguageZh = {
   'check': '检查',
   'check_updates': '检查更新',
   'check_updates_subtitle': '从 GitHub Releases 自动检查并下载最新版 APK。',
+  'auto_check_updates': '自动检查更新',
+  'auto_check_updates_subtitle': '开启后每次打开应用时自动检查；仅发现新版本时弹窗提示。',
   'check_updates_subtitle_latest': '当前已是最新版本：{version}',
   'checking_updates': '正在检查 GitHub 最新版本...',
   'latest_version_available': '发现新版本',

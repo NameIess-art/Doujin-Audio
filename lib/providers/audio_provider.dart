@@ -379,6 +379,11 @@ class AudioProvider with ChangeNotifier {
     _settingsRepository.autoPlayAddedSessions = value;
   }
 
+  bool get _autoCheckUpdates => _settingsRepository.autoCheckUpdates;
+  set _autoCheckUpdates(bool value) {
+    _settingsRepository.autoCheckUpdates = value;
+  }
+
   AppLanguage get _dlsiteMetadataLanguage =>
       _settingsRepository.dlsiteMetadataLanguage;
   set _dlsiteMetadataLanguage(AppLanguage value) {

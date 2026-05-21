@@ -215,6 +215,7 @@ class SettingsState {
     this.notificationsEnabled = true,
     this.showPlaybackCard = true,
     this.autoPlayAddedSessions = true,
+    this.autoCheckUpdates = false,
     this.dlsiteMetadataLanguage = AppLanguage.ja,
     this.maxCacheBytes = 300 * 1024 * 1024,
     this.isPageTransitioning = false,
@@ -226,6 +227,7 @@ class SettingsState {
   final bool notificationsEnabled;
   final bool showPlaybackCard;
   final bool autoPlayAddedSessions;
+  final bool autoCheckUpdates;
   final AppLanguage dlsiteMetadataLanguage;
   final int maxCacheBytes;
   final bool isPageTransitioning;
@@ -239,6 +241,7 @@ class SettingsState {
         other.notificationsEnabled == notificationsEnabled &&
         other.showPlaybackCard == showPlaybackCard &&
         other.autoPlayAddedSessions == autoPlayAddedSessions &&
+        other.autoCheckUpdates == autoCheckUpdates &&
         other.dlsiteMetadataLanguage == dlsiteMetadataLanguage &&
         other.maxCacheBytes == maxCacheBytes &&
         other.isPageTransitioning == isPageTransitioning;
@@ -252,6 +255,7 @@ class SettingsState {
     notificationsEnabled,
     showPlaybackCard,
     autoPlayAddedSessions,
+    autoCheckUpdates,
     dlsiteMetadataLanguage,
     maxCacheBytes,
     isPageTransitioning,
@@ -1196,6 +1200,7 @@ class SettingsRepository {
   bool notificationsEnabled = true;
   bool showPlaybackCard = true;
   bool autoPlayAddedSessions = true;
+  bool autoCheckUpdates = false;
   AppLanguage dlsiteMetadataLanguage = AppLanguage.ja;
   int maxCacheBytes = 300 * 1024 * 1024;
   bool isPageTransitioning = false;
@@ -1217,6 +1222,7 @@ class SettingsRepository {
         notificationsEnabled: notificationsEnabled,
         showPlaybackCard: showPlaybackCard,
         autoPlayAddedSessions: autoPlayAddedSessions,
+        autoCheckUpdates: autoCheckUpdates,
         dlsiteMetadataLanguage: dlsiteMetadataLanguage,
         maxCacheBytes: maxCacheBytes,
         isPageTransitioning: isPageTransitioning,

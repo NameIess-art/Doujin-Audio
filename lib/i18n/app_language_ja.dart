@@ -280,6 +280,8 @@ const Map<String, String> appLanguageJa = {
   'check': '確認',
   'check_updates': '更新を確認',
   'check_updates_subtitle': 'GitHub Releases から最新版 APK を確認してダウンロードします。',
+  'auto_check_updates': '更新を自動確認',
+  'auto_check_updates_subtitle': 'オンにすると起動時に自動確認し、新しい版がある場合だけ通知します。',
   'check_updates_subtitle_latest': '現在は最新バージョンです：{version}',
   'checking_updates': 'GitHub の最新バージョンを確認しています...',
   'latest_version_available': '新しいバージョンがあります',

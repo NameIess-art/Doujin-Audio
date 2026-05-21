@@ -20,6 +20,7 @@ void main() {
         ..notificationsEnabled = false
         ..showPlaybackCard = false
         ..autoPlayAddedSessions = false
+        ..autoCheckUpdates = true
         ..dlsiteMetadataLanguage = AppLanguage.en
         ..maxCacheBytes = 500 * 1024 * 1024
         ..isPageTransitioning = true;
@@ -45,6 +46,11 @@ void main() {
               (state) => state.autoPlayAddedSessions,
               'auto play',
               isFalse,
+            )
+            .having(
+              (state) => state.autoCheckUpdates,
+              'auto update check',
+              isTrue,
             )
             .having(
               (state) => state.dlsiteMetadataLanguage,

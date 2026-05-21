@@ -47,11 +47,9 @@ class _SessionHeroArtwork extends StatelessWidget {
 
         return ConstrainedBox(
           constraints: BoxConstraints(maxHeight: height),
-          child: Hero(
-            tag: 'cover_$sessionId',
-            child: Container(
-              width: displayWidth,
-              decoration: BoxDecoration(
+          child: Container(
+            width: displayWidth,
+            decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(24),
               boxShadow: [
                 BoxShadow(
@@ -61,11 +59,17 @@ class _SessionHeroArtwork extends StatelessWidget {
                 ),
               ],
             ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(24),
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
+            child: Hero(
+              tag: 'cover_$sessionId',
+              flightShuttleBuilder: (context, animation, direction, fromContext, toContext) => fromContext.widget,
+              createRectTween: (begin, end) => MaterialRectCenterArcTween(begin: begin, end: end),
+              child: Material(
+                type: MaterialType.transparency,
+                borderRadius: BorderRadius.circular(24),
+                clipBehavior: Clip.antiAlias,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
                   if (track?.remoteCoverUrl?.trim().isNotEmpty == true)
                     Image.network(
                       track!.remoteCoverUrl!,
@@ -169,12 +173,17 @@ class _SessionCoverThumbnail extends StatelessWidget {
 
     return Hero(
       tag: 'cover_$sessionId',
+      placeholderBuilder: (context, heroSize, child) => child,
+      flightShuttleBuilder: (context, animation, direction, fromContext, toContext) => fromContext.widget,
+      createRectTween: (begin, end) => MaterialRectCenterArcTween(begin: begin, end: end),
       child: SizedBox(
         width: 96,
         height: 72,
-        child: ClipRRect(
-        borderRadius: BorderRadius.circular(14),
-        child: track?.remoteCoverUrl?.trim().isNotEmpty == true
+        child: Material(
+          type: MaterialType.transparency,
+          borderRadius: BorderRadius.circular(14),
+          clipBehavior: Clip.antiAlias,
+          child: track?.remoteCoverUrl?.trim().isNotEmpty == true
             ? Image.network(
                 track!.remoteCoverUrl!,
                 fit: BoxFit.cover,

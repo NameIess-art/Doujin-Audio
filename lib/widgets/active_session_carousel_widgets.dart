@@ -39,27 +39,32 @@ class _ActiveSessionCard extends StatelessWidget {
     final isSmallWindow = screenSize.width < 450 || screenSize.height < 400;
     final isTinyWindow = screenSize.width < 300 || screenSize.height < 300;
 
+    final targetAlpha = isSmallWindow
+        ? (isDark ? 0.65 : 0.75)
+        : (isDark ? 0.45 : 0.55);
+
     return Semantics(
       button: true,
       label: displayName,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(cardRadius),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            borderRadius: BorderRadius.circular(cardRadius),
-            onTap: onOpen,
-            child: Ink(
-              height: 74,
-              decoration: BoxDecoration(
-                color: (isDark ? cs.surfaceBright : cs.surfaceContainerHighest)
-                    .withValues(
-                      alpha: isSmallWindow
-                          ? (isDark ? 0.96 : 0.98)
-                          : (isDark ? 0.92 : 0.94),
-                    ),
-                borderRadius: BorderRadius.circular(cardRadius),
-                boxShadow: isTinyWindow
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 32, sigmaY: 32),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(cardRadius),
+              onTap: onOpen,
+              child: Ink(
+                height: 74,
+                decoration: BoxDecoration(
+                  color: (isDark ? cs.surfaceBright : cs.surfaceContainerHighest)
+                      .withValues(alpha: targetAlpha),
+                  borderRadius: BorderRadius.circular(cardRadius),
+                  border: Border.all(
+                    color: cs.outlineVariant.withValues(alpha: isDark ? 0.3 : 0.5),
+                  ),
+                  boxShadow: isTinyWindow
                     ? null
                     : [
                         BoxShadow(
@@ -87,6 +92,7 @@ class _ActiveSessionCard extends StatelessWidget {
                 view,
                 currentTrack,
                 displayName,
+              ),
               ),
             ),
           ),
@@ -532,8 +538,13 @@ class _ActiveSessionCover extends StatelessWidget {
       height: 58,
       child: Hero(
         tag: 'cover_$sessionId',
-        child: ClipRRect(
+        placeholderBuilder: (context, heroSize, child) => child,
+        flightShuttleBuilder: (context, animation, direction, fromContext, toContext) => fromContext.widget,
+        createRectTween: (begin, end) => MaterialRectCenterArcTween(begin: begin, end: end),
+        child: Material(
+          type: MaterialType.transparency,
           borderRadius: BorderRadius.circular(14),
+          clipBehavior: Clip.antiAlias,
           child: track?.remoteCoverUrl?.trim().isNotEmpty == true
               ? Image.network(
                   track!.remoteCoverUrl!.trim(),

@@ -36,6 +36,7 @@ import '../widgets/swipe_reveal_card.dart';
 import '../widgets/top_page_header.dart';
 import '../widgets/unified_popup_menu.dart';
 import '../widgets/waterfall_flow_stagger.dart';
+import '../widgets/glass_refresh_indicator.dart';
 import 'audio_detail_sheet.dart';
 import 'screen_view_models.dart';
 import 'video_converter_tab.dart';
@@ -86,8 +87,8 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   DateTime? _lastBatchFlushTime;
   bool _isReordering = false;
 
-  final GlobalKey<RefreshIndicatorState> _refreshIndicatorKey =
-      GlobalKey<RefreshIndicatorState>();
+  final GlobalKey<GlassRefreshIndicatorState> _refreshIndicatorKey =
+      GlobalKey<GlassRefreshIndicatorState>();
   final GlobalKey _headerKey = GlobalKey();
   double _headerHeight = 90;
 
@@ -356,7 +357,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     Widget refreshableEmptyBody() {
       final body = emptyListBody();
       if (!canPullRefresh) return body;
-      return RefreshIndicator(
+      return GlassRefreshIndicator(
         key: _refreshIndicatorKey,
         color: Theme.of(context).colorScheme.primary,
         backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
@@ -364,7 +365,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         // Adjust edgeOffset because RefreshIndicator is now inside the restricted Positioned.
         edgeOffset: 150 + 4 + headerControlsFullHeight,
         displacement: 32,
-        triggerMode: RefreshIndicatorTriggerMode.anywhere,
+        triggerMode: GlassRefreshIndicatorTriggerMode.anywhere,
         child: body,
       );
     }
@@ -430,7 +431,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                     itemCount: tree.length + 1,
                     itemBuilder: buildLibraryItem,
                   )
-                : RefreshIndicator(
+                : GlassRefreshIndicator(
                     key: _refreshIndicatorKey,
                     color: Theme.of(context).colorScheme.primary,
                     backgroundColor: Theme.of(
@@ -439,7 +440,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                     onRefresh: _runLibraryPullRefresh,
                     edgeOffset: 150 + 4 + headerControlsFullHeight,
                     displacement: 32,
-                    triggerMode: RefreshIndicatorTriggerMode.anywhere,
+                    triggerMode: GlassRefreshIndicatorTriggerMode.anywhere,
                     child: ReorderAutoScroller(
                       scrollController: _scrollController,
                       isDragging: _isReordering,

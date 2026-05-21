@@ -190,7 +190,7 @@ extension _LibraryTabCategoryView on _LibraryTabState {
         );
 
         if (canPullRefresh) {
-          list = RefreshIndicator(
+          list = GlassRefreshIndicator(
             key: _refreshIndicatorKey,
             color: Theme.of(context).colorScheme.primary,
             backgroundColor: Theme.of(
@@ -199,7 +199,7 @@ extension _LibraryTabCategoryView on _LibraryTabState {
             onRefresh: _runLibraryPullRefresh,
             edgeOffset: topPadding,
             displacement: 32,
-            triggerMode: RefreshIndicatorTriggerMode.anywhere,
+            triggerMode: GlassRefreshIndicatorTriggerMode.anywhere,
             child: list,
           );
         }

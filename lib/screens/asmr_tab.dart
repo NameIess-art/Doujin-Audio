@@ -13,6 +13,7 @@ import '../services/asmr_download_manager.dart';
 import '../services/asmr_library_controller.dart';
 import '../services/search_query_utils.dart';
 import '../widgets/app_feedback.dart';
+import '../widgets/glass_refresh_indicator.dart';
 import '../widgets/library_like_cards.dart';
 import '../widgets/mobile_overlay_inset.dart';
 import '../widgets/swipe_reveal_card.dart';
@@ -919,8 +920,8 @@ class _AsmrCategoryList extends StatefulWidget {
 }
 
 class _AsmrCategoryListState extends State<_AsmrCategoryList> {
-  final GlobalKey<RefreshIndicatorState> _refreshIndicatorKey =
-      GlobalKey<RefreshIndicatorState>();
+  final GlobalKey<GlassRefreshIndicatorState> _refreshIndicatorKey =
+      GlobalKey<GlassRefreshIndicatorState>();
   bool _refreshTriggeredInCurrentScroll = false;
 
   @override
@@ -952,13 +953,13 @@ class _AsmrCategoryListState extends State<_AsmrCategoryList> {
         }
         return false;
       },
-      child: RefreshIndicator(
+      child: GlassRefreshIndicator(
         key: _refreshIndicatorKey,
         color: asmrBlue,
         backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
         edgeOffset: widget.topInset,
         displacement: 32,
-        triggerMode: RefreshIndicatorTriggerMode.anywhere,
+        triggerMode: GlassRefreshIndicatorTriggerMode.anywhere,
         onRefresh: () async {
           unawaited(HapticFeedback.mediumImpact());
           await widget.onRefresh();

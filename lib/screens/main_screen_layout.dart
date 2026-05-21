@@ -5,10 +5,10 @@ extension _MainScreenLayout on _MainScreenState {
     final cs = Theme.of(context).colorScheme;
     final radius = BorderRadius.circular(isDesktop ? 28 : 24);
 
-    Widget pageShell(int index) {
+    Widget pageShell(int renderIndex, int actualIndex) {
       final page = TickerMode(
-        enabled: index == _currentIndex,
-        child: _pages[index],
+        enabled: actualIndex == _currentIndex,
+        child: _pages[actualIndex],
       );
       return Align(
         alignment: Alignment.topCenter,
@@ -56,7 +56,7 @@ extension _MainScreenLayout on _MainScreenState {
         }
         return false;
       },
-      child: PageView(
+      child: PageView.builder(
         controller: _pageController,
         clipBehavior: Clip.none,
         physics: const SnapScrollPhysics(parent: ClampingScrollPhysics()),
@@ -73,7 +73,14 @@ extension _MainScreenLayout on _MainScreenState {
               .read(audioProviderFacadeProvider)
               .scheduleUiWarmup(currentPageIndex: index);
         },
-        children: List<Widget>.generate(_pages.length, pageShell),
+        itemCount: _pages.length,
+        itemBuilder: (context, i) {
+          int actualIndex = i;
+          if (_overrideTargetIndex == i && _overrideSourceIndex != null) {
+            actualIndex = _overrideSourceIndex!;
+          }
+          return pageShell(i, actualIndex);
+        },
       ),
     );
   }

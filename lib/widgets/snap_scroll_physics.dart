@@ -3,12 +3,12 @@ import 'package:flutter/widgets.dart';
 class SnapScrollPhysics extends PageScrollPhysics {
   const SnapScrollPhysics({super.parent});
 
-  static const double _dragThresholdFraction = 0.08;
-  static const double _minPageTurnVelocity = 200.0;
-  static const double _minPageTurnDistance = 20.0;
+  static const double _dragThresholdFraction = 0.35;
+  static const double _minPageTurnVelocity = 600.0;
+  static const double _minPageTurnDistance = 40.0;
 
   @override
-  double? get dragStartDistanceMotionThreshold => 12.0;
+  double? get dragStartDistanceMotionThreshold => 18.0;
 
   @override
   double get minFlingDistance => _minPageTurnDistance;

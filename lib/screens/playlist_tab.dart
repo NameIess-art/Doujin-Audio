@@ -50,7 +50,7 @@ Future<String?> _coverFutureForTrack(
   AudioProvider provider,
   MusicTrack? track,
 ) {
-  if (track == null || track.isSingle) {
+  if (track == null || (track.isSingle && !track.isVideo)) {
     return Future<String?>.value();
   }
   return provider.coverPathFutureForTrack(track);

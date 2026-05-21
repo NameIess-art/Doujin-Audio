@@ -14,6 +14,7 @@ import '../services/asmr_library_controller.dart';
 import '../services/search_query_utils.dart';
 import '../widgets/app_feedback.dart';
 import '../widgets/library_like_cards.dart';
+import '../widgets/marquee_text.dart';
 import '../widgets/mobile_overlay_inset.dart';
 import '../widgets/swipe_reveal_card.dart';
 import '../widgets/top_page_header.dart';
@@ -839,55 +840,63 @@ class _AsmrSearchBar extends StatelessWidget {
             selectionColor: asmrBlue.withValues(alpha: 0.28),
             selectionHandleColor: asmrBlue,
           ),
-          child: TextField(
-            controller: controller,
-            cursorColor: asmrBlue,
-            style: Theme.of(
-              context,
-            ).textTheme.bodyMedium?.copyWith(fontSize: 13),
-            decoration: InputDecoration(
-              filled: true,
-              fillColor: cs.surfaceContainerHigh,
-              prefixIcon: Icon(
-                Icons.search_rounded,
-                color: cs.onSurfaceVariant,
-                size: 18,
+          child: Stack(
+            children: [
+              TextField(
+                controller: controller,
+                cursorColor: asmrBlue,
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.copyWith(fontSize: 13),
+                decoration: InputDecoration(
+                  filled: true,
+                  fillColor: cs.surfaceContainerHigh,
+                  prefixIcon: Icon(
+                    Icons.search_rounded,
+                    color: cs.onSurfaceVariant,
+                    size: 18,
+                  ),
+                  suffixIcon: hasText
+                      ? IconButton(
+                          icon: const Icon(Icons.clear_rounded, size: 18),
+                          onPressed: onClear,
+                          color: cs.onSurfaceVariant,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(
+                            minWidth: 32,
+                            minHeight: 32,
+                          ),
+                        )
+                      : null,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(17),
+                    borderSide: BorderSide.none,
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(17),
+                    borderSide: BorderSide.none,
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(17),
+                    borderSide: BorderSide.none,
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 7,
+                  ),
+                  isDense: true,
+                ),
+                onChanged: onChanged,
               ),
-              suffixIcon: hasText
-                  ? IconButton(
-                      icon: const Icon(Icons.clear_rounded, size: 18),
-                      onPressed: onClear,
-                      color: cs.onSurfaceVariant,
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(
-                        minWidth: 32,
-                        minHeight: 32,
-                      ),
-                    )
-                  : null,
-              hintText: i18n.tr('asmr_search_hint'),
-              hintStyle: Theme.of(
-                context,
-              ).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(17),
-                borderSide: BorderSide.none,
+              MarqueeTextFieldHint(
+                visible: !hasText,
+                text: i18n.tr('asmr_search_hint'),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                fillColor: cs.surfaceContainerHigh,
               ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(17),
-                borderSide: BorderSide.none,
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(17),
-                borderSide: BorderSide.none,
-              ),
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 12,
-                vertical: 7,
-              ),
-              isDense: true,
-            ),
-            onChanged: onChanged,
+            ],
           ),
         ),
       ),

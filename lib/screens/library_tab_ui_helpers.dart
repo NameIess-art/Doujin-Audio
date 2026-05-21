@@ -64,75 +64,85 @@ extension _LibraryTabUiHelpers on _LibraryTabState {
         children: [
           SizedBox(
             height: 34,
-            child: TextField(
-              controller: _searchController,
-              style: Theme.of(
-                context,
-              ).textTheme.bodyMedium?.copyWith(fontSize: 13),
-              decoration: InputDecoration(
-                filled: true,
-                fillColor: cs.surfaceContainerHigh,
-                prefixIcon: Icon(
-                  Icons.search_rounded,
-                  color: cs.onSurfaceVariant,
-                  size: 18,
-                ),
-                suffixIcon: hasText
-                    ? IconButton(
-                        icon: const Icon(Icons.clear_rounded, size: 18),
-                        onPressed: () {
-                          _searchController.clear();
-                          _searchDebounceTimer?.cancel();
-                          context.read<AudioProvider>().setPageTransitioning(
-                            false,
-                          );
-                          _jumpLibraryListToTop();
-                          _setLocalState(() => _searchQuery = '');
-                        },
-                        color: cs.onSurfaceVariant,
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(
-                          minWidth: 32,
-                          minHeight: 32,
-                        ),
-                      )
-                    : null,
-                hintText: i18n.tr('search_audio_placeholder'),
-                hintStyle: Theme.of(
-                  context,
-                ).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(17),
-                  borderSide: BorderSide.none,
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(17),
-                  borderSide: BorderSide.none,
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(17),
-                  borderSide: BorderSide.none,
-                ),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 7,
-                ),
-                isDense: true,
-              ),
-              onChanged: (value) {
-                _searchDebounceTimer?.cancel();
-                _searchDebounceTimer = Timer(
-                  const Duration(milliseconds: 220),
-                  () {
-                    if (!mounted) return;
-                    final nextQuery = value.trim();
-                    if (_searchQuery == nextQuery) return;
-                    context.read<AudioProvider>().setPageTransitioning(false);
-                    _jumpLibraryListToTop();
-                    _setLocalState(() => _searchQuery = nextQuery);
+            child: Stack(
+              children: [
+                TextField(
+                  controller: _searchController,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(fontSize: 13),
+                  decoration: InputDecoration(
+                    filled: true,
+                    fillColor: cs.surfaceContainerHigh,
+                    prefixIcon: Icon(
+                      Icons.search_rounded,
+                      color: cs.onSurfaceVariant,
+                      size: 18,
+                    ),
+                    suffixIcon: hasText
+                        ? IconButton(
+                            icon: const Icon(Icons.clear_rounded, size: 18),
+                            onPressed: () {
+                              _searchController.clear();
+                              _searchDebounceTimer?.cancel();
+                              context
+                                  .read<AudioProvider>()
+                                  .setPageTransitioning(false);
+                              _jumpLibraryListToTop();
+                              _setLocalState(() => _searchQuery = '');
+                            },
+                            color: cs.onSurfaceVariant,
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(
+                              minWidth: 32,
+                              minHeight: 32,
+                            ),
+                          )
+                        : null,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(17),
+                      borderSide: BorderSide.none,
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(17),
+                      borderSide: BorderSide.none,
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(17),
+                      borderSide: BorderSide.none,
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 7,
+                    ),
+                    isDense: true,
+                  ),
+                  onChanged: (value) {
+                    _searchDebounceTimer?.cancel();
+                    _searchDebounceTimer = Timer(
+                      const Duration(milliseconds: 220),
+                      () {
+                        if (!mounted) return;
+                        final nextQuery = value.trim();
+                        if (_searchQuery == nextQuery) return;
+                        context.read<AudioProvider>().setPageTransitioning(
+                          false,
+                        );
+                        _jumpLibraryListToTop();
+                        _setLocalState(() => _searchQuery = nextQuery);
+                      },
+                    );
                   },
-                );
-              },
+                ),
+                MarqueeTextFieldHint(
+                  visible: !hasText,
+                  text: i18n.tr('search_audio_placeholder'),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                  fillColor: cs.surfaceContainerHigh,
+                ),
+              ],
             ),
           ),
         ],

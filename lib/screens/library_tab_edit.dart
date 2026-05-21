@@ -378,63 +378,76 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage>
     final hasText = _searchController.text.isNotEmpty;
     return SizedBox(
       height: 38,
-      child: TextField(
-        controller: _searchController,
-        style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 13),
-        decoration: InputDecoration(
-          filled: true,
-          fillColor: cs.surfaceContainerHigh,
-          prefixIcon: Icon(
-            Icons.search_rounded,
-            color: cs.onSurfaceVariant,
-            size: 18,
+      child: Stack(
+        children: [
+          TextField(
+            controller: _searchController,
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(fontSize: 13),
+            decoration: InputDecoration(
+              filled: true,
+              fillColor: cs.surfaceContainerHigh,
+              prefixIcon: Icon(
+                Icons.search_rounded,
+                color: cs.onSurfaceVariant,
+                size: 18,
+              ),
+              suffixIcon: hasText
+                  ? IconButton(
+                      icon: const Icon(Icons.clear_rounded, size: 18),
+                      onPressed: () {
+                        _searchController.clear();
+                        _searchDebounceTimer?.cancel();
+                        setState(() => _searchQuery = '');
+                      },
+                      color: cs.onSurfaceVariant,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(
+                        minWidth: 34,
+                        minHeight: 34,
+                      ),
+                    )
+                  : null,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(19),
+                borderSide: BorderSide.none,
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(19),
+                borderSide: BorderSide.none,
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(19),
+                borderSide: BorderSide.none,
+              ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 8,
+              ),
+              isDense: true,
+            ),
+            onChanged: (value) {
+              _searchDebounceTimer?.cancel();
+              _searchDebounceTimer = Timer(
+                const Duration(milliseconds: 180),
+                () {
+                  if (!mounted) return;
+                  setState(() => _searchQuery = value.trim());
+                },
+              );
+              setState(() {});
+            },
           ),
-          suffixIcon: hasText
-              ? IconButton(
-                  icon: const Icon(Icons.clear_rounded, size: 18),
-                  onPressed: () {
-                    _searchController.clear();
-                    _searchDebounceTimer?.cancel();
-                    setState(() => _searchQuery = '');
-                  },
-                  color: cs.onSurfaceVariant,
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(
-                    minWidth: 34,
-                    minHeight: 34,
-                  ),
-                )
-              : null,
-          hintText: i18n.tr('search_audio_placeholder'),
-          hintStyle: Theme.of(
-            context,
-          ).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(19),
-            borderSide: BorderSide.none,
+          MarqueeTextFieldHint(
+            visible: !hasText,
+            text: i18n.tr('search_audio_placeholder'),
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+            fillColor: cs.surfaceContainerHigh,
           ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(19),
-            borderSide: BorderSide.none,
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(19),
-            borderSide: BorderSide.none,
-          ),
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 12,
-            vertical: 8,
-          ),
-          isDense: true,
-        ),
-        onChanged: (value) {
-          _searchDebounceTimer?.cancel();
-          _searchDebounceTimer = Timer(const Duration(milliseconds: 180), () {
-            if (!mounted) return;
-            setState(() => _searchQuery = value.trim());
-          });
-          setState(() {});
-        },
+        ],
       ),
     );
   }

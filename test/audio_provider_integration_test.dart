@@ -381,6 +381,37 @@ void main() {
   });
 
   group('cover scope consistency', () {
+    test('single video track cover resolves from generated frame', () async {
+      const trackPath = '/library/video/scene.mp4';
+      const framePath = '/cache/video_scene.jpg';
+      final calls = <MethodCall>[];
+
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(fileCacheChannel, (call) async {
+            calls.add(call);
+            if (call.method == FileCacheMethod.resolveVideoFrame) {
+              return framePath;
+            }
+            return null;
+          });
+
+      const videoTrack = MusicTrack(
+        path: trackPath,
+        displayName: 'scene',
+        groupKey: '__single_files__',
+        groupTitle: 'Single files',
+        groupSubtitle: 'Manual import',
+        isSingle: true,
+        isVideo: true,
+      );
+
+      expect(await provider.coverPathFutureForTrack(videoTrack), framePath);
+      expect(
+        calls.where((call) => call.method == FileCacheMethod.resolveVideoFrame),
+        hasLength(1),
+      );
+    });
+
     test('content track cover resolves against its work folder scope', () async {
       const libraryRoot =
           'content://com.android.externalstorage.documents/tree/primary%3AASMR';

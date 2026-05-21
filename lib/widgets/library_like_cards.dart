@@ -243,13 +243,15 @@ class LibraryLikeDetailInfoLine extends StatelessWidget {
       children: [
         SizedBox(
           width: 28,
-          child: Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.clip,
-            style: style.copyWith(
-              color: accentColor ?? cs.primary,
-              fontWeight: FontWeight.w900,
+          child: SizedBox(
+            height: 16,
+            child: MarqueeText(
+              text: label,
+              style: style.copyWith(
+                color: accentColor ?? cs.primary,
+                fontWeight: FontWeight.w900,
+              ),
+              scrollSpeed: 18,
             ),
           ),
         ),

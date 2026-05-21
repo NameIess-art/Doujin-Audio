@@ -111,6 +111,7 @@ class _ActiveSessionCard extends StatelessWidget {
           child: Row(
             children: [
               _ActiveSessionCover(
+                sessionId: session.id,
                 track: currentTrack,
                 coverPathFuture: coverPathFuture,
               ),
@@ -491,10 +492,12 @@ class _ActiveSessionProgressStripState
 
 class _ActiveSessionCover extends StatelessWidget {
   const _ActiveSessionCover({
+    required this.sessionId,
     required this.track,
     required this.coverPathFuture,
   });
 
+  final String sessionId;
   final MusicTrack? track;
   final Future<String?> coverPathFuture;
 
@@ -527,34 +530,37 @@ class _ActiveSessionCover extends StatelessWidget {
     return SizedBox(
       width: 58,
       height: 58,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(14),
-        child: track?.remoteCoverUrl?.trim().isNotEmpty == true
-            ? Image.network(
-                track!.remoteCoverUrl!.trim(),
-                fit: BoxFit.cover,
-                errorBuilder: (_, _, _) => fallback(),
-              )
-            : AsyncCoverImage(
-                future: coverPathFuture,
-                fallbackBuilder: (_) => fallback(),
-                loadingBuilder: (_) => PulsingPlaceholder(
-                  borderRadius: BorderRadius.circular(14),
-                  child: fallback(),
+      child: Hero(
+        tag: 'cover_$sessionId',
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(14),
+          child: track?.remoteCoverUrl?.trim().isNotEmpty == true
+              ? Image.network(
+                  track!.remoteCoverUrl!.trim(),
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, _, _) => fallback(),
+                )
+              : AsyncCoverImage(
+                  future: coverPathFuture,
+                  fallbackBuilder: (_) => fallback(),
+                  loadingBuilder: (_) => PulsingPlaceholder(
+                    borderRadius: BorderRadius.circular(14),
+                    child: fallback(),
+                  ),
+                  imageBuilder: (context, coverPath) {
+                    final dpr = MediaQuery.devicePixelRatioOf(context);
+                    return Image(
+                      image: resizeFileImageIfNeeded(
+                        path: coverPath,
+                        cacheWidth: (58 * dpr).round(),
+                      ),
+                      fit: BoxFit.cover,
+                      gaplessPlayback: true,
+                      errorBuilder: (_, _, _) => fallback(),
+                    );
+                  },
                 ),
-                imageBuilder: (context, coverPath) {
-                  final dpr = MediaQuery.devicePixelRatioOf(context);
-                  return Image(
-                    image: resizeFileImageIfNeeded(
-                      path: coverPath,
-                      cacheWidth: (58 * dpr).round(),
-                    ),
-                    fit: BoxFit.cover,
-                    gaplessPlayback: true,
-                    errorBuilder: (_, _, _) => fallback(),
-                  );
-                },
-              ),
+        ),
       ),
     );
   }

@@ -105,8 +105,8 @@ class ThemeProvider with ChangeNotifier {
         fontSize: 14,
         height: 1.25,
       ),
-      titleLarge: GoogleFonts.lora(fontWeight: FontWeight.w800, fontSize: 18),
-      headlineSmall: GoogleFonts.lora(
+      titleLarge: GoogleFonts.outfit(fontWeight: FontWeight.w800, fontSize: 18),
+      headlineSmall: GoogleFonts.outfit(
         fontWeight: FontWeight.w900,
         fontSize: 20,
       ),

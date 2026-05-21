@@ -306,6 +306,7 @@ class _SessionListCardState extends State<_SessionListCard>
                     child: Row(
                       children: [
                         _SessionCoverThumbnail(
+                          sessionId: session.id,
                           track: track,
                           coverPathFuture: _coverPathFuture!,
                         ),

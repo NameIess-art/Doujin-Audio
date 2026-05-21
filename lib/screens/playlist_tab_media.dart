@@ -2,11 +2,13 @@ part of 'playlist_tab.dart';
 
 class _SessionHeroArtwork extends StatelessWidget {
   const _SessionHeroArtwork({
+    required this.sessionId,
     required this.height,
     required this.track,
     required this.coverPathFuture,
   });
 
+  final String sessionId;
   final double height;
   final MusicTrack? track;
   final Future<String?> coverPathFuture;
@@ -45,9 +47,11 @@ class _SessionHeroArtwork extends StatelessWidget {
 
         return ConstrainedBox(
           constraints: BoxConstraints(maxHeight: height),
-          child: Container(
-            width: displayWidth,
-            decoration: BoxDecoration(
+          child: Hero(
+            tag: 'cover_$sessionId',
+            child: Container(
+              width: displayWidth,
+              decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(24),
               boxShadow: [
                 BoxShadow(
@@ -119,6 +123,7 @@ class _SessionHeroArtwork extends StatelessWidget {
               ),
             ),
           ),
+          ),
         );
       },
     );
@@ -127,10 +132,12 @@ class _SessionHeroArtwork extends StatelessWidget {
 
 class _SessionCoverThumbnail extends StatelessWidget {
   const _SessionCoverThumbnail({
+    required this.sessionId,
     required this.track,
     required this.coverPathFuture,
   });
 
+  final String sessionId;
   final MusicTrack? track;
   final Future<String?> coverPathFuture;
 
@@ -160,10 +167,12 @@ class _SessionCoverThumbnail extends StatelessWidget {
       );
     }
 
-    return SizedBox(
-      width: 96,
-      height: 72,
-      child: ClipRRect(
+    return Hero(
+      tag: 'cover_$sessionId',
+      child: SizedBox(
+        width: 96,
+        height: 72,
+        child: ClipRRect(
         borderRadius: BorderRadius.circular(14),
         child: track?.remoteCoverUrl?.trim().isNotEmpty == true
             ? Image.network(
@@ -203,6 +212,7 @@ class _SessionCoverThumbnail extends StatelessWidget {
                   );
                 },
               ),
+      ),
       ),
     );
   }

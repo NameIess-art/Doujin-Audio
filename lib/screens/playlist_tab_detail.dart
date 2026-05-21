@@ -914,6 +914,7 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                                     horizontal: 32,
                                   ),
                                   child: _SessionHeroArtwork(
+                                    sessionId: session.id,
                                     height: constraints.maxHeight,
                                     track: track,
                                     coverPathFuture: coverPathFuture,

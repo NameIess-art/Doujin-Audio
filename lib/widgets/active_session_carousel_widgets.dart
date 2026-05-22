@@ -549,6 +549,7 @@ class _ActiveSessionCover extends StatelessWidget {
               ? Image.network(
                   track!.remoteCoverUrl!.trim(),
                   fit: BoxFit.cover,
+                  cacheWidth: (58 * MediaQuery.devicePixelRatioOf(context)).round(),
                   errorBuilder: (_, _, _) => fallback(),
                 )
               : AsyncCoverImage(

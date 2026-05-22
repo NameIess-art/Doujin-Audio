@@ -74,6 +74,7 @@ class _SessionHeroArtwork extends StatelessWidget {
                     Image.network(
                       track!.remoteCoverUrl!,
                       fit: BoxFit.cover,
+                      cacheWidth: cacheW,
                       errorBuilder: (_, _, _) => fallback(),
                     )
                   else
@@ -187,6 +188,7 @@ class _SessionCoverThumbnail extends StatelessWidget {
             ? Image.network(
                 track!.remoteCoverUrl!,
                 fit: BoxFit.cover,
+                cacheWidth: (96 * MediaQuery.devicePixelRatioOf(context)).round(),
                 errorBuilder: (_, _, _) => fallback(),
               )
             : AsyncCoverImage(

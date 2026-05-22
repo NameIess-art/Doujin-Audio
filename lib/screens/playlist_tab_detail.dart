@@ -665,6 +665,7 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                   ? Image.network(
                       track!.remoteCoverUrl!.trim(),
                       fit: BoxFit.cover,
+                      cacheWidth: (MediaQuery.sizeOf(context).width * MediaQuery.devicePixelRatioOf(context)).round(),
                       color: cs.surface.withValues(alpha: 0.45),
                       colorBlendMode: BlendMode.darken,
                       errorBuilder: (_, _, _) =>

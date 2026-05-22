@@ -163,34 +163,64 @@ extension AudioProviderPersistenceSessions on AudioProvider {
           .map((id) => _sessions[id])
           .whereType<PlaybackSession>()
           .toList();
+      final tracksToUpdate = <MusicTrack>[];
+      final now = DateTime.now();
+
       final payload = ordered
           .asMap()
           .entries
           .map(
-            (entry) => PersistedSession(
-              id: entry.value.id,
-              trackPath: entry.value.currentTrackPath,
-              loopModeIndex: entry.value.loopMode.index,
-              volume: entry.value.volume,
-              positionMs: max(
+            (entry) {
+              final session = entry.value;
+              final positionMs = max(
                 0,
                 max(
-                  entry.value.position.inMilliseconds,
-                  entry.value.lastKnownPosition.inMilliseconds,
+                  session.position.inMilliseconds,
+                  session.lastKnownPosition.inMilliseconds,
                 ),
-              ),
-              durationMs: entry.value.duration?.inMilliseconds ?? 0,
-              customQueueTracks: entry.value.customQueueTracks,
-              channelSwapEnabled: entry.value.channelSwapEnabled,
-              createdAtMs: entry.value.createdAt.millisecondsSinceEpoch,
-              updatedAtMs: DateTime.now().millisecondsSinceEpoch,
-              lastPlayedAtMs: entry.value.state.playing
-                  ? DateTime.now().millisecondsSinceEpoch
-                  : null,
-              sortOrder: entry.key,
-            ),
+              );
+
+              final track = _libraryByPath[session.currentTrackPath];
+              if (track != null) {
+                final posDur = Duration(milliseconds: positionMs);
+                final shouldUpdateAt = session.state.playing;
+                if (track.lastPlayedPosition.inSeconds ~/ 5 != posDur.inSeconds ~/ 5 || shouldUpdateAt) {
+                  final updatedTrack = track.copyWith(
+                    lastPlayedPosition: posDur,
+                    lastPlayedAt: shouldUpdateAt ? now : track.lastPlayedAt,
+                  );
+                  _libraryByPath[track.path] = updatedTrack;
+                  final idx = _libraryIndexByPath[track.path];
+                  if (idx != null && idx < _library.length && _library[idx].path == track.path) {
+                    _library[idx] = updatedTrack;
+                  }
+                  tracksToUpdate.add(updatedTrack);
+                }
+              }
+
+              return PersistedSession(
+                id: session.id,
+                trackPath: session.currentTrackPath,
+                loopModeIndex: session.loopMode.index,
+                volume: session.volume,
+                positionMs: positionMs,
+                durationMs: session.duration?.inMilliseconds ?? 0,
+                customQueueTracks: session.customQueueTracks,
+                channelSwapEnabled: session.channelSwapEnabled,
+                createdAtMs: session.createdAt.millisecondsSinceEpoch,
+                updatedAtMs: now.millisecondsSinceEpoch,
+                lastPlayedAtMs: session.state.playing
+                    ? now.millisecondsSinceEpoch
+                    : null,
+                sortOrder: entry.key,
+              );
+            },
           )
           .toList(growable: false);
+
+      if (tracksToUpdate.isNotEmpty && !_skipDisposePersistence) {
+        await _audioDatabaseRepository.upsertTracks(tracksToUpdate);
+      }
       await _audioDatabaseRepository.saveAllSessions(payload);
       final prefs = await _prefs;
       await prefs.remove(_kSessionsKey);

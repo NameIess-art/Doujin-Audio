@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/models/asmr_models.dart';
 import 'package:nameless_audio/models/music_track.dart';
@@ -141,7 +139,7 @@ void main() {
     );
   });
 
-  test('ASMR recommendation refresh changes limited content', () async {
+  test('ASMR recommendation refresh changes full result order', () async {
     await resetPrefs();
     final api = _FakeAsmrApiService(largeRecommendationPool: true);
     final controller = AsmrLibraryController(
@@ -157,6 +155,7 @@ void main() {
         .worksFor(AsmrCategoryType.recommendation)
         .map((work) => work.id)
         .toList(growable: false);
+    expect(firstIds, hasLength(320));
 
     await controller.refreshCategory(AsmrCategoryType.recommendation);
     final secondIds = controller
@@ -164,6 +163,8 @@ void main() {
         .map((work) => work.id)
         .toList(growable: false);
 
+    expect(secondIds, hasLength(firstIds.length));
+    expect(firstIds.toSet(), secondIds.toSet());
     expect(firstIds, isNot(secondIds));
   });
 
@@ -185,6 +186,32 @@ void main() {
     expect(api.fetchWorkRequests, contains('rate_average_2dp:desc:2'));
     expect(api.fetchWorkRequests, contains('release:desc:2'));
   });
+
+  test(
+    'ASMR recommendation stops candidate paging after refresh window',
+    () async {
+      await resetPrefs();
+      final api = _FakeAsmrApiService(
+        largeRecommendationPool: true,
+        recommendationPageCount: 20,
+      );
+      final controller = AsmrLibraryController(
+        apiService: api,
+        audioDatabaseRepository: _FakeAudioDatabaseRepository(
+          const <MusicTrack>[],
+        ),
+      );
+      await controller.initialize(defaultLanguage: AsmrContentLanguage.en);
+
+      await controller.refreshCategory(AsmrCategoryType.recommendation);
+
+      expect(api.fetchWorkRequests, contains('create_date:desc:2'));
+      expect(api.fetchWorkRequests, isNot(contains('create_date:desc:3')));
+      expect(api.fetchWorkRequests, isNot(contains('dl_count:desc:3')));
+      expect(api.fetchWorkRequests, isNot(contains('rate_average_2dp:desc:3')));
+      expect(api.fetchWorkRequests, isNot(contains('release:desc:3')));
+    },
+  );
 
   test(
     'ASMR recommendation hides favorite history and local-owned works',
@@ -236,16 +263,16 @@ void main() {
 
 class _FakeAsmrApiService extends AsmrApiService {
   _FakeAsmrApiService({
-    this.failFavoritePlaylist = false,
     this.largeRecommendationPool = false,
+    this.recommendationPageCount = 2,
     this.recommendationWorks,
   }) : super(baseUri: Uri.parse('https://example.test'));
 
   final List<String> fetchWorkOrders = <String>[];
   final List<String> fetchWorkRequests = <String>[];
   final List<String> searchKeywords = <String>[];
-  final bool failFavoritePlaylist;
   final bool largeRecommendationPool;
+  final int recommendationPageCount;
   final List<AsmrWork>? recommendationWorks;
 
   @override
@@ -287,7 +314,7 @@ class _FakeAsmrApiService extends AsmrApiService {
         ],
         currentPage: page,
         pageSize: pageSize,
-        totalCount: pageSize * 2,
+        totalCount: pageSize * recommendationPageCount,
       );
     }
     return AsmrWorkPage(

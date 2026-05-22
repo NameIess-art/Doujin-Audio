@@ -38,7 +38,7 @@ class AsmrLibraryController extends ChangeNotifier {
         AsmrCategoryType.rating,
         AsmrCategoryType.release,
       ];
-  static const int _recommendationCandidatePageLimit = 2;
+  static const int _recommendationCandidatePagesPerRefresh = 2;
 
   final AsmrApiService _apiService;
   final AudioDatabaseRepository _audioDatabaseRepository;
@@ -68,7 +68,6 @@ class AsmrLibraryController extends ChangeNotifier {
   final Map<int, List<AsmrTrackFile>> _trackCache =
       <int, List<AsmrTrackFile>>{};
   final Set<int> _loadingTrackWorkIds = <int>{};
-
 
   List<AsmrCategoryType> _visibleCategories = kDefaultVisibleAsmrCategories;
   AsmrContentLanguage _contentLanguage = AsmrContentLanguage.zh;
@@ -358,7 +357,6 @@ class AsmrLibraryController extends ChangeNotifier {
     required String searchQuery,
     required int requestId,
   }) async {
-    final pageSize = _pageSizes[category] ?? 40;
     final pageGroups = await Future.wait(<Future<List<AsmrWorkPage>>>[
       for (final sourceCategory in _recommendationCandidateCategories)
         _loadRecommendationCandidatePages(
@@ -385,7 +383,6 @@ class AsmrLibraryController extends ChangeNotifier {
       favoriteWorks: _favoriteWorks,
       historyWorks: _historyWorks,
       refreshSeed: requestId,
-      limit: pageSize,
     );
     _worksByCategory[category] = ranked;
     _applyPageResult(
@@ -415,7 +412,8 @@ class AsmrLibraryController extends ChangeNotifier {
       page: 1,
     );
     pages.add(page);
-    while (page.hasMore && pages.length < _recommendationCandidatePageLimit) {
+    while (page.hasMore &&
+        pages.length < _recommendationCandidatePagesPerRefresh) {
       page = await _loadRemotePage(
         category,
         searchQuery: searchQuery,
@@ -497,7 +495,6 @@ class AsmrLibraryController extends ChangeNotifier {
     return work.copyWith(isFavorite: favoriteIds.contains(work.id));
   }
 
-
   Future<AsmrWorkDetail> loadWorkDetail(AsmrWork work) async {
     final cached = _detailCache[work.id];
     if (cached != null) {
@@ -521,8 +518,7 @@ class AsmrLibraryController extends ChangeNotifier {
 
   Future<List<MusicTrack>> loadPlayableTracks(AsmrWork work) async {
     final tree =
-        _trackCache[work.id] ??
-        await _apiService.fetchTrackTree(work.id);
+        _trackCache[work.id] ?? await _apiService.fetchTrackTree(work.id);
     _trackCache[work.id] = tree;
     return _flattenTracks(work, tree);
   }
@@ -620,9 +616,7 @@ class AsmrLibraryController extends ChangeNotifier {
       notifyListeners();
     }
     try {
-      final tree = await _apiService.fetchTrackTree(
-        work.id,
-      );
+      final tree = await _apiService.fetchTrackTree(work.id);
       _trackCache[work.id] = tree;
       return tree;
     } finally {

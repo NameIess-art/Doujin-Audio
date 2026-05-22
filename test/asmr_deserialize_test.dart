@@ -17,22 +17,22 @@ void main() {
         mainCoverUrl: 'http://test.com/main',
         releaseDate: DateTime.now(),
         createDate: DateTime.now(),
-        duration: Duration(hours: 1),
+        duration: const Duration(hours: 1),
         dlCount: 100,
         reviewCount: 50,
         rating: 4.5,
-        voiceActors: ['Actor1'],
-        tags: ['Tag1'],
+        voiceActors: const ['Actor1'],
+        tags: const ['Tag1'],
         isFavorite: true,
-      )
+      ),
     ];
-    
+
     final payload = works.map((w) => w.toJson()).toList();
     final jsonStr = json.encode(payload);
-    
+
     // Simulate AppPreferences.readJson
     final decoded = json.decode(jsonStr);
-    
+
     try {
       final list = decoded as List<dynamic>? ?? const <dynamic>[];
       final mapped = list

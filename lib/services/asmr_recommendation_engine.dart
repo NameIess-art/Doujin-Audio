@@ -31,7 +31,7 @@ class AsmrRecommendationEngine {
       if (scoreOrder != 0) return scoreOrder;
       return a.work.id.compareTo(b.work.id);
     });
-    return _pickRefreshSlice(scored, refreshSeed: refreshSeed, limit: limit);
+    return _rankForRefresh(scored, refreshSeed: refreshSeed, limit: limit);
   }
 
   double _score(
@@ -58,13 +58,14 @@ class AsmrRecommendationEngine {
       stats.totalWorks,
     );
     final quality = _qualityScore(work);
+    final freshness = _freshnessScore(work);
     if (!profile.hasTasteSignals) {
-      return quality;
+      return quality * 0.82 + freshness * 0.18;
     }
     final preference =
-        tagScore * 0.52 + voiceActorScore * 0.24 + circleScore * 0.16;
-    final nicheBonus = _nicheScore(work) * min(1.0, preference) * 0.08;
-    return preference + quality * 0.06 + nicheBonus;
+        tagScore * 0.5 + voiceActorScore * 0.25 + circleScore * 0.14;
+    final nicheBonus = _nicheScore(work) * min(1.0, preference) * 0.06;
+    return preference + quality * 0.08 + freshness * 0.03 + nicheBonus;
   }
 
   double _termScore(
@@ -102,44 +103,70 @@ class AsmrRecommendationEngine {
     return (1 - popularity) * confidence;
   }
 
+  double _freshnessScore(AsmrWork work) {
+    final date = work.releaseDate ?? work.createDate;
+    if (date == null) return 0;
+    final ageDays = DateTime.now().difference(date).inDays;
+    if (ageDays <= 0) return 1;
+    return exp(-ageDays / 730).clamp(0.0, 1.0);
+  }
+
   double _rarityMultiplier(int count, int totalWorks) {
     if (count <= 0 || totalWorks <= 1) return 1;
     return (log(totalWorks + 1) / log(count + 1)).clamp(1.0, 2.4);
   }
 
-  List<AsmrWork> _pickRefreshSlice(
+  List<AsmrWork> _rankForRefresh(
     List<_ScoredWork> scored, {
     required int refreshSeed,
     required int? limit,
   }) {
-    if (limit == null || scored.length <= limit) {
-      return scored.map((item) => item.work).toList(growable: false);
+    if (scored.isEmpty) {
+      return const <AsmrWork>[];
     }
-    final poolSize = min(scored.length, limit * 3);
-    final pool = scored.take(poolSize).toList();
-    final lockedCount = min(pool.length, max(1, limit ~/ 4));
-    final picked = pool.take(lockedCount).toList();
-    pool.removeRange(0, lockedCount);
-    final random = Random(refreshSeed);
-    while (picked.length < limit && pool.isNotEmpty) {
-      final total = pool.fold<double>(
-        0,
-        (sum, item) => sum + max(0.01, item.score),
-      );
-      var cursor = random.nextDouble() * total;
-      var index = 0;
-      for (; index < pool.length; index++) {
-        cursor -= max(0.01, pool[index].score);
-        if (cursor <= 0) break;
-      }
-      picked.add(pool.removeAt(index.clamp(0, pool.length - 1)));
+
+    final ranked = refreshSeed <= 0
+        ? scored
+        : _diversifyForRefresh(scored, refreshSeed);
+    final visible = limit == null || ranked.length <= limit
+        ? ranked
+        : ranked.take(limit);
+    return visible.map((item) => item.work).toList(growable: false);
+  }
+
+  List<_ScoredWork> _diversifyForRefresh(
+    List<_ScoredWork> scored,
+    int refreshSeed,
+  ) {
+    var minScore = double.infinity;
+    var maxScore = double.negativeInfinity;
+    for (final item in scored) {
+      minScore = min(minScore, item.score);
+      maxScore = max(maxScore, item.score);
     }
-    picked.sort((a, b) {
-      final scoreOrder = b.score.compareTo(a.score);
-      if (scoreOrder != 0) return scoreOrder;
-      return a.work.id.compareTo(b.work.id);
+
+    final scoreRange = maxScore - minScore;
+    final keyed = <_RefreshScoredWork>[
+      for (final item in scored)
+        _RefreshScoredWork(
+          item: item,
+          key: scoreRange <= 0
+              ? _seededUnit(refreshSeed, item.work.id)
+              : ((item.score - minScore) / scoreRange) * 0.74 +
+                    _seededUnit(refreshSeed, item.work.id) * 0.26,
+        ),
+    ];
+    keyed.sort((a, b) {
+      final keyOrder = b.key.compareTo(a.key);
+      if (keyOrder != 0) return keyOrder;
+      return a.item.work.id.compareTo(b.item.work.id);
     });
-    return picked.map((item) => item.work).toList(growable: false);
+    return keyed.map((item) => item.item).toList(growable: false);
+  }
+
+  double _seededUnit(int seed, int workId) {
+    final random = Random(seed ^ (workId * 0x1fffffff));
+    return random.nextDouble();
   }
 }
 
@@ -291,6 +318,13 @@ class _ScoredWork {
 
   final AsmrWork work;
   final double score;
+}
+
+class _RefreshScoredWork {
+  const _RefreshScoredWork({required this.item, required this.key});
+
+  final _ScoredWork item;
+  final double key;
 }
 
 void _add(Map<String, double> target, String? raw, double weight) {

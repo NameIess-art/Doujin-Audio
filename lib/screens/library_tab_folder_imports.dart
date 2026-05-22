@@ -114,62 +114,8 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
         );
       }
 
-      final scanned = <_ScannedTrack>[];
-      for (final item in data) {
-        if (item is! Map) continue;
-        final map = item.cast<Object?, Object?>();
-        final scannedPath = map['path']?.toString().trim();
-        if (scannedPath == null ||
-            scannedPath.isEmpty ||
-            !isSupportedMediaFile(scannedPath)) {
-          continue;
-        }
-
-        final nativeGroupKey = map['groupKey']?.toString().trim();
-        final nativeGroupTitle = map['groupTitle']?.toString().trim();
-        final nativeGroupSubtitle = map['groupSubtitle']?.toString().trim();
-
-        final groupKey = (nativeGroupKey?.isNotEmpty ?? false)
-            ? nativeGroupKey!
-            : path.dirname(scannedPath);
-        final groupTitle = (nativeGroupTitle?.isNotEmpty ?? false)
-            ? nativeGroupTitle!
-            : PathDisplay.folderName(groupKey);
-        final groupSubtitle = (nativeGroupSubtitle?.isNotEmpty ?? false)
-            ? nativeGroupSubtitle!
-            : groupKey;
-        final displayName = map['title']?.toString().trim();
-        final isVideo =
-            map['isVideo'] as bool? ??
-            isVideoMediaFile(
-              displayName?.isEmpty ?? true ? scannedPath : displayName!,
-            );
-        final resolvedPath = scannedPath.startsWith('content://')
-            ? scannedPath
-            : path.normalize(scannedPath);
-        final scannedAtMs = map['scannedAtMs'] as num?;
-        final modifiedAtMs = map['modifiedAtMs'] as num?;
-
-        scanned.add(
-          _ScannedTrack(
-            path: resolvedPath,
-            groupKey: groupKey,
-            groupTitle: groupTitle,
-            groupSubtitle: groupSubtitle,
-            isSingle: false,
-            isVideo: isVideo,
-            displayName: displayName?.isEmpty ?? true ? null : displayName,
-            scannedAt: scannedAtMs == null
-                ? null
-                : DateTime.fromMillisecondsSinceEpoch(scannedAtMs.toInt()),
-            fileSizeBytes: (map['fileSizeBytes'] as num?)?.toInt(),
-            modifiedAt: modifiedAtMs == null
-                ? null
-                : DateTime.fromMillisecondsSinceEpoch(modifiedAtMs.toInt()),
-          ),
-        );
-      }
-      return _NativeScanResult.success(scanned);
+      final payload = await Isolate.run(() => _parseNativeScanPayload(data));
+      return _NativeScanResult.success(payload.tracks, payload.paths);
     } on PlatformException catch (error) {
       return _NativeScanResult.failed(code: error.code, message: error.message);
     } catch (error) {
@@ -270,9 +216,7 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
       i18n: i18n,
       onChunkCommitted: onChunkCommitted,
     );
-    final scannedPaths = nativeScan.tracks
-        .map((track) => PathMatcher.normalize(track.path))
-        .toSet();
+    final scannedPaths = nativeScan.paths;
     provider.removeTracksDeletedFromFolder(libraryRoot, scannedPaths);
     provider.removeLibraryEntriesDeletedFromFolder(
       libraryRoot,
@@ -312,9 +256,7 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
             .whereType<Map<Object?, Object?>>()
             .map(_ScannedTrack.fromPayload)
             .toList(growable: false);
-    final discoveredPaths = scannedTracks
-        .map((track) => PathMatcher.normalize(track.path))
-        .toSet();
+    final discoveredPaths = _stringSetFromPayload(payload['discoveredPaths']);
     final discoveredFolders =
         ((payload['folderPaths'] as List<Object?>?) ?? const <Object?>[])
             .whereType<String>()
@@ -617,13 +559,14 @@ class _NativeScanResult {
   const _NativeScanResult._({
     required this.ok,
     this.tracks = const <_ScannedTrack>[],
+    this.paths = const <String>{},
     this.errorCode,
     this.errorMessage,
     this.notSupported = false,
   });
 
-  const _NativeScanResult.success(List<_ScannedTrack> tracks)
-    : this._(ok: true, tracks: tracks);
+  const _NativeScanResult.success(List<_ScannedTrack> tracks, Set<String> paths)
+    : this._(ok: true, tracks: tracks, paths: paths);
 
   const _NativeScanResult.failed({String? code, String? message})
     : this._(ok: false, errorCode: code, errorMessage: message);
@@ -633,9 +576,17 @@ class _NativeScanResult {
 
   final bool ok;
   final List<_ScannedTrack> tracks;
+  final Set<String> paths;
   final String? errorCode;
   final String? errorMessage;
   final bool notSupported;
+}
+
+class _NativeScanPayload {
+  const _NativeScanPayload({required this.tracks, required this.paths});
+
+  final List<_ScannedTrack> tracks;
+  final Set<String> paths;
 }
 
 Map<String, Object?> _scanFileSystemFolderPayload(String folderPath) {
@@ -703,6 +654,85 @@ Map<String, Object?> _scanFileSystemFolderPayload(String folderPath) {
   return <String, Object?>{
     'tracks': tracks,
     'folderPaths': folderPaths,
+    'discoveredPaths': Set<String>.unmodifiable(seenPaths),
     'failureCount': failures,
   };
+}
+
+Set<String> _stringSetFromPayload(Object? value) {
+  if (value is Set<String>) {
+    return value;
+  }
+  if (value is Iterable) {
+    final result = <String>{};
+    for (final item in value) {
+      if (item is String) result.add(item);
+    }
+    return result;
+  }
+  return const <String>{};
+}
+
+_NativeScanPayload _parseNativeScanPayload(List<dynamic> data) {
+  final scanned = <_ScannedTrack>[];
+  final paths = <String>{};
+  for (final item in data) {
+    if (item is! Map) continue;
+    final map = item.cast<Object?, Object?>();
+    final scannedPath = map['path']?.toString().trim();
+    if (scannedPath == null ||
+        scannedPath.isEmpty ||
+        !isSupportedMediaFile(scannedPath)) {
+      continue;
+    }
+
+    final nativeGroupKey = map['groupKey']?.toString().trim();
+    final nativeGroupTitle = map['groupTitle']?.toString().trim();
+    final nativeGroupSubtitle = map['groupSubtitle']?.toString().trim();
+
+    final groupKey = (nativeGroupKey?.isNotEmpty ?? false)
+        ? nativeGroupKey!
+        : path.dirname(scannedPath);
+    final groupTitle = (nativeGroupTitle?.isNotEmpty ?? false)
+        ? nativeGroupTitle!
+        : PathDisplay.folderName(groupKey);
+    final groupSubtitle = (nativeGroupSubtitle?.isNotEmpty ?? false)
+        ? nativeGroupSubtitle!
+        : groupKey;
+    final displayName = map['title']?.toString().trim();
+    final isVideo =
+        map['isVideo'] as bool? ??
+        isVideoMediaFile(
+          displayName?.isEmpty ?? true ? scannedPath : displayName!,
+        );
+    final resolvedPath = scannedPath.startsWith('content://')
+        ? scannedPath
+        : path.normalize(scannedPath);
+    final scannedAtMs = map['scannedAtMs'] as num?;
+    final modifiedAtMs = map['modifiedAtMs'] as num?;
+
+    scanned.add(
+      _ScannedTrack(
+        path: resolvedPath,
+        groupKey: groupKey,
+        groupTitle: groupTitle,
+        groupSubtitle: groupSubtitle,
+        isSingle: false,
+        isVideo: isVideo,
+        displayName: displayName?.isEmpty ?? true ? null : displayName,
+        scannedAt: scannedAtMs == null
+            ? null
+            : DateTime.fromMillisecondsSinceEpoch(scannedAtMs.toInt()),
+        fileSizeBytes: (map['fileSizeBytes'] as num?)?.toInt(),
+        modifiedAt: modifiedAtMs == null
+            ? null
+            : DateTime.fromMillisecondsSinceEpoch(modifiedAtMs.toInt()),
+      ),
+    );
+    paths.add(PathMatcher.normalize(resolvedPath));
+  }
+  return _NativeScanPayload(
+    tracks: List<_ScannedTrack>.unmodifiable(scanned),
+    paths: Set<String>.unmodifiable(paths),
+  );
 }

@@ -164,6 +164,35 @@ void main() {
     expect(first.map((item) => item.id), isNot(second.map((item) => item.id)));
   });
 
+  test('keeps every recommendation while changing order by refresh seed', () {
+    final first = engine.rank(
+      candidates: <AsmrWork>[
+        for (var i = 1; i <= 90; i++) work(id: i, title: 'Candidate $i'),
+      ],
+      localTracks: const <MusicTrack>[],
+      favoriteWorks: const <AsmrWork>[],
+      historyWorks: const <AsmrWork>[],
+      refreshSeed: 1,
+    );
+    final second = engine.rank(
+      candidates: <AsmrWork>[
+        for (var i = 1; i <= 90; i++) work(id: i, title: 'Candidate $i'),
+      ],
+      localTracks: const <MusicTrack>[],
+      favoriteWorks: const <AsmrWork>[],
+      historyWorks: const <AsmrWork>[],
+      refreshSeed: 2,
+    );
+
+    expect(first, hasLength(90));
+    expect(second, hasLength(90));
+    expect(
+      first.map((item) => item.id).toSet(),
+      second.map((item) => item.id).toSet(),
+    );
+    expect(first.map((item) => item.id), isNot(second.map((item) => item.id)));
+  });
+
   test('falls back to quality when profile is empty', () {
     final ranked = engine.rank(
       candidates: <AsmrWork>[

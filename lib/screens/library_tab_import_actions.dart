@@ -1,7 +1,10 @@
 part of 'library_tab.dart';
 
 extension _LibraryTabImportActions on _LibraryTabState {
-  Future<void> _scheduleWatchedFoldersRefresh({bool silent = false, bool forceShowResult = false}) {
+  Future<void> _scheduleWatchedFoldersRefresh({
+    bool silent = false,
+    bool forceShowResult = false,
+  }) {
     final i18n = context.read<AppLanguageProvider>();
     final activeTask = _activeRefreshTask;
     if (activeTask != null) {
@@ -12,11 +15,15 @@ extension _LibraryTabImportActions on _LibraryTabState {
     }
 
     late final Future<void> trackedTask;
-    trackedTask = _refreshWatchedFolders(silent: silent, forceShowResult: forceShowResult).whenComplete(() {
-      if (identical(_activeRefreshTask, trackedTask)) {
-        _activeRefreshTask = null;
-      }
-    });
+    trackedTask =
+        _refreshWatchedFolders(
+          silent: silent,
+          forceShowResult: forceShowResult,
+        ).whenComplete(() {
+          if (identical(_activeRefreshTask, trackedTask)) {
+            _activeRefreshTask = null;
+          }
+        });
     _activeRefreshTask = trackedTask;
     if (!silent) {
       _showSnack(i18n.tr('scanning_title'));
@@ -132,7 +139,10 @@ extension _LibraryTabImportActions on _LibraryTabState {
     _showSnack(i18n.tr('library_item_exists'));
   }
 
-  Future<void> _refreshWatchedFolders({bool silent = false, bool forceShowResult = false}) async {
+  Future<void> _refreshWatchedFolders({
+    bool silent = false,
+    bool forceShowResult = false,
+  }) async {
     final i18n = context.read<AppLanguageProvider>();
     final provider = context.read<AudioProvider>();
     final watchedFolders = provider.watchedFolders;
@@ -211,9 +221,7 @@ extension _LibraryTabImportActions on _LibraryTabState {
             onChunkCommitted: () => _flushRefreshBatch(provider),
           );
           // Remove tracks that were deleted from disk since the last scan.
-          final diskPaths = nativeScan.tracks
-              .map((t) => PathMatcher.normalize(t.path))
-              .toSet();
+          final diskPaths = nativeScan.paths;
           provider.removeTracksDeletedFromFolder(folderPath, diskPaths);
           provider.removeLibraryEntriesDeletedFromFolder(
             effectiveLibraryRoot,
@@ -342,7 +350,12 @@ extension _LibraryTabImportActions on _LibraryTabState {
     provider.beginLibraryBatch();
     var added = 0;
     try {
-      added = await _importLibraryWithSingleScan(folderPath, provider, i18n);
+      added = await _importLibraryWithSingleScan(
+        folderPath,
+        provider,
+        i18n,
+        onChunkCommitted: () => _flushRefreshBatch(provider),
+      );
       for (final childFolder in importTargets) {
         if (provider.isLibraryPathExcluded(folderPath, childFolder)) continue;
         provider.addWatchedFolder(childFolder, notify: false);
@@ -392,15 +405,12 @@ extension _LibraryTabImportActions on _LibraryTabState {
       provider.setScanProgress(currentFolder: _displaySourceName(folderPath));
       final nativeScan = await _scanFolderViaNative(folderPath);
       if (nativeScan.ok) {
-        final toAdd = nativeScan.tracks.map(_trackFromScanned).toList();
-        provider.recordLibraryEntriesForTracks(normalizedFolderPath, toAdd);
-
-        final beforeCount = provider.library.length;
-        provider.addOrReplaceTracks(toAdd, notify: false);
-        added = provider.library.length - beforeCount;
-        provider.setScanProgress(
-          foundCount: added,
-          duplicateCount: toAdd.length - added,
+        added = await _mergeScannedTracksIncrementally(
+          sourceFolderPath: folderPath,
+          provider: provider,
+          scannedTracks: nativeScan.tracks,
+          libraryRoot: normalizedFolderPath,
+          onChunkCommitted: () => _flushRefreshBatch(provider),
         );
       } else if (nativeScan.notSupported ||
           !PathMatcher.isContentUri(folderPath)) {
@@ -408,6 +418,7 @@ extension _LibraryTabImportActions on _LibraryTabState {
           folderPath,
           provider,
           normalizedFolderPath,
+          onChunkCommitted: () => _flushRefreshBatch(provider),
         );
       } else {
         provider.setScanProgress(failureCount: provider.scanFailureCount + 1);

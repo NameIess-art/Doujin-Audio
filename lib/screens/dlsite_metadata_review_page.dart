@@ -194,6 +194,7 @@ class _DlsiteMetadataReviewPageState extends State<DlsiteMetadataReviewPage> {
                         child: Image.network(
                           coverUrl,
                           fit: BoxFit.cover,
+                          cacheWidth: (400 * MediaQuery.devicePixelRatioOf(context)).round(),
                           errorBuilder: (_, _, _) => ColoredBox(
                             color: cs.surfaceContainerHighest,
                             child: Icon(

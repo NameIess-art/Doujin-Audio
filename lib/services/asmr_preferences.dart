@@ -43,8 +43,8 @@ abstract final class AsmrPreferences {
       (value) {
         final list = value as List<dynamic>? ?? const <dynamic>[];
         return list
-            .where((item) => item is Map<String, dynamic>)
-            .map((item) => AsmrWork.fromJson(item as Map<String, dynamic>))
+            .whereType<Map<String, dynamic>>()
+            .map((item) => AsmrWork.fromJson(item))
             .toList(growable: false);
       },
     );
@@ -64,8 +64,8 @@ abstract final class AsmrPreferences {
       (value) {
         final list = value as List<dynamic>? ?? const <dynamic>[];
         return list
-            .where((item) => item is Map<String, dynamic>)
-            .map((item) => AsmrWork.fromJson(item as Map<String, dynamic>))
+            .whereType<Map<String, dynamic>>()
+            .map((item) => AsmrWork.fromJson(item))
             .toList(growable: false);
       },
     );

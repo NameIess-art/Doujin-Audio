@@ -221,6 +221,7 @@ class _AsmrDetailHero extends StatelessWidget {
             child: Image.network(
               work.mainCoverUrl.isNotEmpty ? work.mainCoverUrl : work.coverUrl,
               fit: BoxFit.cover,
+              cacheWidth: (110 * MediaQuery.devicePixelRatioOf(context)).round(),
               errorBuilder: (_, _, _) => DecoratedBox(
                 decoration: BoxDecoration(
                   gradient: LinearGradient(

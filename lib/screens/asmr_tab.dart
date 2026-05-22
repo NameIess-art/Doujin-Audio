@@ -1762,6 +1762,7 @@ class _AsmrWorkCover extends StatelessWidget {
             : Image.network(
                 url,
                 fit: BoxFit.cover,
+                cacheWidth: (width * MediaQuery.devicePixelRatioOf(context)).round(),
                 errorBuilder: (_, _, _) => _AsmrCoverFallback(colorScheme: cs),
               ),
       ),

@@ -96,58 +96,6 @@ class AsmrWorkPage {
   }
 }
 
-@immutable
-class AsmrAuthSession {
-  const AsmrAuthSession({
-    this.token,
-    this.userName,
-    this.userId,
-    this.favoritePlaylistId,
-  });
-
-  final String? token;
-  final String? userName;
-  final int? userId;
-  final int? favoritePlaylistId;
-
-  bool get isLoggedIn => token != null && token!.isNotEmpty;
-
-  AsmrAuthSession copyWith({
-    String? token,
-    String? userName,
-    int? userId,
-    int? favoritePlaylistId,
-    bool clearFavoritePlaylistId = false,
-  }) {
-    return AsmrAuthSession(
-      token: token ?? this.token,
-      userName: userName ?? this.userName,
-      userId: userId ?? this.userId,
-      favoritePlaylistId: clearFavoritePlaylistId
-          ? null
-          : favoritePlaylistId ?? this.favoritePlaylistId,
-    );
-  }
-
-  Map<String, Object?> toJson() => <String, Object?>{
-    'token': token,
-    'userName': userName,
-    'userId': userId,
-    'favoritePlaylistId': favoritePlaylistId,
-  };
-
-  factory AsmrAuthSession.fromJson(Object? raw) {
-    final json = raw is Map<Object?, Object?>
-        ? raw
-        : const <Object?, Object?>{};
-    return AsmrAuthSession(
-      token: json['token'] as String?,
-      userName: json['userName'] as String?,
-      userId: (json['userId'] as num?)?.toInt(),
-      favoritePlaylistId: (json['favoritePlaylistId'] as num?)?.toInt(),
-    );
-  }
-}
 
 @immutable
 class AsmrWork {

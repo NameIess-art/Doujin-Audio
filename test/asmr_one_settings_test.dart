@@ -99,11 +99,7 @@ void main() {
       );
       await controller.initialize(defaultLanguage: AsmrContentLanguage.en);
 
-      await controller.login(name: 'alice', password: 'secret');
       await controller.refreshCategory(AsmrCategoryType.recommendation);
-
-      expect(controller.authSession.token, 'token-alice');
-      expect(controller.authSession.favoritePlaylistId, 42);
       expect(api.fetchWorkOrders, contains('create_date:desc'));
       expect(api.fetchWorkOrders, contains('dl_count:desc'));
       expect(api.fetchWorkOrders, contains('rate_average_2dp:desc'));
@@ -236,23 +232,6 @@ void main() {
       );
     },
   );
-
-  test(
-    'ASMR controller keeps login when favorite playlist lookup fails',
-    () async {
-      await resetPrefs();
-      final api = _FakeAsmrApiService(failFavoritePlaylist: true);
-      final controller = AsmrLibraryController(apiService: api);
-      await controller.initialize(defaultLanguage: AsmrContentLanguage.en);
-
-      await controller.login(name: 'alice', password: 'secret');
-
-      expect(controller.authSession.isLoggedIn, isTrue);
-      expect(controller.authSession.token, 'token-alice');
-      expect(controller.authSession.favoritePlaylistId, isNull);
-      expect(controller.lastError, isNull);
-    },
-  );
 }
 
 class _FakeAsmrApiService extends AsmrApiService {
@@ -268,31 +247,6 @@ class _FakeAsmrApiService extends AsmrApiService {
   final bool failFavoritePlaylist;
   final bool largeRecommendationPool;
   final List<AsmrWork>? recommendationWorks;
-
-  @override
-  Future<AsmrAuthSession> login({
-    required String name,
-    required String password,
-  }) async {
-    return AsmrAuthSession(token: 'token-$name', userName: name, userId: 7);
-  }
-
-  @override
-  Future<int?> fetchFavoritePlaylistId(String token) async {
-    if (failFavoritePlaylist) {
-      throw const HttpException('Favorite playlist unavailable.');
-    }
-    return 42;
-  }
-
-  @override
-  Future<List<AsmrWork>> fetchFavoriteWorks({
-    required String token,
-    required int playlistId,
-    AsmrContentLanguage language = AsmrContentLanguage.zh,
-  }) async {
-    return const <AsmrWork>[];
-  }
 
   @override
   Future<AsmrWorkPage> fetchWorks({

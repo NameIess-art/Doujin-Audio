@@ -285,163 +285,6 @@ class _AsmrTabState extends State<AsmrTab>
     );
   }
 
-  Future<void> _showLoginDialog() async {
-    final controller = context.read<AsmrLibraryController>();
-    final i18n = context.read<AppLanguageProvider>();
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final asmrBlue = isDark ? _kAsmrBlueDark : _kAsmrBlueLight;
-    final nameController = TextEditingController();
-    final passwordController = TextEditingController();
-    try {
-      final loggedIn = await _showAsmrPanel<bool>(
-        builder: (dialogContext) {
-          var loading = false;
-          final session = controller.authSession;
-          return StatefulBuilder(
-            builder: (context, setDialogState) {
-              if (session.isLoggedIn) {
-                return _AsmrPanelCard(
-                  icon: Icons.login_rounded,
-                  title: i18n.tr('asmr_login_title'),
-                  actions: [
-                    _AsmrPanelAction(
-                      label: i18n.tr('close'),
-                      onPressed: () => Navigator.of(context).pop(false),
-                    ),
-                    _AsmrPanelAction(
-                      label: i18n.tr('asmr_logout_action'),
-                      filled: true,
-                      loading: loading,
-                      onPressed: loading
-                          ? null
-                          : () async {
-                              setDialogState(() => loading = true);
-                              await controller.logout();
-                              if (context.mounted) {
-                                Navigator.of(context).pop(true);
-                              }
-                            },
-                    ),
-                  ],
-                  child: Text(
-                    i18n.tr('asmr_logged_in_as', {
-                      'name': session.userName ?? session.userId ?? '',
-                    }),
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                );
-              }
-              return _AsmrPanelCard(
-                icon: Icons.login_rounded,
-                title: i18n.tr('asmr_login_title'),
-                actions: [
-                  _AsmrPanelAction(
-                    label: i18n.tr('close'),
-                    onPressed: loading
-                        ? null
-                        : () => Navigator.of(context).pop(false),
-                  ),
-                  _AsmrPanelAction(
-                    label: i18n.tr('asmr_login_action'),
-                    filled: true,
-                    loading: loading,
-                    onPressed: loading
-                        ? null
-                        : () async {
-                            final name = nameController.text.trim();
-                            final password = passwordController.text;
-                            if (name.isEmpty || password.isEmpty) {
-                              return;
-                            }
-                            setDialogState(() => loading = true);
-                            try {
-                              await controller.login(
-                                name: name,
-                                password: password,
-                              );
-                              if (context.mounted) {
-                                Navigator.of(context).pop(true);
-                              }
-                            } catch (_) {
-                              if (context.mounted) {
-                                setDialogState(() => loading = false);
-                              }
-                              if (mounted) {
-                                showAppSnackBar(
-                                  this.context,
-                                  i18n.tr('asmr_login_failed'),
-                                  tone: AppFeedbackTone.warning,
-                                  icon: Icons.error_outline_rounded,
-                                );
-                              }
-                            }
-                          },
-                  ),
-                ],
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    TextField(
-                      controller: nameController,
-                      enabled: !loading,
-                      cursorColor: asmrBlue,
-                      textInputAction: TextInputAction.next,
-                      decoration: InputDecoration(
-                        labelText: i18n.tr('asmr_login_account'),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: passwordController,
-                      enabled: !loading,
-                      cursorColor: asmrBlue,
-                      obscureText: true,
-                      decoration: InputDecoration(
-                        labelText: i18n.tr('asmr_login_password'),
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            },
-          );
-        },
-      );
-      if (!mounted || loggedIn != true) {
-        return;
-      }
-      unawaited(_ensureCategoryLoaded(_currentCategory));
-      showAppSnackBar(
-        context,
-        i18n.tr(
-          controller.authSession.isLoggedIn
-              ? 'asmr_login_success'
-              : 'asmr_logout_success',
-        ),
-        tone: AppFeedbackTone.success,
-        icon: controller.authSession.isLoggedIn
-            ? Icons.login_rounded
-            : Icons.logout_rounded,
-      );
-    } catch (_) {
-      if (!mounted) {
-        return;
-      }
-      showAppSnackBar(
-        context,
-        i18n.tr('asmr_login_failed'),
-        tone: AppFeedbackTone.warning,
-        icon: Icons.error_outline_rounded,
-      );
-    } finally {
-      nameController.dispose();
-      passwordController.dispose();
-    }
-  }
-
   Future<void> _showCategoryDialog() async {
     final controller = context.read<AsmrLibraryController>();
     final i18n = context.read<AppLanguageProvider>();
@@ -676,7 +519,6 @@ class _AsmrTabState extends State<AsmrTab>
             key: _headerKey,
             title: 'ASMR.ONE',
             trailing: _AsmrMoreMenuButton(
-              onLogin: _showLoginDialog,
               onCategories: _showCategoryDialog,
               onLanguage: _showLanguageDialog,
             ),
@@ -1314,23 +1156,18 @@ class _AsmrPanelAction extends StatelessWidget {
     required this.label,
     required this.onPressed,
     this.filled = false,
-    this.loading = false,
   });
 
   final String label;
   final VoidCallback? onPressed;
   final bool filled;
-  final bool loading;
 
   @override
   Widget build(BuildContext context) {
-    final child = loading
-        ? const SizedBox(
-            width: 18,
-            height: 18,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          )
-        : Text(label);
+    final child = Text(
+      label,
+      style: const TextStyle(fontWeight: FontWeight.w600),
+    );
     if (filled) {
       return FilledButton(onPressed: onPressed, child: child);
     }
@@ -1389,12 +1226,10 @@ class _AsmrSelectionTile extends StatelessWidget {
 
 class _AsmrMoreMenuButton extends StatelessWidget {
   const _AsmrMoreMenuButton({
-    required this.onLogin,
     required this.onCategories,
     required this.onLanguage,
   });
 
-  final VoidCallback onLogin;
   final VoidCallback onCategories;
   final VoidCallback onLanguage;
 
@@ -1408,11 +1243,6 @@ class _AsmrMoreMenuButton extends StatelessWidget {
       selectAfterDismiss: false,
       entries: [
         UnifiedMenuEntry<_AsmrMoreAction>.action(
-          value: _AsmrMoreAction.login,
-          icon: Icons.login_rounded,
-          label: i18n.tr('asmr_login_title'),
-        ),
-        UnifiedMenuEntry<_AsmrMoreAction>.action(
           value: _AsmrMoreAction.categories,
           icon: Icons.category_rounded,
           label: i18n.tr('asmr_categories_title'),
@@ -1425,9 +1255,6 @@ class _AsmrMoreMenuButton extends StatelessWidget {
       ],
       onSelected: (value) {
         switch (value) {
-          case _AsmrMoreAction.login:
-            onLogin();
-            break;
           case _AsmrMoreAction.categories:
             onCategories();
             break;
@@ -1440,7 +1267,7 @@ class _AsmrMoreMenuButton extends StatelessWidget {
   }
 }
 
-enum _AsmrMoreAction { login, categories, language }
+enum _AsmrMoreAction { categories, language }
 
 class _AsmrWorkTreeCard extends StatefulWidget {
   const _AsmrWorkTreeCard({required this.work, required this.searchQuery});

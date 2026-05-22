@@ -47,7 +47,7 @@ extension _MainScreenLayout on _MainScreenState {
     return PageView.builder(
       controller: _pageController,
       clipBehavior: Clip.none,
-      physics: const ClampingScrollPhysics(),
+      physics: const _TelegramLikeScrollPhysics(parent: ClampingScrollPhysics()),
       onPageChanged: (index) {
         if (_pendingTargetIndex != null && index != _pendingTargetIndex) {
           return;
@@ -426,5 +426,30 @@ extension _MainScreenLayout on _MainScreenState {
     final systemBottom = MediaQuery.of(context).padding.bottom;
     if (hasNowPlaying) return systemBottom + 158;
     return systemBottom + 64;
+  }
+}
+
+class _TelegramLikeScrollPhysics extends PageScrollPhysics {
+  const _TelegramLikeScrollPhysics({super.parent});
+
+  @override
+  _TelegramLikeScrollPhysics applyTo(ScrollPhysics? ancestor) {
+    return _TelegramLikeScrollPhysics(parent: buildParent(ancestor));
+  }
+
+  @override
+  double? get dragStartDistanceMotionThreshold => 36.0;
+
+  @override
+  double get minFlingVelocity => 800.0;
+
+  @override
+  Tolerance toleranceFor(ScrollMetrics metrics) {
+    final Tolerance base = super.toleranceFor(metrics);
+    return Tolerance(
+      distance: base.distance,
+      time: base.time,
+      velocity: base.velocity * 16.0,
+    );
   }
 }

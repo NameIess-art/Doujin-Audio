@@ -693,9 +693,10 @@ class NativePlaybackService : MediaSessionService() {
         }
 
         return ExoPlayer.Builder(this, renderersFactory).build().also { player ->
-            // WAKE_MODE_LOCAL keeps the CPU wake lock without forcing a WifiLock,
-            // saving power for local files while maintaining background stability.
-            player.setWakeMode(C.WAKE_MODE_LOCAL)
+            // WAKE_MODE_NETWORK keeps both the CPU wake lock and a WifiLock,
+            // preventing the OS from dropping network connections during deep Doze mode
+            // when the screen is off for extended periods.
+            player.setWakeMode(C.WAKE_MODE_NETWORK)
             // Disable ExoPlayer's built-in audio focus management.  We manage
             // focus ourselves via audioFocusChangeListener so that transient
             // focus losses (e.g. OEM screen-off sounds) do not pause playback.

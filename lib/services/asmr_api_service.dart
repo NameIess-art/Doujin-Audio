@@ -12,48 +12,6 @@ class AsmrApiService {
   final HttpClient _httpClient;
   final Uri _baseUri;
 
-  Future<AsmrAuthSession> login({
-    required String name,
-    required String password,
-  }) async {
-    final response = await _sendJsonRequest(
-      method: 'POST',
-      path: '/api/auth/me',
-      body: <String, Object?>{'name': name, 'password': password},
-    );
-    final token = response['token'] as String? ?? '';
-    final user = response['user'] as Map<String, dynamic>? ?? response;
-    return AsmrAuthSession(
-      token: token,
-      userId: (user['id'] as num?)?.toInt(),
-      userName: (user['name'] as String?) ?? (user['username'] as String?),
-    );
-  }
-
-  Future<AsmrAuthSession> fetchAuthSession(String token) async {
-    final response = await _sendJsonRequest(
-      method: 'GET',
-      path: '/api/auth/me',
-      token: token,
-    );
-    final user = response['user'] as Map<String, dynamic>? ?? response;
-    return AsmrAuthSession(
-      token: token,
-      userId: (user['id'] as num?)?.toInt(),
-      userName: (user['name'] as String?) ?? (user['username'] as String?),
-    );
-  }
-
-  Future<int?> fetchFavoritePlaylistId(String token) async {
-    final response = await _sendJsonRequest(
-      method: 'GET',
-      path: '/api/playlist/get-default-mark-target-playlist',
-      token: token,
-    );
-    final id = response['id'] as num?;
-    return id?.toInt();
-  }
-
   Future<AsmrWorkPage> fetchWorks({
     required String order,
     required String sort,
@@ -132,78 +90,6 @@ class AsmrApiService {
         .toList(growable: false);
   }
 
-  Future<List<AsmrWork>> fetchFavoriteWorks({
-    required String token,
-    required int playlistId,
-    AsmrContentLanguage language = AsmrContentLanguage.zh,
-  }) async {
-    final response = await _sendJsonRequest(
-      method: 'GET',
-      path: '/api/playlist/get-playlist-metadata',
-      queryParameters: <String, String>{'id': '$playlistId'},
-      token: token,
-    );
-    final workMaps = <Map<String, dynamic>>[];
-
-    void collect(Object? value) {
-      if (value is List) {
-        for (final item in value) {
-          collect(item);
-        }
-        return;
-      }
-      if (value is! Map) {
-        return;
-      }
-      final map = value.map((key, item) => MapEntry(key.toString(), item));
-      if (map.containsKey('source_id') && map.containsKey('title')) {
-        workMaps.add(map);
-      }
-      for (final nested in map.values) {
-        collect(nested);
-      }
-    }
-
-    collect(response);
-    final seenIds = <int>{};
-    return workMaps
-        .map((json) => AsmrWork.fromJson(json, language: language))
-        .where((work) => work.id > 0 && seenIds.add(work.id))
-        .toList(growable: false);
-  }
-
-  Future<void> addWorkToFavoritePlaylist({
-    required String token,
-    required int playlistId,
-    required int workId,
-  }) {
-    return _sendWithoutResult(
-      method: 'POST',
-      path: '/api/playlist/add-works-to-playlist',
-      token: token,
-      body: <String, Object?>{
-        'id': playlistId,
-        'works': <int>[workId],
-      },
-    );
-  }
-
-  Future<void> removeWorkFromFavoritePlaylist({
-    required String token,
-    required int playlistId,
-    required int workId,
-  }) {
-    return _sendWithoutResult(
-      method: 'POST',
-      path: '/api/playlist/remove-works-from-playlist',
-      token: token,
-      body: <String, Object?>{
-        'id': playlistId,
-        'works': <int>[workId],
-      },
-    );
-  }
-
   Future<Map<String, dynamic>> _sendJsonRequest({
     required String method,
     required String path,
@@ -244,21 +130,6 @@ class AsmrApiService {
     throw const HttpException('Unexpected API response list.');
   }
 
-  Future<void> _sendWithoutResult({
-    required String method,
-    required String path,
-    Map<String, String>? queryParameters,
-    String? token,
-    Object? body,
-  }) async {
-    await _send(
-      method: method,
-      path: path,
-      queryParameters: queryParameters,
-      token: token,
-      body: body,
-    );
-  }
 
   Future<Object?> _send({
     required String method,

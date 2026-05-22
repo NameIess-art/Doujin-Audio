@@ -2,23 +2,10 @@ import '../models/asmr_models.dart';
 import 'app_preferences.dart';
 
 abstract final class AsmrPreferences {
-  static const String _authSessionKey = 'asmr_auth_session_v1';
   static const String _favoriteWorksKey = 'asmr_favorite_works_v1';
   static const String _historyWorksKey = 'asmr_history_works_v1';
   static const String _visibleCategoriesKey = 'asmr_visible_categories_v1';
   static const String _contentLanguageKey = 'asmr_content_language_v1';
-
-  static Future<AsmrAuthSession> loadAuthSession() async {
-    return (await AppPreferences.readJson(
-          _authSessionKey,
-          AsmrAuthSession.fromJson,
-        )) ??
-        const AsmrAuthSession();
-  }
-
-  static Future<void> saveAuthSession(AsmrAuthSession session) async {
-    await AppPreferences.writeJson(_authSessionKey, session.toJson());
-  }
 
   static Future<List<AsmrCategoryType>> loadVisibleCategories() async {
     final raw = await AppPreferences.getStringList(_visibleCategoriesKey);
@@ -56,12 +43,8 @@ abstract final class AsmrPreferences {
       (value) {
         final list = value as List<dynamic>? ?? const <dynamic>[];
         return list
-            .whereType<Map<Object?, Object?>>()
-            .map(
-              (item) => AsmrWork.fromJson(
-                item.map((key, value) => MapEntry(key.toString(), value)),
-              ),
-            )
+            .where((item) => item is Map<String, dynamic>)
+            .map((item) => AsmrWork.fromJson(item as Map<String, dynamic>))
             .toList(growable: false);
       },
     );
@@ -81,12 +64,8 @@ abstract final class AsmrPreferences {
       (value) {
         final list = value as List<dynamic>? ?? const <dynamic>[];
         return list
-            .whereType<Map<Object?, Object?>>()
-            .map(
-              (item) => AsmrWork.fromJson(
-                item.map((key, value) => MapEntry(key.toString(), value)),
-              ),
-            )
+            .where((item) => item is Map<String, dynamic>)
+            .map((item) => AsmrWork.fromJson(item as Map<String, dynamic>))
             .toList(growable: false);
       },
     );

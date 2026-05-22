@@ -69,7 +69,7 @@ class AsmrLibraryController extends ChangeNotifier {
       <int, List<AsmrTrackFile>>{};
   final Set<int> _loadingTrackWorkIds = <int>{};
 
-  AsmrAuthSession _authSession = const AsmrAuthSession();
+
   List<AsmrCategoryType> _visibleCategories = kDefaultVisibleAsmrCategories;
   AsmrContentLanguage _contentLanguage = AsmrContentLanguage.zh;
   List<AsmrWork> _favoriteWorks = const <AsmrWork>[];
@@ -79,7 +79,7 @@ class AsmrLibraryController extends ChangeNotifier {
 
   bool get initialized => _initialized;
   Object? get lastError => _lastError;
-  AsmrAuthSession get authSession => _authSession;
+
   List<AsmrCategoryType> get visibleCategories => _visibleCategories;
   AsmrContentLanguage get contentLanguage => _contentLanguage;
 
@@ -127,7 +127,7 @@ class AsmrLibraryController extends ChangeNotifier {
 
   Future<void> initialize({AsmrContentLanguage? defaultLanguage}) async {
     if (_initialized) return;
-    _authSession = await AsmrPreferences.loadAuthSession();
+
     _visibleCategories = await AsmrPreferences.loadVisibleCategories();
     _contentLanguage = await AsmrPreferences.loadContentLanguage(
       defaultLanguage ?? AsmrContentLanguage.zh,
@@ -139,56 +139,6 @@ class AsmrLibraryController extends ChangeNotifier {
     }
     _updateLocalCategoryCounts();
     _initialized = true;
-    notifyListeners();
-    if (_authSession.isLoggedIn) {
-      await syncAuthSession();
-    }
-  }
-
-  Future<void> syncAuthSession() async {
-    final token = _authSession.token;
-    if (token == null || token.isEmpty) return;
-    try {
-      final synced = await _apiService.fetchAuthSession(token);
-      final favoritePlaylistId = await _fetchFavoritePlaylistId(token);
-      _authSession = synced.copyWith(favoritePlaylistId: favoritePlaylistId);
-      await AsmrPreferences.saveAuthSession(_authSession);
-      if (favoritePlaylistId != null) {
-        await _syncFavoriteWorksFromRemoteIfAvailable(
-          token: token,
-          playlistId: favoritePlaylistId,
-        );
-      }
-      notifyListeners();
-    } catch (error) {
-      _lastError = error;
-      notifyListeners();
-    }
-  }
-
-  Future<void> login({required String name, required String password}) async {
-    final loggedIn = await _apiService.login(name: name, password: password);
-    final favoritePlaylistId = loggedIn.token?.isNotEmpty == true
-        ? await _fetchFavoritePlaylistId(loggedIn.token!)
-        : null;
-    _authSession = loggedIn.copyWith(favoritePlaylistId: favoritePlaylistId);
-    await AsmrPreferences.saveAuthSession(_authSession);
-    if (_authSession.token != null && favoritePlaylistId != null) {
-      await _syncFavoriteWorksFromRemoteIfAvailable(
-        token: _authSession.token!,
-        playlistId: favoritePlaylistId,
-      );
-    }
-    _worksByCategory.remove(AsmrCategoryType.recommendation);
-    _lastError = null;
-    notifyListeners();
-  }
-
-  Future<void> logout() async {
-    _authSession = const AsmrAuthSession();
-    await AsmrPreferences.saveAuthSession(_authSession);
-    _worksByCategory.remove(AsmrCategoryType.recommendation);
-    _applyFavoriteFlags();
     notifyListeners();
   }
 
@@ -216,14 +166,6 @@ class AsmrLibraryController extends ChangeNotifier {
           category != AsmrCategoryType.favorites &&
           category != AsmrCategoryType.history,
     );
-    if (_authSession.isLoggedIn &&
-        _authSession.token != null &&
-        _authSession.favoritePlaylistId != null) {
-      await _syncFavoriteWorksFromRemote(
-        token: _authSession.token!,
-        playlistId: _authSession.favoritePlaylistId!,
-      );
-    }
     notifyListeners();
   }
 
@@ -363,14 +305,6 @@ class AsmrLibraryController extends ChangeNotifier {
           );
           break;
         case AsmrCategoryType.favorites:
-          final token = _authSession.token;
-          final playlistId = _authSession.favoritePlaylistId;
-          if (token != null && token.isNotEmpty && playlistId != null) {
-            await _syncFavoriteWorksFromRemote(
-              token: token,
-              playlistId: playlistId,
-            );
-          }
           _queryByCategory[category] = normalizedQuery;
           _totalCountByCategory[category] = filteredWorksFor(
             category,
@@ -517,7 +451,6 @@ class AsmrLibraryController extends ChangeNotifier {
         sort: spec.sort,
         page: page,
         pageSize: pageSize,
-        token: _authSession.token,
         language: _contentLanguage,
       );
     }
@@ -526,7 +459,6 @@ class AsmrLibraryController extends ChangeNotifier {
       sort: spec.sort,
       page: page,
       pageSize: pageSize,
-      token: _authSession.token,
       language: _contentLanguage,
     );
   }
@@ -565,74 +497,6 @@ class AsmrLibraryController extends ChangeNotifier {
     return work.copyWith(isFavorite: favoriteIds.contains(work.id));
   }
 
-  Future<void> _syncFavoriteWorksFromRemote({
-    required String token,
-    required int playlistId,
-  }) async {
-    final remoteWorks = await _apiService.fetchFavoriteWorks(
-      token: token,
-      playlistId: playlistId,
-      language: _contentLanguage,
-    );
-    final decorated = remoteWorks
-        .map((work) => work.copyWith(isFavorite: true))
-        .toList(growable: false);
-    _favoriteWorks = decorated;
-    for (final work in decorated.followedBy(_historyWorks)) {
-      _workCache[work.id] = work;
-    }
-    _applyFavoriteFlags();
-    _updateLocalCategoryCounts();
-    await AsmrPreferences.saveFavoriteWorks(_favoriteWorks);
-  }
-
-  Future<int?> _fetchFavoritePlaylistId(String token) async {
-    try {
-      final playlistId = await _apiService.fetchFavoritePlaylistId(token);
-      _lastError = null;
-      return playlistId;
-    } catch (error) {
-      _lastError = error;
-      return null;
-    }
-  }
-
-  Future<void> _syncFavoriteWorksFromRemoteIfAvailable({
-    required String token,
-    required int playlistId,
-  }) async {
-    try {
-      await _syncFavoriteWorksFromRemote(token: token, playlistId: playlistId);
-      _lastError = null;
-    } catch (error) {
-      _lastError = error;
-    }
-  }
-
-  void _applyFavoriteFlags() {
-    final favoriteIds = _favoriteWorks.map((work) => work.id).toSet();
-    for (final entry in _worksByCategory.entries) {
-      _worksByCategory[entry.key] = entry.value
-          .map(
-            (work) => work.copyWith(isFavorite: favoriteIds.contains(work.id)),
-          )
-          .toList(growable: false);
-    }
-    _historyWorks = _historyWorks
-        .map((work) => work.copyWith(isFavorite: favoriteIds.contains(work.id)))
-        .toList(growable: false);
-    _detailCache.updateAll(
-      (_, detail) => AsmrWorkDetail(
-        work: detail.work.copyWith(
-          isFavorite: favoriteIds.contains(detail.work.id),
-        ),
-        description: detail.description,
-        ageCategory: detail.ageCategory,
-        languageEditionLabels: detail.languageEditionLabels,
-        userRating: detail.userRating,
-      ),
-    );
-  }
 
   Future<AsmrWorkDetail> loadWorkDetail(AsmrWork work) async {
     final cached = _detailCache[work.id];
@@ -641,7 +505,6 @@ class AsmrLibraryController extends ChangeNotifier {
     }
     final detail = await _apiService.fetchWorkDetail(
       work.id,
-      token: _authSession.token,
       language: _contentLanguage,
     );
     final merged = AsmrWorkDetail(
@@ -659,7 +522,7 @@ class AsmrLibraryController extends ChangeNotifier {
   Future<List<MusicTrack>> loadPlayableTracks(AsmrWork work) async {
     final tree =
         _trackCache[work.id] ??
-        await _apiService.fetchTrackTree(work.id, token: _authSession.token);
+        await _apiService.fetchTrackTree(work.id);
     _trackCache[work.id] = tree;
     return _flattenTracks(work, tree);
   }
@@ -759,7 +622,6 @@ class AsmrLibraryController extends ChangeNotifier {
     try {
       final tree = await _apiService.fetchTrackTree(
         work.id,
-        token: _authSession.token,
       );
       _trackCache[work.id] = tree;
       return tree;
@@ -807,45 +669,17 @@ class AsmrLibraryController extends ChangeNotifier {
       ),
     );
     for (final entry in _worksByCategory.entries) {
-      entry.value.replaceRange(
-        0,
-        entry.value.length,
-        entry.value
-            .map(
-              (item) => item.id == work.id
-                  ? item.copyWith(isFavorite: shouldFavorite)
-                  : item,
-            )
-            .toList(growable: false),
-      );
+      _worksByCategory[entry.key] = entry.value
+          .map(
+            (item) => item.id == work.id
+                ? item.copyWith(isFavorite: shouldFavorite)
+                : item,
+          )
+          .toList(growable: false);
     }
     await AsmrPreferences.saveFavoriteWorks(_favoriteWorks);
     _updateLocalCategoryCounts();
     notifyListeners();
-
-    final token = _authSession.token;
-    final playlistId = _authSession.favoritePlaylistId;
-    if (token == null || token.isEmpty || playlistId == null) {
-      return;
-    }
-    try {
-      if (shouldFavorite) {
-        await _apiService.addWorkToFavoritePlaylist(
-          token: token,
-          playlistId: playlistId,
-          workId: work.id,
-        );
-        return;
-      }
-      await _apiService.removeWorkFromFavoritePlaylist(
-        token: token,
-        playlistId: playlistId,
-        workId: work.id,
-      );
-    } catch (error) {
-      _lastError = error;
-      notifyListeners();
-    }
   }
 
   Future<void> recordHistory(AsmrWork work) async {

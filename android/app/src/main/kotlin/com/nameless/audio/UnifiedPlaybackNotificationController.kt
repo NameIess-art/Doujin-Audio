@@ -12,7 +12,7 @@ import android.os.Bundle
 import android.util.LruCache
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
-import androidx.media.app.NotificationCompat.MediaStyle
+import androidx.media3.session.MediaStyleNotificationHelper
 
 internal enum class NotificationCommand(
     val actionName: String,
@@ -310,10 +310,16 @@ internal object UnifiedPlaybackNotificationController {
             .setSortKey(null)
 
         addTransportActions(builder, context, item)
-        val mediaStyle = MediaStyle().setShowActionsInCompactView(
-            *compactActionIndicesFor(item).toIntArray()
-        )
-        builder.setStyle(mediaStyle)
+        val mediaSession = NativePlaybackService.controller()?.currentMediaSession()
+        if (mediaSession != null) {
+            val mediaStyle = MediaStyleNotificationHelper.MediaStyle(mediaSession)
+                .setShowActionsInCompactView(*compactActionIndicesFor(item).toIntArray())
+            builder.setStyle(mediaStyle)
+        } else {
+            val mediaStyle = androidx.media.app.NotificationCompat.MediaStyle()
+                .setShowActionsInCompactView(*compactActionIndicesFor(item).toIntArray())
+            builder.setStyle(mediaStyle)
+        }
         return builder.build()
     }
 
@@ -327,9 +333,6 @@ internal object UnifiedPlaybackNotificationController {
         val childLines = summaryLines.ifEmpty {
             items.map { item -> "${if (item.playing) "*" else "-"} ${item.title}" }
         }
-        val inboxStyle = NotificationCompat.InboxStyle()
-            .setBigContentTitle(mainItem.title)
-        childLines.forEach(inboxStyle::addLine)
         val builder = basePlaybackNotificationBuilder(
             context,
             mainItem,
@@ -343,9 +346,18 @@ internal object UnifiedPlaybackNotificationController {
             .setGroupSummary(true)
             .setGroupAlertBehavior(NotificationCompat.GROUP_ALERT_SUMMARY)
             .setSortKey("0_summary")
-            .setStyle(inboxStyle)
 
         addTransportActions(builder, context, mainItem)
+        val mediaSession = NativePlaybackService.controller()?.currentMediaSession()
+        if (mediaSession != null) {
+            val mediaStyle = MediaStyleNotificationHelper.MediaStyle(mediaSession)
+                .setShowActionsInCompactView(*compactActionIndicesFor(mainItem).toIntArray())
+            builder.setStyle(mediaStyle)
+        } else {
+            val mediaStyle = androidx.media.app.NotificationCompat.MediaStyle()
+                .setShowActionsInCompactView(*compactActionIndicesFor(mainItem).toIntArray())
+            builder.setStyle(mediaStyle)
+        }
         return builder.build()
     }
 
@@ -370,10 +382,16 @@ internal object UnifiedPlaybackNotificationController {
             .setSortKey("1_${item.title}_${item.id}")
 
         addTransportActions(builder, context, item)
-        val mediaStyle = MediaStyle().setShowActionsInCompactView(
-            *compactActionIndicesFor(item).toIntArray()
-        )
-        builder.setStyle(mediaStyle)
+        val mediaSession = NativePlaybackService.controller()?.currentMediaSession()
+        if (mediaSession != null) {
+            val mediaStyle = MediaStyleNotificationHelper.MediaStyle(mediaSession)
+                .setShowActionsInCompactView(*compactActionIndicesFor(item).toIntArray())
+            builder.setStyle(mediaStyle)
+        } else {
+            val mediaStyle = androidx.media.app.NotificationCompat.MediaStyle()
+                .setShowActionsInCompactView(*compactActionIndicesFor(item).toIntArray())
+            builder.setStyle(mediaStyle)
+        }
         return builder.build()
     }
 

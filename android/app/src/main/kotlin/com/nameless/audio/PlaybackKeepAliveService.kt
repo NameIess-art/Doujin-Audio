@@ -12,6 +12,9 @@ import android.os.IBinder
 import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
+import androidx.media3.session.MediaStyleNotificationHelper
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.session.MediaSession
 
 class PlaybackKeepAliveService : Service() {
     companion object {
@@ -35,6 +38,8 @@ class PlaybackKeepAliveService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
     private var currentNotificationId: Int? = null
     private var currentForegroundSignature: String? = null
+    private var dummyPlayer: ExoPlayer? = null
+    private var dummySession: MediaSession? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -122,7 +127,23 @@ class PlaybackKeepAliveService : Service() {
         releaseWakeLock()
         currentForegroundSignature = null
         currentNotificationId = null
+        dummySession?.release()
+        dummySession = null
+        dummyPlayer?.release()
+        dummyPlayer = null
         super.onDestroy()
+    }
+
+    private fun ensureMediaSession(): MediaSession? {
+        NativePlaybackService.controller()?.currentMediaSession()?.let { return it }
+        if (dummySession != null) return dummySession
+        try {
+            val player = ExoPlayer.Builder(this).build()
+            dummyPlayer = player
+            dummySession = MediaSession.Builder(this, player).setId("KeepAlive").build()
+            return dummySession
+        } catch (_: Exception) {}
+        return null
     }
 
     private fun buildNotification(
@@ -169,6 +190,12 @@ class PlaybackKeepAliveService : Service() {
                     setContentIntent(pendingIntent)
                 }
             }
+
+        val mediaSession = ensureMediaSession()
+        if (mediaSession != null) {
+            builder.setStyle(MediaStyleNotificationHelper.MediaStyle(mediaSession))
+        }
+
         return builder.build()
     }
 

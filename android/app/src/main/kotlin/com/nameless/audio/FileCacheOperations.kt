@@ -98,6 +98,42 @@ internal class FileCacheOperations(
             val modifiedAtMs: Long? = null
         )
 
+        private data class MediaNameInfo(
+            val title: String,
+            val isVideo: Boolean
+        )
+
+        private data class DocumentScanNode(
+            val documentId: String,
+            val relative: String,
+            val groupKey: String,
+            val groupTitle: String,
+            val groupSubtitle: String
+        )
+
+        private data class DocumentFileScanNode(
+            val dir: DocumentFile,
+            val relative: String,
+            val groupKey: String,
+            val groupTitle: String,
+            val groupSubtitle: String
+        )
+
+        private data class FileScanNode(
+            val dir: File,
+            val groupKey: String,
+            val groupTitle: String,
+            val groupSubtitle: String
+        )
+
+        private data class FileDocumentScanNode(
+            val dir: File,
+            val relative: String,
+            val groupKey: String,
+            val groupTitle: String,
+            val groupSubtitle: String
+        )
+
         private data class DocumentRenameTarget(
             val uri: Uri,
             val rootUri: Uri?,
@@ -795,9 +831,17 @@ internal class FileCacheOperations(
             if (!root.exists()) return
 
             val rootName = normalizeDisplayName(root.name?.ifBlank { "Folder" } ?: "Folder")
-            data class Node(val dir: DocumentFile, val relative: String)
-            val pending = ArrayDeque<Node>()
-            pending.add(Node(root, ""))
+            val rootUriString = root.uri.toString()
+            val pending = ArrayDeque<DocumentFileScanNode>()
+            pending.add(
+                DocumentFileScanNode(
+                    dir = root,
+                    relative = "",
+                    groupKey = rootUriString,
+                    groupTitle = rootName,
+                    groupSubtitle = rootName
+                )
+            )
 
             while (pending.isNotEmpty()) {
                 val current = pending.removeFirst()
@@ -814,38 +858,45 @@ internal class FileCacheOperations(
                             childName.isEmpty() -> current.relative
                             else -> "${current.relative}/$childName"
                         }
-                        pending.add(Node(child, nextRelative))
+                        val nextTitle = if (nextRelative.isEmpty()) {
+                            rootName
+                        } else {
+                            nextRelative.substringAfterLast('/')
+                        }
+                        pending.add(
+                            DocumentFileScanNode(
+                                dir = child,
+                                relative = nextRelative,
+                                groupKey = if (nextRelative.isEmpty()) {
+                                    rootUriString
+                                } else {
+                                    "$rootUriString::$nextRelative"
+                                },
+                                groupTitle = nextTitle.ifBlank { rootName },
+                                groupSubtitle = if (nextRelative.isEmpty()) {
+                                    rootName
+                                } else {
+                                    "$rootName/$nextRelative"
+                                }
+                            )
+                        )
                         continue
                     }
-                    if (!child.isFile || !isSupportedDocumentFile(child)) {
-                        continue
-                    }
-
-                    val parentRelative = current.relative
-                    val groupTitle = if (parentRelative.isEmpty()) rootName else parentRelative.substringAfterLast('/')
-                    val groupSubtitle = if (parentRelative.isEmpty()) {
-                        rootName
-                    } else {
-                        "$rootName/$parentRelative"
-                    }
-                    val groupKey = if (parentRelative.isEmpty()) {
-                        root.uri.toString()
-                    } else {
-                        "${root.uri}::$parentRelative"
-                    }
+                    if (!child.isFile) continue
                     val safeName = childName.ifEmpty {
                         normalizeDisplayName(child.uri.lastPathSegment ?: "audio_file")
                     }
-                    val title = safeName.substringBeforeLast('.', safeName)
+                    val media = mediaNameInfoOrNull(safeName, child.type) ?: continue
+                    val childUri = child.uri.toString()
                     output.putIfAbsent(
-                        child.uri.toString(),
+                        childUri,
                         ScannedTrack(
-                            path = child.uri.toString(),
-                            title = title,
-                            groupKey = groupKey,
-                            groupTitle = groupTitle.ifBlank { rootName },
-                            groupSubtitle = groupSubtitle,
-                            isVideo = isVideoFileName(safeName),
+                            path = childUri,
+                            title = media.title,
+                            groupKey = current.groupKey,
+                            groupTitle = current.groupTitle,
+                            groupSubtitle = current.groupSubtitle,
+                            isVideo = media.isVideo,
                             fileSizeBytes = child.length().takeIf { it >= 0 },
                             modifiedAtMs = child.lastModified().takeIf { it > 0 }
                         )
@@ -864,9 +915,17 @@ internal class FileCacheOperations(
                     .substringAfterLast('/')
                     .ifBlank { "Folder" }
             )
-            data class Node(val documentId: String, val relative: String)
-            val pending = ArrayDeque<Node>()
-            pending.add(Node(startDocumentId, ""))
+            val rootUriString = rootUri.toString()
+            val pending = ArrayDeque<DocumentScanNode>()
+            pending.add(
+                DocumentScanNode(
+                    documentId = startDocumentId,
+                    relative = "",
+                    groupKey = rootUriString,
+                    groupTitle = rootName,
+                    groupSubtitle = rootName
+                )
+            )
             val projection = arrayOf(
                 DocumentsContract.Document.COLUMN_DOCUMENT_ID,
                 DocumentsContract.Document.COLUMN_DISPLAY_NAME,
@@ -919,31 +978,35 @@ internal class FileCacheOperations(
                                     displayName.isEmpty() -> current.relative
                                     else -> "${current.relative}/$displayName"
                                 }
-                                pending.add(Node(documentId, nextRelative))
+                                val nextTitle = if (nextRelative.isEmpty()) {
+                                    rootName
+                                } else {
+                                    nextRelative.substringAfterLast('/')
+                                }
+                                pending.add(
+                                    DocumentScanNode(
+                                        documentId = documentId,
+                                        relative = nextRelative,
+                                        groupKey = if (nextRelative.isEmpty()) {
+                                            rootUriString
+                                        } else {
+                                            "$rootUriString::$nextRelative"
+                                        },
+                                        groupTitle = nextTitle.ifBlank { rootName },
+                                        groupSubtitle = if (nextRelative.isEmpty()) {
+                                            rootName
+                                        } else {
+                                            "$rootName/$nextRelative"
+                                        }
+                                    )
+                                )
                                 continue
                             }
-                            if (!isSupportedDocumentEntry(displayName, mime)) continue
+                            val media = mediaNameInfoOrNull(displayName, mime) ?: continue
 
                             val documentUri = DocumentsContract
                                 .buildDocumentUriUsingTree(rootUri, documentId)
                                 .toString()
-                            val parentRelative = current.relative
-                            val groupTitle = if (parentRelative.isEmpty()) {
-                                rootName
-                            } else {
-                                parentRelative.substringAfterLast('/')
-                            }
-                            val groupSubtitle = if (parentRelative.isEmpty()) {
-                                rootName
-                            } else {
-                                "$rootName/$parentRelative"
-                            }
-                            val groupKey = if (parentRelative.isEmpty()) {
-                                rootUri.toString()
-                            } else {
-                                "${rootUri}::$parentRelative"
-                            }
-                            val title = displayName.substringBeforeLast('.', displayName)
                             val fileSizeBytes = if (sizeIndex >= 0 && !cursor.isNull(sizeIndex)) {
                                 cursor.getLong(sizeIndex).takeIf { it >= 0 }
                             } else {
@@ -962,11 +1025,11 @@ internal class FileCacheOperations(
                                 documentUri,
                                 ScannedTrack(
                                     path = documentUri,
-                                    title = title,
-                                    groupKey = groupKey,
-                                    groupTitle = groupTitle.ifBlank { rootName },
-                                    groupSubtitle = groupSubtitle,
-                                    isVideo = isVideoFileName(displayName),
+                                    title = media.title,
+                                    groupKey = current.groupKey,
+                                    groupTitle = current.groupTitle,
+                                    groupSubtitle = current.groupSubtitle,
+                                    isVideo = media.isVideo,
                                     fileSizeBytes = fileSizeBytes,
                                     modifiedAtMs = modifiedAtMs
                                 )
@@ -1102,38 +1165,50 @@ internal class FileCacheOperations(
         }
 
         private fun scanFileSystem(root: File, output: MutableMap<String, ScannedTrack>) {
-            val pending = ArrayDeque<File>()
-            pending.add(root)
+            val rootPath = root.absolutePath
+            val pending = ArrayDeque<FileScanNode>()
+            pending.add(
+                FileScanNode(
+                    dir = root,
+                    groupKey = rootPath,
+                    groupTitle = root.name.ifBlank { rootPath },
+                    groupSubtitle = rootPath
+                )
+            )
 
             while (pending.isNotEmpty()) {
                 val current = pending.removeFirst()
                 val children = try {
-                    current.listFiles()
+                    current.dir.listFiles()
                 } catch (_: Exception) {
                     null
                 } ?: continue
 
                 for (child in children) {
                     if (child.isDirectory) {
-                        pending.add(child)
+                        val childPath = child.absolutePath
+                        pending.add(
+                            FileScanNode(
+                                dir = child,
+                                groupKey = childPath,
+                                groupTitle = child.name.ifBlank { childPath },
+                                groupSubtitle = childPath
+                            )
+                        )
                         continue
                     }
-                    if (!child.isFile || !isSupportedFileName(child.name)) {
-                        continue
-                    }
-                    val parent = child.parentFile
-                    val parentPath = parent?.absolutePath ?: root.absolutePath
-                    val parentName = parent?.name?.ifBlank { parentPath } ?: parentPath
-                    val title = child.name.substringBeforeLast('.', child.name)
+                    if (!child.isFile) continue
+                    val media = mediaNameInfoOrNull(child.name) ?: continue
+                    val childPath = child.absolutePath
                     output.putIfAbsent(
-                        child.absolutePath,
+                        childPath,
                         ScannedTrack(
-                            path = child.absolutePath,
-                            title = title,
-                            groupKey = parentPath,
-                            groupTitle = parentName,
-                            groupSubtitle = parentPath,
-                            isVideo = isVideoFileName(child.name),
+                            path = childPath,
+                            title = media.title,
+                            groupKey = current.groupKey,
+                            groupTitle = current.groupTitle,
+                            groupSubtitle = current.groupSubtitle,
+                            isVideo = media.isVideo,
                             fileSizeBytes = child.length().takeIf { it >= 0 },
                             modifiedAtMs = child.lastModified().takeIf { it > 0 }
                         )
@@ -1149,73 +1224,81 @@ internal class FileCacheOperations(
         ) {
             val rootDocumentId = startDocumentIdForTreeUri(rootUri) ?: return
             val rootName = normalizeDisplayName(root.name.ifBlank { "Folder" })
-            val pending = ArrayDeque<File>()
-            pending.add(root)
+            val rootUriString = rootUri.toString()
+            val pending = ArrayDeque<FileDocumentScanNode>()
+            pending.add(
+                FileDocumentScanNode(
+                    dir = root,
+                    relative = "",
+                    groupKey = rootUriString,
+                    groupTitle = rootName,
+                    groupSubtitle = rootName
+                )
+            )
 
             while (pending.isNotEmpty()) {
                 val current = pending.removeFirst()
                 val children = try {
-                    current.listFiles()
+                    current.dir.listFiles()
                 } catch (_: Exception) {
                     null
                 } ?: continue
 
                 for (child in children) {
                     if (child.isDirectory) {
-                        pending.add(child)
+                        val childName = child.name.ifBlank { "Folder" }
+                        val nextRelative = when {
+                            current.relative.isEmpty() -> childName
+                            childName.isEmpty() -> current.relative
+                            else -> "${current.relative}/$childName"
+                        }
+                        val nextTitle = if (nextRelative.isEmpty()) {
+                            rootName
+                        } else {
+                            nextRelative.substringAfterLast('/')
+                        }
+                        pending.add(
+                            FileDocumentScanNode(
+                                dir = child,
+                                relative = nextRelative,
+                                groupKey = if (nextRelative.isEmpty()) {
+                                    rootUriString
+                                } else {
+                                    "$rootUriString::$nextRelative"
+                                },
+                                groupTitle = nextTitle.ifBlank { rootName },
+                                groupSubtitle = if (nextRelative.isEmpty()) {
+                                    rootName
+                                } else {
+                                    "$rootName/$nextRelative"
+                                }
+                            )
+                        )
                         continue
                     }
-                    if (!child.isFile || !isSupportedFileName(child.name)) {
-                        continue
-                    }
-
-                    val normalizedChildPath = child.absolutePath
-                    val relativePath = root.toPath()
-                        .relativize(child.toPath())
-                        .joinToString("/") { segment -> segment.toString() }
-                    if (relativePath.isBlank()) {
-                        continue
-                    }
-
-                    val parentRelative = relativePath.substringBeforeLast(
-                        '/',
-                        missingDelimiterValue = ""
-                    )
-                    val groupTitle = if (parentRelative.isEmpty()) {
-                        rootName
+                    if (!child.isFile) continue
+                    val safeName = normalizeDisplayName(child.name.ifBlank { "audio_file" })
+                    val media = mediaNameInfoOrNull(safeName) ?: continue
+                    val relativePath = if (current.relative.isEmpty()) {
+                        child.name
                     } else {
-                        parentRelative.substringAfterLast('/')
+                        "${current.relative}/${child.name}"
                     }
-                    val groupSubtitle = if (parentRelative.isEmpty()) {
-                        rootName
-                    } else {
-                        "$rootName/$parentRelative"
-                    }
-                    val groupKey = if (parentRelative.isEmpty()) {
-                        rootUri.toString()
-                    } else {
-                        "${rootUri}::$parentRelative"
-                    }
-                    val documentId = if (parentRelative.isEmpty()) {
-                        "$rootDocumentId/${child.name}"
-                    } else {
-                        "$rootDocumentId/$relativePath"
-                    }
+                    if (relativePath.isBlank()) continue
+                    val documentId = "$rootDocumentId/$relativePath"
                     val documentUri = DocumentsContract.buildDocumentUriUsingTree(
                         rootUri,
                         documentId
                     ).toString()
-                    val safeName = normalizeDisplayName(child.name.ifBlank { "audio_file" })
-                    val title = safeName.substringBeforeLast('.', safeName)
                     output.putIfAbsent(
                         documentUri,
                         ScannedTrack(
                             path = documentUri,
-                            title = title,
-                            groupKey = groupKey,
-                            groupTitle = groupTitle.ifBlank { rootName },
-                            groupSubtitle = groupSubtitle,
-                            isVideo = isVideoFileName(safeName),
+                            title = media.title,
+                            groupKey = current.groupKey,
+                            groupTitle = current.groupTitle,
+                            groupSubtitle = current.groupSubtitle,
+                            isVideo = media.isVideo,
                             fileSizeBytes = child.length().takeIf { it >= 0 },
                             modifiedAtMs = child.lastModified().takeIf { it > 0 }
                         )
@@ -1281,11 +1364,8 @@ internal class FileCacheOperations(
                 while (cursor.moveToNext()) {
                     val id = cursor.getLong(idIndex)
                     val displayName = normalizeDisplayName(cursor.getString(displayNameIndex) ?: "audio_file")
-                    if (!isSupportedFileName(displayName)) {
-                        continue
-                    }
+                    val media = mediaNameInfoOrNull(displayName) ?: continue
                     val relative = normalizeDisplayName(cursor.getString(relativeIndex)?.trimEnd('/') ?: "")
-                    val title = displayName.substringBeforeLast('.', displayName)
                     val fullPath = if (dataIndex >= 0) cursor.getString(dataIndex) else null
                     val contentPath = ContentUris.withAppendedId(audioUri, id).toString()
                     val fileSizeBytes = if (sizeIndex >= 0) cursor.getLong(sizeIndex) else null
@@ -1305,11 +1385,11 @@ internal class FileCacheOperations(
                         playablePath,
                         ScannedTrack(
                             path = playablePath,
-                            title = title,
+                            title = media.title,
                             groupKey = groupKey,
                             groupTitle = groupTitle.ifBlank { "Folder" },
                             groupSubtitle = groupSubtitle,
-                            isVideo = isVideoFileName(displayName),
+                            isVideo = media.isVideo,
                             fileSizeBytes = fileSizeBytes,
                             modifiedAtMs = modifiedAtMs
                         )
@@ -1354,37 +1434,36 @@ internal class FileCacheOperations(
             return value.count { it.code in 0x00C0..0x00FF } >= 2
         }
 
-        private fun isSupportedDocumentFile(file: DocumentFile): Boolean {
-            val mime = file.type?.lowercase(Locale.US)
+        private fun mediaNameInfoOrNull(
+            name: String,
+            mime: String? = null
+        ): MediaNameInfo? {
+            val displayName = name.ifBlank { "audio_file" }
+            val extension = displayName.substringAfterLast('.', "").lowercase(Locale.US)
+            val normalizedMime = mime?.lowercase(Locale.US)
+            if (!isSupportedMediaName(extension, normalizedMime)) return null
+            return MediaNameInfo(
+                title = displayName.substringBeforeLast('.', displayName),
+                isVideo = isVideoMediaName(extension, normalizedMime)
+            )
+        }
+
+        private fun isSupportedMediaName(extension: String, mime: String?): Boolean {
             if (mime != null && isSupportedMediaMime(mime)) {
                 return true
             }
-            val name = file.name ?: return false
-            return isSupportedFileName(name)
-        }
-
-        private fun isSupportedDocumentEntry(name: String, mime: String?): Boolean {
-            val normalizedMime = mime?.lowercase(Locale.US)
-            if (normalizedMime != null && isSupportedMediaMime(normalizedMime)) {
-                return true
-            }
-            return isSupportedFileName(name)
-        }
-
-        private fun isSupportedFileName(name: String): Boolean {
-            val extension = name.substringAfterLast('.', "").lowercase(Locale.US)
             if (extension.isBlank()) {
                 return true
             }
             if (blockedExtensions.contains(extension)) {
                 return false
             }
-            val mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension)
+            val extensionMime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension)
                 ?.lowercase(Locale.US)
-            if (mime == null) {
+            if (extensionMime == null) {
                 return true
             }
-            return isSupportedMediaMime(mime)
+            return isSupportedMediaMime(extensionMime)
         }
 
         private fun isSupportedMediaMime(mime: String): Boolean {
@@ -1393,17 +1472,19 @@ internal class FileCacheOperations(
                 mime == "application/ogg"
         }
 
-        private fun isVideoFileName(name: String): Boolean {
-            val extension = name.substringAfterLast('.', "").lowercase(Locale.US)
+        private fun isVideoMediaName(extension: String, mime: String?): Boolean {
+            if (mime?.startsWith("video/") == true) {
+                return true
+            }
             if (extension.isBlank()) {
                 return false
             }
             if (extension in supportedVideoExtensions) {
                 return true
             }
-            val mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension)
+            val extensionMime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension)
                 ?.lowercase(Locale.US)
-            return mime?.startsWith("video/") == true
+            return extensionMime?.startsWith("video/") == true
         }
 
         private data class DocumentImageCandidate(

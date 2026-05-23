@@ -65,19 +65,24 @@ internal class FileCacheMethodHandler(
                         }
                     }
                 ) {
-                    operations.scanFolder(folder).map { track ->
-                        hashMapOf(
-                            "path" to track.path,
-                            "title" to track.title,
-                            "groupKey" to track.groupKey,
-                            "groupTitle" to track.groupTitle,
-                            "groupSubtitle" to track.groupSubtitle,
-                            "isVideo" to track.isVideo,
-                            "scannedAtMs" to track.scannedAtMs,
-                            "fileSizeBytes" to track.fileSizeBytes,
-                            "modifiedAtMs" to track.modifiedAtMs
+                    val tracks = operations.scanFolder(folder)
+                    val payload = ArrayList<HashMap<String, Any?>>(tracks.size)
+                    for (track in tracks) {
+                        payload.add(
+                            hashMapOf(
+                                "path" to track.path,
+                                "title" to track.title,
+                                "groupKey" to track.groupKey,
+                                "groupTitle" to track.groupTitle,
+                                "groupSubtitle" to track.groupSubtitle,
+                                "isVideo" to track.isVideo,
+                                "scannedAtMs" to track.scannedAtMs,
+                                "fileSizeBytes" to track.fileSizeBytes,
+                                "modifiedAtMs" to track.modifiedAtMs
+                            )
                         )
                     }
+                    payload
                 }
             }
             FileCacheMethods.LIST_CHILD_FOLDERS -> {

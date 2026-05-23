@@ -32,6 +32,8 @@ import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import androidx.media3.session.MediaNotification
+
+import androidx.media3.session.MediaStyleNotificationHelper
 import java.util.concurrent.ConcurrentHashMap
 
 private data class NativeMediaItemDescriptor(
@@ -108,6 +110,25 @@ class NativePlaybackService : MediaSessionService() {
     private val stateListeners = ConcurrentHashMap<String, (Map<String, Any?>) -> Unit>()
     private val mainHandler = Handler(Looper.getMainLooper())
     private var mediaSession: MediaSession? = null
+    private var dummyPlayer: ExoPlayer? = null
+
+    fun currentMediaSession(): MediaSession? {
+        return mediaSession
+    }
+
+    private fun ensureMediaSessionForBootstrap() {
+        if (mediaSession != null) return
+        try {
+            val player = ExoPlayer.Builder(this).build()
+            dummyPlayer = player
+            mediaSession = MediaSession.Builder(this, player)
+                .setId("Nameless Audio Bootstrap")
+                .build()
+        } catch (e: Exception) {
+            logWarn("ensure_media_session_for_bootstrap_failed", error = e)
+        }
+    }
+
     private var focusedSessionId: String? = null
     private var tickerScheduled = false
     private var foregroundWatchdogScheduled = false
@@ -826,6 +847,8 @@ class NativePlaybackService : MediaSessionService() {
         if (existingSession.player !== nextPlayer) {
             logInfo("media_session_switch_player")
             existingSession.player = nextPlayer
+            dummyPlayer?.release()
+            dummyPlayer = null
         }
     }
 
@@ -841,6 +864,8 @@ class NativePlaybackService : MediaSessionService() {
         logInfo("media_session_release reason=$reason")
         existingSession.release()
         mediaSession = null
+        dummyPlayer?.release()
+        dummyPlayer = null
     }
 
     private fun hasActivePlayback(): Boolean {
@@ -1034,7 +1059,7 @@ class NativePlaybackService : MediaSessionService() {
                 PendingIntent.FLAG_UPDATE_CURRENT or immutablePendingIntentFlag()
             )
         }
-        return NotificationCompat.Builder(this, PLAYBACK_CHANNEL_ID)
+        val builder = NotificationCompat.Builder(this, PLAYBACK_CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle(session.title.ifBlank { "Nameless Audio" })
             .setContentText(
@@ -1051,7 +1076,13 @@ class NativePlaybackService : MediaSessionService() {
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setCategory(NotificationCompat.CATEGORY_TRANSPORT)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
-            .build()
+
+        val mediaSession = currentMediaSession()
+        if (mediaSession != null) {
+            builder.setStyle(MediaStyleNotificationHelper.MediaStyle(mediaSession))
+        }
+
+        return builder.build()
     }
 
     private fun buildBootstrapForegroundNotification(): Notification {
@@ -1066,7 +1097,7 @@ class NativePlaybackService : MediaSessionService() {
                 PendingIntent.FLAG_UPDATE_CURRENT or immutablePendingIntentFlag()
             )
         }
-        return NotificationCompat.Builder(this, PLAYBACK_CHANNEL_ID)
+        val builder = NotificationCompat.Builder(this, PLAYBACK_CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle("Nameless Audio")
             .setContentText(getString(R.string.keep_alive_timer_active))
@@ -1079,7 +1110,15 @@ class NativePlaybackService : MediaSessionService() {
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
-            .build()
+
+        ensureMediaSessionForBootstrap()
+
+        val mediaSession = currentMediaSession()
+        if (mediaSession != null) {
+            builder.setStyle(MediaStyleNotificationHelper.MediaStyle(mediaSession))
+        }
+
+        return builder.build()
     }
 
     private fun immutablePendingIntentFlag(): Int {

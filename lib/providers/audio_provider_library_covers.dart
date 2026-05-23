@@ -77,8 +77,9 @@ extension AudioProviderLibraryCovers on AudioProvider {
       tracksToUpdate.add(updatedTrack);
     }
 
-    // Clear caches to force re-resolution
-    _clearResolvedCoverPaths();
+    // Clear only the affected cover scope so visible unrelated rows keep their
+    // decoded image and resolved Future.
+    _invalidateResolvedCoverScope(normalizedScope);
 
     // Mark sessions dirty to refresh playlist tab and bottom card
     _markActiveSessionsDirty();

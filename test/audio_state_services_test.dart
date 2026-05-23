@@ -278,6 +278,38 @@ void main() {
       expect(service.watchedFolders, <String>[albumTree]);
     });
 
+    test(
+      'libraryEntryDisplayNameForPath uses normalized O(1) entry lookup',
+      () {
+        final service = LibraryService();
+        addTearDown(service.dispose);
+
+        const libraryPath = '/library';
+        const trackPath = '/library/Album/01.mp3';
+        service.replaceLibraryEntries(const <LibraryEntry>[
+          LibraryEntry(
+            libraryPath: libraryPath,
+            path: trackPath,
+            kind: LibraryEntryKind.track,
+            state: LibraryEntryState.active,
+            displayName: '  Saved title  ',
+          ),
+        ]);
+
+        expect(
+          service.libraryEntryDisplayNameForPath(
+            libraryPath,
+            '/library/Album/../Album/01.mp3',
+          ),
+          'Saved title',
+        );
+        expect(
+          service.libraryEntryDisplayNameForPath(libraryPath, '/missing.mp3'),
+          isNull,
+        );
+      },
+    );
+
     test('removeLibrary clears SAF child folders and exclusions', () async {
       final service = LibraryService();
       addTearDown(service.dispose);

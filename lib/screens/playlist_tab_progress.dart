@@ -15,7 +15,7 @@ class _ProgressBar extends StatefulWidget {
 }
 
 class _ProgressBarState extends State<_ProgressBar> {
-  static const Duration _smoothTickInterval = Duration(milliseconds: 250);
+  static const Duration _smoothTickInterval = Duration(milliseconds: 333);
 
   StreamSubscription<PlayerState>? _stateSub;
   StreamSubscription<Duration>? _positionSub;
@@ -121,7 +121,10 @@ class _ProgressBarState extends State<_ProgressBar> {
 
   void _syncSmoothTimer() {
     final shouldTick =
-        _tickerModeEnabled && _playerState.playing && !_isDragging;
+        _tickerModeEnabled &&
+        _playerState.playing &&
+        !_isDragging &&
+        (_duration?.inMilliseconds ?? 0) > 0;
     if (!shouldTick) {
       _smoothTimer?.cancel();
       _smoothTimer = null;
@@ -270,10 +273,7 @@ class _ProgressBarState extends State<_ProgressBar> {
 }
 
 class _SessionSubtitlePanel extends StatefulWidget {
-  const _SessionSubtitlePanel({
-    required this.session,
-    required this.provider,
-  });
+  const _SessionSubtitlePanel({required this.session, required this.provider});
 
   final PlaybackSession session;
   final AudioProvider provider;

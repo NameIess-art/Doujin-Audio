@@ -472,6 +472,20 @@ class LibraryService {
     return entries.values.toList(growable: false);
   }
 
+  LibraryEntry? libraryEntryForPath(String libraryPath, String entryPath) {
+    final entries = libraryEntriesByLibrary[PathMatcher.normalize(libraryPath)];
+    if (entries == null) return null;
+    return entries[PathMatcher.normalize(entryPath)];
+  }
+
+  String? libraryEntryDisplayNameForPath(String libraryPath, String entryPath) {
+    final displayName = libraryEntryForPath(
+      libraryPath,
+      entryPath,
+    )?.displayName.trim();
+    return displayName == null || displayName.isEmpty ? null : displayName;
+  }
+
   bool hasLibraryEntriesForLibrary(String libraryPath) {
     return libraryEntriesByLibrary[PathMatcher.normalize(libraryPath)]
             ?.isNotEmpty ??

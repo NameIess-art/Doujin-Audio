@@ -11,7 +11,7 @@ import 'package:flutter/services.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:provider/provider.dart';
+import 'package:provider/provider.dart' hide Provider;
 import 'package:lottie/lottie.dart';
 
 import '../i18n/app_language_provider.dart';
@@ -392,7 +392,9 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
       return GlassRefreshIndicator(
         key: _refreshIndicatorKey,
         color: Theme.of(context).colorScheme.primary,
-        backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
+        backgroundColor: Theme.of(
+          context,
+        ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
         onRefresh: _runLibraryPullRefresh,
         // Adjust edgeOffset because RefreshIndicator is now inside the restricted Positioned.
         edgeOffset: 150 + 4 + headerControlsFullHeight,
@@ -466,9 +468,10 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                 : GlassRefreshIndicator(
                     key: _refreshIndicatorKey,
                     color: Theme.of(context).colorScheme.primary,
-                    backgroundColor: Theme.of(
-                      context,
-                    ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
+                    backgroundColor: Theme.of(context)
+                        .colorScheme
+                        .surfaceContainerHighest
+                        .withValues(alpha: 0.6),
                     onRefresh: _runLibraryPullRefresh,
                     edgeOffset: 150 + 4 + headerControlsFullHeight,
                     displacement: 32,

@@ -47,6 +47,8 @@ class _AsmrTabState extends State<AsmrTab>
       };
   final TextEditingController _searchController = TextEditingController();
   Timer? _searchDebounceTimer;
+  final Map<AsmrCategoryType, Timer> _loadMoreDebounceTimers =
+      <AsmrCategoryType, Timer>{};
   ValueListenable<int?>? _scrollToTopTabListenable;
   String _searchQuery = '';
   final GlobalKey _headerKey = GlobalKey();
@@ -119,6 +121,7 @@ class _AsmrTabState extends State<AsmrTab>
         .where((category) => !nextCategories.contains(category))
         .toList(growable: false);
     for (final category in removed) {
+      _loadMoreDebounceTimers.remove(category)?.cancel();
       _scrollControllers.remove(category)?.dispose();
     }
     _tabController
@@ -144,11 +147,23 @@ class _AsmrTabState extends State<AsmrTab>
     if (controller.position.extentAfter > 280) {
       return;
     }
-    unawaited(
-      context.read<AsmrLibraryController>().loadMoreCategory(
-        category,
-        searchQuery: _searchQuery,
-      ),
+    if (_loadMoreDebounceTimers.containsKey(category)) {
+      return;
+    }
+    _loadMoreDebounceTimers[category] = Timer(
+      const Duration(milliseconds: 180),
+      () {
+        _loadMoreDebounceTimers.remove(category);
+        if (!mounted) {
+          return;
+        }
+        unawaited(
+          context.read<AsmrLibraryController>().loadMoreCategory(
+            category,
+            searchQuery: _searchQuery,
+          ),
+        );
+      },
     );
   }
 
@@ -390,6 +405,10 @@ class _AsmrTabState extends State<AsmrTab>
   void dispose() {
     _scrollToTopTabListenable?.removeListener(_handleScrollToTopSignal);
     _searchDebounceTimer?.cancel();
+    for (final timer in _loadMoreDebounceTimers.values) {
+      timer.cancel();
+    }
+    _loadMoreDebounceTimers.clear();
     _searchController.dispose();
     _tabController
       ..removeListener(_handleTabChanged)
@@ -505,13 +524,17 @@ class _AsmrTabState extends State<AsmrTab>
                 controller: _tabController,
                 children: [
                   for (final category in _categories)
-                    _AsmrCategoryList(
-                      category: category,
-                      scrollController: _scrollControllers[category]!,
-                      searchQuery: _searchQuery,
-                      topInset: headerContentHeight,
-                      bottomInset: bottomInset,
-                      onRefresh: () => _refreshCategoryWithFeedback(category),
+                    TickerMode(
+                      enabled: category == currentCategory,
+                      child: _AsmrCategoryList(
+                        key: ValueKey(category),
+                        category: category,
+                        scrollController: _scrollControllers[category]!,
+                        searchQuery: _searchQuery,
+                        topInset: headerContentHeight,
+                        bottomInset: bottomInset,
+                        onRefresh: () => _refreshCategoryWithFeedback(category),
+                      ),
                     ),
                 ],
               )
@@ -731,6 +754,7 @@ class _AsmrSearchBar extends StatelessWidget {
 
 class _AsmrCategoryList extends StatefulWidget {
   const _AsmrCategoryList({
+    super.key,
     required this.category,
     required this.scrollController,
     required this.searchQuery,
@@ -750,13 +774,18 @@ class _AsmrCategoryList extends StatefulWidget {
   State<_AsmrCategoryList> createState() => _AsmrCategoryListState();
 }
 
-class _AsmrCategoryListState extends State<_AsmrCategoryList> {
+class _AsmrCategoryListState extends State<_AsmrCategoryList>
+    with AutomaticKeepAliveClientMixin {
   final GlobalKey<GlassRefreshIndicatorState> _refreshIndicatorKey =
       GlobalKey<GlassRefreshIndicatorState>();
   bool _refreshTriggeredInCurrentScroll = false;
 
   @override
+  bool get wantKeepAlive => true;
+
+  @override
   Widget build(BuildContext context) {
+    super.build(context);
     final state = context.select<AsmrLibraryController, AsmrCategoryViewState>(
       (controller) => controller.categoryViewState(
         widget.category,
@@ -798,6 +827,7 @@ class _AsmrCategoryListState extends State<_AsmrCategoryList> {
         },
         child: ListView.builder(
           controller: widget.scrollController,
+          cacheExtent: 520,
           physics: const AlwaysScrollableScrollPhysics(
             parent: BouncingScrollPhysics(),
           ),
@@ -859,9 +889,11 @@ class _AsmrCategoryListState extends State<_AsmrCategoryList> {
             }
             return Padding(
               padding: const EdgeInsets.only(bottom: 8),
-              child: _AsmrWorkTreeCard(
-                work: works[index],
-                searchQuery: widget.searchQuery,
+              child: RepaintBoundary(
+                child: _AsmrWorkTreeCard(
+                  work: works[index],
+                  searchQuery: widget.searchQuery,
+                ),
               ),
             );
           },
@@ -1491,6 +1523,7 @@ class _AsmrRootCardContent extends StatelessWidget {
       showExpandIndicator: hasChildren,
       playTooltip: i18n.tr('asmr_add_to_playlist'),
       accentColor: asmrBlue,
+      enableMarquee: false,
     );
   }
 }
@@ -1771,6 +1804,7 @@ class _AsmrWorkCover extends StatelessWidget {
             : Image.network(
                 url,
                 fit: BoxFit.cover,
+                filterQuality: FilterQuality.low,
                 cacheWidth: (width * MediaQuery.devicePixelRatioOf(context))
                     .round(),
                 errorBuilder: (_, _, _) => _AsmrCoverFallback(colorScheme: cs),

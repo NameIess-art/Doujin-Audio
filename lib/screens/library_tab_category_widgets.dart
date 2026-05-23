@@ -176,9 +176,8 @@ extension _LibraryTabCategoryView on _LibraryTabState {
             }
 
             final entry = entries[entryIndex];
-            return WaterfallFlowStagger(
+            return RepaintBoundary(
               key: ValueKey('category_${entry.target.targetPath}'),
-              index: entryIndex,
               child: _AudioLibraryCategoryEntryCard(
                 entry: entry,
                 folder: _folderForCategoryEntry(provider, entry),
@@ -631,6 +630,7 @@ class _AudioLibraryCategoryEntryTitle extends StatelessWidget {
               LibraryLikeTwoLineMarqueeText(
                 text: entry.title,
                 style: titleStyle,
+                enableMarquee: false,
               ),
               const SizedBox(height: 5),
               _LibrarySecondaryInfoLine(

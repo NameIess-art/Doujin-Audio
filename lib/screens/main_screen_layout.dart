@@ -47,7 +47,9 @@ extension _MainScreenLayout on _MainScreenState {
     return PageView.builder(
       controller: _pageController,
       clipBehavior: Clip.none,
-      physics: const _TelegramLikeScrollPhysics(parent: ClampingScrollPhysics()),
+      physics: const _TelegramLikeScrollPhysics(
+        parent: ClampingScrollPhysics(),
+      ),
       onPageChanged: (index) {
         if (_pendingTargetIndex != null && index != _pendingTargetIndex) {
           return;
@@ -210,7 +212,6 @@ extension _MainScreenLayout on _MainScreenState {
   Widget _buildMobileBottomDock(
     BuildContext context, {
     required AppLanguageProvider i18n,
-    required _TimerPresentation timerState,
     required List<PlaybackSession> overlaySessions,
     bool tinyMode = false,
   }) {
@@ -261,7 +262,6 @@ extension _MainScreenLayout on _MainScreenState {
 
   Widget _buildDesktopNavigation(
     BuildContext context,
-    _TimerPresentation timerState,
     AppLanguageProvider i18n,
   ) {
     final cs = Theme.of(context).colorScheme;
@@ -372,11 +372,24 @@ extension _MainScreenLayout on _MainScreenState {
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(8, 8, 8, 2),
-            child: _DesktopQuickAction(
-              icon: Icons.timer_rounded,
-              title: _timerFabLabel(timerState, i18n),
-              subtitle: i18n.tr('timer'),
-              onTap: () => _openTimerSettingsPage(context, timerState),
+            child: Consumer(
+              builder: (context, ref, _) {
+                final timerSlice =
+                    ref.watch(timerStateProvider).valueOrNull ??
+                    const TimerStateSliceData();
+                final timerState = _TimerPresentation(
+                  duration: timerSlice.duration,
+                  remaining: timerSlice.remaining,
+                  active: timerSlice.active,
+                  mode: timerSlice.mode,
+                );
+                return _DesktopQuickAction(
+                  icon: Icons.timer_rounded,
+                  title: _timerFabLabel(timerState, i18n),
+                  subtitle: i18n.tr('timer'),
+                  onTap: () => _openTimerSettingsPage(context, timerState),
+                );
+              },
             ),
           ),
         ],

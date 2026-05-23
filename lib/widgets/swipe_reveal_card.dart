@@ -68,8 +68,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
   bool get _hasTertiaryAction => widget.onTertiaryAction != null;
   int get _actionCount =>
       1 + (_hasSecondaryAction ? 1 : 0) + (_hasTertiaryAction ? 1 : 0);
-  double get _actionWidth =>
-      widget.verticalActions && _actionCount > 1
+  double get _actionWidth => widget.verticalActions && _actionCount > 1
       ? 76
       : _hasSecondaryAction
       ? 144
@@ -241,71 +240,83 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                         child: Padding(
                           padding: EdgeInsets.only(
                             left: 18,
-                            right:
-                                showVerticalActions
-                                    ? _actionWidth + 26
-                                    : _hasTertiaryAction
-                                    ? 216
-                                    : _hasSecondaryAction
-                                    ? 158
-                                    : 86,
+                            right: showVerticalActions
+                                ? _actionWidth + 26
+                                : _hasTertiaryAction
+                                ? 216
+                                : _hasSecondaryAction
+                                ? 158
+                                : 86,
                           ),
                           child: AnimatedOpacity(
                             opacity: 0.24 + (revealProgress * 0.76),
                             duration: const Duration(milliseconds: 160),
                             curve: Curves.easeOutCubic,
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 10,
-                                    vertical: 5,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: accentColor.withValues(alpha: 0.12),
-                                    borderRadius: BorderRadius.circular(999),
-                                    border: Border.all(
-                                      color: accentColor.withValues(
-                                        alpha: 0.18,
+                            child: LayoutBuilder(
+                              builder: (context, constraints) {
+                                final compact = constraints.maxHeight < 64;
+                                return Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 5,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: accentColor.withValues(
+                                          alpha: 0.12,
+                                        ),
+                                        borderRadius: BorderRadius.circular(
+                                          999,
+                                        ),
+                                        border: Border.all(
+                                          color: accentColor.withValues(
+                                            alpha: 0.18,
+                                          ),
+                                        ),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(
+                                            Icons.swipe_left_rounded,
+                                            size: 14,
+                                            color: accentColor,
+                                          ),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            actionLabel,
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .labelMedium
+                                                ?.copyWith(
+                                                  color: accentColor,
+                                                  fontWeight: FontWeight.w800,
+                                                ),
+                                          ),
+                                        ],
                                       ),
                                     ),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(
-                                        Icons.swipe_left_rounded,
-                                        size: 14,
-                                        color: accentColor,
-                                      ),
-                                      const SizedBox(width: 4),
+                                    if (!compact) ...[
+                                      const SizedBox(height: 8),
                                       Text(
-                                        actionLabel,
+                                        actionTooltip,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
                                         style: Theme.of(context)
                                             .textTheme
-                                            .labelMedium
+                                            .bodySmall
                                             ?.copyWith(
-                                              color: accentColor,
-                                              fontWeight: FontWeight.w800,
+                                              color: accentContainerOnColor,
+                                              fontWeight: FontWeight.w600,
                                             ),
                                       ),
                                     ],
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  actionTooltip,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: Theme.of(context).textTheme.bodySmall
-                                      ?.copyWith(
-                                        color: accentContainerOnColor,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                ),
-                              ],
+                                  ],
+                                );
+                              },
                             ),
                           ),
                         ),
@@ -327,13 +338,16 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                                     width: _actionWidth - 20,
                                     child: LayoutBuilder(
                                       builder: (context, constraints) {
-                                        final gap = _actionCount > 1 ? 6.0 : 0.0;
-                                        final availableHeight = constraints
-                                            .maxHeight;
+                                        final gap = _actionCount > 1
+                                            ? 6.0
+                                            : 0.0;
+                                        final availableHeight =
+                                            constraints.maxHeight;
                                         final buttonSize =
                                             ((availableHeight -
                                                         gap *
-                                                            (_actionCount - 1)) /
+                                                            (_actionCount -
+                                                                1)) /
                                                     _actionCount)
                                                 .clamp(34.0, 48.0);
                                         return Column(
@@ -346,14 +360,16 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                                                   Feedback.forTap(context);
                                                   HapticFeedback.selectionClick();
                                                   _closePane();
-                                                  widget.onTertiaryAction?.call();
+                                                  widget.onTertiaryAction
+                                                      ?.call();
                                                 },
                                                 backgroundColor:
                                                     cs.secondaryContainer,
                                                 foregroundColor:
                                                     cs.onSecondaryContainer,
                                                 tooltip:
-                                                    widget.tertiaryActionTooltip ??
+                                                    widget
+                                                        .tertiaryActionTooltip ??
                                                     widget.tertiaryActionLabel,
                                                 icon: widget.tertiaryActionIcon,
                                                 tonal: true,
@@ -367,16 +383,19 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                                                   Feedback.forTap(context);
                                                   HapticFeedback.selectionClick();
                                                   _closePane();
-                                                  widget.onSecondaryAction?.call();
+                                                  widget.onSecondaryAction
+                                                      ?.call();
                                                 },
                                                 backgroundColor:
                                                     cs.primaryContainer,
                                                 foregroundColor:
                                                     cs.onPrimaryContainer,
                                                 tooltip:
-                                                    widget.secondaryActionTooltip ??
+                                                    widget
+                                                        .secondaryActionTooltip ??
                                                     widget.secondaryActionLabel,
-                                                icon: widget.secondaryActionIcon,
+                                                icon:
+                                                    widget.secondaryActionIcon,
                                                 tonal: true,
                                                 size: buttonSize,
                                               ),
@@ -414,7 +433,8 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                                             _closePane();
                                             widget.onTertiaryAction?.call();
                                           },
-                                          backgroundColor: cs.secondaryContainer,
+                                          backgroundColor:
+                                              cs.secondaryContainer,
                                           foregroundColor:
                                               cs.onSecondaryContainer,
                                           tooltip:

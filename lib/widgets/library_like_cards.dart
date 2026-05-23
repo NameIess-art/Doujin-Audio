@@ -21,6 +21,7 @@ class LibraryLikeFeaturedCardContent extends StatelessWidget {
     this.expanded = false,
     this.showExpandIndicator = false,
     this.accentColor,
+    this.enableMarquee = true,
   });
 
   final String title;
@@ -31,6 +32,7 @@ class LibraryLikeFeaturedCardContent extends StatelessWidget {
   final bool showExpandIndicator;
   final String playTooltip;
   final Color? accentColor;
+  final bool enableMarquee;
 
   @override
   Widget build(BuildContext context) {
@@ -89,6 +91,7 @@ class LibraryLikeFeaturedCardContent extends StatelessWidget {
                               loading: false,
                               lines: lines[index].lines,
                               accentColor: accentColor,
+                              enableMarquee: enableMarquee,
                             ),
                           ],
                         ],
@@ -106,6 +109,7 @@ class LibraryLikeFeaturedCardContent extends StatelessWidget {
                       child: LibraryLikeTwoLineMarqueeText(
                         text: title,
                         style: titleStyle,
+                        enableMarquee: enableMarquee,
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -155,11 +159,13 @@ class LibraryLikeSingleAudioCardContent extends StatelessWidget {
     required this.title,
     required this.lines,
     this.accentColor,
+    this.enableMarquee = true,
   });
 
   final String title;
   final List<LibraryLikeInfoLineData> lines;
   final Color? accentColor;
+  final bool enableMarquee;
 
   @override
   Widget build(BuildContext context) {
@@ -190,7 +196,11 @@ class LibraryLikeSingleAudioCardContent extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        LibraryLikeTwoLineMarqueeText(text: title, style: titleStyle),
+        LibraryLikeTwoLineMarqueeText(
+          text: title,
+          style: titleStyle,
+          enableMarquee: enableMarquee,
+        ),
         if (lines.isNotEmpty) ...[
           const SizedBox(height: 8),
           Column(
@@ -206,6 +216,7 @@ class LibraryLikeSingleAudioCardContent extends StatelessWidget {
                   loading: false,
                   lines: lines[i].lines,
                   accentColor: accentColor,
+                  enableMarquee: enableMarquee,
                 ),
               ],
             ],
@@ -225,6 +236,7 @@ class LibraryLikeDetailInfoLine extends StatelessWidget {
     required this.loading,
     this.lines = 1,
     this.accentColor,
+    this.enableMarquee = true,
   });
 
   final String label;
@@ -233,6 +245,7 @@ class LibraryLikeDetailInfoLine extends StatelessWidget {
   final bool loading;
   final int lines;
   final Color? accentColor;
+  final bool enableMarquee;
 
   @override
   Widget build(BuildContext context) {
@@ -242,7 +255,7 @@ class LibraryLikeDetailInfoLine extends StatelessWidget {
       color: accentColor ?? cs.primary,
       fontWeight: FontWeight.w900,
     );
-    final labelWidget = label.characters.length > 3
+    final labelWidget = enableMarquee && label.characters.length > 3
         ? MarqueeText(
             text: label,
             style: labelStyle,
@@ -271,8 +284,19 @@ class LibraryLikeDetailInfoLine extends StatelessWidget {
                   ),
                 )
               : lineCount == 2
-              ? LibraryLikeTwoLineMarqueeText(text: text, style: style)
-              : MarqueeText(text: text, style: style, scrollSpeed: 24),
+              ? LibraryLikeTwoLineMarqueeText(
+                  text: text,
+                  style: style,
+                  enableMarquee: enableMarquee,
+                )
+              : enableMarquee
+              ? MarqueeText(text: text, style: style, scrollSpeed: 24)
+              : Text(
+                  text,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: style,
+                ),
         ),
       ],
     );
@@ -286,17 +310,26 @@ class LibraryLikeMarqueeLine extends StatelessWidget {
     super.key,
     required this.text,
     required this.style,
+    this.enableMarquee = true,
   });
 
   final String text;
   final TextStyle style;
+  final bool enableMarquee;
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
       width: double.infinity,
       height: 16,
-      child: MarqueeText(text: text, style: style, scrollSpeed: 26),
+      child: enableMarquee
+          ? MarqueeText(text: text, style: style, scrollSpeed: 26)
+          : Text(
+              text,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: style,
+            ),
     );
   }
 }
@@ -306,10 +339,12 @@ class LibraryLikeTwoLineMarqueeText extends StatelessWidget {
     super.key,
     required this.text,
     required this.style,
+    this.enableMarquee = true,
   });
 
   final String text;
   final TextStyle style;
+  final bool enableMarquee;
 
   @override
   Widget build(BuildContext context) {
@@ -320,9 +355,17 @@ class LibraryLikeTwoLineMarqueeText extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          LibraryLikeMarqueeLine(text: lines.$1, style: style),
+          LibraryLikeMarqueeLine(
+            text: lines.$1,
+            style: style,
+            enableMarquee: enableMarquee,
+          ),
           const SizedBox(height: 2),
-          LibraryLikeMarqueeLine(text: lines.$2, style: style),
+          LibraryLikeMarqueeLine(
+            text: lines.$2,
+            style: style,
+            enableMarquee: enableMarquee,
+          ),
         ],
       ),
     );

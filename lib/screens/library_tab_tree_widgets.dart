@@ -547,6 +547,7 @@ class _LibraryCoverThumbnail extends ConsumerWidget {
           borderRadius: BorderRadius.circular(12),
           child: AsyncCoverImage(
             future: coverPathFuture,
+            duration: Duration.zero,
             fallbackBuilder: (_) => fallback(),
             loadingBuilder: (_) => Stack(
               fit: StackFit.expand,
@@ -624,6 +625,7 @@ class _LibraryTrackCoverThumbnail extends ConsumerWidget {
         borderRadius: BorderRadius.circular(12),
         child: AsyncCoverImage(
           future: coverPathFuture,
+          duration: Duration.zero,
           fallbackBuilder: (_) => fallback(),
           loadingBuilder: (_) => fallback(),
           imageBuilder: (context, coverPath) {
@@ -708,6 +710,7 @@ class _LibraryFeaturedCardContent extends StatelessWidget {
       expanded: expanded,
       showExpandIndicator: showExpandIndicator,
       playTooltip: i18n.tr('play'),
+      enableMarquee: false,
     );
   }
 }
@@ -729,6 +732,7 @@ class _SingleAudioFileCardContent extends StatelessWidget {
     return LibraryLikeSingleAudioCardContent(
       title: title,
       lines: _audioDetailInfoLines(i18n, detail, detailLoading),
+      enableMarquee: false,
     );
   }
 }

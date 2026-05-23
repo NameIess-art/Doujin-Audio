@@ -58,41 +58,44 @@ class _ActiveSessionCard extends StatelessWidget {
               child: Ink(
                 height: 74,
                 decoration: BoxDecoration(
-                  color: (isDark ? cs.surfaceBright : cs.surfaceContainerHighest)
-                      .withValues(alpha: targetAlpha),
+                  color:
+                      (isDark ? cs.surfaceBright : cs.surfaceContainerHighest)
+                          .withValues(alpha: targetAlpha),
                   borderRadius: BorderRadius.circular(cardRadius),
                   border: Border.all(
-                    color: cs.outlineVariant.withValues(alpha: isDark ? 0.3 : 0.5),
+                    color: cs.outlineVariant.withValues(
+                      alpha: isDark ? 0.3 : 0.5,
+                    ),
                   ),
                   boxShadow: isTinyWindow
-                    ? null
-                    : [
-                        BoxShadow(
-                          color: cs.shadow.withValues(
-                            alpha: isPlaying ? 0.26 : 0.18,
+                      ? null
+                      : [
+                          BoxShadow(
+                            color: cs.shadow.withValues(
+                              alpha: isPlaying ? 0.26 : 0.18,
+                            ),
+                            blurRadius: isPlaying ? 34 : 26,
+                            spreadRadius: -7,
+                            offset: const Offset(0, 18),
                           ),
-                          blurRadius: isPlaying ? 34 : 26,
-                          spreadRadius: -7,
-                          offset: const Offset(0, 18),
-                        ),
-                        BoxShadow(
-                          color: cs.primary.withValues(
-                            alpha: isPlaying ? 0.08 : 0.04,
+                          BoxShadow(
+                            color: cs.primary.withValues(
+                              alpha: isPlaying ? 0.08 : 0.04,
+                            ),
+                            blurRadius: 18,
+                            spreadRadius: -10,
+                            offset: const Offset(0, 8),
                           ),
-                          blurRadius: 18,
-                          spreadRadius: -10,
-                          offset: const Offset(0, 8),
-                        ),
-                      ],
-              ),
-              child: _buildCardContent(
-                context,
-                cs,
-                isPlaying,
-                view,
-                currentTrack,
-                displayName,
-              ),
+                        ],
+                ),
+                child: _buildCardContent(
+                  context,
+                  cs,
+                  isPlaying,
+                  view,
+                  currentTrack,
+                  displayName,
+                ),
               ),
             ),
           ),
@@ -290,7 +293,6 @@ class _ActiveSessionTitleSubtitleState
   void initState() {
     super.initState();
     _loadSubtitleTrack();
-    _bindPosition();
   }
 
   @override
@@ -298,7 +300,7 @@ class _ActiveSessionTitleSubtitleState
     super.didUpdateWidget(oldWidget);
     if (oldWidget.session != widget.session) {
       unawaited(_positionSub?.cancel());
-      _bindPosition();
+      _positionSub = null;
     }
     if (_loadedPath != widget.session.currentTrackPath) {
       _loadSubtitleTrack();
@@ -318,18 +320,26 @@ class _ActiveSessionTitleSubtitleState
   void _loadSubtitleTrack() {
     final trackPath = widget.session.currentTrackPath;
     _loadedPath = trackPath;
-    setState(() {
-      _subtitleTrack = null;
-      _subtitleText = null;
-    });
+    unawaited(_positionSub?.cancel());
+    _positionSub = null;
+    if (_subtitleTrack != null || _subtitleText != null) {
+      setState(() {
+        _subtitleTrack = null;
+        _subtitleText = null;
+      });
+    }
     widget.provider.subtitleTrackForPath(trackPath).then((track) {
       if (!mounted || _loadedPath != trackPath) return;
       _subtitleTrack = track;
+      if (track != null) {
+        _bindPosition();
+      }
       _updateSubtitleText(widget.session.position);
     });
   }
 
   void _updateSubtitleText(Duration position) {
+    if (_subtitleTrack == null) return;
     final nextText = widget.provider.subtitleTextForTrackAt(
       widget.session.currentTrackPath,
       position,
@@ -539,8 +549,11 @@ class _ActiveSessionCover extends StatelessWidget {
       child: Hero(
         tag: 'cover_$sessionId',
         placeholderBuilder: (context, heroSize, child) => child,
-        flightShuttleBuilder: (context, animation, direction, fromContext, toContext) => fromContext.widget,
-        createRectTween: (begin, end) => MaterialRectCenterArcTween(begin: begin, end: end),
+        flightShuttleBuilder:
+            (context, animation, direction, fromContext, toContext) =>
+                fromContext.widget,
+        createRectTween: (begin, end) =>
+            MaterialRectCenterArcTween(begin: begin, end: end),
         child: Material(
           type: MaterialType.transparency,
           borderRadius: BorderRadius.circular(14),
@@ -549,7 +562,8 @@ class _ActiveSessionCover extends StatelessWidget {
               ? Image.network(
                   track!.remoteCoverUrl!.trim(),
                   fit: BoxFit.cover,
-                  cacheWidth: (58 * MediaQuery.devicePixelRatioOf(context)).round(),
+                  cacheWidth: (58 * MediaQuery.devicePixelRatioOf(context))
+                      .round(),
                   errorBuilder: (_, _, _) => fallback(),
                 )
               : AsyncCoverImage(

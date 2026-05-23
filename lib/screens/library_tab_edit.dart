@@ -1,5 +1,71 @@
 part of 'library_tab.dart';
 
+final _libraryEditTrackViewStateProvider =
+    Provider.family<_LibraryEditTrackViewState, _LibraryEditTrackKey>((
+      ref,
+      key,
+    ) {
+      ref.watch(
+        libraryStateProvider.select(
+          (value) => value.valueOrNull?.structureRevision ?? 0,
+        ),
+      );
+      final libraryService = ref.read(libraryServiceProvider);
+      final track = libraryService.trackByPath(key.trackPath);
+      final persistedDisplayName = libraryService
+          .libraryEntryDisplayNameForPath(key.libraryPath, key.trackPath);
+      final title = track?.displayName.trim().isNotEmpty == true
+          ? track!.displayName
+          : persistedDisplayName ??
+                PathDisplay.fileName(key.trackPath, withoutExtension: true);
+      return _LibraryEditTrackViewState(
+        title: title,
+        explicitExcluded: libraryService.isLibraryTrackExplicitlyExcluded(
+          key.libraryPath,
+          key.trackPath,
+        ),
+        muted: libraryService.isLibraryPathExcluded(
+          key.libraryPath,
+          key.trackPath,
+        ),
+        inheritedExcluded: libraryService.isLibraryPathInheritedExcluded(
+          key.libraryPath,
+          key.trackPath,
+        ),
+      );
+    });
+
+class _LibraryEditTrackKey {
+  const _LibraryEditTrackKey(this.libraryPath, this.trackPath);
+
+  final String libraryPath;
+  final String trackPath;
+
+  @override
+  bool operator ==(Object other) {
+    return other is _LibraryEditTrackKey &&
+        other.libraryPath == libraryPath &&
+        other.trackPath == trackPath;
+  }
+
+  @override
+  int get hashCode => Object.hash(libraryPath, trackPath);
+}
+
+class _LibraryEditTrackViewState {
+  const _LibraryEditTrackViewState({
+    required this.title,
+    required this.explicitExcluded,
+    required this.muted,
+    required this.inheritedExcluded,
+  });
+
+  final String title;
+  final bool explicitExcluded;
+  final bool muted;
+  final bool inheritedExcluded;
+}
+
 class LibraryEditPage extends ConsumerStatefulWidget {
   const LibraryEditPage({super.key, required this.libraryPath});
 
@@ -876,8 +942,11 @@ class _LibraryEditTreeNodeWidget extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    ref.watch(libraryStateProvider);
-    final libraryService = ref.read(libraryServiceProvider);
+    ref.watch(
+      libraryStateProvider.select(
+        (value) => value.valueOrNull?.structureRevision ?? 0,
+      ),
+    );
     if (node is _LibraryEditFolderTreeNode) {
       return _LibraryEditFolderTreeTile(
         libraryPath: libraryPath,
@@ -887,19 +956,9 @@ class _LibraryEditTreeNodeWidget extends ConsumerWidget {
     }
     if (node is _LibraryEditTrackTreeNode) {
       final track = node as _LibraryEditTrackTreeNode;
-      final explicitExcluded = libraryService.isLibraryTrackExplicitlyExcluded(
-        libraryPath,
-        track.trackPath,
-      );
-      final muted = libraryService.isLibraryPathExcluded(
-        libraryPath,
-        track.trackPath,
-      );
       return _LibraryEditTrackTile(
         libraryPath: libraryPath,
         trackPath: track.trackPath,
-        explicitExcluded: explicitExcluded,
-        muted: muted,
       );
     }
     return const SizedBox.shrink();
@@ -1090,74 +1149,53 @@ class _LibraryEditTrackTile extends ConsumerWidget {
   const _LibraryEditTrackTile({
     required this.libraryPath,
     required this.trackPath,
-    required this.explicitExcluded,
-    this.muted,
   });
 
   final String libraryPath;
   final String trackPath;
-  final bool explicitExcluded;
-  final bool? muted;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    ref.watch(libraryStateProvider);
     final i18n = context.watch<AppLanguageProvider>();
-    final libraryService = ref.read(libraryServiceProvider);
+    final viewState = ref.watch(
+      _libraryEditTrackViewStateProvider(
+        _LibraryEditTrackKey(libraryPath, trackPath),
+      ),
+    );
     final provider = ref.read(audioProviderFacadeProvider);
     final cs = Theme.of(context).colorScheme;
-    final track = libraryService.trackByPath(trackPath);
-    final persistedDisplayName = libraryService
-        .libraryEntriesForLibrary(libraryPath)
-        .where(
-          (entry) =>
-              entry.isTrack &&
-              PathMatcher.equalsNormalized(entry.path, trackPath) &&
-              entry.displayName.trim().isNotEmpty,
-        )
-        .firstOrNull
-        ?.displayName
-        .trim();
-    final title = track?.displayName.trim().isNotEmpty == true
-        ? track!.displayName
-        : persistedDisplayName ??
-              PathDisplay.fileName(trackPath, withoutExtension: true);
-    final isMuted =
-        muted ?? libraryService.isLibraryPathExcluded(libraryPath, trackPath);
-    final inheritedExcluded = libraryService.isLibraryPathInheritedExcluded(
-      libraryPath,
-      trackPath,
-    );
 
     return ListTile(
       dense: true,
       contentPadding: const EdgeInsets.symmetric(horizontal: 6),
       leading: Icon(
-        isMuted ? Icons.music_off_rounded : Icons.music_note_rounded,
-        color: isMuted ? cs.onSurfaceVariant : cs.primary,
+        viewState.muted ? Icons.music_off_rounded : Icons.music_note_rounded,
+        color: viewState.muted ? cs.onSurfaceVariant : cs.primary,
       ),
       title: Text(
-        title,
+        viewState.title,
         maxLines: 2,
         overflow: TextOverflow.ellipsis,
         style: TextStyle(
-          color: isMuted ? cs.onSurfaceVariant : cs.onSurface,
+          color: viewState.muted ? cs.onSurfaceVariant : cs.onSurface,
           fontWeight: FontWeight.w700,
         ),
       ),
-      subtitle: isMuted ? Text(i18n.tr('excluded')) : null,
+      subtitle: viewState.muted ? Text(i18n.tr('excluded')) : null,
       trailing: TextButton(
-        style: isMuted ? _libraryMutedButtonStyle(cs) : null,
-        onPressed: inheritedExcluded
+        style: viewState.muted ? _libraryMutedButtonStyle(cs) : null,
+        onPressed: viewState.inheritedExcluded
             ? null
             : () {
                 provider.setLibraryTrackExcluded(
                   libraryPath,
                   trackPath,
-                  !explicitExcluded,
+                  !viewState.explicitExcluded,
                 );
               },
-        child: Text(explicitExcluded ? i18n.tr('restore') : i18n.tr('exclude')),
+        child: Text(
+          viewState.explicitExcluded ? i18n.tr('restore') : i18n.tr('exclude'),
+        ),
       ),
     );
   }

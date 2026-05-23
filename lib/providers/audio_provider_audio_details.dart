@@ -306,7 +306,7 @@ extension AudioProviderAudioDetails on AudioProvider {
       folderName,
     );
     _retargetActiveSessions(oldFolderPath, newFolderPath);
-    _clearResolvedCoverPaths();
+    _invalidateResolvedCoverScopes([oldFolderPath, newFolderPath]);
     _syncGroupOrderFromLibrary();
     _rebuildLibraryIndexes();
     await _audioDatabaseRepository.saveAllTracks(_library);

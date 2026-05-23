@@ -751,4 +751,46 @@ class AudioProvider with ChangeNotifier {
     _manualCoverByScopeCache.clear();
     _discoveredImagesByScopeCache.clear();
   }
+
+  void _invalidateResolvedCoverScope(String? scope) {
+    if (scope == null || scope.isEmpty) {
+      _clearResolvedCoverPaths();
+      return;
+    }
+    final normalizedScope = PathMatcher.normalize(scope);
+    _coverGeneration++;
+    _coverPathFutures.remove(normalizedScope);
+    _resolvedCoverPaths.remove(normalizedScope);
+    _resolvedCoverPathFutures.remove(normalizedScope);
+    _notificationCoverPathFutures.remove(normalizedScope);
+    _resolvedNotificationCoverPaths.remove(normalizedScope);
+    _resolvedNotificationCoverPathFutures.remove(normalizedScope);
+    _notificationCoverSearchMisses.remove(normalizedScope);
+    _manualCoverByScopeCache.remove(normalizedScope);
+    _discoveredImagesByScopeCache.remove(normalizedScope);
+  }
+
+  void _invalidateResolvedCoverScopes(Iterable<String?> scopes) {
+    final normalizedScopes = scopes
+        .whereType<String>()
+        .map(PathMatcher.normalize)
+        .where((scope) => scope.isNotEmpty)
+        .toSet();
+    if (normalizedScopes.isEmpty) {
+      _clearResolvedCoverPaths();
+      return;
+    }
+    _coverGeneration++;
+    for (final scope in normalizedScopes) {
+      _coverPathFutures.remove(scope);
+      _resolvedCoverPaths.remove(scope);
+      _resolvedCoverPathFutures.remove(scope);
+      _notificationCoverPathFutures.remove(scope);
+      _resolvedNotificationCoverPaths.remove(scope);
+      _resolvedNotificationCoverPathFutures.remove(scope);
+      _notificationCoverSearchMisses.remove(scope);
+      _manualCoverByScopeCache.remove(scope);
+      _discoveredImagesByScopeCache.remove(scope);
+    }
+  }
 }

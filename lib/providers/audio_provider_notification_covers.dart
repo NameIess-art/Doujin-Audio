@@ -388,14 +388,9 @@ extension AudioProviderNotificationCovers on AudioProvider {
             Future<String?>.value(),
       );
 
-      final previous = _resolvedCoverPaths[normalizedFolderPath];
       _resolvedCoverPaths[normalizedFolderPath] = coverPath;
       _resolvedCoverPathFutures[normalizedFolderPath] =
           SynchronousFuture<String?>(coverPath);
-
-      if (previous != coverPath) {
-        _notifyNotificationChanged();
-      }
 
       return coverPath;
     });

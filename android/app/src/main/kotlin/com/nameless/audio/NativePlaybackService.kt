@@ -1,48 +1,28 @@
-package com.nameless.audio
+﻿package com.nameless.audio
 
-import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.media.AudioAttributes as AndroidAudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
-import android.media.audiofx.LoudnessEnhancer
-import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
 import android.util.Log
-import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
-import androidx.media3.common.C
-import androidx.media3.common.MediaItem
-import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.DefaultRenderersFactory
-import androidx.media3.exoplayer.audio.ChannelMappingAudioProcessor
-import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import androidx.media3.session.MediaNotification
 
-import androidx.media3.session.MediaStyleNotificationHelper
 import java.util.concurrent.ConcurrentHashMap
-
-private data class NativeMediaItemDescriptor(
-    val path: String,
-    val uri: String,
-    val title: String,
-    val subtitle: String?,
-    val artUri: String?
-)
 
 class NativePlaybackService : MediaSessionService() {
     companion object {
@@ -109,6 +89,54 @@ class NativePlaybackService : MediaSessionService() {
     private val sessions = linkedMapOf<String, NativePlaybackSession>()
     private val stateListeners = ConcurrentHashMap<String, (Map<String, Any?>) -> Unit>()
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val playbackWakeLock by lazy {
+        NativePlaybackWakeLock(
+            context = this,
+            logInfo = ::logInfo,
+            logWarn = { message, error -> logWarn(message, error = error) }
+        )
+    }
+    private val foregroundNotificationFactory by lazy {
+        NativeForegroundNotificationFactory(this, PLAYBACK_CHANNEL_ID)
+    }
+    private val playerFactory by lazy {
+        NativePlayerFactory(
+            context = this,
+            callbacks = object : NativePlayerEventCallbacks {
+                override fun onPlaybackStateChanged(sessionId: String, playbackState: Int) {
+                    handlePlaybackStateChanged(sessionId, playbackState)
+                }
+
+                override fun onMediaItemTransition(sessionId: String, reason: Int) {
+                    handleMediaItemTransition(sessionId, reason)
+                }
+
+                override fun onPlayerEvents(sessionId: String) {
+                    publishSessionState(sessionId)
+                }
+
+                override fun onPlayWhenReadyChanged(
+                    sessionId: String,
+                    playWhenReady: Boolean,
+                    reason: Int
+                ) {
+                    handlePlayWhenReadyChanged(sessionId, playWhenReady, reason)
+                }
+
+                override fun onIsPlayingChanged(sessionId: String, isPlaying: Boolean) {
+                    handleIsPlayingChanged(sessionId, isPlaying)
+                }
+
+                override fun onPlayerError(sessionId: String, error: PlaybackException) {
+                    handlePlayerError(sessionId, error)
+                }
+
+                override fun onAudioSessionIdChanged(sessionId: String, audioSessionId: Int) {
+                    sessions[sessionId]?.onAudioSessionIdChanged(audioSessionId)
+                }
+            }
+        )
+    }
     private var mediaSession: MediaSession? = null
     private var dummyPlayer: ExoPlayer? = null
 
@@ -136,7 +164,6 @@ class NativePlaybackService : MediaSessionService() {
     private var playbackSuspended = false
     private var playbackForegroundStarted = false
     private var playbackForegroundSignature: String? = null
-    private var wakeLock: PowerManager.WakeLock? = null
     private var audioFocusRequest: AudioFocusRequest? = null
     private var audioFocusHeld = false
     private var transientAudioFocusLossActive = false
@@ -215,7 +242,7 @@ class NativePlaybackService : MediaSessionService() {
     private val foregroundWatchdog = object : Runnable {
         override fun run() {
             if (!hasPlaybackToKeepAlive()) {
-                // Don't stop the watchdog immediately — a grace-period stop may
+                // Don't stop the watchdog immediately 鈥?a grace-period stop may
                 // already be pending.  Just reschedule; the grace runnable will
                 // clean up if playback truly stopped.
                 mainHandler.postDelayed(this, FOREGROUND_WATCHDOG_INTERVAL_MS)
@@ -288,7 +315,7 @@ class NativePlaybackService : MediaSessionService() {
         } else if (sessions.isNotEmpty()) {
             // Sessions exist but nothing is actively playing right now (e.g.
             // the user swiped the app away during a brief buffering gap).
-            // Do NOT call stopSelf() — let the grace-period runnable decide.
+            // Do NOT call stopSelf() 鈥?let the grace-period runnable decide.
             // The foreground service will keep us alive until the grace window
             // expires or playback resumes.
             logInfo("on_task_removed sessions_present_deferring_stop")
@@ -307,7 +334,7 @@ class NativePlaybackService : MediaSessionService() {
     override fun onDestroy() {
         logInfo(
             "on_destroy_begin sessions=${sessions.size} " +
-                "foregroundStarted=$playbackForegroundStarted wakeLockHeld=${wakeLock?.isHeld == true}"
+                "foregroundStarted=$playbackForegroundStarted wakeLockHeld=${playbackWakeLock.isHeld()}"
         )
         stateListeners.clear()
         mainHandler.removeCallbacks(positionTicker)
@@ -364,7 +391,9 @@ class NativePlaybackService : MediaSessionService() {
             playbackSuspended = false
         }
 
-        val nativeSession = sessions.getOrPut(sessionId) { NativePlaybackSession(sessionId) }
+        val nativeSession = sessions.getOrPut(sessionId) {
+            createNativePlaybackSession(sessionId)
+        }
         pendingAudioFocusResumeSessionIds.remove(sessionId)
         return try {
             nativeSession.configure(
@@ -680,6 +709,15 @@ class NativePlaybackService : MediaSessionService() {
         }
     }
 
+    private fun createNativePlaybackSession(sessionId: String): NativePlaybackSession {
+        return NativePlaybackSession(
+            sessionId = sessionId,
+            createPlayer = playerFactory::create,
+            evictPlayersIfNeeded = ::evictPlayersIfNeeded,
+            logWarn = { message, session, error -> logWarn(message, session, error) }
+        )
+    }
+
     private fun parseQueue(rawQueue: Any?): List<NativeMediaItemDescriptor> {
         val queue = rawQueue as? List<*> ?: return emptyList()
         return queue.mapNotNull { rawItem ->
@@ -697,111 +735,72 @@ class NativePlaybackService : MediaSessionService() {
         }
     }
 
-    private fun createPlayer(
+    private fun handlePlaybackStateChanged(sessionId: String, playbackState: Int) {
+        logInfo(
+            "player_state_changed state=${playbackStateName(playbackState)}",
+            sessions[sessionId]
+        )
+        publishSessionState(sessionId)
+        schedulePersistSessionState()
+        syncForegroundState()
+    }
+
+    private fun handleMediaItemTransition(sessionId: String, reason: Int) {
+        sessions[sessionId]?.syncCurrentMediaItemFromPlayer()
+        logInfo(
+            "player_media_item_transition reason=$reason",
+            sessions[sessionId]
+        )
+        publishSessionState(sessionId)
+        persistSessionStateNow()
+        syncForegroundState()
+    }
+
+    private fun handlePlayWhenReadyChanged(
         sessionId: String,
-        channelMappingAudioProcessor: ChannelMappingAudioProcessor
-    ): ExoPlayer {
-        val renderersFactory = object : DefaultRenderersFactory(this) {
-            override fun buildAudioSink(
-                context: Context,
-                enableFloatOutput: Boolean,
-                enableAudioTrackPlaybackParams: Boolean
-            ) = DefaultAudioSink.Builder(context)
-                .setAudioProcessors(arrayOf(channelMappingAudioProcessor))
-                .setEnableFloatOutput(enableFloatOutput)
-                .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
-                .build()
-        }
-
-        return ExoPlayer.Builder(this, renderersFactory).build().also { player ->
-            // WAKE_MODE_NETWORK keeps both the CPU wake lock and a WifiLock,
-            // preventing the OS from dropping network connections during deep Doze mode
-            // when the screen is off for extended periods.
-            player.setWakeMode(C.WAKE_MODE_NETWORK)
-            // Disable ExoPlayer's built-in audio focus management.  We manage
-            // focus ourselves via audioFocusChangeListener so that transient
-            // focus losses (e.g. OEM screen-off sounds) do not pause playback.
-            player.setAudioAttributes(
-                androidx.media3.common.AudioAttributes.Builder()
-                    .setUsage(androidx.media3.common.C.USAGE_MEDIA)
-                    .setContentType(androidx.media3.common.C.AUDIO_CONTENT_TYPE_MUSIC)
-                    .build(),
-                /* handleAudioFocus = */ false,
+        playWhenReady: Boolean,
+        reason: Int
+    ) {
+        if (
+            shouldTrackTransientAudioFocusPause(
+                playWhenReady = playWhenReady,
+                reason = reason,
+                focusLossMayResume = transientAudioFocusLossActive,
+                playbackSuspended = playbackSuspended
             )
-            player.addListener(object : Player.Listener {
-                override fun onPlaybackStateChanged(playbackState: Int) {
-                    logInfo(
-                        "player_state_changed state=${playbackStateName(playbackState)}",
-                        sessions[sessionId]
-                    )
-                    publishSessionState(sessionId)
-                    schedulePersistSessionState()
-                    syncForegroundState()
-                }
-
-                override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-                    sessions[sessionId]?.syncCurrentMediaItemFromPlayer()
-                    logInfo(
-                        "player_media_item_transition reason=$reason",
-                        sessions[sessionId]
-                    )
-                    publishSessionState(sessionId)
-                    persistSessionStateNow()
-                    syncForegroundState()
-                }
-
-                override fun onEvents(player: Player, events: Player.Events) {
-                    publishSessionState(sessionId)
-                }
-
-                override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
-                    if (
-                        shouldTrackTransientAudioFocusPause(
-                            playWhenReady = playWhenReady,
-                            reason = reason,
-                            focusLossMayResume = transientAudioFocusLossActive,
-                            playbackSuspended = playbackSuspended
-                        )
-                    ) {
-                        pendingAudioFocusResumeSessionIds.add(sessionId)
-                    } else {
-                        pendingAudioFocusResumeSessionIds.remove(sessionId)
-                    }
-                    logInfo(
-                        "player_play_when_ready_changed playWhenReady=$playWhenReady " +
-                            "reason=${playWhenReadyReasonName(reason)}",
-                        sessions[sessionId]
-                    )
-                    publishSessionState(sessionId)
-                    schedulePersistSessionState()
-                    syncForegroundState()
-                }
-
-                override fun onIsPlayingChanged(isPlaying: Boolean) {
-                    logInfo("player_is_playing_changed isPlaying=$isPlaying", sessions[sessionId])
-                    publishSessionState(sessionId)
-                    schedulePersistSessionState()
-                    syncForegroundState()
-                }
-
-                override fun onPlayerError(error: PlaybackException) {
-                    pendingAudioFocusResumeSessionIds.remove(sessionId)
-                    logWarn(
-                        "player_error code=${error.errorCodeName} message=${error.message} " +
-                            "cause=${error.cause?.javaClass?.simpleName}:${error.cause?.message}",
-                        sessions[sessionId],
-                        error
-                    )
-                    publishSessionState(sessionId)
-                    persistSessionStateNow()
-                    syncForegroundState()
-                }
-
-                override fun onAudioSessionIdChanged(audioSessionId: Int) {
-                    sessions[sessionId]?.onAudioSessionIdChanged(audioSessionId)
-                }
-            })
+        ) {
+            pendingAudioFocusResumeSessionIds.add(sessionId)
+        } else {
+            pendingAudioFocusResumeSessionIds.remove(sessionId)
         }
+        logInfo(
+            "player_play_when_ready_changed playWhenReady=$playWhenReady " +
+                "reason=${playWhenReadyReasonName(reason)}",
+            sessions[sessionId]
+        )
+        publishSessionState(sessionId)
+        schedulePersistSessionState()
+        syncForegroundState()
+    }
+
+    private fun handleIsPlayingChanged(sessionId: String, isPlaying: Boolean) {
+        logInfo("player_is_playing_changed isPlaying=$isPlaying", sessions[sessionId])
+        publishSessionState(sessionId)
+        schedulePersistSessionState()
+        syncForegroundState()
+    }
+
+    private fun handlePlayerError(sessionId: String, error: PlaybackException) {
+        pendingAudioFocusResumeSessionIds.remove(sessionId)
+        logWarn(
+            "player_error code=${error.errorCodeName} message=${error.message} " +
+                "cause=${error.cause?.javaClass?.simpleName}:${error.cause?.message}",
+            sessions[sessionId],
+            error
+        )
+        publishSessionState(sessionId)
+        persistSessionStateNow()
+        syncForegroundState()
     }
 
     private fun focusSession(sessionId: String) {
@@ -885,7 +884,7 @@ class NativePlaybackService : MediaSessionService() {
 
     private fun syncForegroundState() {
         if (hasPlaybackToKeepAlive()) {
-            // Playback is active — cancel any pending grace-period stop and
+            // Playback is active 鈥?cancel any pending grace-period stop and
             // make sure the foreground service + wake lock are held.
             cancelForegroundStopGrace()
             acquireWakeLock()
@@ -965,7 +964,12 @@ class NativePlaybackService : MediaSessionService() {
             ServiceCompat.startForeground(
                 this,
                 FOREGROUND_NOTIFICATION_ID,
-                buildForegroundNotification(foregroundSession),
+                foregroundNotificationFactory.buildPlaybackNotification(
+                    title = foregroundSession.title,
+                    subtitle = foregroundSession.subtitle,
+                    mediaSession = currentMediaSession(),
+                    allowRichSummary = usesUnifiedNotification
+                ),
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
             )
             playbackForegroundStarted = true
@@ -993,10 +997,13 @@ class NativePlaybackService : MediaSessionService() {
             return
         }
         try {
+            ensureMediaSessionForBootstrap()
             ServiceCompat.startForeground(
                 this,
                 FOREGROUND_NOTIFICATION_ID,
-                buildBootstrapForegroundNotification(),
+                foregroundNotificationFactory.buildBootstrapNotification(
+                    currentMediaSession()
+                ),
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
             )
             playbackForegroundStarted = true
@@ -1034,98 +1041,6 @@ class NativePlaybackService : MediaSessionService() {
         if (shouldRemoveNotification) {
             val manager = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
             manager?.cancel(FOREGROUND_NOTIFICATION_ID)
-        }
-    }
-
-    private fun buildForegroundNotification(
-        session: NativePlaybackSession
-    ): Notification {
-        if (!notificationsDismissed &&
-            !foregroundSuppressed &&
-            UnifiedPlaybackNotificationController.hasUnifiedNotifications()
-        ) {
-            UnifiedPlaybackNotificationController.lastRichSummaryNotification?.let {
-                return it
-            }
-        }
-        val launchIntent = packageManager.getLaunchIntentForPackage(packageName)?.apply {
-            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
-        }
-        val pendingIntent = launchIntent?.let {
-            PendingIntent.getActivity(
-                this,
-                0,
-                it,
-                PendingIntent.FLAG_UPDATE_CURRENT or immutablePendingIntentFlag()
-            )
-        }
-        val builder = NotificationCompat.Builder(this, PLAYBACK_CHANNEL_ID)
-            .setSmallIcon(R.mipmap.ic_launcher)
-            .setContentTitle(session.title.ifBlank { "Nameless Audio" })
-            .setContentText(
-                session.subtitle
-                    ?.takeIf { it.isNotBlank() }
-                    ?: getString(R.string.keep_alive_playback_active)
-            )
-            .setContentIntent(pendingIntent)
-            .setShowWhen(false)
-            .setOngoing(true)
-            .setOnlyAlertOnce(true)
-            .setSilent(true)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            .setCategory(NotificationCompat.CATEGORY_TRANSPORT)
-            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
-
-        val mediaSession = currentMediaSession()
-        if (mediaSession != null) {
-            builder.setStyle(MediaStyleNotificationHelper.MediaStyle(mediaSession))
-        }
-
-        return builder.build()
-    }
-
-    private fun buildBootstrapForegroundNotification(): Notification {
-        val launchIntent = packageManager.getLaunchIntentForPackage(packageName)?.apply {
-            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
-        }
-        val pendingIntent = launchIntent?.let {
-            PendingIntent.getActivity(
-                this,
-                0,
-                it,
-                PendingIntent.FLAG_UPDATE_CURRENT or immutablePendingIntentFlag()
-            )
-        }
-        val builder = NotificationCompat.Builder(this, PLAYBACK_CHANNEL_ID)
-            .setSmallIcon(R.mipmap.ic_launcher)
-            .setContentTitle("Nameless Audio")
-            .setContentText(getString(R.string.keep_alive_timer_active))
-            .setContentIntent(pendingIntent)
-            .setShowWhen(false)
-            .setOngoing(true)
-            .setOnlyAlertOnce(true)
-            .setSilent(true)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            .setCategory(NotificationCompat.CATEGORY_SERVICE)
-            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
-
-        ensureMediaSessionForBootstrap()
-
-        val mediaSession = currentMediaSession()
-        if (mediaSession != null) {
-            builder.setStyle(MediaStyleNotificationHelper.MediaStyle(mediaSession))
-        }
-
-        return builder.build()
-    }
-
-    private fun immutablePendingIntentFlag(): Int {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            PendingIntent.FLAG_IMMUTABLE
-        } else {
-            0
         }
     }
 
@@ -1211,7 +1126,7 @@ class NativePlaybackService : MediaSessionService() {
         val restoredSessionIds = mutableListOf<String>()
         storedSessions.forEach { stored ->
             val nativeSession = sessions.getOrPut(stored.sessionId) {
-                NativePlaybackSession(stored.sessionId)
+                createNativePlaybackSession(stored.sessionId)
             }
             try {
                 nativeSession.channelSwapEnabled = stored.channelSwapEnabled
@@ -1281,7 +1196,7 @@ class NativePlaybackService : MediaSessionService() {
             .filter { it.sessionId in missingSessionIds }
             .forEach { stored ->
                 val nativeSession = sessions.getOrPut(stored.sessionId) {
-                    NativePlaybackSession(stored.sessionId)
+                    createNativePlaybackSession(stored.sessionId)
                 }
                 try {
                     nativeSession.channelSwapEnabled = stored.channelSwapEnabled
@@ -1418,44 +1333,11 @@ class NativePlaybackService : MediaSessionService() {
     }
 
     private fun acquireWakeLock() {
-        if (wakeLock?.isHeld == true) {
-            logInfo("wakelock_acquire_skip already_held")
-            return
-        }
-        try {
-            val powerManager = getSystemService(POWER_SERVICE) as? PowerManager
-            wakeLock = powerManager?.newWakeLock(
-                PowerManager.PARTIAL_WAKE_LOCK,
-                "$packageName:native_playback"
-            )?.apply {
-                setReferenceCounted(false)
-                acquire()
-            }
-            logInfo("wakelock_acquired held=${wakeLock?.isHeld == true}")
-        } catch (e: Exception) {
-            logWarn("wakelock_acquire_failed", error = e)
-            wakeLock = null
-        }
+        playbackWakeLock.acquire()
     }
 
     private fun releaseWakeLock() {
-        val currentWakeLock = wakeLock ?: run {
-            logInfo("wakelock_release_skip none")
-            return
-        }
-        try {
-            if (currentWakeLock.isHeld) {
-                currentWakeLock.release()
-                logInfo("wakelock_released")
-            } else {
-                logInfo("wakelock_release_skip not_held")
-            }
-        } catch (e: RuntimeException) {
-            logWarn("wakelock_release_failed", error = e)
-            // Ignore stale wakelock state.
-        } finally {
-            wakeLock = null
-        }
+        playbackWakeLock.release()
     }
 
     private fun logInfo(message: String, session: NativePlaybackSession? = null) {
@@ -1544,407 +1426,7 @@ class NativePlaybackService : MediaSessionService() {
         return mapOf("ok" to false, "error" to message)
     }
 
-    private inner class NativePlaybackSession(
-        val sessionId: String
-    ) {
-        private val channelMappingAudioProcessor = ChannelMappingAudioProcessor()
-        private var loudnessEnhancer: LoudnessEnhancer? = null
-        private var loudnessEnhancerSessionId: Int = C.AUDIO_SESSION_ID_UNSET
-        private var _player: ExoPlayer? = null
-        var lastUsedMs: Long = System.currentTimeMillis()
-        var path: String? = null
-        var uri: String? = null
-        var title: String = "Audio"
-        var subtitle: String? = null
-        var artUri: String? = null
-        var volume: Float = 1f
-        var repeatOne: Boolean = false
-        var repeatAll: Boolean = false
-        var shuffleModeEnabled: Boolean = false
-        private var queue: List<NativeMediaItemDescriptor> = emptyList()
-        var channelSwapEnabled: Boolean = false
-        var lastPositionMs: Long = 0L
-        var lastDurationMs: Long? = null
-        var lastBufferedPositionMs: Long = 0L
-        var lastIsPlaying: Boolean = false
-        var lastPlayWhenReady: Boolean = false
-        var lastPlaybackState: String = "idle"
 
-        fun hasPlayer(): Boolean = _player != null
-
-        fun playerOrNull(): ExoPlayer? = _player
-
-        fun ensurePlayer(): ExoPlayer {
-            _player?.let { return it }
-            val p = createPlayer(
-                sessionId,
-                channelMappingAudioProcessor
-            )
-            _player = p
-            
-            val descriptors = queue.takeIf { it.isNotEmpty() }
-                ?: uri?.let {
-                    listOf(
-                        NativeMediaItemDescriptor(
-                            path = path ?: it,
-                            uri = it,
-                            title = title,
-                            subtitle = subtitle,
-                            artUri = artUri
-                        )
-                    )
-                }
-            if (!descriptors.isNullOrEmpty()) {
-                p.setMediaItems(
-                    descriptors.map(::buildMediaItem),
-                    currentQueueIndexFor(descriptors),
-                    lastPositionMs
-                )
-                applyVolumeToPlayer(p)
-                p.repeatMode = repeatModeFor(descriptors.size)
-                p.shuffleModeEnabled = shuffleModeEnabled && descriptors.size > 1
-                p.playWhenReady = lastPlayWhenReady
-                p.prepare()
-            }
-            
-            return p
-        }
-
-        fun isPlaying(): Boolean = _player?.isPlaying ?: lastIsPlaying
-
-        fun releasePlayer() {
-            _player?.let { p ->
-                lastPositionMs = p.currentPosition.coerceAtLeast(0L)
-                lastDurationMs = durationOrNull(p.duration)
-                lastBufferedPositionMs = p.bufferedPosition.coerceAtLeast(0L)
-                lastIsPlaying = p.isPlaying
-                lastPlayWhenReady = p.playWhenReady
-                lastPlaybackState = p.playbackStateName()
-                syncCurrentMediaItemFromPlayer()
-                p.release()
-            }
-            releaseLoudnessEnhancer()
-            _player = null
-        }
-
-        fun configure(
-            descriptor: NativeMediaItemDescriptor,
-            queue: List<NativeMediaItemDescriptor>,
-            queueStartIndex: Int,
-            startPositionMs: Long,
-            volume: Float,
-            repeatOne: Boolean,
-            repeatAll: Boolean,
-            shuffleModeEnabled: Boolean,
-            autoPlay: Boolean
-        ) {
-            this.queue = queue.ifEmpty { listOf(descriptor) }
-            this.path = descriptor.path
-            this.uri = descriptor.uri
-            this.title = descriptor.title
-            this.subtitle = descriptor.subtitle
-            this.artUri = descriptor.artUri
-            this.lastPositionMs = startPositionMs
-            this.volume = PlaybackVolumeMapper.normalize(volume)
-            this.repeatOne = repeatOne
-            this.repeatAll = repeatAll
-            this.shuffleModeEnabled = shuffleModeEnabled
-            this.lastPlayWhenReady = autoPlay
-            applyChannelMap()
-
-            val p = playerOrNull() ?: createPlayer(
-                sessionId,
-                channelMappingAudioProcessor
-            ).also { _player = it }
-            p.setMediaItems(
-                this.queue.map(::buildMediaItem),
-                queueStartIndex.coerceIn(0, this.queue.lastIndex),
-                startPositionMs.coerceAtLeast(0L)
-            )
-            applyVolumeToPlayer(p)
-            p.repeatMode = repeatModeFor(this.queue.size)
-            p.shuffleModeEnabled = shuffleModeEnabled && this.queue.size > 1
-            p.playWhenReady = autoPlay
-            p.prepare()
-            syncCurrentMediaItemFromPlayer()
-            
-            evictPlayersIfNeeded()
-        }
-
-        fun applyChannelMap() {
-            channelMappingAudioProcessor.setChannelMap(
-                if (channelSwapEnabled) {
-                    intArrayOf(1, 0)
-                } else {
-                    intArrayOf(0, 1)
-                }
-            )
-        }
-
-        fun applyVolume(volume: Float) {
-            this.volume = PlaybackVolumeMapper.normalize(volume)
-            playerOrNull()?.let(::applyVolumeToPlayer)
-        }
-
-        private fun applyVolumeToPlayer(player: ExoPlayer) {
-            val normalizedVolume = PlaybackVolumeMapper.normalize(volume)
-            this.volume = normalizedVolume
-            player.volume = PlaybackVolumeMapper.playerVolume(normalizedVolume)
-            syncLoudnessEnhancer(player.audioSessionId)
-        }
-
-        fun onAudioSessionIdChanged(audioSessionId: Int) {
-            syncLoudnessEnhancer(audioSessionId)
-        }
-
-        private fun syncLoudnessEnhancer(audioSessionId: Int) {
-            val targetGain = PlaybackVolumeMapper.boostGainMillibels(volume)
-            if (targetGain <= 0 || audioSessionId == C.AUDIO_SESSION_ID_UNSET) {
-                releaseLoudnessEnhancer()
-                return
-            }
-
-            val enhancer = if (loudnessEnhancerSessionId == audioSessionId) {
-                loudnessEnhancer
-            } else {
-                releaseLoudnessEnhancer()
-                try {
-                    LoudnessEnhancer(audioSessionId).also {
-                        loudnessEnhancer = it
-                        loudnessEnhancerSessionId = audioSessionId
-                    }
-                } catch (e: RuntimeException) {
-                    logWarn(
-                        "loudness_enhancer_create_failed audioSessionId=$audioSessionId",
-                        this,
-                        e
-                    )
-                    null
-                }
-            } ?: return
-
-            try {
-                enhancer.setTargetGain(targetGain)
-                enhancer.setEnabled(true)
-            } catch (e: RuntimeException) {
-                logWarn("loudness_enhancer_apply_failed gain=$targetGain", this, e)
-                releaseLoudnessEnhancer()
-            }
-        }
-
-        private fun releaseLoudnessEnhancer() {
-            val enhancer = loudnessEnhancer ?: return
-            loudnessEnhancer = null
-            loudnessEnhancerSessionId = C.AUDIO_SESSION_ID_UNSET
-            try {
-                enhancer.setEnabled(false)
-            } catch (_: RuntimeException) {
-            }
-            try {
-                enhancer.release()
-            } catch (_: RuntimeException) {
-            }
-        }
-
-        fun updateQueue(
-            queue: List<NativeMediaItemDescriptor>,
-            queueStartIndex: Int,
-            repeatOne: Boolean,
-            repeatAll: Boolean,
-            shuffleModeEnabled: Boolean
-        ) {
-            if (queue.isEmpty()) return
-            val p = _player
-            val currentPositionMs = p?.currentPosition?.coerceAtLeast(0L) ?: lastPositionMs
-            val shouldResume = p?.let { it.playWhenReady || it.isPlaying } ?: lastPlayWhenReady
-            configure(
-                descriptor = queue[queueStartIndex.coerceIn(0, queue.lastIndex)],
-                queue = queue,
-                queueStartIndex = queueStartIndex,
-                startPositionMs = currentPositionMs,
-                volume = volume,
-                repeatOne = repeatOne,
-                repeatAll = repeatAll,
-                shuffleModeEnabled = shuffleModeEnabled,
-                autoPlay = shouldResume
-            )
-        }
-
-        fun reprepareCurrentMediaItem() {
-            val currentUri = uri ?: return
-            val p = _player
-            val currentPositionMs = p?.currentPosition?.coerceAtLeast(0L) ?: lastPositionMs
-            val shouldResume = p?.let { it.playWhenReady || it.isPlaying } ?: lastPlayWhenReady
-            val isRepeatOne = (p?.repeatMode == Player.REPEAT_MODE_ONE) || (p == null && repeatOne)
-            val descriptors = queue.takeIf { it.isNotEmpty() } ?: listOf(
-                NativeMediaItemDescriptor(
-                    path = path ?: currentUri,
-                    uri = currentUri,
-                    title = title,
-                    subtitle = subtitle,
-                    artUri = artUri
-                )
-            )
-            val currentIndex = p?.currentMediaItemIndex ?: currentQueueIndexFor(descriptors)
-
-            configure(
-                descriptor = descriptors[currentIndex.coerceIn(0, descriptors.lastIndex)],
-                queue = descriptors,
-                queueStartIndex = currentIndex,
-                startPositionMs = currentPositionMs,
-                volume = volume,
-                repeatOne = isRepeatOne,
-                repeatAll = repeatAll,
-                shuffleModeEnabled = shuffleModeEnabled,
-                autoPlay = shouldResume,
-            )
-        }
-
-        fun snapshot(): Map<String, Any?> {
-            val p = _player
-            if (p != null) {
-                lastPositionMs = p.currentPosition.coerceAtLeast(0L)
-                lastDurationMs = durationOrNull(p.duration)
-                lastBufferedPositionMs = p.bufferedPosition.coerceAtLeast(0L)
-                lastIsPlaying = p.isPlaying
-                lastPlayWhenReady = p.playWhenReady
-                lastPlaybackState = p.playbackStateName()
-                syncCurrentMediaItemFromPlayer()
-            }
-            
-            return mapOf(
-                "sessionId" to sessionId,
-                "path" to path,
-                "uri" to uri,
-                "title" to title,
-                "subtitle" to subtitle,
-                "artUri" to artUri,
-                "playing" to lastIsPlaying,
-                "playWhenReady" to lastPlayWhenReady,
-                "processingState" to lastPlaybackState,
-                "positionMs" to lastPositionMs,
-                "durationMs" to lastDurationMs,
-                "bufferedPositionMs" to lastBufferedPositionMs,
-                "volume" to volume.toDouble(),
-                "boostGain" to PlaybackVolumeMapper.boostGain(volume).toDouble(),
-                "channelSwap" to channelSwapEnabled,
-                "error" to p?.playerError?.message
-            )
-        }
-
-        fun storedSnapshot(): StoredNativePlaybackSession {
-            val p = _player
-            val currentPos = p?.currentPosition?.coerceAtLeast(0L) ?: lastPositionMs
-            val isP = p?.isPlaying ?: lastIsPlaying
-            val isPWR = p?.playWhenReady ?: lastPlayWhenReady
-            if (p != null) {
-                syncCurrentMediaItemFromPlayer()
-            }
-            
-            return StoredNativePlaybackSession(
-                sessionId = sessionId,
-                uri = uri.orEmpty(),
-                path = path ?: uri.orEmpty(),
-                title = title,
-                subtitle = subtitle,
-                artUri = artUri,
-                positionMs = currentPos,
-                volume = volume,
-                repeatOne = repeatOne,
-                repeatAll = repeatAll,
-                shuffleModeEnabled = shuffleModeEnabled,
-                queueStartIndex = (p?.currentMediaItemIndex ?: currentQueueIndexFor(queue))
-                    .coerceAtLeast(0),
-                queue = queue.map { descriptor ->
-                    StoredNativePlaybackQueueItem(
-                        path = descriptor.path,
-                        uri = descriptor.uri,
-                        title = descriptor.title,
-                        subtitle = descriptor.subtitle,
-                        artUri = descriptor.artUri
-                    )
-                },
-                channelSwapEnabled = channelSwapEnabled,
-                playing = isP,
-                playWhenReady = isPWR
-            )
-        }
-
-        fun foregroundNotificationSignature(): String {
-            val p = _player
-            val playing = p?.isPlaying ?: lastIsPlaying
-            val playWhenReady = p?.playWhenReady ?: lastPlayWhenReady
-            return listOf(
-                sessionId,
-                title,
-                subtitle.orEmpty(),
-                playing,
-                playWhenReady,
-                repeatOne
-            ).joinToString("|")
-        }
-
-        fun syncCurrentMediaItemFromPlayer() {
-            val mediaItem = _player?.currentMediaItem ?: return
-            val metadata = mediaItem.mediaMetadata
-            path = mediaItem.mediaId.takeIf { it.isNotBlank() }
-            uri = mediaItem.localConfiguration?.uri?.toString() ?: uri
-            title = metadata.title?.toString()?.takeIf { it.isNotBlank() } ?: title
-            subtitle = metadata.artist?.toString()?.takeIf { it.isNotBlank() }
-            artUri = metadata.artworkUri?.toString()
-        }
-
-        private fun buildMediaItem(descriptor: NativeMediaItemDescriptor): MediaItem {
-            val metadataBuilder = MediaMetadata.Builder()
-                .setTitle(descriptor.title)
-                .setArtist(descriptor.subtitle)
-            if (!descriptor.artUri.isNullOrBlank()) {
-                metadataBuilder.setArtworkUri(Uri.parse(descriptor.artUri))
-            }
-            return MediaItem.Builder()
-                .setMediaId(descriptor.path)
-                .setUri(Uri.parse(descriptor.uri))
-                .setMediaMetadata(metadataBuilder.build())
-                .build()
-        }
-
-        private fun repeatModeFor(queueSize: Int): Int {
-            return when {
-                repeatOne -> Player.REPEAT_MODE_ONE
-                repeatAll && queueSize > 1 -> Player.REPEAT_MODE_ALL
-                else -> Player.REPEAT_MODE_OFF
-            }
-        }
-
-        fun currentRepeatMode(): Int = repeatModeFor(queue.size)
-
-        fun currentShuffleModeEnabled(): Boolean = shuffleModeEnabled && queue.size > 1
-
-        private fun currentQueueIndexFor(descriptors: List<NativeMediaItemDescriptor>): Int {
-            val currentPath = path
-            val index = descriptors.indexOfFirst { it.path == currentPath }
-            return if (index >= 0) index else 0
-        }
-
-        fun release() {
-            _player?.release()
-            _player = null
-        }
-    }
-}
-
-private fun ExoPlayer.playbackStateName(): String {
-    return playbackStateName(playbackState)
-}
-
-private fun playbackStateName(playbackState: Int): String {
-    return when (playbackState) {
-        Player.STATE_IDLE -> "idle"
-        Player.STATE_BUFFERING -> "buffering"
-        Player.STATE_READY -> "ready"
-        Player.STATE_ENDED -> "completed"
-        else -> "unknown"
-    }
 }
 
 private fun playWhenReadyReasonName(reason: Int): String {
@@ -1997,8 +1479,4 @@ private fun audioFocusRequestResultName(result: Int): String {
         AudioManager.AUDIOFOCUS_REQUEST_DELAYED -> "delayed"
         else -> "unknown($result)"
     }
-}
-
-private fun durationOrNull(duration: Long): Long? {
-    return if (duration == C.TIME_UNSET || duration < 0L) null else duration
 }

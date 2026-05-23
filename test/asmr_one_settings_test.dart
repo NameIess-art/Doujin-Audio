@@ -259,6 +259,80 @@ void main() {
       );
     },
   );
+
+  test(
+    'ASMR category view state caches local filtered works until revision changes',
+    () async {
+      final favorite = _work(
+        id: 41,
+        title: 'Sleep Favorite',
+        tags: <String>['sleep'],
+      );
+      await resetPrefs();
+      await AsmrPreferences.saveFavoriteWorks(<AsmrWork>[favorite]);
+      final controller = AsmrLibraryController(
+        audioDatabaseRepository: _FakeAudioDatabaseRepository(
+          const <MusicTrack>[],
+        ),
+      );
+      await controller.initialize(defaultLanguage: AsmrContentLanguage.en);
+
+      final first = controller.categoryViewState(
+        AsmrCategoryType.favorites,
+        searchQuery: 'sleep',
+      );
+      final second = controller.categoryViewState(
+        AsmrCategoryType.favorites,
+        searchQuery: 'sleep',
+      );
+
+      expect(first, second);
+      expect(identical(first.works, second.works), isTrue);
+      expect(first.works.map((work) => work.id), <int>[41]);
+
+      await controller.toggleFavorite(
+        _work(id: 42, title: 'Sleep New', tags: <String>['sleep']),
+      );
+      final third = controller.categoryViewState(
+        AsmrCategoryType.favorites,
+        searchQuery: 'sleep',
+      );
+
+      expect(third.revision, greaterThan(first.revision));
+      expect(identical(first.works, third.works), isFalse);
+      expect(third.works.map((work) => work.id), <int>[42, 41]);
+    },
+  );
+
+  test('ASMR track tree view state caches visible browsable nodes', () async {
+    await resetPrefs();
+    final work = _work(id: 51, title: 'Tree Work');
+    final api = _FakeAsmrApiService(
+      trackTree: <AsmrTrackFile>[
+        _trackFolder(
+          'Disc',
+          'Disc',
+          children: <AsmrTrackFile>[_trackFile('Track.mp3', 'Disc/Track.mp3')],
+        ),
+        _trackFile('notes.txt', 'notes.txt', type: 'text'),
+      ],
+    );
+    final controller = AsmrLibraryController(
+      apiService: api,
+      audioDatabaseRepository: _FakeAudioDatabaseRepository(
+        const <MusicTrack>[],
+      ),
+    );
+    await controller.initialize(defaultLanguage: AsmrContentLanguage.en);
+    await controller.ensureTrackTree(work);
+
+    final first = controller.trackTreeViewState(work.id);
+    final second = controller.trackTreeViewState(work.id);
+
+    expect(first, second);
+    expect(identical(first.visibleTree, second.visibleTree), isTrue);
+    expect(first.visibleTree?.map((node) => node.title), <String>['Disc']);
+  });
 }
 
 class _FakeAsmrApiService extends AsmrApiService {
@@ -266,6 +340,7 @@ class _FakeAsmrApiService extends AsmrApiService {
     this.largeRecommendationPool = false,
     this.recommendationPageCount = 2,
     this.recommendationWorks,
+    this.trackTree = const <AsmrTrackFile>[],
   }) : super(baseUri: Uri.parse('https://example.test'));
 
   final List<String> fetchWorkOrders = <String>[];
@@ -274,6 +349,7 @@ class _FakeAsmrApiService extends AsmrApiService {
   final bool largeRecommendationPool;
   final int recommendationPageCount;
   final List<AsmrWork>? recommendationWorks;
+  final List<AsmrTrackFile> trackTree;
 
   @override
   Future<AsmrWorkPage> fetchWorks({
@@ -362,6 +438,12 @@ class _FakeAsmrApiService extends AsmrApiService {
       totalCount: 1,
     );
   }
+
+  @override
+  Future<List<AsmrTrackFile>> fetchTrackTree(
+    int workId, {
+    String? token,
+  }) async => trackTree;
 }
 
 class _FakeAudioDatabaseRepository extends AudioDatabaseRepository {
@@ -417,5 +499,49 @@ MusicTrack _track({
     groupSubtitle: groupSubtitle,
     isSingle: false,
     tags: tags,
+  );
+}
+
+AsmrTrackFile _trackFolder(
+  String title,
+  String relativePath, {
+  List<AsmrTrackFile> children = const <AsmrTrackFile>[],
+}) {
+  return AsmrTrackFile(
+    hash: relativePath,
+    title: title,
+    type: 'folder',
+    streamUrl: null,
+    downloadUrl: null,
+    lowQualityUrl: null,
+    duration: Duration.zero,
+    size: 0,
+    children: children,
+    workId: 1,
+    workTitle: 'Work',
+    sourceId: 'RJ000001',
+    relativePath: relativePath,
+  );
+}
+
+AsmrTrackFile _trackFile(
+  String title,
+  String relativePath, {
+  String type = 'audio',
+}) {
+  return AsmrTrackFile(
+    hash: relativePath,
+    title: title,
+    type: type,
+    streamUrl: 'https://example.test/$relativePath',
+    downloadUrl: 'https://example.test/$relativePath',
+    lowQualityUrl: null,
+    duration: const Duration(minutes: 1),
+    size: 1024,
+    children: const <AsmrTrackFile>[],
+    workId: 1,
+    workTitle: 'Work',
+    sourceId: 'RJ000001',
+    relativePath: relativePath,
   );
 }

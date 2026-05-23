@@ -10,6 +10,150 @@ import 'asmr_preferences.dart';
 import 'asmr_recommendation_engine.dart';
 import 'search_query_utils.dart';
 
+class AsmrLibraryGlobalViewState {
+  const AsmrLibraryGlobalViewState({
+    required this.initialized,
+    required this.lastError,
+    required this.visibleCategories,
+    required this.contentLanguage,
+    required this.revision,
+  });
+
+  final bool initialized;
+  final Object? lastError;
+  final List<AsmrCategoryType> visibleCategories;
+  final AsmrContentLanguage contentLanguage;
+  final int revision;
+
+  @override
+  bool operator ==(Object other) {
+    return other is AsmrLibraryGlobalViewState &&
+        initialized == other.initialized &&
+        lastError == other.lastError &&
+        listEquals(visibleCategories, other.visibleCategories) &&
+        contentLanguage == other.contentLanguage &&
+        revision == other.revision;
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    initialized,
+    lastError,
+    Object.hashAll(visibleCategories),
+    contentLanguage,
+    revision,
+  );
+}
+
+class AsmrCategoryViewState {
+  const AsmrCategoryViewState({
+    required this.category,
+    required this.works,
+    required this.isLoading,
+    required this.isLoadingMore,
+    required this.hasMore,
+    required this.totalCount,
+    required this.activeQuery,
+    required this.lastError,
+    required this.revision,
+  });
+
+  final AsmrCategoryType category;
+  final List<AsmrWork> works;
+  final bool isLoading;
+  final bool isLoadingMore;
+  final bool hasMore;
+  final int totalCount;
+  final String activeQuery;
+  final Object? lastError;
+  final int revision;
+
+  @override
+  bool operator ==(Object other) {
+    return other is AsmrCategoryViewState &&
+        category == other.category &&
+        identical(works, other.works) &&
+        isLoading == other.isLoading &&
+        isLoadingMore == other.isLoadingMore &&
+        hasMore == other.hasMore &&
+        totalCount == other.totalCount &&
+        activeQuery == other.activeQuery &&
+        lastError == other.lastError &&
+        revision == other.revision;
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    category,
+    identityHashCode(works),
+    isLoading,
+    isLoadingMore,
+    hasMore,
+    totalCount,
+    activeQuery,
+    lastError,
+    revision,
+  );
+}
+
+class AsmrTrackTreeViewState {
+  const AsmrTrackTreeViewState({
+    required this.workId,
+    required this.tree,
+    required this.visibleTree,
+    required this.isLoading,
+    required this.revision,
+  });
+
+  final int workId;
+  final List<AsmrTrackFile>? tree;
+  final List<AsmrTrackFile>? visibleTree;
+  final bool isLoading;
+  final int revision;
+
+  @override
+  bool operator ==(Object other) {
+    return other is AsmrTrackTreeViewState &&
+        workId == other.workId &&
+        identical(tree, other.tree) &&
+        identical(visibleTree, other.visibleTree) &&
+        isLoading == other.isLoading &&
+        revision == other.revision;
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    workId,
+    identityHashCode(tree),
+    identityHashCode(visibleTree),
+    isLoading,
+    revision,
+  );
+}
+
+class _AsmrFilteredWorksCacheKey {
+  const _AsmrFilteredWorksCacheKey({
+    required this.category,
+    required this.query,
+    required this.revision,
+  });
+
+  final AsmrCategoryType category;
+  final String query;
+  final int revision;
+
+  @override
+  bool operator ==(Object other) {
+    return other is _AsmrFilteredWorksCacheKey &&
+        category == other.category &&
+        query == other.query &&
+        revision == other.revision;
+  }
+
+  @override
+  int get hashCode => Object.hash(category, query, revision);
+}
+
 class AsmrLibraryController extends ChangeNotifier {
   AsmrLibraryController({
     AsmrApiService? apiService,
@@ -67,14 +211,23 @@ class AsmrLibraryController extends ChangeNotifier {
   final Map<int, AsmrWorkDetail> _detailCache = <int, AsmrWorkDetail>{};
   final Map<int, List<AsmrTrackFile>> _trackCache =
       <int, List<AsmrTrackFile>>{};
+  final Map<int, List<AsmrTrackFile>> _visibleTrackCache =
+      <int, List<AsmrTrackFile>>{};
   final Set<int> _loadingTrackWorkIds = <int>{};
+  final Map<AsmrCategoryType, int> _categoryRevisions =
+      <AsmrCategoryType, int>{};
+  final Map<int, int> _trackRevisions = <int, int>{};
+  final Map<_AsmrFilteredWorksCacheKey, List<AsmrWork>> _filteredWorksCache =
+      <_AsmrFilteredWorksCacheKey, List<AsmrWork>>{};
 
   List<AsmrCategoryType> _visibleCategories = kDefaultVisibleAsmrCategories;
   AsmrContentLanguage _contentLanguage = AsmrContentLanguage.zh;
   List<AsmrWork> _favoriteWorks = const <AsmrWork>[];
+  Set<int> _favoriteIds = const <int>{};
   List<AsmrWork> _historyWorks = const <AsmrWork>[];
   bool _initialized = false;
   Object? _lastError;
+  int _globalRevision = 0;
 
   bool get initialized => _initialized;
   Object? get lastError => _lastError;
@@ -94,6 +247,47 @@ class AsmrLibraryController extends ChangeNotifier {
       _queryByCategory[category] ?? '';
   bool isTrackTreeLoading(int workId) => _loadingTrackWorkIds.contains(workId);
   List<AsmrTrackFile>? trackTreeFor(int workId) => _trackCache[workId];
+
+  AsmrLibraryGlobalViewState get globalViewState => AsmrLibraryGlobalViewState(
+    initialized: _initialized,
+    lastError: _lastError,
+    visibleCategories: _visibleCategories,
+    contentLanguage: _contentLanguage,
+    revision: _globalRevision,
+  );
+
+  AsmrCategoryViewState categoryViewState(
+    AsmrCategoryType category, {
+    String searchQuery = '',
+  }) {
+    final works = filteredWorksFor(category, searchQuery: searchQuery);
+    return AsmrCategoryViewState(
+      category: category,
+      works: works,
+      isLoading: isLoadingCategory(category),
+      isLoadingMore: isLoadingMoreCategory(category),
+      hasMore: hasMoreCategory(category),
+      totalCount:
+          category == AsmrCategoryType.favorites ||
+              category == AsmrCategoryType.history
+          ? works.length
+          : totalCountFor(category),
+      activeQuery: activeQueryFor(category),
+      lastError: _lastError,
+      revision: _categoryRevisionFor(category),
+    );
+  }
+
+  AsmrTrackTreeViewState trackTreeViewState(int workId) {
+    final tree = _trackCache[workId];
+    return AsmrTrackTreeViewState(
+      workId: workId,
+      tree: tree,
+      visibleTree: tree == null ? null : _visibleTrackTreeFor(workId, tree),
+      isLoading: isTrackTreeLoading(workId),
+      revision: _trackRevisions[workId] ?? 0,
+    );
+  }
 
   List<AsmrWork> worksFor(AsmrCategoryType category) {
     switch (category) {
@@ -119,9 +313,21 @@ class AsmrLibraryController extends ChangeNotifier {
         category != AsmrCategoryType.history) {
       return works;
     }
-    return works
-        .where((work) => _matchesQuery(work, searchQuery))
+    final cacheKey = _AsmrFilteredWorksCacheKey(
+      category: category,
+      query: normalizedQuery,
+      revision: _categoryRevisionFor(category),
+    );
+    final cached = _filteredWorksCache[cacheKey];
+    if (cached != null) {
+      return cached;
+    }
+    final terms = extractSearchTerms(normalizedQuery);
+    final filtered = works
+        .where((work) => _matchesQuery(work, normalizedQuery, terms: terms))
         .toList(growable: false);
+    _filteredWorksCache[cacheKey] = filtered;
+    return filtered;
   }
 
   Future<void> initialize({AsmrContentLanguage? defaultLanguage}) async {
@@ -132,12 +338,14 @@ class AsmrLibraryController extends ChangeNotifier {
       defaultLanguage ?? AsmrContentLanguage.zh,
     );
     _favoriteWorks = await AsmrPreferences.loadFavoriteWorks();
+    _favoriteIds = _favoriteWorks.map((work) => work.id).toSet();
     _historyWorks = await AsmrPreferences.loadHistoryWorks();
     for (final work in _favoriteWorks.followedBy(_historyWorks)) {
       _workCache[work.id] = work;
     }
     _updateLocalCategoryCounts();
     _initialized = true;
+    _bumpGlobalRevision();
     notifyListeners();
   }
 
@@ -148,6 +356,7 @@ class AsmrLibraryController extends ChangeNotifier {
     }
     _visibleCategories = next;
     await AsmrPreferences.saveVisibleCategories(next);
+    _bumpGlobalRevision();
     notifyListeners();
   }
 
@@ -160,11 +369,17 @@ class AsmrLibraryController extends ChangeNotifier {
     _worksByCategory.clear();
     _detailCache.clear();
     _trackCache.clear();
+    _visibleTrackCache.clear();
     _queryByCategory.removeWhere(
       (category, _) =>
           category != AsmrCategoryType.favorites &&
           category != AsmrCategoryType.history,
     );
+    for (final category in AsmrCategoryType.values) {
+      _bumpCategoryRevision(category);
+    }
+    _bumpAllTrackRevisions();
+    _bumpGlobalRevision();
     notifyListeners();
   }
 
@@ -241,6 +456,7 @@ class AsmrLibraryController extends ChangeNotifier {
       _worksByCategory[category] = merged
           .map(_decorateWork)
           .toList(growable: false);
+      _bumpCategoryRevision(category);
       _applyPageResult(
         category,
         query: normalizedQuery,
@@ -346,6 +562,7 @@ class AsmrLibraryController extends ChangeNotifier {
     _worksByCategory[category] = pageResult.works
         .map(_decorateWork)
         .toList(growable: false);
+    _bumpCategoryRevision(category);
     _applyPageResult(category, query: searchQuery, pageResult: pageResult);
     for (final work in _worksByCategory[category]!) {
       _workCache[work.id] = work;
@@ -385,6 +602,7 @@ class AsmrLibraryController extends ChangeNotifier {
       refreshSeed: requestId,
     );
     _worksByCategory[category] = ranked;
+    _bumpCategoryRevision(category);
     _applyPageResult(
       category,
       query: searchQuery,
@@ -491,8 +709,7 @@ class AsmrLibraryController extends ChangeNotifier {
   }
 
   AsmrWork _decorateWork(AsmrWork work) {
-    final favoriteIds = _favoriteWorks.map((item) => item.id).toSet();
-    return work.copyWith(isFavorite: favoriteIds.contains(work.id));
+    return work.copyWith(isFavorite: _favoriteIds.contains(work.id));
   }
 
   Future<AsmrWorkDetail> loadWorkDetail(AsmrWork work) async {
@@ -520,6 +737,7 @@ class AsmrLibraryController extends ChangeNotifier {
     final tree =
         _trackCache[work.id] ?? await _apiService.fetchTrackTree(work.id);
     _trackCache[work.id] = tree;
+    _visibleTrackCache.remove(work.id);
     return _flattenTracks(work, tree);
   }
 
@@ -613,14 +831,18 @@ class AsmrLibraryController extends ChangeNotifier {
       return cached;
     }
     if (_loadingTrackWorkIds.add(work.id)) {
+      _bumpTrackRevision(work.id);
       notifyListeners();
     }
     try {
       final tree = await _apiService.fetchTrackTree(work.id);
       _trackCache[work.id] = tree;
+      _visibleTrackCache.remove(work.id);
+      _bumpTrackRevision(work.id);
       return tree;
     } finally {
       _loadingTrackWorkIds.remove(work.id);
+      _bumpTrackRevision(work.id);
       notifyListeners();
     }
   }
@@ -644,6 +866,7 @@ class AsmrLibraryController extends ChangeNotifier {
           .where((item) => item.id != work.id)
           .toList(growable: false);
     }
+    _favoriteIds = _favoriteWorks.map((item) => item.id).toSet();
     _workCache[work.id] = updatedWork;
     _detailCache.update(
       work.id,
@@ -670,9 +893,11 @@ class AsmrLibraryController extends ChangeNotifier {
                 : item,
           )
           .toList(growable: false);
+      _bumpCategoryRevision(entry.key);
     }
     await AsmrPreferences.saveFavoriteWorks(_favoriteWorks);
     _updateLocalCategoryCounts();
+    _bumpCategoryRevision(AsmrCategoryType.favorites);
     notifyListeners();
   }
 
@@ -684,6 +909,7 @@ class AsmrLibraryController extends ChangeNotifier {
     _workCache[work.id] = work;
     await AsmrPreferences.saveHistoryWorks(_historyWorks);
     _updateLocalCategoryCounts();
+    _bumpCategoryRevision(AsmrCategoryType.history);
     notifyListeners();
   }
 
@@ -750,7 +976,7 @@ class AsmrLibraryController extends ChangeNotifier {
     );
   }
 
-  bool _matchesQuery(AsmrWork work, String query) {
+  bool _matchesQuery(AsmrWork work, String query, {List<String>? terms}) {
     final haystacks = <String>[
       work.title,
       work.circleName,
@@ -758,7 +984,7 @@ class AsmrLibraryController extends ChangeNotifier {
       ...work.tags,
       ...work.voiceActors,
     ];
-    return matchesSearchTerms(haystacks, query);
+    return matchesSearchTerms(haystacks, query, terms: terms);
   }
 
   void _updateLocalCategoryCounts() {
@@ -772,6 +998,41 @@ class AsmrLibraryController extends ChangeNotifier {
         searchQuery: query,
       ).length;
     }
+  }
+
+  int _categoryRevisionFor(AsmrCategoryType category) {
+    return _categoryRevisions[category] ?? 0;
+  }
+
+  void _bumpCategoryRevision(AsmrCategoryType category) {
+    _categoryRevisions[category] = _categoryRevisionFor(category) + 1;
+    _filteredWorksCache.removeWhere((key, _) => key.category == category);
+  }
+
+  void _bumpTrackRevision(int workId) {
+    _trackRevisions[workId] = (_trackRevisions[workId] ?? 0) + 1;
+  }
+
+  void _bumpAllTrackRevisions() {
+    for (final workId in _trackRevisions.keys.toList(growable: false)) {
+      _bumpTrackRevision(workId);
+    }
+  }
+
+  void _bumpGlobalRevision() {
+    _globalRevision++;
+  }
+
+  List<AsmrTrackFile> _visibleTrackTreeFor(
+    int workId,
+    List<AsmrTrackFile> tree,
+  ) {
+    return _visibleTrackCache.putIfAbsent(
+      workId,
+      () => tree
+          .where((node) => node.hasBrowsableContent)
+          .toList(growable: false),
+    );
   }
 
   static List<AsmrCategoryType> _sanitizeVisibleCategories(

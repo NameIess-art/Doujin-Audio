@@ -1,4 +1,4 @@
-part of 'audio_provider.dart';
+﻿part of 'audio_provider.dart';
 
 const PlaybackQueueResolver _playbackQueueResolver = PlaybackQueueResolver();
 const TimerRuntimeCalculator _timerRuntimeCalculator = TimerRuntimeCalculator();
@@ -72,7 +72,7 @@ extension AudioProviderPlayback on AudioProvider {
       }
     }
     if (notify) {
-      _notifyListeners();
+      _notifyPlaybackChanged();
     }
 
     await Future.wait(
@@ -114,7 +114,7 @@ extension AudioProviderPlayback on AudioProvider {
       shuffle: _isShuffleMode(mode),
     );
     _syncNotificationState();
-    _notifyListeners();
+    _notifyPlaybackChanged();
     _scheduleSaveSessionState();
   }
 
@@ -124,7 +124,7 @@ extension AudioProviderPlayback on AudioProvider {
     if (session.channelSwapEnabled == enabled) return;
     session.channelSwapEnabled = enabled;
     _markActiveSessionsDirty();
-    _notifyListeners(); // Optimistic update
+    _notifyPlaybackChanged(); // Optimistic update
     final response = await _nativePlaybackRepository.setChannelSwap(
       session.id,
       enabled,
@@ -134,7 +134,7 @@ extension AudioProviderPlayback on AudioProvider {
       _playbackService.applyNativeSnapshot(
         _normalizeNativePlaybackSnapshot(value),
       );
-      _notifyListeners(); // Refresh with native state
+      _notifyPlaybackChanged(); // Refresh with native state
     }
     _scheduleSaveSessionState();
   }
@@ -208,7 +208,7 @@ extension AudioProviderPlayback on AudioProvider {
     session.volume = nextVolume;
     await _nativePlaybackRepository.setVolume(session.id, session.volume);
     if (notify) {
-      _notifyListeners();
+      _notifyPlaybackChanged();
     }
     if (persist) {
       _scheduleSaveSessionState();
@@ -289,7 +289,7 @@ extension AudioProviderPlayback on AudioProvider {
     }
     _notificationFocusSessionId = null;
 
-    _notifyListeners();
+    _notifyPlaybackChanged();
 
     await _nativePlaybackRepository.clearAll();
     for (final session in removedSessions) {

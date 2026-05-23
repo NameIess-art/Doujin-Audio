@@ -1,4 +1,4 @@
-part of 'audio_provider.dart';
+﻿part of 'audio_provider.dart';
 
 extension AudioProviderNotificationSubtitles on AudioProvider {
   Future<SubtitleTrack?> subtitleTrackForPath(String trackPath) {
@@ -45,9 +45,9 @@ extension AudioProviderNotificationSubtitles on AudioProvider {
 
         if (shouldRefreshNotification) {
           _syncNotificationState();
-          _notifyListeners();
+          _notifyNotificationChanged();
         } else if (subtitleTrack != null) {
-          _notifyListeners();
+          _notifyNotificationChanged();
         }
         return subtitleTrack;
       } finally {

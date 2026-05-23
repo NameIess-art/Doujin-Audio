@@ -1,4 +1,4 @@
-part of 'audio_provider.dart';
+﻿part of 'audio_provider.dart';
 
 extension AudioProviderLibraryCovers on AudioProvider {
   /// Recursively scans for all images in the root folder containing the given track.
@@ -91,7 +91,7 @@ extension AudioProviderLibraryCovers on AudioProvider {
     // Refresh system notifications to reflect the new cover
     _syncNotificationState();
 
-    _notifyListeners();
+    _notifyLibraryChanged();
   }
 
   Future<void> setFolderManualCover(String folderPath, String imagePath) {

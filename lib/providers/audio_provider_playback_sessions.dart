@@ -1,4 +1,4 @@
-part of 'audio_provider.dart';
+﻿part of 'audio_provider.dart';
 
 extension AudioProviderPlaybackSessions on AudioProvider {
   Future<void> spawnSession(MusicTrack track, {bool? autoPlay}) async {
@@ -66,7 +66,7 @@ extension AudioProviderPlaybackSessions on AudioProvider {
     _bindSessionListeners(session);
     _syncKeepCpuAwake();
     _syncNotificationState();
-    _notifyListeners();
+    _notifyPlaybackChanged();
   }
 
   Future<void> _enqueueSessionPreparation(
@@ -116,7 +116,7 @@ extension AudioProviderPlaybackSessions on AudioProvider {
       }
       _syncKeepCpuAwake();
       _syncNotificationState();
-      _notifyListeners();
+      _notifyPlaybackChanged();
 
       if (previousPlaying != state.playing ||
           previousProcessing != state.processingState) {
@@ -184,7 +184,7 @@ extension AudioProviderPlaybackSessions on AudioProvider {
     _syncKeepCpuAwake();
     _syncNotificationState();
     if (!wasLoading) {
-      _notifyListeners();
+      _notifyPlaybackChanged();
     }
 
     var prepared = false;
@@ -217,7 +217,8 @@ extension AudioProviderPlaybackSessions on AudioProvider {
 
       final isNewTrack = session.loadedPath != resolvedNextPath;
       final resumePosition = track?.lastPlayedPosition ?? Duration.zero;
-      final startPosition = (track != null &&
+      final startPosition =
+          (track != null &&
               resumePosition > const Duration(seconds: 3) &&
               (track.duration.inMilliseconds == 0 ||
                   track.duration - resumePosition > const Duration(seconds: 3)))
@@ -230,7 +231,7 @@ extension AudioProviderPlaybackSessions on AudioProvider {
         session.setOptimisticPosition(startPosition);
       }
       _markActiveSessionsDirty();
-      _notifyListeners();
+      _notifyPlaybackChanged();
 
       if (isNewTrack) {
         final title =
@@ -305,7 +306,7 @@ extension AudioProviderPlaybackSessions on AudioProvider {
         _syncKeepCpuAwake();
         _syncNotificationState();
         _scheduleSaveSessionState();
-        _notifyListeners();
+        _notifyPlaybackChanged();
       }
     }
 

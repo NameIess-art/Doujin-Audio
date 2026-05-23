@@ -1,4 +1,4 @@
-part of 'audio_provider.dart';
+﻿part of 'audio_provider.dart';
 
 extension AudioProviderNativeBridge on AudioProvider {
   String _snapshotUriForPath(String pathValue) {
@@ -74,7 +74,7 @@ extension AudioProviderNativeBridge on AudioProvider {
       _markActiveSessionsDirty();
       _syncNotificationState();
       _scheduleSaveSessionState(delay: const Duration(milliseconds: 800));
-      _notifyListeners();
+      _notifyPlaybackChanged();
     }
     final trackPath = session?.currentTrackPath;
     if (trackPath != null && normalizedSnapshot.duration != null) {

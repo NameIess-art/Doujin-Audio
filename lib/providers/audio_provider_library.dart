@@ -57,7 +57,7 @@ extension AudioProviderLibrary on AudioProvider {
       currentTree: buildLibraryTree(),
       onPersist: () => unawaited(_saveLibraryNodeOrder()),
     );
-    _notifyListeners();
+    _notifyLibraryChanged();
   }
 
   void addWatchedFolder(String folderPath, {bool notify = true}) {
@@ -65,7 +65,7 @@ extension AudioProviderLibrary on AudioProvider {
       folderPath,
       onPersist: () => unawaited(_saveWatchedFolders()),
     );
-    if (changed && notify) _notifyListeners();
+    if (changed && notify) _notifyLibraryChanged();
   }
 
   void addWatchedLibrary(String folderPath, {bool notify = true}) {
@@ -73,7 +73,7 @@ extension AudioProviderLibrary on AudioProvider {
       folderPath,
       onPersist: () => unawaited(_saveWatchedLibraries()),
     );
-    if (changed && notify) _notifyListeners();
+    if (changed && notify) _notifyLibraryChanged();
   }
 
   void removeWatchedFolder(String folderPath, {bool notify = true}) {
@@ -81,7 +81,7 @@ extension AudioProviderLibrary on AudioProvider {
       folderPath,
       onPersist: () => unawaited(_saveWatchedFolders()),
     );
-    if (changed && notify) _notifyListeners();
+    if (changed && notify) _notifyLibraryChanged();
   }
 
   void removeWatchedLibrary(String folderPath, {bool notify = true}) {
@@ -89,7 +89,7 @@ extension AudioProviderLibrary on AudioProvider {
       folderPath,
       onPersist: () => unawaited(_saveWatchedLibraries()),
     );
-    if (changed && notify) _notifyListeners();
+    if (changed && notify) _notifyLibraryChanged();
   }
 
   Future<void> removeLibrary(String libraryPath) async {
@@ -106,7 +106,7 @@ extension AudioProviderLibrary on AudioProvider {
         _audioDatabaseRepository.deleteLibraryEntriesForLibrary(libraryPath),
       );
     }
-    _notifyListeners();
+    _notifyLibraryAndPlaybackChanged();
   }
 
   List<String> childFoldersForLibrary(String libraryPath) =>
@@ -202,7 +202,7 @@ extension AudioProviderLibrary on AudioProvider {
       );
     }
     unawaited(_saveLibraryExclusions());
-    _notifyListeners();
+    _notifyLibraryChanged();
   }
 
   void setLibraryFolderExcluded(
@@ -250,7 +250,7 @@ extension AudioProviderLibrary on AudioProvider {
         _restoreExcludedFolder(normalizedLibraryPath, normalizedFolderPath),
       );
     }
-    _notifyListeners();
+    _notifyLibraryChanged();
   }
 
   void setLibraryTrackExcluded(
@@ -287,7 +287,7 @@ extension AudioProviderLibrary on AudioProvider {
     } else {
       unawaited(_restoreExcludedTrack(libraryPath, normalizedTrackPath));
     }
-    _notifyListeners();
+    _notifyLibraryChanged();
   }
 
   Future<void> _restoreExcludedTrack(
@@ -358,7 +358,7 @@ extension AudioProviderLibrary on AudioProvider {
         .toList(growable: false);
     if (persistedTracks.isNotEmpty) {
       addOrReplaceTracks(persistedTracks, notify: false);
-      _notifyListeners();
+      _notifyLibraryChanged();
       return;
     }
 
@@ -366,7 +366,7 @@ extension AudioProviderLibrary on AudioProvider {
         ? await _scanRestorableTracksViaNative(folderPath)
         : await _scanRestorableTracksFromDisk(folderPath);
     if (restoredTracks.isEmpty) {
-      _notifyListeners();
+      _notifyLibraryChanged();
       return;
     }
 
@@ -377,12 +377,12 @@ extension AudioProviderLibrary on AudioProvider {
         )
         .toList(growable: false);
     if (candidates.isEmpty) {
-      _notifyListeners();
+      _notifyLibraryChanged();
       return;
     }
 
     addOrReplaceTracks(candidates, notify: false);
-    _notifyListeners();
+    _notifyLibraryChanged();
   }
 
   Future<List<MusicTrack>> _scanRestorableTracksFromDisk(
@@ -556,7 +556,7 @@ extension AudioProviderLibrary on AudioProvider {
       _libraryByPath.remove(trackPath);
       _libraryIndexByPath.remove(trackPath);
     }
-    // Skip the expensive rebuild when inside a batch — endLibraryBatch will
+    // Skip the expensive rebuild when inside a batch 鈥?endLibraryBatch will
     // do a single consolidated rebuild when the batch closes.
     if (_libraryBatchDepth <= 0) {
       _rebuildLibraryIndexes();
@@ -632,7 +632,7 @@ extension AudioProviderLibrary on AudioProvider {
       _scanProgressNotifyTimer?.cancel();
       _scanProgressNotifyTimer = null;
     }
-    _notifyListeners();
+    _notifyLibraryChanged();
   }
 
   void beginLibraryBatch() {
@@ -655,7 +655,7 @@ extension AudioProviderLibrary on AudioProvider {
     _syncGroupOrderFromLibrary();
     _syncLibraryNodeOrder(persist: false);
     if (notify) {
-      _notifyListeners();
+      _notifyLibraryChanged();
     }
     if (tracksToPersist.isNotEmpty && !_skipDisposePersistence) {
       await _audioDatabaseRepository.upsertTracks(tracksToPersist);
@@ -704,7 +704,7 @@ extension AudioProviderLibrary on AudioProvider {
       _rebuildLibraryIndexes();
       _syncLibraryNodeOrder(persist: false);
       if (notify) {
-        _notifyListeners();
+        _notifyLibraryChanged();
       }
       if (persist && !_skipDisposePersistence) {
         unawaited(_audioDatabaseRepository.upsertTracks(toAdd));
@@ -751,7 +751,7 @@ extension AudioProviderLibrary on AudioProvider {
             _library[index].path == nextTrack.path) {
           _library[index] = nextTrack;
         } else {
-          // Index is stale — fall back to a linear scan and repair the index.
+          // Index is stale 鈥?fall back to a linear scan and repair the index.
           final fallbackIndex = _library.indexWhere(
             (item) => item.path == nextTrack.path,
           );
@@ -789,7 +789,7 @@ extension AudioProviderLibrary on AudioProvider {
     _syncGroupOrderFromLibrary();
     _syncLibraryNodeOrder(persist: false);
     if (notify) {
-      _notifyListeners();
+      _notifyLibraryChanged();
     }
     if (persist && !_skipDisposePersistence) {
       unawaited(_audioDatabaseRepository.upsertTracks(tracksToPersist));
@@ -1072,7 +1072,7 @@ extension AudioProviderLibrary on AudioProvider {
 
     _rebuildLibraryIndexes();
     _syncLibraryNodeOrder(persist: false);
-    _notifyListeners();
+    _notifyLibraryChanged();
     if (!_skipDisposePersistence) {
       unawaited(_audioDatabaseRepository.deleteTracks([trackPath]));
     }
@@ -1137,7 +1137,7 @@ extension AudioProviderLibrary on AudioProvider {
 
     _rebuildLibraryIndexes();
     _syncLibraryNodeOrder(persist: false);
-    _notifyListeners();
+    _notifyLibraryChanged();
     if (!_skipDisposePersistence) {
       unawaited(_audioDatabaseRepository.deleteTracks(trackPaths.toList()));
       unawaited(

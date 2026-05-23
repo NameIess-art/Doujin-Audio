@@ -411,7 +411,7 @@ extension AudioProviderPersistence on AudioProvider {
       changed = true;
     }
     if (!changed) return;
-    _notifyListeners();
+    _notifySettingsChanged();
     unawaited(_saveConverterSettings());
   }
 
@@ -425,7 +425,7 @@ extension AudioProviderPersistence on AudioProvider {
     await _clearUnifiedPlaybackNotificationsOnPlatform();
     _syncKeepCpuAwake();
     _syncNotificationState(immediateUnifiedSync: true);
-    _notifyListeners();
+    _notifySettingsChanged();
     unawaited(_savePlaybackSettings());
   }
 
@@ -433,7 +433,7 @@ extension AudioProviderPersistence on AudioProvider {
     if (_notificationsEnabled == enabled) return;
     _notificationsEnabled = enabled;
     _unifiedNotificationSyncKey = null;
-    _notifyListeners();
+    _notifySettingsChanged();
     await _notificationService.setEnabled(enabled);
     // setForegroundEnabled drives the native notification preference. During
     // active playback, Android still keeps a minimal foreground notification.
@@ -444,35 +444,35 @@ extension AudioProviderPersistence on AudioProvider {
     }
     _syncKeepCpuAwake();
     _syncNotificationState(immediateUnifiedSync: true);
-    _notifyListeners();
+    _notifySettingsChanged();
     unawaited(_savePlaybackSettings());
   }
 
   Future<void> setShowPlaybackCard(bool show) async {
     if (_showPlaybackCard == show) return;
     _showPlaybackCard = show;
-    _notifyListeners();
+    _notifySettingsChanged();
     unawaited(_savePlaybackSettings());
   }
 
   Future<void> setAutoPlayAddedSessions(bool enabled) async {
     if (_autoPlayAddedSessions == enabled) return;
     _autoPlayAddedSessions = enabled;
-    _notifyListeners();
+    _notifySettingsChanged();
     unawaited(_savePlaybackSettings());
   }
 
   Future<void> setAutoCheckUpdates(bool enabled) async {
     if (_autoCheckUpdates == enabled) return;
     _autoCheckUpdates = enabled;
-    _notifyListeners();
+    _notifySettingsChanged();
     unawaited(_savePlaybackSettings());
   }
 
   Future<void> setDlsiteMetadataLanguage(AppLanguage language) async {
     if (_dlsiteMetadataLanguage == language) return;
     _dlsiteMetadataLanguage = language;
-    _notifyListeners();
+    _notifySettingsChanged();
     unawaited(_savePlaybackSettings());
   }
 
@@ -482,7 +482,7 @@ extension AudioProviderPersistence on AudioProvider {
         : bytes;
     if (_maxCacheBytes == normalized) return;
     _maxCacheBytes = normalized;
-    _notifyListeners();
+    _notifySettingsChanged();
     await AppCacheService.setMaxCacheBytes(normalized);
     unawaited(_savePlaybackSettings());
   }

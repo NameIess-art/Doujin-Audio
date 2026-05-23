@@ -1,9 +1,8 @@
-package com.nameless.audio
+﻿package com.nameless.audio
 
 import android.app.Activity
 import android.app.AlarmManager
 import android.app.NotificationChannel
-import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.ComponentName
@@ -27,7 +26,6 @@ import android.util.LruCache
 import android.webkit.MimeTypeMap
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
-import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.documentfile.provider.DocumentFile
 import androidx.media.app.NotificationCompat.MediaStyle
@@ -47,66 +45,6 @@ private data class SubtitleOverlayStyle(
     val backgroundColor: String,
     val textColor: String
 )
-
-private object PlaybackWakeLockController {
-    private var wakeLock: PowerManager.WakeLock? = null
-
-    @Synchronized
-    fun sync(context: Context, enabled: Boolean) {
-        if (enabled) {
-            acquire(context.applicationContext)
-        } else {
-            release()
-        }
-    }
-
-    private fun acquire(context: Context) {
-        if (wakeLock?.isHeld == true) return
-        try {
-            val powerManager = context.getSystemService(Context.POWER_SERVICE) as? PowerManager
-            wakeLock = powerManager?.newWakeLock(
-                PowerManager.PARTIAL_WAKE_LOCK,
-                "${context.packageName}:playback_keep_alive"
-            )?.apply {
-                setReferenceCounted(false)
-                acquire()
-            }
-        } catch (_: Exception) {
-            wakeLock = null
-        }
-    }
-
-    private fun release() {
-        val currentWakeLock = wakeLock ?: return
-        try {
-            if (currentWakeLock.isHeld) {
-                currentWakeLock.release()
-            }
-        } catch (_: RuntimeException) {
-            // Ignore stale wakelock state.
-        } finally {
-            wakeLock = null
-        }
-    }
-}
-
-internal object PlaybackKeepAlivePolicy {
-    fun shouldRunKeepAliveService(
-        keepForegroundServiceAlive: Boolean,
-        hasActiveTimer: Boolean,
-        hasActivePlayback: Boolean
-    ): Boolean {
-        return keepForegroundServiceAlive && hasActiveTimer && !hasActivePlayback
-    }
-
-    fun shouldHoldKeepAliveWakeLock(
-        enabled: Boolean,
-        hasActiveTimer: Boolean,
-        hasActivePlayback: Boolean
-    ): Boolean {
-        return enabled && (hasActiveTimer || hasActivePlayback)
-    }
-}
 
 private val supportedImageExtensions = setOf(
     "jpg", "jpeg", "png", "webp", "bmp", "gif"
@@ -139,13 +77,6 @@ class MainActivity : AudioServiceActivity() {
             "com.nameless.audio.OPEN_SESSION_FROM_NOTIFICATION"
     }
 
-    private val fileCacheChannel = "nameless_audio/file_cache"
-    private val powerChannel = "nameless_audio/power"
-    private val notificationsChannel = "nameless_audio/notifications"
-    private val nativePlaybackMethodsChannel = "nameless_audio/native_playback"
-    private val nativePlaybackEventsChannel = "nameless_audio/native_playback/events"
-    private val updateChannel = "nameless_audio/update"
-    private val subtitleOverlayChannel = "nameless_audio/subtitle_overlay"
     private val pickAudioSourceRequestCode = 7001
     private val pickAudioFilesRequestCode = 7002
     private val pickAudioFolderRequestCode = 7003
@@ -156,6 +87,9 @@ class MainActivity : AudioServiceActivity() {
     private var pendingSubtitleOverlayText: String? = null
     private var pendingSubtitleOverlayStyle: SubtitleOverlayStyle? = null
     private var pendingNotificationSessionId: String? = null
+    private val playbackKeepAliveCoordinator by lazy {
+        PlaybackKeepAliveCoordinator(applicationContext)
+    }
     private val audioPickerMimeTypes = arrayOf(
         "audio/*",
         "video/*",
@@ -190,17 +124,17 @@ class MainActivity : AudioServiceActivity() {
         val nativePlaybackBridge = NativePlaybackBridge(applicationContext)
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
-            nativePlaybackMethodsChannel
+            PlatformChannelNames.NATIVE_PLAYBACK
         ).setMethodCallHandler(nativePlaybackBridge)
         EventChannel(
             flutterEngine.dartExecutor.binaryMessenger,
-            nativePlaybackEventsChannel
+            PlatformChannelNames.NATIVE_PLAYBACK_EVENTS
         ).setStreamHandler(nativePlaybackBridge)
 
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, powerChannel)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, PlatformChannelNames.POWER)
             .setMethodCallHandler { call, result ->
                 when (call.method) {
-                    "setKeepCpuAwake" -> {
+                    PowerMethods.SET_KEEP_CPU_AWAKE -> {
                         val enabled = call.argument<Boolean>("enabled") ?: false
                         val hasActivePlayback =
                             call.argument<Boolean>("hasActivePlayback") ?: false
@@ -219,35 +153,35 @@ class MainActivity : AudioServiceActivity() {
                         )
                         result.success(null)
                     }
-                    "canManageAllFilesAccess" -> {
+                    PowerMethods.CAN_MANAGE_ALL_FILES_ACCESS -> {
                         result.success(canManageAllFilesAccess())
                     }
-                    "openManageAllFilesAccessSettings" -> {
+                    PowerMethods.OPEN_MANAGE_ALL_FILES_ACCESS_SETTINGS -> {
                         result.success(openManageAllFilesAccessSettings())
                     }
-                    "stopPlaybackKeepAlive" -> {
+                    PowerMethods.STOP_PLAYBACK_KEEP_ALIVE -> {
                         stopPlaybackKeepAliveService()
                         result.success(null)
                     }
-                    "isIgnoringBatteryOptimizations" -> {
+                    PowerMethods.IS_IGNORING_BATTERY_OPTIMIZATIONS -> {
                         result.success(isIgnoringBatteryOptimizations())
                     }
-                    "openBatteryOptimizationSettings" -> {
+                    PowerMethods.OPEN_BATTERY_OPTIMIZATION_SETTINGS -> {
                         result.success(openBatteryOptimizationSettings())
                     }
-                    "openBackgroundRunSettings" -> {
+                    PowerMethods.OPEN_BACKGROUND_RUN_SETTINGS -> {
                         result.success(openBackgroundRunSettings())
                     }
-                    "canScheduleExactAlarms" -> {
+                    PowerMethods.CAN_SCHEDULE_EXACT_ALARMS -> {
                         result.success(canScheduleExactAlarms())
                     }
-                    "openExactAlarmSettings" -> {
+                    PowerMethods.OPEN_EXACT_ALARM_SETTINGS -> {
                         result.success(openExactAlarmSettings())
                     }
-                    "getNativeTimerRuntimeState" -> {
+                    PowerMethods.GET_NATIVE_TIMER_RUNTIME_STATE -> {
                         result.success(getNativeTimerRuntimeState())
                     }
-                    "executeTimerExpiredNow" -> {
+                    PowerMethods.EXECUTE_TIMER_EXPIRED_NOW -> {
                         val generation = call.argument<Int>("generation")
                         PlaybackTimerAlarmScheduler.executeNow(
                             applicationContext,
@@ -256,7 +190,7 @@ class MainActivity : AudioServiceActivity() {
                         )
                         result.success(true)
                     }
-                    "executeAutoResumeNow" -> {
+                    PowerMethods.EXECUTE_AUTO_RESUME_NOW -> {
                         val generation = call.argument<Int>("generation")
                         PlaybackTimerAlarmScheduler.executeNow(
                             applicationContext,
@@ -265,7 +199,7 @@ class MainActivity : AudioServiceActivity() {
                         )
                         result.success(true)
                     }
-                    "syncPlaybackTimerAlarms" -> {
+                    PowerMethods.SYNC_PLAYBACK_TIMER_ALARMS -> {
                         val timerModeIndex = call.argument<Int>("timerMode")
                         val timerDurationMs =
                             (call.argument<Number>("timerDurationMs"))?.toLong()
@@ -300,37 +234,37 @@ class MainActivity : AudioServiceActivity() {
                 }
             }
 
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, updateChannel)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, PlatformChannelNames.UPDATE)
             .setMethodCallHandler { call, result ->
                 when (call.method) {
-                    "getAppVersion" -> {
+                    UpdateMethods.GET_APP_VERSION -> {
                         result.success(currentAppVersion())
                     }
-                    "installApk" -> {
+                    UpdateMethods.INSTALL_APK -> {
                         val apkPath = call.argument<String>("path")
                         result.success(installDownloadedApk(apkPath))
                     }
-                    "canInstallUnknownApps" -> {
+                    UpdateMethods.CAN_INSTALL_UNKNOWN_APPS -> {
                         result.success(canInstallUnknownApps())
                     }
-                    "openInstallPermissionSettings" -> {
+                    UpdateMethods.OPEN_INSTALL_PERMISSION_SETTINGS -> {
                         result.success(openInstallPermissionSettings())
                     }
                     else -> result.notImplemented()
                 }
             }
 
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, subtitleOverlayChannel)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, PlatformChannelNames.SUBTITLE_OVERLAY)
             .setMethodCallHandler { call, result ->
                 when (call.method) {
-                    "canDrawOverlays" -> {
+                    SubtitleOverlayMethods.CAN_DRAW_OVERLAYS -> {
                         result.success(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                             Settings.canDrawOverlays(this)
                         } else {
                             true
                         })
                     }
-                    "openOverlaySettings" -> {
+                    SubtitleOverlayMethods.OPEN_OVERLAY_SETTINGS -> {
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                             val intent = Intent(
                                 Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
@@ -344,20 +278,20 @@ class MainActivity : AudioServiceActivity() {
                             result.success(false)
                         }
                     }
-                    "startOverlay" -> {
+                    SubtitleOverlayMethods.START_OVERLAY -> {
                         startSubtitleService()
                         result.success(true)
                     }
-                    "stopOverlay" -> {
+                    SubtitleOverlayMethods.STOP_OVERLAY -> {
                         stopSubtitleService()
                         result.success(true)
                     }
-                    "updateSubtitle" -> {
+                    SubtitleOverlayMethods.UPDATE_SUBTITLE -> {
                         val text = call.argument<String>("text") ?: ""
                         updateSubtitleOverlayText(text)
                         result.success(true)
                     }
-                    "updateStyle" -> {
+                    SubtitleOverlayMethods.UPDATE_STYLE -> {
                         val fontSize = call.argument<Double>("fontSize")?.toFloat() ?: 18f
                         val backgroundColor = call.argument<String>("backgroundColor") ?: "#80000000"
                         val textColor = call.argument<String>("textColor") ?: "#FFFFFF"
@@ -375,19 +309,19 @@ class MainActivity : AudioServiceActivity() {
             }
 
         notificationsMethodChannel =
-            MethodChannel(flutterEngine.dartExecutor.binaryMessenger, notificationsChannel)
+            MethodChannel(flutterEngine.dartExecutor.binaryMessenger, PlatformChannelNames.NOTIFICATIONS)
         capturePendingNotificationSession(intent)
         notificationsMethodChannel?.setMethodCallHandler { call, result ->
                 when (call.method) {
-                    "areNotificationsEnabled" -> {
+                    NotificationsMethods.ARE_NOTIFICATIONS_ENABLED -> {
                         result.success(
                             NotificationManagerCompat.from(this).areNotificationsEnabled()
                         )
                     }
-                    "openNotificationSettings" -> {
+                    NotificationsMethods.OPEN_NOTIFICATION_SETTINGS -> {
                         result.success(openNotificationSettings())
                     }
-                    "syncUnifiedPlaybackNotifications" -> {
+                    NotificationsMethods.SYNC_UNIFIED_PLAYBACK_NOTIFICATIONS -> {
                         val rawItems =
                             call.argument<List<Map<String, Any?>>>("items") ?: emptyList()
                         val mode = call.argument<String>("mode") ?: "single"
@@ -422,11 +356,11 @@ class MainActivity : AudioServiceActivity() {
                         )
                         result.success(null)
                     }
-                    "clearUnifiedPlaybackNotifications" -> {
+                    NotificationsMethods.CLEAR_UNIFIED_PLAYBACK_NOTIFICATIONS -> {
                         UnifiedPlaybackNotificationController.clear(this)
                         result.success(null)
                     }
-                    "consumePendingNotificationSessionId" -> {
+                    NotificationsMethods.CONSUME_PENDING_NOTIFICATION_SESSION_ID -> {
                         val sessionId = pendingNotificationSessionId
                         pendingNotificationSessionId = null
                         result.success(sessionId)
@@ -435,10 +369,10 @@ class MainActivity : AudioServiceActivity() {
                 }
             }
 
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, fileCacheChannel)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, PlatformChannelNames.FILE_CACHE)
             .setMethodCallHandler { call, result ->
                 when (call.method) {
-                    "cacheFromUri" -> {
+                    FileCacheMethods.CACHE_FROM_URI -> {
                         val uriString = call.argument<String>("uri")
                         val name = call.argument<String>("name") ?: "picked_audio"
                         val index = call.argument<Int>("index") ?: 0
@@ -478,13 +412,13 @@ class MainActivity : AudioServiceActivity() {
                             result.error("cache_failed", e.message ?: "unknown error", null)
                         }
                     }
-                    "clearApplicationCache" -> {
+                    FileCacheMethods.CLEAR_APPLICATION_CACHE -> {
                         Thread {
                             val deletedBytes = clearApplicationCache()
                             runOnUiThread { result.success(deletedBytes) }
                         }.start()
                     }
-                    "setApplicationCacheLimit" -> {
+                    FileCacheMethods.SET_APPLICATION_CACHE_LIMIT -> {
                         val maxBytes = call.argument<Number>("maxBytes")?.toLong()
                             ?: defaultMaxApplicationCacheBytes
                         setMaxApplicationCacheBytes(maxBytes)
@@ -493,7 +427,7 @@ class MainActivity : AudioServiceActivity() {
                             runOnUiThread { result.success(null) }
                         }.start()
                     }
-                    "enforceApplicationCacheLimit" -> {
+                    FileCacheMethods.ENFORCE_APPLICATION_CACHE_LIMIT -> {
                         val maxBytes = call.argument<Number>("maxBytes")?.toLong()
                             ?: maxApplicationCacheBytes()
                         Thread {
@@ -501,7 +435,7 @@ class MainActivity : AudioServiceActivity() {
                             runOnUiThread { result.success(null) }
                         }.start()
                     }
-                    "scanFolder" -> {
+                    FileCacheMethods.SCAN_FOLDER -> {
                         val folder = call.argument<String>("folder")
                         if (folder.isNullOrBlank()) {
                             result.error("invalid_args", "folder is required", null)
@@ -547,7 +481,7 @@ class MainActivity : AudioServiceActivity() {
                             }
                         }.start()
                     }
-                    "listChildFolders" -> {
+                    FileCacheMethods.LIST_CHILD_FOLDERS -> {
                         val folder = call.argument<String>("folder")
                         if (folder.isNullOrBlank()) {
                             result.error("invalid_args", "folder is required", null)
@@ -568,7 +502,7 @@ class MainActivity : AudioServiceActivity() {
                             }
                         }.start()
                     }
-                    "renameDocument" -> {
+                    FileCacheMethods.RENAME_DOCUMENT -> {
                         val targetPath = call.argument<String>("path")
                         val name = call.argument<String>("name")
                         if (targetPath.isNullOrBlank() || name.isNullOrBlank()) {
@@ -598,7 +532,7 @@ class MainActivity : AudioServiceActivity() {
                             }
                         }.start()
                     }
-                    "readAudioDetailBackup" -> {
+                    FileCacheMethods.READ_AUDIO_DETAIL_BACKUP -> {
                         val folder = call.argument<String>("folder")
                         if (folder.isNullOrBlank()) {
                             result.error("invalid_args", "folder is required", null)
@@ -619,7 +553,7 @@ class MainActivity : AudioServiceActivity() {
                             }
                         }.start()
                     }
-                    "writeAudioDetailBackup" -> {
+                    FileCacheMethods.WRITE_AUDIO_DETAIL_BACKUP -> {
                         val folder = call.argument<String>("folder")
                         val json = call.argument<String>("json")
                         if (folder.isNullOrBlank() || json == null) {
@@ -641,7 +575,7 @@ class MainActivity : AudioServiceActivity() {
                             }
                         }.start()
                     }
-                    "readSingleFileDetailBackup" -> {
+                    FileCacheMethods.READ_SINGLE_FILE_DETAIL_BACKUP -> {
                         val filePath = call.argument<String>("filePath")
                         if (filePath.isNullOrBlank()) {
                             result.error("invalid_args", "filePath is required", null)
@@ -662,7 +596,7 @@ class MainActivity : AudioServiceActivity() {
                             }
                         }.start()
                     }
-                    "writeSingleFileDetailBackup" -> {
+                    FileCacheMethods.WRITE_SINGLE_FILE_DETAIL_BACKUP -> {
                         val filePath = call.argument<String>("filePath")
                         val json = call.argument<String>("json")
                         if (filePath.isNullOrBlank() || json == null) {
@@ -684,7 +618,7 @@ class MainActivity : AudioServiceActivity() {
                             }
                         }.start()
                     }
-                    "writeFileBytesToFolder" -> {
+                    FileCacheMethods.WRITE_FILE_BYTES_TO_FOLDER -> {
                         val folder = call.argument<String>("folder")
                         val name = call.argument<String>("name")
                         val bytes = call.argument<ByteArray>("bytes")
@@ -712,7 +646,7 @@ class MainActivity : AudioServiceActivity() {
                             }
                         }.start()
                     }
-                    "documentPathExists" -> {
+                    FileCacheMethods.DOCUMENT_PATH_EXISTS -> {
                         val targetPath = call.argument<String>("path")
                         if (targetPath.isNullOrBlank()) {
                             result.error("invalid_args", "path is required", null)
@@ -733,7 +667,7 @@ class MainActivity : AudioServiceActivity() {
                             }
                         }.start()
                     }
-                    "ensureFolderPath" -> {
+                    FileCacheMethods.ENSURE_FOLDER_PATH -> {
                         val folder = call.argument<String>("folder")
                         val relativePath = call.argument<String>("relativePath")
                         val overwrite = call.argument<Boolean>("overwrite") ?: false
@@ -760,7 +694,7 @@ class MainActivity : AudioServiceActivity() {
                             }
                         }.start()
                     }
-                    "copyFileToFolder" -> {
+                    FileCacheMethods.COPY_FILE_TO_FOLDER -> {
                         val sourcePath = call.argument<String>("sourcePath")
                         val folder = call.argument<String>("folder")
                         val relativePath = call.argument<String>("relativePath")
@@ -796,7 +730,7 @@ class MainActivity : AudioServiceActivity() {
                             }
                         }.start()
                     }
-                    "deleteDocumentPath" -> {
+                    FileCacheMethods.DELETE_DOCUMENT_PATH -> {
                         val targetPath = call.argument<String>("path")
                         if (targetPath.isNullOrBlank()) {
                             result.error("invalid_args", "path is required", null)
@@ -817,7 +751,7 @@ class MainActivity : AudioServiceActivity() {
                             }
                         }.start()
                     }
-                    "resolveTrackCover" -> {
+                    FileCacheMethods.RESOLVE_TRACK_COVER -> {
                         val trackPath = call.argument<String>("path")
                         val groupKey = call.argument<String>("groupKey")
                         val rootFolder = call.argument<String>("rootFolder")
@@ -840,7 +774,7 @@ class MainActivity : AudioServiceActivity() {
                             }
                         }.start()
                     }
-                    "resolveVideoFrame" -> {
+                    FileCacheMethods.RESOLVE_VIDEO_FRAME -> {
                         val trackPath = call.argument<String>("path")
                         val modifiedAtMs = call.argument<Long>("modifiedAtMs")
                         if (trackPath.isNullOrBlank()) {
@@ -862,7 +796,7 @@ class MainActivity : AudioServiceActivity() {
                             }
                         }.start()
                     }
-                    "discoverRootImages" -> {
+                    FileCacheMethods.DISCOVER_ROOT_IMAGES -> {
                         val trackPath = call.argument<String>("path")
                         val groupKey = call.argument<String>("groupKey")
                         val rootFolder = call.argument<String>("rootFolder")
@@ -885,7 +819,7 @@ class MainActivity : AudioServiceActivity() {
                             }
                         }.start()
                     }
-                    "resolveTrackSubtitle" -> {
+                    FileCacheMethods.RESOLVE_TRACK_SUBTITLE -> {
                         val trackPath = call.argument<String>("path")
                         val groupKey = call.argument<String>("groupKey")
                         if (trackPath.isNullOrBlank()) {
@@ -907,13 +841,13 @@ class MainActivity : AudioServiceActivity() {
                             }
                         }.start()
                     }
-                    "pickAudioSource" -> {
+                    FileCacheMethods.PICK_AUDIO_SOURCE -> {
                         launchPickAudioSource(result)
                     }
-                    "pickAudioFiles" -> {
+                    FileCacheMethods.PICK_AUDIO_FILES -> {
                         launchPickAudioFiles(result)
                     }
-                    "pickAudioFolder" -> {
+                    FileCacheMethods.PICK_AUDIO_FOLDER -> {
                         launchPickAudioFolder(result)
                     }
                     else -> result.notImplemented()
@@ -1156,85 +1090,18 @@ class MainActivity : AudioServiceActivity() {
         usesUnifiedPlaybackNotifications: Boolean,
         keepForegroundServiceAlive: Boolean
     ) {
-        try {
-            // NativePlaybackService already owns the foreground notification
-            // during active playback.  The keep-alive service provides a
-            // redundant foreground service + wake lock so that if
-            // NativePlaybackService briefly drops out of foreground (e.g.
-            // during a track transition) the process is not killed.
-            // When foreground is suppressed (notification control disabled),
-            // do NOT start the keep-alive service — it would show a notification
-            // that the user explicitly turned off.
-            val shouldRunKeepAliveService =
-                !NativePlaybackService.foregroundSuppressed &&
-                    PlaybackKeepAlivePolicy.shouldRunKeepAliveService(
-                        keepForegroundServiceAlive = keepForegroundServiceAlive,
-                        hasActiveTimer = hasActiveTimer,
-                        hasActivePlayback = hasActivePlayback
-                    )
-            if (shouldRunKeepAliveService) {
-                val serviceIntent =
-                    Intent(applicationContext, PlaybackKeepAliveService::class.java).apply {
-                        action = PlaybackKeepAliveService.ACTION_START
-                        putExtra(
-                            PlaybackKeepAliveService.EXTRA_HAS_ACTIVE_PLAYBACK,
-                            hasActivePlayback
-                        )
-                        putExtra(
-                            PlaybackKeepAliveService.EXTRA_HAS_ACTIVE_TIMER,
-                            hasActiveTimer
-                        )
-                        putExtra(
-                            PlaybackKeepAliveService.EXTRA_USES_UNIFIED_PLAYBACK_NOTIFICATION,
-                            usesUnifiedPlaybackNotifications
-                        )
-                        putExtra(
-                            PlaybackKeepAliveService.EXTRA_KEEP_FOREGROUND_SERVICE_ALIVE,
-                            true
-                        )
-                    }
-                ContextCompat.startForegroundService(applicationContext, serviceIntent)
-            } else {
-                stopPlaybackKeepAliveService()
-            }
-        } catch (_: Exception) {
-            // Ignore foreground service sync failures and fall back to a wakelock.
-        }
-        try {
-            PlaybackWakeLockController.sync(
-                applicationContext,
-                PlaybackKeepAlivePolicy.shouldHoldKeepAliveWakeLock(
-                    enabled = enabled,
-                    hasActiveTimer = hasActiveTimer,
-                    hasActivePlayback = hasActivePlayback
-                )
-            )
-        } catch (_: Exception) {
-            // Ignore keep-alive sync failures and let playback continue best-effort.
-        }
+        playbackKeepAliveCoordinator.sync(
+            enabled = enabled,
+            hasActivePlayback = hasActivePlayback,
+            hasActiveTimer = hasActiveTimer,
+            usesUnifiedPlaybackNotifications = usesUnifiedPlaybackNotifications,
+            keepForegroundServiceAlive = keepForegroundServiceAlive
+        )
     }
 
     private fun stopPlaybackKeepAliveService() {
-        val stopIntent = Intent(applicationContext, PlaybackKeepAliveService::class.java).apply {
-            action = PlaybackKeepAliveService.ACTION_STOP
-        }
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                applicationContext.startService(stopIntent)
-            } else {
-                @Suppress("DEPRECATION")
-                applicationContext.startService(stopIntent)
-            }
-        } catch (_: Exception) {
-            // If the service is not startable from the current state, remove it best-effort.
-        }
-        applicationContext.stopService(
-            Intent(applicationContext, PlaybackKeepAliveService::class.java)
-        )
-        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
-        manager?.cancel(UnifiedPlaybackNotificationController.foregroundServiceNotificationId + 1)
+        playbackKeepAliveCoordinator.stopService()
     }
-
     private fun openNotificationSettings(): Boolean {
         return try {
             val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
@@ -1674,7 +1541,7 @@ class MainActivity : AudioServiceActivity() {
         }
         try {
             channel.invokeMethod(
-                "openSessionFromNotification",
+                NotificationsMethods.OPEN_SESSION_FROM_NOTIFICATION,
                 mapOf("sessionId" to sessionId)
             )
         } catch (_: Exception) {
@@ -1758,7 +1625,7 @@ class MainActivity : AudioServiceActivity() {
             if (fileRenamedPath != null) {
                 return hashMapOf("path" to fileRenamedPath)
             }
-            // File rename not available — fall through to SAF rename.
+            // File rename not available 鈥?fall through to SAF rename.
         }
 
         val renamedUri = DocumentsContract.renameDocument(contentResolver, target.uri, newName)
@@ -1892,7 +1759,7 @@ class MainActivity : AudioServiceActivity() {
                 }
             }
         }
-        // SAF access failed (e.g. after a File.renameTo) — fall back to File I/O.
+        // SAF access failed (e.g. after a File.renameTo) 鈥?fall back to File I/O.
         val filePath = contentUriToFilePath(folderPath) ?: return null
         val backupFile = java.io.File(filePath, audioDetailBackupFileName)
         if (backupFile.exists()) return backupFile.readText(Charsets.UTF_8)
@@ -1915,7 +1782,7 @@ class MainActivity : AudioServiceActivity() {
                 return true
             }
         }
-        // SAF access failed — fall back to File I/O.
+        // SAF access failed 鈥?fall back to File I/O.
         val filePath = contentUriToFilePath(folderPath) ?: return false
         return try {
             val backupFile = java.io.File(filePath, audioDetailBackupFileName)
@@ -2016,7 +1883,7 @@ class MainActivity : AudioServiceActivity() {
             val parentDocumentId = if (documentId.contains('/')) {
                 documentId.substringBeforeLast('/')
             } else {
-                // File is at the tree root — parent is the root itself.
+                // File is at the tree root 鈥?parent is the root itself.
                 startDocumentIdForTreeUri(treeBase) ?: return null
             }
             val parentUri = DocumentsContract.buildDocumentUriUsingTree(
@@ -3003,7 +2870,7 @@ class MainActivity : AudioServiceActivity() {
             return null
         }
 
-        // SAF access failed (e.g. after a File.renameTo) — fall back to File I/O.
+        // SAF access failed (e.g. after a File.renameTo) 鈥?fall back to File I/O.
         val folderPath = if (relativeDirectory.isBlank()) {
             contentUriToFilePath(rootTreeUri)
         } else {

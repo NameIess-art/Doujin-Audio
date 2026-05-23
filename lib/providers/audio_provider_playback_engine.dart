@@ -1,4 +1,4 @@
-part of 'audio_provider.dart';
+﻿part of 'audio_provider.dart';
 
 extension AudioProviderPlaybackEngine on AudioProvider {
   bool _isSessionCommandCurrent(
@@ -133,7 +133,7 @@ extension AudioProviderPlaybackEngine on AudioProvider {
     _syncKeepCpuAwake();
     _notificationFocusSessionId = null;
     _syncNotificationState();
-    _notifyListeners();
+    _notifyPlaybackChanged();
   }
 
   Future<void> _enforceSingleThreadPlayback({
@@ -154,7 +154,7 @@ extension AudioProviderPlaybackEngine on AudioProvider {
     _notificationFocusSessionId = keepSessionId;
     if (sessionsToPause.isEmpty) {
       _syncNotificationState();
-      _notifyListeners();
+      _notifyPlaybackChanged();
       return;
     }
 
@@ -167,7 +167,7 @@ extension AudioProviderPlaybackEngine on AudioProvider {
     _notificationFocusSessionId = keepSessionId;
     _syncKeepCpuAwake();
     _syncNotificationState();
-    _notifyListeners();
+    _notifyPlaybackChanged();
   }
 
   String? get _preferredSingleSessionId {
@@ -187,7 +187,7 @@ extension AudioProviderPlaybackEngine on AudioProvider {
     _sessionOrder.insert(newIndex, moved);
     _markActiveSessionsDirty();
     _syncNotificationState();
-    _notifyListeners();
+    _notifyPlaybackChanged();
     _scheduleSaveSessionOrder();
   }
 
@@ -228,7 +228,7 @@ extension AudioProviderPlaybackEngine on AudioProvider {
           session.isLoading = false;
           session.isAdvancingAfterCompletion = false;
           _syncNotificationState();
-          _notifyListeners();
+          _notifyPlaybackChanged();
         }
       }
       if (_sessions.containsKey(session.id) &&

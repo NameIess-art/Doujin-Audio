@@ -16,7 +16,7 @@ void main() {
   test('play decodes success payload into a typed snapshot', () async {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (call) async {
-          expect(call.method, NativePlaybackMethods.play);
+          expect(call.method, NativePlaybackMethod.play);
           return <String, Object?>{
             'ok': true,
             'value': <String, Object?>{
@@ -50,7 +50,7 @@ void main() {
           .setMockMethodCallHandler(channel, (call) async {
             callCount++;
             if (callCount == 1) {
-              expect(call.method, NativePlaybackMethods.snapshot);
+              expect(call.method, NativePlaybackMethod.snapshot);
               return <String, Object?>{
                 'ok': true,
                 'value': <String, Object?>{

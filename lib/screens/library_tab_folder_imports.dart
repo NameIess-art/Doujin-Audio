@@ -684,38 +684,38 @@ _NativeScanPayload _parseNativeScanPayload(List<dynamic> data) {
   final paths = <String>{};
   for (final item in data) {
     if (item is! Map) continue;
-    final map = item.cast<Object?, Object?>();
-    final scannedPath = map['path']?.toString().trim();
+    final scannedPath = item['path']?.toString().trim();
     if (scannedPath == null ||
         scannedPath.isEmpty ||
         !isSupportedMediaFile(scannedPath)) {
       continue;
     }
+    final resolvedPath = PathMatcher.isContentUri(scannedPath)
+        ? scannedPath
+        : path.normalize(scannedPath);
+    final normalizedPath = PathMatcher.normalize(resolvedPath);
 
-    final nativeGroupKey = map['groupKey']?.toString().trim();
-    final nativeGroupTitle = map['groupTitle']?.toString().trim();
-    final nativeGroupSubtitle = map['groupSubtitle']?.toString().trim();
+    final nativeGroupKey = item['groupKey']?.toString().trim();
+    final nativeGroupTitle = item['groupTitle']?.toString().trim();
+    final nativeGroupSubtitle = item['groupSubtitle']?.toString().trim();
 
     final groupKey = (nativeGroupKey?.isNotEmpty ?? false)
         ? nativeGroupKey!
-        : path.dirname(scannedPath);
+        : path.dirname(resolvedPath);
     final groupTitle = (nativeGroupTitle?.isNotEmpty ?? false)
         ? nativeGroupTitle!
         : PathDisplay.folderName(groupKey);
     final groupSubtitle = (nativeGroupSubtitle?.isNotEmpty ?? false)
         ? nativeGroupSubtitle!
         : groupKey;
-    final displayName = map['title']?.toString().trim();
+    final displayName = item['title']?.toString().trim();
     final isVideo =
-        map['isVideo'] as bool? ??
+        item['isVideo'] as bool? ??
         isVideoMediaFile(
-          displayName?.isEmpty ?? true ? scannedPath : displayName!,
+          displayName?.isEmpty ?? true ? resolvedPath : displayName!,
         );
-    final resolvedPath = scannedPath.startsWith('content://')
-        ? scannedPath
-        : path.normalize(scannedPath);
-    final scannedAtMs = map['scannedAtMs'] as num?;
-    final modifiedAtMs = map['modifiedAtMs'] as num?;
+    final scannedAtMs = item['scannedAtMs'] as num?;
+    final modifiedAtMs = item['modifiedAtMs'] as num?;
 
     scanned.add(
       _ScannedTrack(
@@ -729,13 +729,13 @@ _NativeScanPayload _parseNativeScanPayload(List<dynamic> data) {
         scannedAt: scannedAtMs == null
             ? null
             : DateTime.fromMillisecondsSinceEpoch(scannedAtMs.toInt()),
-        fileSizeBytes: (map['fileSizeBytes'] as num?)?.toInt(),
+        fileSizeBytes: (item['fileSizeBytes'] as num?)?.toInt(),
         modifiedAt: modifiedAtMs == null
             ? null
             : DateTime.fromMillisecondsSinceEpoch(modifiedAtMs.toInt()),
       ),
     );
-    paths.add(PathMatcher.normalize(resolvedPath));
+    paths.add(normalizedPath);
   }
   return _NativeScanPayload(
     tracks: List<_ScannedTrack>.unmodifiable(scanned),

@@ -322,6 +322,7 @@ extension _TimerTabBody on _TimerTabState {
                         timerWaitingTrigger: timerWaitingTrigger,
                         timerConfigured: timerConfigured,
                         pickAutoResumeTime: pickAutoResumeTime,
+                        autoResumeAt: timerSlice.autoResumeAt,
                       )
                     : buildConfiguratorSection(compactMode: true),
               ),
@@ -373,6 +374,7 @@ extension _TimerTabBody on _TimerTabState {
                       waitingTrigger: timerWaitingTrigger,
                       fmtDuration: _fmtDuration,
                       cs: cs,
+                      autoResumeAt: timerSlice.autoResumeAt,
                     ),
                     const SizedBox(height: 16),
                   ],

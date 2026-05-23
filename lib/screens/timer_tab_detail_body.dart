@@ -16,8 +16,8 @@ extension _TimerTabDetailBody on _TimerTabState {
     required bool timerWaitingTrigger,
     required bool timerConfigured,
     required Future<void> Function() pickAutoResumeTime,
+    DateTime? autoResumeAt,
   }) {
-    final backTooltip = MaterialLocalizations.of(context).backButtonTooltip;
     final detailAccent = timerExpired
         ? cs.error
         : timerWaitingTrigger
@@ -31,33 +31,17 @@ extension _TimerTabDetailBody on _TimerTabState {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Row(
-              children: [
-                IconButton(
-                  onPressed: () {
-                    Feedback.forTap(context);
-                    HapticFeedback.selectionClick();
-                    _setLocalState(() => _showCompactDetail = false);
-                  },
-                  tooltip: backTooltip,
-                  icon: const Icon(Icons.arrow_back_rounded),
-                ),
-                const SizedBox(width: 4),
-                Expanded(
-                  child: _TimerSectionTitle(
-                    icon: timerExpired
-                        ? Icons.alarm_off_rounded
-                        : timerWaitingTrigger
-                        ? Icons.schedule_rounded
-                        : Icons.timer_rounded,
-                    title: timerExpired
-                        ? i18n.tr('countdown_finished')
-                        : timerWaitingTrigger
-                        ? i18n.tr('waiting_to_start_countdown')
-                        : i18n.tr('counting_down'),
-                  ),
-                ),
-              ],
+            _TimerSectionTitle(
+              icon: timerExpired
+                  ? Icons.alarm_off_rounded
+                  : timerWaitingTrigger
+                  ? Icons.schedule_rounded
+                  : Icons.timer_rounded,
+              title: timerExpired
+                  ? i18n.tr('countdown_finished')
+                  : timerWaitingTrigger
+                  ? i18n.tr('waiting_to_start_countdown')
+                  : i18n.tr('counting_down'),
             ),
             const SizedBox(height: 10),
             if (timerConfigured)
@@ -67,6 +51,7 @@ extension _TimerTabDetailBody on _TimerTabState {
                 waitingTrigger: timerWaitingTrigger,
                 fmtDuration: _fmtDuration,
                 cs: cs,
+                autoResumeAt: autoResumeAt,
                 compact: true,
               )
             else

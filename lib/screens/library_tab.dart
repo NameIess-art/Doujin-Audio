@@ -35,7 +35,6 @@ import '../widgets/reorderable_hold_drag_listener.dart';
 import '../widgets/swipe_reveal_card.dart';
 import '../widgets/top_page_header.dart';
 import '../widgets/unified_popup_menu.dart';
-import '../widgets/waterfall_flow_stagger.dart';
 import '../widgets/glass_refresh_indicator.dart';
 import 'audio_detail_sheet.dart';
 import 'screen_view_models.dart';
@@ -231,8 +230,25 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     final detailRevision = context.select<AudioProvider, int>(
       (value) => value.audioDetailRevision,
     );
-    final sliceState =
-        ref.watch(libraryStateProvider).valueOrNull ?? const LibraryState();
+    final libraryUiState = ref.watch(
+      libraryStateProvider.select((value) {
+        final state = value.valueOrNull ?? const LibraryState();
+        final showForegroundScan =
+            state.isScanning && !state.isBackgroundScanning;
+        // Pull-to-refresh runs as a background scan and does not surface the
+        // progress card, so ignore those transient updates here to avoid
+        // rebuilding the heavy library tree when content has not changed.
+        return (
+          structureRevision: state.structureRevision,
+          isInitialized: state.isInitialized,
+          isScanning: showForegroundScan,
+          scanCurrentFolder: showForegroundScan ? state.scanCurrentFolder : '',
+          scanFoundCount: showForegroundScan ? state.scanFoundCount : 0,
+          scanDuplicateCount: showForegroundScan ? state.scanDuplicateCount : 0,
+          scanFailureCount: showForegroundScan ? state.scanFailureCount : 0,
+        );
+      }),
+    );
     final libraryHeaderState = context
         .select<AudioProvider, LibraryHeaderState>(
           (value) => libraryHeaderStateFromSlice(
@@ -240,7 +256,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
               libraryTrackCount: value.libraryTrackCount,
               watchedFolderCount: value.watchedFolderCount,
               watchedLibraryCount: value.watchedLibraryCount,
-              isInitialized: sliceState.isInitialized,
+              isInitialized: libraryUiState.isInitialized,
             ),
           ),
         );
@@ -250,14 +266,14 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         watchedLibraries: value.watchedLibraries,
         watchedFolderCount: value.watchedFolderCount,
         watchedLibraryCount: value.watchedLibraryCount,
-        isScanning: value.isScanning,
-        isBackgroundScanning: value.isBackgroundScanning,
-        scanCurrentFolder: value.scanCurrentFolder,
-        scanFoundCount: value.scanFoundCount,
-        scanDuplicateCount: value.scanDuplicateCount,
-        scanFailureCount: value.scanFailureCount,
-        structureRevision: sliceState.structureRevision,
-        isInitialized: sliceState.isInitialized,
+        isScanning: libraryUiState.isScanning,
+        isBackgroundScanning: false,
+        scanCurrentFolder: libraryUiState.scanCurrentFolder,
+        scanFoundCount: libraryUiState.scanFoundCount,
+        scanDuplicateCount: libraryUiState.scanDuplicateCount,
+        scanFailureCount: libraryUiState.scanFailureCount,
+        structureRevision: libraryUiState.structureRevision,
+        isInitialized: libraryUiState.isInitialized,
       ),
     );
     _ensureCategorySnapshot(
@@ -324,11 +340,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
             : _LibraryTreeItem(key: ValueKey(node.path), node: node),
       );
 
-      return WaterfallFlowStagger(
-        key: ValueKey('stagger_${node.path}'),
-        index: index,
-        child: item,
-      );
+      return KeyedSubtree(key: ValueKey(node.path), child: item);
     }
 
     Widget emptyListBody() {
@@ -524,15 +536,11 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                             );
                           }
                           final node = tree[index];
-                          return WaterfallFlowStagger(
-                            key: ValueKey('stagger_${node.path}'),
+                          return ReorderableHoldDragStartListener(
+                            key: ValueKey(node.path),
                             index: index,
-                            child: ReorderableHoldDragStartListener(
-                              key: ValueKey(node.path),
-                              index: index,
-                              child: RepaintBoundary(
-                                child: _LibraryTreeItem(node: node),
-                              ),
+                            child: RepaintBoundary(
+                              child: _LibraryTreeItem(node: node),
                             ),
                           );
                         },

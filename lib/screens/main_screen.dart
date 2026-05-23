@@ -7,7 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:provider/provider.dart';
+import 'package:provider/provider.dart' hide Consumer;
 
 import '../i18n/app_language_provider.dart';
 import '../providers/audio_provider.dart';
@@ -475,16 +475,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
         unawaited(_maybePromptForBackgroundPlaybackReliability());
       });
     }
-    final timerSlice =
-        ref.watch(timerStateProvider).valueOrNull ??
-        const TimerStateSliceData();
-    final timerState = _TimerPresentation(
-      duration: timerSlice.duration,
-      remaining: timerSlice.remaining,
-      active: timerSlice.active,
-      mode: timerSlice.mode,
-    );
-
     if (!_isDataReady && (playbackState?.isInitialized ?? false)) {
       _isDataReady = true;
     }
@@ -513,7 +503,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
             if (isDesktop)
               Row(
                 children: [
-                  _buildDesktopNavigation(context, timerState, i18n),
+                  _buildDesktopNavigation(context, i18n),
                   Expanded(child: _buildAnimatedBody(isDesktop: true)),
                 ],
               )
@@ -551,7 +541,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
                   _buildMobileBottomDock(
                     context,
                     i18n: i18n,
-                    timerState: timerState,
                     overlaySessions: visibleSessions,
                     tinyMode: isTinyWindow,
                   ),

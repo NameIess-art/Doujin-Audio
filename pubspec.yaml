@@ -31,6 +31,7 @@ dependencies:
   auto_size_text: ^3.0.0
   ffmpeg_kit_flutter_new_audio: ^2.0.0
   lottie: ^3.3.3
+  palette_generator: ^0.3.3+7
 
 dev_dependencies:
   flutter_test:

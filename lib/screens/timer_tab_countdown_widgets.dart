@@ -1,12 +1,13 @@
 part of 'timer_tab.dart';
 
-class _CountdownCard extends StatelessWidget {
+class _CountdownCard extends StatefulWidget {
   const _CountdownCard({
     required this.provider,
     required this.timerExpired,
     required this.waitingTrigger,
     required this.fmtDuration,
     required this.cs,
+    this.autoResumeAt,
     this.compact = false,
   });
 
@@ -15,56 +16,135 @@ class _CountdownCard extends StatelessWidget {
   final bool waitingTrigger;
   final String Function(Duration) fmtDuration;
   final ColorScheme cs;
+  final DateTime? autoResumeAt;
   final bool compact;
+
+  @override
+  State<_CountdownCard> createState() => _CountdownCardState();
+}
+
+class _CountdownCardState extends State<_CountdownCard> {
+  Timer? _ticker;
+  Duration _autoResumeRemaining = Duration.zero;
+
+  @override
+  void initState() {
+    super.initState();
+    _updateAutoResumeRemaining();
+    if (_shouldTick()) {
+      _startTicker();
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _CountdownCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _updateAutoResumeRemaining();
+    if (_shouldTick()) {
+      _startTicker();
+    } else {
+      _stopTicker();
+    }
+  }
+
+  @override
+  void dispose() {
+    _stopTicker();
+    super.dispose();
+  }
+
+  bool _shouldTick() {
+    return widget.timerExpired && widget.provider.autoResumeEnabled && widget.autoResumeAt != null;
+  }
+
+  void _startTicker() {
+    if (_ticker?.isActive == true) return;
+    _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      _updateAutoResumeRemaining();
+    });
+  }
+
+  void _stopTicker() {
+    _ticker?.cancel();
+    _ticker = null;
+  }
+
+  void _updateAutoResumeRemaining() {
+    final target = widget.autoResumeAt;
+    if (target == null) return;
+    final diff = target.difference(DateTime.now());
+    final next = diff > Duration.zero ? diff : Duration.zero;
+    if (mounted) {
+      setState(() => _autoResumeRemaining = next);
+    } else {
+      _autoResumeRemaining = next;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final i18n = context.watch<AppLanguageProvider>();
-    final remaining = provider.timerRemaining ?? Duration.zero;
-    final title = timerExpired
+    final remaining = widget.provider.timerRemaining ?? Duration.zero;
+    
+    final bool showAutoResumeCountdown = widget.timerExpired && widget.provider.autoResumeEnabled;
+    
+    final title = showAutoResumeCountdown
+        ? i18n.tr('auto_resume_after_timer')
+        : widget.timerExpired
         ? i18n.tr('countdown_finished')
-        : waitingTrigger
+        : widget.waitingTrigger
         ? i18n.tr('waiting_to_start_countdown')
         : i18n.tr('counting_down');
-    final accent = timerExpired
-        ? cs.error
-        : waitingTrigger
-        ? cs.onSurfaceVariant
-        : cs.primary;
-    final timeColor = timerExpired
-        ? cs.error
-        : waitingTrigger
-        ? cs.onSurface
-        : cs.onPrimaryContainer;
+        
+    final accent = showAutoResumeCountdown
+        ? widget.cs.primary
+        : widget.timerExpired
+        ? widget.cs.error
+        : widget.waitingTrigger
+        ? widget.cs.onSurfaceVariant
+        : widget.cs.primary;
+        
+    final timeColor = showAutoResumeCountdown
+        ? widget.cs.onPrimaryContainer
+        : widget.timerExpired
+        ? widget.cs.error
+        : widget.waitingTrigger
+        ? widget.cs.onSurface
+        : widget.cs.onPrimaryContainer;
 
     return Container(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(32),
-        color: cs.surfaceContainerLow,
+        color: widget.cs.surfaceContainerLow,
       ),
       child: Padding(
-        padding: EdgeInsets.all(compact ? 14 : 24),
+        padding: EdgeInsets.all(widget.compact ? 14 : 24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (!compact) ...[
+            if (!widget.compact) ...[
               Row(
                 children: [
                   Container(
                     width: 48,
                     height: 48,
                     decoration: BoxDecoration(
-                      color: timerExpired
-                          ? cs.errorContainer
-                          : waitingTrigger
-                          ? cs.surfaceContainerHighest
-                          : cs.primaryContainer,
+                      color: showAutoResumeCountdown
+                          ? widget.cs.primaryContainer
+                          : widget.timerExpired
+                          ? widget.cs.errorContainer
+                          : widget.waitingTrigger
+                          ? widget.cs.surfaceContainerHighest
+                          : widget.cs.primaryContainer,
                       borderRadius: BorderRadius.circular(16),
                     ),
                     child: Icon(
-                      timerExpired
+                      showAutoResumeCountdown
+                          ? Icons.restore_rounded
+                          : widget.timerExpired
                           ? Icons.alarm_off_rounded
-                          : waitingTrigger
+                          : widget.waitingTrigger
                           ? Icons.schedule_rounded
                           : Icons.timer_rounded,
                       size: 24,
@@ -76,7 +156,7 @@ class _CountdownCard extends StatelessWidget {
                     child: Text(
                       title,
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        color: cs.onSurface,
+                        color: widget.cs.onSurface,
                         fontWeight: FontWeight.w800,
                       ),
                     ),
@@ -87,40 +167,29 @@ class _CountdownCard extends StatelessWidget {
             ],
             Center(
               child: Text(
-                fmtDuration(remaining),
+                showAutoResumeCountdown ? widget.fmtDuration(_autoResumeRemaining) : widget.fmtDuration(remaining),
                 style: TextStyle(
-                  fontSize: compact ? 32 : 46,
+                  fontSize: widget.compact ? 32 : 46,
                   fontWeight: FontWeight.bold,
-                  letterSpacing: compact ? 1.4 : 2.6,
+                  letterSpacing: widget.compact ? 1.4 : 2.6,
                   fontFeatures: const [FontFeature.tabularFigures()],
                   color: timeColor,
                 ),
               ),
             ),
-            if (timerExpired) ...[
+            if (widget.timerExpired && !showAutoResumeCountdown) ...[
               Builder(
                 builder: (context) {
                   final chips = <Widget>[
-                    if (provider.pausedByTimerSessionIds.isNotEmpty)
+                    if (widget.provider.pausedByTimerSessionIds.isNotEmpty)
                       _TimerSummaryChip(
                         icon: Icons.pause_circle_outline_rounded,
                         text: i18n.tr('paused_audio_count', {
-                          'count': provider.pausedByTimerSessionIds.length,
+                          'count': widget.provider.pausedByTimerSessionIds.length,
                         }),
-                        foregroundColor: cs.onErrorContainer,
-                        backgroundColor: cs.errorContainer,
-                        compact: compact,
-                      ),
-                    if (provider.autoResumeEnabled)
-                      _TimerSummaryChip(
-                        icon: Icons.alarm_rounded,
-                        text: i18n.tr('auto_resume_at', {
-                          'time':
-                              '${provider.autoResumeHour.toString().padLeft(2, '0')}:${provider.autoResumeMinute.toString().padLeft(2, '0')}',
-                        }),
-                        foregroundColor: cs.onErrorContainer,
-                        backgroundColor: cs.errorContainer,
-                        compact: compact,
+                        foregroundColor: widget.cs.onErrorContainer,
+                        backgroundColor: widget.cs.errorContainer,
+                        compact: widget.compact,
                       ),
                   ];
 
@@ -129,8 +198,8 @@ class _CountdownCard extends StatelessWidget {
                   }
 
                   return Padding(
-                    padding: EdgeInsets.only(top: compact ? 12 : 16),
-                    child: compact
+                    padding: EdgeInsets.only(top: widget.compact ? 12 : 16),
+                    child: widget.compact
                         ? Wrap(
                             alignment: WrapAlignment.center,
                             spacing: 8,
@@ -193,62 +262,15 @@ class _DurationPicker extends StatelessWidget {
             child: Column(
               children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  height: 140,
                   decoration: BoxDecoration(
                     color: cs.surfaceContainerLow,
                     borderRadius: BorderRadius.circular(16),
                   ),
-                  child: DropdownButtonHideUnderline(
-                    child: DropdownButton<int>(
-                      value: value,
-                      isExpanded: true,
-                      alignment: Alignment.center,
-                      icon: const Icon(Icons.expand_more_rounded, size: 20),
-                      iconEnabledColor: cs.onSurfaceVariant,
-                      menuMaxHeight: 280,
-                      borderRadius: BorderRadius.circular(12),
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
-                        fontFeatures: const [FontFeature.tabularFigures()],
-                      ),
-                      selectedItemBuilder: (context) =>
-                          List.generate(max + 1, (i) {
-                            return Center(
-                              child: Text(
-                                i.toString().padLeft(2, '0'),
-                                maxLines: 1,
-                                softWrap: false,
-                                overflow: TextOverflow.visible,
-                                style: const TextStyle(
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.w700,
-                                  fontFeatures: [FontFeature.tabularFigures()],
-                                ),
-                              ),
-                            );
-                          }),
-                      items: List.generate(max + 1, (i) => i)
-                          .map(
-                            (v) => DropdownMenuItem(
-                              value: v,
-                              alignment: Alignment.center,
-                              child: Text(
-                                v.toString().padLeft(2, '0'),
-                                maxLines: 1,
-                                softWrap: false,
-                                style: const TextStyle(
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.w600,
-                                  fontFeatures: [FontFeature.tabularFigures()],
-                                ),
-                              ),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: (v) {
-                        if (v != null) onChange(v);
-                      },
-                    ),
+                  child: _WheelPicker(
+                    value: value,
+                    max: max,
+                    onChanged: onChange,
                   ),
                 ),
                 if (showLabels) ...[
@@ -263,11 +285,12 @@ class _DurationPicker extends StatelessWidget {
         Widget separator() {
           return SizedBox(
             width: separatorWidth,
+            height: 140,
             child: Center(
               child: Text(
                 ':',
                 style: TextStyle(
-                  fontSize: constraints.maxWidth < 330 ? 18 : 22,
+                  fontSize: constraints.maxWidth < 330 ? 20 : 24,
                   fontWeight: FontWeight.bold,
                   color: cs.onSurfaceVariant,
                 ),
@@ -303,6 +326,96 @@ class _DurationPicker extends StatelessWidget {
           ],
         );
       },
+    );
+  }
+}
+
+class _WheelPicker extends StatefulWidget {
+  const _WheelPicker({
+    required this.value,
+    required this.max,
+    required this.onChanged,
+  });
+
+  final int value;
+  final int max;
+  final ValueChanged<int> onChanged;
+
+  @override
+  State<_WheelPicker> createState() => _WheelPickerState();
+}
+
+class _WheelPickerState extends State<_WheelPicker> {
+  late FixedExtentScrollController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = FixedExtentScrollController(initialItem: widget.value);
+  }
+
+  @override
+  void didUpdateWidget(_WheelPicker oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.value != oldWidget.value) {
+      if (_controller.hasClients && _controller.selectedItem != widget.value) {
+        _controller.animateToItem(
+          widget.value,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOutCubic,
+        );
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        Container(
+          height: 42,
+          margin: const EdgeInsets.symmetric(horizontal: 8),
+          decoration: BoxDecoration(
+            color: cs.primaryContainer.withValues(alpha: 0.5),
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+        ListWheelScrollView.useDelegate(
+          controller: _controller,
+          itemExtent: 42,
+          perspective: 0.005,
+          diameterRatio: 1.5,
+          physics: const FixedExtentScrollPhysics(),
+          onSelectedItemChanged: (index) {
+            HapticFeedback.selectionClick();
+            widget.onChanged(index);
+          },
+          childDelegate: ListWheelChildBuilderDelegate(
+            childCount: widget.max + 1,
+            builder: (context, index) {
+              return Center(
+                child: Text(
+                  index.toString().padLeft(2, '0'),
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w700,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                    color: cs.onSurface,
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 }

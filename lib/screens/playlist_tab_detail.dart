@@ -672,6 +672,7 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                           ColoredBox(color: cs.surfaceDim),
                     )
                   : AsyncCoverImage(
+                      duration: Duration.zero,
                       future: coverPathFuture,
                       fallbackBuilder: (_) => ColoredBox(color: cs.surfaceDim),
                       imageBuilder: (context, coverPath) {

@@ -26,12 +26,14 @@ class AsyncCoverImage extends StatefulWidget {
     required this.imageBuilder,
     required this.fallbackBuilder,
     this.loadingBuilder,
+    this.duration = const Duration(milliseconds: 600),
   });
 
   final Future<String?> future;
   final Widget Function(BuildContext context, String path) imageBuilder;
   final WidgetBuilder fallbackBuilder;
   final WidgetBuilder? loadingBuilder;
+  final Duration duration;
 
   @override
   State<AsyncCoverImage> createState() => _AsyncCoverImageState();
@@ -91,8 +93,15 @@ class _AsyncCoverImageState extends State<AsyncCoverImage> {
       content = widget.fallbackBuilder(context);
     }
 
+    if (widget.duration == Duration.zero) {
+      return SizedBox.expand(
+        key: ValueKey('$_resolvedPath$_isResolved'),
+        child: content,
+      );
+    }
+
     return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 600),
+      duration: widget.duration,
       switchInCurve: Curves.easeInOutSine,
       switchOutCurve: Curves.easeInOutSine,
       transitionBuilder: (child, animation) {

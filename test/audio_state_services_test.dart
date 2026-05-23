@@ -310,6 +310,72 @@ void main() {
       },
     );
 
+    test('library exclusion matcher handles tracks and folder ancestors', () {
+      final matcher = LibraryExclusionMatcher(
+        libraryPath: r'C:\Music',
+        excludedTrackPaths: <String>[r'C:\Music\Singles\skip.mp3'],
+        excludedFolderPaths: <String>[r'C:\Music\Albums\Muted'],
+      );
+
+      expect(matcher.isExcluded(r'C:\Music\Singles\skip.mp3'), isTrue);
+      expect(matcher.isExcluded(r'C:\Music\Albums\Muted\01.mp3'), isTrue);
+      expect(matcher.isExcluded(r'C:\Music\Albums\Muted'), isTrue);
+      expect(matcher.isExcluded(r'C:\Music\Albums\Active\01.mp3'), isFalse);
+    });
+
+    test('library exclusion matcher handles synthetic content URI folders', () {
+      const root =
+          'content://com.android.externalstorage.documents/tree/primary%3AMusic';
+      final matcher = LibraryExclusionMatcher(
+        libraryPath: root,
+        excludedFolderPaths: <String>['$root::Album/Muted'],
+        excludedTrackPaths: <String>['$root::Singles/skip.mp3'],
+      );
+
+      expect(matcher.isExcluded('$root::Singles/skip.mp3'), isTrue);
+      expect(matcher.isExcluded('$root::Album/Muted/01.mp3'), isTrue);
+      expect(matcher.isExcluded('$root::Album/Active/01.mp3'), isFalse);
+    });
+
+    test(
+      'library entry snapshot filters unchanged entries and remembers updates',
+      () {
+        final existingTrack = LibraryEntry.track(
+          libraryPath: '/library/root',
+          track: track(
+            '/library/root/Album/01.mp3',
+            groupKey: '/library/root/Album',
+          ),
+          parentPath: '/library/root/Album',
+          state: LibraryEntryState.active,
+        );
+        final snapshot = LibraryEntrySnapshot(
+          libraryPath: '/library/root',
+          entries: <LibraryEntry>[existingTrack],
+        );
+
+        expect(snapshot.entryNeedsRefresh(existingTrack), isFalse);
+
+        final renamed = LibraryEntry.track(
+          libraryPath: '/library/root',
+          track: const MusicTrack(
+            path: '/library/root/Album/01.mp3',
+            displayName: '01 renamed.mp3',
+            groupKey: '/library/root/Album',
+            groupTitle: 'Album',
+            groupSubtitle: '/library/root/Album',
+            isSingle: false,
+          ),
+          parentPath: '/library/root/Album',
+          state: LibraryEntryState.active,
+        );
+
+        expect(snapshot.entryNeedsRefresh(renamed), isTrue);
+        snapshot.remember(<LibraryEntry>[renamed]);
+        expect(snapshot.entryNeedsRefresh(renamed), isFalse);
+      },
+    );
+
     test('removeLibrary clears SAF child folders and exclusions', () async {
       final service = LibraryService();
       addTearDown(service.dispose);

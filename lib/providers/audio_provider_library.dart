@@ -136,6 +136,13 @@ extension AudioProviderLibrary on AudioProvider {
   List<LibraryEntry> libraryEntriesForLibrary(String libraryPath) =>
       _libraryService.libraryEntriesForLibrary(libraryPath);
 
+  LibraryEntrySnapshot libraryEntrySnapshotForLibrary(String libraryPath) =>
+      _libraryService.libraryEntrySnapshotForLibrary(libraryPath);
+
+  LibraryExclusionMatcher libraryExclusionMatcherForLibrary(
+    String libraryPath,
+  ) => _libraryService.libraryExclusionMatcherForLibrary(libraryPath);
+
   bool isLibraryPathExcluded(String libraryPath, String entityPath) =>
       _libraryService.isLibraryPathExcluded(libraryPath, entityPath);
 
@@ -852,17 +859,34 @@ extension AudioProviderLibrary on AudioProvider {
     List<MusicTrack> tracks, {
     Iterable<String> folderPaths = const <String>[],
     bool persist = true,
+    LibraryExclusionMatcher? exclusionMatcher,
+    LibraryEntrySnapshot? entrySnapshot,
   }) {
-    final entries = _buildLibraryEntries(
-      libraryPath,
-      tracks,
-      folderPaths: folderPaths,
+    final entries = _filterFreshLibraryEntries(
+      _buildLibraryEntries(
+        libraryPath,
+        tracks,
+        folderPaths: folderPaths,
+        exclusionMatcher: exclusionMatcher,
+      ),
+      entrySnapshot,
     );
     if (entries.isEmpty) return;
     _libraryService.replaceLibraryEntries(entries);
+    entrySnapshot?.remember(entries);
     if (persist && !_skipDisposePersistence) {
       unawaited(_audioDatabaseRepository.upsertLibraryEntries(entries));
     }
+  }
+
+  List<LibraryEntry> _filterFreshLibraryEntries(
+    List<LibraryEntry> entries,
+    LibraryEntrySnapshot? entrySnapshot,
+  ) {
+    if (entries.isEmpty || entrySnapshot == null) return entries;
+    return entries
+        .where(entrySnapshot.entryNeedsRefresh)
+        .toList(growable: false);
   }
 
   void _recordLibraryEntriesForTracks(
@@ -890,8 +914,14 @@ extension AudioProviderLibrary on AudioProvider {
     String libraryPath,
     List<MusicTrack> tracks, {
     Iterable<String> folderPaths = const <String>[],
+    LibraryExclusionMatcher? exclusionMatcher,
   }) {
     final normalizedLibraryPath = PathMatcher.normalize(libraryPath);
+    final matcher =
+        exclusionMatcher ??
+        _libraryService.libraryExclusionMatcherForLibrary(
+          normalizedLibraryPath,
+        );
     final entriesByKey = <String, LibraryEntry>{};
 
     void putEntry(LibraryEntry entry) {
@@ -925,11 +955,7 @@ extension AudioProviderLibrary on AudioProvider {
           libraryPath: normalizedLibraryPath,
           path: normalizedFolderPath,
           parentPath: parentPath,
-          state:
-              _libraryService.isLibraryPathExcluded(
-                normalizedLibraryPath,
-                normalizedFolderPath,
-              )
+          state: matcher.isExcluded(normalizedFolderPath)
               ? LibraryEntryState.excluded
               : LibraryEntryState.active,
           displayName: PathDisplay.folderName(normalizedFolderPath),
@@ -957,11 +983,7 @@ extension AudioProviderLibrary on AudioProvider {
           libraryPath: normalizedLibraryPath,
           track: track,
           parentPath: parentPath,
-          state:
-              _libraryService.isLibraryPathExcluded(
-                normalizedLibraryPath,
-                track.path,
-              )
+          state: matcher.isExcluded(track.path)
               ? LibraryEntryState.excluded
               : LibraryEntryState.active,
         ),

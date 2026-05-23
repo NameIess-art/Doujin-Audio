@@ -636,6 +636,37 @@ class AudioProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  void _notifyLibraryChanged() {
+    _syncLibraryStateSlice();
+    notifyListeners();
+  }
+
+  void _notifyLibraryAndPlaybackChanged() {
+    _syncLibraryStateSlice();
+    _syncPlaybackStateSlice();
+    _syncNotificationStateSlice();
+    notifyListeners();
+  }
+
+  void _notifyPlaybackChanged() {
+    _syncPlaybackStateSlice();
+    _syncNotificationStateSlice();
+    notifyListeners();
+  }
+
+  void _notifySettingsChanged() {
+    _syncSettingsStateSlice();
+    _syncPlaybackStateSlice();
+    _syncNotificationStateSlice();
+    notifyListeners();
+  }
+
+  void _notifyNotificationChanged() {
+    _syncNotificationStateSlice();
+    _syncPlaybackStateSlice();
+    notifyListeners();
+  }
+
   void _notifyPresentationListeners() {
     notifyListeners();
   }
@@ -651,7 +682,18 @@ class AudioProvider with ChangeNotifier {
       _notificationStateService.slice.stream;
 
   void _syncAllStateSlices() {
+    _syncLibraryStateSlice();
+    _syncPlaybackStateSlice();
+    _syncTimerStateSlice();
+    _syncSettingsStateSlice();
+    _syncNotificationStateSlice();
+  }
+
+  void _syncLibraryStateSlice() {
     _libraryService.syncSlice(isInitialized: _isInitialized);
+  }
+
+  void _syncPlaybackStateSlice() {
     _playbackService.syncSlice(
       activeSessions: activeSessions,
       playingSessionCount: playingSessionCount,
@@ -659,8 +701,17 @@ class AudioProvider with ChangeNotifier {
       multiThreadPlaybackEnabled: _multiThreadPlaybackEnabled,
       isInitialized: _isInitialized,
     );
+  }
+
+  void _syncTimerStateSlice() {
     _timerService.syncSlice(isInitialized: _isInitialized);
+  }
+
+  void _syncSettingsStateSlice() {
     _settingsRepository.syncSlice();
+  }
+
+  void _syncNotificationStateSlice() {
     _notificationStateService.syncSlice(
       activeQueueLength: activeSessions.length,
     );

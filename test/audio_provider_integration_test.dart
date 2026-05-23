@@ -297,11 +297,11 @@ void main() {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
             nativeCalls.add(call.method);
-            if (call.method == NativePlaybackMethods.prepareSession ||
-                call.method == NativePlaybackMethods.dismissNotifications) {
+            if (call.method == NativePlaybackMethod.prepareSession ||
+                call.method == NativePlaybackMethod.dismissNotifications) {
               return <String, Object?>{'ok': true, 'value': null};
             }
-            if (call.method == NativePlaybackMethods.pauseAll) {
+            if (call.method == NativePlaybackMethod.pauseAll) {
               return <String, Object?>{'ok': true, 'value': null};
             }
             return <String, Object?>{'ok': true, 'value': null};
@@ -330,8 +330,8 @@ void main() {
       await provider.dismissNotificationsAfterPauseAll();
 
       expect(session.state.playing, isTrue);
-      expect(nativeCalls, contains(NativePlaybackMethods.dismissNotifications));
-      expect(nativeCalls, isNot(contains(NativePlaybackMethods.pauseAll)));
+      expect(nativeCalls, contains(NativePlaybackMethod.dismissNotifications));
+      expect(nativeCalls, isNot(contains(NativePlaybackMethod.pauseAll)));
     });
   });
 

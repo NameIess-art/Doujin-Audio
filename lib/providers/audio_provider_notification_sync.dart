@@ -1,4 +1,4 @@
-part of 'audio_provider.dart';
+﻿part of 'audio_provider.dart';
 
 extension AudioProviderNotificationSync on AudioProvider {
   Future<void> _clearUnifiedPlaybackNotificationsOnPlatform() async {
@@ -182,7 +182,12 @@ extension AudioProviderNotificationSync on AudioProvider {
           final track = trackByPath(trackPath);
           final artPath = coverPathForTrack(track, trackPath: trackPath);
           if (artPath == null) {
-            unawaited(_resolveNotificationCoverPathForTrack(track, trackPath: trackPath));
+            unawaited(
+              _resolveNotificationCoverPathForTrack(
+                track,
+                trackPath: trackPath,
+              ),
+            );
           }
           return <String, dynamic>{
             'id': session.id,
@@ -221,7 +226,7 @@ extension AudioProviderNotificationSync on AudioProvider {
 
   void refreshNotificationState() {
     _syncNotificationState();
-    _notifyListeners();
+    _notifyNotificationChanged();
   }
 
   Future<void> selectNotificationSessionFromQueue(int index) async {
@@ -229,6 +234,6 @@ extension AudioProviderNotificationSync on AudioProvider {
     if (index < 0 || index >= sessions.length) return;
     _notificationFocusSessionId = sessions[index].id;
     _syncNotificationState();
-    _notifyListeners();
+    _notifyNotificationChanged();
   }
 }

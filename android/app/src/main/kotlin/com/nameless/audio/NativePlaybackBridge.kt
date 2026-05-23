@@ -8,24 +8,6 @@ import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 
-object NativePlaybackMethods {
-    const val PREPARE_SESSION = "prepareSession"
-    const val PLAY = "play"
-    const val PAUSE = "pause"
-    const val STOP = "stop"
-    const val SEEK = "seek"
-    const val SET_VOLUME = "setVolume"
-    const val SET_REPEAT_ONE = "setRepeatOne"
-    const val SET_CHANNEL_SWAP = "setChannelSwap"
-    const val REMOVE_SESSION = "removeSession"
-    const val PAUSE_ALL = "pauseAll"
-    const val CLEAR_ALL = "clearAll"
-    const val SET_FOREGROUND_ENABLED = "setForegroundEnabled"
-    const val DISMISS_NOTIFICATIONS = "dismissNotifications"
-    const val UNDISMISS_NOTIFICATIONS = "undismissNotifications"
-    const val SNAPSHOT = "snapshot"
-}
-
 class NativePlaybackBridge(
     private val context: Context
 ) : MethodChannel.MethodCallHandler, EventChannel.StreamHandler {

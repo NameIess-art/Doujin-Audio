@@ -1,4 +1,4 @@
-part of 'audio_provider.dart';
+﻿part of 'audio_provider.dart';
 
 const List<String> _preferredCoverBasenames = <String>[
   'cover',
@@ -313,7 +313,7 @@ extension AudioProviderNotificationCovers on AudioProvider {
         });
         if (anySessionUsesCover) {
           _syncNotificationState();
-          _notifyListeners();
+          _notifyNotificationChanged();
         }
       }
 
@@ -394,7 +394,7 @@ extension AudioProviderNotificationCovers on AudioProvider {
           SynchronousFuture<String?>(coverPath);
 
       if (previous != coverPath) {
-        _notifyListeners();
+        _notifyNotificationChanged();
       }
 
       return coverPath;
@@ -446,7 +446,7 @@ extension AudioProviderNotificationCovers on AudioProvider {
 
     try {
       // First pass: check common cover file names in the top-level directory
-      // (non-recursive) — this covers the vast majority of cases.
+      // (non-recursive) 鈥?this covers the vast majority of cases.
       final candidates = <String>[];
       await for (final entity in directory.list(
         recursive: true,

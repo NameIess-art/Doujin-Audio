@@ -1,4 +1,4 @@
-part of 'audio_provider.dart';
+﻿part of 'audio_provider.dart';
 
 extension AudioProviderNotifications on AudioProvider {
   void _bindNotificationHandler() {
@@ -202,7 +202,7 @@ extension AudioProviderNotifications on AudioProvider {
     if (_hasPlaybackToKeepAlive) {
       await _clearUnifiedPlaybackNotificationsOnPlatform();
       _syncKeepCpuAwake();
-      _notifyListeners();
+      _notifyNotificationChanged();
       return;
     }
     // Clear unified notifications before stopping the keep-alive service
@@ -218,7 +218,7 @@ extension AudioProviderNotifications on AudioProvider {
     _notificationService.updateSnapshot(null);
     _notificationFocusSessionId = _preferredSingleSessionId;
     _syncKeepCpuAwake();
-    _notifyListeners();
+    _notifyNotificationChanged();
   }
 
   Future<void> restoreNotificationsAfterSystemClear() async {
@@ -226,7 +226,7 @@ extension AudioProviderNotifications on AudioProvider {
     _unifiedNotificationSyncKey = null;
     await _nativePlaybackRepository.undismissNotifications();
     _syncNotificationState(immediateUnifiedSync: true);
-    _notifyListeners();
+    _notifyNotificationChanged();
   }
 
   void resyncNotificationsAfterResume() {
@@ -235,7 +235,7 @@ extension AudioProviderNotifications on AudioProvider {
     _unifiedNotificationSyncKey = null;
     unawaited(_nativePlaybackRepository.undismissNotifications());
     _syncNotificationState(immediateUnifiedSync: true);
-    _notifyListeners();
+    _notifyNotificationChanged();
   }
 
   List<PlaybackSession> get _singleThreadNotificationSessions {

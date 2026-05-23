@@ -49,27 +49,6 @@ abstract final class NativePlaybackMethod {
   static const String snapshot = 'snapshot';
 }
 
-abstract final class NativePlaybackMethods {
-  static const String prepareSession = NativePlaybackMethod.prepareSession;
-  static const String play = NativePlaybackMethod.play;
-  static const String pause = NativePlaybackMethod.pause;
-  static const String stop = NativePlaybackMethod.stop;
-  static const String seek = NativePlaybackMethod.seek;
-  static const String setVolume = NativePlaybackMethod.setVolume;
-  static const String setRepeatOne = NativePlaybackMethod.setRepeatOne;
-  static const String setChannelSwap = NativePlaybackMethod.setChannelSwap;
-  static const String removeSession = NativePlaybackMethod.removeSession;
-  static const String pauseAll = NativePlaybackMethod.pauseAll;
-  static const String clearAll = NativePlaybackMethod.clearAll;
-  static const String setForegroundEnabled =
-      NativePlaybackMethod.setForegroundEnabled;
-  static const String dismissNotifications =
-      NativePlaybackMethod.dismissNotifications;
-  static const String undismissNotifications =
-      NativePlaybackMethod.undismissNotifications;
-  static const String snapshot = NativePlaybackMethod.snapshot;
-}
-
 // ---------------------------------------------------------------------------
 // Method names — power
 // ---------------------------------------------------------------------------

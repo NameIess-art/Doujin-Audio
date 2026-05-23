@@ -3,6 +3,7 @@ import 'dart:collection';
 
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:path/path.dart' as path;
 import '../i18n/app_language_provider.dart';
 import '../models/library_node.dart';
 import '../models/library_entry.dart';
@@ -98,6 +99,134 @@ class LibraryState {
     structureRevision,
     isInitialized,
   );
+}
+
+class LibraryExclusionMatcher {
+  LibraryExclusionMatcher({
+    required String libraryPath,
+    Iterable<String> excludedTrackPaths = const <String>[],
+    Iterable<String> excludedFolderPaths = const <String>[],
+  }) : libraryPath = PathMatcher.normalize(libraryPath),
+       _excludedTrackPaths = excludedTrackPaths
+           .map(PathMatcher.normalize)
+           .toSet(),
+       _excludedFolderPaths = excludedFolderPaths
+           .map(PathMatcher.normalize)
+           .toSet();
+
+  final String libraryPath;
+  final Set<String> _excludedTrackPaths;
+  final Set<String> _excludedFolderPaths;
+
+  bool get hasExclusions =>
+      _excludedTrackPaths.isNotEmpty || _excludedFolderPaths.isNotEmpty;
+
+  bool isExcluded(String entityPath) {
+    final normalizedPath = PathMatcher.normalize(entityPath);
+    if (_excludedTrackPaths.contains(normalizedPath)) {
+      return true;
+    }
+    if (_excludedFolderPaths.isEmpty) {
+      return false;
+    }
+    for (final folderPath in _candidateFolderPaths(normalizedPath)) {
+      if (_excludedFolderPaths.contains(folderPath)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  Iterable<String> _candidateFolderPaths(String normalizedPath) sync* {
+    if (_excludedFolderPaths.contains(normalizedPath)) {
+      yield normalizedPath;
+    }
+
+    if (PathMatcher.isContentUri(libraryPath) ||
+        PathMatcher.isContentUri(normalizedPath)) {
+      final relativePath = PathMatcher.relativeWithin(
+        normalizedPath,
+        libraryPath,
+      );
+      if (relativePath == null || relativePath.isEmpty) {
+        return;
+      }
+      var current = _trimRightSlash(relativePath.replaceAll('\\', '/'));
+      while (current.isNotEmpty) {
+        yield '$libraryPath::$current';
+        final slashIndex = current.lastIndexOf('/');
+        if (slashIndex < 0) {
+          break;
+        }
+        current = current.substring(0, slashIndex);
+      }
+      return;
+    }
+
+    var current = normalizedPath;
+    while (!PathMatcher.equalsNormalized(current, libraryPath)) {
+      yield current;
+      final parent = PathMatcher.normalize(path.dirname(current));
+      if (parent == current) {
+        break;
+      }
+      current = parent;
+    }
+  }
+
+  static String _trimRightSlash(String value) {
+    var result = value;
+    while (result.endsWith('/')) {
+      result = result.substring(0, result.length - 1);
+    }
+    return result;
+  }
+}
+
+class LibraryEntrySnapshot {
+  LibraryEntrySnapshot({
+    required String libraryPath,
+    Iterable<LibraryEntry> entries = const <LibraryEntry>[],
+  }) : libraryPath = PathMatcher.normalize(libraryPath),
+       entriesByPath = <String, LibraryEntry>{
+         for (final entry in entries) PathMatcher.normalize(entry.path): entry,
+       };
+
+  final String libraryPath;
+  final Map<String, LibraryEntry> entriesByPath;
+
+  LibraryEntry? entryForPath(String entryPath) {
+    return entriesByPath[PathMatcher.normalize(entryPath)];
+  }
+
+  void remember(Iterable<LibraryEntry> entries) {
+    for (final entry in entries) {
+      entriesByPath[PathMatcher.normalize(entry.path)] = entry;
+    }
+  }
+
+  bool entryNeedsRefresh(LibraryEntry nextEntry) {
+    final existing = entryForPath(nextEntry.path);
+    if (existing == null) {
+      return true;
+    }
+    if (existing.kind != nextEntry.kind ||
+        existing.state != nextEntry.state ||
+        existing.parentPath != nextEntry.parentPath ||
+        existing.displayName != nextEntry.displayName) {
+      return true;
+    }
+    if (nextEntry.isFolder) {
+      return false;
+    }
+    return existing.groupKey != nextEntry.groupKey ||
+        existing.groupTitle != nextEntry.groupTitle ||
+        existing.groupSubtitle != nextEntry.groupSubtitle ||
+        existing.isSingle != nextEntry.isSingle ||
+        existing.isVideo != nextEntry.isVideo ||
+        existing.fileSizeBytes != nextEntry.fileSizeBytes ||
+        existing.modifiedAt != nextEntry.modifiedAt;
+  }
 }
 
 @immutable
@@ -470,6 +599,29 @@ class LibraryService {
     final entries = libraryEntriesByLibrary[normalizedLibraryPath];
     if (entries == null) return const <LibraryEntry>[];
     return entries.values.toList(growable: false);
+  }
+
+  LibraryEntrySnapshot libraryEntrySnapshotForLibrary(String libraryPath) {
+    final normalizedLibraryPath = PathMatcher.normalize(libraryPath);
+    return LibraryEntrySnapshot(
+      libraryPath: normalizedLibraryPath,
+      entries:
+          libraryEntriesByLibrary[normalizedLibraryPath]?.values ??
+          const <LibraryEntry>[],
+    );
+  }
+
+  LibraryExclusionMatcher libraryExclusionMatcherForLibrary(
+    String libraryPath,
+  ) {
+    final normalizedLibraryPath = PathMatcher.normalize(libraryPath);
+    return LibraryExclusionMatcher(
+      libraryPath: normalizedLibraryPath,
+      excludedTrackPaths:
+          excludedLibraryTracks[normalizedLibraryPath] ?? const <String>{},
+      excludedFolderPaths:
+          excludedLibraryFolders[normalizedLibraryPath] ?? const <String>{},
+    );
   }
 
   LibraryEntry? libraryEntryForPath(String libraryPath, String entryPath) {

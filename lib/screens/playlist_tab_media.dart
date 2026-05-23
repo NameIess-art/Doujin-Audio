@@ -79,6 +79,7 @@ class _SessionHeroArtwork extends StatelessWidget {
                     )
                   else
                     AsyncCoverImage(
+                      duration: Duration.zero,
                       future: coverPathFuture,
                       fallbackBuilder: (_) => fallback(),
                       loadingBuilder: (_) => Stack(
@@ -192,6 +193,7 @@ class _SessionCoverThumbnail extends StatelessWidget {
                 errorBuilder: (_, _, _) => fallback(),
               )
             : AsyncCoverImage(
+                duration: Duration.zero,
                 future: coverPathFuture,
                 fallbackBuilder: (_) => fallback(),
                 loadingBuilder: (_) => Stack(

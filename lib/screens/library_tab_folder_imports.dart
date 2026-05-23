@@ -268,12 +268,20 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
     var added = 0;
     var duplicates = 0;
     final failures = (payload['failureCount'] as int?) ?? 0;
+    final mergeContext = libraryRoot == null
+        ? null
+        : _LibraryScanMergeContext(
+            provider: provider,
+            libraryRoot: libraryRoot,
+          );
 
     if (libraryRoot != null && discoveredFolders.isNotEmpty) {
       provider.recordLibraryEntriesForTracks(
         libraryRoot,
         const <MusicTrack>[],
         folderPaths: discoveredFolders,
+        exclusionMatcher: mergeContext?.exclusionMatcher,
+        entrySnapshot: mergeContext?.entrySnapshot,
       );
     }
 
@@ -282,11 +290,11 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
       final endIndex = index + batchSize < scannedTracks.length
           ? index + batchSize
           : scannedTracks.length;
-      final chunk = scannedTracks.sublist(index, endIndex);
       final entryBatch = <MusicTrack>[];
       final trackBatch = <MusicTrack>[];
 
-      for (final scanned in chunk) {
+      for (var scanIndex = index; scanIndex < endIndex; scanIndex++) {
+        final scanned = scannedTracks[scanIndex];
         final converted = _convertScannedTrack(
           scanned,
           libraryRoot: libraryRoot,
@@ -295,7 +303,7 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
         );
         if (libraryRoot != null) {
           entryBatch.add(converted);
-          if (provider.isLibraryPathExcluded(libraryRoot, scanned.path)) {
+          if (mergeContext!.isExcluded(scanned.path)) {
             continue;
           }
         }
@@ -307,7 +315,12 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
       }
 
       if (libraryRoot != null && entryBatch.isNotEmpty) {
-        provider.recordLibraryEntriesForTracks(libraryRoot, entryBatch);
+        provider.recordLibraryEntriesForTracks(
+          libraryRoot,
+          entryBatch,
+          exclusionMatcher: mergeContext?.exclusionMatcher,
+          entrySnapshot: mergeContext?.entrySnapshot,
+        );
       }
       if (trackBatch.isNotEmpty) {
         final before = provider.library.length;
@@ -372,38 +385,33 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
     final baseFailureCount = provider.scanFailureCount;
     var added = 0;
     var duplicates = 0;
-    final existingLibraryEntriesByPath = libraryRoot == null
-        ? const <String, LibraryEntry>{}
-        : {
-            for (final entry in provider.libraryEntriesForLibrary(libraryRoot))
-              if (entry.isTrack) PathMatcher.normalize(entry.path): entry,
-          };
+    final mergeContext = libraryRoot == null
+        ? null
+        : _LibraryScanMergeContext(
+            provider: provider,
+            libraryRoot: libraryRoot,
+          );
 
     for (var index = 0; index < scannedTracks.length; index += chunkSize) {
       if (!mounted || !provider.isScanning) break;
       final endIndex = index + chunkSize < scannedTracks.length
           ? index + chunkSize
           : scannedTracks.length;
-      final chunk = scannedTracks.sublist(index, endIndex);
       final entryBatch = <MusicTrack>[];
       final trackBatch = <MusicTrack>[];
 
-      for (final scanned in chunk) {
+      for (var scanIndex = index; scanIndex < endIndex; scanIndex++) {
+        final scanned = scannedTracks[scanIndex];
         final converted = _convertScannedTrack(
           scanned,
           libraryRoot: libraryRoot,
           promoteRootTracksToSingles: promoteRootTracksToSingles,
           i18n: i18n,
         );
-        final needsRefresh = _scannedTrackNeedsRefresh(provider, converted);
+        final needsRefresh = provider.libraryTrackNeedsRefresh(converted);
         if (libraryRoot != null) {
-          if (_libraryEntryNeedsRefresh(
-            existingLibraryEntriesByPath,
-            converted,
-          )) {
-            entryBatch.add(converted);
-          }
-          if (provider.isLibraryPathExcluded(libraryRoot, scanned.path)) {
+          entryBatch.add(converted);
+          if (mergeContext!.isExcluded(scanned.path)) {
             continue;
           }
         }
@@ -415,7 +423,12 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
       }
 
       if (libraryRoot != null && entryBatch.isNotEmpty) {
-        provider.recordLibraryEntriesForTracks(libraryRoot, entryBatch);
+        provider.recordLibraryEntriesForTracks(
+          libraryRoot,
+          entryBatch,
+          exclusionMatcher: mergeContext?.exclusionMatcher,
+          entrySnapshot: mergeContext?.entrySnapshot,
+        );
       }
       if (trackBatch.isNotEmpty) {
         final beforeCount = provider.library.length;
@@ -445,28 +458,6 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
     }
 
     return added;
-  }
-
-  bool _scannedTrackNeedsRefresh(AudioProvider provider, MusicTrack nextTrack) {
-    return provider.libraryTrackNeedsRefresh(nextTrack);
-  }
-
-  bool _libraryEntryNeedsRefresh(
-    Map<String, LibraryEntry> entriesByPath,
-    MusicTrack nextTrack,
-  ) {
-    final existing = entriesByPath[PathMatcher.normalize(nextTrack.path)];
-    if (existing == null) {
-      return true;
-    }
-    return existing.displayName != nextTrack.displayName ||
-        existing.groupKey != nextTrack.groupKey ||
-        existing.groupTitle != nextTrack.groupTitle ||
-        existing.groupSubtitle != nextTrack.groupSubtitle ||
-        existing.isSingle != nextTrack.isSingle ||
-        existing.isVideo != nextTrack.isVideo ||
-        existing.fileSizeBytes != nextTrack.fileSizeBytes ||
-        existing.modifiedAt != nextTrack.modifiedAt;
   }
 
   MusicTrack _convertScannedTrack(
@@ -587,6 +578,21 @@ class _NativeScanPayload {
 
   final List<_ScannedTrack> tracks;
   final Set<String> paths;
+}
+
+class _LibraryScanMergeContext {
+  _LibraryScanMergeContext({
+    required AudioProvider provider,
+    required String libraryRoot,
+  }) : exclusionMatcher = provider.libraryExclusionMatcherForLibrary(
+         libraryRoot,
+       ),
+       entrySnapshot = provider.libraryEntrySnapshotForLibrary(libraryRoot);
+
+  final LibraryExclusionMatcher exclusionMatcher;
+  final LibraryEntrySnapshot entrySnapshot;
+
+  bool isExcluded(String entityPath) => exclusionMatcher.isExcluded(entityPath);
 }
 
 Map<String, Object?> _scanFileSystemFolderPayload(String folderPath) {

@@ -114,11 +114,141 @@ class AsmrDownloadTaskSnapshot {
   }
 }
 
+class AsmrDownloadButtonViewState {
+  const AsmrDownloadButtonViewState({
+    required this.visible,
+    required this.progress,
+  });
+
+  final bool visible;
+  final double? progress;
+
+  @override
+  bool operator ==(Object other) {
+    return other is AsmrDownloadButtonViewState &&
+        visible == other.visible &&
+        progress == other.progress;
+  }
+
+  @override
+  int get hashCode => Object.hash(visible, progress);
+}
+
+class AsmrDownloadTaskShellViewState {
+  const AsmrDownloadTaskShellViewState({
+    required this.hasTask,
+    required this.isActive,
+  });
+
+  final bool hasTask;
+  final bool isActive;
+
+  @override
+  bool operator ==(Object other) {
+    return other is AsmrDownloadTaskShellViewState &&
+        hasTask == other.hasTask &&
+        isActive == other.isActive;
+  }
+
+  @override
+  int get hashCode => Object.hash(hasTask, isActive);
+}
+
+class AsmrDownloadTaskProgressViewState {
+  const AsmrDownloadTaskProgressViewState({
+    required this.progress,
+    required this.status,
+    required this.completedFiles,
+    required this.totalFiles,
+    required this.skippedFiles,
+    required this.failedFiles,
+    required this.downloadedBytes,
+    required this.totalBytes,
+  });
+
+  final double? progress;
+  final AsmrDownloadTaskStatus status;
+  final int completedFiles;
+  final int totalFiles;
+  final int skippedFiles;
+  final int failedFiles;
+  final int downloadedBytes;
+  final int totalBytes;
+
+  @override
+  bool operator ==(Object other) {
+    return other is AsmrDownloadTaskProgressViewState &&
+        progress == other.progress &&
+        status == other.status &&
+        completedFiles == other.completedFiles &&
+        totalFiles == other.totalFiles &&
+        skippedFiles == other.skippedFiles &&
+        failedFiles == other.failedFiles &&
+        downloadedBytes == other.downloadedBytes &&
+        totalBytes == other.totalBytes;
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    progress,
+    status,
+    completedFiles,
+    totalFiles,
+    skippedFiles,
+    failedFiles,
+    downloadedBytes,
+    totalBytes,
+  );
+}
+
+class AsmrDownloadTaskHeaderViewState {
+  const AsmrDownloadTaskHeaderViewState({
+    required this.title,
+    required this.status,
+    required this.currentItemPath,
+    required this.error,
+    required this.failedFiles,
+    required this.completedFiles,
+  });
+
+  final String title;
+  final AsmrDownloadTaskStatus status;
+  final String? currentItemPath;
+  final String? error;
+  final int failedFiles;
+  final int completedFiles;
+
+  @override
+  bool operator ==(Object other) {
+    return other is AsmrDownloadTaskHeaderViewState &&
+        title == other.title &&
+        status == other.status &&
+        currentItemPath == other.currentItemPath &&
+        error == other.error &&
+        failedFiles == other.failedFiles &&
+        completedFiles == other.completedFiles;
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    title,
+    status,
+    currentItemPath,
+    error,
+    failedFiles,
+    completedFiles,
+  );
+}
+
 class AsmrDownloadManager extends ChangeNotifier {
   AsmrDownloadManager();
 
   static const String _defaultDestinationKey =
       'asmr_download_default_destination_v1';
+  static const Duration _progressNotifyMinInterval = Duration(
+    milliseconds: 120,
+  );
+  static const int _progressNotifyMinByteDelta = 128 * 1024;
   static const MethodChannel _fileCacheChannel = MethodChannel(
     FileCacheChannel.name,
   );
@@ -129,10 +259,67 @@ class AsmrDownloadManager extends ChangeNotifier {
   bool _running = false;
   bool _cancelRequested = false;
   Completer<void>? _downloadCompletion;
+  Timer? _deferredProgressNotifyTimer;
+  DateTime? _lastProgressNotifyAt;
+  int _lastProgressNotifyBytes = 0;
 
   AsmrDownloadTaskSnapshot? get currentTask => _currentTask;
   bool get hasLiveTask => _currentTask?.isActive ?? false;
   String? get defaultDestinationRoot => _defaultDestinationRoot;
+  AsmrDownloadButtonViewState get buttonViewState =>
+      AsmrDownloadButtonViewState(
+        visible: hasLiveTask && _currentTask != null,
+        progress: _currentTask?.progress,
+      );
+  AsmrDownloadTaskShellViewState get taskShellViewState =>
+      AsmrDownloadTaskShellViewState(
+        hasTask: _currentTask != null,
+        isActive: _currentTask?.isActive ?? false,
+      );
+  AsmrDownloadTaskHeaderViewState? get taskHeaderViewState {
+    final task = _currentTask;
+    if (task == null) {
+      return null;
+    }
+    return AsmrDownloadTaskHeaderViewState(
+      title: task.work.title,
+      status: task.status,
+      currentItemPath: task.currentItemPath,
+      error: task.error,
+      failedFiles: task.failedFiles,
+      completedFiles: task.completedFiles,
+    );
+  }
+
+  AsmrDownloadTaskProgressViewState? get taskProgressViewState {
+    final task = _currentTask;
+    if (task == null) {
+      return null;
+    }
+    return AsmrDownloadTaskProgressViewState(
+      progress: task.progress,
+      status: task.status,
+      completedFiles: task.completedFiles,
+      totalFiles: task.totalFiles,
+      skippedFiles: task.skippedFiles,
+      failedFiles: task.failedFiles,
+      downloadedBytes: task.downloadedBytes,
+      totalBytes: task.totalBytes,
+    );
+  }
+
+  @visibleForTesting
+  void debugSetCurrentTaskForTesting(
+    AsmrDownloadTaskSnapshot? task, {
+    bool progressOnly = false,
+  }) {
+    _currentTask = task;
+    if (progressOnly) {
+      _notifyProgressChanged();
+    } else {
+      _notifyTaskChanged();
+    }
+  }
 
   Future<void> initialize() async {
     if (_initialized) return;
@@ -143,7 +330,7 @@ class AsmrDownloadManager extends ChangeNotifier {
       _defaultDestinationRoot = null;
     }
     _initialized = true;
-    notifyListeners();
+    _notifyTaskChanged();
   }
 
   Future<String?> pickDestinationFolder({String? dialogTitle}) async {
@@ -177,13 +364,13 @@ class AsmrDownloadManager extends ChangeNotifier {
     if (normalized.isEmpty) return;
     _defaultDestinationRoot = normalized;
     await AppPreferences.setString(_defaultDestinationKey, normalized);
-    notifyListeners();
+    _notifyTaskChanged();
   }
 
   Future<void> clearDefaultDestination() async {
     _defaultDestinationRoot = null;
     await AppPreferences.remove(_defaultDestinationKey);
-    notifyListeners();
+    _notifyTaskChanged();
   }
 
   Future<bool> destinationExists(String folderPath) async {
@@ -212,7 +399,7 @@ class AsmrDownloadManager extends ChangeNotifier {
     _cancelRequested = true;
     if (task.isActive) {
       _currentTask = task.copyWith(message: 'canceling');
-      notifyListeners();
+      _notifyTaskChanged();
     }
 
     final completion = _downloadCompletion;
@@ -222,7 +409,7 @@ class AsmrDownloadManager extends ChangeNotifier {
 
     await _deleteDownloadRoot(task.workRootPath);
     _currentTask = null;
-    notifyListeners();
+    _notifyTaskChanged();
   }
 
   Future<void> startDownload({
@@ -276,7 +463,7 @@ class AsmrDownloadManager extends ChangeNotifier {
       startedAt: DateTime.now(),
       message: 'preparing',
     );
-    notifyListeners();
+    _notifyTaskChanged();
 
     try {
       final rootReady = await _ensureFolderPath(
@@ -297,7 +484,7 @@ class AsmrDownloadManager extends ChangeNotifier {
         downloadedBytes: backupBytes,
         message: 'downloading_work_detail',
       );
-      notifyListeners();
+      _notifyTaskChanged();
 
       var completed = 1;
       var skipped = 0;
@@ -327,7 +514,7 @@ class AsmrDownloadManager extends ChangeNotifier {
           currentItemPath: item.relativePath,
           message: item.relativePath,
         );
-        notifyListeners();
+        _notifyProgressChanged();
 
         final result = await _downloadItem(
           item,
@@ -350,7 +537,7 @@ class AsmrDownloadManager extends ChangeNotifier {
           failedFiles: failed,
           downloadedBytes: downloadedBytes,
         );
-        notifyListeners();
+        _notifyProgressChanged();
       }
 
       _currentTask = _currentTask!.copyWith(
@@ -363,20 +550,20 @@ class AsmrDownloadManager extends ChangeNotifier {
         downloadedBytes: totalBytes,
         message: failed > 0 ? 'completed_with_failures' : 'completed',
       );
-      notifyListeners();
+      _notifyTaskChanged();
     } on _DownloadCancelled {
       _currentTask = _currentTask?.copyWith(
         status: AsmrDownloadTaskStatus.failed,
         message: 'cancelled',
       );
-      notifyListeners();
+      _notifyTaskChanged();
     } catch (error) {
       _currentTask = _currentTask?.copyWith(
         status: AsmrDownloadTaskStatus.failed,
         error: error.toString(),
         message: 'failed',
       );
-      notifyListeners();
+      _notifyTaskChanged();
     } finally {
       _running = false;
       final completion = _downloadCompletion;
@@ -552,7 +739,7 @@ class AsmrDownloadManager extends ChangeNotifier {
             _currentTask = _currentTask!.copyWith(
               downloadedBytes: _currentTask!.downloadedBytes + chunk.length,
             );
-            notifyListeners();
+            _notifyProgressChanged();
           }
         }
         await sink.flush();
@@ -700,6 +887,51 @@ class AsmrDownloadManager extends ChangeNotifier {
       result = result.substring(0, result.length - 1);
     }
     return result;
+  }
+
+  void _notifyTaskChanged() {
+    _deferredProgressNotifyTimer?.cancel();
+    _deferredProgressNotifyTimer = null;
+    _markProgressNotified();
+    notifyListeners();
+  }
+
+  void _notifyProgressChanged() {
+    final task = _currentTask;
+    if (task == null || task.status != AsmrDownloadTaskStatus.downloading) {
+      _notifyTaskChanged();
+      return;
+    }
+
+    final now = DateTime.now();
+    final elapsed = _lastProgressNotifyAt == null
+        ? _progressNotifyMinInterval
+        : now.difference(_lastProgressNotifyAt!);
+    final byteDelta = (task.downloadedBytes - _lastProgressNotifyBytes).abs();
+    if (byteDelta >= _progressNotifyMinByteDelta ||
+        elapsed >= _progressNotifyMinInterval) {
+      _notifyTaskChanged();
+      return;
+    }
+
+    _deferredProgressNotifyTimer ??= Timer(
+      _progressNotifyMinInterval - elapsed,
+      () {
+        _deferredProgressNotifyTimer = null;
+        _notifyTaskChanged();
+      },
+    );
+  }
+
+  void _markProgressNotified() {
+    _lastProgressNotifyAt = DateTime.now();
+    _lastProgressNotifyBytes = _currentTask?.downloadedBytes ?? 0;
+  }
+
+  @override
+  void dispose() {
+    _deferredProgressNotifyTimer?.cancel();
+    super.dispose();
   }
 
   void _throwIfCancelled() {

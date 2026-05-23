@@ -403,8 +403,13 @@ class _AsmrTabState extends State<AsmrTab>
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    final controller = context.watch<AsmrLibraryController?>();
-    final downloadManager = context.watch<AsmrDownloadManager?>();
+    final globalState = context
+        .select<AsmrLibraryController?, AsmrLibraryGlobalViewState?>(
+          (controller) => controller?.globalViewState,
+        );
+    final hasDownloadManager = context.select<AsmrDownloadManager?, bool>(
+      (manager) => manager != null,
+    );
     final i18n = context.watch<AppLanguageProvider>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
@@ -471,7 +476,7 @@ class _AsmrTabState extends State<AsmrTab>
       );
     }
 
-    if (controller == null) {
+    if (globalState == null) {
       return Stack(
         clipBehavior: Clip.none,
         children: [
@@ -495,7 +500,7 @@ class _AsmrTabState extends State<AsmrTab>
     return Stack(
       clipBehavior: Clip.none,
       children: [
-        controller.initialized
+        globalState.initialized
             ? TabBarView(
                 controller: _tabController,
                 children: [
@@ -522,75 +527,80 @@ class _AsmrTabState extends State<AsmrTab>
               onCategories: _showCategoryDialog,
               onLanguage: _showLanguageDialog,
             ),
-            isLoading: !controller.initialized,
+            isLoading: !globalState.initialized,
             bottomSpacing: 4,
             padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
             additionalChild: collapsingHeaderControls(),
           ),
         ),
-        if (downloadManager != null)
-          Positioned(
-            right: 16,
-            bottom: bottomInset + 18,
-            child: AnimatedBuilder(
-              animation: downloadManager,
-              builder: (context, _) {
-                final task = downloadManager.currentTask;
-                final visible = downloadManager.hasLiveTask && task != null;
-                final progress = task?.progress;
-                return IgnorePointer(
-                  ignoring: !visible,
-                  child: AnimatedOpacity(
-                    opacity: visible ? 1 : 0,
-                    duration: const Duration(milliseconds: 180),
-                    curve: Curves.easeOutCubic,
-                    child: AnimatedScale(
-                      scale: visible ? 1 : 0.92,
-                      duration: const Duration(milliseconds: 180),
-                      curve: Curves.easeOutCubic,
-                      child: FloatingActionButton.small(
-                        heroTag: 'asmr-one-download-progress',
-                        backgroundColor: Theme.of(
-                          context,
-                        ).colorScheme.secondaryContainer,
-                        foregroundColor: Theme.of(
-                          context,
-                        ).colorScheme.onSecondaryContainer,
-                        elevation: 0,
-                        onPressed: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute<void>(
-                              builder: (_) => const AsmrDownloadTaskPage(),
-                            ),
-                          );
-                        },
-                        child: Stack(
-                          alignment: Alignment.center,
-                          children: [
-                            const Icon(Icons.downloading_rounded),
-                            if (progress != null)
-                              SizedBox(
-                                width: 34,
-                                height: 34,
-                                child: CircularProgressIndicator(
-                                  value: progress,
-                                  strokeWidth: 2.4,
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .onSecondaryContainer
-                                      .withValues(alpha: 0.78),
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                    ),
+        if (hasDownloadManager)
+          _AsmrDownloadProgressButton(bottomInset: bottomInset),
+      ],
+    );
+  }
+}
+
+class _AsmrDownloadProgressButton extends StatelessWidget {
+  const _AsmrDownloadProgressButton({required this.bottomInset});
+
+  final double bottomInset;
+
+  @override
+  Widget build(BuildContext context) {
+    final state = context
+        .select<AsmrDownloadManager, AsmrDownloadButtonViewState>(
+          (manager) => manager.buttonViewState,
+        );
+    return Positioned(
+      right: 16,
+      bottom: bottomInset + 18,
+      child: IgnorePointer(
+        ignoring: !state.visible,
+        child: AnimatedOpacity(
+          opacity: state.visible ? 1 : 0,
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOutCubic,
+          child: AnimatedScale(
+            scale: state.visible ? 1 : 0.92,
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOutCubic,
+            child: FloatingActionButton.small(
+              heroTag: 'asmr-one-download-progress',
+              backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
+              foregroundColor: Theme.of(
+                context,
+              ).colorScheme.onSecondaryContainer,
+              elevation: 0,
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const AsmrDownloadTaskPage(),
                   ),
                 );
               },
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  const Icon(Icons.downloading_rounded),
+                  if (state.progress != null)
+                    SizedBox(
+                      width: 34,
+                      height: 34,
+                      child: CircularProgressIndicator(
+                        value: state.progress,
+                        strokeWidth: 2.4,
+                        color: Theme.of(context)
+                            .colorScheme
+                            .onSecondaryContainer
+                            .withValues(alpha: 0.78),
+                      ),
+                    ),
+                ],
+              ),
             ),
           ),
-      ],
+        ),
+      ),
     );
   }
 }
@@ -747,15 +757,13 @@ class _AsmrCategoryListState extends State<_AsmrCategoryList> {
 
   @override
   Widget build(BuildContext context) {
-    final controller = context.watch<AsmrLibraryController>();
-    final works = controller.filteredWorksFor(
-      widget.category,
-      searchQuery: widget.searchQuery,
+    final state = context.select<AsmrLibraryController, AsmrCategoryViewState>(
+      (controller) => controller.categoryViewState(
+        widget.category,
+        searchQuery: widget.searchQuery,
+      ),
     );
-    final isLoading = controller.isLoadingCategory(widget.category);
-    final isLoadingMore = controller.isLoadingMoreCategory(widget.category);
-    final hasMore = controller.hasMoreCategory(widget.category);
-    final lastError = controller.lastError;
+    final works = state.works;
     final i18n = context.watch<AppLanguageProvider>();
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
@@ -801,10 +809,10 @@ class _AsmrCategoryListState extends State<_AsmrCategoryList> {
           ),
           itemCount: works.isEmpty
               ? 1
-              : works.length + ((isLoadingMore || hasMore) ? 1 : 0),
+              : works.length + ((state.isLoadingMore || state.hasMore) ? 1 : 0),
           itemBuilder: (context, index) {
             if (works.isEmpty) {
-              if (isLoading) {
+              if (state.isLoading) {
                 return Padding(
                   padding: const EdgeInsets.only(top: 80),
                   child: Center(
@@ -816,7 +824,7 @@ class _AsmrCategoryListState extends State<_AsmrCategoryList> {
                 padding: const EdgeInsets.only(top: 80),
                 child: Center(
                   child: Text(
-                    lastError == null
+                    state.lastError == null
                         ? i18n.tr('asmr_empty_category')
                         : i18n.tr('asmr_refresh_failed'),
                     style: theme.textTheme.bodyLarge?.copyWith(
@@ -830,7 +838,7 @@ class _AsmrCategoryListState extends State<_AsmrCategoryList> {
               return Padding(
                 padding: const EdgeInsets.only(top: 4, bottom: 4),
                 child: Center(
-                  child: isLoadingMore
+                  child: state.isLoadingMore
                       ? SizedBox(
                           width: 22,
                           height: 22,
@@ -1330,12 +1338,13 @@ class _AsmrWorkTreeCardState extends State<_AsmrWorkTreeCard> {
 
   @override
   Widget build(BuildContext context) {
-    final asmrController = context.watch<AsmrLibraryController>();
-    final tree = asmrController.trackTreeFor(widget.work.id);
-    final visibleTree = tree
-        ?.where((node) => node.hasBrowsableContent)
-        .toList(growable: false);
-    final isTreeLoading = asmrController.isTrackTreeLoading(widget.work.id);
+    final treeState = context
+        .select<AsmrLibraryController, AsmrTrackTreeViewState>(
+          (controller) => controller.trackTreeViewState(widget.work.id),
+        );
+    final tree = treeState.tree;
+    final visibleTree = treeState.visibleTree;
+    final isTreeLoading = treeState.isLoading;
     final i18n = context.watch<AppLanguageProvider>();
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -1762,7 +1771,8 @@ class _AsmrWorkCover extends StatelessWidget {
             : Image.network(
                 url,
                 fit: BoxFit.cover,
-                cacheWidth: (width * MediaQuery.devicePixelRatioOf(context)).round(),
+                cacheWidth: (width * MediaQuery.devicePixelRatioOf(context))
+                    .round(),
                 errorBuilder: (_, _, _) => _AsmrCoverFallback(colorScheme: cs),
               ),
       ),

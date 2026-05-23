@@ -61,4 +61,101 @@ void main() {
     expect(task.workRootPath, '$destinationRoot::$workFolderName');
     expect(task.displayDestinationPath, 'Download/$workFolderName');
   });
+
+  test(
+    'download progress notifications are throttled but completion is immediate',
+    () async {
+      final manager = AsmrDownloadManager();
+      final notifications = <AsmrDownloadTaskProgressViewState?>[];
+      manager.addListener(() {
+        notifications.add(manager.taskProgressViewState);
+      });
+
+      final startedAt = DateTime(2026);
+      final work = _work();
+      manager.debugSetCurrentTaskForTesting(
+        AsmrDownloadTaskSnapshot(
+          work: work,
+          destinationRoot: 'C:\\Downloads',
+          workFolderName: 'RJ123456 - Work',
+          conflictPolicy: AsmrDownloadConflictPolicy.skip,
+          status: AsmrDownloadTaskStatus.downloading,
+          totalFiles: 2,
+          completedFiles: 0,
+          skippedFiles: 0,
+          failedFiles: 0,
+          totalBytes: 1024,
+          downloadedBytes: 0,
+          startedAt: startedAt,
+        ),
+      );
+
+      manager.debugSetCurrentTaskForTesting(
+        AsmrDownloadTaskSnapshot(
+          work: work,
+          destinationRoot: 'C:\\Downloads',
+          workFolderName: 'RJ123456 - Work',
+          conflictPolicy: AsmrDownloadConflictPolicy.skip,
+          status: AsmrDownloadTaskStatus.downloading,
+          totalFiles: 2,
+          completedFiles: 0,
+          skippedFiles: 0,
+          failedFiles: 0,
+          totalBytes: 1024,
+          downloadedBytes: 1,
+          startedAt: startedAt,
+        ),
+        progressOnly: true,
+      );
+
+      expect(notifications, hasLength(1));
+
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      expect(notifications, hasLength(2));
+      expect(notifications.last?.downloadedBytes, 1);
+
+      manager.debugSetCurrentTaskForTesting(
+        AsmrDownloadTaskSnapshot(
+          work: work,
+          destinationRoot: 'C:\\Downloads',
+          workFolderName: 'RJ123456 - Work',
+          conflictPolicy: AsmrDownloadConflictPolicy.skip,
+          status: AsmrDownloadTaskStatus.completed,
+          totalFiles: 2,
+          completedFiles: 2,
+          skippedFiles: 0,
+          failedFiles: 0,
+          totalBytes: 1024,
+          downloadedBytes: 1024,
+          startedAt: startedAt,
+        ),
+      );
+
+      expect(notifications, hasLength(3));
+      expect(notifications.last?.status, AsmrDownloadTaskStatus.completed);
+      manager.dispose();
+    },
+  );
+}
+
+AsmrWork _work() {
+  return const AsmrWork(
+    id: 1,
+    title: 'Work',
+    circleName: 'Circle',
+    sourceId: 'RJ123456',
+    sourceType: 'asmr',
+    sourceUrl: '',
+    coverUrl: '',
+    thumbnailUrl: '',
+    mainCoverUrl: '',
+    releaseDate: null,
+    createDate: null,
+    duration: Duration.zero,
+    dlCount: 0,
+    reviewCount: 0,
+    rating: 0,
+    voiceActors: <String>[],
+    tags: <String>[],
+  );
 }

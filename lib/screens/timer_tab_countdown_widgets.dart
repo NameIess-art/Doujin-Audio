@@ -54,7 +54,7 @@ class _CountdownCardState extends State<_CountdownCard> {
   }
 
   bool _shouldTick() {
-    return widget.timerExpired && widget.provider.autoResumeEnabled && widget.autoResumeAt != null;
+    return widget.timerExpired && widget.autoResumeAt != null;
   }
 
   void _startTicker() {
@@ -86,17 +86,18 @@ class _CountdownCardState extends State<_CountdownCard> {
   Widget build(BuildContext context) {
     final i18n = context.watch<AppLanguageProvider>();
     final remaining = widget.provider.timerRemaining ?? Duration.zero;
-    
-    final bool showAutoResumeCountdown = widget.timerExpired && widget.provider.autoResumeEnabled;
-    
+
+    final showAutoResumeCountdown =
+        widget.timerExpired && widget.autoResumeAt != null;
+
     final title = showAutoResumeCountdown
-        ? i18n.tr('auto_resume_after_timer')
+        ? i18n.tr('waiting_for_auto_resume')
         : widget.timerExpired
         ? i18n.tr('countdown_finished')
         : widget.waitingTrigger
         ? i18n.tr('waiting_to_start_countdown')
         : i18n.tr('counting_down');
-        
+
     final accent = showAutoResumeCountdown
         ? widget.cs.primary
         : widget.timerExpired
@@ -104,7 +105,7 @@ class _CountdownCardState extends State<_CountdownCard> {
         : widget.waitingTrigger
         ? widget.cs.onSurfaceVariant
         : widget.cs.primary;
-        
+
     final timeColor = showAutoResumeCountdown
         ? widget.cs.onPrimaryContainer
         : widget.timerExpired
@@ -167,7 +168,9 @@ class _CountdownCardState extends State<_CountdownCard> {
             ],
             Center(
               child: Text(
-                showAutoResumeCountdown ? widget.fmtDuration(_autoResumeRemaining) : widget.fmtDuration(remaining),
+                showAutoResumeCountdown
+                    ? widget.fmtDuration(_autoResumeRemaining)
+                    : widget.fmtDuration(remaining),
                 style: TextStyle(
                   fontSize: widget.compact ? 32 : 46,
                   fontWeight: FontWeight.bold,
@@ -185,7 +188,8 @@ class _CountdownCardState extends State<_CountdownCard> {
                       _TimerSummaryChip(
                         icon: Icons.pause_circle_outline_rounded,
                         text: i18n.tr('paused_audio_count', {
-                          'count': widget.provider.pausedByTimerSessionIds.length,
+                          'count':
+                              widget.provider.pausedByTimerSessionIds.length,
                         }),
                         foregroundColor: widget.cs.onErrorContainer,
                         backgroundColor: widget.cs.errorContainer,

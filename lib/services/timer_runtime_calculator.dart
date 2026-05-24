@@ -40,6 +40,20 @@ class TimerRuntimeCalculator {
     return autoResumeAt != null && hasPausedByTimerSessionIds;
   }
 
+  DateTime? autoResumeCountdownTarget({
+    required bool timerExpired,
+    required bool autoResumeEnabled,
+    required DateTime? autoResumeAt,
+    required int hour,
+    required int minute,
+    required DateTime now,
+  }) {
+    if (!timerExpired || !autoResumeEnabled) {
+      return null;
+    }
+    return autoResumeAt ?? nextClockTime(now: now, hour: hour, minute: minute);
+  }
+
   DateTime nextClockTime({
     required DateTime now,
     required int hour,

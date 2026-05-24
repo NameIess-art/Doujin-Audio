@@ -232,13 +232,10 @@ class _SessionListCardState extends State<_SessionListCard>
         _playPauseController.reverse();
       }
     }
-    
+
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final isAsmrOne = track?.remoteMetadataKind == 'asmr.one';
     final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
-    final asmrBlueContainer = isDark
-        ? const Color(0xFF1E3A8A)
-        : const Color(0xFFDBEAFE);
     final localPlayRose = isDark
         ? const Color(0xFFF472B6)
         : const Color(0xFFDB2777);
@@ -249,11 +246,11 @@ class _SessionListCardState extends State<_SessionListCard>
 
     final highlightColor = isAsmrOne
         ? (isDark
-            ? asmrBlueContainer.withValues(alpha: 0.35)
-            : const Color(0xFF93C5FD).withValues(alpha: 0.45))
+              ? asmrBlue.withValues(alpha: 0.48)
+              : const Color(0xFF93C5FD).withValues(alpha: 0.45))
         : (isDark
-            ? const Color(0xFF851A46).withValues(alpha: 0.55)
-            : const Color(0xFFE898BA).withValues(alpha: 0.5));
+              ? localPlayRose.withValues(alpha: 0.48)
+              : const Color(0xFFE898BA).withValues(alpha: 0.5));
 
     final cardShape = RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(14),

@@ -18,7 +18,7 @@ class _SessionHeroArtwork extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     final dpr = MediaQuery.devicePixelRatioOf(context);
 
-    Widget fallback() {
+    Widget fallback({bool hideIcon = false}) {
       return DecoratedBox(
         decoration: BoxDecoration(
           gradient: LinearGradient(
@@ -30,13 +30,15 @@ class _SessionHeroArtwork extends StatelessWidget {
             ],
           ),
         ),
-        child: Center(
-          child: Icon(
-            Icons.photo_album_rounded,
-            size: 56,
-            color: cs.onPrimaryContainer,
-          ),
-        ),
+        child: hideIcon
+            ? const SizedBox.shrink()
+            : Center(
+                child: Icon(
+                  Icons.photo_album_rounded,
+                  size: 56,
+                  color: cs.onPrimaryContainer,
+                ),
+              ),
       );
     }
 
@@ -85,12 +87,16 @@ class _SessionHeroArtwork extends StatelessWidget {
                       loadingBuilder: (_) => Stack(
                         fit: StackFit.expand,
                         children: [
-                          fallback(),
+                          fallback(hideIcon: true),
                           Center(
-                            child: CircularProgressIndicator(
-                              strokeWidth: 3,
-                              color: cs.onPrimaryContainer.withValues(
-                                alpha: 0.65,
+                            child: SizedBox(
+                              width: 36,
+                              height: 36,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 3,
+                                color: cs.onPrimaryContainer.withValues(
+                                  alpha: 0.65,
+                                ),
                               ),
                             ),
                           ),
@@ -151,7 +157,7 @@ class _SessionCoverThumbnail extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
 
-    Widget fallback() {
+    Widget fallback({bool hideIcon = false}) {
       return DecoratedBox(
         decoration: BoxDecoration(
           gradient: LinearGradient(
@@ -163,13 +169,15 @@ class _SessionCoverThumbnail extends StatelessWidget {
             ],
           ),
         ),
-        child: Center(
-          child: Icon(
-            Icons.photo_album_rounded,
-            size: 26,
-            color: cs.onPrimaryContainer,
-          ),
-        ),
+        child: hideIcon
+            ? const SizedBox.shrink()
+            : Center(
+                child: Icon(
+                  Icons.photo_album_rounded,
+                  size: 26,
+                  color: cs.onPrimaryContainer,
+                ),
+              ),
       );
     }
 
@@ -199,13 +207,13 @@ class _SessionCoverThumbnail extends StatelessWidget {
                 loadingBuilder: (_) => Stack(
                   fit: StackFit.expand,
                   children: [
-                    fallback(),
+                    fallback(hideIcon: true),
                     Center(
                       child: SizedBox(
-                        width: 20,
-                        height: 20,
+                        width: 32,
+                        height: 32,
                         child: CircularProgressIndicator(
-                          strokeWidth: 2,
+                          strokeWidth: 2.5,
                           color: cs.onPrimaryContainer.withValues(alpha: 0.65),
                         ),
                       ),

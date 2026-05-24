@@ -139,6 +139,10 @@ extension AudioProviderPersistenceTimer on AudioProvider {
       _timerRemaining = _timerDuration;
       _timerWaitingForPlayback = true;
       _timerActive = false;
+    } else if (_timerDuration != null && timerEndsAtMs == null) {
+      _timerRemaining = Duration.zero;
+      _timerActive = false;
+      _timerWaitingForPlayback = false;
     }
 
     if (timerEndsAtMs != null && _timerDuration != null) {

@@ -34,6 +34,15 @@ extension _TimerTabBody on _TimerTabState {
         !timerSlice.active &&
         timerSlice.remaining != null &&
         timerSlice.remaining! <= Duration.zero;
+    final autoResumeCountdownTarget = _TimerTabState._timerRuntimeCalculator
+        .autoResumeCountdownTarget(
+          timerExpired: timerExpired,
+          autoResumeEnabled: timerSlice.autoResumeEnabled,
+          autoResumeAt: timerSlice.autoResumeAt,
+          hour: timerSlice.autoResumeHour,
+          minute: timerSlice.autoResumeMinute,
+          now: DateTime.now(),
+        );
     final timerWaitingTrigger =
         timerConfigured &&
         !timerExpired &&
@@ -322,7 +331,7 @@ extension _TimerTabBody on _TimerTabState {
                         timerWaitingTrigger: timerWaitingTrigger,
                         timerConfigured: timerConfigured,
                         pickAutoResumeTime: pickAutoResumeTime,
-                        autoResumeAt: timerSlice.autoResumeAt,
+                        autoResumeAt: autoResumeCountdownTarget,
                       )
                     : buildConfiguratorSection(compactMode: true),
               ),
@@ -374,7 +383,7 @@ extension _TimerTabBody on _TimerTabState {
                       waitingTrigger: timerWaitingTrigger,
                       fmtDuration: _fmtDuration,
                       cs: cs,
-                      autoResumeAt: timerSlice.autoResumeAt,
+                      autoResumeAt: autoResumeCountdownTarget,
                     ),
                     const SizedBox(height: 16),
                   ],

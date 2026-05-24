@@ -39,10 +39,11 @@ class NativePlaybackService : MediaSessionService() {
         private const val STATE_PERSISTENCE_DEBOUNCE_MS = 800L
         private const val MAX_ACTIVE_PLAYERS = 10
         // Grace period before releasing the wake lock / stopping foreground after
-        // playback appears to have stopped. Covers brief gaps during track
-        // transitions and buffering so that aggressive OEM battery managers
-        // cannot kill the service in that window.
-        private const val PLAYBACK_STOP_GRACE_MS = 5_000L
+        // playback appears to have stopped. Android's background-audio guidance
+        // recommends keeping a mediaPlayback foreground service alive through
+        // transient buffering/focus failures under 10 minutes; a short grace
+        // window lets screen-off playback get killed during those gaps.
+        private const val PLAYBACK_STOP_GRACE_MS = 10 * 60 * 1000L
         private const val LOG_TAG = "NativePlaybackService"
 
         @Volatile

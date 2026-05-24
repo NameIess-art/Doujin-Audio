@@ -18,7 +18,10 @@ extension _TimerTabDetailBody on _TimerTabState {
     required Future<void> Function() pickAutoResumeTime,
     DateTime? autoResumeAt,
   }) {
-    final detailAccent = timerExpired
+    final showAutoResumeCountdown = timerExpired && autoResumeAt != null;
+    final detailAccent = showAutoResumeCountdown
+        ? cs.primary
+        : timerExpired
         ? cs.error
         : timerWaitingTrigger
         ? cs.outline
@@ -32,12 +35,16 @@ extension _TimerTabDetailBody on _TimerTabState {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             _TimerSectionTitle(
-              icon: timerExpired
+              icon: showAutoResumeCountdown
+                  ? Icons.timer_rounded
+                  : timerExpired
                   ? Icons.alarm_off_rounded
                   : timerWaitingTrigger
                   ? Icons.schedule_rounded
                   : Icons.timer_rounded,
-              title: timerExpired
+              title: showAutoResumeCountdown
+                  ? i18n.tr('waiting_for_auto_resume')
+                  : timerExpired
                   ? i18n.tr('countdown_finished')
                   : timerWaitingTrigger
                   ? i18n.tr('waiting_to_start_countdown')
@@ -56,104 +63,107 @@ extension _TimerTabDetailBody on _TimerTabState {
               )
             else
               const SizedBox.shrink(),
-            const SizedBox(height: 8),
-            Container(
-              decoration: BoxDecoration(
-                color: cs.surfaceContainerLow,
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(10, 8, 8, 8),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 30,
-                      height: 30,
-                      decoration: BoxDecoration(
-                        color: cs.surfaceContainerHighest,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Icon(
-                        Icons.restore_rounded,
-                        size: 17,
-                        color: cs.onSurfaceVariant,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        i18n.tr('auto_resume_after_timer'),
-                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                          fontWeight: FontWeight.w800,
+            if (!showAutoResumeCountdown) ...[
+              const SizedBox(height: 8),
+              Container(
+                decoration: BoxDecoration(
+                  color: cs.surfaceContainerLow,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(10, 8, 8, 8),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 30,
+                        height: 30,
+                        decoration: BoxDecoration(
+                          color: cs.surfaceContainerHighest,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Icon(
+                          Icons.restore_rounded,
+                          size: 17,
+                          color: cs.onSurfaceVariant,
                         ),
                       ),
-                    ),
-                    Switch.adaptive(
-                      value: provider.autoResumeEnabled,
-                      onChanged: (value) {
-                        HapticFeedback.selectionClick();
-                        unawaited(
-                          _setAutoResumeWithCapabilityCheck(
-                            provider,
-                            enabled: value,
-                            hour: provider.autoResumeHour,
-                            minute: provider.autoResumeMinute,
-                            promptForCapability:
-                                value && !provider.autoResumeEnabled,
-                          ),
-                        );
-                      },
-                    ),
-                  ],
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          i18n.tr('auto_resume_after_timer'),
+                          style: Theme.of(context).textTheme.labelLarge
+                              ?.copyWith(fontWeight: FontWeight.w800),
+                        ),
+                      ),
+                      Switch.adaptive(
+                        value: provider.autoResumeEnabled,
+                        onChanged: (value) {
+                          HapticFeedback.selectionClick();
+                          unawaited(
+                            _setAutoResumeWithCapabilityCheck(
+                              provider,
+                              enabled: value,
+                              hour: provider.autoResumeHour,
+                              minute: provider.autoResumeMinute,
+                              promptForCapability:
+                                  value && !provider.autoResumeEnabled,
+                            ),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-            if (provider.autoResumeEnabled) ...[
-              const SizedBox(height: 8),
-              Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  onTap: pickAutoResumeTime,
-                  borderRadius: BorderRadius.circular(16),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: cs.surfaceContainerLow,
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 9,
+              if (provider.autoResumeEnabled) ...[
+                const SizedBox(height: 8),
+                Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: pickAutoResumeTime,
+                    borderRadius: BorderRadius.circular(16),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: cs.surfaceContainerLow,
+                        borderRadius: BorderRadius.circular(16),
                       ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.alarm_rounded, size: 18),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  i18n.tr('resume_time', {
-                                    'time': _fmtClockTime(
-                                      provider.autoResumeHour,
-                                      provider.autoResumeMinute,
-                                    ),
-                                  }),
-                                  style: Theme.of(context).textTheme.labelLarge
-                                      ?.copyWith(fontWeight: FontWeight.w800),
-                                ),
-                              ],
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 9,
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.alarm_rounded, size: 18),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    i18n.tr('resume_time', {
+                                      'time': _fmtClockTime(
+                                        provider.autoResumeHour,
+                                        provider.autoResumeMinute,
+                                      ),
+                                    }),
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .labelLarge
+                                        ?.copyWith(fontWeight: FontWeight.w800),
+                                  ),
+                                ],
+                              ),
                             ),
-                          ),
-                          const SizedBox(width: 8),
-                          const Icon(Icons.chevron_right_rounded),
-                        ],
+                            const SizedBox(width: 8),
+                            const Icon(Icons.chevron_right_rounded),
+                          ],
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
+              ],
             ],
             const Spacer(),
             if (timerConfigured)

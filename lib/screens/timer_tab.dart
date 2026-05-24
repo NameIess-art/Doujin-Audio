@@ -11,6 +11,7 @@ import '../providers/audio_provider.dart';
 import '../providers/audio_provider_riverpod.dart';
 import '../services/audio_state_services.dart';
 import '../services/platform_channels.dart';
+import '../services/timer_runtime_calculator.dart';
 import '../widgets/top_page_header.dart';
 
 part 'timer_tab_body.dart';
@@ -38,6 +39,8 @@ class TimerTab extends ConsumerStatefulWidget {
 
 class _TimerTabState extends ConsumerState<TimerTab>
     with WidgetsBindingObserver {
+  static const TimerRuntimeCalculator _timerRuntimeCalculator =
+      TimerRuntimeCalculator();
   static const MethodChannel _powerChannel = MethodChannel(PowerChannel.name);
   static const MethodChannel _notificationsChannel = MethodChannel(
     NotificationsChannel.name,

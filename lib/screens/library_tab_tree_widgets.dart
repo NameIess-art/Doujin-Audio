@@ -515,7 +515,7 @@ class _LibraryCoverThumbnail extends ConsumerWidget {
     final isCoverLoading = provider.isCoverPathLoadingForFolder(folderPath);
     final cs = Theme.of(context).colorScheme;
 
-    Widget fallback() {
+    Widget fallback({bool hideIcon = false}) {
       return DecoratedBox(
         decoration: BoxDecoration(
           gradient: LinearGradient(
@@ -527,13 +527,15 @@ class _LibraryCoverThumbnail extends ConsumerWidget {
             ],
           ),
         ),
-        child: Center(
-          child: Icon(
-            Icons.photo_album_rounded,
-            size: 28,
-            color: cs.onPrimaryContainer,
-          ),
-        ),
+        child: hideIcon
+            ? const SizedBox.shrink()
+            : Center(
+                child: Icon(
+                  Icons.photo_album_rounded,
+                  size: 28,
+                  color: cs.onPrimaryContainer,
+                ),
+              ),
       );
     }
 
@@ -552,12 +554,12 @@ class _LibraryCoverThumbnail extends ConsumerWidget {
             loadingBuilder: (_) => Stack(
               fit: StackFit.expand,
               children: [
-                fallback(),
+                fallback(hideIcon: isCoverLoading),
                 if (isCoverLoading)
                   Center(
                     child: Icon(
                       Icons.hourglass_top_rounded,
-                      size: 22,
+                      size: 32,
                       color: cs.onPrimaryContainer,
                     ),
                   ),

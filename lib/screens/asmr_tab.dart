@@ -429,6 +429,10 @@ class _AsmrTabState extends State<AsmrTab>
     final hasDownloadManager = context.select<AsmrDownloadManager?, bool>(
       (manager) => manager != null,
     );
+    final collectedCount = context.select<AsmrLibraryController?, int>(
+      (controller) =>
+          controller?.totalCountFor(AsmrCategoryType.collected) ?? 0,
+    );
     final i18n = context.watch<AppLanguageProvider>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
@@ -546,6 +550,11 @@ class _AsmrTabState extends State<AsmrTab>
           child: TopPageHeader(
             key: _headerKey,
             title: 'ASMR.ONE',
+            subtitle: i18n.tr('asmr_collected_count', {
+              'count': collectedCount,
+            }),
+            subtitleFontSize: 11,
+            fitSubtitleToWidth: true,
             trailing: _AsmrMoreMenuButton(
               onCategories: _showCategoryDialog,
               onLanguage: _showLanguageDialog,
@@ -778,6 +787,7 @@ class _AsmrCategoryListState extends State<_AsmrCategoryList>
     with AutomaticKeepAliveClientMixin {
   final GlobalKey<GlassRefreshIndicatorState> _refreshIndicatorKey =
       GlobalKey<GlassRefreshIndicatorState>();
+  final Set<String> _primedCoverUrls = <String>{};
   bool _refreshTriggeredInCurrentScroll = false;
 
   @override
@@ -793,6 +803,7 @@ class _AsmrCategoryListState extends State<_AsmrCategoryList>
       ),
     );
     final works = state.works;
+    _primeVisibleCovers(works);
     final i18n = context.watch<AppLanguageProvider>();
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
@@ -900,6 +911,37 @@ class _AsmrCategoryListState extends State<_AsmrCategoryList>
         ),
       ),
     );
+  }
+
+  void _primeVisibleCovers(List<AsmrWork> works) {
+    if (works.isEmpty) {
+      _primedCoverUrls.clear();
+      return;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      final scrollController = widget.scrollController;
+      final firstVisibleIndex = scrollController.hasClients
+          ? scrollController.offset ~/ 168
+          : 0;
+      final lastIndex = works.length - 1;
+      final start = firstVisibleIndex.clamp(0, lastIndex).toInt();
+      final end = (start + 8).clamp(start, lastIndex).toInt();
+      for (var index = start; index <= end; index++) {
+        final url = _asmrWorkListCoverUrl(works[index]);
+        if (url.isEmpty || !_primedCoverUrls.add(url)) {
+          continue;
+        }
+        unawaited(
+          precacheImage(NetworkImage(url), context).catchError((_) {
+            _primedCoverUrls.remove(url);
+            return null;
+          }),
+        );
+      }
+    });
   }
 }
 
@@ -1514,10 +1556,8 @@ class _AsmrRootCardContent extends StatelessWidget {
     return LibraryLikeFeaturedCardContent(
       title: work.title,
       lines: _workInfoLines(context, work),
-      coverBuilder: (coverWidth) => _AsmrWorkCover(
-        url: work.mainCoverUrl.isNotEmpty ? work.mainCoverUrl : work.coverUrl,
-        width: coverWidth,
-      ),
+      coverBuilder: (coverWidth) =>
+          _AsmrWorkCover(url: _asmrWorkListCoverUrl(work), width: coverWidth),
       onPlay: onPlay,
       expanded: expanded,
       showExpandIndicator: hasChildren,
@@ -1784,31 +1824,133 @@ class _AsmrTrackLeafRow extends StatelessWidget {
   }
 }
 
-class _AsmrWorkCover extends StatelessWidget {
+class _AsmrWorkCover extends StatefulWidget {
   const _AsmrWorkCover({required this.url, required this.width});
 
   final String url;
   final double width;
 
   @override
+  State<_AsmrWorkCover> createState() => _AsmrWorkCoverState();
+}
+
+class _AsmrWorkCoverState extends State<_AsmrWorkCover> {
+  static const int _maxRetryCount = 3;
+  int _retryCount = 0;
+  Timer? _retryTimer;
+
+  @override
+  void didUpdateWidget(covariant _AsmrWorkCover oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.url != widget.url) {
+      _retryTimer?.cancel();
+      _retryCount = 0;
+    }
+  }
+
+  @override
+  void dispose() {
+    _retryTimer?.cancel();
+    super.dispose();
+  }
+
+  void _scheduleRetry() {
+    if (_retryCount >= _maxRetryCount || _retryTimer?.isActive == true) {
+      return;
+    }
+    final url = widget.url.trim();
+    if (url.isEmpty) {
+      return;
+    }
+    final attempt = _retryCount + 1;
+    _retryTimer = Timer(Duration(milliseconds: 450 * attempt), () {
+      if (!mounted) {
+        return;
+      }
+      NetworkImage(url).evict().ignore();
+      setState(() {
+        _retryCount = attempt;
+      });
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final width = widget.width;
     final height = width * 0.8;
+    final url = widget.url.trim();
     return ClipRRect(
       borderRadius: BorderRadius.circular(12),
       child: SizedBox(
         width: width,
         height: height,
-        child: url.trim().isEmpty
+        child: url.isEmpty
             ? _AsmrCoverFallback(colorScheme: cs)
             : Image.network(
                 url,
+                key: ValueKey('$url#$_retryCount'),
                 fit: BoxFit.cover,
                 filterQuality: FilterQuality.low,
+                gaplessPlayback: true,
                 cacheWidth: (width * MediaQuery.devicePixelRatioOf(context))
                     .round(),
-                errorBuilder: (_, _, _) => _AsmrCoverFallback(colorScheme: cs),
+                loadingBuilder: (context, child, loadingProgress) {
+                  if (loadingProgress == null) {
+                    return child;
+                  }
+                  return _AsmrCoverLoading(colorScheme: cs);
+                },
+                errorBuilder: (_, _, _) {
+                  _scheduleRetry();
+                  return _AsmrCoverFallback(colorScheme: cs);
+                },
               ),
+      ),
+    );
+  }
+}
+
+String _asmrWorkListCoverUrl(AsmrWork work) {
+  for (final url in <String>[
+    work.thumbnailUrl,
+    work.mainCoverUrl,
+    work.coverUrl,
+  ]) {
+    final trimmed = url.trim();
+    if (trimmed.isNotEmpty) {
+      return trimmed;
+    }
+  }
+  return '';
+}
+
+class _AsmrCoverLoading extends StatelessWidget {
+  const _AsmrCoverLoading({required this.colorScheme});
+
+  final ColorScheme colorScheme;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            colorScheme.primaryContainer,
+            colorScheme.secondaryContainer.withValues(alpha: 0.92),
+          ],
+        ),
+      ),
+      child: Center(
+        child: SizedBox.square(
+          dimension: 36,
+          child: CircularProgressIndicator(
+            strokeWidth: 3,
+            color: colorScheme.primary,
+          ),
+        ),
       ),
     );
   }

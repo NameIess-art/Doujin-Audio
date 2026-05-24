@@ -78,4 +78,30 @@ void main() {
       isFalse,
     );
   });
+
+  test('autoResumeCountdownTarget falls back to configured clock time', () {
+    final target = calculator.autoResumeCountdownTarget(
+      timerExpired: true,
+      autoResumeEnabled: true,
+      autoResumeAt: null,
+      hour: 7,
+      minute: 0,
+      now: DateTime(2026, 5, 24, 1, 7),
+    );
+
+    expect(target, DateTime(2026, 5, 24, 7));
+  });
+
+  test('autoResumeCountdownTarget is hidden until timer expires', () {
+    final target = calculator.autoResumeCountdownTarget(
+      timerExpired: false,
+      autoResumeEnabled: true,
+      autoResumeAt: DateTime(2026, 5, 24, 7),
+      hour: 7,
+      minute: 0,
+      now: DateTime(2026, 5, 24, 1, 7),
+    );
+
+    expect(target, isNull);
+  });
 }

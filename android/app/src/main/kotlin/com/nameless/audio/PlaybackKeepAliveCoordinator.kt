@@ -3,11 +3,13 @@ package com.nameless.audio
 import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
+import android.net.wifi.WifiManager
 import android.os.PowerManager
 import androidx.core.content.ContextCompat
 
 private object PlaybackWakeLockController {
     private var wakeLock: PowerManager.WakeLock? = null
+    private var wifiLock: WifiManager.WifiLock? = null
 
     @Synchronized
     fun sync(context: Context, enabled: Boolean) {
@@ -19,7 +21,7 @@ private object PlaybackWakeLockController {
     }
 
     private fun acquire(context: Context) {
-        if (wakeLock?.isHeld == true) return
+        if (wakeLock?.isHeld == true && wifiLock?.isHeld == true) return
         try {
             val powerManager = context.getSystemService(Context.POWER_SERVICE) as? PowerManager
             wakeLock = powerManager?.newWakeLock(
@@ -29,21 +31,37 @@ private object PlaybackWakeLockController {
                 setReferenceCounted(false)
                 acquire()
             }
+            val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+            wifiLock = wifiManager?.createWifiLock(
+                WifiManager.WIFI_MODE_FULL_HIGH_PERF,
+                "${context.packageName}:playback_keep_alive_wifi"
+            )?.apply {
+                setReferenceCounted(false)
+                acquire()
+            }
         } catch (_: Exception) {
             wakeLock = null
+            wifiLock = null
         }
     }
 
     private fun release() {
-        val currentWakeLock = wakeLock ?: return
+        val currentWakeLock = wakeLock
+        val currentWifiLock = wifiLock
+        if (currentWakeLock == null && currentWifiLock == null) return
+
         try {
-            if (currentWakeLock.isHeld) {
+            if (currentWakeLock?.isHeld == true) {
                 currentWakeLock.release()
+            }
+            if (currentWifiLock?.isHeld == true) {
+                currentWifiLock.release()
             }
         } catch (_: RuntimeException) {
             // Ignore stale wakelock state.
         } finally {
             wakeLock = null
+            wifiLock = null
         }
     }
 }

@@ -1,6 +1,7 @@
 package com.nameless.audio
 
 import android.content.Context
+import android.net.wifi.WifiManager
 import android.os.PowerManager
 
 internal class NativePlaybackWakeLock(
@@ -9,11 +10,12 @@ internal class NativePlaybackWakeLock(
     private val logWarn: (String, Exception) -> Unit
 ) {
     private var wakeLock: PowerManager.WakeLock? = null
+    private var wifiLock: WifiManager.WifiLock? = null
 
-    fun isHeld(): Boolean = wakeLock?.isHeld == true
+    fun isHeld(): Boolean = wakeLock?.isHeld == true || wifiLock?.isHeld == true
 
     fun acquire() {
-        if (wakeLock?.isHeld == true) {
+        if (wakeLock?.isHeld == true && wifiLock?.isHeld == true) {
             logInfo("wakelock_acquire_skip already_held")
             return
         }
@@ -26,21 +28,43 @@ internal class NativePlaybackWakeLock(
                 setReferenceCounted(false)
                 acquire()
             }
-            logInfo("wakelock_acquired held=${wakeLock?.isHeld == true}")
+
+            val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+            wifiLock = wifiManager?.createWifiLock(
+                WifiManager.WIFI_MODE_FULL_HIGH_PERF,
+                "${context.packageName}:native_playback_wifi"
+            )?.apply {
+                setReferenceCounted(false)
+                acquire()
+            }
+            logInfo("wakelock_acquired held=${wakeLock?.isHeld == true} wifiHeld=${wifiLock?.isHeld == true}")
         } catch (e: Exception) {
             logWarn("wakelock_acquire_failed", e)
             wakeLock = null
+            wifiLock = null
         }
     }
 
     fun release() {
-        val currentWakeLock = wakeLock ?: run {
+        val currentWakeLock = wakeLock
+        val currentWifiLock = wifiLock
+        
+        if (currentWakeLock == null && currentWifiLock == null) {
             logInfo("wakelock_release_skip none")
             return
         }
+        
         try {
-            if (currentWakeLock.isHeld) {
+            var releasedAny = false
+            if (currentWakeLock?.isHeld == true) {
                 currentWakeLock.release()
+                releasedAny = true
+            }
+            if (currentWifiLock?.isHeld == true) {
+                currentWifiLock.release()
+                releasedAny = true
+            }
+            if (releasedAny) {
                 logInfo("wakelock_released")
             } else {
                 logInfo("wakelock_release_skip not_held")
@@ -49,6 +73,7 @@ internal class NativePlaybackWakeLock(
             logWarn("wakelock_release_failed", e)
         } finally {
             wakeLock = null
+            wifiLock = null
         }
     }
 }

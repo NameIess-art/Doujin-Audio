@@ -1,4 +1,4 @@
-﻿package com.nameless.audio
+package com.nameless.audio
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -183,6 +183,7 @@ class NativePlaybackService : MediaSessionService() {
                 audioFocusHeld = false
                 transientAudioFocusLossActive = false
                 pendingAudioFocusResumeSessionIds.clear()
+                pauseAll()
             }
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
@@ -249,7 +250,34 @@ class NativePlaybackService : MediaSessionService() {
                 mainHandler.postDelayed(this, FOREGROUND_WATCHDOG_INTERVAL_MS)
                 return
             }
-            startPlaybackForeground(forceRefresh = true)
+            if (playbackForegroundStarted) {
+                try {
+                    val manager = getSystemService(Context.NOTIFICATION_SERVICE) as? android.app.NotificationManager
+                    val session = sessions[focusedSessionId]
+                        ?: sessions.values.firstOrNull { candidate ->
+                            val player = candidate.playerOrNull()
+                            player != null && (player.isPlaying || player.playWhenReady)
+                        }
+                        ?: sessions.values.firstOrNull()
+                    if (manager != null && session != null) {
+                        val usesUnifiedNotification =
+                            !notificationsDismissed &&
+                                !foregroundSuppressed &&
+                                UnifiedPlaybackNotificationController.hasUnifiedNotifications()
+                        val notification = foregroundNotificationFactory.buildPlaybackNotification(
+                            title = session.title,
+                            subtitle = session.subtitle,
+                            mediaSession = currentMediaSession(),
+                            allowRichSummary = usesUnifiedNotification
+                        )
+                        manager.notify(FOREGROUND_NOTIFICATION_ID, notification)
+                    }
+                } catch (e: Exception) {
+                    logWarn("foreground_watchdog_update_failed", error = e)
+                }
+            } else {
+                startPlaybackForeground(forceRefresh = true)
+            }
             mainHandler.postDelayed(this, FOREGROUND_WATCHDOG_INTERVAL_MS)
         }
     }

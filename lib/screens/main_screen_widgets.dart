@@ -75,77 +75,7 @@ class _GlowOrb extends StatelessWidget {
   }
 }
 
-class _DesktopQuickAction extends StatelessWidget {
-  const _DesktopQuickAction({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.onTap,
-  });
 
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-
-    return Material(
-      color: cs.surfaceContainerHigh.withValues(alpha: 0.78),
-      borderRadius: BorderRadius.circular(16),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: () {
-          Feedback.forTap(context);
-          onTap();
-        },
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
-          child: Row(
-            children: [
-              Container(
-                width: 34,
-                height: 34,
-                decoration: BoxDecoration(
-                  color: cs.secondaryContainer,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(icon, color: cs.onSecondaryContainer, size: 20),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    Text(
-                      subtitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: cs.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Icon(Icons.chevron_right_rounded, color: cs.onSurfaceVariant),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
 
 class _MainDestination {
   const _MainDestination({
@@ -312,20 +242,29 @@ class _TimerOverlaySheet extends StatelessWidget {
         animation: curved,
         builder: (context, child) {
           final progress = curved.value.clamp(0.0, 1.0);
+          final showBackdrop = animation.status != AnimationStatus.reverse;
 
           return Stack(
             fit: StackFit.expand,
             children: [
               Positioned.fill(
                 child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
                   onTap: () => Navigator.of(context).maybePop(),
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: cs.scrim.withValues(
-                        alpha: 0.08 + (0.14 * progress),
-                      ),
-                    ),
-                  ),
+                  child: showBackdrop
+                      ? ClipRect(
+                          child: BackdropFilter(
+                            filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: cs.scrim.withValues(
+                                  alpha: 0.12 + (0.10 * progress),
+                                ),
+                              ),
+                            ),
+                          ),
+                        )
+                      : const SizedBox.expand(),
                 ),
               ),
               SafeArea(

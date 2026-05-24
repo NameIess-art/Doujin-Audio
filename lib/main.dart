@@ -126,7 +126,11 @@ class AppOrientationPolicy {
   ]);
 
   // Swap this policy when landscape playback detail UI is added.
-  static const current = portrait;
+  static const current = AppOrientationPolicy._([
+    DeviceOrientation.portraitUp,
+    DeviceOrientation.landscapeLeft,
+    DeviceOrientation.landscapeRight,
+  ]);
 
   final List<DeviceOrientation> allowedOrientations;
 }

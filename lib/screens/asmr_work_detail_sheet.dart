@@ -41,9 +41,160 @@ class _AsmrWorkDetailSheet extends StatelessWidget {
       builder: (context, snapshot) {
         final detail = snapshot.data;
         final effectiveWork = detail?.work ?? work;
+        final isLandscape = MediaQuery.orientationOf(context) == Orientation.landscape;
+
+        Widget mainContent;
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          mainContent = Padding(
+            padding: const EdgeInsets.symmetric(vertical: 48),
+            child: Center(child: CircularProgressIndicator(color: asmrBlue)),
+          );
+        } else if (snapshot.hasError) {
+          mainContent = Padding(
+            padding: const EdgeInsets.symmetric(vertical: 24),
+            child: Text(
+              i18n.tr('asmr_detail_load_failed'),
+              style: TextStyle(color: cs.error),
+            ),
+          );
+        } else {
+          final heroAndButton = Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _AsmrDetailHero(work: effectiveWork),
+              const SizedBox(height: 20),
+              FilledButton.tonalIcon(
+                style: FilledButton.styleFrom(
+                  backgroundColor: isDark
+                      ? const Color(0xFF1E2E4A)
+                      : const Color(0xFFE6F0FA),
+                  foregroundColor: asmrBlue,
+                ),
+                onPressed: () async {
+                  unawaited(HapticFeedback.lightImpact());
+                  await controller.playWork(
+                    context.read<AudioProvider>(),
+                    effectiveWork,
+                  );
+                  if (context.mounted) {
+                    showAppSnackBar(
+                      context,
+                      i18n.tr('asmr_added_to_playlist', {
+                        'title': effectiveWork.title,
+                      }),
+                      tone: AppFeedbackTone.success,
+                      icon: Icons.add_circle_rounded,
+                      iconColor: asmrBlue,
+                    );
+                  }
+                },
+                icon: const Icon(Icons.add_circle_rounded),
+                label: Text(i18n.tr('asmr_add_to_playlist')),
+              ),
+            ],
+          );
+
+          final detailsSections = Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _AsmrDetailSection(
+                title: i18n.tr('asmr_detail_basic_info'),
+                children: [
+                  _CopyableValueRow(
+                    label: i18n.tr('audio_detail_rj_code'),
+                    value: effectiveWork.rjCode,
+                  ),
+                  _CopyableValueRow(
+                    label: i18n.tr('audio_detail_work_title'),
+                    value: effectiveWork.title,
+                  ),
+                  _CopyableValueRow(
+                    label: i18n.tr('asmr_circle_label'),
+                    value: effectiveWork.circleName,
+                  ),
+                  _CopyableChipWrapRow(
+                    label: i18n.tr('audio_detail_voice_actors'),
+                    values: effectiveWork.voiceActors,
+                  ),
+                  _CopyableChipWrapRow(
+                    label: i18n.tr('asmr_tags_label'),
+                    values: effectiveWork.tags,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              _AsmrDetailSection(
+                title: i18n.tr('asmr_detail_statistics'),
+                children: [
+                  _CopyableValueRow(
+                    label: i18n.tr('asmr_detail_release_date'),
+                    value: _formatDate(i18n, effectiveWork.releaseDate),
+                  ),
+                  _CopyableValueRow(
+                    label: i18n.tr('asmr_detail_duration'),
+                    value: _formatDuration(i18n, effectiveWork.duration),
+                  ),
+                  _CopyableValueRow(
+                    label: i18n.tr('asmr_detail_sales'),
+                    value: '${effectiveWork.dlCount}',
+                  ),
+                  _CopyableValueRow(
+                    label: i18n.tr('asmr_detail_rating'),
+                    value: effectiveWork.rating <= 0
+                        ? i18n.tr('asmr_detail_unrated')
+                        : effectiveWork.rating.toStringAsFixed(2),
+                  ),
+                  _CopyableValueRow(
+                    label: i18n.tr('asmr_detail_reviews'),
+                    value: '${effectiveWork.reviewCount}',
+                  ),
+                  _CopyableValueRow(
+                    label: i18n.tr('asmr_detail_age_rating'),
+                    value: detail?.ageCategory ?? '',
+                  ),
+                  _CopyableChipWrapRow(
+                    label: i18n.tr('asmr_detail_language_editions'),
+                    values:
+                        detail?.languageEditionLabels ?? const <String>[],
+                  ),
+                ],
+              ),
+              if ((detail?.description.trim().isNotEmpty ?? false)) ...[
+                const SizedBox(height: 14),
+                _AsmrDetailSection(
+                  title: i18n.tr('asmr_detail_description'),
+                  children: [
+                    _CopyableTextBlock(text: detail!.description.trim()),
+                  ],
+                ),
+              ],
+            ],
+          );
+
+          if (isLandscape) {
+            mainContent = Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(flex: 2, child: heroAndButton),
+                const SizedBox(width: 24),
+                Expanded(flex: 3, child: detailsSections),
+              ],
+            );
+          } else {
+            mainContent = Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                heroAndButton,
+                const SizedBox(height: 20),
+                detailsSections,
+              ],
+            );
+          }
+        }
+
         return ConstrainedBox(
           constraints: BoxConstraints(
-            maxHeight: MediaQuery.sizeOf(context).height * 0.82,
+            maxHeight: MediaQuery.sizeOf(context).height * (isLandscape ? 0.95 : 0.82),
           ),
           child: SingleChildScrollView(
             padding: const EdgeInsets.fromLTRB(24, 0, 24, 32),
@@ -76,123 +227,7 @@ class _AsmrWorkDetailSheet extends StatelessWidget {
                   ).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
                 ),
                 const SizedBox(height: 16),
-                if (snapshot.connectionState == ConnectionState.waiting)
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 48),
-                    child: Center(child: CircularProgressIndicator()),
-                  )
-                else if (snapshot.hasError)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 24),
-                    child: Text(
-                      i18n.tr('asmr_detail_load_failed'),
-                      style: TextStyle(color: cs.error),
-                    ),
-                  )
-                else ...[
-                  _AsmrDetailHero(work: effectiveWork),
-                  const SizedBox(height: 20),
-                  _AsmrDetailSection(
-                    title: i18n.tr('asmr_detail_basic_info'),
-                    children: [
-                      _CopyableValueRow(
-                        label: i18n.tr('audio_detail_rj_code'),
-                        value: effectiveWork.rjCode,
-                      ),
-                      _CopyableValueRow(
-                        label: i18n.tr('audio_detail_work_title'),
-                        value: effectiveWork.title,
-                      ),
-                      _CopyableValueRow(
-                        label: i18n.tr('asmr_circle_label'),
-                        value: effectiveWork.circleName,
-                      ),
-                      _CopyableChipWrapRow(
-                        label: i18n.tr('audio_detail_voice_actors'),
-                        values: effectiveWork.voiceActors,
-                      ),
-                      _CopyableChipWrapRow(
-                        label: i18n.tr('asmr_tags_label'),
-                        values: effectiveWork.tags,
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
-                  _AsmrDetailSection(
-                    title: i18n.tr('asmr_detail_statistics'),
-                    children: [
-                      _CopyableValueRow(
-                        label: i18n.tr('asmr_detail_release_date'),
-                        value: _formatDate(i18n, effectiveWork.releaseDate),
-                      ),
-                      _CopyableValueRow(
-                        label: i18n.tr('asmr_detail_duration'),
-                        value: _formatDuration(i18n, effectiveWork.duration),
-                      ),
-                      _CopyableValueRow(
-                        label: i18n.tr('asmr_detail_sales'),
-                        value: '${effectiveWork.dlCount}',
-                      ),
-                      _CopyableValueRow(
-                        label: i18n.tr('asmr_detail_rating'),
-                        value: effectiveWork.rating <= 0
-                            ? i18n.tr('asmr_detail_unrated')
-                            : effectiveWork.rating.toStringAsFixed(2),
-                      ),
-                      _CopyableValueRow(
-                        label: i18n.tr('asmr_detail_reviews'),
-                        value: '${effectiveWork.reviewCount}',
-                      ),
-                      _CopyableValueRow(
-                        label: i18n.tr('asmr_detail_age_rating'),
-                        value: detail?.ageCategory ?? '',
-                      ),
-                      _CopyableChipWrapRow(
-                        label: i18n.tr('asmr_detail_language_editions'),
-                        values:
-                            detail?.languageEditionLabels ?? const <String>[],
-                      ),
-                    ],
-                  ),
-                  if ((detail?.description.trim().isNotEmpty ?? false)) ...[
-                    const SizedBox(height: 14),
-                    _AsmrDetailSection(
-                      title: i18n.tr('asmr_detail_description'),
-                      children: [
-                        _CopyableTextBlock(text: detail!.description.trim()),
-                      ],
-                    ),
-                  ],
-                  const SizedBox(height: 18),
-                  FilledButton.tonalIcon(
-                    style: FilledButton.styleFrom(
-                      backgroundColor: isDark
-                          ? const Color(0xFF1E2E4A)
-                          : const Color(0xFFE6F0FA),
-                      foregroundColor: asmrBlue,
-                    ),
-                    onPressed: () async {
-                      unawaited(HapticFeedback.lightImpact());
-                      await controller.playWork(
-                        context.read<AudioProvider>(),
-                        effectiveWork,
-                      );
-                      if (context.mounted) {
-                        showAppSnackBar(
-                          context,
-                          i18n.tr('asmr_added_to_playlist', {
-                            'title': effectiveWork.title,
-                          }),
-                          tone: AppFeedbackTone.success,
-                          icon: Icons.add_circle_rounded,
-                          iconColor: asmrBlue,
-                        );
-                      }
-                    },
-                    icon: const Icon(Icons.add_circle_rounded),
-                    label: Text(i18n.tr('asmr_add_to_playlist')),
-                  ),
-                ],
+                mainContent,
               ],
             ),
           ),

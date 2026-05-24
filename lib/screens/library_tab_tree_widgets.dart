@@ -511,8 +511,12 @@ class _LibraryCoverThumbnail extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     context.select<AudioProvider, int>((value) => value.coverGeneration);
     final provider = context.read<AudioProvider>();
-    final coverPathFuture = provider.coverPathFutureForFolder(folderPath);
-    final isCoverLoading = provider.isCoverPathLoadingForFolder(folderPath);
+    final isScrolling = ScrollActivityGate.isScrollingOf(context);
+    final coverPathFuture = isScrolling
+        ? SynchronousFuture<String?>(
+            provider.resolvedCoverPathForFolder(folderPath),
+          )
+        : provider.coverPathFutureForFolder(folderPath);
     final cs = Theme.of(context).colorScheme;
 
     Widget fallback({bool hideIcon = false}) {
@@ -554,15 +558,12 @@ class _LibraryCoverThumbnail extends ConsumerWidget {
             loadingBuilder: (_) => Stack(
               fit: StackFit.expand,
               children: [
-                fallback(hideIcon: isCoverLoading),
-                if (isCoverLoading)
-                  Center(
-                    child: Icon(
-                      Icons.hourglass_top_rounded,
-                      size: 32,
-                      color: cs.onPrimaryContainer,
-                    ),
-                  ),
+                fallback(hideIcon: true),
+                CoverLoadingIndicator(
+                  size: 34,
+                  strokeWidth: 3,
+                  color: cs.primary,
+                ),
               ],
             ),
             imageBuilder: (context, coverPath) {
@@ -594,7 +595,10 @@ class _LibraryTrackCoverThumbnail extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     context.select<AudioProvider, int>((value) => value.coverGeneration);
     final provider = context.read<AudioProvider>();
-    final coverPathFuture = provider.coverPathFutureForTrack(track);
+    final isScrolling = ScrollActivityGate.isScrollingOf(context);
+    final coverPathFuture = isScrolling
+        ? SynchronousFuture<String?>(provider.resolvedCoverPathForTrack(track))
+        : provider.coverPathFutureForTrack(track);
     final cs = Theme.of(context).colorScheme;
 
     Widget fallback() {
@@ -629,7 +633,11 @@ class _LibraryTrackCoverThumbnail extends ConsumerWidget {
           future: coverPathFuture,
           duration: Duration.zero,
           fallbackBuilder: (_) => fallback(),
-          loadingBuilder: (_) => fallback(),
+          loadingBuilder: (_) => CoverLoadingIndicator(
+            size: 34,
+            strokeWidth: 3,
+            color: cs.primary,
+          ),
           imageBuilder: (context, coverPath) {
             final dpr = MediaQuery.devicePixelRatioOf(context);
             return Image(

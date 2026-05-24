@@ -29,6 +29,7 @@ import '../widgets/marquee_text.dart';
 import '../widgets/mobile_overlay_inset.dart';
 import '../widgets/reorder_auto_scroller.dart';
 import '../widgets/reorderable_hold_drag_listener.dart';
+import '../widgets/scroll_activity_gate.dart';
 import '../widgets/swipe_reveal_card.dart';
 import '../widgets/top_page_header.dart';
 import '../widgets/unified_popup_menu.dart';
@@ -48,10 +49,16 @@ part 'playlist_tab_volume_timer.dart';
 
 Future<String?> _coverFutureForTrack(
   AudioProvider provider,
-  MusicTrack? track,
-) {
+  MusicTrack? track, {
+  bool cachedOnly = false,
+}) {
   if (track == null || (track.isSingle && !track.isVideo)) {
     return Future<String?>.value();
+  }
+  if (cachedOnly) {
+    return SynchronousFuture<String?>(
+      provider.resolvedCoverPathForTrack(track),
+    );
   }
   return provider.coverPathFutureForTrack(track);
 }
@@ -187,161 +194,163 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
         .clamp(_headerHeight + 4, 720.0)
         .toDouble();
 
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        ContentBoundReorderArea(
-          headerHeight: _headerHeight,
-          bottomInset: listBottomInset,
-          topExpansion: 150,
-          bottomExpansion: 350,
-          child: !listState.isInitialized
-              ? const SizedBox.shrink(key: ValueKey('initializing'))
-              : Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    if (!listState.hasSessions)
-                      _SessionsEmptyState(
-                        key: const ValueKey('empty_state'),
-                        bottomInset: 100,
-                        topInset: _headerHeight + 64,
-                      ),
-                    if (listState.hasSessions)
-                      Theme(
-                        data: Theme.of(
-                          context,
-                        ).copyWith(canvasColor: Colors.transparent),
-                        child: ReorderAutoScroller(
-                          key: const ValueKey('session_list'),
-                          scrollController: _scrollController,
-                          isDragging: _isReordering,
-                          contentMarginTop: 150,
-                          contentMarginBottom: 350,
-                          child: ReorderableListView.builder(
+    return ScrollActivityGate(
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          ContentBoundReorderArea(
+            headerHeight: _headerHeight,
+            bottomInset: listBottomInset,
+            topExpansion: 150,
+            bottomExpansion: 350,
+            child: !listState.isInitialized
+                ? const SizedBox.shrink(key: ValueKey('initializing'))
+                : Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      if (!listState.hasSessions)
+                        _SessionsEmptyState(
+                          key: const ValueKey('empty_state'),
+                          bottomInset: 100,
+                          topInset: _headerHeight + 64,
+                        ),
+                      if (listState.hasSessions)
+                        Theme(
+                          data: Theme.of(
+                            context,
+                          ).copyWith(canvasColor: Colors.transparent),
+                          child: ReorderAutoScroller(
+                            key: const ValueKey('session_list'),
                             scrollController: _scrollController,
-                            padding: const EdgeInsets.fromLTRB(
-                              16,
-                              154,
-                              16,
-                              350,
-                            ),
-                            cacheExtent: listCacheExtent,
-                            clipBehavior: Clip.none,
-                            buildDefaultDragHandles: false,
-                            keyboardDismissBehavior:
-                                ScrollViewKeyboardDismissBehavior.onDrag,
-                            onReorder: (oldIndex, newIndex) {
-                              setState(() => _isReordering = false);
-                              provider.reorderSessions(oldIndex, newIndex);
-                            },
-                            onReorderStart: (_) {
-                              setState(() => _isReordering = true);
-                              unawaited(HapticFeedback.heavyImpact());
-                            },
-                            onReorderEnd: (_) {
-                              if (_isReordering) {
+                            isDragging: _isReordering,
+                            contentMarginTop: 150,
+                            contentMarginBottom: 350,
+                            child: ReorderableListView.builder(
+                              scrollController: _scrollController,
+                              padding: const EdgeInsets.fromLTRB(
+                                16,
+                                154,
+                                16,
+                                350,
+                              ),
+                              cacheExtent: listCacheExtent,
+                              clipBehavior: Clip.none,
+                              buildDefaultDragHandles: false,
+                              keyboardDismissBehavior:
+                                  ScrollViewKeyboardDismissBehavior.onDrag,
+                              onReorder: (oldIndex, newIndex) {
                                 setState(() => _isReordering = false);
-                              }
-                            },
-                            proxyDecorator: (child, index, animation) =>
-                                _buildReorderProxy(context, child, animation),
-                            itemCount: listState.sessions.length + 1,
-                            itemBuilder: (context, index) {
-                              if (index == listState.sessions.length) {
-                                return const SizedBox.shrink(
-                                  key: ValueKey('bottom_spacing'),
-                                );
-                              }
-                              final session = listState.sessions[index];
-                              return WaterfallFlowStagger(
-                                key: ValueKey('stagger_${session.id}'),
-                                index: index,
-                                child: ReorderableHoldDragStartListener(
-                                  key: ValueKey(session.id),
+                                provider.reorderSessions(oldIndex, newIndex);
+                              },
+                              onReorderStart: (_) {
+                                setState(() => _isReordering = true);
+                                unawaited(HapticFeedback.heavyImpact());
+                              },
+                              onReorderEnd: (_) {
+                                if (_isReordering) {
+                                  setState(() => _isReordering = false);
+                                }
+                              },
+                              proxyDecorator: (child, index, animation) =>
+                                  _buildReorderProxy(context, child, animation),
+                              itemCount: listState.sessions.length + 1,
+                              itemBuilder: (context, index) {
+                                if (index == listState.sessions.length) {
+                                  return const SizedBox.shrink(
+                                    key: ValueKey('bottom_spacing'),
+                                  );
+                                }
+                                final session = listState.sessions[index];
+                                return WaterfallFlowStagger(
+                                  key: ValueKey('stagger_${session.id}'),
                                   index: index,
-                                  child: RepaintBoundary(
-                                    child: _SessionListCard(
-                                      session: session,
-                                      provider: provider,
-                                      onOpen: () => _openSessionDetail(
-                                        context,
-                                        session.id,
+                                  child: ReorderableHoldDragStartListener(
+                                    key: ValueKey(session.id),
+                                    index: index,
+                                    child: RepaintBoundary(
+                                      child: _SessionListCard(
+                                        session: session,
+                                        provider: provider,
+                                        onOpen: () => _openSessionDetail(
+                                          context,
+                                          session.id,
+                                        ),
                                       ),
                                     ),
                                   ),
-                                ),
-                              );
-                            },
+                                );
+                              },
+                            ),
                           ),
                         ),
+                    ],
+                  ),
+          ),
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: TopPageHeader(
+              key: _headerKey,
+              icon: Icons.graphic_eq_rounded,
+              title: i18n.tr('playback_sessions'),
+              marqueeTitle: true,
+              isLoading: !listState.isInitialized,
+              subtitle: sessionSummary,
+              subtitleFontSize: 11,
+              fitSubtitleToWidth: true,
+              trailing: SizedBox(
+                width: 168,
+                height: 44,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    if (headerState.hasTimer)
+                      _TimerCountdownCapsule(
+                        remaining:
+                            headerState.timerRemaining ??
+                            headerState.timerDuration ??
+                            Duration.zero,
+                        active: headerState.timerActive,
+                        autoResumeAt: headerState.autoResumeAt,
+                        onTap: widget.onTimerTap,
+                      )
+                    else
+                      IconButton(
+                        onPressed: widget.onTimerTap,
+                        icon: const Icon(Icons.alarm_rounded),
+                        tooltip: i18n.tr('timer'),
                       ),
+                    IconButton(
+                      onPressed: !listState.hasSessions
+                          ? null
+                          : () {
+                              provider.pauseAllSessions();
+                              showAppSnackBar(
+                                context,
+                                i18n.tr('all_paused'),
+                                tone: AppFeedbackTone.warning,
+                                icon: Icons.pause_circle_outline_rounded,
+                              );
+                            },
+                      icon: const Icon(Icons.pause_circle_outline_rounded),
+                      tooltip: i18n.tr('pause_all_sessions'),
+                    ),
+                    IconButton(
+                      onPressed: !listState.hasSessions
+                          ? null
+                          : () => _confirmClearAll(context, provider),
+                      icon: const Icon(Icons.delete_sweep_rounded),
+                      tooltip: i18n.tr('clear_all_sessions'),
+                    ),
                   ],
                 ),
-        ),
-        Positioned(
-          top: 0,
-          left: 0,
-          right: 0,
-          child: TopPageHeader(
-            key: _headerKey,
-            icon: Icons.graphic_eq_rounded,
-            title: i18n.tr('playback_sessions'),
-            marqueeTitle: true,
-            isLoading: !listState.isInitialized,
-            subtitle: sessionSummary,
-            subtitleFontSize: 11,
-            fitSubtitleToWidth: true,
-            trailing: SizedBox(
-              width: 168,
-              height: 44,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  if (headerState.hasTimer)
-                    _TimerCountdownCapsule(
-                      remaining:
-                          headerState.timerRemaining ??
-                          headerState.timerDuration ??
-                          Duration.zero,
-                      active: headerState.timerActive,
-                      autoResumeAt: headerState.autoResumeAt,
-                      onTap: widget.onTimerTap,
-                    )
-                  else
-                    IconButton(
-                      onPressed: widget.onTimerTap,
-                      icon: const Icon(Icons.alarm_rounded),
-                      tooltip: i18n.tr('timer'),
-                    ),
-                  IconButton(
-                    onPressed: !listState.hasSessions
-                        ? null
-                        : () {
-                            provider.pauseAllSessions();
-                            showAppSnackBar(
-                              context,
-                              i18n.tr('all_paused'),
-                              tone: AppFeedbackTone.warning,
-                              icon: Icons.pause_circle_outline_rounded,
-                            );
-                          },
-                    icon: const Icon(Icons.pause_circle_outline_rounded),
-                    tooltip: i18n.tr('pause_all_sessions'),
-                  ),
-                  IconButton(
-                    onPressed: !listState.hasSessions
-                        ? null
-                        : () => _confirmClearAll(context, provider),
-                    icon: const Icon(Icons.delete_sweep_rounded),
-                    tooltip: i18n.tr('clear_all_sessions'),
-                  ),
-                ],
               ),
+              padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
             ),
-            padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 

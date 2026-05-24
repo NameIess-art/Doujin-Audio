@@ -60,8 +60,15 @@ class _AsyncCoverImageState extends State<AsyncCoverImage> {
 
   void _bindFuture(Future<String?> future) {
     final token = ++_token;
-    // Removed immediate _isResolved = false to prevent flickering.
-    // The previous state remains visible until the new future resolves.
+    if (mounted) {
+      setState(() {
+        _resolvedPath = null;
+        _isResolved = false;
+      });
+    } else {
+      _resolvedPath = null;
+      _isResolved = false;
+    }
     future
         .then((path) {
           if (!mounted || token != _token) return;
@@ -88,7 +95,7 @@ class _AsyncCoverImageState extends State<AsyncCoverImage> {
       final loadingBuilder = widget.loadingBuilder;
       content = loadingBuilder != null
           ? loadingBuilder(context)
-          : widget.fallbackBuilder(context);
+          : const CoverLoadingIndicator();
     } else {
       content = widget.fallbackBuilder(context);
     }
@@ -105,14 +112,38 @@ class _AsyncCoverImageState extends State<AsyncCoverImage> {
       switchInCurve: Curves.easeInOutSine,
       switchOutCurve: Curves.easeInOutSine,
       transitionBuilder: (child, animation) {
-        return FadeTransition(
-          opacity: animation,
-          child: child,
-        );
+        return FadeTransition(opacity: animation, child: child);
       },
       child: SizedBox.expand(
         key: ValueKey('$_resolvedPath$_isResolved'),
         child: content,
+      ),
+    );
+  }
+}
+
+class CoverLoadingIndicator extends StatelessWidget {
+  const CoverLoadingIndicator({
+    super.key,
+    this.size = 32,
+    this.strokeWidth = 2.8,
+    this.color,
+  });
+
+  final double size;
+  final double strokeWidth;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Center(
+      child: SizedBox.square(
+        dimension: size,
+        child: CircularProgressIndicator(
+          strokeWidth: strokeWidth,
+          color: color ?? cs.primary,
+        ),
       ),
     );
   }

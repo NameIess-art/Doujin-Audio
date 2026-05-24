@@ -63,8 +63,11 @@ class _SessionHeroArtwork extends StatelessWidget {
             ),
             child: Hero(
               tag: 'cover_$sessionId',
-              flightShuttleBuilder: (context, animation, direction, fromContext, toContext) => fromContext.widget,
-              createRectTween: (begin, end) => MaterialRectCenterArcTween(begin: begin, end: end),
+              flightShuttleBuilder:
+                  (context, animation, direction, fromContext, toContext) =>
+                      fromContext.widget,
+              createRectTween: (begin, end) =>
+                  MaterialRectCenterArcTween(begin: begin, end: end),
               child: Material(
                 type: MaterialType.transparency,
                 borderRadius: BorderRadius.circular(24),
@@ -72,69 +75,74 @@ class _SessionHeroArtwork extends StatelessWidget {
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
-                  if (track?.remoteCoverUrl?.trim().isNotEmpty == true)
-                    Image.network(
-                      track!.remoteCoverUrl!,
-                      fit: BoxFit.cover,
-                      cacheWidth: cacheW,
-                      errorBuilder: (_, _, _) => fallback(),
-                    )
-                  else
-                    AsyncCoverImage(
-                      duration: Duration.zero,
-                      future: coverPathFuture,
-                      fallbackBuilder: (_) => fallback(),
-                      loadingBuilder: (_) => Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          fallback(hideIcon: true),
-                          Center(
-                            child: SizedBox(
-                              width: 36,
-                              height: 36,
-                              child: CircularProgressIndicator(
+                    if (track?.remoteCoverUrl?.trim().isNotEmpty == true)
+                      Image.network(
+                        track!.remoteCoverUrl!,
+                        fit: BoxFit.cover,
+                        cacheWidth: cacheW,
+                        loadingBuilder: (context, child, loadingProgress) =>
+                            loadingProgress == null
+                            ? child
+                            : CoverLoadingIndicator(
+                                size: 36,
                                 strokeWidth: 3,
                                 color: cs.onPrimaryContainer.withValues(
-                                  alpha: 0.65,
+                                  alpha: 0.75,
                                 ),
                               ),
+                        errorBuilder: (_, _, _) => fallback(),
+                      )
+                    else
+                      AsyncCoverImage(
+                        duration: Duration.zero,
+                        future: coverPathFuture,
+                        fallbackBuilder: (_) => fallback(),
+                        loadingBuilder: (_) => Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            fallback(hideIcon: true),
+                            CoverLoadingIndicator(
+                              size: 36,
+                              strokeWidth: 3,
+                              color: cs.onPrimaryContainer.withValues(
+                                alpha: 0.75,
+                              ),
                             ),
-                          ),
-                        ],
-                      ),
-                      imageBuilder: (context, coverPath) {
-                        return RepaintBoundary(
-                          child: Image(
-                            image: resizeFileImageIfNeeded(
-                              path: coverPath,
-                              cacheWidth: cacheW,
-                            ),
-                            fit: BoxFit.cover,
-                            gaplessPlayback: true,
-                            errorBuilder: (_, _, _) => fallback(),
-                          ),
-                        );
-                      },
-                    ),
-                  Positioned.fill(
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [
-                            Colors.black.withValues(alpha: 0.1),
-                            Colors.transparent,
-                            Colors.black.withValues(alpha: 0.2),
                           ],
+                        ),
+                        imageBuilder: (context, coverPath) {
+                          return RepaintBoundary(
+                            child: Image(
+                              image: resizeFileImageIfNeeded(
+                                path: coverPath,
+                                cacheWidth: cacheW,
+                              ),
+                              fit: BoxFit.cover,
+                              gaplessPlayback: true,
+                              errorBuilder: (_, _, _) => fallback(),
+                            ),
+                          );
+                        },
+                      ),
+                    Positioned.fill(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              Colors.black.withValues(alpha: 0.1),
+                              Colors.transparent,
+                              Colors.black.withValues(alpha: 0.2),
+                            ],
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
-          ),
           ),
         );
       },
@@ -184,8 +192,11 @@ class _SessionCoverThumbnail extends StatelessWidget {
     return Hero(
       tag: 'cover_$sessionId',
       placeholderBuilder: (context, heroSize, child) => child,
-      flightShuttleBuilder: (context, animation, direction, fromContext, toContext) => fromContext.widget,
-      createRectTween: (begin, end) => MaterialRectCenterArcTween(begin: begin, end: end),
+      flightShuttleBuilder:
+          (context, animation, direction, fromContext, toContext) =>
+              fromContext.widget,
+      createRectTween: (begin, end) =>
+          MaterialRectCenterArcTween(begin: begin, end: end),
       child: SizedBox(
         width: 96,
         height: 72,
@@ -194,46 +205,46 @@ class _SessionCoverThumbnail extends StatelessWidget {
           borderRadius: BorderRadius.circular(14),
           clipBehavior: Clip.antiAlias,
           child: track?.remoteCoverUrl?.trim().isNotEmpty == true
-            ? Image.network(
-                track!.remoteCoverUrl!,
-                fit: BoxFit.cover,
-                cacheWidth: (96 * MediaQuery.devicePixelRatioOf(context)).round(),
-                errorBuilder: (_, _, _) => fallback(),
-              )
-            : AsyncCoverImage(
-                duration: Duration.zero,
-                future: coverPathFuture,
-                fallbackBuilder: (_) => fallback(),
-                loadingBuilder: (_) => Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    fallback(hideIcon: true),
-                    Center(
-                      child: SizedBox(
-                        width: 32,
-                        height: 32,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2.5,
-                          color: cs.onPrimaryContainer.withValues(alpha: 0.65),
+              ? Image.network(
+                  track!.remoteCoverUrl!,
+                  fit: BoxFit.cover,
+                  cacheWidth: (96 * MediaQuery.devicePixelRatioOf(context))
+                      .round(),
+                  loadingBuilder: (context, child, loadingProgress) =>
+                      loadingProgress == null
+                      ? child
+                      : CoverLoadingIndicator(
+                          color: cs.onPrimaryContainer.withValues(alpha: 0.75),
                         ),
+                  errorBuilder: (_, _, _) => fallback(),
+                )
+              : AsyncCoverImage(
+                  duration: Duration.zero,
+                  future: coverPathFuture,
+                  fallbackBuilder: (_) => fallback(),
+                  loadingBuilder: (_) => Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      fallback(hideIcon: true),
+                      CoverLoadingIndicator(
+                        color: cs.onPrimaryContainer.withValues(alpha: 0.75),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
+                  imageBuilder: (context, coverPath) {
+                    final dpr = MediaQuery.devicePixelRatioOf(context);
+                    return Image(
+                      image: resizeFileImageIfNeeded(
+                        path: coverPath,
+                        cacheWidth: (96 * dpr).round(),
+                      ),
+                      fit: BoxFit.cover,
+                      gaplessPlayback: true,
+                      errorBuilder: (_, _, _) => fallback(),
+                    );
+                  },
                 ),
-                imageBuilder: (context, coverPath) {
-                  final dpr = MediaQuery.devicePixelRatioOf(context);
-                  return Image(
-                    image: resizeFileImageIfNeeded(
-                      path: coverPath,
-                      cacheWidth: (96 * dpr).round(),
-                    ),
-                    fit: BoxFit.cover,
-                    gaplessPlayback: true,
-                    errorBuilder: (_, _, _) => fallback(),
-                  );
-                },
-              ),
-      ),
+        ),
       ),
     );
   }

@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 
+import 'scroll_activity_gate.dart';
+
 class MarqueeText extends StatefulWidget {
   final String text;
   final TextStyle? style;
@@ -24,6 +26,8 @@ class MarqueeText extends StatefulWidget {
 class _MarqueeTextState extends State<MarqueeText> {
   late ScrollController _scrollController;
   bool _isMounted = true;
+  bool _isScrolling = false;
+  bool _tickerEnabled = true;
   Timer? _delayTimer;
 
   @override
@@ -40,6 +44,10 @@ class _MarqueeTextState extends State<MarqueeText> {
     if (!_isMounted) return;
 
     while (_isMounted) {
+      if (_isScrolling || !_tickerEnabled) {
+        await _delay(const Duration(milliseconds: 160));
+        continue;
+      }
       if (!_scrollController.hasClients) {
         await _delay(const Duration(milliseconds: 100));
         continue;
@@ -53,7 +61,12 @@ class _MarqueeTextState extends State<MarqueeText> {
 
       // Initial pause at the start
       await _delay(widget.pauseDuration);
-      if (!_isMounted || !_scrollController.hasClients) break;
+      if (!_isMounted ||
+          _isScrolling ||
+          !_tickerEnabled ||
+          !_scrollController.hasClients) {
+        continue;
+      }
 
       // Scroll to end
       final duration = Duration(
@@ -110,6 +123,14 @@ class _MarqueeTextState extends State<MarqueeText> {
 
   @override
   Widget build(BuildContext context) {
+    _isScrolling = ScrollActivityGate.isScrollingOf(context);
+    _tickerEnabled = TickerMode.valuesOf(context).enabled;
+    if (_isScrolling && _scrollController.hasClients) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!_isMounted || !_scrollController.hasClients) return;
+        _scrollController.jumpTo(0);
+      });
+    }
     final cs = Theme.of(context).colorScheme;
     return ShaderMask(
       shaderCallback: (Rect bounds) {

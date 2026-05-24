@@ -61,7 +61,7 @@ extension AudioProviderPlaybackTimer on AudioProvider {
     _timerWaitingForPlayback = false;
     _timerRemaining = _timerDuration;
     _timerEndsAt = DateTime.now().add(_timerDuration!);
-    _countdownTimer = Timer.periodic(const Duration(milliseconds: 200), (_) {
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (generation != _timerGeneration) return;
       _tickCountdown();
     });

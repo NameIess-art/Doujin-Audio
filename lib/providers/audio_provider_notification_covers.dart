@@ -1,4 +1,4 @@
-﻿part of 'audio_provider.dart';
+part of 'audio_provider.dart';
 
 const List<String> _preferredCoverBasenames = <String>[
   'cover',
@@ -178,6 +178,10 @@ extension AudioProviderNotificationCovers on AudioProvider {
   }
 
   String? coverPathForTrack(MusicTrack? track, {String? trackPath}) {
+    return resolvedCoverPathForTrack(track, trackPath: trackPath);
+  }
+
+  String? resolvedCoverPathForTrack(MusicTrack? track, {String? trackPath}) {
     if (track?.manualCoverPath != null) {
       return track!.manualCoverPath;
     }
@@ -190,6 +194,16 @@ extension AudioProviderNotificationCovers on AudioProvider {
       return null;
     }
     return _resolvedNotificationCoverPaths[coverSearchKey];
+  }
+
+  String? resolvedCoverPathForFolder(String folderPath) {
+    final normalizedFolderPath = PathMatcher.normalize(folderPath);
+    if (_manualCoverByScopeCache.isEmpty) {
+      _rebuildManualCoverByScopeCache();
+    }
+    return _manualCoverByScopeCache[normalizedFolderPath] ??
+        _resolvedCoverPaths[normalizedFolderPath] ??
+        _resolvedNotificationCoverPaths[normalizedFolderPath];
   }
 
   Future<String?> coverPathFutureForTrack(MusicTrack? track) {
@@ -440,13 +454,8 @@ extension AudioProviderNotificationCovers on AudioProvider {
     }
 
     try {
-      // First pass: check common cover file names in the top-level directory
-      // (non-recursive) 鈥?this covers the vast majority of cases.
       final candidates = <String>[];
-      await for (final entity in directory.list(
-        recursive: true,
-        followLinks: false,
-      )) {
+      await for (final entity in directory.list(followLinks: false)) {
         if (entity is! File) continue;
         final extension = path.extension(entity.path).toLowerCase();
         if (!AudioProvider._supportedImageExtensions.contains(extension)) {
@@ -459,12 +468,8 @@ extension AudioProviderNotificationCovers on AudioProvider {
         _notificationCoverSearchMisses.remove(normalizedFolderPath);
         return candidates.first;
       }
-    } catch (_) {
-      // Recursive scan failed.
-    }
+    } catch (_) {}
 
-    // Recursive search is disabled here to avoid sibling/unrelated child cover pollution.
-    // The miss is cached so repeated lookups stay cheap.
     _notificationCoverSearchMisses.add(normalizedFolderPath);
     return null;
   }

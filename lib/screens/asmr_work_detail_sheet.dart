@@ -9,6 +9,7 @@ import '../models/asmr_models.dart';
 import '../providers/audio_provider.dart';
 import '../services/asmr_library_controller.dart';
 import '../widgets/app_feedback.dart';
+import '../widgets/async_cover_image.dart';
 
 Future<void> showAsmrWorkDetailSheet(BuildContext context, AsmrWork work) {
   unawaited(context.read<AsmrLibraryController>().recordHistory(work));
@@ -222,7 +223,16 @@ class _AsmrDetailHero extends StatelessWidget {
             child: Image.network(
               work.mainCoverUrl.isNotEmpty ? work.mainCoverUrl : work.coverUrl,
               fit: BoxFit.cover,
-              cacheWidth: (110 * MediaQuery.devicePixelRatioOf(context)).round(),
+              cacheWidth: (110 * MediaQuery.devicePixelRatioOf(context))
+                  .round(),
+              loadingBuilder: (context, child, loadingProgress) =>
+                  loadingProgress == null
+                  ? child
+                  : CoverLoadingIndicator(
+                      size: 36,
+                      strokeWidth: 3,
+                      color: asmrBlue,
+                    ),
               errorBuilder: (_, _, _) => DecoratedBox(
                 decoration: BoxDecoration(
                   gradient: LinearGradient(

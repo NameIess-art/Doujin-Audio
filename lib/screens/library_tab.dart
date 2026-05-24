@@ -32,6 +32,7 @@ import '../widgets/marquee_text.dart';
 import '../widgets/mobile_overlay_inset.dart';
 import '../widgets/reorder_auto_scroller.dart';
 import '../widgets/reorderable_hold_drag_listener.dart';
+import '../widgets/scroll_activity_gate.dart';
 import '../widgets/swipe_reveal_card.dart';
 import '../widgets/top_page_header.dart';
 import '../widgets/unified_popup_menu.dart';
@@ -416,241 +417,247 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
       );
     }
 
-    return NotificationListener<ScrollNotification>(
-      onNotification: (notification) {
-        if (notification is ScrollUpdateNotification &&
-            notification.dragDetails != null &&
-            notification.metrics.pixels < -68 &&
-            !_refreshTriggeredInCurrentScroll &&
-            canPullRefresh &&
-            !listState.isScanning &&
-            _effectiveSearchQuery.isEmpty) {
-          _refreshTriggeredInCurrentScroll = true;
-          unawaited(HapticFeedback.mediumImpact());
-          _refreshIndicatorKey.currentState?.show();
-        } else if (notification is ScrollEndNotification) {
-          _refreshTriggeredInCurrentScroll = false;
-        }
-        return false;
-      },
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          // Viewport restricted to content area so drag-to-reorder auto-scroll
-          // triggers at content edges rather than screen edges.
-          ContentBoundReorderArea(
-            headerHeight: _headerHeight,
-            bottomInset: listBottomInset,
-            topExpansion: 150,
-            bottomExpansion: 350,
-            child: !listState.isInitialized
-                ? const SizedBox.shrink()
-                : _categoryType == AudioLibraryCategoryType.all && tree.isEmpty
-                ? refreshableEmptyBody()
-                : _categoryType != AudioLibraryCategoryType.all
-                ? _buildCategoryBody(
-                    provider: provider,
-                    i18n: i18n,
-                    headerControlsFullHeight: headerControlsFullHeight,
-                    bottomInset: listBottomInset,
-                    cacheExtent: listCacheExtent,
-                    canPullRefresh: canPullRefresh,
-                    detailRevision: detailRevision,
-                  )
-                : _effectiveSearchQuery.isNotEmpty
-                ? ListView.builder(
-                    key: const ValueKey('search_results_list'),
-                    controller: _scrollController,
-                    padding: EdgeInsets.fromLTRB(
-                      16,
-                      4 + headerControlsFullHeight + 150,
-                      16,
-                      350,
-                    ),
-                    cacheExtent: listCacheExtent,
-                    clipBehavior: Clip.none,
-                    physics: const AlwaysScrollableScrollPhysics(
-                      parent: BouncingScrollPhysics(),
-                    ),
-                    keyboardDismissBehavior:
-                        ScrollViewKeyboardDismissBehavior.onDrag,
-                    itemCount: tree.length + 1,
-                    itemBuilder: buildLibraryItem,
-                  )
-                : GlassRefreshIndicator(
-                    key: _refreshIndicatorKey,
-                    color: Theme.of(context).colorScheme.primary,
-                    backgroundColor: Theme.of(context)
-                        .colorScheme
-                        .surfaceContainerHighest
-                        .withValues(alpha: 0.6),
-                    onRefresh: _runLibraryPullRefresh,
-                    edgeOffset: 150 + 4 + headerControlsFullHeight,
-                    displacement: 32,
-                    triggerMode: GlassRefreshIndicatorTriggerMode.anywhere,
-                    child: ReorderAutoScroller(
-                      scrollController: _scrollController,
-                      isDragging: _isReordering,
-                      contentMarginTop: 150 + 4 + headerControlsFullHeight,
-                      contentMarginBottom: 350,
-                      child: ReorderableListView.builder(
+    return ScrollActivityGate(
+      child: NotificationListener<ScrollNotification>(
+        onNotification: (notification) {
+          if (notification is ScrollUpdateNotification &&
+              notification.dragDetails != null &&
+              notification.metrics.pixels < -68 &&
+              !_refreshTriggeredInCurrentScroll &&
+              canPullRefresh &&
+              !listState.isScanning &&
+              _effectiveSearchQuery.isEmpty) {
+            _refreshTriggeredInCurrentScroll = true;
+            unawaited(HapticFeedback.mediumImpact());
+            _refreshIndicatorKey.currentState?.show();
+          } else if (notification is ScrollEndNotification) {
+            _refreshTriggeredInCurrentScroll = false;
+          }
+          return false;
+        },
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            // Viewport restricted to content area so drag-to-reorder auto-scroll
+            // triggers at content edges rather than screen edges.
+            ContentBoundReorderArea(
+              headerHeight: _headerHeight,
+              bottomInset: listBottomInset,
+              topExpansion: 150,
+              bottomExpansion: 350,
+              child: !listState.isInitialized
+                  ? const SizedBox.shrink()
+                  : _categoryType == AudioLibraryCategoryType.all &&
+                        tree.isEmpty
+                  ? refreshableEmptyBody()
+                  : _categoryType != AudioLibraryCategoryType.all
+                  ? _buildCategoryBody(
+                      provider: provider,
+                      i18n: i18n,
+                      headerControlsFullHeight: headerControlsFullHeight,
+                      bottomInset: listBottomInset,
+                      cacheExtent: listCacheExtent,
+                      canPullRefresh: canPullRefresh,
+                      detailRevision: detailRevision,
+                    )
+                  : _effectiveSearchQuery.isNotEmpty
+                  ? ListView.builder(
+                      key: const ValueKey('search_results_list'),
+                      controller: _scrollController,
+                      padding: EdgeInsets.fromLTRB(
+                        16,
+                        4 + headerControlsFullHeight + 150,
+                        16,
+                        350,
+                      ),
+                      cacheExtent: listCacheExtent,
+                      clipBehavior: Clip.none,
+                      physics: const AlwaysScrollableScrollPhysics(
+                        parent: BouncingScrollPhysics(),
+                      ),
+                      keyboardDismissBehavior:
+                          ScrollViewKeyboardDismissBehavior.onDrag,
+                      itemCount: tree.length + 1,
+                      itemBuilder: buildLibraryItem,
+                    )
+                  : GlassRefreshIndicator(
+                      key: _refreshIndicatorKey,
+                      color: Theme.of(context).colorScheme.primary,
+                      backgroundColor: Theme.of(context)
+                          .colorScheme
+                          .surfaceContainerHighest
+                          .withValues(alpha: 0.6),
+                      onRefresh: _runLibraryPullRefresh,
+                      edgeOffset: 150 + 4 + headerControlsFullHeight,
+                      displacement: 32,
+                      triggerMode: GlassRefreshIndicatorTriggerMode.anywhere,
+                      child: ReorderAutoScroller(
                         scrollController: _scrollController,
-                        // Clip.none allows items to be visible when scrolled into the
-                        // "empty" space above/below the restricted Positioned area.
-                        clipBehavior: Clip.none,
-                        padding: EdgeInsets.fromLTRB(
-                          16,
-                          4 + headerControlsFullHeight + 150,
-                          16,
-                          350,
-                        ),
-                        cacheExtent: listCacheExtent,
-                        physics: canPullRefresh
-                            ? const AlwaysScrollableScrollPhysics(
-                                parent: BouncingScrollPhysics(),
-                              )
-                            : null,
-                        buildDefaultDragHandles: false,
-                        keyboardDismissBehavior:
-                            ScrollViewKeyboardDismissBehavior.onDrag,
-                        onReorder: (oldIndex, newIndex) {
-                          setState(() => _isReordering = false);
-                          provider.reorderLibraryNodes(oldIndex, newIndex);
-                        },
-                        onReorderStart: (index) {
-                          setState(() => _isReordering = true);
-                          unawaited(HapticFeedback.heavyImpact());
-                        },
-                        onReorderEnd: (_) {
-                          if (_isReordering) {
+                        isDragging: _isReordering,
+                        contentMarginTop: 150 + 4 + headerControlsFullHeight,
+                        contentMarginBottom: 350,
+                        child: ReorderableListView.builder(
+                          scrollController: _scrollController,
+                          // Clip.none allows items to be visible when scrolled into the
+                          // "empty" space above/below the restricted Positioned area.
+                          clipBehavior: Clip.none,
+                          padding: EdgeInsets.fromLTRB(
+                            16,
+                            4 + headerControlsFullHeight + 150,
+                            16,
+                            350,
+                          ),
+                          cacheExtent: listCacheExtent,
+                          physics: canPullRefresh
+                              ? const AlwaysScrollableScrollPhysics(
+                                  parent: BouncingScrollPhysics(),
+                                )
+                              : null,
+                          buildDefaultDragHandles: false,
+                          keyboardDismissBehavior:
+                              ScrollViewKeyboardDismissBehavior.onDrag,
+                          onReorder: (oldIndex, newIndex) {
                             setState(() => _isReordering = false);
-                          }
-                        },
-                        proxyDecorator: (child, index, animation) =>
-                            _buildReorderProxy(context, child, animation),
-                        itemCount: tree.length + 1,
-                        itemBuilder: (context, index) {
-                          if (index == tree.length) {
-                            return const SizedBox.shrink(
-                              key: ValueKey('bottom_spacing'),
+                            provider.reorderLibraryNodes(oldIndex, newIndex);
+                          },
+                          onReorderStart: (index) {
+                            setState(() => _isReordering = true);
+                            unawaited(HapticFeedback.heavyImpact());
+                          },
+                          onReorderEnd: (_) {
+                            if (_isReordering) {
+                              setState(() => _isReordering = false);
+                            }
+                          },
+                          proxyDecorator: (child, index, animation) =>
+                              _buildReorderProxy(context, child, animation),
+                          itemCount: tree.length + 1,
+                          itemBuilder: (context, index) {
+                            if (index == tree.length) {
+                              return const SizedBox.shrink(
+                                key: ValueKey('bottom_spacing'),
+                              );
+                            }
+                            final node = tree[index];
+                            return ReorderableHoldDragStartListener(
+                              key: ValueKey(node.path),
+                              index: index,
+                              child: RepaintBoundary(
+                                child: _LibraryTreeItem(node: node),
+                              ),
                             );
-                          }
-                          final node = tree[index];
-                          return ReorderableHoldDragStartListener(
-                            key: ValueKey(node.path),
-                            index: index,
-                            child: RepaintBoundary(
-                              child: _LibraryTreeItem(node: node),
-                            ),
-                          );
-                        },
+                          },
+                        ),
                       ),
                     ),
-                  ),
-          ),
-
-          // Scan progress card
-          if (listState.isScanning && !listState.isBackgroundScanning)
-            Positioned(
-              top: headerContentHeight + 10,
-              left: 12,
-              right: 12,
-              child: _buildScanProgressCard(
-                i18n,
-                provider,
-                listState.scanCurrentFolder,
-                listState.scanFoundCount,
-                listState.scanDuplicateCount,
-                listState.scanFailureCount,
-              ),
             ),
 
-          // Header — frosted glass overlay on top of the scrolling list
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: TopPageHeader(
-              key: _headerKey,
-              icon: Icons.library_music_rounded,
-              title: i18n.tr('music_library'),
-              isLoading: !libraryHeaderState.isInitialized,
-              subtitle: i18n.tr('audio_count', {
-                'count': libraryHeaderState.audioCount,
-              }),
-              subtitleFontSize: 11,
-              fitSubtitleToWidth: true,
-              trailing: SizedBox(
-                width: listState.watchedLibraries.isEmpty ? 52 : 104,
-                height: 44,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    if (listState.watchedLibraries.isNotEmpty)
-                      UnifiedPopupMenuButton<String>(
-                        icon: Icons.edit_note_rounded,
-                        tooltip: i18n.tr('edit_library'),
-                        menuWidth: 280,
-                        entries: listState.watchedLibraries
-                            .map(
-                              (libraryPath) => UnifiedMenuEntry<String>.action(
-                                value: libraryPath,
-                                icon: Icons.folder_copy_rounded,
-                                label: _displaySourceName(libraryPath),
-                                trailingValue: libraryPath,
-                                trailing: Icon(
-                                  Icons.delete_outline_rounded,
-                                  size: 20,
-                                  color: Theme.of(context).colorScheme.error,
-                                ),
-                              ),
-                            )
-                            .toList(growable: false),
-                        onSelected: _openLibraryEditPage,
-                        onTrailingSelected: _confirmRemoveLibrary,
-                      ),
-                    UnifiedPopupMenuButton<int>(
-                      icon: Icons.add_circle_outline_rounded,
-                      tooltip: i18n.tr('more_actions'),
-                      entries: [
-                        UnifiedMenuEntry<int>.action(
-                          value: 0,
-                          icon: Icons.create_new_folder_rounded,
-                          label: i18n.tr('import_folder'),
-                        ),
-                        UnifiedMenuEntry<int>.action(
-                          value: 2,
-                          icon: Icons.upload_file_rounded,
-                          label: i18n.tr('import_file'),
-                        ),
-                        UnifiedMenuEntry<int>.action(
-                          value: 1,
-                          icon: Icons.library_add_rounded,
-                          label: i18n.tr('choose_library'),
-                        ),
-                        const UnifiedMenuEntry<int>.divider(),
-                        UnifiedMenuEntry<int>.action(
-                          value: 3,
-                          icon: Icons.video_library_rounded,
-                          label: i18n.tr('video_to_audio'),
-                        ),
-                      ],
-                      onSelected: (value) {
-                        if (value == 0) _addFolder();
-                        if (value == 1) _addLibrary();
-                        if (value == 2) _addFiles();
-                        if (value == 3) _openVideoConverterPage();
-                      },
-                    ),
-                  ],
+            // Scan progress card
+            if (listState.isScanning && !listState.isBackgroundScanning)
+              Positioned(
+                top: headerContentHeight + 10,
+                left: 12,
+                right: 12,
+                child: _buildScanProgressCard(
+                  i18n,
+                  provider,
+                  listState.scanCurrentFolder,
+                  listState.scanFoundCount,
+                  listState.scanDuplicateCount,
+                  listState.scanFailureCount,
                 ),
               ),
-              bottomSpacing: 4,
-              padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
-              additionalChild: dynamicSearchBar(),
+
+            // Header — frosted glass overlay on top of the scrolling list
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: TopPageHeader(
+                key: _headerKey,
+                icon: Icons.library_music_rounded,
+                title: i18n.tr('music_library'),
+                isLoading: !libraryHeaderState.isInitialized,
+                subtitle: i18n.tr('audio_count', {
+                  'count': libraryHeaderState.audioCount,
+                }),
+                subtitleFontSize: 11,
+                fitSubtitleToWidth: true,
+                trailing: SizedBox(
+                  width: listState.watchedLibraries.isEmpty ? 52 : 104,
+                  height: 44,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      if (listState.watchedLibraries.isNotEmpty)
+                        UnifiedPopupMenuButton<String>(
+                          icon: Icons.edit_note_rounded,
+                          tooltip: i18n.tr('edit_library'),
+                          menuWidth: 280,
+                          entries: listState.watchedLibraries
+                              .map(
+                                (libraryPath) =>
+                                    UnifiedMenuEntry<String>.action(
+                                      value: libraryPath,
+                                      icon: Icons.folder_copy_rounded,
+                                      label: _displaySourceName(libraryPath),
+                                      trailingValue: libraryPath,
+                                      trailing: Icon(
+                                        Icons.delete_outline_rounded,
+                                        size: 20,
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.error,
+                                      ),
+                                    ),
+                              )
+                              .toList(growable: false),
+                          onSelected: _openLibraryEditPage,
+                          onTrailingSelected: _confirmRemoveLibrary,
+                        ),
+                      UnifiedPopupMenuButton<int>(
+                        icon: Icons.add_circle_outline_rounded,
+                        tooltip: i18n.tr('more_actions'),
+                        entries: [
+                          UnifiedMenuEntry<int>.action(
+                            value: 0,
+                            icon: Icons.create_new_folder_rounded,
+                            label: i18n.tr('import_folder'),
+                          ),
+                          UnifiedMenuEntry<int>.action(
+                            value: 2,
+                            icon: Icons.upload_file_rounded,
+                            label: i18n.tr('import_file'),
+                          ),
+                          UnifiedMenuEntry<int>.action(
+                            value: 1,
+                            icon: Icons.library_add_rounded,
+                            label: i18n.tr('choose_library'),
+                          ),
+                          const UnifiedMenuEntry<int>.divider(),
+                          UnifiedMenuEntry<int>.action(
+                            value: 3,
+                            icon: Icons.video_library_rounded,
+                            label: i18n.tr('video_to_audio'),
+                          ),
+                        ],
+                        onSelected: (value) {
+                          if (value == 0) _addFolder();
+                          if (value == 1) _addLibrary();
+                          if (value == 2) _addFiles();
+                          if (value == 3) _openVideoConverterPage();
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+                bottomSpacing: 4,
+                padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+                additionalChild: dynamicSearchBar(),
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

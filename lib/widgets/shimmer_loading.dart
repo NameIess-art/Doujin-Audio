@@ -1,11 +1,9 @@
 import 'package:flutter/material.dart';
 
+import 'scroll_activity_gate.dart';
+
 class ShimmerLoader extends StatefulWidget {
-  const ShimmerLoader({
-    super.key,
-    required this.child,
-    this.enabled = true,
-  });
+  const ShimmerLoader({super.key, required this.child, this.enabled = true});
 
   final Widget child;
   final bool enabled;
@@ -47,18 +45,28 @@ class _ShimmerLoaderState extends State<ShimmerLoader>
 
   @override
   Widget build(BuildContext context) {
-    if (!widget.enabled) {
+    final shouldAnimate =
+        widget.enabled &&
+        TickerMode.valuesOf(context).enabled &&
+        !ScrollActivityGate.isScrollingOf(context);
+    if (shouldAnimate && !_controller.isAnimating) {
+      _controller.repeat();
+    } else if (!shouldAnimate && _controller.isAnimating) {
+      _controller.stop();
+    }
+
+    if (!shouldAnimate) {
       return widget.child;
     }
-    
+
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    
-    final baseColor = isDark 
-        ? cs.surfaceContainerHigh 
+
+    final baseColor = isDark
+        ? cs.surfaceContainerHigh
         : cs.surfaceContainerHighest;
-    final highlightColor = isDark 
-        ? cs.surfaceContainerHighest 
+    final highlightColor = isDark
+        ? cs.surfaceContainerHighest
         : cs.surfaceContainer;
 
     return AnimatedBuilder(
@@ -119,7 +127,7 @@ class ShimmerContainer extends StatelessWidget {
       width: width,
       height: height,
       decoration: BoxDecoration(
-        color: Colors.white, // acts as a mask, the actual color is drawn by ShaderMask
+        color: Colors.white,
         borderRadius: BorderRadius.circular(borderRadius),
       ),
     );

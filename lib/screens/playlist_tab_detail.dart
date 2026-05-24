@@ -665,9 +665,23 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                   ? Image.network(
                       track!.remoteCoverUrl!.trim(),
                       fit: BoxFit.cover,
-                      cacheWidth: (MediaQuery.sizeOf(context).width * MediaQuery.devicePixelRatioOf(context)).round(),
+                      cacheWidth:
+                          (MediaQuery.sizeOf(context).width *
+                                  MediaQuery.devicePixelRatioOf(context))
+                              .round(),
                       color: cs.surface.withValues(alpha: 0.45),
                       colorBlendMode: BlendMode.darken,
+                      loadingBuilder: (context, child, loadingProgress) =>
+                          loadingProgress == null
+                          ? child
+                          : ColoredBox(
+                              color: cs.surfaceDim,
+                              child: CoverLoadingIndicator(
+                                size: 36,
+                                strokeWidth: 3,
+                                color: cs.primary,
+                              ),
+                            ),
                       errorBuilder: (_, _, _) =>
                           ColoredBox(color: cs.surfaceDim),
                     )

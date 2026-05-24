@@ -115,6 +115,7 @@ class _SessionListCardState extends State<_SessionListCard>
   Future<String?>? _coverPathFuture;
   String? _lastTrackPath;
   int _lastCoverGeneration = -1;
+  bool _lastCoverWasCachedOnly = true;
   late final AnimationController _playPauseController;
   bool _wasPlaying = false;
 
@@ -127,7 +128,7 @@ class _SessionListCardState extends State<_SessionListCard>
       duration: const Duration(milliseconds: 300),
       value: _wasPlaying ? 1.0 : 0.0,
     );
-    _updateFutureIfNeeded();
+    _updateFutureIfNeeded(cachedOnly: true);
   }
 
   @override
@@ -139,17 +140,24 @@ class _SessionListCardState extends State<_SessionListCard>
   @override
   void didUpdateWidget(covariant _SessionListCard oldWidget) {
     super.didUpdateWidget(oldWidget);
-    _updateFutureIfNeeded();
+    _updateFutureIfNeeded(cachedOnly: true);
   }
 
-  void _updateFutureIfNeeded() {
+  void _updateFutureIfNeeded({required bool cachedOnly}) {
     final trackPath = widget.session.currentTrackPath;
     final currentGen = widget.provider.coverGeneration;
-    if (_lastTrackPath != trackPath || _lastCoverGeneration != currentGen) {
+    if (_lastTrackPath != trackPath ||
+        _lastCoverGeneration != currentGen ||
+        _lastCoverWasCachedOnly && !cachedOnly) {
       _lastTrackPath = trackPath;
       _lastCoverGeneration = currentGen;
+      _lastCoverWasCachedOnly = cachedOnly;
       final track = widget.provider.trackByPath(trackPath);
-      _coverPathFuture = _coverFutureForTrack(widget.provider, track);
+      _coverPathFuture = _coverFutureForTrack(
+        widget.provider,
+        track,
+        cachedOnly: cachedOnly,
+      );
     }
   }
 
@@ -185,6 +193,7 @@ class _SessionListCardState extends State<_SessionListCard>
     final coverGeneration = context.select<AudioProvider, int>(
       (value) => value.coverGeneration,
     );
+    final isScrolling = ScrollActivityGate.isScrollingOf(context);
     final sessionView = context
         .select<
           AudioProvider,
@@ -210,7 +219,9 @@ class _SessionListCardState extends State<_SessionListCard>
         });
     if (_lastCoverGeneration != coverGeneration) {
       _lastCoverGeneration = coverGeneration;
-      _updateFutureIfNeeded();
+      _updateFutureIfNeeded(cachedOnly: isScrolling);
+    } else if (_lastCoverWasCachedOnly && !isScrolling) {
+      _updateFutureIfNeeded(cachedOnly: false);
     }
     final track = sessionView.track;
     final displayName =

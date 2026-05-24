@@ -564,14 +564,23 @@ class _ActiveSessionCover extends StatelessWidget {
                   fit: BoxFit.cover,
                   cacheWidth: (58 * MediaQuery.devicePixelRatioOf(context))
                       .round(),
+                  loadingBuilder: (context, child, loadingProgress) =>
+                      loadingProgress == null
+                      ? child
+                      : CoverLoadingIndicator(
+                          size: 28,
+                          strokeWidth: 2.6,
+                          color: cs.primary,
+                        ),
                   errorBuilder: (_, _, _) => fallback(),
                 )
               : AsyncCoverImage(
                   future: coverPathFuture,
                   fallbackBuilder: (_) => fallback(),
-                  loadingBuilder: (_) => PulsingPlaceholder(
-                    borderRadius: BorderRadius.circular(14),
-                    child: fallback(),
+                  loadingBuilder: (_) => CoverLoadingIndicator(
+                    size: 28,
+                    strokeWidth: 2.6,
+                    color: cs.primary,
                   ),
                   imageBuilder: (context, coverPath) {
                     final dpr = MediaQuery.devicePixelRatioOf(context);

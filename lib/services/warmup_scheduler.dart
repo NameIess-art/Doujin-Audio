@@ -26,6 +26,7 @@ class WarmupScheduler {
     required String key,
     required int priority,
     required int generation,
+    String? group,
     required Future<void> Function() task,
   }) {
     if (generation != _currentGeneration) return false;
@@ -35,6 +36,7 @@ class WarmupScheduler {
       key: key,
       priority: priority,
       generation: generation,
+      group: group,
       task: task,
     );
 
@@ -61,6 +63,14 @@ class WarmupScheduler {
   void clear() {
     _pending.clear();
     _queuedKeys.clear();
+  }
+
+  void clearGroup(String group) {
+    _pending.removeWhere((task) {
+      if (task.group != group) return false;
+      _queuedKeys.remove(task.key);
+      return true;
+    });
   }
 
   void _dropStalePending() {
@@ -102,11 +112,13 @@ class _QueuedWarmupTask {
     required this.key,
     required this.priority,
     required this.generation,
+    this.group,
     required this.task,
   });
 
   final String key;
   final int priority;
   final int generation;
+  final String? group;
   final Future<void> Function() task;
 }

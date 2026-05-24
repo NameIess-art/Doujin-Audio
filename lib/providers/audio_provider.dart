@@ -147,6 +147,8 @@ class AudioProvider with ChangeNotifier {
   int _audioLibraryCategoryFutureStructureRevision = -1;
   int _audioLibraryCategoryFutureDetailRevision = -1;
   int _audioDetailRevision = 0;
+  bool _notifyListenersQueued = false;
+  bool _isDisposed = false;
 
   void requestCarouselSnapTo(String sessionId) {
     _carouselSnapNotifier.value = sessionId;
@@ -593,6 +595,7 @@ class AudioProvider with ChangeNotifier {
 
   @override
   void dispose() {
+    _isDisposed = true;
     _countdownTimer?.cancel();
     _autoResumeTimer?.cancel();
     _saveSessionStateTimer?.cancel();
@@ -633,42 +636,52 @@ class AudioProvider with ChangeNotifier {
 
   void _notifyListeners() {
     _syncAllStateSlices();
-    notifyListeners();
+    _scheduleNotifyListeners();
   }
 
   void _notifyLibraryChanged() {
     _syncLibraryStateSlice();
-    notifyListeners();
+    _scheduleNotifyListeners();
   }
 
   void _notifyLibraryAndPlaybackChanged() {
     _syncLibraryStateSlice();
     _syncPlaybackStateSlice();
     _syncNotificationStateSlice();
-    notifyListeners();
+    _scheduleNotifyListeners();
   }
 
   void _notifyPlaybackChanged() {
     _syncPlaybackStateSlice();
     _syncNotificationStateSlice();
-    notifyListeners();
+    _scheduleNotifyListeners();
   }
 
   void _notifySettingsChanged() {
     _syncSettingsStateSlice();
     _syncPlaybackStateSlice();
     _syncNotificationStateSlice();
-    notifyListeners();
+    _scheduleNotifyListeners();
   }
 
   void _notifyNotificationChanged() {
     _syncNotificationStateSlice();
     _syncPlaybackStateSlice();
-    notifyListeners();
+    _scheduleNotifyListeners();
   }
 
   void _notifyPresentationListeners() {
-    notifyListeners();
+    _scheduleNotifyListeners();
+  }
+
+  void _scheduleNotifyListeners() {
+    if (_isDisposed || _notifyListenersQueued) return;
+    _notifyListenersQueued = true;
+    scheduleMicrotask(() {
+      _notifyListenersQueued = false;
+      if (_isDisposed) return;
+      notifyListeners();
+    });
   }
 
   Stream<LibraryState> get libraryStateStream => _libraryService.slice.stream;

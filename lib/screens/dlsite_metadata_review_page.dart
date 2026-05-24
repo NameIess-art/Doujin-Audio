@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../i18n/app_language_provider.dart';
 import '../providers/audio_provider.dart';
 import '../widgets/app_feedback.dart';
+import '../widgets/async_cover_image.dart';
 
 class DlsiteMetadataReviewPage extends StatefulWidget {
   const DlsiteMetadataReviewPage({
@@ -194,7 +195,17 @@ class _DlsiteMetadataReviewPageState extends State<DlsiteMetadataReviewPage> {
                         child: Image.network(
                           coverUrl,
                           fit: BoxFit.cover,
-                          cacheWidth: (400 * MediaQuery.devicePixelRatioOf(context)).round(),
+                          cacheWidth:
+                              (400 * MediaQuery.devicePixelRatioOf(context))
+                                  .round(),
+                          loadingBuilder: (context, child, loadingProgress) =>
+                              loadingProgress == null
+                              ? child
+                              : CoverLoadingIndicator(
+                                  size: 40,
+                                  strokeWidth: 3,
+                                  color: cs.primary,
+                                ),
                           errorBuilder: (_, _, _) => ColoredBox(
                             color: cs.surfaceContainerHighest,
                             child: Icon(

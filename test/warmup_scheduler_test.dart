@@ -100,4 +100,51 @@ void main() {
     expect(staleRan, isFalse);
     expect(scheduler.pendingCount, 0);
   });
+
+  test('clears queued work by group without touching active work', () async {
+    final scheduler = WarmupScheduler(maxConcurrent: 1, maxQueueSize: 4);
+    scheduler.beginGeneration(5);
+
+    final releaseActive = Completer<void>();
+    var droppedRan = false;
+    var keptRan = false;
+
+    scheduler.schedule(
+      key: 'active',
+      priority: 0,
+      generation: 5,
+      group: 'session_cover',
+      task: () async {
+        await releaseActive.future;
+      },
+    );
+    scheduler.schedule(
+      key: 'drop',
+      priority: 1,
+      generation: 5,
+      group: 'library_cover',
+      task: () async {
+        droppedRan = true;
+      },
+    );
+    scheduler.schedule(
+      key: 'keep',
+      priority: 2,
+      generation: 5,
+      group: 'subtitle',
+      task: () async {
+        keptRan = true;
+      },
+    );
+
+    scheduler.clearGroup('library_cover');
+    expect(scheduler.pendingCount, 1);
+
+    releaseActive.complete();
+    await Future<void>.delayed(Duration.zero);
+    await Future<void>.delayed(Duration.zero);
+
+    expect(droppedRan, isFalse);
+    expect(keptRan, isTrue);
+  });
 }

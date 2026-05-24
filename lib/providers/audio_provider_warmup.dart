@@ -43,6 +43,7 @@ extension AudioProviderWarmup on AudioProvider {
         key: key,
         priority: 30 + index,
         generation: generation,
+        group: 'library_cover',
         task: () async {
           await coverPathFutureForFolder(folder.path);
         },
@@ -81,6 +82,7 @@ extension AudioProviderWarmup on AudioProvider {
         key: 'track_cover:$trackPath:$coverGeneration',
         priority: index == focusIndex ? 0 : 8 + index,
         generation: generation,
+        group: 'session_cover',
         task: () async {
           await coverPathFutureForTrack(track);
         },
@@ -89,6 +91,7 @@ extension AudioProviderWarmup on AudioProvider {
         key: 'subtitle:$trackPath',
         priority: index == focusIndex ? 1 : 12 + index,
         generation: generation,
+        group: 'subtitle',
         task: () async {
           await subtitleTrackForPath(trackPath);
         },
@@ -105,6 +108,7 @@ extension AudioProviderWarmup on AudioProvider {
       key: 'track_cover:$trackPath:$coverGeneration',
       priority: 0,
       generation: generation,
+      group: 'session_cover',
       task: () async {
         await coverPathFutureForTrack(track);
       },
@@ -113,6 +117,7 @@ extension AudioProviderWarmup on AudioProvider {
       key: 'subtitle:$trackPath',
       priority: 1,
       generation: generation,
+      group: 'subtitle',
       task: () async {
         await subtitleTrackForPath(trackPath);
       },

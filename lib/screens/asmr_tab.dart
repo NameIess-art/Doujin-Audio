@@ -16,6 +16,7 @@ import '../widgets/app_feedback.dart';
 import '../widgets/glass_refresh_indicator.dart';
 import '../widgets/library_like_cards.dart';
 import '../widgets/mobile_overlay_inset.dart';
+import '../widgets/scroll_activity_gate.dart';
 import '../widgets/shimmer_loading.dart';
 import '../widgets/swipe_reveal_card.dart';
 import '../widgets/top_page_header.dart';
@@ -556,7 +557,12 @@ class _AsmrTabState extends State<AsmrTab>
             : ShimmerLoader(
                 child: ListView(
                   physics: const NeverScrollableScrollPhysics(),
-                  padding: EdgeInsets.fromLTRB(16, headerContentHeight + 10, 16, 0),
+                  padding: EdgeInsets.fromLTRB(
+                    16,
+                    headerContentHeight + 10,
+                    16,
+                    0,
+                  ),
                   children: [
                     for (int i = 0; i < 5; i++)
                       const Padding(
@@ -826,116 +832,122 @@ class _AsmrCategoryListState extends State<_AsmrCategoryList>
       ),
     );
     final works = state.works;
-    _primeVisibleCovers(works);
+    final isScrolling = ScrollActivityGate.isScrollingOf(context);
+    if (!isScrolling) {
+      _primeVisibleCovers(works);
+    }
     final i18n = context.watch<AppLanguageProvider>();
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
-    return NotificationListener<ScrollNotification>(
-      onNotification: (notification) {
-        if (notification is ScrollUpdateNotification &&
-            notification.dragDetails != null &&
-            notification.metrics.pixels < -68 &&
-            !_refreshTriggeredInCurrentScroll) {
-          _refreshTriggeredInCurrentScroll = true;
-          unawaited(HapticFeedback.mediumImpact());
-          _refreshIndicatorKey.currentState?.show();
-        } else if (notification is ScrollEndNotification) {
-          _refreshTriggeredInCurrentScroll = false;
-        }
-        return false;
-      },
-      child: GlassRefreshIndicator(
-        key: _refreshIndicatorKey,
-        color: asmrBlue,
-        backgroundColor: Theme.of(
-          context,
-        ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
-        edgeOffset: widget.topInset,
-        displacement: 32,
-        triggerMode: GlassRefreshIndicatorTriggerMode.anywhere,
-        onRefresh: () async {
-          unawaited(HapticFeedback.mediumImpact());
-          await widget.onRefresh();
-          await Future<void>.delayed(const Duration(milliseconds: 300));
+    return ScrollActivityGate(
+      child: NotificationListener<ScrollNotification>(
+        onNotification: (notification) {
+          if (notification is ScrollUpdateNotification &&
+              notification.dragDetails != null &&
+              notification.metrics.pixels < -68 &&
+              !_refreshTriggeredInCurrentScroll) {
+            _refreshTriggeredInCurrentScroll = true;
+            unawaited(HapticFeedback.mediumImpact());
+            _refreshIndicatorKey.currentState?.show();
+          } else if (notification is ScrollEndNotification) {
+            _refreshTriggeredInCurrentScroll = false;
+          }
+          return false;
         },
-        child: ListView.builder(
-          controller: widget.scrollController,
-          cacheExtent: 520,
-          physics: const AlwaysScrollableScrollPhysics(
-            parent: BouncingScrollPhysics(),
-          ),
-          padding: EdgeInsets.fromLTRB(
-            16,
-            widget.topInset + 6,
-            16,
-            widget.bottomInset + 24,
-          ),
-          itemCount: works.isEmpty
-              ? 1
-              : works.length + ((state.isLoadingMore || state.hasMore) ? 1 : 0),
-          itemBuilder: (context, index) {
-            if (works.isEmpty) {
-              if (state.isLoading) {
-                return ShimmerLoader(
-                  child: Column(
-                    children: [
-                      for (int i = 0; i < 5; i++)
-                        const Padding(
-                          padding: EdgeInsets.only(bottom: 8),
-                          child: _AsmrWorkSkeletonCard(),
-                        ),
-                    ],
+        child: GlassRefreshIndicator(
+          key: _refreshIndicatorKey,
+          color: asmrBlue,
+          backgroundColor: Theme.of(
+            context,
+          ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
+          edgeOffset: widget.topInset,
+          displacement: 32,
+          triggerMode: GlassRefreshIndicatorTriggerMode.anywhere,
+          onRefresh: () async {
+            unawaited(HapticFeedback.mediumImpact());
+            await widget.onRefresh();
+            await Future<void>.delayed(const Duration(milliseconds: 300));
+          },
+          child: ListView.builder(
+            controller: widget.scrollController,
+            cacheExtent: 520,
+            physics: const AlwaysScrollableScrollPhysics(
+              parent: BouncingScrollPhysics(),
+            ),
+            padding: EdgeInsets.fromLTRB(
+              16,
+              widget.topInset + 6,
+              16,
+              widget.bottomInset + 24,
+            ),
+            itemCount: works.isEmpty
+                ? 1
+                : works.length +
+                      ((state.isLoadingMore || state.hasMore) ? 1 : 0),
+            itemBuilder: (context, index) {
+              if (works.isEmpty) {
+                if (state.isLoading) {
+                  return ShimmerLoader(
+                    child: Column(
+                      children: [
+                        for (int i = 0; i < 5; i++)
+                          const Padding(
+                            padding: EdgeInsets.only(bottom: 8),
+                            child: _AsmrWorkSkeletonCard(),
+                          ),
+                      ],
+                    ),
+                  );
+                }
+                return Padding(
+                  padding: const EdgeInsets.only(top: 80),
+                  child: Center(
+                    child: Text(
+                      state.lastError == null
+                          ? i18n.tr('asmr_empty_category')
+                          : i18n.tr('asmr_refresh_failed'),
+                      style: theme.textTheme.bodyLarge?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                );
+              }
+              if (index >= works.length) {
+                return Padding(
+                  padding: const EdgeInsets.only(top: 4, bottom: 4),
+                  child: Center(
+                    child: state.isLoadingMore
+                        ? SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2.2,
+                              color: asmrBlue,
+                            ),
+                          )
+                        : Text(
+                            i18n.tr('asmr_load_more_hint'),
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
                   ),
                 );
               }
               return Padding(
-                padding: const EdgeInsets.only(top: 80),
-                child: Center(
-                  child: Text(
-                    state.lastError == null
-                        ? i18n.tr('asmr_empty_category')
-                        : i18n.tr('asmr_refresh_failed'),
-                    style: theme.textTheme.bodyLarge?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
+                padding: const EdgeInsets.only(bottom: 8),
+                child: RepaintBoundary(
+                  child: _AsmrWorkTreeCard(
+                    work: works[index],
+                    searchQuery: widget.searchQuery,
                   ),
                 ),
               );
-            }
-            if (index >= works.length) {
-              return Padding(
-                padding: const EdgeInsets.only(top: 4, bottom: 4),
-                child: Center(
-                  child: state.isLoadingMore
-                      ? SizedBox(
-                          width: 22,
-                          height: 22,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2.2,
-                            color: asmrBlue,
-                          ),
-                        )
-                      : Text(
-                          i18n.tr('asmr_load_more_hint'),
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                ),
-              );
-            }
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: RepaintBoundary(
-                child: _AsmrWorkTreeCard(
-                  work: works[index],
-                  searchQuery: widget.searchQuery,
-                ),
-              ),
-            );
-          },
+            },
+          ),
         ),
       ),
     );
@@ -2083,7 +2095,7 @@ class _AsmrWorkSkeletonCard extends StatelessWidget {
       side: BorderSide(color: cs.outlineVariant),
       borderRadius: BorderRadius.circular(14),
     );
-    
+
     return Card(
       margin: EdgeInsets.zero,
       shape: cardShape,
@@ -2108,7 +2120,11 @@ class _AsmrWorkSkeletonCard extends StatelessWidget {
                     SizedBox(height: 12),
                     ShimmerContainer(width: 110, height: 14, borderRadius: 4),
                     Spacer(),
-                    ShimmerContainer(width: double.infinity, height: 26, borderRadius: 6),
+                    ShimmerContainer(
+                      width: double.infinity,
+                      height: 26,
+                      borderRadius: 6,
+                    ),
                   ],
                 ),
               ),

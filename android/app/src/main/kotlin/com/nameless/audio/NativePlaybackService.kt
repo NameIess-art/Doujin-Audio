@@ -183,7 +183,6 @@ class NativePlaybackService : MediaSessionService() {
                 audioFocusHeld = false
                 transientAudioFocusLossActive = false
                 pendingAudioFocusResumeSessionIds.clear()
-                pauseAll()
             }
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {

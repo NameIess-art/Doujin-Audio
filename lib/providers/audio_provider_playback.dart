@@ -1,4 +1,4 @@
-﻿part of 'audio_provider.dart';
+part of 'audio_provider.dart';
 
 const PlaybackQueueResolver _playbackQueueResolver = PlaybackQueueResolver();
 const TimerRuntimeCalculator _timerRuntimeCalculator = TimerRuntimeCalculator();
@@ -42,8 +42,10 @@ extension AudioProviderPlayback on AudioProvider {
 
     if (session.state.playing) {
       session.isPlaybackStarting = false;
-      await _nativePlaybackRepository.pause(session.id);
       session.setOptimisticState(playing: false);
+      _syncKeepCpuAwake();
+      _notifyPlaybackChanged();
+      await _nativePlaybackRepository.pause(session.id);
     } else if (session.state.processingState == ProcessingState.completed ||
         session.state.processingState == ProcessingState.idle) {
       await _prepareAndPlay(session, nextPath: session.currentTrackPath);
@@ -268,13 +270,14 @@ extension AudioProviderPlayback on AudioProvider {
   }
 
   Future<void> pauseAllSessions() async {
-    await _nativePlaybackRepository.pauseAll();
     for (final session in _sessions.values) {
       session.setOptimisticState(playing: false);
       session.isLoading = false;
       session.isPlaybackStarting = false;
     }
     _syncKeepCpuAwake();
+    _notifyPlaybackChanged();
+    await _nativePlaybackRepository.pauseAll();
     _scheduleSaveSessionState();
   }
 

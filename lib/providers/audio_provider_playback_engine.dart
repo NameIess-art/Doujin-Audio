@@ -1,4 +1,4 @@
-﻿part of 'audio_provider.dart';
+part of 'audio_provider.dart';
 
 extension AudioProviderPlaybackEngine on AudioProvider {
   bool _isSessionCommandCurrent(
@@ -51,6 +51,7 @@ extension AudioProviderPlaybackEngine on AudioProvider {
           ? ProcessingState.loading
           : null,
     );
+    _notifyPlaybackChanged();
 
     try {
       final playResult = await _nativePlaybackRepository.play(session.id);
@@ -65,6 +66,8 @@ extension AudioProviderPlaybackEngine on AudioProvider {
               ? ProcessingState.ready
               : ProcessingState.idle,
         );
+        _syncKeepCpuAwake();
+        _notifyPlaybackChanged();
       } else if (!session.state.playing && session.isPlaybackStarting) {
         // Stale EventChannel snapshots from prepareSession may have
         // overwritten the optimistic playing state. Re-assert it.
@@ -74,6 +77,8 @@ extension AudioProviderPlaybackEngine on AudioProvider {
               ? ProcessingState.ready
               : ProcessingState.idle,
         );
+        _syncKeepCpuAwake();
+        _notifyPlaybackChanged();
       }
     } catch (e) {
       if (_isSessionCommandCurrent(session, token)) {
@@ -84,6 +89,8 @@ extension AudioProviderPlaybackEngine on AudioProvider {
               ? ProcessingState.ready
               : ProcessingState.idle,
         );
+        _syncKeepCpuAwake();
+        _notifyPlaybackChanged();
       }
       debugPrint('AudioProvider._startSessionPlayback error: $e');
     }
@@ -92,6 +99,7 @@ extension AudioProviderPlaybackEngine on AudioProvider {
       return;
     }
     _syncKeepCpuAwake();
+    _notifyPlaybackChanged();
     unawaited(_clearPlaybackStartingIfStillPending(session.id, generation));
     if (shouldStartTriggerCountdown) {
       _maybeStartTriggerCountdown();
@@ -113,6 +121,7 @@ extension AudioProviderPlaybackEngine on AudioProvider {
     session.isPlaybackStarting = false;
     _syncKeepCpuAwake();
     _syncNotificationState();
+    _notifyPlaybackChanged();
   }
 
   Future<void> _resetSessionsForSingleThreadMode() async {

@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'marquee_text.dart';
 
@@ -114,7 +117,10 @@ class LibraryLikeFeaturedCardContent extends StatelessWidget {
                     ),
                     const SizedBox(width: 8),
                     IconButton(
-                      onPressed: onPlay,
+                      onPressed: () {
+                        unawaited(HapticFeedback.lightImpact());
+                        onPlay();
+                      },
                       visualDensity: VisualDensity.compact,
                       tooltip: playTooltip,
                       style: IconButton.styleFrom(

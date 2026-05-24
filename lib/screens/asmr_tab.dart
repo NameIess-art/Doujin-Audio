@@ -16,6 +16,7 @@ import '../widgets/app_feedback.dart';
 import '../widgets/glass_refresh_indicator.dart';
 import '../widgets/library_like_cards.dart';
 import '../widgets/mobile_overlay_inset.dart';
+import '../widgets/shimmer_loading.dart';
 import '../widgets/swipe_reveal_card.dart';
 import '../widgets/top_page_header.dart';
 import '../widgets/unified_popup_menu.dart';
@@ -434,8 +435,6 @@ class _AsmrTabState extends State<AsmrTab>
           controller?.totalCountFor(AsmrCategoryType.collected) ?? 0,
     );
     final i18n = context.watch<AppLanguageProvider>();
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
     final currentCategory = _currentCategory;
     final currentScrollController = _scrollControllers[currentCategory]!;
     final bottomInset = MobileOverlayInset.of(context);
@@ -503,7 +502,19 @@ class _AsmrTabState extends State<AsmrTab>
       return Stack(
         clipBehavior: Clip.none,
         children: [
-          Center(child: CircularProgressIndicator(color: asmrBlue)),
+          ShimmerLoader(
+            child: ListView(
+              physics: const NeverScrollableScrollPhysics(),
+              padding: EdgeInsets.fromLTRB(16, headerContentHeight + 10, 16, 0),
+              children: [
+                for (int i = 0; i < 5; i++)
+                  const Padding(
+                    padding: EdgeInsets.only(bottom: 8),
+                    child: _AsmrWorkSkeletonCard(),
+                  ),
+              ],
+            ),
+          ),
           Positioned(
             top: 0,
             left: 0,
@@ -542,7 +553,19 @@ class _AsmrTabState extends State<AsmrTab>
                     ),
                 ],
               )
-            : Center(child: CircularProgressIndicator(color: asmrBlue)),
+            : ShimmerLoader(
+                child: ListView(
+                  physics: const NeverScrollableScrollPhysics(),
+                  padding: EdgeInsets.fromLTRB(16, headerContentHeight + 10, 16, 0),
+                  children: [
+                    for (int i = 0; i < 5; i++)
+                      const Padding(
+                        padding: EdgeInsets.only(bottom: 8),
+                        child: _AsmrWorkSkeletonCard(),
+                      ),
+                  ],
+                ),
+              ),
         Positioned(
           top: 0,
           left: 0,
@@ -854,10 +877,15 @@ class _AsmrCategoryListState extends State<_AsmrCategoryList>
           itemBuilder: (context, index) {
             if (works.isEmpty) {
               if (state.isLoading) {
-                return Padding(
-                  padding: const EdgeInsets.only(top: 80),
-                  child: Center(
-                    child: CircularProgressIndicator(color: asmrBlue),
+                return ShimmerLoader(
+                  child: Column(
+                    children: [
+                      for (int i = 0; i < 5; i++)
+                        const Padding(
+                          padding: EdgeInsets.only(bottom: 8),
+                          child: _AsmrWorkSkeletonCard(),
+                        ),
+                    ],
                   ),
                 );
               }
@@ -2043,4 +2071,51 @@ String _formatDuration(Duration value) {
   }
   return '${value.inMinutes.toString().padLeft(2, '0')}:'
       '${seconds.toString().padLeft(2, '0')}';
+}
+
+class _AsmrWorkSkeletonCard extends StatelessWidget {
+  const _AsmrWorkSkeletonCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final cardShape = RoundedRectangleBorder(
+      side: BorderSide(color: cs.outlineVariant),
+      borderRadius: BorderRadius.circular(14),
+    );
+    
+    return Card(
+      margin: EdgeInsets.zero,
+      shape: cardShape,
+      color: cs.surface,
+      child: const Padding(
+        padding: EdgeInsets.fromLTRB(12, 12, 12, 10),
+        child: SizedBox(
+          height: 136,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ShimmerContainer(width: 110, height: 136, borderRadius: 12),
+              SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(height: 4),
+                    ShimmerContainer(width: 90, height: 14, borderRadius: 4),
+                    SizedBox(height: 12),
+                    ShimmerContainer(width: 140, height: 14, borderRadius: 4),
+                    SizedBox(height: 12),
+                    ShimmerContainer(width: 110, height: 14, borderRadius: 4),
+                    Spacer(),
+                    ShimmerContainer(width: double.infinity, height: 26, borderRadius: 6),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }

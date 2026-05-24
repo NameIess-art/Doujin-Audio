@@ -58,6 +58,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
   int _currentIndex = 1;
   late final PageController _pageController;
   late final List<Widget> _pages;
+  final GlobalKey _pageViewKey = GlobalKey();
   final GlobalKey _bottomDockKey = GlobalKey();
   final GlobalKey _dockContentKey = GlobalKey();
   double _measuredBottomInset = 0;
@@ -385,16 +386,26 @@ class _MainScreenState extends ConsumerState<MainScreen>
     }
 
     if (!_pageController.hasClients) return;
-    _pageController
-        .animateToPage(
-          index,
-          duration: _pageTransitionDuration,
-          curve: _pageTransitionCurve,
-        )
-        .whenComplete(() {
-          if (!mounted) return;
-          provider.scheduleUiWarmup(currentPageIndex: index);
-        });
+    
+    final width = MediaQuery.sizeOf(context).width;
+    final isLandscape = MediaQuery.orientationOf(context) == Orientation.landscape;
+    final isDesktop = width >= _desktopBreakpoint || isLandscape;
+
+    if (isDesktop) {
+      _pageController.jumpToPage(index);
+      provider.scheduleUiWarmup(currentPageIndex: index);
+    } else {
+      _pageController
+          .animateToPage(
+            index,
+            duration: _pageTransitionDuration,
+            curve: _pageTransitionCurve,
+          )
+          .whenComplete(() {
+            if (!mounted) return;
+            provider.scheduleUiWarmup(currentPageIndex: index);
+          });
+    }
   }
 
   List<PlaybackSession> _buildOverlaySessions(PlaybackStateSliceData? state) {
@@ -479,7 +490,8 @@ class _MainScreenState extends ConsumerState<MainScreen>
       _isDataReady = true;
     }
     final width = MediaQuery.sizeOf(context).width;
-    final isDesktop = width >= _desktopBreakpoint;
+    final isLandscape = MediaQuery.orientationOf(context) == Orientation.landscape;
+    final isDesktop = width >= _desktopBreakpoint || isLandscape;
     final isTinyWindow = width < 300 || MediaQuery.sizeOf(context).height < 300;
     final mobileContentInset = isDesktop
         ? 0.0

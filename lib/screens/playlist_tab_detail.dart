@@ -922,26 +922,27 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                         ),
                         // Content area 鈥?keep session drag gestures on artwork only
                         Expanded(
-                          child: Column(
-                            children: [
-                              Expanded(
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 32,
-                                  ),
-                                  child: _SessionHeroArtwork(
-                                    sessionId: session.id,
-                                    height: constraints.maxHeight,
-                                    track: track,
-                                    coverPathFuture: coverPathFuture,
-                                  ),
+                          child: Builder(
+                            builder: (context) {
+                              final isLandscape = MediaQuery.orientationOf(context) == Orientation.landscape;
+                              
+                              final artwork = Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 32,
                                 ),
-                              ),
-                              Padding(
-                                padding: const EdgeInsets.fromLTRB(
-                                  28,
-                                  12,
-                                  28,
+                                child: _SessionHeroArtwork(
+                                  sessionId: session.id,
+                                  height: constraints.maxHeight,
+                                  track: track,
+                                  coverPathFuture: coverPathFuture,
+                                ),
+                              );
+
+                              final detailContent = Padding(
+                                padding: EdgeInsets.fromLTRB(
+                                  isLandscape ? 12 : 28,
+                                  isLandscape ? 0 : 12,
+                                  isLandscape ? 32 : 28,
                                   8,
                                 ),
                                 child: _SessionDetailContent(
@@ -953,8 +954,28 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                                       .watch(subtitleSettingsProvider)
                                       .fontSize,
                                 ),
-                              ),
-                            ],
+                              );
+
+                              if (isLandscape) {
+                                return Row(
+                                  children: [
+                                    Expanded(child: artwork),
+                                    Expanded(
+                                      child: SingleChildScrollView(
+                                        child: detailContent,
+                                      ),
+                                    ),
+                                  ],
+                                );
+                              }
+
+                              return Column(
+                                children: [
+                                  Expanded(child: artwork),
+                                  detailContent,
+                                ],
+                              );
+                            },
                           ),
                         ),
                       ],

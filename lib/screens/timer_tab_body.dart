@@ -192,98 +192,118 @@ extension _TimerTabBody on _TimerTabState {
     }
 
     Widget buildConfiguratorSection({required bool compactMode}) {
-      final content = Padding(
-        padding: EdgeInsets.all(compactMode ? 14 : 18),
-        child: Column(
-          mainAxisSize: compactMode ? MainAxisSize.max : MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _TimerSectionTitle(
-              icon: Icons.timer_rounded,
-              title: i18n.tr('set_countdown'),
-              subtitle: compactMode ? '' : _modeSubtitle(i18n, _selectedMode),
-            ),
-            SizedBox(height: compactMode ? 12 : 16),
-            _DurationPicker(
-              hours: _hours,
-              minutes: _minutes,
-              seconds: _seconds,
-              showLabels: !compactMode,
-              onChanged: (h, m, s) => _setLocalState(() {
-                _hours = h;
-                _minutes = m;
-                _seconds = s;
-                _lastSyncedDraftKey = _draftKey(_selectedMode, _pickedDuration);
-                provider.setTimerDraft(_selectedMode, _pickedDuration);
-              }),
-            ),
-            SizedBox(height: compactMode ? 12 : 18),
-            if (!compactMode) ...[
-              _TimerFieldLabel(
-                icon: Icons.tune_rounded,
-                text: i18n.tr('start_mode'),
-              ),
-              const SizedBox(height: 8),
-            ],
-            _ModeSelector(
-              value: _selectedMode,
-              showSubtitle: !compactMode,
-              compact: compactMode,
-              onChanged: (mode) {
-                HapticFeedback.selectionClick();
-                if (timerConfigured && timerSlice.mode != mode) {
-                  provider.configureTimer(mode, _pickedDuration);
-                  if (mode == TimerMode.manual) {
-                    provider.startCountdown();
-                  }
-                } else {
-                  provider.setTimerDraft(mode, _pickedDuration);
-                }
-                _setLocalState(() {
-                  _selectedMode = mode;
-                  _lastSyncedDraftKey = _draftKey(mode, _pickedDuration);
-                });
-              },
-            ),
-            if (compactMode) const Spacer(),
-            SizedBox(height: compactMode ? 12 : 14),
-            FilledButton.icon(
-              onPressed: _durationIsZero
-                  ? null
-                  : () {
-                      Feedback.forTap(context);
-                      HapticFeedback.mediumImpact();
-                      _onConfirm(provider);
-                    },
-              icon: Icon(
-                _selectedMode == TimerMode.manual
-                    ? Icons.play_arrow_rounded
-                    : Icons.schedule_rounded,
-              ),
-              label: Text(
-                _selectedMode == TimerMode.manual
-                    ? i18n.tr('confirm_start_now')
-                    : i18n.tr('confirm_wait_playback'),
-              ),
-              style: FilledButton.styleFrom(
-                elevation: 0,
-                shadowColor: Colors.transparent,
-                minimumSize: Size.fromHeight(compactMode ? 50 : 56),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(18),
-                ),
-              ),
-            ),
-            if (_durationIsZero && !compactMode)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Text(
-                  i18n.tr('set_duration_first'),
-                  style: TextStyle(color: cs.error, fontSize: 12),
-                ),
-              ),
-          ],
+      final children = [
+        _TimerSectionTitle(
+          icon: Icons.timer_rounded,
+          title: i18n.tr('set_countdown'),
+          subtitle: compactMode ? '' : _modeSubtitle(i18n, _selectedMode),
         ),
+        SizedBox(height: compactMode ? 12 : 16),
+        _DurationPicker(
+          hours: _hours,
+          minutes: _minutes,
+          seconds: _seconds,
+          showLabels: !compactMode,
+          onChanged: (h, m, s) => _setLocalState(() {
+            _hours = h;
+            _minutes = m;
+            _seconds = s;
+            _lastSyncedDraftKey = _draftKey(_selectedMode, _pickedDuration);
+            provider.setTimerDraft(_selectedMode, _pickedDuration);
+          }),
+        ),
+        SizedBox(height: compactMode ? 12 : 18),
+        if (!compactMode) ...[
+          _TimerFieldLabel(
+            icon: Icons.tune_rounded,
+            text: i18n.tr('start_mode'),
+          ),
+          const SizedBox(height: 8),
+        ],
+        _ModeSelector(
+          value: _selectedMode,
+          showSubtitle: !compactMode,
+          compact: compactMode,
+          onChanged: (mode) {
+            HapticFeedback.selectionClick();
+            if (timerConfigured && timerSlice.mode != mode) {
+              provider.configureTimer(mode, _pickedDuration);
+              if (mode == TimerMode.manual) {
+                provider.startCountdown();
+              }
+            } else {
+              provider.setTimerDraft(mode, _pickedDuration);
+            }
+            _setLocalState(() {
+              _selectedMode = mode;
+              _lastSyncedDraftKey = _draftKey(mode, _pickedDuration);
+            });
+          },
+        ),
+        if (compactMode) const Spacer(),
+        SizedBox(height: compactMode ? 12 : 14),
+        FilledButton.icon(
+          onPressed: _durationIsZero
+              ? null
+              : () {
+                  Feedback.forTap(context);
+                  HapticFeedback.mediumImpact();
+                  _onConfirm(provider);
+                },
+          icon: Icon(
+            _selectedMode == TimerMode.manual
+                ? Icons.play_arrow_rounded
+                : Icons.schedule_rounded,
+          ),
+          label: Text(
+            _selectedMode == TimerMode.manual
+                ? i18n.tr('confirm_start_now')
+                : i18n.tr('confirm_wait_playback'),
+          ),
+          style: FilledButton.styleFrom(
+            elevation: 0,
+            shadowColor: Colors.transparent,
+            minimumSize: Size.fromHeight(compactMode ? 50 : 56),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(18),
+            ),
+          ),
+        ),
+        if (_durationIsZero && !compactMode)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text(
+              i18n.tr('set_duration_first'),
+              style: TextStyle(color: cs.error, fontSize: 12),
+            ),
+          ),
+      ];
+
+      Widget content = Padding(
+        padding: EdgeInsets.all(compactMode ? 14 : 18),
+        child: compactMode
+            ? LayoutBuilder(
+                builder: (context, constraints) {
+                  return SingleChildScrollView(
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        minHeight: constraints.maxHeight,
+                      ),
+                      child: IntrinsicHeight(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: children,
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              )
+            : Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: children,
+              ),
       );
 
       if (compactMode) {

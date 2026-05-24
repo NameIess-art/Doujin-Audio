@@ -3,7 +3,14 @@ part of 'main_screen.dart';
 extension _MainScreenLayout on _MainScreenState {
   Widget _buildAnimatedBody({required bool isDesktop}) {
     final cs = Theme.of(context).colorScheme;
-    final radius = BorderRadius.circular(isDesktop ? 28 : 24);
+    final width = MediaQuery.sizeOf(context).width;
+    final isLargeScreen = width >= 980;
+    final radius = BorderRadius.circular(isDesktop ? (isLargeScreen ? 28 : 16) : 24);
+    final padding = isDesktop 
+        ? (isLargeScreen 
+            ? const EdgeInsets.fromLTRB(24, 22, 24, 22) 
+            : const EdgeInsets.fromLTRB(12, 12, 16, 12))
+        : EdgeInsets.zero;
 
     Widget pageShell(int actualIndex) {
       final Widget page = TickerMode(
@@ -17,7 +24,7 @@ extension _MainScreenLayout on _MainScreenState {
             ? ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 980),
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 22, 24, 22),
+                  padding: padding,
                   child: DecoratedBox(
                     decoration: BoxDecoration(
                       color: cs.surfaceContainerLow,
@@ -45,6 +52,7 @@ extension _MainScreenLayout on _MainScreenState {
     }
 
     return PageView.builder(
+      key: _pageViewKey,
       controller: _pageController,
       clipBehavior: Clip.none,
       physics: const _TelegramLikeScrollPhysics(
@@ -76,7 +84,8 @@ extension _MainScreenLayout on _MainScreenState {
   ) {
     final i18n = context.read<AppLanguageProvider>();
     final mediaSize = MediaQuery.sizeOf(context);
-    final isDesktop = mediaSize.width >= _MainScreenState._desktopBreakpoint;
+    final isLandscape = MediaQuery.orientationOf(context) == Orientation.landscape;
+    final isDesktop = mediaSize.width >= 760 || isLandscape;
 
     if (!_timerOverlayPrimed) {
       _setLocalState(() {
@@ -103,36 +112,6 @@ extension _MainScreenLayout on _MainScreenState {
         _timerOverlayPrimed = false;
       });
     });
-  }
-
-  String _fmtDuration(Duration duration) {
-    final h = duration.inHours;
-    final m = duration.inMinutes.remainder(60).toString().padLeft(2, '0');
-    final s = duration.inSeconds.remainder(60).toString().padLeft(2, '0');
-    if (h > 0) {
-      return '${h.toString().padLeft(2, '0')}:$m:$s';
-    }
-    return '$m:$s';
-  }
-
-  String _timerFabLabel(
-    _TimerPresentation timerState,
-    AppLanguageProvider i18n,
-  ) {
-    final configured = timerState.duration != null;
-    if (!configured) return i18n.tr('timer');
-
-    final remaining = timerState.remaining ?? timerState.duration!;
-    if (timerState.active) {
-      return _fmtDuration(remaining);
-    }
-    if (remaining <= Duration.zero) {
-      return i18n.tr('done');
-    }
-    if (timerState.mode == TimerMode.trigger) {
-      return i18n.tr('timer_play_plus', {'time': _fmtDuration(remaining)});
-    }
-    return _fmtDuration(remaining);
   }
 
   Widget _buildBottomBar(BuildContext context) {
@@ -336,7 +315,7 @@ extension _MainScreenLayout on _MainScreenState {
                 extended: true,
                 minExtendedWidth: 256,
                 useIndicator: true,
-                groupAlignment: -0.86,
+                groupAlignment: 0.0, // Center aligned for better layout
                 destinations: _MainScreenState._destinations
                     .asMap()
                     .entries
@@ -368,28 +347,6 @@ extension _MainScreenLayout on _MainScreenState {
                     })
                     .toList(),
               ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(8, 8, 8, 2),
-            child: Consumer(
-              builder: (context, ref, _) {
-                final timerSlice =
-                    ref.watch(timerStateProvider).valueOrNull ??
-                    const TimerStateSliceData();
-                final timerState = _TimerPresentation(
-                  duration: timerSlice.duration,
-                  remaining: timerSlice.remaining,
-                  active: timerSlice.active,
-                  mode: timerSlice.mode,
-                );
-                return _DesktopQuickAction(
-                  icon: Icons.timer_rounded,
-                  title: _timerFabLabel(timerState, i18n),
-                  subtitle: i18n.tr('timer'),
-                  onTap: () => _openTimerSettingsPage(context, timerState),
-                );
-              },
             ),
           ),
         ],

@@ -1,4 +1,4 @@
-﻿part of 'audio_provider.dart';
+part of 'audio_provider.dart';
 
 extension AudioProviderPlaybackSessions on AudioProvider {
   Future<void> spawnSession(MusicTrack track, {bool? autoPlay}) async {
@@ -107,8 +107,9 @@ extension AudioProviderPlaybackSessions on AudioProvider {
         session.isAdvancingAfterCompletion = true;
         session.lastHandledCompletionGeneration = currentGeneration;
       }
-      if (state.processingState == ProcessingState.idle ||
-          state.processingState == ProcessingState.completed) {
+      if (!state.playing &&
+          (state.processingState == ProcessingState.idle ||
+              state.processingState == ProcessingState.completed)) {
         session.isPlaybackStarting = false;
       }
       if (state.processingState != ProcessingState.completed) {

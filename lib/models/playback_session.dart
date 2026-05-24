@@ -63,14 +63,26 @@ class PlaybackSession {
     if (isPlaybackStarting && snapshot.playing) {
       isPlaybackStarting = false;
     }
-    var effectivePlaying = snapshot.playing;
+    final nativeProcessingState = _nativeProcessingState(
+      snapshot.processingState,
+    );
+    final nativeIntendsPlayback =
+        snapshot.playWhenReady &&
+        snapshot.error == null &&
+        nativeProcessingState != ProcessingState.idle &&
+        nativeProcessingState != ProcessingState.completed;
+    var effectivePlaying = snapshot.playing || nativeIntendsPlayback;
+    var effectiveProcessingState = nativeProcessingState;
     if (isPlaybackStarting && !effectivePlaying && snapshot.error == null) {
       effectivePlaying = true;
+      if (effectiveProcessingState == ProcessingState.idle ||
+          effectiveProcessingState == ProcessingState.completed) {
+        effectiveProcessingState = state.processingState == ProcessingState.idle
+            ? ProcessingState.loading
+            : state.processingState;
+      }
     }
-    final nextState = PlayerState(
-      effectivePlaying,
-      _nativeProcessingState(snapshot.processingState),
-    );
+    final nextState = PlayerState(effectivePlaying, effectiveProcessingState);
     if (state != nextState) {
       previousStateBeforeLastStateEvent = state;
       state = nextState;

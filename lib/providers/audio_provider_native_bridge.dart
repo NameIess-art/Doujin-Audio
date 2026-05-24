@@ -1,4 +1,4 @@
-﻿part of 'audio_provider.dart';
+part of 'audio_provider.dart';
 
 extension AudioProviderNativeBridge on AudioProvider {
   String _snapshotUriForPath(String pathValue) {
@@ -56,9 +56,13 @@ extension AudioProviderNativeBridge on AudioProvider {
 
   void _handleNativePlaybackSnapshot(NativePlaybackSnapshot snapshot) {
     final normalizedSnapshot = _normalizeNativePlaybackSnapshot(snapshot);
-    final previousTrackPath =
-        _sessions[normalizedSnapshot.sessionId]?.currentTrackPath;
-    _playbackService.applyNativeSnapshot(normalizedSnapshot);
+    final existingSession = _sessions[normalizedSnapshot.sessionId];
+    final previousTrackPath = existingSession?.currentTrackPath;
+    final previousState = existingSession?.state;
+    final previousPosition = existingSession?.position;
+    final previousIsPlaybackStarting = existingSession?.isPlaybackStarting;
+    final applied = _playbackService.applyNativeSnapshot(normalizedSnapshot);
+    if (!applied) return;
 
     // Update track duration in library if it was unknown
     final session = _sessions[snapshot.sessionId];
@@ -90,6 +94,14 @@ extension AudioProviderNativeBridge on AudioProvider {
           unawaited(_audioDatabaseRepository.upsertTracks([updatedTrack]));
         }
       }
+    }
+    if (session != null &&
+        (session.state != previousState ||
+            session.position != previousPosition ||
+            session.isPlaybackStarting != previousIsPlaybackStarting)) {
+      _syncKeepCpuAwake();
+      _syncNotificationState();
+      _notifyPlaybackChanged();
     }
   }
 }

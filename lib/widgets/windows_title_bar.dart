@@ -14,7 +14,7 @@ class WindowsTitleBar extends StatelessWidget {
 
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    
+
     return Container(
       height: 32,
       color: Colors.transparent,

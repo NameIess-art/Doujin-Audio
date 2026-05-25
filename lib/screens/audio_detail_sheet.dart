@@ -626,7 +626,9 @@ class _FolderCoverSelectorState extends State<_FolderCoverSelector> {
                       return Image.file(
                         File(_images[index]),
                         fit: BoxFit.cover,
-                        cacheWidth: (400 * MediaQuery.devicePixelRatioOf(context)).round(),
+                        cacheWidth:
+                            (400 * MediaQuery.devicePixelRatioOf(context))
+                                .round(),
                         errorBuilder: (_, _, _) => DecoratedBox(
                           decoration: BoxDecoration(
                             color: cs.surfaceContainerHighest,
@@ -641,7 +643,9 @@ class _FolderCoverSelectorState extends State<_FolderCoverSelector> {
                     },
                   ),
                 ),
-                if (!const bool.fromEnvironment('dart.library.html') && Platform.isWindows && _images.length > 1)
+                if (!const bool.fromEnvironment('dart.library.html') &&
+                    Platform.isWindows &&
+                    _images.length > 1)
                   Positioned.fill(
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -655,7 +659,10 @@ class _FolderCoverSelectorState extends State<_FolderCoverSelector> {
                                 curve: Curves.easeOutCubic,
                               );
                             },
-                            icon: const Icon(Icons.chevron_left_rounded, size: 32),
+                            icon: const Icon(
+                              Icons.chevron_left_rounded,
+                              size: 32,
+                            ),
                           ),
                         ),
                         Padding(
@@ -667,7 +674,10 @@ class _FolderCoverSelectorState extends State<_FolderCoverSelector> {
                                 curve: Curves.easeOutCubic,
                               );
                             },
-                            icon: const Icon(Icons.chevron_right_rounded, size: 32),
+                            icon: const Icon(
+                              Icons.chevron_right_rounded,
+                              size: 32,
+                            ),
                           ),
                         ),
                       ],

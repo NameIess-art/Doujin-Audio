@@ -332,20 +332,20 @@ class NativePlaybackBridge implements NativePlaybackBridgeBase {
     return _invokeSnapshot(NativePlaybackMethod.prepareSession, {
       'sessionId': sessionId,
       'uri': uri.toString(),
-      // ignore: use_null_aware_elements
+
       if (path != null) 'path': path,
       'title': title,
-      // ignore: use_null_aware_elements
+
       if (subtitle != null) 'subtitle': subtitle,
-      // ignore: use_null_aware_elements
+
       if (artUri != null) 'artUri': artUri.toString(),
       'startPositionMs': startPosition.inMilliseconds,
       'volume': volume,
       'repeatOne': repeatOne,
       'autoPlay': autoPlay,
-      // ignore: use_null_aware_elements
+
       if (queue != null && queue.isNotEmpty) 'queue': queue,
-      // ignore: use_null_aware_elements
+
       if (queueStartIndex != null) 'queueStartIndex': queueStartIndex,
       'repeatAll': repeatAll,
       'shuffle': shuffle,
@@ -404,9 +404,9 @@ class NativePlaybackBridge implements NativePlaybackBridgeBase {
     return _invokeSnapshot(NativePlaybackMethod.setRepeatOne, {
       'sessionId': sessionId,
       'repeatOne': repeatOne,
-      // ignore: use_null_aware_elements
+
       if (queue != null && queue.isNotEmpty) 'queue': queue,
-      // ignore: use_null_aware_elements
+
       if (queueStartIndex != null) 'queueStartIndex': queueStartIndex,
       'repeatAll': repeatAll,
       'shuffle': shuffle,

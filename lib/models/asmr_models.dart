@@ -96,7 +96,6 @@ class AsmrWorkPage {
   }
 }
 
-
 @immutable
 class AsmrWork {
   const AsmrWork({

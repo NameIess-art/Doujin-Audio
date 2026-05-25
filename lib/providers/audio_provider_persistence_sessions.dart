@@ -169,53 +169,55 @@ extension AudioProviderPersistenceSessions on AudioProvider {
       final payload = ordered
           .asMap()
           .entries
-          .map(
-            (entry) {
-              final session = entry.value;
-              final positionMs = max(
-                0,
-                max(
-                  session.position.inMilliseconds,
-                  session.lastKnownPosition.inMilliseconds,
-                ),
-              );
+          .map((entry) {
+            final session = entry.value;
+            final positionMs = max(
+              0,
+              max(
+                session.position.inMilliseconds,
+                session.lastKnownPosition.inMilliseconds,
+              ),
+            );
 
-              final track = _libraryByPath[session.currentTrackPath];
-              if (track != null) {
-                final posDur = Duration(milliseconds: positionMs);
-                final shouldUpdateAt = session.state.playing;
-                if (track.lastPlayedPosition.inSeconds ~/ 5 != posDur.inSeconds ~/ 5 || shouldUpdateAt) {
-                  final updatedTrack = track.copyWith(
-                    lastPlayedPosition: posDur,
-                    lastPlayedAt: shouldUpdateAt ? now : track.lastPlayedAt,
-                  );
-                  _libraryByPath[track.path] = updatedTrack;
-                  final idx = _libraryIndexByPath[track.path];
-                  if (idx != null && idx < _library.length && _library[idx].path == track.path) {
-                    _library[idx] = updatedTrack;
-                  }
-                  tracksToUpdate.add(updatedTrack);
+            final track = _libraryByPath[session.currentTrackPath];
+            if (track != null) {
+              final posDur = Duration(milliseconds: positionMs);
+              final shouldUpdateAt = session.state.playing;
+              if (track.lastPlayedPosition.inSeconds ~/ 5 !=
+                      posDur.inSeconds ~/ 5 ||
+                  shouldUpdateAt) {
+                final updatedTrack = track.copyWith(
+                  lastPlayedPosition: posDur,
+                  lastPlayedAt: shouldUpdateAt ? now : track.lastPlayedAt,
+                );
+                _libraryByPath[track.path] = updatedTrack;
+                final idx = _libraryIndexByPath[track.path];
+                if (idx != null &&
+                    idx < _library.length &&
+                    _library[idx].path == track.path) {
+                  _library[idx] = updatedTrack;
                 }
+                tracksToUpdate.add(updatedTrack);
               }
+            }
 
-              return PersistedSession(
-                id: session.id,
-                trackPath: session.currentTrackPath,
-                loopModeIndex: session.loopMode.index,
-                volume: session.volume,
-                positionMs: positionMs,
-                durationMs: session.duration?.inMilliseconds ?? 0,
-                customQueueTracks: session.customQueueTracks,
-                channelSwapEnabled: session.channelSwapEnabled,
-                createdAtMs: session.createdAt.millisecondsSinceEpoch,
-                updatedAtMs: now.millisecondsSinceEpoch,
-                lastPlayedAtMs: session.state.playing
-                    ? now.millisecondsSinceEpoch
-                    : null,
-                sortOrder: entry.key,
-              );
-            },
-          )
+            return PersistedSession(
+              id: session.id,
+              trackPath: session.currentTrackPath,
+              loopModeIndex: session.loopMode.index,
+              volume: session.volume,
+              positionMs: positionMs,
+              durationMs: session.duration?.inMilliseconds ?? 0,
+              customQueueTracks: session.customQueueTracks,
+              channelSwapEnabled: session.channelSwapEnabled,
+              createdAtMs: session.createdAt.millisecondsSinceEpoch,
+              updatedAtMs: now.millisecondsSinceEpoch,
+              lastPlayedAtMs: session.state.playing
+                  ? now.millisecondsSinceEpoch
+                  : null,
+              sortOrder: entry.key,
+            );
+          })
           .toList(growable: false);
 
       if (tracksToUpdate.isNotEmpty && !_skipDisposePersistence) {

@@ -34,26 +34,26 @@ Future<bool> showConfirmActionDialog({
                 child: Material(
                   color: Colors.transparent,
                   child: Container(
-                      decoration: BoxDecoration(
-                        color: cs.surfaceContainerLow.withValues(alpha: 0.94),
-                        borderRadius: BorderRadius.circular(28),
-                        border: Border.all(
-                          color: cs.outlineVariant.withValues(alpha: 0.22),
-                          width: 1.2,
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: cs.shadow.withValues(alpha: 0.24),
-                            blurRadius: 38,
-                            offset: const Offset(0, 22),
-                          ),
-                          BoxShadow(
-                            color: cs.shadow.withValues(alpha: 0.08),
-                            blurRadius: 14,
-                            offset: const Offset(0, 6),
-                          ),
-                        ],
+                    decoration: BoxDecoration(
+                      color: cs.surfaceContainerLow.withValues(alpha: 0.94),
+                      borderRadius: BorderRadius.circular(28),
+                      border: Border.all(
+                        color: cs.outlineVariant.withValues(alpha: 0.22),
+                        width: 1.2,
                       ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: cs.shadow.withValues(alpha: 0.24),
+                          blurRadius: 38,
+                          offset: const Offset(0, 22),
+                        ),
+                        BoxShadow(
+                          color: cs.shadow.withValues(alpha: 0.08),
+                          blurRadius: 14,
+                          offset: const Offset(0, 6),
+                        ),
+                      ],
+                    ),
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
                       child: Column(

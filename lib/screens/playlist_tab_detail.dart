@@ -410,15 +410,17 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
               return child!;
             },
             child: Listener(
-              onPointerSignal: Platform.isWindows ? (event) {
-                if (event is PointerScrollEvent) {
-                  if (event.scrollDelta.dy > 0) {
-                    _changeSessionByOffset(provider, 1);
-                  } else if (event.scrollDelta.dy < 0) {
-                    _changeSessionByOffset(provider, -1);
-                  }
-                }
-              } : null,
+              onPointerSignal: Platform.isWindows
+                  ? (event) {
+                      if (event is PointerScrollEvent) {
+                        if (event.scrollDelta.dy > 0) {
+                          _changeSessionByOffset(provider, 1);
+                        } else if (event.scrollDelta.dy < 0) {
+                          _changeSessionByOffset(provider, -1);
+                        }
+                      }
+                    }
+                  : null,
               child: _SessionDetailScaffold(
                 session: session,
                 provider: provider,
@@ -436,42 +438,48 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
                   }
                 },
                 switchAnimation: _slideController,
-                onHorizontalDragUpdate: Platform.isWindows ? null : (details) {
-                  _horizontalDragDelta += details.primaryDelta ?? 0;
+                onHorizontalDragUpdate: Platform.isWindows
+                    ? null
+                    : (details) {
+                        _horizontalDragDelta += details.primaryDelta ?? 0;
+                      },
+                onHorizontalDragEnd: Platform.isWindows
+                    ? null
+                    : (details) => _handleHorizontalDragEnd(details, provider),
+                onHorizontalDragCancel: Platform.isWindows
+                    ? null
+                    : () {
+                        _horizontalDragDelta = 0;
+                      },
+                onVerticalDragUpdate: enableVerticalDismiss
+                    ? (details) {
+                        final screenHeight = MediaQuery.sizeOf(context).height;
+                        if (screenHeight <= 0) return;
+                        final nextValue =
+                            _dismissController.value +
+                            (((details.primaryDelta ?? 0) / screenHeight) *
+                                0.92);
+                        _dismissController.value = nextValue.clamp(0.0, 1.0);
+                      }
+                    : null,
+                onVerticalDragEnd: enableVerticalDismiss
+                    ? (details) => _handleVerticalDragEnd(details, context)
+                    : null,
+                onVerticalDragCancel: enableVerticalDismiss
+                    ? () {
+                        _animateDismissBack();
+                      }
+                    : null,
+                onSubtitleAnchorComputed: (top) {
+                  if (mounted) {
+                    setState(() {
+                      _subtitleDefaultTop = top;
+                    });
+                  }
                 },
-                onHorizontalDragEnd: Platform.isWindows ? null : (details) =>
-                    _handleHorizontalDragEnd(details, provider),
-                onHorizontalDragCancel: Platform.isWindows ? null : () {
-                  _horizontalDragDelta = 0;
-                },
-              onVerticalDragUpdate: enableVerticalDismiss
-                  ? (details) {
-                      final screenHeight = MediaQuery.sizeOf(context).height;
-                      if (screenHeight <= 0) return;
-                      final nextValue =
-                          _dismissController.value +
-                          (((details.primaryDelta ?? 0) / screenHeight) * 0.92);
-                      _dismissController.value = nextValue.clamp(0.0, 1.0);
-                    }
-                  : null,
-              onVerticalDragEnd: enableVerticalDismiss
-                  ? (details) => _handleVerticalDragEnd(details, context)
-                  : null,
-              onVerticalDragCancel: enableVerticalDismiss
-                  ? () {
-                      _animateDismissBack();
-                    }
-                  : null,
-              onSubtitleAnchorComputed: (top) {
-                if (mounted) {
-                  setState(() {
-                    _subtitleDefaultTop = top;
-                  });
-                }
-              },
+              ),
             ),
           ),
-        ),
         ),
       ),
     );
@@ -956,8 +964,10 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                         Expanded(
                           child: Builder(
                             builder: (context) {
-                              final isLandscape = MediaQuery.orientationOf(context) == Orientation.landscape;
-                              
+                              final isLandscape =
+                                  MediaQuery.orientationOf(context) ==
+                                  Orientation.landscape;
+
                               Widget artworkWidget = _SessionHeroArtwork(
                                 sessionId: session.id,
                                 height: constraints.maxHeight,
@@ -1008,10 +1018,15 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                                       child: LayoutBuilder(
                                         builder: (context, scrollConstraints) {
                                           return SingleChildScrollView(
-                                            padding: const EdgeInsets.symmetric(vertical: 24),
+                                            padding: const EdgeInsets.symmetric(
+                                              vertical: 24,
+                                            ),
                                             child: ConstrainedBox(
                                               constraints: BoxConstraints(
-                                                minHeight: scrollConstraints.maxHeight - 48,
+                                                minHeight:
+                                                    scrollConstraints
+                                                        .maxHeight -
+                                                    48,
                                               ),
                                               child: Center(
                                                 child: detailContent,

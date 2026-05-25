@@ -32,10 +32,7 @@ class GlobalShortcuts extends ConsumerWidget {
             },
           ),
         },
-        child: Focus(
-          autofocus: true,
-          child: child,
-        ),
+        child: Focus(autofocus: true, child: child),
       ),
     );
   }

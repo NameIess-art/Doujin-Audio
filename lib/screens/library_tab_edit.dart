@@ -239,10 +239,10 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage>
     final audioFiles = <String>{};
     final folderPaths = <String>{};
     try {
-      final data = await _fileCacheChannel
-          .invokeMethod<List<dynamic>>(FileCacheMethod.scanFolder, {
-            'folder': widget.libraryPath,
-          });
+      final data = await _fileCacheChannel.invokeMethod<List<dynamic>>(
+        FileCacheMethod.scanFolder,
+        {'folder': widget.libraryPath},
+      );
       if (data == null) return false;
       for (final item in data) {
         if (item is! Map) continue;
@@ -297,7 +297,9 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage>
   @override
   Widget build(BuildContext context) {
     ref.watch(
-      libraryStateProvider.select((value) => value.valueOrNull?.contentRevision ?? 0),
+      libraryStateProvider.select(
+        (value) => value.valueOrNull?.contentRevision ?? 0,
+      ),
     );
     final i18n = context.watch<AppLanguageProvider>();
     final libraryService = ref.read(libraryServiceProvider);
@@ -1005,7 +1007,9 @@ class _LibraryEditFolderTreeTileState
   @override
   Widget build(BuildContext context) {
     ref.watch(
-      libraryStateProvider.select((value) => value.valueOrNull?.contentRevision ?? 0),
+      libraryStateProvider.select(
+        (value) => value.valueOrNull?.contentRevision ?? 0,
+      ),
     );
     final i18n = context.watch<AppLanguageProvider>();
     final libraryService = ref.read(libraryServiceProvider);

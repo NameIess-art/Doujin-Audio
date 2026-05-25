@@ -9,9 +9,7 @@ class _AmbientBackground extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     if (tinyMode) {
-      return DecoratedBox(
-        decoration: BoxDecoration(color: cs.surface),
-      );
+      return DecoratedBox(decoration: BoxDecoration(color: cs.surface));
     }
     return RepaintBoundary(
       child: DecoratedBox(
@@ -74,8 +72,6 @@ class _GlowOrb extends StatelessWidget {
     );
   }
 }
-
-
 
 class _MainDestination {
   const _MainDestination({
@@ -144,7 +140,7 @@ class _FloatingGlassPanel extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final screenSize = MediaQuery.sizeOf(context);
     final isSmallWindow = screenSize.width < 450 || screenSize.height < 400;
-    
+
     // Lower alpha for true glass effect
     final targetAlpha = isSmallWindow
         ? (isDark ? 0.65 : 0.75)
@@ -160,20 +156,22 @@ class _FloatingGlassPanel extends StatelessWidget {
           border: Border.all(
             color: cs.outlineVariant.withValues(alpha: isDark ? 0.3 : 0.5),
           ),
-          boxShadow: tinyMode ? null : [
-            BoxShadow(
-              color: cs.shadow.withValues(alpha: shadowOpacity * 0.8),
-              blurRadius: 34,
-              spreadRadius: -6,
-              offset: const Offset(0, 18),
-            ),
-            BoxShadow(
-              color: cs.primary.withValues(alpha: isDark ? 0.08 : 0.05),
-              blurRadius: 18,
-              spreadRadius: -10,
-              offset: const Offset(0, 8),
-            ),
-          ],
+          boxShadow: tinyMode
+              ? null
+              : [
+                  BoxShadow(
+                    color: cs.shadow.withValues(alpha: shadowOpacity * 0.8),
+                    blurRadius: 34,
+                    spreadRadius: -6,
+                    offset: const Offset(0, 18),
+                  ),
+                  BoxShadow(
+                    color: cs.primary.withValues(alpha: isDark ? 0.08 : 0.05),
+                    blurRadius: 18,
+                    spreadRadius: -10,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
         ),
         child: Stack(
           children: [
@@ -271,10 +269,7 @@ class _TimerOverlaySheet extends StatelessWidget {
                 child: FadeTransition(
                   opacity: curved,
                   child: ScaleTransition(
-                    scale: Tween<double>(
-                      begin: 0.88,
-                      end: 1.0,
-                    ).animate(curved),
+                    scale: Tween<double>(begin: 0.88, end: 1.0).animate(curved),
                     child: Padding(
                       padding: outerPadding,
                       child: Align(
@@ -302,6 +297,7 @@ class _TimerOverlaySheet extends StatelessWidget {
     );
   }
 }
+
 class _BootstrapOverlay extends StatefulWidget {
   const _BootstrapOverlay({
     required this.visible,
@@ -333,15 +329,17 @@ class _BootstrapOverlayState extends State<_BootstrapOverlay>
 
     _logoScale = TweenSequence<double>([
       TweenSequenceItem(
-        tween: Tween<double>(begin: 0.0, end: 1.0).chain(
-          CurveTween(curve: Curves.easeOutBack),
-        ),
+        tween: Tween<double>(
+          begin: 0.0,
+          end: 1.0,
+        ).chain(CurveTween(curve: Curves.easeOutBack)),
         weight: 50, // 0.75s
       ),
       TweenSequenceItem(
-        tween: Tween<double>(begin: 1.0, end: 0.0).chain(
-          CurveTween(curve: Curves.easeInBack),
-        ),
+        tween: Tween<double>(
+          begin: 1.0,
+          end: 0.0,
+        ).chain(CurveTween(curve: Curves.easeInBack)),
         weight: 50, // 0.75s
       ),
     ]).animate(_controller);
@@ -352,9 +350,10 @@ class _BootstrapOverlayState extends State<_BootstrapOverlay>
         weight: 50, // Stay solid during grow
       ),
       TweenSequenceItem(
-        tween: Tween<double>(begin: 1.0, end: 0.0).chain(
-          CurveTween(curve: Curves.easeInCubic),
-        ),
+        tween: Tween<double>(
+          begin: 1.0,
+          end: 0.0,
+        ).chain(CurveTween(curve: Curves.easeInCubic)),
         weight: 50, // Fade during shrink
       ),
     ]).animate(_controller);
@@ -365,9 +364,10 @@ class _BootstrapOverlayState extends State<_BootstrapOverlay>
         weight: 50, // No blur during grow
       ),
       TweenSequenceItem(
-        tween: Tween<double>(begin: 0.0, end: 25.0).chain(
-          CurveTween(curve: Curves.easeInQuint),
-        ),
+        tween: Tween<double>(
+          begin: 0.0,
+          end: 25.0,
+        ).chain(CurveTween(curve: Curves.easeInQuint)),
         weight: 50, // Blur during shrink
       ),
     ]).animate(_controller);
@@ -457,11 +457,12 @@ class _BootstrapOverlayState extends State<_BootstrapOverlay>
                     const SizedBox(height: 24),
                     Text(
                       'NL Audio',
-                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: -0.5,
-                        color: cs.onSurface,
-                      ),
+                      style: Theme.of(context).textTheme.headlineSmall
+                          ?.copyWith(
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: -0.5,
+                            color: cs.onSurface,
+                          ),
                     ),
                   ],
                 ),

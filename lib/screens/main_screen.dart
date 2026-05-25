@@ -387,10 +387,12 @@ class _MainScreenState extends ConsumerState<MainScreen>
     }
 
     if (!_pageController.hasClients) return;
-    
+
     final width = MediaQuery.sizeOf(context).width;
-    final isLandscape = MediaQuery.orientationOf(context) == Orientation.landscape;
-    final isDesktop = Platform.isWindows || width >= _desktopBreakpoint || isLandscape;
+    final isLandscape =
+        MediaQuery.orientationOf(context) == Orientation.landscape;
+    final isDesktop =
+        Platform.isWindows || width >= _desktopBreakpoint || isLandscape;
 
     if (isDesktop) {
       _pageController.jumpToPage(index);
@@ -491,8 +493,10 @@ class _MainScreenState extends ConsumerState<MainScreen>
       _isDataReady = true;
     }
     final width = MediaQuery.sizeOf(context).width;
-    final isLandscape = MediaQuery.orientationOf(context) == Orientation.landscape;
-    final isDesktop = Platform.isWindows || width >= _desktopBreakpoint || isLandscape;
+    final isLandscape =
+        MediaQuery.orientationOf(context) == Orientation.landscape;
+    final isDesktop =
+        Platform.isWindows || width >= _desktopBreakpoint || isLandscape;
     final isTinyWindow = width < 300 || MediaQuery.sizeOf(context).height < 300;
     final mobileContentInset = isDesktop
         ? 0.0
@@ -523,8 +527,14 @@ class _MainScreenState extends ConsumerState<MainScreen>
                       if (isDesktop)
                         Row(
                           children: [
-                            _buildDesktopNavigation(context, i18n, visibleSessions),
-                            Expanded(child: _buildAnimatedBody(isDesktop: true)),
+                            _buildDesktopNavigation(
+                              context,
+                              i18n,
+                              visibleSessions,
+                            ),
+                            Expanded(
+                              child: _buildAnimatedBody(isDesktop: true),
+                            ),
                           ],
                         )
                       else
@@ -544,12 +554,16 @@ class _MainScreenState extends ConsumerState<MainScreen>
                                   : 136,
                               child: IgnorePointer(
                                 child: ShaderMask(
-                                  shaderCallback: (bounds) => const LinearGradient(
-                                    begin: Alignment.topCenter,
-                                    end: Alignment.bottomCenter,
-                                    colors: [Colors.transparent, Colors.white],
-                                    stops: [0, 0.45],
-                                  ).createShader(bounds),
+                                  shaderCallback: (bounds) =>
+                                      const LinearGradient(
+                                        begin: Alignment.topCenter,
+                                        end: Alignment.bottomCenter,
+                                        colors: [
+                                          Colors.transparent,
+                                          Colors.white,
+                                        ],
+                                        stops: [0, 0.45],
+                                      ).createShader(bounds),
                                   child: RepaintBoundary(
                                     child: isTinyWindow
                                         ? const SizedBox.expand()

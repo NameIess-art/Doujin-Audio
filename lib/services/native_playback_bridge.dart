@@ -184,8 +184,9 @@ abstract interface class NativePlaybackBridgeBase {
 
   Future<NativeResult<NativePlaybackSnapshot>> setVolume(
     String sessionId,
-    double volume,
-  );
+    double volume, {
+    bool reloadSource = true,
+  });
 
   Future<NativeResult<NativePlaybackSnapshot>> setRepeatOne(
     String sessionId,
@@ -382,8 +383,9 @@ class NativePlaybackBridge implements NativePlaybackBridgeBase {
   @override
   Future<NativeResult<NativePlaybackSnapshot>> setVolume(
     String sessionId,
-    double volume,
-  ) {
+    double volume, {
+    bool reloadSource = true,
+  }) {
     return _invokeSnapshot(NativePlaybackMethod.setVolume, {
       'sessionId': sessionId,
       'volume': volume,

@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -83,11 +84,17 @@ class ThemeProvider with ChangeNotifier {
       );
 
   ThemeData _buildTheme(ColorScheme scheme) {
+    final bool isDesktop = !const bool.fromEnvironment('dart.library.html') && 
+        (Platform.isWindows || Platform.isMacOS || Platform.isLinux);
+    
+    // Modern UI for desktop
+    final fontFamily = isDesktop ? 'Segoe UI' : null;
+
     final bodyText = GoogleFonts.ralewayTextTheme().copyWith(
-      bodyMedium: GoogleFonts.raleway(fontSize: 14, height: 1.5),
-      bodyLarge: GoogleFonts.raleway(fontSize: 15, height: 1.5),
+      bodyMedium: GoogleFonts.raleway(fontSize: isDesktop ? 13 : 14, height: 1.5),
+      bodyLarge: GoogleFonts.raleway(fontSize: isDesktop ? 14 : 15, height: 1.5),
       labelLarge: GoogleFonts.raleway(
-        fontSize: 12,
+        fontSize: isDesktop ? 11 : 12,
         fontWeight: FontWeight.w700,
         letterSpacing: 0.1,
       ),
@@ -102,26 +109,28 @@ class ThemeProvider with ChangeNotifier {
       bodySmall: GoogleFonts.raleway(fontSize: 10, fontWeight: FontWeight.w500),
       titleMedium: GoogleFonts.raleway(
         fontWeight: FontWeight.w800,
-        fontSize: 14,
+        fontSize: isDesktop ? 13 : 14,
         height: 1.25,
       ),
-      titleLarge: GoogleFonts.outfit(fontWeight: FontWeight.w800, fontSize: 18),
+      titleLarge: GoogleFonts.outfit(fontWeight: FontWeight.w800, fontSize: isDesktop ? 16 : 18),
       headlineSmall: GoogleFonts.outfit(
         fontWeight: FontWeight.w900,
-        fontSize: 20,
+        fontSize: isDesktop ? 18 : 20,
       ),
     );
 
     final largeShape = RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(20),
+      borderRadius: BorderRadius.circular(isDesktop ? 12 : 20),
     );
 
     return ThemeData(
       useMaterial3: true,
+      visualDensity: isDesktop ? VisualDensity.compact : VisualDensity.standard,
       colorScheme: scheme,
       textTheme: bodyText.apply(
         bodyColor: scheme.onSurface,
         displayColor: scheme.onSurface,
+        fontFamily: fontFamily,
       ),
       pageTransitionsTheme: const PageTransitionsTheme(
         builders: {

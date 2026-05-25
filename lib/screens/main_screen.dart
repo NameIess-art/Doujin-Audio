@@ -390,7 +390,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
     
     final width = MediaQuery.sizeOf(context).width;
     final isLandscape = MediaQuery.orientationOf(context) == Orientation.landscape;
-    final isDesktop = width >= _desktopBreakpoint || isLandscape;
+    final isDesktop = Platform.isWindows || width >= _desktopBreakpoint || isLandscape;
 
     if (isDesktop) {
       _pageController.jumpToPage(index);
@@ -492,7 +492,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
     }
     final width = MediaQuery.sizeOf(context).width;
     final isLandscape = MediaQuery.orientationOf(context) == Orientation.landscape;
-    final isDesktop = width >= _desktopBreakpoint || isLandscape;
+    final isDesktop = Platform.isWindows || width >= _desktopBreakpoint || isLandscape;
     final isTinyWindow = width < 300 || MediaQuery.sizeOf(context).height < 300;
     final mobileContentInset = isDesktop
         ? 0.0
@@ -509,76 +509,81 @@ class _MainScreenState extends ConsumerState<MainScreen>
         extendBody: !isDesktop,
         resizeToAvoidBottomInset: false,
         backgroundColor: Colors.transparent,
-        body: Column(
+        body: Stack(
+          fit: StackFit.expand,
           children: [
-            const WindowsTitleBar(),
-            Expanded(
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  _AmbientBackground(tinyMode: isTinyWindow),
-                  if (isDesktop)
-                    Row(
-                      children: [
-                        _buildDesktopNavigation(context, i18n, visibleSessions),
-                        Expanded(child: _buildAnimatedBody(isDesktop: true)),
-                      ],
-                    )
-                  else
-              Stack(
-                fit: StackFit.expand,
-                children: [
-                  MobileOverlayInset(
-                    bottomInset: mobileContentInset,
-                    child: _buildAnimatedBody(isDesktop: false),
-                  ),
-                  Positioned(
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    height: _measuredDockContent > 0
-                        ? _measuredDockContent + 36
-                        : 136,
-                    child: IgnorePointer(
-                      child: ShaderMask(
-                        shaderCallback: (bounds) => const LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [Colors.transparent, Colors.white],
-                          stops: [0, 0.45],
-                        ).createShader(bounds),
-                        child: RepaintBoundary(
-                          child: isTinyWindow
-                              ? const SizedBox.expand()
-                              : const SizedBox.expand(),
+            _AmbientBackground(tinyMode: isTinyWindow),
+            Column(
+              children: [
+                const WindowsTitleBar(),
+                Expanded(
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      if (isDesktop)
+                        Row(
+                          children: [
+                            _buildDesktopNavigation(context, i18n, visibleSessions),
+                            Expanded(child: _buildAnimatedBody(isDesktop: true)),
+                          ],
+                        )
+                      else
+                        Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            MobileOverlayInset(
+                              bottomInset: mobileContentInset,
+                              child: _buildAnimatedBody(isDesktop: false),
+                            ),
+                            Positioned(
+                              left: 0,
+                              right: 0,
+                              bottom: 0,
+                              height: _measuredDockContent > 0
+                                  ? _measuredDockContent + 36
+                                  : 136,
+                              child: IgnorePointer(
+                                child: ShaderMask(
+                                  shaderCallback: (bounds) => const LinearGradient(
+                                    begin: Alignment.topCenter,
+                                    end: Alignment.bottomCenter,
+                                    colors: [Colors.transparent, Colors.white],
+                                    stops: [0, 0.45],
+                                  ).createShader(bounds),
+                                  child: RepaintBoundary(
+                                    child: isTinyWindow
+                                        ? const SizedBox.expand()
+                                        : const SizedBox.expand(),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            _buildMobileBottomDock(
+                              context,
+                              i18n: i18n,
+                              overlaySessions: visibleSessions,
+                              tinyMode: isTinyWindow,
+                            ),
+                          ],
                         ),
-                      ),
-                    ),
+                      if (_timerOverlayPrimed) const _ImmediateTimerScrim(),
+                      for (final session in subtitleSessions)
+                        FloatingSubtitleWindow(
+                          key: ValueKey('subtitle_${session.id}'),
+                          sessionId: session.id,
+                          isCrossPage: true,
+                        ),
+                      if (!_bootstrapDone)
+                        _BootstrapOverlay(
+                          visible: !_isDataReady,
+                          onAnimationEnd: () {
+                            if (mounted) setState(() => _bootstrapDone = true);
+                          },
+                        ),
+                    ],
                   ),
-                  _buildMobileBottomDock(
-                    context,
-                    i18n: i18n,
-                    overlaySessions: visibleSessions,
-                    tinyMode: isTinyWindow,
-                  ),
-                ],
-              ),
-            if (_timerOverlayPrimed) const _ImmediateTimerScrim(),
-            for (final session in subtitleSessions)
-              FloatingSubtitleWindow(
-                key: ValueKey('subtitle_${session.id}'),
-                sessionId: session.id,
-                isCrossPage: true,
-              ),
-            if (!_bootstrapDone)
-              _BootstrapOverlay(
-                visible: !_isDataReady,
-                onAnimationEnd: () {
-                  if (mounted) setState(() => _bootstrapDone = true);
-                },
-              ),
-          ],
-        ),
+                ),
+              ],
             ),
           ],
         ),

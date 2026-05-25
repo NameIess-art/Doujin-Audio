@@ -136,6 +136,7 @@ class AudioProvider with ChangeNotifier {
 
   int _sessionSeed = 0;
   bool _isInitialized = false;
+  final Set<String> _deferredVolumeReloadSessionIds = <String>{};
   final Map<String, String> _retargetedPathAliases = <String, String>{};
   final ValueNotifier<int?> _scrollToTopTabNotifier = ValueNotifier<int?>(null);
   ValueListenable<int?> get scrollToTopTabListenable => _scrollToTopTabNotifier;

@@ -30,6 +30,14 @@ import 'services/app_preferences.dart';
 import 'services/app_database.dart';
 import 'windows/subtitle_overlay_window.dart';
 
+class _MainWindowListener extends WindowListener {
+  @override
+  void onWindowClose() async {
+    await windowManager.destroy();
+    exit(0);
+  }
+}
+
 Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -78,6 +86,7 @@ Future<void> main(List<String> args) async {
       await windowManager.show();
       await windowManager.focus();
     });
+    windowManager.addListener(_MainWindowListener());
   }
 
   // Optimize image cache for mobile memory stability

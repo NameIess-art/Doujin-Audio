@@ -68,6 +68,7 @@ extension AudioProviderPlayback on AudioProvider {
 
     for (final session in removedSessions) {
       session.isPlaybackStarting = false;
+      _deferredVolumeReloadSessionIds.remove(session.id);
       _clearNotificationSubtitleForSession(session.id);
       if (_notificationFocusSessionId == session.id) {
         _notificationFocusSessionId = null;
@@ -127,19 +128,19 @@ extension AudioProviderPlayback on AudioProvider {
     session.channelSwapEnabled = enabled;
     _markActiveSessionsDirty();
     _notifyPlaybackChanged(); // Optimistic update
-    
+
     // Prevent spurious ProcessingState.completed events from auto-advancing
     // the playlist while the audio source is being replaced.
     final wasLoading = session.isLoading;
     session.isLoading = true;
-    
+
     final response = await _nativePlaybackRepository.setChannelSwap(
       session.id,
       enabled,
     );
-    
+
     session.isLoading = wasLoading;
-    
+
     final value = response.valueOrNull;
     if (value != null) {
       _playbackService.applyNativeSnapshot(
@@ -210,14 +211,30 @@ extension AudioProviderPlayback on AudioProvider {
     final session = _sessions[sessionId];
     if (session == null) return;
     final nextVolume = volume.clamp(0.0, _maxSessionVolume);
+    final hasDeferredReload = _deferredVolumeReloadSessionIds.contains(
+      session.id,
+    );
     if ((session.volume - nextVolume).abs() < 0.001) {
+      if (persist && hasDeferredReload) {
+        await _nativePlaybackRepository.setVolume(session.id, session.volume);
+        _deferredVolumeReloadSessionIds.remove(session.id);
+      }
       if (persist) {
         _scheduleSaveSessionState();
       }
       return;
     }
     session.volume = nextVolume;
-    await _nativePlaybackRepository.setVolume(session.id, session.volume);
+    if (persist) {
+      _deferredVolumeReloadSessionIds.remove(session.id);
+    } else {
+      _deferredVolumeReloadSessionIds.add(session.id);
+    }
+    await _nativePlaybackRepository.setVolume(
+      session.id,
+      session.volume,
+      reloadSource: persist,
+    );
     if (notify) {
       _notifyPlaybackChanged();
     }
@@ -297,6 +314,7 @@ extension AudioProviderPlayback on AudioProvider {
     final removedSessions = _playbackService.removeSessions(sessionIds);
     for (final session in removedSessions) {
       session.isPlaybackStarting = false;
+      _deferredVolumeReloadSessionIds.remove(session.id);
       _clearNotificationSubtitleForSession(session.id);
     }
     _notificationFocusSessionId = null;

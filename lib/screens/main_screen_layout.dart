@@ -13,6 +13,7 @@ extension _MainScreenLayout on _MainScreenState {
               ? const EdgeInsets.fromLTRB(24, 22, 24, 22)
               : const EdgeInsets.fromLTRB(12, 12, 16, 12))
         : EdgeInsets.zero;
+    final isWindows = Platform.isWindows;
 
     Widget pageShell(int actualIndex) {
       final Widget page = TickerMode(
@@ -26,15 +27,20 @@ extension _MainScreenLayout on _MainScreenState {
             ? ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 980),
                 child: Padding(
-                  padding: padding,
+                  padding: isWindows ? EdgeInsets.zero : padding,
                   child: DecoratedBox(
                     decoration: BoxDecoration(
-                      color: cs.surfaceContainerLow,
-                      borderRadius: radius,
-                      border: Border.all(
-                        color: cs.outlineVariant.withValues(alpha: 0.85),
-                      ),
-                      boxShadow: [
+                      color: isWindows ? cs.surface : cs.surfaceContainerLow,
+                      borderRadius: isWindows ? const BorderRadius.only(topLeft: Radius.circular(8)) : radius,
+                      border: isWindows
+                          ? Border(
+                              left: BorderSide(color: cs.outlineVariant.withValues(alpha: 0.5)),
+                              top: BorderSide(color: cs.outlineVariant.withValues(alpha: 0.5)),
+                            )
+                          : Border.all(
+                              color: cs.outlineVariant.withValues(alpha: 0.85),
+                            ),
+                      boxShadow: isWindows ? null : [
                         BoxShadow(
                           color: cs.shadow.withValues(alpha: 0.1),
                           blurRadius: 28,
@@ -43,7 +49,7 @@ extension _MainScreenLayout on _MainScreenState {
                       ],
                     ),
                     child: ClipRRect(
-                      borderRadius: radius,
+                      borderRadius: isWindows ? const BorderRadius.only(topLeft: Radius.circular(8)) : radius,
                       clipBehavior: Clip.hardEdge,
                       child: ColoredBox(
                         color: cs.surface,
@@ -92,7 +98,7 @@ extension _MainScreenLayout on _MainScreenState {
     final mediaSize = MediaQuery.sizeOf(context);
     final isLandscape =
         MediaQuery.orientationOf(context) == Orientation.landscape;
-    final isDesktop = mediaSize.width >= 760 || isLandscape;
+    final isDesktop = Platform.isWindows || mediaSize.width >= 760 || isLandscape;
 
     if (!_timerOverlayPrimed) {
       _setLocalState(() {
@@ -254,16 +260,17 @@ extension _MainScreenLayout on _MainScreenState {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
+    final isWindows = Platform.isWindows;
 
     return Container(
       width: 292,
-      margin: const EdgeInsets.fromLTRB(16, 18, 8, 18),
+      margin: isWindows ? EdgeInsets.zero : const EdgeInsets.fromLTRB(16, 18, 8, 18),
       padding: const EdgeInsets.fromLTRB(10, 16, 10, 10),
       decoration: BoxDecoration(
-        color: cs.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(26),
-        border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.85)),
-        boxShadow: [
+        color: isWindows ? Colors.transparent : cs.surfaceContainerLow,
+        borderRadius: isWindows ? BorderRadius.zero : BorderRadius.circular(26),
+        border: isWindows ? null : Border.all(color: cs.outlineVariant.withValues(alpha: 0.85)),
+        boxShadow: isWindows ? null : [
           BoxShadow(
             color: cs.shadow.withValues(alpha: 0.1),
             blurRadius: 28,
@@ -274,36 +281,37 @@ extension _MainScreenLayout on _MainScreenState {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(10, 2, 10, 14),
-            child: Row(
-              children: [
-                Container(
-                  width: 38,
-                  height: 38,
-                  decoration: BoxDecoration(
-                    color: cs.primaryContainer,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Icon(
-                    Icons.graphic_eq_rounded,
-                    color: cs.onPrimaryContainer,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    i18n.tr('asmr_player'),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w800,
+          if (!isWindows)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(10, 2, 10, 14),
+              child: Row(
+                children: [
+                  Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      color: cs.primaryContainer,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(
+                      Icons.graphic_eq_rounded,
+                      color: cs.onPrimaryContainer,
                     ),
                   ),
-                ),
-              ],
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      i18n.tr('asmr_player'),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
           Expanded(
             child: Theme(
               data: Theme.of(context).copyWith(

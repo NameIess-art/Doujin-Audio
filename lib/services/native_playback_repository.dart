@@ -80,9 +80,10 @@ class NativePlaybackRepository {
 
   Future<NativeResult<NativePlaybackSnapshot>> setVolume(
     String sessionId,
-    double volume,
-  ) {
-    return _bridge.setVolume(sessionId, volume);
+    double volume, {
+    bool reloadSource = true,
+  }) {
+    return _bridge.setVolume(sessionId, volume, reloadSource: reloadSource);
   }
 
   Future<NativeResult<NativePlaybackSnapshot>> setRepeatOne(

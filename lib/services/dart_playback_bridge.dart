@@ -76,13 +76,13 @@ class DartPlaybackBridge implements NativePlaybackBridgeBase {
         queue: queue,
         queueStartIndex: queueStartIndex,
       );
+      session.volume = _normalizeSessionVolume(volume);
       await session.setItems(
         items,
         initialIndex: 0,
         initialPosition: startPosition,
       );
-      session.volume = volume;
-      await session.player.setVolume(volume.clamp(0.0, 1.0));
+      await session.player.setVolume(_playerVolumeFor(session.volume));
       await _applyLoopAndShuffle(
         session.player,
         repeatOne: repeatOne,
@@ -137,12 +137,12 @@ class DartPlaybackBridge implements NativePlaybackBridgeBase {
   @override
   Future<NativeResult<NativePlaybackSnapshot>> setVolume(
     String sessionId,
-    double volume,
-  ) async {
+    double volume, {
+    bool reloadSource = true,
+  }) async {
     final session = _sessions[sessionId];
     if (session == null) return NativeFailure('Unknown session: $sessionId');
-    session.volume = volume;
-    await session.player.setVolume(volume.clamp(0.0, 1.0));
+    await session.setVolume(volume, reloadSource: reloadSource);
     return NativeSuccess(_emit(sessionId));
   }
 
@@ -333,7 +333,7 @@ class DartPlaybackBridge implements NativePlaybackBridgeBase {
       bufferedPosition: player.bufferedPosition,
       duration: player.duration,
       volume: session.volume,
-      boostGain: 1.0,
+      boostGain: _boostGainFor(session.volume),
       channelSwapEnabled: session.channelSwapEnabled,
     );
   }
@@ -344,10 +344,10 @@ class _DartPlaybackSession {
     void bind(Stream<dynamic> stream) {
       subscriptions.add(
         stream.listen(
-          (_) => onChanged(),
+          (_) => _notifyChanged(),
           onError: (e, st) {
             debugPrint('DartPlaybackSession stream error: $e\n$st');
-            onChanged();
+            _notifyChanged();
           },
         ),
       );
@@ -367,6 +367,45 @@ class _DartPlaybackSession {
   List<_DartPlaybackItem> items = const <_DartPlaybackItem>[];
   double volume = 1.0;
   bool channelSwapEnabled = false;
+  bool _suppressPlayerEvents = false;
+  bool _sourceRequiresFfmpeg = false;
+  double _sourceBoostGain = 1.0;
+  bool _sourceChannelSwapEnabled = false;
+
+  Future<void> setVolume(double nextVolume, {bool reloadSource = true}) async {
+    volume = _normalizeSessionVolume(nextVolume);
+    final needsSourceReload =
+        items.isNotEmpty &&
+        reloadSource &&
+        Platform.isWindows &&
+        WindowsFfmpegService.isAvailable &&
+        (_sourceRequiresFfmpeg != _targetRequiresFfmpegSource ||
+            (_sourceBoostGain - _targetBoostGain).abs() >= 0.01 ||
+            _sourceChannelSwapEnabled != channelSwapEnabled);
+
+    if (needsSourceReload) {
+      final wasPlaying = player.playing;
+      final currentIndex = (player.currentIndex ?? 0).clamp(
+        0,
+        items.isEmpty ? 0 : items.length - 1,
+      );
+      final currentPosition = player.position;
+      await _withPlayerEventsSuppressed(() async {
+        await _setPlayerSources(
+          initialIndex: currentIndex,
+          initialPosition: currentPosition,
+        );
+        await player.setVolume(_playerVolume);
+      });
+      if (wasPlaying) {
+        unawaited(player.play());
+      }
+      onChanged();
+      return;
+    }
+
+    await player.setVolume(_playerVolume);
+  }
 
   _DartPlaybackItem? get currentItem {
     if (items.isEmpty) return null;
@@ -398,18 +437,38 @@ class _DartPlaybackSession {
     channelSwapEnabled = enabled;
     try {
       if (items.isNotEmpty) {
-        await _setPlayerSources(
-          initialIndex: currentIndex,
-          initialPosition: currentPosition,
-        );
-        await player.setVolume(volume.clamp(0.0, 1.0));
+        await _withPlayerEventsSuppressed(() async {
+          await _setPlayerSources(
+            initialIndex: currentIndex,
+            initialPosition: currentPosition,
+          );
+          await player.setVolume(_playerVolume);
+        });
         if (wasPlaying) {
           unawaited(player.play());
         }
+        onChanged();
       }
     } catch (_) {
       channelSwapEnabled = previous;
       rethrow;
+    }
+  }
+
+  Future<void> _withPlayerEventsSuppressed(
+    Future<void> Function() action,
+  ) async {
+    _suppressPlayerEvents = true;
+    try {
+      await action();
+    } finally {
+      _suppressPlayerEvents = false;
+    }
+  }
+
+  void _notifyChanged() {
+    if (!_suppressPlayerEvents) {
+      onChanged();
     }
   }
 
@@ -419,6 +478,9 @@ class _DartPlaybackSession {
   }) async {
     if (items.isEmpty) {
       await player.stop();
+      _sourceRequiresFfmpeg = false;
+      _sourceBoostGain = 1.0;
+      _sourceChannelSwapEnabled = false;
       return;
     }
     if (items.length == 1) {
@@ -426,6 +488,7 @@ class _DartPlaybackSession {
         _audioSourceFor(items.first),
         initialPosition: initialPosition,
       );
+      _markSourceConfigApplied();
       return;
     }
     await player.setAudioSources(
@@ -433,6 +496,7 @@ class _DartPlaybackSession {
       initialIndex: initialIndex,
       initialPosition: initialPosition,
     );
+    _markSourceConfigApplied();
   }
 
   AudioSource _audioSourceFor(_DartPlaybackItem item) {
@@ -440,11 +504,30 @@ class _DartPlaybackSession {
     if (itemPath == null || PathMatcher.isRemoteUri(itemPath)) {
       return AudioSource.uri(item.uri);
     }
-    if (channelSwapEnabled && Platform.isWindows && WindowsFfmpegService.isAvailable) {
-      return _FfmpegStreamAudioSource(itemPath, channelSwap: true);
+    if (_targetRequiresFfmpegSource) {
+      return _FfmpegStreamAudioSource(
+        itemPath,
+        channelSwap: channelSwapEnabled,
+        volumeGain: _targetBoostGain,
+      );
     }
     return _LocalFileStreamAudioSource(itemPath);
   }
+
+  void _markSourceConfigApplied() {
+    _sourceRequiresFfmpeg = _targetRequiresFfmpegSource;
+    _sourceBoostGain = _targetBoostGain;
+    _sourceChannelSwapEnabled = channelSwapEnabled;
+  }
+
+  bool get _targetRequiresFfmpegSource =>
+      Platform.isWindows &&
+      WindowsFfmpegService.isAvailable &&
+      (channelSwapEnabled || _targetBoostGain > 1.0);
+
+  double get _playerVolume => _playerVolumeFor(volume);
+
+  double get _targetBoostGain => _boostGainFor(volume);
 
   Future<void> dispose() async {
     for (final subscription in subscriptions) {
@@ -453,6 +536,18 @@ class _DartPlaybackSession {
     subscriptions.clear();
     await player.dispose();
   }
+}
+
+double _normalizeSessionVolume(double volume) {
+  return volume.clamp(0.0, 2.0);
+}
+
+double _playerVolumeFor(double volume) {
+  return _normalizeSessionVolume(volume).clamp(0.0, 1.0);
+}
+
+double _boostGainFor(double volume) {
+  return _normalizeSessionVolume(volume).clamp(1.0, 2.0);
 }
 
 class _DartPlaybackItem {
@@ -533,10 +628,15 @@ class _LocalFileStreamAudioSource extends StreamAudioSource {
 }
 
 class _FfmpegStreamAudioSource extends StreamAudioSource {
-  _FfmpegStreamAudioSource(this.path, {required this.channelSwap});
+  _FfmpegStreamAudioSource(
+    this.path, {
+    required this.channelSwap,
+    required this.volumeGain,
+  });
 
   final String path;
   final bool channelSwap;
+  final double volumeGain;
   int? _sourceLength;
 
   Future<void> _initDuration() async {
@@ -583,19 +683,30 @@ class _FfmpegStreamAudioSource extends StreamAudioSource {
     }
     args.addAll(['-i', path]);
 
-    if (channelSwap) {
-      args.addAll(['-af', 'pan=stereo|c0=c1|c1=c0']);
+    final filters = <String>[
+      if (channelSwap) 'pan=stereo|c0=c1|c1=c0',
+      if (volumeGain > 1.0) 'volume=${volumeGain.toStringAsFixed(3)}',
+    ];
+    if (filters.isNotEmpty) {
+      args.addAll(['-af', filters.join(',')]);
     }
 
     args.addAll([
       '-vn',
-      '-map_metadata', '-1',
-      '-fflags', '+bitexact',
-      '-flags:a', '+bitexact',
-      '-c:a', 'pcm_s16le',
-      '-ar', '44100',
-      '-ac', '2',
-      '-f', 's16le',
+      '-map_metadata',
+      '-1',
+      '-fflags',
+      '+bitexact',
+      '-flags:a',
+      '+bitexact',
+      '-c:a',
+      'pcm_s16le',
+      '-ar',
+      '44100',
+      '-ac',
+      '2',
+      '-f',
+      's16le',
       'pipe:1',
     ]);
 
@@ -631,10 +742,19 @@ class _FfmpegStreamAudioSource extends StreamAudioSource {
   Uint8List _generateWavHeader(int dataLength) {
     final header = Uint8List(44);
     final view = ByteData.view(header.buffer);
-    header[0] = 82; header[1] = 73; header[2] = 70; header[3] = 70;
+    header[0] = 82;
+    header[1] = 73;
+    header[2] = 70;
+    header[3] = 70;
     view.setUint32(4, dataLength + 36, Endian.little);
-    header[8] = 87; header[9] = 65; header[10] = 86; header[11] = 69;
-    header[12] = 102; header[13] = 109; header[14] = 116; header[15] = 32;
+    header[8] = 87;
+    header[9] = 65;
+    header[10] = 86;
+    header[11] = 69;
+    header[12] = 102;
+    header[13] = 109;
+    header[14] = 116;
+    header[15] = 32;
     view.setUint32(16, 16, Endian.little);
     view.setUint16(20, 1, Endian.little);
     view.setUint16(22, 2, Endian.little);
@@ -642,9 +762,11 @@ class _FfmpegStreamAudioSource extends StreamAudioSource {
     view.setUint32(28, 176400, Endian.little);
     view.setUint16(32, 4, Endian.little);
     view.setUint16(34, 16, Endian.little);
-    header[36] = 100; header[37] = 97; header[38] = 116; header[39] = 97;
+    header[36] = 100;
+    header[37] = 97;
+    header[38] = 116;
+    header[39] = 97;
     view.setUint32(40, dataLength, Endian.little);
     return header;
   }
 }
-

@@ -130,7 +130,6 @@ class AsmrApiService {
     throw const HttpException('Unexpected API response list.');
   }
 
-
   Future<Object?> _send({
     required String method,
     required String path,

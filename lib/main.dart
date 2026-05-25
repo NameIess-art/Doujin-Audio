@@ -64,10 +64,12 @@ Future<void> main(List<String> args) async {
       });
     }
 
-    runApp(SubtitleOverlayWindow(
-      windowController: WindowController.fromWindowId(windowId),
-      args: argument,
-    ));
+    runApp(
+      SubtitleOverlayWindow(
+        windowController: WindowController.fromWindowId(windowId),
+        args: argument,
+      ),
+    );
     return;
   }
 
@@ -225,9 +227,7 @@ class MusicPlayerApp extends StatelessWidget {
           scrollBehavior: const MaterialScrollBehavior().copyWith(
             scrollbars: Platform.isWindows,
           ),
-          home: const GlobalShortcuts(
-            child: MainScreen(),
-          ),
+          home: const GlobalShortcuts(child: MainScreen()),
         );
       },
     );

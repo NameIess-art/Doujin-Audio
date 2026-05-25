@@ -185,36 +185,36 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
           }
         },
         child: PageView.builder(
-        controller: _pageController,
-        scrollBehavior: ScrollConfiguration.of(context).copyWith(
-          dragDevices: {
-            PointerDeviceKind.touch,
-            PointerDeviceKind.mouse,
-            PointerDeviceKind.trackpad,
+          controller: _pageController,
+          scrollBehavior: ScrollConfiguration.of(context).copyWith(
+            dragDevices: {
+              PointerDeviceKind.touch,
+              PointerDeviceKind.mouse,
+              PointerDeviceKind.trackpad,
+            },
+          ),
+          physics: sessions.length == 1
+              ? const NeverScrollableScrollPhysics()
+              : const BouncingScrollPhysics(),
+          itemCount: sessions.length,
+          itemBuilder: (context, index) {
+            final session = sessions[index];
+            final track = provider.trackByPath(session.currentTrackPath);
+
+            return _ActiveSessionPageTransform(
+              pageListenable: _pageNotifier,
+              index: index,
+              child: RepaintBoundary(
+                child: _ActiveSessionCard(
+                  session: session,
+                  provider: provider,
+                  coverPathFuture: _sessionCoverFutureForTrack(provider, track),
+                  onOpen: () => _openSessionDetail(context, session),
+                ),
+              ),
+            );
           },
         ),
-        physics: sessions.length == 1
-            ? const NeverScrollableScrollPhysics()
-            : const BouncingScrollPhysics(),
-        itemCount: sessions.length,
-        itemBuilder: (context, index) {
-          final session = sessions[index];
-          final track = provider.trackByPath(session.currentTrackPath);
-
-          return _ActiveSessionPageTransform(
-            pageListenable: _pageNotifier,
-            index: index,
-            child: RepaintBoundary(
-              child: _ActiveSessionCard(
-                session: session,
-                provider: provider,
-                coverPathFuture: _sessionCoverFutureForTrack(provider, track),
-                onOpen: () => _openSessionDetail(context, session),
-              ),
-            ),
-          );
-        },
-      ),
       ),
     );
   }

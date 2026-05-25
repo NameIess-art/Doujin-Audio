@@ -430,78 +430,82 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                       const SizedBox(height: 12),
                       _SectionHeader(title: i18n.tr('section_notification')),
                       const SizedBox(height: 2),
-                    _CapabilitySettingsTile(
-                      title: i18n.tr('notification_permission_status'),
-                      icon: Icons.notifications_rounded,
-                      okFuture: _notificationsAllowedFuture,
-                      okText: i18n.tr('notification_permission_ready'),
-                      missingText: i18n.tr('notification_permission_missing'),
-                      checkingText: i18n.tr('notification_permission_checking'),
-                      onTap: () => _openNotificationSettings(context),
-                    ),
-                    const SizedBox(height: 2),
-                    _CapabilitySettingsTile(
-                      title: i18n.tr('exact_alarm_permission_status'),
-                      icon: Icons.alarm_on_rounded,
-                      okFuture: _exactAlarmAllowedFuture,
-                      okText: i18n.tr('exact_alarm_permission_ready'),
-                      missingText: i18n.tr('exact_alarm_permission_missing'),
-                      checkingText: i18n.tr('exact_alarm_permission_checking'),
-                      onTap: () => _openExactAlarmSettings(context),
-                    ),
-                    const SizedBox(height: 2),
-                    ListTile(
-                      onTap: () => _openBackgroundRunSettings(context),
-                      title: Text(i18n.tr('allow_background_run')),
-                      subtitle: FutureBuilder<bool>(
-                        future: _backgroundRunAllowedFuture,
-                        builder: (context, snapshot) {
-                          if (snapshot.connectionState !=
-                                  ConnectionState.done &&
-                              snapshot.data == null) {
+                      _CapabilitySettingsTile(
+                        title: i18n.tr('notification_permission_status'),
+                        icon: Icons.notifications_rounded,
+                        okFuture: _notificationsAllowedFuture,
+                        okText: i18n.tr('notification_permission_ready'),
+                        missingText: i18n.tr('notification_permission_missing'),
+                        checkingText: i18n.tr(
+                          'notification_permission_checking',
+                        ),
+                        onTap: () => _openNotificationSettings(context),
+                      ),
+                      const SizedBox(height: 2),
+                      _CapabilitySettingsTile(
+                        title: i18n.tr('exact_alarm_permission_status'),
+                        icon: Icons.alarm_on_rounded,
+                        okFuture: _exactAlarmAllowedFuture,
+                        okText: i18n.tr('exact_alarm_permission_ready'),
+                        missingText: i18n.tr('exact_alarm_permission_missing'),
+                        checkingText: i18n.tr(
+                          'exact_alarm_permission_checking',
+                        ),
+                        onTap: () => _openExactAlarmSettings(context),
+                      ),
+                      const SizedBox(height: 2),
+                      ListTile(
+                        onTap: () => _openBackgroundRunSettings(context),
+                        title: Text(i18n.tr('allow_background_run')),
+                        subtitle: FutureBuilder<bool>(
+                          future: _backgroundRunAllowedFuture,
+                          builder: (context, snapshot) {
+                            if (snapshot.connectionState !=
+                                    ConnectionState.done &&
+                                snapshot.data == null) {
+                              return Text(
+                                i18n.tr('allow_background_run_checking'),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: descStyle,
+                              );
+                            }
+                            final ignoring = snapshot.data == true;
+                            final status = ignoring
+                                ? i18n.tr('allow_background_run_ready')
+                                : i18n.tr('allow_background_run_subtitle');
                             return Text(
-                              i18n.tr('allow_background_run_checking'),
+                              status,
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
                               style: descStyle,
                             );
-                          }
-                          final ignoring = snapshot.data == true;
-                          final status = ignoring
-                              ? i18n.tr('allow_background_run_ready')
-                              : i18n.tr('allow_background_run_subtitle');
-                          return Text(
-                            status,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: descStyle,
-                          );
-                        },
-                      ),
-                      leading: Container(
-                        width: 38,
-                        height: 38,
-                        decoration: BoxDecoration(
-                          color: cs.tertiaryContainer,
-                          borderRadius: BorderRadius.circular(10),
+                          },
                         ),
-                        child: Icon(
-                          Icons.battery_saver_rounded,
-                          color: cs.onTertiaryContainer,
+                        leading: Container(
+                          width: 38,
+                          height: 38,
+                          decoration: BoxDecoration(
+                            color: cs.tertiaryContainer,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Icon(
+                            Icons.battery_saver_rounded,
+                            color: cs.onTertiaryContainer,
+                          ),
+                        ),
+                        trailing: Icon(
+                          Icons.chevron_right_rounded,
+                          color: cs.onSurfaceVariant,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 2,
                         ),
                       ),
-                      trailing: Icon(
-                        Icons.chevron_right_rounded,
-                        color: cs.onSurfaceVariant,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 2,
-                      ),
-                    ),
                       const SizedBox(height: 14),
                       const Divider(),
                     ],
@@ -511,87 +515,87 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                     if (!Platform.isWindows) ...[
                       ListTile(
                         title: Text(i18n.tr('max_cache_size')),
-                      subtitle: Text(
-                        i18n.tr('max_cache_size_subtitle', {
-                          'size': AppCacheService.formatBytes(
-                            playbackSettings.maxCacheBytes,
+                        subtitle: Text(
+                          i18n.tr('max_cache_size_subtitle', {
+                            'size': AppCacheService.formatBytes(
+                              playbackSettings.maxCacheBytes,
+                            ),
+                          }),
+                          style: descStyle,
+                        ),
+                        leading: Container(
+                          width: 38,
+                          height: 38,
+                          decoration: BoxDecoration(
+                            color: cs.primaryContainer,
+                            borderRadius: BorderRadius.circular(10),
                           ),
-                        }),
-                        style: descStyle,
-                      ),
-                      leading: Container(
-                        width: 38,
-                        height: 38,
-                        decoration: BoxDecoration(
-                          color: cs.primaryContainer,
-                          borderRadius: BorderRadius.circular(10),
+                          child: Icon(
+                            Icons.storage_rounded,
+                            color: cs.onPrimaryContainer,
+                          ),
                         ),
-                        child: Icon(
-                          Icons.storage_rounded,
-                          color: cs.onPrimaryContainer,
-                        ),
-                      ),
-                      trailing: DropdownButtonHideUnderline(
-                        child: DropdownButton<int>(
-                          value:
-                              _cacheLimitOptions.contains(
-                                playbackSettings.maxCacheBytes,
-                              )
-                              ? playbackSettings.maxCacheBytes
-                              : AppCacheService.defaultMaxCacheBytes,
-                          borderRadius: BorderRadius.circular(12),
-                          onChanged: (value) {
-                            if (value != null) {
-                              audioProvider.setMaxCacheBytes(value);
-                            }
-                          },
-                          items: _cacheLimitOptions
-                              .map(
-                                (value) => DropdownMenuItem<int>(
-                                  value: value,
-                                  child: Text(
-                                    AppCacheService.formatBytes(value),
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w700,
+                        trailing: DropdownButtonHideUnderline(
+                          child: DropdownButton<int>(
+                            value:
+                                _cacheLimitOptions.contains(
+                                  playbackSettings.maxCacheBytes,
+                                )
+                                ? playbackSettings.maxCacheBytes
+                                : AppCacheService.defaultMaxCacheBytes,
+                            borderRadius: BorderRadius.circular(12),
+                            onChanged: (value) {
+                              if (value != null) {
+                                audioProvider.setMaxCacheBytes(value);
+                              }
+                            },
+                            items: _cacheLimitOptions
+                                .map(
+                                  (value) => DropdownMenuItem<int>(
+                                    value: value,
+                                    child: Text(
+                                      AppCacheService.formatBytes(value),
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                      ),
                                     ),
                                   ),
-                                ),
-                              )
-                              .toList(),
+                                )
+                                .toList(),
+                          ),
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 2,
                         ),
                       ),
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 2,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    ListTile(
-                      onTap: () => _clearApplicationCache(context),
-                      title: Text(i18n.tr('clear_app_cache')),
-                      subtitle: Text(
-                        i18n.tr('clear_app_cache_subtitle'),
-                        style: descStyle,
-                      ),
-                      leading: Container(
-                        width: 38,
-                        height: 38,
-                        decoration: BoxDecoration(
-                          color: cs.secondaryContainer,
-                          borderRadius: BorderRadius.circular(10),
+                      const SizedBox(height: 2),
+                      ListTile(
+                        onTap: () => _clearApplicationCache(context),
+                        title: Text(i18n.tr('clear_app_cache')),
+                        subtitle: Text(
+                          i18n.tr('clear_app_cache_subtitle'),
+                          style: descStyle,
                         ),
-                        child: Icon(
-                          Icons.cleaning_services_rounded,
-                          color: cs.onSecondaryContainer,
+                        leading: Container(
+                          width: 38,
+                          height: 38,
+                          decoration: BoxDecoration(
+                            color: cs.secondaryContainer,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Icon(
+                            Icons.cleaning_services_rounded,
+                            color: cs.onSecondaryContainer,
+                          ),
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 2,
                         ),
                       ),
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 2,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                  ],
+                      const SizedBox(height: 2),
+                    ],
                     _UpdateSettingsTile(
                       checking: _checkingUpdate,
                       downloading: _downloadingUpdate,

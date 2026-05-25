@@ -2,9 +2,9 @@ import '../models/asmr_models.dart';
 
 class AsmrDownloadSelectionModel {
   AsmrDownloadSelectionModel(List<AsmrTrackFile> roots)
-    : rootNodes = roots.map(AsmrDownloadSelectionNode.fromTrack).toList(
-        growable: false,
-      ) {
+    : rootNodes = roots
+          .map(AsmrDownloadSelectionNode.fromTrack)
+          .toList(growable: false) {
     for (final root in rootNodes) {
       _index(root);
     }
@@ -145,7 +145,9 @@ class AsmrDownloadSelectionNode {
     );
     node.children.addAll(
       track.children
-          .map((child) => AsmrDownloadSelectionNode.fromTrack(child, parent: node))
+          .map(
+            (child) => AsmrDownloadSelectionNode.fromTrack(child, parent: node),
+          )
           .toList(growable: false),
     );
     return node;

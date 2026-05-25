@@ -31,25 +31,35 @@ extension _MainScreenLayout on _MainScreenState {
                   child: DecoratedBox(
                     decoration: BoxDecoration(
                       color: isWindows ? cs.surface : cs.surfaceContainerLow,
-                      borderRadius: isWindows ? const BorderRadius.only(topLeft: Radius.circular(8)) : radius,
+                      borderRadius: isWindows
+                          ? const BorderRadius.only(topLeft: Radius.circular(8))
+                          : radius,
                       border: isWindows
                           ? Border(
-                              left: BorderSide(color: cs.outlineVariant.withValues(alpha: 0.5)),
-                              top: BorderSide(color: cs.outlineVariant.withValues(alpha: 0.5)),
+                              left: BorderSide(
+                                color: cs.outlineVariant.withValues(alpha: 0.5),
+                              ),
+                              top: BorderSide(
+                                color: cs.outlineVariant.withValues(alpha: 0.5),
+                              ),
                             )
                           : Border.all(
                               color: cs.outlineVariant.withValues(alpha: 0.85),
                             ),
-                      boxShadow: isWindows ? null : [
-                        BoxShadow(
-                          color: cs.shadow.withValues(alpha: 0.1),
-                          blurRadius: 28,
-                          offset: const Offset(0, 12),
-                        ),
-                      ],
+                      boxShadow: isWindows
+                          ? null
+                          : [
+                              BoxShadow(
+                                color: cs.shadow.withValues(alpha: 0.1),
+                                blurRadius: 28,
+                                offset: const Offset(0, 12),
+                              ),
+                            ],
                     ),
                     child: ClipRRect(
-                      borderRadius: isWindows ? const BorderRadius.only(topLeft: Radius.circular(8)) : radius,
+                      borderRadius: isWindows
+                          ? const BorderRadius.only(topLeft: Radius.circular(8))
+                          : radius,
                       clipBehavior: Clip.hardEdge,
                       child: ColoredBox(
                         color: cs.surface,
@@ -98,7 +108,8 @@ extension _MainScreenLayout on _MainScreenState {
     final mediaSize = MediaQuery.sizeOf(context);
     final isLandscape =
         MediaQuery.orientationOf(context) == Orientation.landscape;
-    final isDesktop = Platform.isWindows || mediaSize.width >= 760 || isLandscape;
+    final isDesktop =
+        Platform.isWindows || mediaSize.width >= 760 || isLandscape;
 
     if (!_timerOverlayPrimed) {
       _setLocalState(() {
@@ -264,19 +275,25 @@ extension _MainScreenLayout on _MainScreenState {
 
     return Container(
       width: 292,
-      margin: isWindows ? EdgeInsets.zero : const EdgeInsets.fromLTRB(16, 18, 8, 18),
+      margin: isWindows
+          ? EdgeInsets.zero
+          : const EdgeInsets.fromLTRB(16, 18, 8, 18),
       padding: const EdgeInsets.fromLTRB(10, 16, 10, 10),
       decoration: BoxDecoration(
         color: isWindows ? Colors.transparent : cs.surfaceContainerLow,
         borderRadius: isWindows ? BorderRadius.zero : BorderRadius.circular(26),
-        border: isWindows ? null : Border.all(color: cs.outlineVariant.withValues(alpha: 0.85)),
-        boxShadow: isWindows ? null : [
-          BoxShadow(
-            color: cs.shadow.withValues(alpha: 0.1),
-            blurRadius: 28,
-            offset: const Offset(0, 14),
-          ),
-        ],
+        border: isWindows
+            ? null
+            : Border.all(color: cs.outlineVariant.withValues(alpha: 0.85)),
+        boxShadow: isWindows
+            ? null
+            : [
+                BoxShadow(
+                  color: cs.shadow.withValues(alpha: 0.1),
+                  blurRadius: 28,
+                  offset: const Offset(0, 14),
+                ),
+              ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

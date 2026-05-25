@@ -70,7 +70,7 @@ class _SessionDetailContentState extends State<_SessionDetailContent>
     final cs = Theme.of(context).colorScheme;
     final provider = widget.provider;
     final session = widget.session;
-    
+
     final isPlaying = session.state.playing;
     if (_wasPlaying != isPlaying) {
       _wasPlaying = isPlaying;
@@ -80,7 +80,7 @@ class _SessionDetailContentState extends State<_SessionDetailContent>
         _playPauseController.reverse();
       }
     }
-    
+
     final track = provider.trackByPath(session.currentTrackPath);
     final displayName =
         track?.displayName ??

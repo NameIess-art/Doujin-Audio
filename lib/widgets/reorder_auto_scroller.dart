@@ -2,7 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 /// A wrapper that provides enhanced auto-scroll behavior for reorderable lists.
-/// 
+///
 /// It implements a quadratic velocity ramp based on the distance of the pointer
 /// from the viewport edges, providing a more dynamic and responsive "speed change"
 /// effect during drag-to-reorder interactions.
@@ -53,9 +53,10 @@ class _ReorderAutoScrollerState extends State<ReorderAutoScroller> {
 
     final localPos = box.globalToLocal(event.position);
     final height = box.size.height;
-    
+
     // Define the usable content area height
-    final contentHeight = height - widget.contentMarginTop - widget.contentMarginBottom;
+    final contentHeight =
+        height - widget.contentMarginTop - widget.contentMarginBottom;
     if (contentHeight <= 0) {
       _velocity = 0;
       return;
@@ -63,7 +64,7 @@ class _ReorderAutoScrollerState extends State<ReorderAutoScroller> {
 
     // Position relative to the content area top
     final relativeDy = localPos.dy - widget.contentMarginTop;
-    
+
     // Trigger in the top 1/3 and bottom 1/3 of the content area
     final threshold = contentHeight / 3.0;
 
@@ -73,7 +74,8 @@ class _ReorderAutoScrollerState extends State<ReorderAutoScroller> {
       // Quadratic velocity ramp as requested
       final curve = intensity * intensity;
       _velocity = -widget.maxVelocity * curve;
-    } else if (relativeDy > contentHeight - threshold && relativeDy <= contentHeight) {
+    } else if (relativeDy > contentHeight - threshold &&
+        relativeDy <= contentHeight) {
       // Near bottom of content area
       final distFromBottom = contentHeight - relativeDy;
       final intensity = 1.0 - (distFromBottom / threshold);

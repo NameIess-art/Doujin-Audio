@@ -52,9 +52,7 @@ class _ModeSelector extends StatelessWidget {
                 width: compact ? 30 : 36,
                 height: compact ? 30 : 36,
                 decoration: BoxDecoration(
-                  color: selected
-                      ? cs.primary
-                      : cs.surfaceContainerHigh,
+                  color: selected ? cs.primary : cs.surfaceContainerHigh,
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Icon(
@@ -81,7 +79,9 @@ class _ModeSelector extends StatelessWidget {
                         subtitle,
                         style: TextStyle(
                           fontSize: compact ? 10 : 11,
-                          color: selected ? cs.onPrimaryContainer : cs.onSurfaceVariant,
+                          color: selected
+                              ? cs.onPrimaryContainer
+                              : cs.onSurfaceVariant,
                         ),
                       ),
                   ],

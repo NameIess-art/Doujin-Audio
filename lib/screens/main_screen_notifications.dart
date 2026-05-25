@@ -221,7 +221,9 @@ extension _MainScreenNotifications on _MainScreenState {
     if (!Platform.isAndroid || !mounted) return;
     try {
       final sessionId = await _MainScreenState._notificationsChannel
-          .invokeMethod<String>(NotificationsMethod.consumePendingNotificationSessionId);
+          .invokeMethod<String>(
+            NotificationsMethod.consumePendingNotificationSessionId,
+          );
       if (!mounted || sessionId == null || sessionId.isEmpty) {
         return;
       }

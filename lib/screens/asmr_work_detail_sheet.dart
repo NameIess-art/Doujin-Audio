@@ -41,7 +41,8 @@ class _AsmrWorkDetailSheet extends StatelessWidget {
       builder: (context, snapshot) {
         final detail = snapshot.data;
         final effectiveWork = detail?.work ?? work;
-        final isLandscape = MediaQuery.orientationOf(context) == Orientation.landscape;
+        final isLandscape =
+            MediaQuery.orientationOf(context) == Orientation.landscape;
 
         Widget mainContent;
         if (snapshot.connectionState == ConnectionState.waiting) {
@@ -154,8 +155,7 @@ class _AsmrWorkDetailSheet extends StatelessWidget {
                   ),
                   _CopyableChipWrapRow(
                     label: i18n.tr('asmr_detail_language_editions'),
-                    values:
-                        detail?.languageEditionLabels ?? const <String>[],
+                    values: detail?.languageEditionLabels ?? const <String>[],
                   ),
                 ],
               ),
@@ -194,7 +194,8 @@ class _AsmrWorkDetailSheet extends StatelessWidget {
 
         return ConstrainedBox(
           constraints: BoxConstraints(
-            maxHeight: MediaQuery.sizeOf(context).height * (isLandscape ? 0.95 : 0.82),
+            maxHeight:
+                MediaQuery.sizeOf(context).height * (isLandscape ? 0.95 : 0.82),
           ),
           child: SingleChildScrollView(
             padding: const EdgeInsets.fromLTRB(24, 0, 24, 32),

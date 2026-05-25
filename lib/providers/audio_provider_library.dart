@@ -712,9 +712,7 @@ extension AudioProviderLibrary on AudioProvider {
     return true;
   }
 
-  Future<void> finishStagedLibraryRefresh({
-    bool waitForPersistence = false,
-  }) {
+  Future<void> finishStagedLibraryRefresh({bool waitForPersistence = false}) {
     return endLibraryBatch(waitForPersistence: waitForPersistence);
   }
 

@@ -1,4 +1,3 @@
-
 import '../models/music_track.dart';
 import 'audio_state_services.dart';
 import 'library_scanner_service.dart';
@@ -36,17 +35,20 @@ class ScanMergeIsolateResult {
   final int duplicatesCount;
 }
 
-ScanMergeIsolateResult processScannedTracksInIsolate(ScanMergeIsolatePayload payload) {
+ScanMergeIsolateResult processScannedTracksInIsolate(
+  ScanMergeIsolatePayload payload,
+) {
   final libraryRoot = payload.libraryRoot;
   final promoteRootTracksToSingles = payload.promoteRootTracksToSingles;
-  
+
   final existingTracks = <String, MusicTrack>{};
   for (final track in payload.library) {
     existingTracks[PathMatcher.normalize(track.path)] = track;
   }
 
   bool trackIsDirectlyInFolder(String folderPath, ScannedTrack track) {
-    return PathMatcher.equalsNormalized(track.groupKey, folderPath) || track.groupKey == folderPath;
+    return PathMatcher.equalsNormalized(track.groupKey, folderPath) ||
+        track.groupKey == folderPath;
   }
 
   MusicTrack canonicalizeTrackPath(MusicTrack track) {
@@ -73,7 +75,9 @@ ScanMergeIsolateResult processScannedTracksInIsolate(ScanMergeIsolatePayload pay
       remoteCoverUrl: existing.remoteCoverUrl,
       remoteMetadataKind: existing.remoteMetadataKind,
       remoteMetadata: existing.remoteMetadata,
-      duration: existing.duration == Duration.zero ? track.duration : existing.duration,
+      duration: existing.duration == Duration.zero
+          ? track.duration
+          : existing.duration,
     );
   }
 
@@ -89,7 +93,8 @@ ScanMergeIsolateResult processScannedTracksInIsolate(ScanMergeIsolatePayload pay
         (existing.coverCachePath == null && scanned.coverCachePath != null) ||
         (existing.lyricsPath == null && scanned.lyricsPath != null) ||
         (existing.manualCoverPath == null && scanned.manualCoverPath != null) ||
-        (existing.duration == Duration.zero && scanned.duration != Duration.zero);
+        (existing.duration == Duration.zero &&
+            scanned.duration != Duration.zero);
   }
 
   bool trackNeedsRefresh(MusicTrack nextTrack) {
@@ -103,10 +108,14 @@ ScanMergeIsolateResult processScannedTracksInIsolate(ScanMergeIsolatePayload pay
 
   for (final scanned in payload.scannedTracks) {
     MusicTrack converted;
-    if (promoteRootTracksToSingles && libraryRoot != null && trackIsDirectlyInFolder(libraryRoot, scanned)) {
+    if (promoteRootTracksToSingles &&
+        libraryRoot != null &&
+        trackIsDirectlyInFolder(libraryRoot, scanned)) {
       converted = MusicTrack(
         path: scanned.path,
-        displayName: scanned.displayName ?? PathDisplay.fileName(scanned.path, withoutExtension: true),
+        displayName:
+            scanned.displayName ??
+            PathDisplay.fileName(scanned.path, withoutExtension: true),
         groupKey: '__single_files__',
         groupTitle: payload.i18nImportedFiles,
         groupSubtitle: payload.i18nManuallySelectedFiles,
@@ -119,7 +128,9 @@ ScanMergeIsolateResult processScannedTracksInIsolate(ScanMergeIsolatePayload pay
     } else {
       converted = MusicTrack(
         path: scanned.path,
-        displayName: scanned.displayName ?? PathDisplay.fileName(scanned.path, withoutExtension: true),
+        displayName:
+            scanned.displayName ??
+            PathDisplay.fileName(scanned.path, withoutExtension: true),
         groupKey: scanned.groupKey,
         groupTitle: scanned.groupTitle,
         groupSubtitle: scanned.groupSubtitle,
@@ -138,7 +149,9 @@ ScanMergeIsolateResult processScannedTracksInIsolate(ScanMergeIsolatePayload pay
     }
 
     if (trackNeedsRefresh(converted)) {
-      if (libraryRoot == null || payload.exclusionMatcher == null || !payload.exclusionMatcher!.isExcluded(converted.path)) {
+      if (libraryRoot == null ||
+          payload.exclusionMatcher == null ||
+          !payload.exclusionMatcher!.isExcluded(converted.path)) {
         trackBatch.add(converted);
       }
     } else {

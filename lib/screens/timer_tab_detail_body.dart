@@ -97,7 +97,9 @@ extension _TimerTabDetailBody on _TimerTabState {
                                 Expanded(
                                   child: Text(
                                     i18n.tr('auto_resume_after_timer'),
-                                    style: Theme.of(context).textTheme.labelLarge
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .labelLarge
                                         ?.copyWith(fontWeight: FontWeight.w800),
                                   ),
                                 ),
@@ -112,7 +114,8 @@ extension _TimerTabDetailBody on _TimerTabState {
                                         hour: provider.autoResumeHour,
                                         minute: provider.autoResumeMinute,
                                         promptForCapability:
-                                            value && !provider.autoResumeEnabled,
+                                            value &&
+                                            !provider.autoResumeEnabled,
                                       ),
                                     );
                                   },
@@ -144,7 +147,8 @@ extension _TimerTabDetailBody on _TimerTabState {
                                       const SizedBox(width: 8),
                                       Expanded(
                                         child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
                                           children: [
                                             Text(
                                               i18n.tr('resume_time', {
@@ -156,7 +160,9 @@ extension _TimerTabDetailBody on _TimerTabState {
                                               style: Theme.of(context)
                                                   .textTheme
                                                   .labelLarge
-                                                  ?.copyWith(fontWeight: FontWeight.w800),
+                                                  ?.copyWith(
+                                                    fontWeight: FontWeight.w800,
+                                                  ),
                                             ),
                                           ],
                                         ),

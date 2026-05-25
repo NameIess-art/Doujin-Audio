@@ -84,15 +84,22 @@ class ThemeProvider with ChangeNotifier {
       );
 
   ThemeData _buildTheme(ColorScheme scheme) {
-    final bool isDesktop = !const bool.fromEnvironment('dart.library.html') && 
+    final bool isDesktop =
+        !const bool.fromEnvironment('dart.library.html') &&
         (Platform.isWindows || Platform.isMacOS || Platform.isLinux);
-    
+
     // Modern UI for desktop
     final fontFamily = isDesktop ? 'Segoe UI' : null;
 
     final bodyText = GoogleFonts.ralewayTextTheme().copyWith(
-      bodyMedium: GoogleFonts.raleway(fontSize: isDesktop ? 13 : 14, height: 1.5),
-      bodyLarge: GoogleFonts.raleway(fontSize: isDesktop ? 14 : 15, height: 1.5),
+      bodyMedium: GoogleFonts.raleway(
+        fontSize: isDesktop ? 13 : 14,
+        height: 1.5,
+      ),
+      bodyLarge: GoogleFonts.raleway(
+        fontSize: isDesktop ? 14 : 15,
+        height: 1.5,
+      ),
       labelLarge: GoogleFonts.raleway(
         fontSize: isDesktop ? 11 : 12,
         fontWeight: FontWeight.w700,
@@ -112,7 +119,10 @@ class ThemeProvider with ChangeNotifier {
         fontSize: isDesktop ? 13 : 14,
         height: 1.25,
       ),
-      titleLarge: GoogleFonts.outfit(fontWeight: FontWeight.w800, fontSize: isDesktop ? 16 : 18),
+      titleLarge: GoogleFonts.outfit(
+        fontWeight: FontWeight.w800,
+        fontSize: isDesktop ? 16 : 18,
+      ),
       headlineSmall: GoogleFonts.outfit(
         fontWeight: FontWeight.w900,
         fontSize: isDesktop ? 18 : 20,

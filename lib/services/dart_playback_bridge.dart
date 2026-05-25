@@ -635,12 +635,12 @@ class _FfmpegStreamAudioSource extends StreamAudioSource {
   Future<StreamAudioResponse> request([int? start, int? end]) async {
     await _initDuration();
 
-    start ??= 0;
+    final startOffset = start ?? 0;
     final effectiveEnd = end ?? _sourceLength!;
 
     // Align start offset to 4-byte boundaries (16-bit stereo frame = 4 bytes)
     // to avoid sending corrupted PCM data causing Media Foundation to crash/noise.
-    int offsetBytes = start < 44 ? 0 : start - 44;
+    int offsetBytes = startOffset < 44 ? 0 : startOffset - 44;
     final alignedOffsetBytes = (offsetBytes ~/ 4) * 4;
     final skipBytes = offsetBytes - alignedOffsetBytes;
     final seconds = alignedOffsetBytes / 176400;
@@ -683,9 +683,9 @@ class _FfmpegStreamAudioSource extends StreamAudioSource {
 
     Stream<List<int>> generateStream() async* {
       try {
-        if (start < 44) {
+        if (startOffset < 44) {
           final header = _generateWavHeader(_sourceLength! - 44);
-          yield header.sublist(start);
+          yield header.sublist(startOffset);
         }
         var bytesSkipped = 0;
         await for (final chunk in process.stdout) {
@@ -709,8 +709,8 @@ class _FfmpegStreamAudioSource extends StreamAudioSource {
 
     return StreamAudioResponse(
       sourceLength: _sourceLength,
-      contentLength: effectiveEnd - start,
-      offset: start,
+      contentLength: effectiveEnd - startOffset,
+      offset: startOffset,
       stream: generateStream(),
       contentType: 'audio/wav',
     );

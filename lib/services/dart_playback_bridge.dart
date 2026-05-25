@@ -505,7 +505,7 @@ class _DartPlaybackSession {
         volumeGain: _targetBoostGain,
       );
     }
-    return _LocalFileStreamAudioSource(itemPath);
+    return AudioSource.uri(Uri.file(itemPath));
   }
 
   void _markSourceConfigApplied() {
@@ -591,35 +591,7 @@ String _processingStateName(ProcessingState state) {
 
 // added for test
 
-class _LocalFileStreamAudioSource extends StreamAudioSource {
-  _LocalFileStreamAudioSource(this.path);
-
-  final String path;
-
-  @override
-  Future<StreamAudioResponse> request([int? start, int? end]) async {
-    start ??= 0;
-    final file = File(path);
-    final length = await file.length();
-    final effectiveEnd = end ?? length;
-    final stream = file.openRead(start, effectiveEnd);
-
-    final ext = path.split('.').last.toLowerCase();
-    String contentType = 'audio/mpeg';
-    if (ext == 'm4a' || ext == 'mp4') contentType = 'audio/mp4';
-    if (ext == 'flac') contentType = 'audio/flac';
-    if (ext == 'wav') contentType = 'audio/wav';
-    if (ext == 'ogg') contentType = 'audio/ogg';
-
-    return StreamAudioResponse(
-      sourceLength: length,
-      contentLength: effectiveEnd - start,
-      offset: start,
-      stream: stream,
-      contentType: contentType,
-    );
-  }
-}
+// _LocalFileStreamAudioSource removed
 
 class _FfmpegStreamAudioSource extends StreamAudioSource {
   _FfmpegStreamAudioSource(
@@ -666,10 +638,12 @@ class _FfmpegStreamAudioSource extends StreamAudioSource {
     start ??= 0;
     final effectiveEnd = end ?? _sourceLength!;
 
-    // Calculate seconds from byte offset
-    // WAV Header is 44 bytes.
-    final offsetBytes = start < 44 ? 0 : start - 44;
-    final seconds = offsetBytes / 176400;
+    // Align start offset to 4-byte boundaries (16-bit stereo frame = 4 bytes)
+    // to avoid sending corrupted PCM data causing Media Foundation to crash/noise.
+    int offsetBytes = start < 44 ? 0 : start - 44;
+    final alignedOffsetBytes = (offsetBytes ~/ 4) * 4;
+    final skipBytes = offsetBytes - alignedOffsetBytes;
+    final seconds = alignedOffsetBytes / 176400;
 
     final args = <String>['-v', 'quiet'];
     if (seconds > 0) {
@@ -707,25 +681,39 @@ class _FfmpegStreamAudioSource extends StreamAudioSource {
     final process = await Process.start(WindowsFfmpegService.ffmpegPath, args);
     process.stderr.listen((_) {}).onError((_) {});
 
+    Stream<List<int>> generateStream() async* {
+      try {
+        if (start < 44) {
+          final header = _generateWavHeader(_sourceLength! - 44);
+          yield header.sublist(start);
+        }
+        var bytesSkipped = 0;
+        await for (final chunk in process.stdout) {
+          if (bytesSkipped < skipBytes) {
+            final toSkip = skipBytes - bytesSkipped;
+            if (chunk.length <= toSkip) {
+              bytesSkipped += chunk.length;
+              continue;
+            } else {
+              bytesSkipped += toSkip;
+              yield chunk.sublist(toSkip);
+            }
+          } else {
+            yield chunk;
+          }
+        }
+      } finally {
+        process.kill();
+      }
+    }
+
     return StreamAudioResponse(
       sourceLength: _sourceLength,
       contentLength: effectiveEnd - start,
       offset: start,
-      stream: _buildStream(start, process),
+      stream: generateStream(),
       contentType: 'audio/wav',
     );
-  }
-
-  Stream<List<int>> _buildStream(int start, Process process) async* {
-    try {
-      if (start < 44) {
-        final header = _generateWavHeader((_sourceLength ?? 2000000000) - 44);
-        yield header.sublist(start);
-      }
-      yield* process.stdout;
-    } finally {
-      process.kill();
-    }
   }
 
   Uint8List _generateWavHeader(int dataLength) {

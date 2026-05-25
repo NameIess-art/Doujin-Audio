@@ -79,14 +79,14 @@ class DartPlaybackBridge implements NativePlaybackBridgeBase {
       session.volume = _normalizeSessionVolume(volume);
       await session.setItems(
         items,
-        initialIndex: 0,
+        initialIndex: queueStartIndex ?? 0,
         initialPosition: startPosition,
       );
       await session.player.setVolume(_playerVolumeFor(session.volume));
       await _applyLoopAndShuffle(
         session.player,
         repeatOne: repeatOne,
-        repeatAll: false,
+        repeatAll: repeatAll,
         shuffle: shuffle,
       );
       if (autoPlay) {
@@ -160,7 +160,7 @@ class DartPlaybackBridge implements NativePlaybackBridgeBase {
     await _applyLoopAndShuffle(
       session.player,
       repeatOne: repeatOne,
-      repeatAll: false,
+      repeatAll: repeatAll,
       shuffle: shuffle,
     );
     return NativeSuccess(_emit(sessionId));
@@ -264,11 +264,7 @@ class DartPlaybackBridge implements NativePlaybackBridgeBase {
         .whereType<_DartPlaybackItem>()
         .toList(growable: false);
     if (queueItems != null && queueItems.isNotEmpty) {
-      final selectedIndex = (queueStartIndex ?? 0).clamp(
-        0,
-        queueItems.length - 1,
-      );
-      return <_DartPlaybackItem>[queueItems[selectedIndex]];
+      return queueItems;
     }
     return <_DartPlaybackItem>[
       _DartPlaybackItem(

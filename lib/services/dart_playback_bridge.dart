@@ -707,30 +707,25 @@ class _FfmpegStreamAudioSource extends StreamAudioSource {
     final process = await Process.start(WindowsFfmpegService.ffmpegPath, args);
     process.stderr.listen((_) {}).onError((_) {});
 
-    final controller = StreamController<List<int>>(
-      onCancel: () {
-        process.kill();
-      },
-    );
-
-    if (start < 44) {
-      final header = _generateWavHeader(_sourceLength! - 44);
-      controller.add(header.sublist(start));
-    }
-
-    process.stdout.listen(
-      controller.add,
-      onError: controller.addError,
-      onDone: controller.close,
-    );
-
     return StreamAudioResponse(
       sourceLength: _sourceLength,
-      contentLength: effectiveEnd - start,
+      contentLength: null, // Allow chunked or live stream behavior to prevent hangs
       offset: start,
-      stream: controller.stream,
+      stream: _buildStream(start, process),
       contentType: 'audio/wav',
     );
+  }
+
+  Stream<List<int>> _buildStream(int start, Process process) async* {
+    try {
+      if (start < 44) {
+        final header = _generateWavHeader((_sourceLength ?? 2000000000) - 44);
+        yield header.sublist(start);
+      }
+      yield* process.stdout;
+    } finally {
+      process.kill();
+    }
   }
 
   Uint8List _generateWavHeader(int dataLength) {

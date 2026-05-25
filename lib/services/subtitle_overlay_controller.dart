@@ -11,6 +11,7 @@ class SubtitleOverlayController {
   static Map<String, Object?> _windowsStyleArgs = const {};
   static String _windowsSubtitleText = '';
   static bool? _windowsIsPlaying;
+  static final Set<Timer> _windowsPendingTimers = <Timer>{};
 
   static Future<bool> canDrawOverlays() async {
     if (Platform.isWindows) return true;
@@ -66,6 +67,7 @@ class SubtitleOverlayController {
   static Future<void> stopOverlay({bool immediate = false}) async {
     _stopTimer?.cancel();
     _stopTimer = null;
+    _cancelWindowsPendingTimers();
     if (immediate) {
       await _doStop();
     } else {
@@ -169,15 +171,13 @@ class SubtitleOverlayController {
 
   static void _scheduleWindowsStateReplay(WindowController window) {
     unawaited(_replayWindowsState(window));
-    unawaited(
-      Future<void>.delayed(const Duration(milliseconds: 120), () {
-        return _replayWindowsState(window);
-      }),
+    _scheduleWindowsTimer(
+      const Duration(milliseconds: 120),
+      () => _replayWindowsState(window),
     );
-    unawaited(
-      Future<void>.delayed(const Duration(milliseconds: 350), () {
-        return _replayWindowsState(window);
-      }),
+    _scheduleWindowsTimer(
+      const Duration(milliseconds: 350),
+      () => _replayWindowsState(window),
     );
   }
 
@@ -189,16 +189,33 @@ class SubtitleOverlayController {
 
   static void _scheduleWindowsShow(WindowController window) {
     unawaited(_showWindowsOverlay(window));
-    unawaited(
-      Future<void>.delayed(const Duration(milliseconds: 120), () {
-        return _showWindowsOverlay(window);
-      }),
+    _scheduleWindowsTimer(
+      const Duration(milliseconds: 120),
+      () => _showWindowsOverlay(window),
     );
-    unawaited(
-      Future<void>.delayed(const Duration(milliseconds: 350), () {
-        return _showWindowsOverlay(window);
-      }),
+    _scheduleWindowsTimer(
+      const Duration(milliseconds: 350),
+      () => _showWindowsOverlay(window),
     );
+  }
+
+  static void _scheduleWindowsTimer(
+    Duration duration,
+    Future<void> Function() action,
+  ) {
+    late final Timer timer;
+    timer = Timer(duration, () {
+      _windowsPendingTimers.remove(timer);
+      unawaited(action());
+    });
+    _windowsPendingTimers.add(timer);
+  }
+
+  static void _cancelWindowsPendingTimers() {
+    for (final timer in _windowsPendingTimers) {
+      timer.cancel();
+    }
+    _windowsPendingTimers.clear();
   }
 
   static Future<void> _invokeWindowsOverlay(

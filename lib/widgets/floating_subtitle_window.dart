@@ -111,7 +111,7 @@ class _FloatingSubtitleWindowState extends ConsumerState<FloatingSubtitleWindow>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     if (widget.isCrossPage && _isOverlayActive) {
-      _stopOverlay();
+      unawaited(_stopOverlay(immediate: true));
     }
     _playbackStateSub?.close();
     _positionSub?.cancel();

@@ -141,6 +141,9 @@ class ThemeProvider with ChangeNotifier {
           TargetPlatform.windows: ZoomPageTransitionsBuilder(),
         },
       ),
+      hoverColor: scheme.primary.withValues(alpha: 0.08),
+      focusColor: scheme.primary.withValues(alpha: 0.12),
+      highlightColor: scheme.primary.withValues(alpha: 0.12),
       scaffoldBackgroundColor: scheme.surface,
       canvasColor: scheme.surface,
       dividerColor: scheme.outlineVariant,
@@ -208,7 +211,7 @@ class ThemeProvider with ChangeNotifier {
         overlayColor: scheme.primary.withValues(alpha: 0.12),
       ),
       listTileTheme: ListTileThemeData(
-        dense: false,
+        dense: isDesktop,
         minLeadingWidth: 24,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       ),

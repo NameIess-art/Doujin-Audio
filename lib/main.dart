@@ -29,6 +29,7 @@ import 'theme/theme_provider.dart';
 import 'services/app_preferences.dart';
 import 'services/app_database.dart';
 import 'windows/subtitle_overlay_window.dart';
+import 'widgets/global_shortcuts.dart';
 
 class _MainWindowListener extends WindowListener {
   @override
@@ -78,7 +79,6 @@ Future<void> main(List<String> args) async {
       size: Size(1100, 750),
       minimumSize: Size(800, 600),
       center: true,
-      backgroundColor: Colors.transparent,
       skipTaskbar: false,
       titleBarStyle: TitleBarStyle.hidden,
     );
@@ -225,7 +225,9 @@ class MusicPlayerApp extends StatelessWidget {
           scrollBehavior: const MaterialScrollBehavior().copyWith(
             scrollbars: Platform.isWindows,
           ),
-          home: const MainScreen(),
+          home: const GlobalShortcuts(
+            child: MainScreen(),
+          ),
         );
       },
     );

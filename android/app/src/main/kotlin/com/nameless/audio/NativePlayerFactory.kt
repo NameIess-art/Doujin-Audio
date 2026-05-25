@@ -41,7 +41,7 @@ internal class NativePlayerFactory(
         }
 
         return ExoPlayer.Builder(context, renderersFactory).build().also { player ->
-            player.setWakeMode(C.WAKE_MODE_NETWORK)
+            player.setWakeMode(C.WAKE_MODE_LOCAL)
             player.setAudioAttributes(
                 androidx.media3.common.AudioAttributes.Builder()
                     .setUsage(C.USAGE_MEDIA)

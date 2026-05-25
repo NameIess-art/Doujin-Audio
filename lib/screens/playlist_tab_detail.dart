@@ -409,31 +409,41 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
             builder: (context, child) {
               return child!;
             },
-            child: _SessionDetailScaffold(
-              session: session,
-              provider: provider,
-              coverPathFuture: coverPathFuture,
-              slideAnimation: _slideAnimation,
-              dismissAnimation: _dismissController,
-              onClose: () async {
-                _saveSubtitlePositionBeforeDismiss();
-                ref
-                    .read(audioProviderFacadeProvider)
-                    .requestCarouselSnapTo(_currentSessionId);
-                await _animateDismissToEnd();
-                if (context.mounted) {
-                  await Navigator.of(context).maybePop();
+            child: Listener(
+              onPointerSignal: Platform.isWindows ? (event) {
+                if (event is PointerScrollEvent) {
+                  if (event.scrollDelta.dy > 0) {
+                    _changeSessionByOffset(provider, 1);
+                  } else if (event.scrollDelta.dy < 0) {
+                    _changeSessionByOffset(provider, -1);
+                  }
                 }
-              },
-              switchAnimation: _slideController,
-              onHorizontalDragUpdate: (details) {
-                _horizontalDragDelta += details.primaryDelta ?? 0;
-              },
-              onHorizontalDragEnd: (details) =>
-                  _handleHorizontalDragEnd(details, provider),
-              onHorizontalDragCancel: () {
-                _horizontalDragDelta = 0;
-              },
+              } : null,
+              child: _SessionDetailScaffold(
+                session: session,
+                provider: provider,
+                coverPathFuture: coverPathFuture,
+                slideAnimation: _slideAnimation,
+                dismissAnimation: _dismissController,
+                onClose: () async {
+                  _saveSubtitlePositionBeforeDismiss();
+                  ref
+                      .read(audioProviderFacadeProvider)
+                      .requestCarouselSnapTo(_currentSessionId);
+                  await _animateDismissToEnd();
+                  if (context.mounted) {
+                    await Navigator.of(context).maybePop();
+                  }
+                },
+                switchAnimation: _slideController,
+                onHorizontalDragUpdate: Platform.isWindows ? null : (details) {
+                  _horizontalDragDelta += details.primaryDelta ?? 0;
+                },
+                onHorizontalDragEnd: Platform.isWindows ? null : (details) =>
+                    _handleHorizontalDragEnd(details, provider),
+                onHorizontalDragCancel: Platform.isWindows ? null : () {
+                  _horizontalDragDelta = 0;
+                },
               onVerticalDragUpdate: enableVerticalDismiss
                   ? (details) {
                       final screenHeight = MediaQuery.sizeOf(context).height;
@@ -461,6 +471,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
               },
             ),
           ),
+        ),
         ),
       ),
     );

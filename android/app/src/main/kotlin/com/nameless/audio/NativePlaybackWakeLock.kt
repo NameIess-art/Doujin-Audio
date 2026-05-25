@@ -15,33 +15,58 @@ internal class NativePlaybackWakeLock(
     fun isHeld(): Boolean = wakeLock?.isHeld == true || wifiLock?.isHeld == true
 
     fun acquire() {
-        if (wakeLock?.isHeld == true && wifiLock?.isHeld == true) {
-            logInfo("wakelock_acquire_skip already_held")
-            return
-        }
-        try {
-            val powerManager = context.getSystemService(Context.POWER_SERVICE) as? PowerManager
-            wakeLock = powerManager?.newWakeLock(
-                PowerManager.PARTIAL_WAKE_LOCK,
-                "${context.packageName}:native_playback"
-            )?.apply {
-                setReferenceCounted(false)
-                acquire()
-            }
+        var acquiredAny = false
 
-            val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
-            wifiLock = wifiManager?.createWifiLock(
-                WifiManager.WIFI_MODE_FULL_HIGH_PERF,
-                "${context.packageName}:native_playback_wifi"
-            )?.apply {
-                setReferenceCounted(false)
-                acquire()
+        if (wakeLock == null) {
+            try {
+                val powerManager = context.getSystemService(Context.POWER_SERVICE) as? PowerManager
+                wakeLock = powerManager?.newWakeLock(
+                    PowerManager.PARTIAL_WAKE_LOCK,
+                    "${context.packageName}:native_playback"
+                )?.apply {
+                    setReferenceCounted(false)
+                }
+            } catch (e: Exception) {
+                logWarn("wakelock_create_failed", e)
             }
+        }
+
+        if (wakeLock?.isHeld == false) {
+            try {
+                wakeLock?.acquire()
+                acquiredAny = true
+            } catch (e: Exception) {
+                logWarn("wakelock_acquire_failed", e)
+            }
+        }
+
+        if (wifiLock == null) {
+            try {
+                val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+                wifiLock = wifiManager?.createWifiLock(
+                    WifiManager.WIFI_MODE_FULL,
+                    "${context.packageName}:native_playback_wifi"
+                )?.apply {
+                    setReferenceCounted(false)
+                }
+            } catch (e: Exception) {
+                logWarn("wifilock_create_failed", e)
+            }
+        }
+
+        if (wifiLock?.isHeld == false) {
+            try {
+                wifiLock?.acquire()
+                acquiredAny = true
+            } catch (e: Exception) {
+                logWarn("wifilock_acquire_failed", e)
+            }
+        }
+
+        if (acquiredAny) {
             logInfo("wakelock_acquired held=${wakeLock?.isHeld == true} wifiHeld=${wifiLock?.isHeld == true}")
-        } catch (e: Exception) {
-            logWarn("wakelock_acquire_failed", e)
-            wakeLock = null
-            wifiLock = null
+        } else if (wakeLock?.isHeld == true || wifiLock?.isHeld == true) {
+            logInfo("wakelock_acquire_skip already_held")
         }
     }
 

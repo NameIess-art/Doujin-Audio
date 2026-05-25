@@ -1,4 +1,4 @@
-﻿package com.nameless.audio
+package com.nameless.audio
 
 import android.app.AlarmManager
 import android.content.Intent
@@ -193,14 +193,18 @@ class MainActivity : AudioServiceActivity() {
                         result.success(true)
                     }
                     SubtitleOverlayMethods.UPDATE_STYLE -> {
-                        val fontSize = call.argument<Double>("fontSize")?.toFloat() ?: 18f
+                        val fontSize = (call.argument<Number>("fontSize"))?.toFloat() ?: 18f
                         val backgroundColor = call.argument<String>("backgroundColor") ?: "#80000000"
                         val textColor = call.argument<String>("textColor") ?: "#FFFFFF"
+                        val fontFamily = call.argument<String>("fontFamily") ?: ""
+                        val borderDepth = (call.argument<Number>("borderDepth"))?.toFloat() ?: 0.5f
                         subtitleOverlayCoordinator.updateStyle(
                             SubtitleOverlayStyle(
                                 fontSize = fontSize,
                                 backgroundColor = backgroundColor,
-                                textColor = textColor
+                                textColor = textColor,
+                                fontFamily = fontFamily,
+                                borderDepth = borderDepth
                             )
                         )
                         result.success(true)

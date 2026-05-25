@@ -265,6 +265,7 @@ class _LibraryCategoryTermBox extends StatelessWidget {
                     return GestureDetector(
                       behavior: HitTestBehavior.translucent,
                       onLongPress: () => _copyCategoryTerm(context, term),
+                      onSecondaryTap: () => _copyCategoryTerm(context, term),
                       child: FilterChip(
                         selected: selected,
                         label: Text(term),

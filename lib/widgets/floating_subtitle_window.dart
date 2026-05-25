@@ -169,7 +169,8 @@ class _FloatingSubtitleWindowState extends ConsumerState<FloatingSubtitleWindow>
       final updateStyle = SubtitleOverlayController.updateStyle(
         fontSize: settings.fontSize,
         backgroundColor: _toHex(
-          settings.backgroundColor ?? const Color(0xFF000000),
+          (settings.backgroundColor ?? const Color(0xFF000000))
+              .withValues(alpha: settings.backgroundOpacity),
         ),
         textColor: _toHex(settings.fontColor ?? const Color(0xFFFFFFFF)),
         backgroundOpacity: settings.backgroundOpacity,

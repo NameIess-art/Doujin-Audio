@@ -119,7 +119,13 @@ class SubtitleOverlayService : Service() {
         }
     }
 
-    fun setStyle(fontSize: Float, backgroundColor: String, textColor: String) {
+    fun setStyle(
+        fontSize: Float,
+        backgroundColor: String,
+        textColor: String,
+        fontFamily: String = "",
+        borderDepth: Float = 0.5f
+    ) {
         subtitleTextView?.post {
             subtitleTextView?.textSize = fontSize
             try {
@@ -128,8 +134,20 @@ class SubtitleOverlayService : Service() {
                 val shape = GradientDrawable().apply {
                     cornerRadius = fontSize * 1.2f // Dynamic corner radius
                     setColor(Color.parseColor(backgroundColor))
+                    if (borderDepth > 0) {
+                        setStroke((borderDepth * 4).toInt().coerceAtLeast(1), Color.parseColor("#40FFFFFF"))
+                    }
                 }
                 subtitleTextView?.background = shape
+
+                if (fontFamily.isNotEmpty()) {
+                    val tf = android.graphics.Typeface.create(fontFamily, android.graphics.Typeface.NORMAL)
+                    subtitleTextView?.typeface = tf
+                } else {
+                    subtitleTextView?.typeface = android.graphics.Typeface.DEFAULT
+                }
+
+                subtitleTextView?.setShadowLayer(4f, 0f, 2f, Color.parseColor("#80000000"))
             } catch (e: Exception) {
                 // Ignore invalid colors
             }

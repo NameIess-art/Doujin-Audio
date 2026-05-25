@@ -21,27 +21,38 @@ private object PlaybackWakeLockController {
     }
 
     private fun acquire(context: Context) {
-        if (wakeLock?.isHeld == true && wifiLock?.isHeld == true) return
-        try {
-            val powerManager = context.getSystemService(Context.POWER_SERVICE) as? PowerManager
-            wakeLock = powerManager?.newWakeLock(
-                PowerManager.PARTIAL_WAKE_LOCK,
-                "${context.packageName}:playback_keep_alive"
-            )?.apply {
-                setReferenceCounted(false)
-                acquire()
-            }
-            val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
-            wifiLock = wifiManager?.createWifiLock(
-                WifiManager.WIFI_MODE_FULL_HIGH_PERF,
-                "${context.packageName}:playback_keep_alive_wifi"
-            )?.apply {
-                setReferenceCounted(false)
-                acquire()
-            }
-        } catch (_: Exception) {
-            wakeLock = null
-            wifiLock = null
+        if (wakeLock == null) {
+            try {
+                val powerManager = context.getSystemService(Context.POWER_SERVICE) as? PowerManager
+                wakeLock = powerManager?.newWakeLock(
+                    PowerManager.PARTIAL_WAKE_LOCK,
+                    "${context.packageName}:playback_keep_alive"
+                )?.apply {
+                    setReferenceCounted(false)
+                }
+            } catch (_: Exception) {}
+        }
+        if (wakeLock?.isHeld == false) {
+            try {
+                wakeLock?.acquire()
+            } catch (_: Exception) {}
+        }
+
+        if (wifiLock == null) {
+            try {
+                val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+                wifiLock = wifiManager?.createWifiLock(
+                    WifiManager.WIFI_MODE_FULL,
+                    "${context.packageName}:playback_keep_alive_wifi"
+                )?.apply {
+                    setReferenceCounted(false)
+                }
+            } catch (_: Exception) {}
+        }
+        if (wifiLock?.isHeld == false) {
+            try {
+                wifiLock?.acquire()
+            } catch (_: Exception) {}
         }
     }
 

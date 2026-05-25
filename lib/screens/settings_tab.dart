@@ -426,9 +426,10 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                         borderRadius: BorderRadius.circular(14),
                       ),
                     ),
-                    const SizedBox(height: 12),
-                    _SectionHeader(title: i18n.tr('section_notification')),
-                    const SizedBox(height: 2),
+                    if (!Platform.isWindows) ...[
+                      const SizedBox(height: 12),
+                      _SectionHeader(title: i18n.tr('section_notification')),
+                      const SizedBox(height: 2),
                     _CapabilitySettingsTile(
                       title: i18n.tr('notification_permission_status'),
                       icon: Icons.notifications_rounded,
@@ -501,13 +502,15 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                         vertical: 2,
                       ),
                     ),
-                    const SizedBox(height: 14),
-                    const Divider(),
+                      const SizedBox(height: 14),
+                      const Divider(),
+                    ],
                     const SizedBox(height: 8),
                     _SectionHeader(title: i18n.tr('section_other')),
                     const SizedBox(height: 2),
-                    ListTile(
-                      title: Text(i18n.tr('max_cache_size')),
+                    if (!Platform.isWindows) ...[
+                      ListTile(
+                        title: Text(i18n.tr('max_cache_size')),
                       subtitle: Text(
                         i18n.tr('max_cache_size_subtitle', {
                           'size': AppCacheService.formatBytes(
@@ -588,6 +591,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                       ),
                     ),
                     const SizedBox(height: 2),
+                  ],
                     _UpdateSettingsTile(
                       checking: _checkingUpdate,
                       downloading: _downloadingUpdate,

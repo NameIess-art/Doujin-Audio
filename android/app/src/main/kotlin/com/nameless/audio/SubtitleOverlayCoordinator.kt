@@ -12,7 +12,9 @@ import android.provider.Settings
 internal data class SubtitleOverlayStyle(
     val fontSize: Float,
     val backgroundColor: String,
-    val textColor: String
+    val textColor: String,
+    val fontFamily: String = "",
+    val borderDepth: Float = 0.5f
 )
 
 internal class SubtitleOverlayCoordinator(
@@ -87,7 +89,9 @@ internal class SubtitleOverlayCoordinator(
         service?.setStyle(
             style.fontSize,
             style.backgroundColor,
-            style.textColor
+            style.textColor,
+            style.fontFamily,
+            style.borderDepth
         )
     }
 
@@ -102,7 +106,13 @@ internal class SubtitleOverlayCoordinator(
     private fun applyPendingState() {
         val currentService = service ?: return
         pendingStyle?.let { style ->
-            currentService.setStyle(style.fontSize, style.backgroundColor, style.textColor)
+            currentService.setStyle(
+                style.fontSize, 
+                style.backgroundColor, 
+                style.textColor,
+                style.fontFamily,
+                style.borderDepth
+            )
         }
         pendingText?.let(currentService::updateSubtitle)
     }

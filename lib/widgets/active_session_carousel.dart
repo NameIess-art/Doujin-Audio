@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -167,7 +168,23 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
 
     return SizedBox(
       height: 88,
-      child: PageView.builder(
+      child: Listener(
+        onPointerSignal: (signal) {
+          if (signal is PointerScrollEvent && sessions.length > 1) {
+            if (signal.scrollDelta.dy > 0) {
+              _pageController.nextPage(
+                duration: const Duration(milliseconds: 250),
+                curve: Curves.easeOutCubic,
+              );
+            } else if (signal.scrollDelta.dy < 0) {
+              _pageController.previousPage(
+                duration: const Duration(milliseconds: 250),
+                curve: Curves.easeOutCubic,
+              );
+            }
+          }
+        },
+        child: PageView.builder(
         controller: _pageController,
         scrollBehavior: ScrollConfiguration.of(context).copyWith(
           dragDevices: {
@@ -197,6 +214,7 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
             ),
           );
         },
+      ),
       ),
     );
   }

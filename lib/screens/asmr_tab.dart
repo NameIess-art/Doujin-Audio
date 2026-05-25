@@ -862,8 +862,22 @@ class _AsmrCategoryListState extends State<_AsmrCategoryList>
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
-    return ScrollActivityGate(
-      child: MediaQuery(
+    return Theme(
+      data: theme.copyWith(
+        scrollbarTheme: theme.scrollbarTheme.copyWith(
+          thumbColor: WidgetStateProperty.resolveWith((states) {
+            if (states.contains(WidgetState.dragged)) {
+              return asmrBlue;
+            }
+            if (states.contains(WidgetState.hovered)) {
+              return asmrBlue.withValues(alpha: 0.7);
+            }
+            return theme.colorScheme.outlineVariant.withValues(alpha: 0.5);
+          }),
+        ),
+      ),
+      child: ScrollActivityGate(
+        child: MediaQuery(
         data: MediaQuery.of(context).copyWith(
           padding: EdgeInsets.only(
             top: widget.topInset + 6,
@@ -981,8 +995,9 @@ class _AsmrCategoryListState extends State<_AsmrCategoryList>
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   void _primeVisibleCovers(List<AsmrWork> works) {
     if (works.isEmpty) {

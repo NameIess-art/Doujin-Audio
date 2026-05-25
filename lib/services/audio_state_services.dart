@@ -54,6 +54,7 @@ class LibraryState {
     this.scanDuplicateCount = 0,
     this.scanFailureCount = 0,
     this.structureRevision = 0,
+    this.contentRevision = 0,
     this.isInitialized = false,
   });
 
@@ -67,6 +68,7 @@ class LibraryState {
   final int scanDuplicateCount;
   final int scanFailureCount;
   final int structureRevision;
+  final int contentRevision;
   final bool isInitialized;
 
   @override
@@ -82,6 +84,7 @@ class LibraryState {
         other.scanDuplicateCount == scanDuplicateCount &&
         other.scanFailureCount == scanFailureCount &&
         other.structureRevision == structureRevision &&
+        other.contentRevision == contentRevision &&
         other.isInitialized == isInitialized;
   }
 
@@ -97,6 +100,7 @@ class LibraryState {
     scanDuplicateCount,
     scanFailureCount,
     structureRevision,
+    contentRevision,
     isInitialized,
   );
 }
@@ -454,6 +458,7 @@ class LibraryService {
   int scanFailureCount = 0;
   bool libraryTreeDirty = true;
   List<LibraryNode> cachedLibraryTree = const <LibraryNode>[];
+  int contentRevision = 0;
   int cachedLibraryLeafFolderCount = 0;
   int libraryBatchDepth = 0;
   bool libraryBatchChanged = false;
@@ -472,6 +477,7 @@ class LibraryService {
       return;
     }
     structureRevision++;
+    contentRevision++;
   }
 
   List<String> currentTopLevelNodeIds() {
@@ -957,6 +963,7 @@ class LibraryService {
         scanDuplicateCount: scanDuplicateCount,
         scanFailureCount: scanFailureCount,
         structureRevision: structureRevision,
+        contentRevision: contentRevision,
         isInitialized: isInitialized,
       ),
     );

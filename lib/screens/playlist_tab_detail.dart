@@ -339,6 +339,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
     final animatedListenable = routeAnimation == null
         ? _dismissController
         : Listenable.merge([routeAnimation, _dismissController]);
+    final enableVerticalDismiss = !Platform.isWindows;
 
     return Material(
       color: Colors.transparent,
@@ -433,19 +434,24 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
               onHorizontalDragCancel: () {
                 _horizontalDragDelta = 0;
               },
-              onVerticalDragUpdate: (details) {
-                final screenHeight = MediaQuery.sizeOf(context).height;
-                if (screenHeight <= 0) return;
-                final nextValue =
-                    _dismissController.value +
-                    (((details.primaryDelta ?? 0) / screenHeight) * 0.92);
-                _dismissController.value = nextValue.clamp(0.0, 1.0);
-              },
-              onVerticalDragEnd: (details) =>
-                  _handleVerticalDragEnd(details, context),
-              onVerticalDragCancel: () {
-                _animateDismissBack();
-              },
+              onVerticalDragUpdate: enableVerticalDismiss
+                  ? (details) {
+                      final screenHeight = MediaQuery.sizeOf(context).height;
+                      if (screenHeight <= 0) return;
+                      final nextValue =
+                          _dismissController.value +
+                          (((details.primaryDelta ?? 0) / screenHeight) * 0.92);
+                      _dismissController.value = nextValue.clamp(0.0, 1.0);
+                    }
+                  : null,
+              onVerticalDragEnd: enableVerticalDismiss
+                  ? (details) => _handleVerticalDragEnd(details, context)
+                  : null,
+              onVerticalDragCancel: enableVerticalDismiss
+                  ? () {
+                      _animateDismissBack();
+                    }
+                  : null,
               onSubtitleAnchorComputed: (top) {
                 if (mounted) {
                   setState(() {

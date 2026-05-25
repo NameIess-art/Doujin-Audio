@@ -127,10 +127,19 @@ extension AudioProviderPlayback on AudioProvider {
     session.channelSwapEnabled = enabled;
     _markActiveSessionsDirty();
     _notifyPlaybackChanged(); // Optimistic update
+    
+    // Prevent spurious ProcessingState.completed events from auto-advancing
+    // the playlist while the audio source is being replaced.
+    final wasLoading = session.isLoading;
+    session.isLoading = true;
+    
     final response = await _nativePlaybackRepository.setChannelSwap(
       session.id,
       enabled,
     );
+    
+    session.isLoading = wasLoading;
+    
     final value = response.valueOrNull;
     if (value != null) {
       _playbackService.applyNativeSnapshot(

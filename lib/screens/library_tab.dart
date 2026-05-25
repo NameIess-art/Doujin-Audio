@@ -1,16 +1,12 @@
 import 'dart:async';
 import 'dart:collection';
 import 'dart:io';
-import 'dart:isolate';
-
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as path;
-import 'package:path_provider/path_provider.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart' hide Provider;
 import 'package:lottie/lottie.dart';
 
@@ -23,6 +19,7 @@ import '../services/natural_sort.dart';
 import '../services/path_display.dart';
 import '../services/path_matcher.dart';
 import '../services/platform_channels.dart';
+import '../services/library_scanner_service.dart';
 import '../widgets/app_feedback.dart';
 import '../widgets/async_cover_image.dart';
 import '../widgets/confirm_action_dialog.dart';
@@ -41,13 +38,10 @@ import 'audio_detail_sheet.dart';
 import 'screen_view_models.dart';
 import 'video_converter_tab.dart';
 
-part 'library_tab_import_actions.dart';
-part 'library_tab_folder_imports.dart';
 part 'library_tab_ui_helpers.dart';
 part 'library_tab_empty_scan.dart';
 part 'library_tab_tree_widgets.dart';
 part 'library_tab_category_widgets.dart';
-part 'library_tab_models.dart';
 part 'library_tab_edit.dart';
 
 String _displaySourceName(String sourcePath) {
@@ -67,9 +61,7 @@ class LibraryTab extends ConsumerStatefulWidget {
 
 class _LibraryTabState extends ConsumerState<LibraryTab>
     with AutomaticKeepAliveClientMixin {
-  static const MethodChannel _fileCacheChannel = MethodChannel(
-    'nameless_audio/file_cache',
-  );
+  final _scanner = LibraryScannerService();
 
   @override
   bool get wantKeepAlive => true;
@@ -82,9 +74,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   final Set<String> _selectedTagTerms = <String>{};
   final Set<String> _selectedVoiceActorTerms = <String>{};
   final Set<String> _selectedCircleTerms = <String>{};
-  Future<void>? _activeRefreshTask;
   bool _refreshTriggeredInCurrentScroll = false;
-  DateTime? _lastBatchFlushTime;
   bool _isReordering = false;
 
   final GlobalKey<GlassRefreshIndicatorState> _refreshIndicatorKey =
@@ -143,6 +133,67 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         icon: Icons.delete_outline_rounded,
       );
     }
+  }
+
+  Future<void> _scheduleWatchedFoldersRefresh({
+    bool silent = false,
+    bool forceShowResult = false,
+  }) async {
+    final i18n = context.read<AppLanguageProvider>();
+    final provider = context.read<AudioProvider>();
+    if (provider.isScanning && !silent) {
+      showAppSnackBar(context, i18n.tr('scanning_title'));
+      return;
+    }
+    await _scanner.refreshWatchedFolders(
+      provider: provider,
+      i18n: i18n,
+      showSnack: (msg) {
+        if (mounted) showAppSnackBar(context, msg);
+      },
+      silent: silent,
+      forceShowResult: forceShowResult,
+    );
+  }
+
+  Future<void> _runLibraryPullRefresh() async {
+    await _scheduleWatchedFoldersRefresh(silent: true, forceShowResult: true);
+  }
+
+  Future<void> _addFolder() async {
+    final i18n = context.read<AppLanguageProvider>();
+    final provider = context.read<AudioProvider>();
+    await _scanner.addFolder(
+      provider: provider,
+      i18n: i18n,
+      showSnack: (msg) {
+        if (mounted) showAppSnackBar(context, msg);
+      },
+    );
+  }
+
+  Future<void> _addLibrary() async {
+    final i18n = context.read<AppLanguageProvider>();
+    final provider = context.read<AudioProvider>();
+    await _scanner.addLibrary(
+      provider: provider,
+      i18n: i18n,
+      showSnack: (msg) {
+        if (mounted) showAppSnackBar(context, msg);
+      },
+    );
+  }
+
+  Future<void> _addFiles() async {
+    final i18n = context.read<AppLanguageProvider>();
+    final provider = context.read<AudioProvider>();
+    await _scanner.addFiles(
+      provider: provider,
+      i18n: i18n,
+      showSnack: (msg) {
+        if (mounted) showAppSnackBar(context, msg);
+      },
+    );
   }
 
   @override
@@ -241,6 +292,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         // rebuilding the heavy library tree when content has not changed.
         return (
           structureRevision: state.structureRevision,
+          contentRevision: state.contentRevision,
           isInitialized: state.isInitialized,
           isScanning: showForegroundScan,
           scanCurrentFolder: showForegroundScan ? state.scanCurrentFolder : '',
@@ -274,7 +326,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         scanFoundCount: libraryUiState.scanFoundCount,
         scanDuplicateCount: libraryUiState.scanDuplicateCount,
         scanFailureCount: libraryUiState.scanFailureCount,
-        structureRevision: libraryUiState.structureRevision,
+        structureRevision: libraryUiState.contentRevision,
         isInitialized: libraryUiState.isInitialized,
       ),
     );

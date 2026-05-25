@@ -8,14 +8,21 @@ class VideoConversionPlan {
     required this.outputPath,
     required this.format,
     required this.bitrate,
-    required this.command,
+    required this.commandArgs,
   });
 
   final String inputPath;
   final String outputPath;
   final String format;
   final String bitrate;
-  final String command;
+  final List<String> commandArgs;
+
+  String get command => buildVideoConversionCommand(
+    inputPath: inputPath,
+    outputPath: outputPath,
+    format: format,
+    bitrate: bitrate,
+  );
 }
 
 int parseVideoDurationMs(String? durationStr) {
@@ -45,21 +52,58 @@ Future<String> resolveVideoConversionOutputPath({
   }
 }
 
-String buildVideoConversionCommand({
+List<String> buildVideoConversionCommandArgs({
   required String inputPath,
   required String outputPath,
   required String format,
   required String bitrate,
 }) {
   final codecArgs = switch (format) {
-    'mp3' => '-vn -ar 44100 -ac 2 -b:a $bitrate',
-    'flac' => '-vn -c:a flac',
-    'wav' => '-vn -c:a pcm_s16le -ar 44100 -ac 2',
-    'aac' => '-vn -c:a aac -b:a $bitrate',
-    'ogg' => '-vn -c:a libvorbis -b:a $bitrate',
-    _ => '-vn',
+    'mp3' => ['-vn', '-ar', '44100', '-ac', '2', '-b:a', bitrate],
+    'flac' => ['-vn', '-c:a', 'flac'],
+    'wav' => ['-vn', '-c:a', 'pcm_s16le', '-ar', '44100', '-ac', '2'],
+    'aac' => ['-vn', '-c:a', 'aac', '-b:a', bitrate],
+    'ogg' => ['-vn', '-c:a', 'libvorbis', '-b:a', bitrate],
+    _ => ['-vn'],
   };
-  return '-i "$inputPath" $codecArgs "$outputPath"';
+  return ['-i', inputPath, ...codecArgs, outputPath];
+}
+
+String buildVideoConversionCommand({
+  required String inputPath,
+  required String outputPath,
+  required String format,
+  required String bitrate,
+}) {
+  final args = buildVideoConversionCommandArgs(
+    inputPath: inputPath,
+    outputPath: outputPath,
+    format: format,
+    bitrate: bitrate,
+  );
+  return [
+    args[0],
+    _quoteCommandPath(args[1]),
+    ...args.skip(2).take(args.length - 3),
+    _quoteCommandPath(args.last),
+  ].join(' ');
+}
+
+int parseFfmpegProgressTimeMs(String text) {
+  final match = RegExp(
+    r'time=(\d{2}):(\d{2}):(\d{2}(?:\.\d+)?)',
+  ).firstMatch(text);
+  if (match == null) return 0;
+  final hours = int.tryParse(match.group(1)!);
+  final minutes = int.tryParse(match.group(2)!);
+  final seconds = double.tryParse(match.group(3)!);
+  if (hours == null || minutes == null || seconds == null) return 0;
+  return ((hours * 3600 + minutes * 60 + seconds) * 1000).round();
+}
+
+String _quoteCommandPath(String value) {
+  final escaped = value.replaceAll('"', r'\"');
+  return '"$escaped"';
 }
 
 Future<VideoConversionPlan> createVideoConversionPlan({
@@ -78,7 +122,7 @@ Future<VideoConversionPlan> createVideoConversionPlan({
     outputPath: outputPath,
     format: format,
     bitrate: bitrate,
-    command: buildVideoConversionCommand(
+    commandArgs: buildVideoConversionCommandArgs(
       inputPath: inputPath,
       outputPath: outputPath,
       format: format,

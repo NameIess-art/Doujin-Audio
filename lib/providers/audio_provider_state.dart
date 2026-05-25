@@ -69,6 +69,7 @@ extension AudioProviderState on AudioProvider {
   int get scanFoundCount => _scanFoundCount;
   int get scanDuplicateCount => _scanDuplicateCount;
   int get scanFailureCount => _scanFailureCount;
+  int get libraryContentRevision => _libraryService.contentRevision;
 
   void setScanProgress({
     String? currentFolder,

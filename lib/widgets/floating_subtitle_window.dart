@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -44,6 +45,7 @@ class _FloatingSubtitleWindowState extends ConsumerState<FloatingSubtitleWindow>
   bool _isAppInBackground = false;
   bool _isOverlayActive = false;
   bool _isSyncing = false;
+  bool _syncAgainAfterCurrent = false;
 
   @override
   void initState() {
@@ -53,23 +55,55 @@ class _FloatingSubtitleWindowState extends ConsumerState<FloatingSubtitleWindow>
         WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed &&
         WidgetsBinding.instance.lifecycleState != null;
 
+    if (widget.isCrossPage) {
+      SubtitleOverlayController.initMethodHandler(_handleOverlayMethodCall);
+    }
+
     _playbackStateSub = ref.listenManual<AsyncValue<PlaybackStateSliceData>>(
       playbackStateProvider,
       (previous, next) {
         _syncSession(next.valueOrNull);
+        if (_isOverlayActive && _currentSession != null) {
+          SubtitleOverlayController.updatePlaybackState(
+            _currentSession!.state.playing,
+          );
+        }
       },
       fireImmediately: true,
     );
 
-    // Also listen to settings changes to sync overlay state if toggled in background
+    // Windows uses a separate desktop window even while the app is foregrounded.
     ref.listenManual(subtitleSettingsProvider, (prev, next) {
-      if (_isAppInBackground) {
+      if (Platform.isWindows || _isAppInBackground) {
         _syncOverlayState();
       }
     });
 
-    if (_isAppInBackground) {
+    if (Platform.isWindows || _isAppInBackground) {
       _syncOverlayState();
+    }
+  }
+
+  Future<dynamic> _handleOverlayMethodCall(MethodCall call) async {
+    final session = _currentSession;
+    if (session == null) return;
+
+    final provider = ref.read(audioProviderFacadeProvider);
+    switch (call.method) {
+      case 'previous':
+        await provider.seekSessionToPrev(session.id);
+        break;
+      case 'next':
+        await provider.seekSessionToNext(session.id);
+        break;
+      case 'playPause':
+        await provider.toggleSessionPlayPause(session.id);
+        break;
+      case 'closeOverlay':
+        ref
+            .read(subtitleSettingsProvider.notifier)
+            .setGlobalEnabled(session.id, false);
+        break;
     }
   }
 
@@ -99,16 +133,29 @@ class _FloatingSubtitleWindowState extends ConsumerState<FloatingSubtitleWindow>
   }
 
   Future<void> _syncOverlayState() async {
-    if (_isSyncing) return;
+    if (_isSyncing) {
+      _syncAgainAfterCurrent = true;
+      return;
+    }
     _isSyncing = true;
     try {
-      if (_isAppInBackground) {
+      final session = _currentSession;
+      final shouldUsePlatformOverlay =
+          widget.isCrossPage &&
+          session != null &&
+          ref.read(subtitleSettingsProvider).isGlobalEnabled(session.id) &&
+          (Platform.isWindows || _isAppInBackground);
+      if (shouldUsePlatformOverlay) {
         await _tryStartOverlay();
       } else {
         await _stopOverlay(immediate: true);
       }
     } finally {
       _isSyncing = false;
+      if (_syncAgainAfterCurrent && mounted) {
+        _syncAgainAfterCurrent = false;
+        unawaited(_syncOverlayState());
+      }
     }
   }
 
@@ -119,21 +166,35 @@ class _FloatingSubtitleWindowState extends ConsumerState<FloatingSubtitleWindow>
     if (!settings.isGlobalEnabled(_currentSession!.id)) return;
 
     if (await SubtitleOverlayController.canDrawOverlays()) {
+      final updateStyle = SubtitleOverlayController.updateStyle(
+        fontSize: settings.fontSize,
+        backgroundColor: _toHex(
+          settings.backgroundColor ?? const Color(0xFF000000),
+        ),
+        textColor: _toHex(settings.fontColor ?? const Color(0xFFFFFFFF)),
+        backgroundOpacity: settings.backgroundOpacity,
+        fontFamily: settings.fontFamily,
+        borderDepth: settings.borderDepth,
+        backgroundBlur: settings.backgroundBlur,
+      );
+      if (Platform.isWindows) {
+        await updateStyle;
+      }
+
       await SubtitleOverlayController.startOverlay();
 
-      final bg = settings.backgroundColor ?? const Color(0xFF000000);
-      final bgColor = bg.withValues(alpha: settings.backgroundOpacity);
-      final txtColor = settings.fontColor ?? const Color(0xFFFFFFFF);
-
-      await SubtitleOverlayController.updateStyle(
-        fontSize: settings.fontSize,
-        backgroundColor: _toHex(bgColor),
-        textColor: _toHex(txtColor),
-      );
+      if (!Platform.isWindows) {
+        await updateStyle;
+      }
       if (_subtitleText != null) {
         await SubtitleOverlayController.updateSubtitle(_subtitleText!);
       }
       _isOverlayActive = true;
+      if (_currentSession != null) {
+        await SubtitleOverlayController.updatePlaybackState(
+          _currentSession!.state.playing,
+        );
+      }
     }
   }
 
@@ -182,7 +243,7 @@ class _FloatingSubtitleWindowState extends ConsumerState<FloatingSubtitleWindow>
         _updateSubtitleText,
       );
       _loadSubtitleTrack();
-      if (_isAppInBackground) {
+      if (Platform.isWindows || _isAppInBackground) {
         _syncOverlayState();
       }
     } else if (mounted) {
@@ -191,6 +252,9 @@ class _FloatingSubtitleWindowState extends ConsumerState<FloatingSubtitleWindow>
         _subtitleText = null;
         _loadedPath = null;
       });
+      if (Platform.isWindows || _isAppInBackground) {
+        _syncOverlayState();
+      }
     }
   }
 
@@ -254,6 +318,9 @@ class _FloatingSubtitleWindowState extends ConsumerState<FloatingSubtitleWindow>
     if (widget.isCrossPage && !settings.isGlobalEnabled(sessionId)) {
       return const SizedBox.shrink();
     }
+    if (Platform.isWindows && settings.isGlobalEnabled(sessionId)) {
+      return const SizedBox.shrink();
+    }
 
     // Try sync load if not loaded yet
     if (_subtitleTrack == null && trackPath.isNotEmpty) {
@@ -295,11 +362,14 @@ class _FloatingSubtitleWindowState extends ConsumerState<FloatingSubtitleWindow>
     top = top.clamp(40.0, screenHeight - 60.0);
     final isTinyWindow = screenWidth < 300 || screenHeight < 300;
     final isWideScreen = screenWidth > 600;
-    final isDesktop = defaultTargetPlatform == TargetPlatform.windows ||
+    final isDesktop =
+        defaultTargetPlatform == TargetPlatform.windows ||
         defaultTargetPlatform == TargetPlatform.macOS ||
         defaultTargetPlatform == TargetPlatform.linux;
     final leftPos = isWideScreen ? screenWidth / 2 : 0.0;
-    final maxAllowedWidth = isWideScreen ? (screenWidth / 2) * 0.9 : screenWidth * 0.8;
+    final maxAllowedWidth = isWideScreen
+        ? (screenWidth / 2) * 0.9
+        : screenWidth * 0.8;
 
     return Positioned(
       top: top,
@@ -353,7 +423,8 @@ class _FloatingSubtitleWindowState extends ConsumerState<FloatingSubtitleWindow>
                   final currentY = _dragY!;
                   final snapThreshold = isDesktop ? 15.0 : 30.0;
                   final snapToDefault =
-                      defaultTop != null && (currentY - defaultTop).abs() < snapThreshold;
+                      defaultTop != null &&
+                      (currentY - defaultTop).abs() < snapThreshold;
                   if (snapToDefault) {
                     ref
                         .read(subtitleSettingsProvider.notifier)

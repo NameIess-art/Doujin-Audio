@@ -1,5 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
+
+import 'package:desktop_multi_window/desktop_multi_window.dart';
 
 import 'package:audio_session/audio_session.dart';
 import 'package:audio_service/audio_service.dart';
@@ -25,9 +28,40 @@ import 'services/playback_notification_service.dart';
 import 'theme/theme_provider.dart';
 import 'services/app_preferences.dart';
 import 'services/app_database.dart';
+import 'windows/subtitle_overlay_window.dart';
 
-Future<void> main() async {
+Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  if (args.isNotEmpty && args.first == 'multi_window') {
+    final windowId = args[1];
+    final argument = args[2].isEmpty
+        ? const <String, dynamic>{}
+        : jsonDecode(args[2]) as Map<String, dynamic>;
+
+    if (Platform.isWindows) {
+      await windowManager.ensureInitialized();
+      WindowOptions windowOptions = const WindowOptions(
+        size: Size(800, 200),
+        center: true,
+        backgroundColor: Colors.transparent,
+        skipTaskbar: true,
+        titleBarStyle: TitleBarStyle.hidden,
+        alwaysOnTop: true,
+      );
+      await windowManager.waitUntilReadyToShow(windowOptions, () async {
+        await windowManager.setAsFrameless();
+        await windowManager.show();
+      });
+    }
+
+    runApp(SubtitleOverlayWindow(
+      windowController: WindowController.fromWindowId(windowId),
+      args: argument,
+    ));
+    return;
+  }
+
   AppDatabase.initializeForPlatform();
 
   if (Platform.isWindows) {

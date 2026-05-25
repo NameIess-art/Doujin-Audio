@@ -285,21 +285,28 @@ class _SessionListCardState extends State<_SessionListCard>
             color: isPlaying ? cs.surfaceContainerHigh : baseBgColor,
             elevation: 0,
             shadowColor: Colors.transparent,
-            child: Container(
+            child: AnimatedContainer(
+              duration: const Duration(seconds: 1),
+              curve: Curves.easeOutCubic,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(14),
-                gradient: isPlaying
-                    ? LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: isPlaying
+                      ? [
                           highlightColor,
                           baseBgColor,
                           baseBgColor,
                           baseBgColor,
+                        ]
+                      : [
+                          Colors.transparent,
+                          Colors.transparent,
+                          Colors.transparent,
+                          Colors.transparent,
                         ],
-                      )
-                    : null,
+                ),
               ),
               child: Semantics(
                 button: true,

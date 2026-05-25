@@ -654,7 +654,74 @@ extension AudioProviderLibrary on AudioProvider {
     _libraryBatchDepth++;
   }
 
-  Future<void> endLibraryBatch({bool notify = true}) async {
+  void beginStagedLibraryRefresh() {
+    beginLibraryBatch();
+  }
+
+  int applyStagedLibraryRefreshChunk({
+    required String sourceFolderPath,
+    required String libraryRoot,
+    List<MusicTrack> tracks = const <MusicTrack>[],
+    Iterable<String> folderPaths = const <String>[],
+    Iterable<String> removeWatchedFolders = const <String>[],
+    Iterable<String> addWatchedFolders = const <String>[],
+    Set<String> retainedTrackPaths = const <String>{},
+    Set<String> retainedEntryPaths = const <String>{},
+    bool persist = true,
+  }) {
+    for (final folderPath in removeWatchedFolders) {
+      removeWatchedFolder(folderPath, notify: false);
+    }
+    if (tracks.isNotEmpty || folderPaths.isNotEmpty) {
+      recordLibraryEntriesForTracks(
+        libraryRoot,
+        tracks,
+        folderPaths: folderPaths,
+        persist: persist,
+      );
+    }
+    for (final folderPath in addWatchedFolders) {
+      addWatchedFolder(folderPath, notify: false);
+    }
+    final beforeCount = _library.length;
+    if (tracks.isNotEmpty) {
+      addOrReplaceTracks(tracks, notify: false, persist: persist);
+    }
+    if (retainedTrackPaths.isNotEmpty) {
+      removeTracksDeletedFromFolder(sourceFolderPath, retainedTrackPaths);
+    }
+    if (retainedEntryPaths.isNotEmpty) {
+      removeLibraryEntriesDeletedFromFolder(
+        libraryRoot,
+        sourceFolderPath,
+        retainedEntryPaths,
+      );
+    }
+    return _library.length - beforeCount;
+  }
+
+  Future<bool> flushStagedLibraryRefreshChunk({
+    bool waitForPersistence = false,
+  }) async {
+    await endLibraryBatch(waitForPersistence: waitForPersistence);
+    await Future<void>.delayed(Duration.zero);
+    if (!_isScanning) {
+      return false;
+    }
+    beginLibraryBatch();
+    return true;
+  }
+
+  Future<void> finishStagedLibraryRefresh({
+    bool waitForPersistence = false,
+  }) {
+    return endLibraryBatch(waitForPersistence: waitForPersistence);
+  }
+
+  Future<void> endLibraryBatch({
+    bool notify = true,
+    bool waitForPersistence = true,
+  }) async {
     if (_libraryBatchDepth <= 0) return;
     _libraryBatchDepth--;
     if (_libraryBatchDepth > 0 || !_libraryBatchChanged) return;
@@ -672,13 +739,23 @@ extension AudioProviderLibrary on AudioProvider {
     if (notify) {
       _notifyLibraryChanged();
     }
+    final persistenceTasks = <Future<void>>[];
     if (tracksToPersist.isNotEmpty && !_skipDisposePersistence) {
-      await _audioDatabaseRepository.upsertTracks(tracksToPersist);
+      persistenceTasks.add(
+        _audioDatabaseRepository.upsertTracks(tracksToPersist),
+      );
     }
     if (didChangeGroupOrder) {
-      await _saveGroupOrder();
+      persistenceTasks.add(_saveGroupOrder());
     }
-    await _saveLibraryNodeOrder();
+    persistenceTasks.add(_saveLibraryNodeOrder());
+    if (waitForPersistence) {
+      await Future.wait(persistenceTasks);
+    } else {
+      for (final task in persistenceTasks) {
+        unawaited(task);
+      }
+    }
   }
 
   void addTracks(

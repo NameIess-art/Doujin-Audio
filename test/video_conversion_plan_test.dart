@@ -12,6 +12,16 @@ void main() {
     expect(parseVideoDurationMs(null), 0);
   });
 
+  test('parseFfmpegProgressTimeMs reads stderr progress timestamps', () {
+    expect(
+      parseFfmpegProgressTimeMs(
+        'size= 1024kB time=00:01:02.50 bitrate=128.0kbits/s',
+      ),
+      62500,
+    );
+    expect(parseFfmpegProgressTimeMs('no progress yet'), 0);
+  });
+
   test('buildVideoConversionCommand maps supported formats to ffmpeg args', () {
     expect(
       buildVideoConversionCommand(

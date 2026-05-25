@@ -7,7 +7,7 @@ final _libraryEditTrackViewStateProvider =
     ) {
       ref.watch(
         libraryStateProvider.select(
-          (value) => value.valueOrNull?.structureRevision ?? 0,
+          (value) => value.valueOrNull?.contentRevision ?? 0,
         ),
       );
       final libraryService = ref.read(libraryServiceProvider);
@@ -77,6 +77,9 @@ class LibraryEditPage extends ConsumerStatefulWidget {
 
 class _LibraryEditPageState extends ConsumerState<LibraryEditPage>
     with WidgetsBindingObserver {
+  static const MethodChannel _fileCacheChannel = MethodChannel(
+    'nameless_audio/file_cache',
+  );
   final TextEditingController _searchController = TextEditingController();
   List<String> _diskAudioFilePaths = const <String>[];
   Set<String> _diskAudioFilePathSet = const <String>{};
@@ -236,7 +239,7 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage>
     final audioFiles = <String>{};
     final folderPaths = <String>{};
     try {
-      final data = await _LibraryTabState._fileCacheChannel
+      final data = await _fileCacheChannel
           .invokeMethod<List<dynamic>>(FileCacheMethod.scanFolder, {
             'folder': widget.libraryPath,
           });
@@ -293,7 +296,9 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage>
 
   @override
   Widget build(BuildContext context) {
-    ref.watch(libraryStateProvider);
+    ref.watch(
+      libraryStateProvider.select((value) => value.valueOrNull?.contentRevision ?? 0),
+    );
     final i18n = context.watch<AppLanguageProvider>();
     final libraryService = ref.read(libraryServiceProvider);
     final cs = Theme.of(context).colorScheme;
@@ -999,7 +1004,9 @@ class _LibraryEditFolderTreeTileState
 
   @override
   Widget build(BuildContext context) {
-    ref.watch(libraryStateProvider);
+    ref.watch(
+      libraryStateProvider.select((value) => value.valueOrNull?.contentRevision ?? 0),
+    );
     final i18n = context.watch<AppLanguageProvider>();
     final libraryService = ref.read(libraryServiceProvider);
     final audioProvider = ref.read(audioProviderFacadeProvider);

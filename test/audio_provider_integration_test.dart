@@ -1205,6 +1205,43 @@ void main() {
       },
     );
 
+    test(
+      'background refresh commits changed tracks once after batch',
+      () async {
+        var notificationCount = 0;
+        provider.addListener(() {
+          notificationCount++;
+        });
+
+        provider.setScanning(true, background: true, notify: false);
+        provider.beginLibraryBatch();
+        provider.addOrReplaceTracks(
+          <MusicTrack>[
+            const MusicTrack(
+              path: '/library/work/new.mp3',
+              displayName: 'new',
+              groupKey: '/library/work',
+              groupTitle: 'work',
+              groupSubtitle: '/library/work',
+              isSingle: false,
+            ),
+          ],
+          notify: false,
+          persist: false,
+        );
+        provider.setScanProgress(currentFolder: 'background-folder');
+        await Future<void>.delayed(const Duration(milliseconds: 180));
+
+        expect(notificationCount, 0);
+
+        await provider.endLibraryBatch();
+        await Future<void>.delayed(Duration.zero);
+        provider.setScanning(false, notify: false);
+
+        expect(notificationCount, 1);
+      },
+    );
+
     test('addOrReplaceTracks ignores unchanged rescan metadata', () async {
       final initialModifiedAt = DateTime.fromMillisecondsSinceEpoch(1000);
       final initialScannedAt = DateTime.fromMillisecondsSinceEpoch(2000);

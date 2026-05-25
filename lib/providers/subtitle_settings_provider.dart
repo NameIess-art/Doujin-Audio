@@ -197,9 +197,13 @@ class SubtitleSettingsNotifier extends StateNotifier<SubtitleSettingsState> {
   }
 
   void toggleGlobalSubtitles(String sessionId) {
-    final next = !state.isGlobalEnabled(sessionId);
+    setGlobalEnabled(sessionId, !state.isGlobalEnabled(sessionId));
+  }
+
+  void setGlobalEnabled(String sessionId, bool enabled) {
+    if (state.isGlobalEnabled(sessionId) == enabled) return;
     final newMap = Map<String, bool>.from(state.globalSubtitlesMap);
-    newMap[sessionId] = next;
+    newMap[sessionId] = enabled;
     state = state.copyWith(globalSubtitlesMap: newMap);
 
     final strList = newMap.entries.map((e) => '${e.key}|${e.value}').toList();

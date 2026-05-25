@@ -198,93 +198,109 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
       child: Stack(
         clipBehavior: Clip.none,
         children: [
-          ContentBoundReorderArea(
-            headerHeight: _headerHeight,
-            bottomInset: listBottomInset,
-            topExpansion: 150,
-            bottomExpansion: 350,
-            child: !listState.isInitialized
-                ? const SizedBox.shrink(key: ValueKey('initializing'))
-                : Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      if (!listState.hasSessions)
-                        _SessionsEmptyState(
-                          key: const ValueKey('empty_state'),
-                          bottomInset: 100,
-                          topInset: _headerHeight + 64,
-                        ),
-                      if (listState.hasSessions)
-                        Theme(
-                          data: Theme.of(
-                            context,
-                          ).copyWith(canvasColor: Colors.transparent),
-                          child: ReorderAutoScroller(
-                            key: const ValueKey('session_list'),
-                            scrollController: _scrollController,
-                            isDragging: _isReordering,
-                            contentMarginTop: 150,
-                            contentMarginBottom: 350,
-                            child: ReorderableListView.builder(
+          MediaQuery(
+            data: MediaQuery.of(context).copyWith(
+              padding: EdgeInsets.only(
+                top: _headerHeight + 4,
+                bottom: listBottomInset,
+                right: 4,
+              ),
+            ),
+            child: ContentBoundReorderArea(
+              headerHeight: _headerHeight,
+              bottomInset: listBottomInset,
+              topExpansion: 150,
+              bottomExpansion: 350,
+              scrollController: _scrollController,
+              showScrollbar: Platform.isWindows,
+              scrollbarMainAxisMargin: Platform.isWindows ? 12 : 0,
+              child: !listState.isInitialized
+                  ? const SizedBox.shrink(key: ValueKey('initializing'))
+                  : Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        if (!listState.hasSessions)
+                          _SessionsEmptyState(
+                            key: const ValueKey('empty_state'),
+                            bottomInset: 100,
+                            topInset: _headerHeight + 64,
+                          ),
+                        if (listState.hasSessions)
+                          Theme(
+                            data: Theme.of(
+                              context,
+                            ).copyWith(canvasColor: Colors.transparent),
+                            child: ReorderAutoScroller(
+                              key: const ValueKey('session_list'),
                               scrollController: _scrollController,
-                              padding: const EdgeInsets.fromLTRB(
-                                16,
-                                154,
-                                16,
-                                350,
-                              ),
-                              cacheExtent: listCacheExtent,
-                              clipBehavior: Clip.none,
-                              buildDefaultDragHandles: false,
-                              keyboardDismissBehavior:
-                                  ScrollViewKeyboardDismissBehavior.onDrag,
-                              onReorder: (oldIndex, newIndex) {
-                                setState(() => _isReordering = false);
-                                provider.reorderSessions(oldIndex, newIndex);
-                              },
-                              onReorderStart: (_) {
-                                setState(() => _isReordering = true);
-                                unawaited(HapticFeedback.heavyImpact());
-                              },
-                              onReorderEnd: (_) {
-                                if (_isReordering) {
+                              isDragging: _isReordering,
+                              contentMarginTop: 150,
+                              contentMarginBottom: 350,
+                              child: ReorderableListView.builder(
+                                scrollController: _scrollController,
+                                padding: const EdgeInsets.fromLTRB(
+                                  16,
+                                  154,
+                                  16,
+                                  350,
+                                ),
+                                cacheExtent: listCacheExtent,
+                                clipBehavior: Clip.none,
+                                buildDefaultDragHandles: false,
+                                keyboardDismissBehavior:
+                                    ScrollViewKeyboardDismissBehavior.onDrag,
+                                onReorder: (oldIndex, newIndex) {
                                   setState(() => _isReordering = false);
-                                }
-                              },
-                              proxyDecorator: (child, index, animation) =>
-                                  _buildReorderProxy(context, child, animation),
-                              itemCount: listState.sessions.length + 1,
-                              itemBuilder: (context, index) {
-                                if (index == listState.sessions.length) {
-                                  return const SizedBox.shrink(
-                                    key: ValueKey('bottom_spacing'),
-                                  );
-                                }
-                                final session = listState.sessions[index];
-                                return WaterfallFlowStagger(
-                                  key: ValueKey('stagger_${session.id}'),
-                                  index: index,
-                                  child: ReorderableHoldDragStartListener(
-                                    key: ValueKey(session.id),
+                                  provider.reorderSessions(oldIndex, newIndex);
+                                },
+                                onReorderStart: (_) {
+                                  setState(() => _isReordering = true);
+                                  unawaited(HapticFeedback.heavyImpact());
+                                },
+                                onReorderEnd: (_) {
+                                  if (_isReordering) {
+                                    setState(() => _isReordering = false);
+                                  }
+                                },
+                                proxyDecorator: (child, index, animation) =>
+                                    _buildReorderProxy(
+                                      context,
+                                      child,
+                                      animation,
+                                    ),
+                                itemCount: listState.sessions.length + 1,
+                                itemBuilder: (context, index) {
+                                  if (index == listState.sessions.length) {
+                                    return const SizedBox.shrink(
+                                      key: ValueKey('bottom_spacing'),
+                                    );
+                                  }
+                                  final session = listState.sessions[index];
+                                  return WaterfallFlowStagger(
+                                    key: ValueKey('stagger_${session.id}'),
                                     index: index,
-                                    child: RepaintBoundary(
-                                      child: _SessionListCard(
-                                        session: session,
-                                        provider: provider,
-                                        onOpen: () => _openSessionDetail(
-                                          context,
-                                          session.id,
+                                    child: ReorderableHoldDragStartListener(
+                                      key: ValueKey(session.id),
+                                      index: index,
+                                      child: RepaintBoundary(
+                                        child: _SessionListCard(
+                                          session: session,
+                                          provider: provider,
+                                          onOpen: () => _openSessionDetail(
+                                            context,
+                                            session.id,
+                                          ),
                                         ),
                                       ),
                                     ),
-                                  ),
-                                );
-                              },
+                                  );
+                                },
+                              ),
                             ),
                           ),
-                        ),
-                    ],
-                  ),
+                      ],
+                    ),
+            ),
           ),
           Positioned(
             top: 0,

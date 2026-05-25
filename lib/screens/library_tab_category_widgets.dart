@@ -99,14 +99,12 @@ extension _LibraryTabCategoryView on _LibraryTabState {
   Widget _buildCategoryBody({
     required AudioProvider provider,
     required AppLanguageProvider i18n,
-    required double headerControlsFullHeight,
-    required double bottomInset,
+    required double topPadding,
+    required double bottomPadding,
     required double cacheExtent,
     required bool canPullRefresh,
     required int detailRevision,
   }) {
-    final topPadding = 4 + headerControlsFullHeight + 150;
-    const bottomPadding = 350.0;
     return FutureBuilder<AudioLibraryCategorySnapshot>(
       key: ValueKey('category_future_${_categoryType.name}_$detailRevision'),
       future: provider.audioLibraryCategorySnapshot(),

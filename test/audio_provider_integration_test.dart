@@ -337,6 +337,53 @@ void main() {
 
   // ── optimistic playback state dedup ───────────────────────────
 
+  group('file-system cover discovery', () {
+    test(
+      'folder cover resolves recursively on Windows-style libraries',
+      () async {
+        final tempDir = await Directory.systemTemp.createTemp(
+          'audio_provider_cover_',
+        );
+        addTearDown(() async {
+          if (await tempDir.exists()) {
+            await tempDir.delete(recursive: true);
+          }
+        });
+
+        final workDir = Directory(
+          '${tempDir.path}${Platform.pathSeparator}work',
+        );
+        final audioDir = Directory(
+          '${workDir.path}${Platform.pathSeparator}audio',
+        );
+        final imageDir = Directory(
+          '${workDir.path}${Platform.pathSeparator}extras',
+        );
+        await audioDir.create(recursive: true);
+        await imageDir.create(recursive: true);
+        final coverPath = '${imageDir.path}${Platform.pathSeparator}cover.jpg';
+        await File(coverPath).writeAsBytes(<int>[0xff, 0xd8, 0xff, 0xd9]);
+
+        final track = MusicTrack(
+          path: '${audioDir.path}${Platform.pathSeparator}track.wav',
+          displayName: 'track',
+          groupKey: audioDir.path,
+          groupTitle: 'audio',
+          groupSubtitle: audioDir.path,
+          isSingle: false,
+        );
+        provider.addWatchedFolder(workDir.path, notify: false);
+        provider.addTracks(<MusicTrack>[track], notify: false, persist: false);
+
+        expect(
+          await provider.coverPathFutureForFolder(workDir.path),
+          coverPath,
+        );
+        expect(await provider.coverPathFutureForTrack(track), coverPath);
+      },
+    );
+  });
+
   group('optimistic playback state dedup', () {
     test('setOptimisticState only emits when values differ', () async {
       final session = PlaybackSession(
@@ -1131,8 +1178,7 @@ void main() {
           notificationCount++;
         });
 
-        provider.setScanning(true, background: true);
-        final afterBackgroundStart = notificationCount;
+        provider.setScanning(true, background: true, notify: false);
 
         provider.setScanProgress(
           currentFolder: 'background-folder',
@@ -1141,9 +1187,9 @@ void main() {
         );
         await Future<void>.delayed(const Duration(milliseconds: 180));
 
-        expect(notificationCount, afterBackgroundStart);
+        expect(notificationCount, 0);
 
-        provider.setScanning(false);
+        provider.setScanning(false, notify: false);
         provider.setScanning(true);
         final afterForegroundStart = notificationCount;
 
@@ -1159,7 +1205,7 @@ void main() {
       },
     );
 
-    test('addOrReplaceTracks ignores unchanged rescan metadata', () {
+    test('addOrReplaceTracks ignores unchanged rescan metadata', () async {
       final initialModifiedAt = DateTime.fromMillisecondsSinceEpoch(1000);
       final initialScannedAt = DateTime.fromMillisecondsSinceEpoch(2000);
       final refreshedScannedAt = DateTime.fromMillisecondsSinceEpoch(3000);
@@ -1219,6 +1265,7 @@ void main() {
           modifiedAt: initialModifiedAt,
         ),
       ], persist: false);
+      await Future<void>.delayed(Duration.zero);
 
       expect(notificationCount, 1);
       expect(provider.library.single.displayName, '01 renamed');

@@ -295,19 +295,23 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
 
       for (var scanIndex = index; scanIndex < endIndex; scanIndex++) {
         final scanned = scannedTracks[scanIndex];
-        final converted = _convertScannedTrack(
-          scanned,
-          libraryRoot: libraryRoot,
-          promoteRootTracksToSingles: promoteRootTracksToSingles,
-          i18n: i18n,
+        final converted = _canonicalizeTrackPath(
+          provider,
+          _convertScannedTrack(
+            scanned,
+            libraryRoot: libraryRoot,
+            promoteRootTracksToSingles: promoteRootTracksToSingles,
+            i18n: i18n,
+          ),
         );
+        final needsRefresh = provider.libraryTrackNeedsRefresh(converted);
         if (libraryRoot != null) {
           entryBatch.add(converted);
-          if (mergeContext!.isExcluded(scanned.path)) {
+          if (mergeContext!.isExcluded(converted.path)) {
             continue;
           }
         }
-        if (provider.trackByPath(scanned.path) != null) {
+        if (!needsRefresh) {
           duplicates++;
           continue;
         }
@@ -324,7 +328,7 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
       }
       if (trackBatch.isNotEmpty) {
         final before = provider.library.length;
-        provider.addTracks(trackBatch, notify: false);
+        provider.addOrReplaceTracks(trackBatch, notify: false);
         final batchAdded = provider.library.length - before;
         added += batchAdded;
         duplicates += trackBatch.length - batchAdded;
@@ -402,16 +406,19 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
 
       for (var scanIndex = index; scanIndex < endIndex; scanIndex++) {
         final scanned = scannedTracks[scanIndex];
-        final converted = _convertScannedTrack(
-          scanned,
-          libraryRoot: libraryRoot,
-          promoteRootTracksToSingles: promoteRootTracksToSingles,
-          i18n: i18n,
+        final converted = _canonicalizeTrackPath(
+          provider,
+          _convertScannedTrack(
+            scanned,
+            libraryRoot: libraryRoot,
+            promoteRootTracksToSingles: promoteRootTracksToSingles,
+            i18n: i18n,
+          ),
         );
         final needsRefresh = provider.libraryTrackNeedsRefresh(converted);
         if (libraryRoot != null) {
           entryBatch.add(converted);
-          if (mergeContext!.isExcluded(scanned.path)) {
+          if (mergeContext!.isExcluded(converted.path)) {
             continue;
           }
         }
@@ -509,6 +516,44 @@ extension _LibraryTabFolderImportActions on _LibraryTabState {
       fileSizeBytes: track.fileSizeBytes,
       modifiedAt: track.modifiedAt,
     );
+  }
+
+  MusicTrack _canonicalizeTrackPath(AudioProvider provider, MusicTrack track) {
+    final existing = _trackByEquivalentPath(provider, track.path);
+    if (existing == null || existing.path == track.path) return track;
+    return MusicTrack(
+      path: existing.path,
+      displayName: track.displayName,
+      groupKey: track.groupKey,
+      groupTitle: track.groupTitle,
+      groupSubtitle: track.groupSubtitle,
+      isSingle: track.isSingle,
+      isVideo: track.isVideo,
+      scannedAt: track.scannedAt,
+      fileSizeBytes: track.fileSizeBytes,
+      modifiedAt: track.modifiedAt,
+      lastPlayedPosition: existing.lastPlayedPosition,
+      lastPlayedAt: existing.lastPlayedAt,
+      isFavorite: existing.isFavorite,
+      tags: existing.tags,
+      coverCachePath: existing.coverCachePath ?? track.coverCachePath,
+      lyricsPath: existing.lyricsPath ?? track.lyricsPath,
+      manualCoverPath: existing.manualCoverPath ?? track.manualCoverPath,
+      duration: existing.duration == Duration.zero
+          ? track.duration
+          : existing.duration,
+    );
+  }
+
+  MusicTrack? _trackByEquivalentPath(AudioProvider provider, String trackPath) {
+    final direct = provider.trackByPath(trackPath);
+    if (direct != null) return direct;
+    for (final track in provider.library) {
+      if (PathMatcher.equalsNormalized(track.path, trackPath)) {
+        return track;
+      }
+    }
+    return null;
   }
 
   Future<bool> _ensureReadPermissionForSources({

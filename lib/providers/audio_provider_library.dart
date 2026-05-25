@@ -598,7 +598,7 @@ extension AudioProviderLibrary on AudioProvider {
       )) {
         return false;
       }
-      return !scannedPaths.contains(track.path);
+      return !PathMatcher.containsEquivalent(scannedPaths, track.path);
     });
   }
 
@@ -624,7 +624,11 @@ extension AudioProviderLibrary on AudioProvider {
     }
   }
 
-  void setScanning(bool scanning, {bool background = false}) {
+  void setScanning(
+    bool scanning, {
+    bool background = false,
+    bool notify = true,
+  }) {
     if (_isScanning == scanning && _isBackgroundScanning == background) return;
     _isScanning = scanning;
     _isBackgroundScanning = background;
@@ -639,7 +643,11 @@ extension AudioProviderLibrary on AudioProvider {
       _scanProgressNotifyTimer?.cancel();
       _scanProgressNotifyTimer = null;
     }
-    _notifyLibraryChanged();
+    if (notify) {
+      _notifyLibraryChanged();
+    } else {
+      _syncLibraryStateSlice();
+    }
   }
 
   void beginLibraryBatch() {

@@ -27,6 +27,7 @@ import '../widgets/active_session_carousel.dart';
 import '../widgets/app_feedback.dart';
 import '../widgets/confirm_action_dialog.dart';
 import '../widgets/mobile_overlay_inset.dart';
+import '../widgets/windows_title_bar.dart';
 
 import '../widgets/floating_subtitle_window.dart';
 
@@ -508,18 +509,22 @@ class _MainScreenState extends ConsumerState<MainScreen>
         extendBody: !isDesktop,
         resizeToAvoidBottomInset: false,
         backgroundColor: Colors.transparent,
-        body: Stack(
-          fit: StackFit.expand,
+        body: Column(
           children: [
-            _AmbientBackground(tinyMode: isTinyWindow),
-            if (isDesktop)
-              Row(
+            const WindowsTitleBar(),
+            Expanded(
+              child: Stack(
+                fit: StackFit.expand,
                 children: [
-                  _buildDesktopNavigation(context, i18n),
-                  Expanded(child: _buildAnimatedBody(isDesktop: true)),
-                ],
-              )
-            else
+                  _AmbientBackground(tinyMode: isTinyWindow),
+                  if (isDesktop)
+                    Row(
+                      children: [
+                        _buildDesktopNavigation(context, i18n, visibleSessions),
+                        Expanded(child: _buildAnimatedBody(isDesktop: true)),
+                      ],
+                    )
+                  else
               Stack(
                 fit: StackFit.expand,
                 children: [
@@ -572,6 +577,9 @@ class _MainScreenState extends ConsumerState<MainScreen>
                   if (mounted) setState(() => _bootstrapDone = true);
                 },
               ),
+          ],
+        ),
+            ),
           ],
         ),
       ),

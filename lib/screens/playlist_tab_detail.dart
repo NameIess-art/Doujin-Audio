@@ -548,6 +548,7 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
   final _progressBarKey = GlobalKey();
   final PermissionActionController _permissionActionController =
       PermissionActionController();
+  Size? _lastSize;
 
   @override
   void initState() {
@@ -563,6 +564,20 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
     WidgetsBinding.instance.removeObserver(this);
     _permissionActionController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final size = MediaQuery.sizeOf(context);
+    if (_lastSize != null && _lastSize != size) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _computeSubtitleDefaultTop();
+        }
+      });
+    }
+    _lastSize = size;
   }
 
   @override
@@ -926,24 +941,36 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                             builder: (context) {
                               final isLandscape = MediaQuery.orientationOf(context) == Orientation.landscape;
                               
+                              Widget artworkWidget = _SessionHeroArtwork(
+                                sessionId: session.id,
+                                height: constraints.maxHeight,
+                                track: track,
+                                coverPathFuture: coverPathFuture,
+                              );
+
+                              if (isLandscape) {
+                                artworkWidget = Center(
+                                  child: AspectRatio(
+                                    aspectRatio: 1.0,
+                                    child: artworkWidget,
+                                  ),
+                                );
+                              }
+
                               final artwork = Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 32,
+                                padding: EdgeInsets.symmetric(
+                                  horizontal: isLandscape ? 48.0 : 32.0,
+                                  vertical: isLandscape ? 32.0 : 0.0,
                                 ),
-                                child: _SessionHeroArtwork(
-                                  sessionId: session.id,
-                                  height: constraints.maxHeight,
-                                  track: track,
-                                  coverPathFuture: coverPathFuture,
-                                ),
+                                child: artworkWidget,
                               );
 
                               final detailContent = Padding(
                                 padding: EdgeInsets.fromLTRB(
                                   isLandscape ? 12 : 28,
                                   isLandscape ? 0 : 12,
-                                  isLandscape ? 32 : 28,
-                                  8,
+                                  isLandscape ? 64 : 28,
+                                  isLandscape ? 32 : 8,
                                 ),
                                 child: _SessionDetailContent(
                                   session: session,
@@ -961,8 +988,20 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                                   children: [
                                     Expanded(child: artwork),
                                     Expanded(
-                                      child: SingleChildScrollView(
-                                        child: detailContent,
+                                      child: LayoutBuilder(
+                                        builder: (context, scrollConstraints) {
+                                          return SingleChildScrollView(
+                                            padding: const EdgeInsets.symmetric(vertical: 24),
+                                            child: ConstrainedBox(
+                                              constraints: BoxConstraints(
+                                                minHeight: scrollConstraints.maxHeight - 48,
+                                              ),
+                                              child: Center(
+                                                child: detailContent,
+                                              ),
+                                            ),
+                                          );
+                                        },
                                       ),
                                     ),
                                   ],

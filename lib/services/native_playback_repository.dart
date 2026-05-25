@@ -1,11 +1,21 @@
+import 'dart:io';
+
+import 'dart_playback_bridge.dart';
 import 'native_playback_bridge.dart';
 import 'native_result.dart';
 
 class NativePlaybackRepository {
-  NativePlaybackRepository({NativePlaybackBridge? bridge})
-    : _bridge = bridge ?? NativePlaybackBridge.instance;
+  NativePlaybackRepository({NativePlaybackBridgeBase? bridge})
+    : _bridge = bridge ?? _defaultBridge();
 
-  final NativePlaybackBridge _bridge;
+  final NativePlaybackBridgeBase _bridge;
+
+  static NativePlaybackBridgeBase _defaultBridge() {
+    if (Platform.isWindows && Platform.environment['FLUTTER_TEST'] != 'true') {
+      return DartPlaybackBridge();
+    }
+    return NativePlaybackBridge.instance;
+  }
 
   Stream<NativePlaybackSnapshot> get snapshots => _bridge.snapshots;
 

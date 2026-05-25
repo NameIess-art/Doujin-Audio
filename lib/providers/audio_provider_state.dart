@@ -36,10 +36,10 @@ extension AudioProviderState on AudioProvider {
   int get maxCacheBytes => _maxCacheBytes;
   int get audioDetailRevision => _audioDetailRevision;
 
-  List<MusicTrack> get library => List.unmodifiable(_library);
+  List<MusicTrack> get library => UnmodifiableListView(_library);
   int get libraryTrackCount => _library.length;
-  List<String> get watchedFolders => List.unmodifiable(_watchedFolders);
-  List<String> get watchedLibraries => List.unmodifiable(_watchedLibraries);
+  List<String> get watchedFolders => UnmodifiableListView(_watchedFolders);
+  List<String> get watchedLibraries => UnmodifiableListView(_watchedLibraries);
   int get watchedFolderCount => _watchedFolders.length;
   int get watchedLibraryCount => _watchedLibraries.length;
   List<LibraryNode> get libraryTree {

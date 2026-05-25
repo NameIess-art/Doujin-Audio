@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -293,10 +294,16 @@ class _FloatingSubtitleWindowState extends ConsumerState<FloatingSubtitleWindow>
 
     top = top.clamp(40.0, screenHeight - 60.0);
     final isTinyWindow = screenWidth < 300 || screenHeight < 300;
+    final isWideScreen = screenWidth > 600;
+    final isDesktop = defaultTargetPlatform == TargetPlatform.windows ||
+        defaultTargetPlatform == TargetPlatform.macOS ||
+        defaultTargetPlatform == TargetPlatform.linux;
+    final leftPos = isWideScreen ? screenWidth / 2 : 0.0;
+    final maxAllowedWidth = isWideScreen ? (screenWidth / 2) * 0.9 : screenWidth * 0.8;
 
     return Positioned(
       top: top,
-      left: 0,
+      left: leftPos,
       right: 0,
       child: FractionalTranslation(
         translation: const Offset(0, -0.5),
@@ -305,25 +312,32 @@ class _FloatingSubtitleWindowState extends ConsumerState<FloatingSubtitleWindow>
           children: [
             GestureDetector(
               behavior: HitTestBehavior.translucent,
-              onVerticalDragStart: (_) {
+              onPanStart: (_) {
                 _dragY = top;
                 _snapHapticFired = false;
               },
-              onVerticalDragUpdate: (details) {
+              onPanUpdate: (details) {
                 setState(() {
-                  var newY = (_dragY ?? top) + (details.primaryDelta ?? 0);
+                  var newY = (_dragY ?? top) + details.delta.dy;
                   final defaultTop = widget.isCrossPage
                       ? null
                       : (widget.defaultTop ?? screenHeight * 0.60);
                   if (defaultTop != null) {
                     final dist = (newY - defaultTop).abs();
-                    if (dist < 25) {
+                    // On desktop platforms (mouse input), disable the rubber-band pull
+                    // because it unaligns the window from the mouse cursor.
+                    if (dist < 25 && !isDesktop) {
                       if (!_snapHapticFired) {
                         _snapHapticFired = true;
                         HapticFeedback.selectionClick();
                       }
                       final pull = (1.0 - dist / 25.0).clamp(0.0, 1.0) * 0.45;
                       newY = newY + (defaultTop - newY) * pull;
+                    } else if (dist < 15 && isDesktop) {
+                      if (!_snapHapticFired) {
+                        _snapHapticFired = true;
+                        HapticFeedback.selectionClick();
+                      }
                     } else {
                       _snapHapticFired = false;
                     }
@@ -331,14 +345,15 @@ class _FloatingSubtitleWindowState extends ConsumerState<FloatingSubtitleWindow>
                   _dragY = newY;
                 });
               },
-              onVerticalDragEnd: (details) {
+              onPanEnd: (details) {
                 if (_dragY != null && _currentSession != null) {
                   final defaultTop = widget.isCrossPage
                       ? null
                       : (widget.defaultTop ?? screenHeight * 0.60);
                   final currentY = _dragY!;
+                  final snapThreshold = isDesktop ? 15.0 : 30.0;
                   final snapToDefault =
-                      defaultTop != null && (currentY - defaultTop).abs() < 30;
+                      defaultTop != null && (currentY - defaultTop).abs() < snapThreshold;
                   if (snapToDefault) {
                     ref
                         .read(subtitleSettingsProvider.notifier)
@@ -353,7 +368,7 @@ class _FloatingSubtitleWindowState extends ConsumerState<FloatingSubtitleWindow>
                   });
                 }
               },
-              onVerticalDragCancel: () {
+              onPanCancel: () {
                 setState(() {
                   _dragY = null;
                 });
@@ -361,7 +376,7 @@ class _FloatingSubtitleWindowState extends ConsumerState<FloatingSubtitleWindow>
               child: SubtitleWindowVisual(
                 settings: settings,
                 text: _subtitleText ?? '',
-                maxTextWidth: screenWidth * 0.8,
+                maxTextWidth: maxAllowedWidth,
                 enableBackdropBlur: !isTinyWindow,
               ),
             ),

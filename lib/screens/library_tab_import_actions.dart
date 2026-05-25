@@ -35,17 +35,12 @@ extension _LibraryTabImportActions on _LibraryTabState {
     if (!provider.isScanning) {
       return Future<void>.value();
     }
-    final completer = Completer<void>();
-    void listener() {
-      if (!provider.isScanning && !completer.isCompleted) {
-        completer.complete();
-      }
-    }
-
-    provider.addListener(listener);
-    return completer.future.whenComplete(() {
-      provider.removeListener(listener);
-    });
+    return ref
+        .read(libraryServiceProvider)
+        .slice
+        .stream
+        .firstWhere((state) => !state.isScanning)
+        .then((_) {});
   }
 
   Future<void> _runLibraryPullRefresh() async {
@@ -139,6 +134,56 @@ extension _LibraryTabImportActions on _LibraryTabState {
     _showSnack(i18n.tr('library_item_exists'));
   }
 
+  bool _hasWatchedLibraryOverlap(
+    AudioProvider provider,
+    String normalizedFolderPath,
+  ) {
+    return provider.watchedLibraries.any(
+      (value) => _pathsOverlap(value, normalizedFolderPath),
+    );
+  }
+
+  bool _isNestedInsideStandaloneFolder(
+    AudioProvider provider,
+    String normalizedFolderPath,
+  ) {
+    return provider.watchedFolders.any(
+      (value) =>
+          PathMatcher.isWithinOrEqual(normalizedFolderPath, value) &&
+          !PathMatcher.equalsNormalized(value, normalizedFolderPath),
+    );
+  }
+
+  List<String> _watchedFoldersToPromote(
+    AudioProvider provider,
+    String normalizedFolderPath,
+  ) {
+    return provider.watchedFolders
+        .where(
+          (value) => PathMatcher.isWithinOrEqual(value, normalizedFolderPath),
+        )
+        .toList(growable: false);
+  }
+
+  bool _hasUnmanagedLibraryContentOverlap(
+    AudioProvider provider,
+    String normalizedFolderPath,
+    List<String> promotedFolders,
+  ) {
+    return provider.library.any((track) {
+      final belongsToPromotedFolder = promotedFolders.any(
+        (folderPath) =>
+            PathMatcher.isWithinOrEqual(track.path, folderPath) ||
+            (track.groupKey != '__single_files__' &&
+                PathMatcher.isWithinOrEqual(track.groupKey, folderPath)),
+      );
+      if (belongsToPromotedFolder) return false;
+      return _pathsOverlap(track.path, normalizedFolderPath) ||
+          (track.groupKey != '__single_files__' &&
+              _pathsOverlap(track.groupKey, normalizedFolderPath));
+    });
+  }
+
   Future<void> _refreshWatchedFolders({
     bool silent = false,
     bool forceShowResult = false,
@@ -159,7 +204,7 @@ extension _LibraryTabImportActions on _LibraryTabState {
 
     if (!mounted) return;
     _lastBatchFlushTime = null;
-    provider.setScanning(true, background: true);
+    provider.setScanning(true, background: true, notify: false);
     provider.beginLibraryBatch();
     var batchOpen = true;
     var totalAdded = 0;
@@ -274,7 +319,7 @@ extension _LibraryTabImportActions on _LibraryTabState {
       if (batchOpen) {
         await provider.endLibraryBatch();
       }
-      provider.setScanning(false);
+      provider.setScanning(false, notify: false);
       if (mounted) {
         if (!silent || forceShowResult || totalAdded > 0) {
           _showSnack(
@@ -331,18 +376,32 @@ extension _LibraryTabImportActions on _LibraryTabState {
     String folderPath,
     AppLanguageProvider i18n,
   ) async {
-    final childFolders = await _listImmediateChildFolders(folderPath);
+    final normalizedFolderPath = PathMatcher.normalize(folderPath);
+    final childFolders = await _listImmediateChildFolders(normalizedFolderPath);
     final importTargets = childFolders;
     if (!mounted) return;
     final provider = context.read<AudioProvider>();
-    if (_isFolderAlreadyInLibrary(provider, folderPath)) {
+    final promotedFolders = _watchedFoldersToPromote(
+      provider,
+      normalizedFolderPath,
+    );
+    if (_hasWatchedLibraryOverlap(provider, normalizedFolderPath) ||
+        _isNestedInsideStandaloneFolder(provider, normalizedFolderPath) ||
+        _hasUnmanagedLibraryContentOverlap(
+          provider,
+          normalizedFolderPath,
+          promotedFolders,
+        )) {
       _showAlreadyExistsSnack(i18n);
       return;
     }
+    for (final folderPath in promotedFolders) {
+      provider.removeWatchedFolder(folderPath, notify: false);
+    }
 
-    provider.addWatchedLibrary(folderPath, notify: false);
+    provider.addWatchedLibrary(normalizedFolderPath, notify: false);
     provider.recordLibraryEntriesForTracks(
-      folderPath,
+      normalizedFolderPath,
       const <MusicTrack>[],
       folderPaths: childFolders,
     );
@@ -351,13 +410,15 @@ extension _LibraryTabImportActions on _LibraryTabState {
     var added = 0;
     try {
       added = await _importLibraryWithSingleScan(
-        folderPath,
+        normalizedFolderPath,
         provider,
         i18n,
         onChunkCommitted: () => _flushRefreshBatch(provider),
       );
       for (final childFolder in importTargets) {
-        if (provider.isLibraryPathExcluded(folderPath, childFolder)) continue;
+        if (provider.isLibraryPathExcluded(normalizedFolderPath, childFolder)) {
+          continue;
+        }
         provider.addWatchedFolder(childFolder, notify: false);
         await _prefillRjDetailForFolder(provider, childFolder);
       }

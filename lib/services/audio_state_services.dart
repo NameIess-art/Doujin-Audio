@@ -466,8 +466,12 @@ class LibraryService {
   );
 
   void markStructureChanged() {
-    structureRevision++;
     libraryTreeDirty = true;
+    if (libraryBatchDepth > 0) {
+      libraryBatchChanged = true;
+      return;
+    }
+    structureRevision++;
   }
 
   List<String> currentTopLevelNodeIds() {
@@ -822,7 +826,7 @@ class LibraryService {
           ? retainedPaths.any(
               (path) => PathMatcher.isWithinOrEqualNormalized(path, entry.path),
             )
-          : retainedPaths.contains(entry.path);
+          : PathMatcher.containsEquivalent(retainedPaths, entry.path);
       if (retained) return false;
       removedPaths.add(entry.path);
       return true;

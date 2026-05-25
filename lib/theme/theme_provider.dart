@@ -260,6 +260,25 @@ class ThemeProvider with ChangeNotifier {
           side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.5)),
         ),
       ),
+      scrollbarTheme: ScrollbarThemeData(
+        thickness: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.hovered)) return 8;
+          return 4;
+        }),
+        thumbColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.dragged)) {
+            return scheme.primary;
+          }
+          if (states.contains(WidgetState.hovered)) {
+            return scheme.primary.withValues(alpha: 0.7);
+          }
+          return scheme.outlineVariant.withValues(alpha: 0.5);
+        }),
+        trackColor: WidgetStateProperty.all(Colors.transparent),
+        crossAxisMargin: 4,
+        mainAxisMargin: 4,
+        radius: const Radius.circular(8),
+      ),
     );
   }
 

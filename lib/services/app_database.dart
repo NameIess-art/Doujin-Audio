@@ -1,8 +1,9 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
-import 'package:sqflite/sqflite.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import '../models/audio_detail.dart';
 import '../models/library_entry.dart';
@@ -17,6 +18,12 @@ class AppDatabase {
 
   static AppDatabase? _instance;
   static AppDatabase get instance => _instance ??= AppDatabase._();
+
+  static void initializeForPlatform() {
+    if (!Platform.isWindows && !Platform.isLinux) return;
+    sqfliteFfiInit();
+    databaseFactory = databaseFactoryFfi;
+  }
 
   Database? _db;
 

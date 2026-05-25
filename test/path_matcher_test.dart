@@ -56,4 +56,13 @@ void main() {
     expect(PathMatcher.relativeWithin(childDocument, root), 'Album');
     expect(PathMatcher.relativeWithin(childDocument, childDocument), '');
   });
+
+  test('containsEquivalent matches normalized file-system paths', () {
+    expect(
+      PathMatcher.containsEquivalent(const <String>{
+        '/library/root/album/../track.mp3',
+      }, '/library/root/track.mp3'),
+      isTrue,
+    );
+  });
 }

@@ -46,6 +46,7 @@ class LibraryHeaderState {
 class LibraryListState {
   const LibraryListState({
     required this.rawTree,
+    required this.watchedFolders,
     required this.watchedLibraries,
     required this.watchedFolderCount,
     required this.watchedLibraryCount,
@@ -60,6 +61,7 @@ class LibraryListState {
   });
 
   final List<LibraryNode> rawTree;
+  final List<String> watchedFolders;
   final List<String> watchedLibraries;
   final int watchedFolderCount;
   final int watchedLibraryCount;
@@ -79,6 +81,7 @@ class LibraryListState {
   bool operator ==(Object other) {
     return other is LibraryListState &&
         identical(other.rawTree, rawTree) &&
+        listEquals(other.watchedFolders, watchedFolders) &&
         listEquals(other.watchedLibraries, watchedLibraries) &&
         other.watchedFolderCount == watchedFolderCount &&
         other.watchedLibraryCount == watchedLibraryCount &&
@@ -95,6 +98,7 @@ class LibraryListState {
   @override
   int get hashCode => Object.hash(
     rawTree,
+    Object.hashAll(watchedFolders),
     Object.hashAll(watchedLibraries),
     watchedFolderCount,
     watchedLibraryCount,

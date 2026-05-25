@@ -160,6 +160,7 @@ class _SessionDetailContentState extends State<_SessionDetailContent>
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
                   IconButton(
+                    tooltip: i18n.tr('previous_track'),
                     constraints: BoxConstraints.tightFor(
                       width: compact ? 56 : 64,
                       height: compact ? 56 : 64,
@@ -201,6 +202,7 @@ class _SessionDetailContentState extends State<_SessionDetailContent>
                     ),
                   ),
                   IconButton(
+                    tooltip: isPlaying ? i18n.tr('pause') : i18n.tr('play'),
                     constraints: BoxConstraints.tightFor(
                       width: compact ? 80 : 92,
                       height: compact ? 80 : 92,
@@ -270,6 +272,7 @@ class _SessionDetailContentState extends State<_SessionDetailContent>
                     ),
                   ),
                   IconButton(
+                    tooltip: i18n.tr('next_track'),
                     constraints: BoxConstraints.tightFor(
                       width: compact ? 56 : 64,
                       height: compact ? 56 : 64,

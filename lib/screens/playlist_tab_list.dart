@@ -370,6 +370,7 @@ class _SessionListCardState extends State<_SessionListCard>
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             IconButton(
+                              tooltip: isPlaying ? i18n.tr('pause') : i18n.tr('play'),
                               onPressed: sessionView.isLoading
                                   ? null
                                   : () {

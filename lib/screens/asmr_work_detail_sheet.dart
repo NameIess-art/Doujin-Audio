@@ -470,6 +470,7 @@ class _CopyableTextChip extends StatelessWidget {
       child: InkWell(
         borderRadius: BorderRadius.circular(multiline ? 16 : 999),
         onLongPress: () => _copyText(context, text),
+        onSecondaryTap: () => _copyText(context, text),
         child: Padding(
           padding: EdgeInsets.symmetric(
             horizontal: compact ? 12 : 14,

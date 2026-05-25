@@ -4,6 +4,7 @@ import 'dart:math';
 import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -310,7 +311,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
               key: _headerKey,
               icon: Icons.graphic_eq_rounded,
               title: i18n.tr('playback_sessions'),
-              marqueeTitle: true,
+              marqueeTitle: !Platform.isWindows,
               isLoading: !listState.isInitialized,
               subtitle: sessionSummary,
               subtitleFontSize: 11,

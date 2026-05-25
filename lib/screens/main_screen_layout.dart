@@ -5,11 +5,13 @@ extension _MainScreenLayout on _MainScreenState {
     final cs = Theme.of(context).colorScheme;
     final width = MediaQuery.sizeOf(context).width;
     final isLargeScreen = width >= 980;
-    final radius = BorderRadius.circular(isDesktop ? (isLargeScreen ? 28 : 16) : 24);
-    final padding = isDesktop 
-        ? (isLargeScreen 
-            ? const EdgeInsets.fromLTRB(24, 22, 24, 22) 
-            : const EdgeInsets.fromLTRB(12, 12, 16, 12))
+    final radius = BorderRadius.circular(
+      isDesktop ? (isLargeScreen ? 16 : 12) : 24,
+    );
+    final padding = isDesktop
+        ? (isLargeScreen
+              ? const EdgeInsets.fromLTRB(24, 22, 24, 22)
+              : const EdgeInsets.fromLTRB(12, 12, 16, 12))
         : EdgeInsets.zero;
 
     Widget pageShell(int actualIndex) {
@@ -42,7 +44,11 @@ extension _MainScreenLayout on _MainScreenState {
                     ),
                     child: ClipRRect(
                       borderRadius: radius,
-                      child: RepaintBoundary(child: page),
+                      clipBehavior: Clip.hardEdge,
+                      child: ColoredBox(
+                        color: cs.surface,
+                        child: RepaintBoundary(child: page),
+                      ),
                     ),
                   ),
                 ),
@@ -84,7 +90,8 @@ extension _MainScreenLayout on _MainScreenState {
   ) {
     final i18n = context.read<AppLanguageProvider>();
     final mediaSize = MediaQuery.sizeOf(context);
-    final isLandscape = MediaQuery.orientationOf(context) == Orientation.landscape;
+    final isLandscape =
+        MediaQuery.orientationOf(context) == Orientation.landscape;
     final isDesktop = mediaSize.width >= 760 || isLandscape;
 
     if (!_timerOverlayPrimed) {
@@ -242,6 +249,7 @@ extension _MainScreenLayout on _MainScreenState {
   Widget _buildDesktopNavigation(
     BuildContext context,
     AppLanguageProvider i18n,
+    List<PlaybackSession> overlaySessions,
   ) {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -349,6 +357,20 @@ extension _MainScreenLayout on _MainScreenState {
               ),
             ),
           ),
+          if (overlaySessions.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 10),
+              child: ActiveSessionCarousel(
+                sessions: overlaySessions,
+                provider: ref.read(audioProviderFacadeProvider),
+                i18n: i18n,
+                onOpenSession: (sessionId) {
+                  Navigator.of(
+                    context,
+                  ).push(buildSessionDetailRoute(sessionId: sessionId));
+                },
+              ),
+            ),
         ],
       ),
     );

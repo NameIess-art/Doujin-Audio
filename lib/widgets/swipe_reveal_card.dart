@@ -217,6 +217,11 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
           onHorizontalDragStart: _handleHorizontalDragStart,
           onHorizontalDragUpdate: _handleHorizontalDragUpdate,
           onHorizontalDragEnd: _handleHorizontalDragEnd,
+          onSecondaryTap: () {
+            setState(() {
+              _revealedWidth = _isOpen ? 0 : _actionWidth;
+            });
+          },
           onHorizontalDragCancel: () {
             _dragAccepted = false;
             _dragRejected = false;

@@ -145,7 +145,78 @@ class NativePlaybackBundleSnapshot {
   }
 }
 
-class NativePlaybackBridge {
+abstract interface class NativePlaybackBridgeBase {
+  Stream<NativePlaybackSnapshot> get snapshots;
+
+  void startListening();
+
+  Future<void> stopListening();
+
+  Future<void> dispose();
+
+  Future<NativeResult<NativePlaybackSnapshot>> prepareSession({
+    required String sessionId,
+    required Uri uri,
+    required String title,
+    String? path,
+    String? subtitle,
+    Uri? artUri,
+    Duration startPosition = Duration.zero,
+    double volume = 1.0,
+    bool repeatOne = false,
+    bool autoPlay = false,
+    List<Map<String, Object?>>? queue,
+    int? queueStartIndex,
+    bool repeatAll = false,
+    bool shuffle = false,
+  });
+
+  Future<NativeResult<NativePlaybackSnapshot>> play(String sessionId);
+
+  Future<NativeResult<NativePlaybackSnapshot>> pause(String sessionId);
+
+  Future<NativeResult<NativePlaybackSnapshot>> stop(String sessionId);
+
+  Future<NativeResult<NativePlaybackSnapshot>> seek(
+    String sessionId,
+    Duration position,
+  );
+
+  Future<NativeResult<NativePlaybackSnapshot>> setVolume(
+    String sessionId,
+    double volume,
+  );
+
+  Future<NativeResult<NativePlaybackSnapshot>> setRepeatOne(
+    String sessionId,
+    bool repeatOne, {
+    List<Map<String, Object?>>? queue,
+    int? queueStartIndex,
+    bool repeatAll = false,
+    bool shuffle = false,
+  });
+
+  Future<NativeResult<NativePlaybackSnapshot>> setChannelSwap(
+    String sessionId,
+    bool enabled,
+  );
+
+  Future<NativeResult<void>> removeSession(String sessionId);
+
+  Future<NativeResult<void>> pauseAll();
+
+  Future<NativeResult<void>> clearAll();
+
+  Future<NativeResult<void>> setForegroundEnabled(bool enabled);
+
+  Future<NativeResult<void>> dismissNotifications();
+
+  Future<NativeResult<void>> undismissNotifications();
+
+  Future<NativeResult<NativePlaybackBundleSnapshot>> snapshot();
+}
+
+class NativePlaybackBridge implements NativePlaybackBridgeBase {
   NativePlaybackBridge._();
 
   static final NativePlaybackBridge instance = NativePlaybackBridge._();
@@ -167,8 +238,10 @@ class NativePlaybackBridge {
   int _reconnectAttempt = 0;
   static const int _maxReconnectAttempts = 5;
 
+  @override
   Stream<NativePlaybackSnapshot> get snapshots => _controller.stream;
 
+  @override
   void startListening() {
     _listeningEnabled = true;
     if (_eventSubscription != null) return;
@@ -221,6 +294,7 @@ class NativePlaybackBridge {
     });
   }
 
+  @override
   Future<void> stopListening() async {
     _listeningEnabled = false;
     _reconnectAttempt = _maxReconnectAttempts;
@@ -230,12 +304,14 @@ class NativePlaybackBridge {
     _eventSubscription = null;
   }
 
+  @override
   Future<void> dispose() async {
     await stopListening();
     await _snapshotController?.close();
     _snapshotController = null;
   }
 
+  @override
   Future<NativeResult<NativePlaybackSnapshot>> prepareSession({
     required String sessionId,
     required Uri uri,
@@ -275,20 +351,24 @@ class NativePlaybackBridge {
     });
   }
 
+  @override
   Future<NativeResult<NativePlaybackSnapshot>> play(String sessionId) {
     return _invokeSnapshot(NativePlaybackMethod.play, {'sessionId': sessionId});
   }
 
+  @override
   Future<NativeResult<NativePlaybackSnapshot>> pause(String sessionId) {
     return _invokeSnapshot(NativePlaybackMethod.pause, {
       'sessionId': sessionId,
     });
   }
 
+  @override
   Future<NativeResult<NativePlaybackSnapshot>> stop(String sessionId) {
     return _invokeSnapshot(NativePlaybackMethod.stop, {'sessionId': sessionId});
   }
 
+  @override
   Future<NativeResult<NativePlaybackSnapshot>> seek(
     String sessionId,
     Duration position,
@@ -299,6 +379,7 @@ class NativePlaybackBridge {
     });
   }
 
+  @override
   Future<NativeResult<NativePlaybackSnapshot>> setVolume(
     String sessionId,
     double volume,
@@ -309,6 +390,7 @@ class NativePlaybackBridge {
     });
   }
 
+  @override
   Future<NativeResult<NativePlaybackSnapshot>> setRepeatOne(
     String sessionId,
     bool repeatOne, {
@@ -329,6 +411,7 @@ class NativePlaybackBridge {
     });
   }
 
+  @override
   Future<NativeResult<NativePlaybackSnapshot>> setChannelSwap(
     String sessionId,
     bool enabled,
@@ -339,34 +422,41 @@ class NativePlaybackBridge {
     });
   }
 
+  @override
   Future<NativeResult<void>> removeSession(String sessionId) {
     return _invokeVoid(NativePlaybackMethod.removeSession, {
       'sessionId': sessionId,
     });
   }
 
+  @override
   Future<NativeResult<void>> pauseAll() {
     return _invokeVoid(NativePlaybackMethod.pauseAll);
   }
 
+  @override
   Future<NativeResult<void>> clearAll() {
     return _invokeVoid(NativePlaybackMethod.clearAll);
   }
 
+  @override
   Future<NativeResult<void>> setForegroundEnabled(bool enabled) {
     return _invokeVoid(NativePlaybackMethod.setForegroundEnabled, {
       'enabled': enabled,
     });
   }
 
+  @override
   Future<NativeResult<void>> dismissNotifications() {
     return _invokeVoid(NativePlaybackMethod.dismissNotifications);
   }
 
+  @override
   Future<NativeResult<void>> undismissNotifications() {
     return _invokeVoid(NativePlaybackMethod.undismissNotifications);
   }
 
+  @override
   Future<NativeResult<NativePlaybackBundleSnapshot>> snapshot() {
     return _invokeValue(
       NativePlaybackMethod.snapshot,

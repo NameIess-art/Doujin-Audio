@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/foundation.dart';
@@ -66,11 +67,13 @@ class PlaybackNotificationService {
       _handler.playbackState.add(PlaybackState(queueIndex: 0));
       _handler.mediaItem.add(null);
       _handler.queue.add(const []);
-      await AudioService.stopService();
+      if (!Platform.isWindows && !Platform.isLinux) {
+        await AudioService.stopService();
+      }
       await _clearUnifiedNotifications();
     }
     _enabled = enabled;
-    if (enabled) {
+    if (enabled && Platform.isAndroid) {
       await NativePlaybackBridge.instance.setForegroundEnabled(true);
     }
   }

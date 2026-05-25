@@ -301,6 +301,63 @@ void main() {
     },
   );
 
+  testWidgets('library tab exposes edit action for standalone folders', (
+    WidgetTester tester,
+  ) async {
+    final handler = PlaybackNotificationHandler();
+    final notificationService = PlaybackNotificationService(handler);
+    final audioDatabaseRepository = AudioDatabaseRepository();
+    final nativePlaybackRepository = NativePlaybackRepository();
+    const playbackCommandRunner = PlaybackCommandRunner();
+    final libraryService = LibraryService();
+    final playbackService = PlaybackSessionService();
+    final timerService = TimerService();
+    final notificationCoordinatorService = NotificationCoordinatorService();
+    final settingsRepository = SettingsRepository();
+    final languageProvider = AppLanguageProvider();
+    final audioProvider = AudioProvider.test(
+      notificationService: notificationService,
+      audioDatabaseRepository: audioDatabaseRepository,
+      nativePlaybackRepository: nativePlaybackRepository,
+      libraryService: libraryService,
+      playbackService: playbackService,
+      timerService: timerService,
+      notificationStateService: notificationCoordinatorService,
+      settingsRepository: settingsRepository,
+    );
+
+    addTearDown(audioProvider.dispose);
+
+    const folderPath = '/library/standalone';
+    audioProvider.addWatchedFolder(folderPath, notify: false);
+    audioProvider.recordLibraryEntriesForTracks(
+      folderPath,
+      const <MusicTrack>[],
+      persist: false,
+    );
+    libraryService.syncSlice(isInitialized: true);
+
+    await tester.pumpWidget(
+      _buildTestApp(
+        audioProvider: audioProvider,
+        audioDatabaseRepository: audioDatabaseRepository,
+        nativePlaybackRepository: nativePlaybackRepository,
+        playbackCommandRunner: playbackCommandRunner,
+        libraryService: libraryService,
+        playbackService: playbackService,
+        timerService: timerService,
+        notificationCoordinatorService: notificationCoordinatorService,
+        settingsRepository: settingsRepository,
+        languageProvider: languageProvider,
+        child: const LibraryTab(),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.byTooltip(languageProvider.tr('edit_library')), findsOneWidget);
+  });
+
   testWidgets('library edit keeps restored content folder visible', (
     WidgetTester tester,
   ) async {

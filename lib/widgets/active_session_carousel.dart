@@ -169,6 +169,13 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
       height: 88,
       child: PageView.builder(
         controller: _pageController,
+        scrollBehavior: ScrollConfiguration.of(context).copyWith(
+          dragDevices: {
+            PointerDeviceKind.touch,
+            PointerDeviceKind.mouse,
+            PointerDeviceKind.trackpad,
+          },
+        ),
         physics: sessions.length == 1
             ? const NeverScrollableScrollPhysics()
             : const BouncingScrollPhysics(),

@@ -31,6 +31,9 @@ class ContentBoundReorderArea extends StatelessWidget {
     required this.child,
     this.topExpansion = 0,
     this.bottomExpansion = 0,
+    this.scrollController,
+    this.showScrollbar = false,
+    this.scrollbarMainAxisMargin = 0,
   });
 
   /// The Y-coordinate of the content area top — typically the bottom edge of
@@ -53,14 +56,42 @@ class ContentBoundReorderArea extends StatelessWidget {
 
   final Widget child;
 
+  final ScrollController? scrollController;
+
+  final bool showScrollbar;
+
+  final double scrollbarMainAxisMargin;
+
   @override
   Widget build(BuildContext context) {
-    return Positioned(
-      top: headerHeight - topExpansion,
-      bottom: bottomInset - bottomExpansion,
+    final expandedScrollable = Positioned(
+      top: -topExpansion,
+      bottom: -bottomExpansion,
       left: 0,
       right: 0,
-      child: child,
+      child: ScrollConfiguration(
+        behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
+        child: child,
+      ),
+    );
+    final content = Stack(
+      clipBehavior: Clip.none,
+      children: [expandedScrollable],
+    );
+
+    return Positioned(
+      top: headerHeight,
+      bottom: bottomInset,
+      left: 0,
+      right: 0,
+      child: showScrollbar
+          ? ScrollbarTheme(
+              data: ScrollbarTheme.of(
+                context,
+              ).copyWith(mainAxisMargin: scrollbarMainAxisMargin),
+              child: Scrollbar(controller: scrollController, child: content),
+            )
+          : content,
     );
   }
 }

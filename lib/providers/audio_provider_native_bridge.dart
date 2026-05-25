@@ -13,7 +13,9 @@ extension AudioProviderNativeBridge on AudioProvider {
     if (uriValue == null || uriValue.isEmpty) return null;
     final uri = Uri.tryParse(uriValue);
     if (uri == null) return uriValue;
-    if (uri.scheme == 'file') return uri.toFilePath(windows: false);
+    if (uri.scheme == 'file') {
+      return uri.toFilePath(windows: _isWindowsDriveUri(uri));
+    }
     if (uri.scheme == 'content') return uriValue;
     if (uri.scheme == 'http' || uri.scheme == 'https') return uriValue;
     return null;
@@ -104,4 +106,10 @@ extension AudioProviderNativeBridge on AudioProvider {
       _notifyPlaybackChanged();
     }
   }
+}
+
+bool _isWindowsDriveUri(Uri uri) {
+  return Platform.isWindows &&
+      uri.pathSegments.isNotEmpty &&
+      RegExp(r'^[A-Za-z]:$').hasMatch(uri.pathSegments.first);
 }

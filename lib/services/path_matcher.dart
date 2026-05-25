@@ -57,6 +57,16 @@ abstract final class PathMatcher {
     return path.equals(normalize(first), normalize(second));
   }
 
+  static bool containsEquivalent(Iterable<String> candidates, String value) {
+    final normalizedValue = normalize(value);
+    for (final candidate in candidates) {
+      if (equalsNormalized(candidate, normalizedValue)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   static bool isWithinOrEqual(String child, String parent) {
     final normalizedChild = normalize(child);
     final normalizedParent = normalize(parent);

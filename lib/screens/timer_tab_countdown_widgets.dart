@@ -392,31 +392,40 @@ class _WheelPickerState extends State<_WheelPicker> {
             borderRadius: BorderRadius.circular(12),
           ),
         ),
-        ListWheelScrollView.useDelegate(
-          controller: _controller,
-          itemExtent: 42,
-          perspective: 0.005,
-          diameterRatio: 1.5,
-          physics: const FixedExtentScrollPhysics(),
-          onSelectedItemChanged: (index) {
-            HapticFeedback.selectionClick();
-            widget.onChanged(index);
-          },
-          childDelegate: ListWheelChildBuilderDelegate(
-            childCount: widget.max + 1,
-            builder: (context, index) {
-              return Center(
-                child: Text(
-                  index.toString().padLeft(2, '0'),
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w700,
-                    fontFeatures: const [FontFeature.tabularFigures()],
-                    color: cs.onSurface,
-                  ),
-                ),
-              );
+        ScrollConfiguration(
+          behavior: ScrollConfiguration.of(context).copyWith(
+            dragDevices: {
+              PointerDeviceKind.touch,
+              PointerDeviceKind.mouse,
+              PointerDeviceKind.trackpad,
             },
+          ),
+          child: ListWheelScrollView.useDelegate(
+            controller: _controller,
+            itemExtent: 42,
+            perspective: 0.005,
+            diameterRatio: 1.5,
+            physics: const FixedExtentScrollPhysics(),
+            onSelectedItemChanged: (index) {
+              HapticFeedback.selectionClick();
+              widget.onChanged(index);
+            },
+            childDelegate: ListWheelChildBuilderDelegate(
+              childCount: widget.max + 1,
+              builder: (context, index) {
+                return Center(
+                  child: Text(
+                    index.toString().padLeft(2, '0'),
+                    style: TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w700,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                      color: cs.onSurface,
+                    ),
+                  ),
+                );
+              },
+            ),
           ),
         ),
       ],

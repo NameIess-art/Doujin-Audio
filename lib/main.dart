@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:audio_session/audio_session.dart';
 import 'package:audio_service/audio_service.dart';
@@ -7,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart' show ProviderScope;
 import 'package:provider/provider.dart';
+import 'package:window_manager/window_manager.dart';
 
 import 'i18n/app_language_provider.dart';
 import 'providers/audio_provider.dart';
@@ -22,9 +24,27 @@ import 'services/playback_command_runner.dart';
 import 'services/playback_notification_service.dart';
 import 'theme/theme_provider.dart';
 import 'services/app_preferences.dart';
+import 'services/app_database.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  AppDatabase.initializeForPlatform();
+
+  if (Platform.isWindows) {
+    await windowManager.ensureInitialized();
+    WindowOptions windowOptions = const WindowOptions(
+      size: Size(1100, 750),
+      minimumSize: Size(800, 600),
+      center: true,
+      backgroundColor: Colors.transparent,
+      skipTaskbar: false,
+      titleBarStyle: TitleBarStyle.hidden,
+    );
+    await windowManager.waitUntilReadyToShow(windowOptions, () async {
+      await windowManager.show();
+      await windowManager.focus();
+    });
+  }
 
   // Optimize image cache for mobile memory stability
   PaintingBinding.instance.imageCache.maximumSizeBytes =
@@ -32,6 +52,16 @@ Future<void> main() async {
   PaintingBinding.instance.imageCache.maximumSize = 200; // 200 images
 
   // Start essential services in parallel to minimize blocking before runApp
+  final audioHandlerFuture = Platform.isWindows
+      ? Future<PlaybackNotificationHandler>.value(PlaybackNotificationHandler())
+      : AudioService.init(
+          builder: PlaybackNotificationHandler.new,
+          config: const AudioServiceConfig(
+            androidNotificationChannelId: 'com.nameless.audio.channel.playback',
+            androidNotificationChannelName: 'Playback',
+            androidNotificationOngoing: true,
+          ),
+        );
   final initFutures = Future.wait([
     SystemChrome.setPreferredOrientations(
       AppOrientationPolicy.current.allowedOrientations,
@@ -40,14 +70,7 @@ Future<void> main() async {
     AudioSession.instance.then(
       (session) => session.configure(const AudioSessionConfiguration.music()),
     ),
-    AudioService.init(
-      builder: PlaybackNotificationHandler.new,
-      config: const AudioServiceConfig(
-        androidNotificationChannelId: 'com.nameless.audio.channel.playback',
-        androidNotificationChannelName: 'Playback',
-        androidNotificationOngoing: true,
-      ),
-    ),
+    audioHandlerFuture,
     AppPreferences.init(),
   ]);
 
@@ -156,6 +179,9 @@ class MusicPlayerApp extends StatelessWidget {
             GlobalWidgetsLocalizations.delegate,
           ],
           theme: themeProvider.currentTheme,
+          scrollBehavior: const MaterialScrollBehavior().copyWith(
+            scrollbars: Platform.isWindows,
+          ),
           home: const MainScreen(),
         );
       },

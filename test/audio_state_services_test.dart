@@ -407,6 +407,38 @@ void main() {
       expect(service.excludedLibraryTracks, isEmpty);
     });
 
+    test('library entry pruning retains normalized equivalent file paths', () {
+      final service = LibraryService();
+      addTearDown(service.dispose);
+
+      const root = '/library/root';
+      const trackPath = '$root/track.mp3';
+      service.replaceLibraryEntries(<LibraryEntry>[
+        LibraryEntry.track(
+          libraryPath: root,
+          track: const MusicTrack(
+            path: trackPath,
+            displayName: 'track',
+            groupKey: root,
+            groupTitle: 'root',
+            groupSubtitle: root,
+            isSingle: false,
+          ),
+          parentPath: root,
+          state: LibraryEntryState.active,
+        ),
+      ]);
+
+      final removed = service.removeLibraryEntriesMissingFromFolderScan(
+        root,
+        root,
+        const <String>{'$root/album/../track.mp3'},
+      );
+
+      expect(removed, isEmpty);
+      expect(service.libraryEntriesForLibrary(root), hasLength(1));
+    });
+
     test('syncSlice reflects scan and structure metadata', () {
       final service = LibraryService();
       addTearDown(service.dispose);

@@ -264,6 +264,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     final listState = context.select<AudioProvider, LibraryListState>(
       (value) => LibraryListState(
         rawTree: value.libraryTree,
+        watchedFolders: value.watchedFolders,
         watchedLibraries: value.watchedLibraries,
         watchedFolderCount: value.watchedFolderCount,
         watchedLibraryCount: value.watchedLibraryCount,
@@ -296,6 +297,12 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     final headerContentHeight = topTotalHeight + headerControlsFullHeight;
     // Remove the extra 96px to make content flush with the bottom dock.
     final listBottomInset = bottomInset;
+    final isWindows = Platform.isWindows;
+    final listTopExpansion = isWindows ? 0.0 : 150.0;
+    final listBottomExpansion = isWindows ? 0.0 : 350.0;
+    final listTopPadding = 4 + headerControlsFullHeight + listTopExpansion;
+    final listBottomPadding = isWindows ? 16.0 : listBottomExpansion;
+    final listViewportBottomInset = listBottomInset + (isWindows ? 16.0 : 0.0);
     // Reduced cacheExtent to significantly lower memory footprint and improve
     // scroll/swipe performance.
     final listCacheExtent = (headerContentHeight + 400)
@@ -348,8 +355,8 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
       // Padding adjustment for restricted Positioned viewport.
       // We expand the Positioned by 80px to pre-render items under the glass,
       // so we add 80px to the internal padding to keep the content visually in place.
-      final relativeTop = 150.0 + 4 + headerControlsFullHeight;
-      const relativeBottom = 350.0;
+      final relativeTop = listTopPadding;
+      final relativeBottom = listBottomPadding;
 
       if (_effectiveSearchQuery.isNotEmpty) {
         return ListView(
@@ -410,7 +417,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
         onRefresh: _runLibraryPullRefresh,
         // Adjust edgeOffset because RefreshIndicator is now inside the restricted Positioned.
-        edgeOffset: 150 + 4 + headerControlsFullHeight,
+        edgeOffset: listTopPadding,
         displacement: 32,
         triggerMode: GlassRefreshIndicatorTriggerMode.anywhere,
         child: body,
@@ -440,116 +447,128 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
           children: [
             // Viewport restricted to content area so drag-to-reorder auto-scroll
             // triggers at content edges rather than screen edges.
-            ContentBoundReorderArea(
-              headerHeight: _headerHeight,
-              bottomInset: listBottomInset,
-              topExpansion: 150,
-              bottomExpansion: 350,
-              child: !listState.isInitialized
-                  ? const SizedBox.shrink()
-                  : _categoryType == AudioLibraryCategoryType.all &&
-                        tree.isEmpty
-                  ? refreshableEmptyBody()
-                  : _categoryType != AudioLibraryCategoryType.all
-                  ? _buildCategoryBody(
-                      provider: provider,
-                      i18n: i18n,
-                      headerControlsFullHeight: headerControlsFullHeight,
-                      bottomInset: listBottomInset,
-                      cacheExtent: listCacheExtent,
-                      canPullRefresh: canPullRefresh,
-                      detailRevision: detailRevision,
-                    )
-                  : _effectiveSearchQuery.isNotEmpty
-                  ? ListView.builder(
-                      key: const ValueKey('search_results_list'),
-                      controller: _scrollController,
-                      padding: EdgeInsets.fromLTRB(
-                        16,
-                        4 + headerControlsFullHeight + 150,
-                        16,
-                        350,
-                      ),
-                      cacheExtent: listCacheExtent,
-                      clipBehavior: Clip.none,
-                      physics: const AlwaysScrollableScrollPhysics(
-                        parent: BouncingScrollPhysics(),
-                      ),
-                      keyboardDismissBehavior:
-                          ScrollViewKeyboardDismissBehavior.onDrag,
-                      itemCount: tree.length + 1,
-                      itemBuilder: buildLibraryItem,
-                    )
-                  : GlassRefreshIndicator(
-                      key: _refreshIndicatorKey,
-                      color: Theme.of(context).colorScheme.primary,
-                      backgroundColor: Theme.of(context)
-                          .colorScheme
-                          .surfaceContainerHighest
-                          .withValues(alpha: 0.6),
-                      onRefresh: _runLibraryPullRefresh,
-                      edgeOffset: 150 + 4 + headerControlsFullHeight,
-                      displacement: 32,
-                      triggerMode: GlassRefreshIndicatorTriggerMode.anywhere,
-                      child: ReorderAutoScroller(
-                        scrollController: _scrollController,
-                        isDragging: _isReordering,
-                        contentMarginTop: 150 + 4 + headerControlsFullHeight,
-                        contentMarginBottom: 350,
-                        child: ReorderableListView.builder(
+            MediaQuery(
+              data: MediaQuery.of(context).copyWith(
+                padding: EdgeInsets.only(
+                  top: headerControlsFullHeight + 4,
+                  bottom: listViewportBottomInset,
+                  right: 4,
+                ),
+              ),
+              child: ContentBoundReorderArea(
+                headerHeight: _headerHeight,
+                bottomInset: listViewportBottomInset,
+                topExpansion: listTopExpansion,
+                bottomExpansion: listBottomExpansion,
+                scrollController: _scrollController,
+                showScrollbar: isWindows,
+                scrollbarMainAxisMargin: isWindows ? 8 : 0,
+                child: !listState.isInitialized
+                    ? const SizedBox.shrink()
+                    : _categoryType == AudioLibraryCategoryType.all &&
+                          tree.isEmpty
+                    ? refreshableEmptyBody()
+                    : _categoryType != AudioLibraryCategoryType.all
+                    ? _buildCategoryBody(
+                        provider: provider,
+                        i18n: i18n,
+                        topPadding: listTopPadding,
+                        bottomPadding: listBottomPadding,
+                        cacheExtent: listCacheExtent,
+                        canPullRefresh: canPullRefresh,
+                        detailRevision: detailRevision,
+                      )
+                    : _effectiveSearchQuery.isNotEmpty
+                    ? ListView.builder(
+                        key: const ValueKey('search_results_list'),
+                        controller: _scrollController,
+                        padding: EdgeInsets.fromLTRB(
+                          16,
+                          listTopPadding,
+                          16,
+                          listBottomPadding,
+                        ),
+                        cacheExtent: listCacheExtent,
+                        clipBehavior: Clip.none,
+                        physics: const AlwaysScrollableScrollPhysics(
+                          parent: BouncingScrollPhysics(),
+                        ),
+                        keyboardDismissBehavior:
+                            ScrollViewKeyboardDismissBehavior.onDrag,
+                        itemCount: tree.length + 1,
+                        itemBuilder: buildLibraryItem,
+                      )
+                    : GlassRefreshIndicator(
+                        key: _refreshIndicatorKey,
+                        color: Theme.of(context).colorScheme.primary,
+                        backgroundColor: Theme.of(context)
+                            .colorScheme
+                            .surfaceContainerHighest
+                            .withValues(alpha: 0.6),
+                        onRefresh: _runLibraryPullRefresh,
+                        edgeOffset: listTopPadding,
+                        displacement: 32,
+                        triggerMode: GlassRefreshIndicatorTriggerMode.anywhere,
+                        child: ReorderAutoScroller(
                           scrollController: _scrollController,
-                          // Clip.none allows items to be visible when scrolled into the
-                          // "empty" space above/below the restricted Positioned area.
-                          clipBehavior: Clip.none,
-                          padding: EdgeInsets.fromLTRB(
-                            16,
-                            4 + headerControlsFullHeight + 150,
-                            16,
-                            350,
-                          ),
-                          cacheExtent: listCacheExtent,
-                          physics: canPullRefresh
-                              ? const AlwaysScrollableScrollPhysics(
-                                  parent: BouncingScrollPhysics(),
-                                )
-                              : null,
-                          buildDefaultDragHandles: false,
-                          keyboardDismissBehavior:
-                              ScrollViewKeyboardDismissBehavior.onDrag,
-                          onReorder: (oldIndex, newIndex) {
-                            setState(() => _isReordering = false);
-                            provider.reorderLibraryNodes(oldIndex, newIndex);
-                          },
-                          onReorderStart: (index) {
-                            setState(() => _isReordering = true);
-                            unawaited(HapticFeedback.heavyImpact());
-                          },
-                          onReorderEnd: (_) {
-                            if (_isReordering) {
+                          isDragging: _isReordering,
+                          contentMarginTop: listTopPadding,
+                          contentMarginBottom: listBottomPadding,
+                          child: ReorderableListView.builder(
+                            scrollController: _scrollController,
+                            // Clip.none allows items to be visible when scrolled into the
+                            // "empty" space above/below the restricted Positioned area.
+                            clipBehavior: Clip.none,
+                            padding: EdgeInsets.fromLTRB(
+                              16,
+                              listTopPadding,
+                              16,
+                              listBottomPadding,
+                            ),
+                            cacheExtent: listCacheExtent,
+                            physics: canPullRefresh
+                                ? const AlwaysScrollableScrollPhysics(
+                                    parent: BouncingScrollPhysics(),
+                                  )
+                                : null,
+                            buildDefaultDragHandles: false,
+                            keyboardDismissBehavior:
+                                ScrollViewKeyboardDismissBehavior.onDrag,
+                            onReorder: (oldIndex, newIndex) {
                               setState(() => _isReordering = false);
-                            }
-                          },
-                          proxyDecorator: (child, index, animation) =>
-                              _buildReorderProxy(context, child, animation),
-                          itemCount: tree.length + 1,
-                          itemBuilder: (context, index) {
-                            if (index == tree.length) {
-                              return const SizedBox.shrink(
-                                key: ValueKey('bottom_spacing'),
+                              provider.reorderLibraryNodes(oldIndex, newIndex);
+                            },
+                            onReorderStart: (index) {
+                              setState(() => _isReordering = true);
+                              unawaited(HapticFeedback.heavyImpact());
+                            },
+                            onReorderEnd: (_) {
+                              if (_isReordering) {
+                                setState(() => _isReordering = false);
+                              }
+                            },
+                            proxyDecorator: (child, index, animation) =>
+                                _buildReorderProxy(context, child, animation),
+                            itemCount: tree.length + 1,
+                            itemBuilder: (context, index) {
+                              if (index == tree.length) {
+                                return const SizedBox.shrink(
+                                  key: ValueKey('bottom_spacing'),
+                                );
+                              }
+                              final node = tree[index];
+                              return ReorderableHoldDragStartListener(
+                                key: ValueKey(node.path),
+                                index: index,
+                                child: RepaintBoundary(
+                                  child: _LibraryTreeItem(node: node),
+                                ),
                               );
-                            }
-                            final node = tree[index];
-                            return ReorderableHoldDragStartListener(
-                              key: ValueKey(node.path),
-                              index: index,
-                              child: RepaintBoundary(
-                                child: _LibraryTreeItem(node: node),
-                              ),
-                            );
-                          },
+                            },
+                          ),
                         ),
                       ),
-                    ),
+              ),
             ),
 
             // Scan progress card
@@ -584,11 +603,21 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                 subtitleFontSize: 11,
                 fitSubtitleToWidth: true,
                 trailing: SizedBox(
-                  width: listState.watchedLibraries.isEmpty ? 52 : 104,
+                  width:
+                      (listState.watchedLibraries.isEmpty ? 52 : 104) +
+                      (isWindows ? 52 : 0),
                   height: 44,
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [
+                      if (isWindows)
+                        IconButton(
+                          onPressed: canPullRefresh
+                              ? () => unawaited(_runLibraryPullRefresh())
+                              : null,
+                          icon: const Icon(Icons.refresh_rounded),
+                          tooltip: i18n.tr('refresh_watched_folder'),
+                        ),
                       if (listState.watchedLibraries.isNotEmpty)
                         UnifiedPopupMenuButton<String>(
                           icon: Icons.edit_note_rounded,
@@ -653,6 +682,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                 ),
                 bottomSpacing: 4,
                 padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+                backgroundOpacity: isWindows ? 1 : null,
                 additionalChild: dynamicSearchBar(),
               ),
             ),

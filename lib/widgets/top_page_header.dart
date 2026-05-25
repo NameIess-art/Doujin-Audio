@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -23,6 +24,7 @@ class TopPageHeader extends StatelessWidget {
     this.additionalChild,
     this.isLoading = false,
     this.marqueeTitle = false,
+    this.backgroundOpacity,
   });
 
   final IconData? icon;
@@ -39,6 +41,7 @@ class TopPageHeader extends StatelessWidget {
   final Widget? additionalChild;
   final bool isLoading;
   final bool marqueeTitle;
+  final double? backgroundOpacity;
 
   @override
   Widget build(BuildContext context) {
@@ -132,6 +135,9 @@ class TopPageHeader extends StatelessWidget {
     final alphaTarget = isSmallWindow
         ? (isDark ? 0.65 : 0.75)
         : (isDark ? 0.45 : 0.55);
+    final resolvedAlphaTarget = Platform.isWindows
+        ? 1.0
+        : (backgroundOpacity ?? alphaTarget);
 
     return TweenAnimationBuilder<double>(
       tween: Tween<double>(end: blurTarget),
@@ -139,7 +145,7 @@ class TopPageHeader extends StatelessWidget {
       curve: Curves.easeOutCubic,
       builder: (context, blur, _) {
         return TweenAnimationBuilder<double>(
-          tween: Tween<double>(end: alphaTarget),
+          tween: Tween<double>(end: resolvedAlphaTarget),
           duration: const Duration(milliseconds: 240),
           curve: Curves.easeOutCubic,
           builder: (context, alpha, _) {

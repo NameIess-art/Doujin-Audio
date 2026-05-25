@@ -468,6 +468,12 @@ extension AudioProviderNotificationCovers on AudioProvider {
         _notificationCoverSearchMisses.remove(normalizedFolderPath);
         return candidates.first;
       }
+      candidates.addAll(await _discoverFileSystemImages(folderPath));
+      if (candidates.isNotEmpty) {
+        candidates.sort(_compareCoverPaths);
+        _notificationCoverSearchMisses.remove(normalizedFolderPath);
+        return candidates.first;
+      }
     } catch (_) {}
 
     _notificationCoverSearchMisses.add(normalizedFolderPath);

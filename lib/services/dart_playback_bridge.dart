@@ -707,9 +707,11 @@ class _FfmpegStreamAudioSource extends StreamAudioSource {
     final process = await Process.start(WindowsFfmpegService.ffmpegPath, args);
     process.stderr.listen((_) {}).onError((_) {});
 
+    final effectiveEnd = end ?? _sourceLength!;
+
     return StreamAudioResponse(
       sourceLength: _sourceLength,
-      contentLength: null, // Allow chunked or live stream behavior to prevent hangs
+      contentLength: effectiveEnd - start,
       offset: start,
       stream: _buildStream(start, process),
       contentType: 'audio/wav',

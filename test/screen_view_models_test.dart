@@ -1,6 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:just_audio/just_audio.dart';
 import 'package:nameless_audio/models/library_node.dart';
 import 'package:nameless_audio/models/music_track.dart';
+import 'package:nameless_audio/models/playback_mode.dart';
+import 'package:nameless_audio/models/playback_session.dart';
 import 'package:nameless_audio/screens/screen_view_models.dart';
 import 'package:nameless_audio/services/audio_state_services.dart';
 
@@ -23,6 +26,23 @@ void main() {
       TrackNode(track('Ocean Waves', '/library/rain/ocean_waves.mp3')),
     ]);
     return <LibraryNode>[folder];
+  }
+
+  PlaybackSession session({
+    required String id,
+    required String path,
+    bool playing = false,
+    SessionLoopMode loopMode = SessionLoopMode.single,
+  }) {
+    return PlaybackSession(
+      id: id,
+      currentTrackPath: path,
+      loopMode: loopMode,
+      nonSingleLoopMode: SessionLoopMode.single,
+      volume: 1,
+      createdAt: DateTime(2026),
+      state: PlayerState(playing, ProcessingState.ready),
+    );
   }
 
   test(
@@ -148,5 +168,44 @@ void main() {
 
     expect(first, same);
     expect(nextTrack, isNot(first));
+  });
+
+  test('overlay state keeps one visible session in single-thread playback', () {
+    final paused = session(id: 'paused', path: '/tracks/a.mp3');
+    final playing = session(
+      id: 'playing',
+      path: '/tracks/b.mp3',
+      playing: true,
+    );
+    addTearDown(paused.dispose);
+    addTearDown(playing.dispose);
+
+    final overlay = overlaySessionsFromPlaybackState(
+      PlaybackStateSliceData(
+        activeSessions: [paused, playing],
+        playingSessionCount: 1,
+      ),
+    );
+
+    expect(overlay.map((session) => session.id), ['playing']);
+  });
+
+  test('session detail view state tracks only detail page inputs', () {
+    final detailSession = session(
+      id: 'detail',
+      path: '/tracks/detail.mp3',
+      playing: true,
+      loopMode: SessionLoopMode.folderSequential,
+    );
+    addTearDown(detailSession.dispose);
+
+    final detailState = sessionDetailViewStateFromPlaybackState(
+      PlaybackStateSliceData(activeSessions: [detailSession]),
+      'detail',
+    );
+
+    expect(detailState?.trackPath, '/tracks/detail.mp3');
+    expect(detailState?.isPlaying, isTrue);
+    expect(detailState?.loopMode, SessionLoopMode.folderSequential);
   });
 }

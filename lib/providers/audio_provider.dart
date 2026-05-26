@@ -711,7 +711,10 @@ class AudioProvider with ChangeNotifier {
   }
 
   void _syncLibraryStateSlice() {
-    _libraryService.syncSlice(isInitialized: _isInitialized);
+    _libraryService.syncSlice(
+      isInitialized: _isInitialized,
+      detailRevision: _audioDetailRevision,
+    );
   }
 
   void _syncPlaybackStateSlice() {
@@ -720,6 +723,7 @@ class AudioProvider with ChangeNotifier {
       playingSessionCount: playingSessionCount,
       focusedSessionId: _notificationFocusSessionId,
       multiThreadPlaybackEnabled: _multiThreadPlaybackEnabled,
+      coverGeneration: _coverGeneration,
       isInitialized: _isInitialized,
     );
   }

@@ -412,6 +412,7 @@ class _DartPlaybackSession {
   Duration bufferedPosition = Duration.zero;
   Duration? duration;
   String? error;
+  Duration? _pendingSeekPosition;
 
   Future<void> setVolume(double nextVolume, {bool reloadSource = true}) async {
     volume = _normalizeSessionVolume(nextVolume);
@@ -460,6 +461,7 @@ class _DartPlaybackSession {
       await player.setVolume(volume * 100);
       await _applyChannelSwap();
       if (initialPosition > Duration.zero) {
+        _pendingSeekPosition = initialPosition;
         await player.seek(initialPosition);
       }
       position = initialPosition;
@@ -535,6 +537,11 @@ class _DartPlaybackSession {
     completed = false;
     error = null;
     onChanged();
+    if (_pendingSeekPosition != null) {
+      final pos = _pendingSeekPosition!;
+      _pendingSeekPosition = null;
+      await player.seek(pos);
+    }
     await player.play();
   }
 
@@ -551,6 +558,7 @@ class _DartPlaybackSession {
     buffering = false;
     completed = false;
     opening = false;
+    _pendingSeekPosition = null;
     position = Duration.zero;
     bufferedPosition = Duration.zero;
     duration = null;
@@ -561,6 +569,7 @@ class _DartPlaybackSession {
   }
 
   Future<void> seek(Duration nextPosition) async {
+    _pendingSeekPosition = null;
     final shouldResume = playWhenReady || playing;
     completed = false;
     position = nextPosition;
@@ -590,6 +599,13 @@ class _DartPlaybackSession {
             ? _channelSwapAudioFilter
             : _channelSwapAudioFilterLabel,
       ]);
+      final filters = (await platform.getProperty('af')).toString();
+      final applied = filters.contains(_channelSwapAudioFilterLabel);
+      if (channelSwapEnabled != applied) {
+        throw StateError(
+          'Failed to ${channelSwapEnabled ? 'apply' : 'remove'} channel swap filter.',
+        );
+      }
     }
   }
 

@@ -245,6 +245,8 @@ const Map<String, String> appLanguageZh = {
   'show_playback_card_subtitle': '在页面底部显示当前播放卡片。',
   'auto_play_added_sessions': '添加后立即播放',
   'auto_play_added_sessions_subtitle': '从音频库添加音频时，立即以播放状态创建会话。',
+  'record_playback_progress': '记录上次播放进度',
+  'record_playback_progress_subtitle': '开启后打开应用可以恢复上次的播放进度。从音频库新添加的音频始终从头开始播放。',
   'section_appearance': '外观',
   'section_playback': '功能',
   'section_notification': '通知',

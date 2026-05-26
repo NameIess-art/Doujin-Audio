@@ -48,7 +48,13 @@ extension AudioProviderPlayback on AudioProvider {
       await _nativePlaybackRepository.pause(session.id);
     } else if (session.state.processingState == ProcessingState.completed ||
         session.state.processingState == ProcessingState.idle) {
-      await _prepareAndPlay(session, nextPath: session.currentTrackPath);
+      final isCompleted =
+          session.state.processingState == ProcessingState.completed;
+      await _prepareAndPlay(
+        session,
+        nextPath: session.currentTrackPath,
+        forceStartAtZero: isCompleted,
+      );
     } else {
       await _startSessionPlayback(session, shouldStartTriggerCountdown: true);
     }
@@ -257,7 +263,7 @@ extension AudioProviderPlayback on AudioProvider {
   Future<void> switchSessionTrack(String sessionId, String newPath) async {
     final session = _sessions[sessionId];
     if (session == null || session.isLoading) return;
-    await _prepareAndPlay(session, nextPath: newPath);
+    await _prepareAndPlay(session, nextPath: newPath, forceStartAtZero: true);
     _scheduleSaveSessionState();
   }
 
@@ -266,7 +272,7 @@ extension AudioProviderPlayback on AudioProvider {
     if (session == null || session.isLoading) return;
     final nextPath = _nextPathFor(session, forward: true);
     if (nextPath != null) {
-      await _prepareAndPlay(session, nextPath: nextPath);
+      await _prepareAndPlay(session, nextPath: nextPath, forceStartAtZero: true);
     }
   }
 
@@ -287,7 +293,7 @@ extension AudioProviderPlayback on AudioProvider {
     }
     final prevPath = _nextPathFor(session, forward: false);
     if (prevPath != null) {
-      await _prepareAndPlay(session, nextPath: prevPath);
+      await _prepareAndPlay(session, nextPath: prevPath, forceStartAtZero: true);
     }
   }
 

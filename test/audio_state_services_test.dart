@@ -208,6 +208,7 @@ void main() {
         playingSessionCount: 1,
         focusedSessionId: 'focus',
         multiThreadPlaybackEnabled: true,
+        coverGeneration: 2,
         isInitialized: true,
       );
 
@@ -225,7 +226,8 @@ void main() {
               (state) => state.multiThreadPlaybackEnabled,
               'multi-thread',
               isTrue,
-            ),
+            )
+            .having((state) => state.coverGeneration, 'cover gen', 2),
       );
     });
   });
@@ -454,7 +456,7 @@ void main() {
         ..scanDuplicateCount = 1
         ..scanFailureCount = 2;
       service.markStructureChanged();
-      service.syncSlice(isInitialized: true);
+      service.syncSlice(isInitialized: true, detailRevision: 0);
 
       expect(
         service.slice.state,

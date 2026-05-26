@@ -271,6 +271,9 @@ const Map<String, String> appLanguageEn = {
   'auto_play_added_sessions': 'Play immediately after adding',
   'auto_play_added_sessions_subtitle':
       'Create library-added audio sessions in the playing state.',
+  'record_playback_progress': 'Record last playback progress',
+  'record_playback_progress_subtitle':
+      'Restore the last playback progress when opening the app. New audio added from the library will always start from the beginning.',
   'section_appearance': 'Appearance',
   'section_playback': 'Features',
   'section_notification': 'Notifications',

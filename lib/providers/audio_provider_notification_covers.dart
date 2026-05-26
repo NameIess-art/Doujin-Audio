@@ -133,7 +133,7 @@ extension AudioProviderNotificationCovers on AudioProvider {
     if (session.isLoading || session.state.playing) return;
     _notificationFocusSessionId = session.id;
     if (session.state.processingState == ProcessingState.completed) {
-      await _prepareAndPlay(session, nextPath: session.currentTrackPath);
+      await _prepareAndPlay(session, nextPath: session.currentTrackPath, forceStartAtZero: true);
       return;
     }
     await _startSessionPlayback(session, shouldStartTriggerCountdown: true);

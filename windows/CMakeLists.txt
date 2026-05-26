@@ -60,6 +60,40 @@ add_subdirectory("runner")
 # them to the application.
 include(flutter/generated_plugins.cmake)
 
+set(FULL_LIBMPV_ARCHIVE_NAME "mpv-dev-x86_64-20260525-git-1ac687d.7z")
+set(FULL_LIBMPV_ARCHIVE "${CMAKE_BINARY_DIR}/${FULL_LIBMPV_ARCHIVE_NAME}")
+set(FULL_LIBMPV_SRC "${CMAKE_BINARY_DIR}/full_libmpv")
+set(FULL_LIBMPV_DLL "${FULL_LIBMPV_SRC}/libmpv-2.dll")
+set(FULL_LIBMPV_SHA256 "2AB102234903BA0E6AE8DB7953CD0836FC43A978B454341D1DE1CD02D8840AC5")
+
+if(EXISTS "${FULL_LIBMPV_ARCHIVE}")
+  file(SHA256 "${FULL_LIBMPV_ARCHIVE}" FULL_LIBMPV_ARCHIVE_SHA256)
+  string(TOUPPER "${FULL_LIBMPV_ARCHIVE_SHA256}" FULL_LIBMPV_ARCHIVE_SHA256)
+  if(NOT FULL_LIBMPV_ARCHIVE_SHA256 STREQUAL FULL_LIBMPV_SHA256)
+    file(REMOVE "${FULL_LIBMPV_ARCHIVE}")
+  endif()
+endif()
+
+if(NOT EXISTS "${FULL_LIBMPV_ARCHIVE}")
+  file(DOWNLOAD
+    "https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/20260525/${FULL_LIBMPV_ARCHIVE_NAME}"
+    "${FULL_LIBMPV_ARCHIVE}"
+    EXPECTED_HASH "SHA256=${FULL_LIBMPV_SHA256}"
+    SHOW_PROGRESS
+  )
+endif()
+
+add_custom_command(
+  OUTPUT "${FULL_LIBMPV_DLL}"
+  COMMAND "${CMAKE_COMMAND}" -E make_directory "${FULL_LIBMPV_SRC}"
+  COMMAND "${CMAKE_COMMAND}" -E tar xzf "${FULL_LIBMPV_ARCHIVE}"
+  WORKING_DIRECTORY "${FULL_LIBMPV_SRC}"
+  DEPENDS "${FULL_LIBMPV_ARCHIVE}"
+)
+
+add_custom_target(full_windows_libmpv ALL DEPENDS "${FULL_LIBMPV_DLL}")
+add_dependencies(${BINARY_NAME} full_windows_libmpv)
+
 
 # === Installation ===
 # Support files are copied into place next to the executable, so that it can
@@ -89,6 +123,10 @@ if(PLUGIN_BUNDLED_LIBRARIES)
     DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
     COMPONENT Runtime)
 endif()
+
+install(FILES "${FULL_LIBMPV_DLL}"
+  DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
+  COMPONENT Runtime)
 
 # Copy the native assets provided by the build.dart from all packages.
 set(NATIVE_ASSETS_DIR "${PROJECT_BUILD_DIR}native_assets/windows/")

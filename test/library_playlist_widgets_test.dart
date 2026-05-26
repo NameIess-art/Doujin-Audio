@@ -122,7 +122,7 @@ void main() {
       notify: false,
       persist: false,
     );
-    libraryService.syncSlice(isInitialized: true);
+    libraryService.syncSlice(isInitialized: true, detailRevision: 0);
 
     await tester.pumpWidget(
       _buildTestApp(
@@ -139,7 +139,8 @@ void main() {
         child: const LibraryTab(),
       ),
     );
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
 
     expect(find.byType(TextField), findsOneWidget);
 
@@ -222,7 +223,7 @@ void main() {
         isSingle: true,
       ),
     ], persist: false);
-    libraryService.syncSlice(isInitialized: true);
+    libraryService.syncSlice(isInitialized: true, detailRevision: 0);
 
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
@@ -271,7 +272,7 @@ void main() {
         notify: false,
         persist: false,
       );
-      libraryService.syncSlice(isInitialized: true);
+      libraryService.syncSlice(isInitialized: true, detailRevision: 0);
 
       await tester.pumpWidget(
         _buildTestApp(
@@ -335,7 +336,7 @@ void main() {
       const <MusicTrack>[],
       persist: false,
     );
-    libraryService.syncSlice(isInitialized: true);
+    libraryService.syncSlice(isInitialized: true, detailRevision: 0);
 
     await tester.pumpWidget(
       _buildTestApp(
@@ -413,7 +414,7 @@ void main() {
       notify: false,
       persist: false,
     );
-    libraryService.syncSlice(isInitialized: true);
+    libraryService.syncSlice(isInitialized: true, detailRevision: 0);
 
     await tester.pumpWidget(
       _buildTestApp(
@@ -520,7 +521,7 @@ void main() {
       notify: false,
       persist: false,
     );
-    libraryService.syncSlice(isInitialized: true);
+    libraryService.syncSlice(isInitialized: true, detailRevision: 0);
 
     await tester.pumpWidget(
       _buildTestApp(

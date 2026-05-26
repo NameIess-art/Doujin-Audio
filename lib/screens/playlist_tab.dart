@@ -16,7 +16,6 @@ import '../i18n/app_language_provider.dart';
 import '../providers/audio_provider.dart';
 import '../providers/audio_provider_riverpod.dart';
 import '../providers/subtitle_settings_provider.dart';
-import '../services/audio_state_services.dart';
 import '../services/permission_action_controller.dart';
 import '../services/subtitle_parser.dart';
 import '../services/subtitle_overlay_controller.dart';
@@ -171,22 +170,9 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     super.build(context);
     final i18n = context.watch<AppLanguageProvider>();
     final provider = ref.read(audioProviderFacadeProvider);
-    final playbackState =
-        ref.watch(playbackStateProvider).valueOrNull ??
-        const PlaybackStateSliceData();
-    final timerState =
-        ref.watch(timerStateProvider).valueOrNull ??
-        const TimerStateSliceData();
-    final headerState = playlistHeaderStateFromSlices(
-      playbackState,
-      timerState,
-    );
-    final listState = context.select<AudioProvider, PlaylistListState>(
-      (value) => PlaylistListState(
-        sessions: value.activeSessions,
-        isInitialized: playbackState.isInitialized,
-      ),
-    );
+    final uiState = ref.watch(playlistUiProvider);
+    final headerState = uiState.header;
+    final listState = uiState.list;
     final sessionSummary =
         '${i18n.tr('sessions_count', {'count': headerState.sessionCount})} · '
         '${i18n.tr('playing_count', {'count': headerState.playingCount})}';
@@ -194,7 +180,8 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     final listCacheExtent = (_headerHeight + 404)
         .clamp(_headerHeight + 4, 720.0)
         .toDouble();
-    final isWindows = Platform.isWindows ||
+    final isWindows =
+        Platform.isWindows ||
         MediaQuery.orientationOf(context) == Orientation.landscape;
     final topExpansion = isWindows ? 0.0 : 150.0;
     final bottomExpansion = isWindows ? 0.0 : 350.0;
@@ -317,8 +304,10 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
               key: _headerKey,
               icon: Icons.graphic_eq_rounded,
               title: i18n.tr('playback_sessions'),
-              marqueeTitle: i18n.language == AppLanguage.ja && Platform.isAndroid,
-              forceMarqueeTitle: i18n.language == AppLanguage.ja &&
+              marqueeTitle:
+                  i18n.language == AppLanguage.ja && Platform.isAndroid,
+              forceMarqueeTitle:
+                  i18n.language == AppLanguage.ja &&
                   Platform.isAndroid &&
                   MediaQuery.orientationOf(context) == Orientation.portrait,
               isLoading: !listState.isInitialized,

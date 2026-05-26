@@ -246,8 +246,12 @@ const Map<String, String> appLanguageJa = {
       '詳細な再生通知の表示を切り替えます。再生中は画面オフ時の安定性のため、システムの前景通知を保持します。',
   'show_playback_card': '再生カード表示',
   'show_playback_card_subtitle': '画面下部に現在の再生カードを表示します。',
-  'auto_play_added_sessions': '追加後すぐ再生',
-  'auto_play_added_sessions_subtitle': 'ライブラリから追加した音声を再生状態で作成します。',
+  'auto_play_added_sessions': '追加後すぐに再生',
+  'auto_play_added_sessions_subtitle':
+      'ライブラリからオーディオを追加する際、すぐに再生状態のセッションを作成します。',
+  'record_playback_progress': '前回の再生位置を記録する',
+  'record_playback_progress_subtitle':
+      'オンにすると、アプリを開いたときに前回の再生位置から再開できます。ライブラリから新しく追加されたオーディオは常に最初から再生されます。',
   'section_appearance': '外観',
   'section_playback': '機能',
   'section_notification': '通知',

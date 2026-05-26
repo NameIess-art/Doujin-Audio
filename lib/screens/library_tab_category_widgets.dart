@@ -414,8 +414,14 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
     final firstTrack = entry.firstTrack;
     final isAlreadyPlaying = firstTrack == null
         ? false
-        : context.select<AudioProvider, bool>(
-            (value) => value.isTrackActive(firstTrack.path),
+        : ref.watch(
+            playbackStateProvider.select(
+              (value) =>
+                  value.valueOrNull?.activeSessions.any(
+                    (session) => session.currentTrackPath == firstTrack.path,
+                  ) ??
+                  false,
+            ),
           );
     final cardShape = RoundedRectangleBorder(
       side: BorderSide(color: cs.outlineVariant),

@@ -3,6 +3,7 @@ import 'dart:collection';
 import 'package:flutter/foundation.dart';
 
 import '../models/library_node.dart';
+import '../models/playback_mode.dart';
 import '../models/playback_session.dart';
 import '../services/audio_state_services.dart';
 import '../services/search_query_utils.dart';
@@ -114,6 +115,30 @@ class LibraryListState {
 }
 
 @immutable
+class LibraryUiState {
+  const LibraryUiState({
+    required this.header,
+    required this.list,
+    required this.detailRevision,
+  });
+
+  final LibraryHeaderState header;
+  final LibraryListState list;
+  final int detailRevision;
+
+  @override
+  bool operator ==(Object other) {
+    return other is LibraryUiState &&
+        other.header == header &&
+        other.list == list &&
+        other.detailRevision == detailRevision;
+  }
+
+  @override
+  int get hashCode => Object.hash(header, list, detailRevision);
+}
+
+@immutable
 class PlaylistHeaderState {
   const PlaylistHeaderState({
     required this.sessionCount,
@@ -182,6 +207,77 @@ class PlaylistListState {
 }
 
 @immutable
+class PlaylistUiState {
+  const PlaylistUiState({
+    required this.header,
+    required this.list,
+    required this.coverGeneration,
+  });
+
+  final PlaylistHeaderState header;
+  final PlaylistListState list;
+  final int coverGeneration;
+
+  @override
+  bool operator ==(Object other) {
+    return other is PlaylistUiState &&
+        other.header == header &&
+        other.list == list &&
+        other.coverGeneration == coverGeneration;
+  }
+
+  @override
+  int get hashCode => Object.hash(header, list, coverGeneration);
+}
+
+@immutable
+class MainOverlayUiState {
+  const MainOverlayUiState({
+    required this.overlaySessions,
+    required this.visibleSessions,
+    required this.subtitleSessions,
+    required this.playingSessionCount,
+    required this.activeSessionCount,
+    required this.showPlaybackCard,
+    required this.isInitialized,
+  });
+
+  final List<PlaybackSession> overlaySessions;
+  final List<PlaybackSession> visibleSessions;
+  final List<PlaybackSession> subtitleSessions;
+  final int playingSessionCount;
+  final int activeSessionCount;
+  final bool showPlaybackCard;
+  final bool isInitialized;
+
+  bool get hasPlayingSession => playingSessionCount > 0;
+  bool get hasNowPlaying => visibleSessions.isNotEmpty;
+
+  @override
+  bool operator ==(Object other) {
+    return other is MainOverlayUiState &&
+        listEquals(other.overlaySessions, overlaySessions) &&
+        listEquals(other.visibleSessions, visibleSessions) &&
+        listEquals(other.subtitleSessions, subtitleSessions) &&
+        other.playingSessionCount == playingSessionCount &&
+        other.activeSessionCount == activeSessionCount &&
+        other.showPlaybackCard == showPlaybackCard &&
+        other.isInitialized == isInitialized;
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    Object.hashAll(overlaySessions),
+    Object.hashAll(visibleSessions),
+    Object.hashAll(subtitleSessions),
+    playingSessionCount,
+    activeSessionCount,
+    showPlaybackCard,
+    isInitialized,
+  );
+}
+
+@immutable
 class SessionOrderState {
   const SessionOrderState({required this.sessionIds});
 
@@ -202,6 +298,7 @@ class SessionDetailViewState {
   const SessionDetailViewState({
     required this.sessionId,
     required this.trackPath,
+    required this.loopMode,
     required this.isPlaying,
     required this.isLoading,
     required this.channelSwapEnabled,
@@ -209,6 +306,7 @@ class SessionDetailViewState {
 
   final String sessionId;
   final String trackPath;
+  final SessionLoopMode loopMode;
   final bool isPlaying;
   final bool isLoading;
   final bool channelSwapEnabled;
@@ -218,6 +316,7 @@ class SessionDetailViewState {
     return other is SessionDetailViewState &&
         other.sessionId == sessionId &&
         other.trackPath == trackPath &&
+        other.loopMode == loopMode &&
         other.isPlaying == isPlaying &&
         other.isLoading == isLoading &&
         other.channelSwapEnabled == channelSwapEnabled;
@@ -227,10 +326,35 @@ class SessionDetailViewState {
   int get hashCode => Object.hash(
     sessionId,
     trackPath,
+    loopMode,
     isPlaying,
     isLoading,
     channelSwapEnabled,
   );
+}
+
+@immutable
+class SessionDetailUiState {
+  const SessionDetailUiState({
+    required this.sessionOrder,
+    required this.detail,
+    required this.coverGeneration,
+  });
+
+  final SessionOrderState sessionOrder;
+  final SessionDetailViewState? detail;
+  final int coverGeneration;
+
+  @override
+  bool operator ==(Object other) {
+    return other is SessionDetailUiState &&
+        other.sessionOrder == sessionOrder &&
+        other.detail == detail &&
+        other.coverGeneration == coverGeneration;
+  }
+
+  @override
+  int get hashCode => Object.hash(sessionOrder, detail, coverGeneration);
 }
 
 @immutable
@@ -429,4 +553,46 @@ PlaylistHeaderState playlistHeaderStateFromSlices(
     timerActive: timerState.active,
     autoResumeAt: timerState.autoResumeAt,
   );
+}
+
+List<PlaybackSession> overlaySessionsFromPlaybackState(
+  PlaybackStateSliceData playbackState,
+) {
+  final sessions = playbackState.activeSessions;
+  if (playbackState.multiThreadPlaybackEnabled || sessions.isEmpty) {
+    return sessions;
+  }
+  final retainedSession = sessions.firstWhere(
+    (session) => session.state.playing || session.isLoading,
+    orElse: () => sessions.first,
+  );
+  return <PlaybackSession>[retainedSession];
+}
+
+SessionOrderState sessionOrderStateFromPlaybackState(
+  PlaybackStateSliceData playbackState,
+) {
+  return SessionOrderState(
+    sessionIds: playbackState.activeSessions
+        .map((session) => session.id)
+        .toList(growable: false),
+  );
+}
+
+SessionDetailViewState? sessionDetailViewStateFromPlaybackState(
+  PlaybackStateSliceData playbackState,
+  String sessionId,
+) {
+  for (final session in playbackState.activeSessions) {
+    if (session.id != sessionId) continue;
+    return SessionDetailViewState(
+      sessionId: session.id,
+      trackPath: session.currentTrackPath,
+      loopMode: session.loopMode,
+      isPlaying: session.state.playing,
+      isLoading: session.isLoading,
+      channelSwapEnabled: session.channelSwapEnabled,
+    );
+  }
+  return null;
 }

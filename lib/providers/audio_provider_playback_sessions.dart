@@ -173,6 +173,7 @@ extension AudioProviderPlaybackSessions on AudioProvider {
     PlaybackSession session, {
     required String nextPath,
     bool autoPlay = true,
+    bool forceStartAtZero = false,
   }) async {
     if (!_sessions.containsKey(session.id)) return;
 
@@ -217,18 +218,20 @@ extension AudioProviderPlaybackSessions on AudioProvider {
       final coverPath = await _resolveNotificationCoverPathForTrack(track);
 
       final isNewTrack = session.loadedPath != resolvedNextPath;
-      final resumePosition = track?.lastPlayedPosition ?? Duration.zero;
-      final startPosition =
-          (track != null &&
-              resumePosition > const Duration(seconds: 3) &&
-              (track.duration.inMilliseconds == 0 ||
-                  track.duration - resumePosition > const Duration(seconds: 3)))
-          ? resumePosition
-          : Duration.zero;
+      final isInitialLoad = session.loadedPath == null;
+
+      final Duration startPosition;
+      if (forceStartAtZero || (isNewTrack && !isInitialLoad)) {
+        startPosition = Duration.zero;
+      } else {
+        startPosition = session.lastKnownPosition;
+      }
 
       if (isNewTrack) {
-        session.resetStreamsForNewTrack();
-      } else {
+        if (!isInitialLoad) {
+          session.resetStreamsForNewTrack();
+        }
+      } else if (forceStartAtZero) {
         session.setOptimisticPosition(startPosition);
       }
       _markActiveSessionsDirty();
@@ -289,7 +292,9 @@ extension AudioProviderPlaybackSessions on AudioProvider {
         if (!ok) return;
         session.loadedPath = resolvedNextPath;
       } else {
-        await _nativePlaybackRepository.seek(session.id, Duration.zero);
+        if (forceStartAtZero) {
+          await _nativePlaybackRepository.seek(session.id, Duration.zero);
+        }
         if (!_sessions.containsKey(session.id) ||
             session.loadGeneration != generation) {
           return;

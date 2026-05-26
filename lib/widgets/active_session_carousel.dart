@@ -7,12 +7,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as path;
-import 'package:provider/provider.dart' hide Consumer;
 
 import '../i18n/app_language_provider.dart';
 import '../providers/audio_provider.dart';
 import '../providers/audio_provider_riverpod.dart';
 import '../providers/subtitle_settings_provider.dart';
+import '../services/audio_state_services.dart';
 import '../services/subtitle_parser.dart';
 import '../screens/playlist_tab.dart';
 import 'async_cover_image.dart';
@@ -152,14 +152,12 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
 
   @override
   Widget build(BuildContext context) {
-    context.select<AudioProvider, int>((value) => value.coverGeneration);
+    final playbackState =
+        ref.watch(playbackStateProvider).valueOrNull ??
+        const PlaybackStateSliceData();
     final AudioProvider provider =
-        widget.provider ?? context.read<AudioProvider>();
-    final sessions =
-        widget.sessions ??
-        context.select<AudioProvider, List<PlaybackSession>>(
-          (value) => value.activeSessions,
-        );
+        widget.provider ?? ref.read(audioProviderFacadeProvider);
+    final sessions = widget.sessions ?? playbackState.activeSessions;
     if (sessions.isEmpty) {
       return const SizedBox.shrink();
     }

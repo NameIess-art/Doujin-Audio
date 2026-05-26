@@ -425,6 +425,32 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                         borderRadius: BorderRadius.circular(14),
                       ),
                     ),
+                    const SizedBox(height: 2),
+                    SwitchListTile(
+                      value: playbackSettings.recordPlaybackProgress,
+                      onChanged: audioProvider.setRecordPlaybackProgress,
+                      title: Text(i18n.tr('record_playback_progress')),
+                      subtitle: Text(
+                        i18n.tr('record_playback_progress_subtitle'),
+                        style: descStyle,
+                      ),
+                      secondary: Container(
+                        width: 38,
+                        height: 38,
+                        decoration: BoxDecoration(
+                          color: cs.secondaryContainer,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Icon(
+                          Icons.restore_rounded,
+                          color: cs.onSecondaryContainer,
+                        ),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
                     if (!Platform.isWindows) ...[
                       const SizedBox(height: 12),
                       _SectionHeader(title: i18n.tr('section_notification')),

@@ -311,6 +311,7 @@ class _FloatingSubtitleWindowState extends ConsumerState<FloatingSubtitleWindow>
 
   @override
   Widget build(BuildContext context) {
+    ref.watch(playbackStateProvider);
     final settings = ref.watch(subtitleSettingsProvider);
 
     final sessionId = _currentSession?.id ?? '';

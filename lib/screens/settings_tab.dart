@@ -3,7 +3,6 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:provider/provider.dart' hide Consumer;
 
@@ -13,8 +12,9 @@ import '../providers/audio_provider_riverpod.dart';
 import '../services/app_cache_service.dart';
 import '../services/app_update_service.dart';
 import '../services/audio_state_services.dart';
+import '../services/notifications_platform_service.dart';
 import '../services/permission_action_controller.dart';
-import '../services/platform_channels.dart';
+import '../services/power_platform_service.dart';
 import '../theme/theme_provider.dart';
 import '../widgets/app_feedback.dart';
 import '../widgets/confirm_action_dialog.dart';
@@ -35,10 +35,9 @@ class SettingsTab extends ConsumerStatefulWidget {
 
 class _SettingsTabState extends ConsumerState<SettingsTab>
     with WidgetsBindingObserver, AutomaticKeepAliveClientMixin {
-  static const MethodChannel _powerChannel = MethodChannel(PowerChannel.name);
-  static const MethodChannel _notificationsChannel = MethodChannel(
-    NotificationsChannel.name,
-  );
+  final PowerPlatformService _powerPlatformService = PowerPlatformService();
+  final NotificationsPlatformService _notificationsPlatformService =
+      NotificationsPlatformService();
   static const List<int> _cacheLimitOptions = <int>[
     100 * 1024 * 1024,
     300 * 1024 * 1024,

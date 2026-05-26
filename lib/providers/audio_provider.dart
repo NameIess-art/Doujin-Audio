@@ -33,6 +33,7 @@ import '../services/media_file_support.dart';
 import '../services/native_playback_repository.dart';
 import '../services/playback_queue_resolver.dart';
 import '../services/platform_channels.dart';
+import '../services/power_platform_service.dart';
 import '../services/timer_runtime_calculator.dart';
 import '../services/warmup_scheduler.dart';
 
@@ -103,7 +104,6 @@ class AudioProvider with ChangeNotifier {
   static const Duration _unifiedNotificationDebounceInterval = Duration(
     milliseconds: 90,
   );
-  static const MethodChannel _powerChannel = MethodChannel(PowerChannel.name);
   static const MethodChannel _fileCacheChannel = MethodChannel(
     FileCacheChannel.name,
   );
@@ -113,6 +113,7 @@ class AudioProvider with ChangeNotifier {
   final DlsiteMetadataService _dlsiteMetadataService;
   final NativePlaybackRepository _nativePlaybackRepository;
   final PlaybackCommandRunner _playbackCommandRunner;
+  final PowerPlatformService _powerPlatformService;
   final LibraryService _libraryService;
   final PlaybackSessionService _playbackService;
   final TimerService _timerService;
@@ -478,6 +479,7 @@ class AudioProvider with ChangeNotifier {
     DlsiteMetadataService? dlsiteMetadataService,
     NativePlaybackRepository? nativePlaybackRepository,
     PlaybackCommandRunner playbackCommandRunner = const PlaybackCommandRunner(),
+    PowerPlatformService? powerPlatformService,
     LibraryService? libraryService,
     PlaybackSessionService? playbackService,
     TimerService? timerService,
@@ -497,6 +499,7 @@ class AudioProvider with ChangeNotifier {
        _nativePlaybackRepository =
            nativePlaybackRepository ?? NativePlaybackRepository(),
        _playbackCommandRunner = playbackCommandRunner,
+       _powerPlatformService = powerPlatformService ?? PowerPlatformService(),
        _libraryService = libraryService ?? LibraryService(),
        _playbackService = playbackService ?? PlaybackSessionService(),
        _timerService = timerService ?? TimerService(),
@@ -522,6 +525,7 @@ class AudioProvider with ChangeNotifier {
     DlsiteMetadataService? dlsiteMetadataService,
     NativePlaybackRepository? nativePlaybackRepository,
     PlaybackCommandRunner playbackCommandRunner = const PlaybackCommandRunner(),
+    PowerPlatformService? powerPlatformService,
     LibraryService? libraryService,
     PlaybackSessionService? playbackService,
     TimerService? timerService,
@@ -541,6 +545,7 @@ class AudioProvider with ChangeNotifier {
        _nativePlaybackRepository =
            nativePlaybackRepository ?? NativePlaybackRepository(),
        _playbackCommandRunner = playbackCommandRunner,
+       _powerPlatformService = powerPlatformService ?? PowerPlatformService(),
        _libraryService = libraryService ?? LibraryService(),
        _playbackService = playbackService ?? PlaybackSessionService(),
        _timerService = timerService ?? TimerService(),

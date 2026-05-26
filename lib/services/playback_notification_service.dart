@@ -2,22 +2,21 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:audio_service/audio_service.dart';
-import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
 
 import 'native_playback_bridge.dart';
+import 'notifications_platform_service.dart';
 import 'playback_notification_handler.dart';
-import 'platform_channels.dart';
 
 class PlaybackNotificationService {
-  static const MethodChannel _notificationsChannel = MethodChannel(
-    NotificationsChannel.name,
-  );
-
   final PlaybackNotificationHandler _handler;
+  final NotificationsPlatformService _notificationsPlatformService;
   bool _enabled = true;
 
-  PlaybackNotificationService(this._handler);
+  PlaybackNotificationService(
+    this._handler, {
+    NotificationsPlatformService? notificationsPlatformService,
+  }) : _notificationsPlatformService =
+           notificationsPlatformService ?? NotificationsPlatformService();
 
   PlaybackNotificationHandler get handler => _handler;
   bool get enabled => _enabled;
@@ -84,45 +83,12 @@ class PlaybackNotificationService {
 
   Future<void> syncUnifiedNotifications(Map<String, dynamic> payload) async {
     if (!_enabled) return;
-    try {
-      await _notificationsChannel
-          .invokeMethod<void>(
-            NotificationsMethod.syncUnifiedPlaybackNotifications,
-            payload,
-          )
-          .timeout(
-            const Duration(seconds: 5),
-            onTimeout: () => debugPrint(
-              'PlaybackNotificationService.syncUnifiedNotifications timed out',
-            ),
-          );
-    } on MissingPluginException {
-      // Channel not available on this platform.
-    } catch (e) {
-      debugPrint(
-        'PlaybackNotificationService.syncUnifiedNotifications error: $e',
-      );
-    }
+    await _notificationsPlatformService.syncUnifiedPlaybackNotifications(
+      payload,
+    );
   }
 
   Future<void> _clearUnifiedNotifications() async {
-    try {
-      await _notificationsChannel
-          .invokeMethod<void>(
-            NotificationsMethod.clearUnifiedPlaybackNotifications,
-          )
-          .timeout(
-            const Duration(seconds: 5),
-            onTimeout: () => debugPrint(
-              'PlaybackNotificationService._clearUnifiedNotifications timed out',
-            ),
-          );
-    } on MissingPluginException {
-      // Channel not available on this platform.
-    } catch (e) {
-      debugPrint(
-        'PlaybackNotificationService._clearUnifiedNotifications error: $e',
-      );
-    }
+    await _notificationsPlatformService.clearUnifiedPlaybackNotifications();
   }
 }

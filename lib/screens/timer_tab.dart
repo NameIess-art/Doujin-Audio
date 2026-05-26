@@ -11,7 +11,8 @@ import '../i18n/app_language_provider.dart';
 import '../providers/audio_provider.dart';
 import '../providers/audio_provider_riverpod.dart';
 import '../services/audio_state_services.dart';
-import '../services/platform_channels.dart';
+import '../services/notifications_platform_service.dart';
+import '../services/power_platform_service.dart';
 import '../services/timer_runtime_calculator.dart';
 import '../widgets/top_page_header.dart';
 
@@ -42,10 +43,9 @@ class _TimerTabState extends ConsumerState<TimerTab>
     with WidgetsBindingObserver {
   static const TimerRuntimeCalculator _timerRuntimeCalculator =
       TimerRuntimeCalculator();
-  static const MethodChannel _powerChannel = MethodChannel(PowerChannel.name);
-  static const MethodChannel _notificationsChannel = MethodChannel(
-    NotificationsChannel.name,
-  );
+  final PowerPlatformService _powerPlatformService = PowerPlatformService();
+  final NotificationsPlatformService _notificationsPlatformService =
+      NotificationsPlatformService();
   int _hours = 0;
   int _minutes = 30;
   int _seconds = 0;
@@ -160,78 +160,29 @@ class _TimerTabState extends ConsumerState<TimerTab>
   }
 
   Future<bool> _canScheduleExactAlarms() async {
-    try {
-      return await _powerChannel.invokeMethod<bool>(
-            PowerMethod.canScheduleExactAlarms,
-          ) ??
-          true;
-    } on MissingPluginException {
-      return true;
-    } catch (_) {
-      return true;
-    }
+    return _powerPlatformService.canScheduleExactAlarms();
   }
 
   Future<bool> _isIgnoringBatteryOptimizations() async {
-    try {
-      return await _powerChannel.invokeMethod<bool>(
-            PowerMethod.isIgnoringBatteryOptimizations,
-          ) ??
-          true;
-    } on MissingPluginException {
-      return true;
-    } catch (_) {
-      return true;
-    }
+    return _powerPlatformService.isIgnoringBatteryOptimizations(
+      errorDefault: true,
+    );
   }
 
   Future<bool> _areNotificationsEnabled() async {
-    try {
-      return await _notificationsChannel.invokeMethod<bool>(
-            NotificationsMethod.areNotificationsEnabled,
-          ) ??
-          true;
-    } on MissingPluginException {
-      return true;
-    } catch (_) {
-      return true;
-    }
+    return _notificationsPlatformService.areNotificationsEnabled();
   }
 
   Future<void> _openExactAlarmSettings() async {
-    try {
-      await _powerChannel.invokeMethod<void>(
-        PowerMethod.openExactAlarmSettings,
-      );
-    } on MissingPluginException {
-      // Non-Android platforms do not expose this channel.
-    } catch (_) {
-      // Best effort only.
-    }
+    await _powerPlatformService.openExactAlarmSettings();
   }
 
   Future<void> _openBackgroundRunSettings() async {
-    try {
-      await _powerChannel.invokeMethod<void>(
-        PowerMethod.openBackgroundRunSettings,
-      );
-    } on MissingPluginException {
-      // Non-Android platforms do not expose this channel.
-    } catch (_) {
-      // Best effort only.
-    }
+    await _powerPlatformService.openBackgroundRunSettings();
   }
 
   Future<void> _openNotificationSettings() async {
-    try {
-      await _notificationsChannel.invokeMethod<void>(
-        NotificationsMethod.openNotificationSettings,
-      );
-    } on MissingPluginException {
-      // Non-Android platforms do not expose this channel.
-    } catch (_) {
-      // Best effort only.
-    }
+    await _notificationsPlatformService.openNotificationSettings();
   }
 
   Future<_TimerReliabilityStatus> _loadReliabilityStatus() async {

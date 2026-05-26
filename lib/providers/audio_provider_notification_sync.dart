@@ -1,4 +1,4 @@
-﻿part of 'audio_provider.dart';
+part of 'audio_provider.dart';
 
 extension AudioProviderNotificationSync on AudioProvider {
   Future<void> _clearUnifiedPlaybackNotificationsOnPlatform() async {
@@ -8,11 +8,7 @@ extension AudioProviderNotificationSync on AudioProvider {
 
   Future<void> _stopPlaybackKeepAliveOnPlatform() async {
     try {
-      await AudioProvider._powerChannel.invokeMethod<void>(
-        'stopPlaybackKeepAlive',
-      );
-    } on MissingPluginException {
-      // The Android power channel is not available on this platform.
+      await _powerPlatformService.stopPlaybackKeepAlive();
     } catch (e) {
       debugPrint('AudioProvider._stopPlaybackKeepAliveOnPlatform error: $e');
     }

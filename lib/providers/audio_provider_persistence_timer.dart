@@ -192,10 +192,7 @@ extension AudioProviderPersistenceTimer on AudioProvider {
 
   Future<bool> _loadNativeTimerRuntime() async {
     try {
-      final map = await AudioProvider._powerChannel
-          .invokeMapMethod<dynamic, dynamic>(
-            PowerMethod.getNativeTimerRuntimeState,
-          );
+      final map = await _powerPlatformService.getNativeTimerRuntimeState();
       if (map == null || map.isEmpty) {
         return false;
       }
@@ -205,8 +202,6 @@ extension AudioProviderPersistenceTimer on AudioProvider {
         syncNativeAfterRestore: false,
       );
       return true;
-    } on MissingPluginException {
-      return false;
     } catch (e) {
       debugPrint('AudioProvider native timer runtime restore error: $e');
       return false;

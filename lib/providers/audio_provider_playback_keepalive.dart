@@ -99,15 +99,13 @@ extension AudioProviderPlaybackKeepAlive on AudioProvider {
     required bool keepForegroundServiceAlive,
   }) async {
     try {
-      await AudioProvider._powerChannel.invokeMethod<void>('setKeepCpuAwake', {
-        'enabled': enabled,
-        'hasActivePlayback': hasActivePlayback,
-        'hasActiveTimer': hasActiveTimer,
-        'usesUnifiedPlaybackNotifications': usesUnifiedPlaybackNotifications,
-        'keepForegroundServiceAlive': keepForegroundServiceAlive,
-      });
-    } on MissingPluginException {
-      // Non-Android platforms don't expose this channel.
+      await _powerPlatformService.setKeepCpuAwake(
+        enabled: enabled,
+        hasActivePlayback: hasActivePlayback,
+        hasActiveTimer: hasActiveTimer,
+        usesUnifiedPlaybackNotifications: usesUnifiedPlaybackNotifications,
+        keepForegroundServiceAlive: keepForegroundServiceAlive,
+      );
     } catch (e) {
       debugPrint('AudioProvider._setKeepCpuAwake error: $e');
     }

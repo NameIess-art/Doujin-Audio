@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 
 import 'app_cache_service.dart';
 import 'path_display.dart';
+import 'platform_channels.dart';
 
 class AppVersionInfo {
   const AppVersionInfo({required this.versionName, required this.buildNumber});
@@ -59,7 +60,7 @@ class AppUpdateService {
   static const String repo = 'nameless-audio';
   static const String latestReleaseApi =
       'https://api.github.com/repos/$owner/$repo/releases/latest';
-  static const MethodChannel _channel = MethodChannel('nameless_audio/update');
+  static const MethodChannel _channel = MethodChannel(UpdateChannel.name);
 
   static Future<AppUpdateInfo> checkLatest() async {
     final currentVersion = await currentAppVersion();
@@ -119,7 +120,7 @@ class AppUpdateService {
   static Future<AppVersionInfo> currentAppVersion() async {
     try {
       final raw = await _channel.invokeMapMethod<String, Object?>(
-        'getAppVersion',
+        UpdateMethod.getAppVersion,
       );
       final versionName = raw?['versionName'] as String? ?? '0.0.0';
       final buildNumber = (raw?['buildNumber'] as num?)?.toInt() ?? 0;
@@ -183,7 +184,10 @@ class AppUpdateService {
 
   static Future<bool> canInstallUnknownApps() async {
     try {
-      return await _channel.invokeMethod<bool>('canInstallUnknownApps') ?? true;
+      return await _channel.invokeMethod<bool>(
+            UpdateMethod.canInstallUnknownApps,
+          ) ??
+          true;
     } catch (_) {
       return true;
     }
@@ -192,7 +196,7 @@ class AppUpdateService {
   static Future<bool> openInstallPermissionSettings() async {
     try {
       return await _channel.invokeMethod<bool>(
-            'openInstallPermissionSettings',
+            UpdateMethod.openInstallPermissionSettings,
           ) ??
           false;
     } catch (_) {
@@ -201,9 +205,10 @@ class AppUpdateService {
   }
 
   static Future<UpdateInstallResult> installApk(File file) async {
-    final raw = await _channel.invokeMapMethod<String, Object?>('installApk', {
-      'path': file.path,
-    });
+    final raw = await _channel.invokeMapMethod<String, Object?>(
+      UpdateMethod.installApk,
+      {'path': file.path},
+    );
     return UpdateInstallResult(
       ok: raw?['ok'] == true,
       needsPermission: raw?['needsPermission'] == true,

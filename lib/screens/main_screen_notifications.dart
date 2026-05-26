@@ -2,36 +2,15 @@ part of 'main_screen.dart';
 
 extension _MainScreenNotifications on _MainScreenState {
   Future<bool> _areNotificationsEnabled() async {
-    if (!Platform.isAndroid) return true;
-    try {
-      return await _MainScreenState._notificationsChannel.invokeMethod<bool>(
-            NotificationsMethod.areNotificationsEnabled,
-          ) ??
-          true;
-    } catch (_) {
-      return true;
-    }
+    return _notificationsPlatformService.areNotificationsEnabled();
   }
 
   Future<bool> _isIgnoringBatteryOptimizations() async {
-    if (!Platform.isAndroid) return true;
-    try {
-      return await _MainScreenState._powerChannel.invokeMethod<bool>(
-            PowerMethod.isIgnoringBatteryOptimizations,
-          ) ??
-          false;
-    } catch (_) {
-      return false;
-    }
+    return _powerPlatformService.isIgnoringBatteryOptimizations();
   }
 
   Future<void> _openBatteryOptimizationSettings() async {
-    if (!Platform.isAndroid) return;
-    try {
-      await _MainScreenState._powerChannel.invokeMethod<bool>(
-        PowerMethod.openBatteryOptimizationSettings,
-      );
-    } catch (_) {}
+    await _powerPlatformService.openBatteryOptimizationSettings();
   }
 
   Future<void> _maybeEnableBackgroundKeepAliveOnFirstLaunch() async {
@@ -91,20 +70,10 @@ extension _MainScreenNotifications on _MainScreenState {
   }
 
   Future<void> _openNotificationSettings() async {
-    if (!Platform.isAndroid) return;
-    try {
-      final opened =
-          await _MainScreenState._notificationsChannel.invokeMethod<bool>(
-            NotificationsMethod.openNotificationSettings,
-          ) ??
-          false;
-      if (!opened && mounted) {
-        await openAppSettings();
-      }
-    } catch (_) {
-      if (mounted) {
-        await openAppSettings();
-      }
+    final opened = await _notificationsPlatformService
+        .openNotificationSettings();
+    if (!opened && mounted && Platform.isAndroid) {
+      await openAppSettings();
     }
   }
 
@@ -198,37 +167,14 @@ extension _MainScreenNotifications on _MainScreenState {
     _showNotificationPermissionEnabledSnack();
   }
 
-  Future<dynamic> _handleNotificationsChannelCall(MethodCall call) async {
-    switch (call.method) {
-      case NotificationsMethod.openSessionFromNotification:
-        final args = call.arguments;
-        String? sessionId;
-        if (args is Map) {
-          sessionId = args['sessionId'] as String?;
-        } else if (args is String) {
-          sessionId = args;
-        }
-        if (sessionId != null && sessionId.isNotEmpty) {
-          _queueNotificationSessionNavigation(sessionId);
-        }
-        return null;
-      default:
-        return null;
-    }
-  }
-
   Future<void> _consumePendingNotificationSession() async {
     if (!Platform.isAndroid || !mounted) return;
-    try {
-      final sessionId = await _MainScreenState._notificationsChannel
-          .invokeMethod<String>(
-            NotificationsMethod.consumePendingNotificationSessionId,
-          );
-      if (!mounted || sessionId == null || sessionId.isEmpty) {
-        return;
-      }
-      _queueNotificationSessionNavigation(sessionId);
-    } catch (_) {}
+    final sessionId = await _notificationsPlatformService
+        .consumePendingNotificationSessionId();
+    if (!mounted || sessionId == null || sessionId.isEmpty) {
+      return;
+    }
+    _queueNotificationSessionNavigation(sessionId);
   }
 
   void _queueNotificationSessionNavigation(String sessionId) {

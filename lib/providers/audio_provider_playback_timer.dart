@@ -10,21 +10,18 @@ extension AudioProviderPlaybackTimer on AudioProvider {
           _autoResumeAt != null && _pausedByTimerSessionIds.isNotEmpty
           ? _autoResumeAt!.millisecondsSinceEpoch
           : null;
-      await AudioProvider._powerChannel
-          .invokeMethod<void>('syncPlaybackTimerAlarms', {
-            'timerMode': _timerMode?.index,
-            'timerDurationMs': _timerDuration?.inMilliseconds,
-            'timerWaitingForPlayback': _timerWaitingForPlayback,
-            'timerEndsAtWallClockMs': timerEndsAtWallClockMs,
-            'autoResumeEnabled': _autoResumeEnabled,
-            'autoResumeHour': _autoResumeHour,
-            'autoResumeMinute': _autoResumeMinute,
-            'autoResumeAtMs': autoResumeAtMs,
-            'pausedSessionIds': _pausedByTimerSessionIds,
-            'generation': _timerGeneration,
-          });
-    } on MissingPluginException {
-      // Non-Android platforms don't expose this channel.
+      await _powerPlatformService.syncPlaybackTimerAlarms(
+        timerMode: _timerMode?.index,
+        timerDurationMs: _timerDuration?.inMilliseconds,
+        timerWaitingForPlayback: _timerWaitingForPlayback,
+        timerEndsAtWallClockMs: timerEndsAtWallClockMs,
+        autoResumeEnabled: _autoResumeEnabled,
+        autoResumeHour: _autoResumeHour,
+        autoResumeMinute: _autoResumeMinute,
+        autoResumeAtMs: autoResumeAtMs,
+        pausedSessionIds: _pausedByTimerSessionIds,
+        generation: _timerGeneration,
+      );
     } catch (e) {
       debugPrint('AudioProvider._syncNativeTimerAlarms error: $e');
     }
@@ -112,7 +109,7 @@ extension AudioProviderPlaybackTimer on AudioProvider {
 
   Future<void> _handleTimerExpiredOnPlatform(int generation) async {
     final handled = await _executeTimerActionOnPlatform(
-      PowerMethod.executeTimerExpiredNow,
+      _powerPlatformService.executeTimerExpiredNow,
       generation,
     );
     if (!handled) {
@@ -168,7 +165,7 @@ extension AudioProviderPlaybackTimer on AudioProvider {
 
   Future<void> _handleAutoResumeOnPlatform(int generation) async {
     final handled = await _executeTimerActionOnPlatform(
-      PowerMethod.executeAutoResumeNow,
+      _powerPlatformService.executeAutoResumeNow,
       generation,
     );
     if (!handled) {
@@ -184,16 +181,11 @@ extension AudioProviderPlaybackTimer on AudioProvider {
   }
 
   Future<bool> _executeTimerActionOnPlatform(
-    String method,
+    Future<bool> Function(int generation) action,
     int generation,
   ) async {
     try {
-      await AudioProvider._powerChannel.invokeMethod<bool>(method, {
-        'generation': generation,
-      });
-      return true;
-    } on MissingPluginException {
-      return false;
+      return await action(generation);
     } catch (e) {
       debugPrint('AudioProvider timer action error: $e');
       return false;

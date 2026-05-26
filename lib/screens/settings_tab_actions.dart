@@ -91,49 +91,21 @@ extension _SettingsTabActions on _SettingsTabState {
   }
 
   Future<bool> _isIgnoringBatteryOptimizations() async {
-    if (!Platform.isAndroid) return true;
-    try {
-      return await _SettingsTabState._powerChannel.invokeMethod<bool>(
-            PowerMethod.isIgnoringBatteryOptimizations,
-          ) ??
-          false;
-    } catch (_) {
-      return false;
-    }
+    return _powerPlatformService.isIgnoringBatteryOptimizations();
   }
 
   Future<bool> _canScheduleExactAlarms() async {
-    if (!Platform.isAndroid) return true;
-    try {
-      return await _SettingsTabState._powerChannel.invokeMethod<bool>(
-            PowerMethod.canScheduleExactAlarms,
-          ) ??
-          true;
-    } catch (_) {
-      return true;
-    }
+    return _powerPlatformService.canScheduleExactAlarms();
   }
 
   Future<bool> _areNotificationsEnabled() async {
-    if (!Platform.isAndroid) return true;
-    try {
-      return await _SettingsTabState._notificationsChannel.invokeMethod<bool>(
-            NotificationsMethod.areNotificationsEnabled,
-          ) ??
-          true;
-    } catch (_) {
-      return true;
-    }
+    return _notificationsPlatformService.areNotificationsEnabled();
   }
 
   Future<void> _openBackgroundRunSettings(BuildContext context) async {
     if (!Platform.isAndroid) return;
     try {
-      final opened =
-          await _SettingsTabState._powerChannel.invokeMethod<bool>(
-            PowerMethod.openBackgroundRunSettings,
-          ) ??
-          false;
+      final opened = await _powerPlatformService.openBackgroundRunSettings();
       if (!opened && context.mounted) {
         showAppSnackBar(
           context,
@@ -165,11 +137,7 @@ extension _SettingsTabActions on _SettingsTabState {
   Future<void> _openExactAlarmSettings(BuildContext context) async {
     if (!Platform.isAndroid) return;
     try {
-      final opened =
-          await _SettingsTabState._powerChannel.invokeMethod<bool>(
-            PowerMethod.openExactAlarmSettings,
-          ) ??
-          false;
+      final opened = await _powerPlatformService.openExactAlarmSettings();
       if (!opened && context.mounted) {
         showAppSnackBar(
           context,
@@ -201,11 +169,8 @@ extension _SettingsTabActions on _SettingsTabState {
   Future<void> _openNotificationSettings(BuildContext context) async {
     if (!Platform.isAndroid) return;
     try {
-      final opened =
-          await _SettingsTabState._notificationsChannel.invokeMethod<bool>(
-            NotificationsMethod.openNotificationSettings,
-          ) ??
-          false;
+      final opened = await _notificationsPlatformService
+          .openNotificationSettings();
       if (!opened && context.mounted) {
         showAppSnackBar(
           context,

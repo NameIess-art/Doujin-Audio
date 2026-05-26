@@ -16,8 +16,9 @@ import '../providers/subtitle_settings_provider.dart';
 import '../services/app_preferences.dart';
 import '../services/app_update_service.dart';
 import '../services/audio_state_services.dart';
+import '../services/notifications_platform_service.dart';
 import '../services/permission_action_controller.dart';
-import '../services/platform_channels.dart';
+import '../services/power_platform_service.dart';
 import 'asmr_tab.dart';
 import 'library_tab.dart';
 import 'playlist_tab.dart';
@@ -51,10 +52,9 @@ class _MainScreenState extends ConsumerState<MainScreen>
   static const double _desktopBreakpoint = 980;
   static const String _backgroundKeepAliveInitializedKey =
       'background_keep_alive_initialized_v2';
-  static const MethodChannel _powerChannel = MethodChannel(PowerChannel.name);
-  static const MethodChannel _notificationsChannel = MethodChannel(
-    NotificationsChannel.name,
-  );
+  final PowerPlatformService _powerPlatformService = PowerPlatformService();
+  final NotificationsPlatformService _notificationsPlatformService =
+      NotificationsPlatformService();
 
   int _currentIndex = 1;
   late final PageController _pageController;
@@ -122,7 +122,9 @@ class _MainScreenState extends ConsumerState<MainScreen>
     ];
     _pageController = PageController(initialPage: _currentIndex);
     WidgetsBinding.instance.addObserver(this);
-    _notificationsChannel.setMethodCallHandler(_handleNotificationsChannelCall);
+    _notificationsPlatformService.setOpenSessionHandler(
+      _queueNotificationSessionNavigation,
+    );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final provider = ref.read(audioProviderFacadeProvider);
       unawaited(_consumePendingNotificationSession());
@@ -319,7 +321,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
     _pageController.dispose();
     _notificationSessionNavigationTimer?.cancel();
     _permissionActionController.dispose();
-    _notificationsChannel.setMethodCallHandler(null);
+    _notificationsPlatformService.setOpenSessionHandler(null);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }

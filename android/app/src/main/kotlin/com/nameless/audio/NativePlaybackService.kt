@@ -12,7 +12,6 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
-import android.util.Log
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import androidx.media3.common.PlaybackException
@@ -1369,7 +1368,7 @@ class NativePlaybackService : MediaSessionService() {
     }
 
     private fun logInfo(message: String, session: NativePlaybackSession? = null) {
-        Log.i(LOG_TAG, "$message ${playbackLogState(session)}")
+        AppFileLogger.info(applicationContext, LOG_TAG, "$message ${playbackLogState(session)}")
     }
 
     private fun logWarn(
@@ -1379,9 +1378,9 @@ class NativePlaybackService : MediaSessionService() {
     ) {
         val fullMessage = "$message ${playbackLogState(session)}"
         if (error == null) {
-            Log.w(LOG_TAG, fullMessage)
+            AppFileLogger.warn(applicationContext, LOG_TAG, fullMessage)
         } else {
-            Log.w(LOG_TAG, fullMessage, error)
+            AppFileLogger.warn(applicationContext, LOG_TAG, fullMessage, error)
         }
     }
 

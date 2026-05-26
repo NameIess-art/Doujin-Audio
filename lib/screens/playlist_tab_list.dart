@@ -335,10 +335,8 @@ class _SessionListCardState extends State<_SessionListCard>
                                     ),
                               ),
                               const SizedBox(height: 3),
-                              Text(
-                                displayName,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
+                              MarqueeText(
+                                text: displayName,
                                 style: Theme.of(context).textTheme.titleMedium
                                     ?.copyWith(
                                       fontWeight: FontWeight.w900,

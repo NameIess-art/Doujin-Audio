@@ -1,8 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
-import 'dart:io';
-
-import 'package:desktop_multi_window/desktop_multi_window.dart';
 
 import 'package:audio_session/audio_session.dart';
 import 'package:audio_service/audio_service.dart';
@@ -11,9 +7,10 @@ import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart' show ProviderScope;
 import 'package:provider/provider.dart';
-import 'package:window_manager/window_manager.dart';
 
 import 'i18n/app_language_provider.dart';
+import 'platform/app_platform.dart';
+import 'platform/app_window_bootstrap.dart';
 import 'providers/audio_provider.dart';
 import 'providers/audio_provider_riverpod.dart';
 import 'screens/main_screen.dart';
@@ -25,71 +22,28 @@ import 'services/playback_notification_handler.dart';
 import 'services/native_playback_repository.dart';
 import 'services/playback_command_runner.dart';
 import 'services/playback_notification_service.dart';
+import 'services/app_log_service.dart';
 import 'theme/theme_provider.dart';
 import 'services/app_preferences.dart';
 import 'services/app_database.dart';
-import 'windows/subtitle_overlay_window.dart';
 import 'widgets/global_shortcuts.dart';
-
-class _MainWindowListener extends WindowListener {
-  @override
-  void onWindowClose() async {
-    await windowManager.destroy();
-    exit(0);
-  }
-}
 
 Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
+  await AppLogService.initialize();
+  AppLogService.installFlutterErrorHandler();
 
-  if (args.isNotEmpty && args.first == 'multi_window') {
-    final windowId = args[1];
-    final argument = args[2].isEmpty
-        ? const <String, dynamic>{}
-        : jsonDecode(args[2]) as Map<String, dynamic>;
+  await runZonedGuarded<Future<void>>(
+    () async => _runAudioPlayerApp(args),
+    AppLogService.logZoneError,
+  );
+}
 
-    if (Platform.isWindows) {
-      await windowManager.ensureInitialized();
-      WindowOptions windowOptions = const WindowOptions(
-        size: Size(800, 200),
-        center: true,
-        backgroundColor: Colors.transparent,
-        skipTaskbar: true,
-        titleBarStyle: TitleBarStyle.hidden,
-        alwaysOnTop: true,
-      );
-      await windowManager.waitUntilReadyToShow(windowOptions, () async {
-        await windowManager.setAsFrameless();
-        await windowManager.show();
-      });
-    }
-
-    runApp(
-      SubtitleOverlayWindow(
-        windowController: WindowController.fromWindowId(windowId),
-        args: argument,
-      ),
-    );
-    return;
-  }
+Future<void> _runAudioPlayerApp(List<String> args) async {
+  if (await AppWindowBootstrap.runSubtitleOverlayWindowIfNeeded(args)) return;
 
   AppDatabase.initializeForPlatform();
-
-  if (Platform.isWindows) {
-    await windowManager.ensureInitialized();
-    WindowOptions windowOptions = const WindowOptions(
-      size: Size(1100, 750),
-      minimumSize: Size(800, 600),
-      center: true,
-      skipTaskbar: false,
-      titleBarStyle: TitleBarStyle.hidden,
-    );
-    await windowManager.waitUntilReadyToShow(windowOptions, () async {
-      await windowManager.show();
-      await windowManager.focus();
-    });
-    windowManager.addListener(_MainWindowListener());
-  }
+  await AppWindowBootstrap.initializeMainWindow();
 
   // Optimize image cache for mobile memory stability
   PaintingBinding.instance.imageCache.maximumSizeBytes =
@@ -97,7 +51,7 @@ Future<void> main(List<String> args) async {
   PaintingBinding.instance.imageCache.maximumSize = 200; // 200 images
 
   // Start essential services in parallel to minimize blocking before runApp
-  final audioHandlerFuture = Platform.isWindows
+  final audioHandlerFuture = AppPlatform.isWindows
       ? Future<PlaybackNotificationHandler>.value(PlaybackNotificationHandler())
       : AudioService.init(
           builder: PlaybackNotificationHandler.new,
@@ -225,7 +179,7 @@ class MusicPlayerApp extends StatelessWidget {
           ],
           theme: themeProvider.currentTheme,
           scrollBehavior: const MaterialScrollBehavior().copyWith(
-            scrollbars: Platform.isWindows,
+            scrollbars: AppPlatform.showsDesktopScrollbars,
           ),
           home: const GlobalShortcuts(child: MainScreen()),
         );

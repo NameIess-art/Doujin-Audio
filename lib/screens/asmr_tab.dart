@@ -15,6 +15,7 @@ import '../services/asmr_library_controller.dart';
 import '../services/search_query_utils.dart';
 import '../widgets/app_feedback.dart';
 import '../widgets/glass_refresh_indicator.dart';
+import '../widgets/marquee_text.dart';
 import '../widgets/library_like_cards.dart';
 import '../widgets/mobile_overlay_inset.dart';
 import '../widgets/scroll_activity_gate.dart';
@@ -340,7 +341,7 @@ class _AsmrTabState extends State<AsmrTab>
                       CheckboxListTile(
                         value: selected.contains(category),
                         onChanged:
-                            !selected.contains(category) && selected.length >= 5
+                            !Platform.isWindows && !selected.contains(category) && selected.length >= 5
                             ? null
                             : (checked) {
                                 setDialogState(() {
@@ -439,7 +440,8 @@ class _AsmrTabState extends State<AsmrTab>
     final i18n = context.watch<AppLanguageProvider>();
     final currentCategory = _currentCategory;
     final currentScrollController = _scrollControllers[currentCategory]!;
-    final isWindows = Platform.isWindows;
+    final isWindows = Platform.isWindows ||
+        MediaQuery.orientationOf(context) == Orientation.landscape;
     final bottomInset = MobileOverlayInset.of(context);
     final headerControlsFullHeight = _headerControlsFullHeight;
     final topTotalHeight = _headerHeight + 4;
@@ -586,29 +588,29 @@ class _AsmrTabState extends State<AsmrTab>
             }),
             subtitleFontSize: 11,
             fitSubtitleToWidth: true,
-            trailing: isWindows
-                ? Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        onPressed: globalState.initialized
-                            ? () => unawaited(
-                                _refreshCategoryWithFeedback(currentCategory),
-                              )
-                            : null,
-                        icon: const Icon(Icons.refresh_rounded),
-                        tooltip: 'Refresh',
-                      ),
-                      _AsmrMoreMenuButton(
-                        onCategories: _showCategoryDialog,
-                        onLanguage: _showLanguageDialog,
-                      ),
-                    ],
-                  )
-                : _AsmrMoreMenuButton(
+            trailing: SizedBox(
+              width: isWindows ? 104 : 52,
+              height: 44,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  if (isWindows)
+                    IconButton(
+                      onPressed: globalState.initialized
+                          ? () => unawaited(
+                              _refreshCategoryWithFeedback(currentCategory),
+                            )
+                          : null,
+                      icon: const Icon(Icons.refresh_rounded),
+                      tooltip: 'Refresh',
+                    ),
+                  _AsmrMoreMenuButton(
                     onCategories: _showCategoryDialog,
                     onLanguage: _showLanguageDialog,
                   ),
+                ],
+              ),
+            ),
             isLoading: !globalState.initialized,
             bottomSpacing: 4,
             padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
@@ -780,10 +782,14 @@ class _AsmrSearchBar extends StatelessWidget {
                           ),
                         )
                       : null,
-                  hintText: i18n.tr('asmr_search_hint'),
-                  hintStyle: Theme.of(
-                    context,
-                  ).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                  floatingLabelBehavior: FloatingLabelBehavior.never,
+                  label: MarqueeText(
+                    text: i18n.tr('asmr_search_hint'),
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                    edgePadding: 0,
+                  ),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(17),
                     borderSide: BorderSide.none,
@@ -880,7 +886,7 @@ class _AsmrCategoryListState extends State<_AsmrCategoryList>
         child: MediaQuery(
           data: MediaQuery.of(context).copyWith(
             padding: EdgeInsets.only(
-              top: widget.topInset + 6,
+              top: widget.topInset,
               bottom: widget.bottomInset,
               right: 4,
             ),
@@ -921,7 +927,7 @@ class _AsmrCategoryListState extends State<_AsmrCategoryList>
                 ),
                 padding: EdgeInsets.fromLTRB(
                   16,
-                  widget.topInset + 6,
+                  widget.topInset,
                   16,
                   widget.bottomInset + 24,
                 ),
@@ -937,7 +943,7 @@ class _AsmrCategoryListState extends State<_AsmrCategoryList>
                           children: [
                             for (int i = 0; i < 5; i++)
                               const Padding(
-                                padding: EdgeInsets.only(bottom: 8),
+                                padding: EdgeInsets.only(bottom: 6),
                                 child: _AsmrWorkSkeletonCard(),
                               ),
                           ],
@@ -982,7 +988,7 @@ class _AsmrCategoryListState extends State<_AsmrCategoryList>
                     );
                   }
                   return Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.only(bottom: 6),
                     child: RepaintBoundary(
                       child: _AsmrWorkTreeCard(
                         work: works[index],
@@ -1649,7 +1655,6 @@ class _AsmrRootCardContent extends StatelessWidget {
       showExpandIndicator: hasChildren,
       playTooltip: i18n.tr('asmr_add_to_playlist'),
       accentColor: asmrBlue,
-      enableMarquee: false,
     );
   }
 }

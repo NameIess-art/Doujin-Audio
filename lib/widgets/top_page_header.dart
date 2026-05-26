@@ -24,6 +24,7 @@ class TopPageHeader extends StatelessWidget {
     this.additionalChild,
     this.isLoading = false,
     this.marqueeTitle = false,
+    this.forceMarqueeTitle = false,
     this.backgroundOpacity,
   });
 
@@ -41,6 +42,7 @@ class TopPageHeader extends StatelessWidget {
   final Widget? additionalChild;
   final bool isLoading;
   final bool marqueeTitle;
+  final bool forceMarqueeTitle;
   final double? backgroundOpacity;
 
   @override
@@ -74,6 +76,7 @@ class TopPageHeader extends StatelessWidget {
                           style: titleStyle,
                           scrollSpeed: 24,
                           edgePadding: 2,
+                          forceMarquee: forceMarqueeTitle,
                         ),
                       )
                     : Text(

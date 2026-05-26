@@ -1,8 +1,7 @@
-import 'dart:io';
-
 import 'dart_playback_bridge.dart';
 import 'native_playback_bridge.dart';
 import 'native_result.dart';
+import '../platform/app_platform.dart';
 
 class NativePlaybackRepository {
   NativePlaybackRepository({NativePlaybackBridgeBase? bridge})
@@ -11,7 +10,7 @@ class NativePlaybackRepository {
   final NativePlaybackBridgeBase _bridge;
 
   static NativePlaybackBridgeBase _defaultBridge() {
-    if (Platform.isWindows && Platform.environment['FLUTTER_TEST'] != 'true') {
+    if (AppPlatform.usesDesktopPlaybackBridge) {
       return DartPlaybackBridge();
     }
     return NativePlaybackBridge.instance;

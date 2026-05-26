@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/models/asmr_models.dart';
 import 'package:nameless_audio/models/music_track.dart';
@@ -38,13 +39,24 @@ void main() {
       ],
     });
 
-    expect(await AsmrPreferences.loadVisibleCategories(), <AsmrCategoryType>[
-      AsmrCategoryType.sales,
-      AsmrCategoryType.rating,
-      AsmrCategoryType.release,
-      AsmrCategoryType.favorites,
-      AsmrCategoryType.history,
-    ]);
+    if (Platform.isWindows) {
+      expect(await AsmrPreferences.loadVisibleCategories(), <AsmrCategoryType>[
+        AsmrCategoryType.sales,
+        AsmrCategoryType.rating,
+        AsmrCategoryType.release,
+        AsmrCategoryType.favorites,
+        AsmrCategoryType.history,
+        AsmrCategoryType.collected,
+      ]);
+    } else {
+      expect(await AsmrPreferences.loadVisibleCategories(), <AsmrCategoryType>[
+        AsmrCategoryType.sales,
+        AsmrCategoryType.rating,
+        AsmrCategoryType.release,
+        AsmrCategoryType.favorites,
+        AsmrCategoryType.history,
+      ]);
+    }
   });
 
   test(

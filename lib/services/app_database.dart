@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
@@ -8,6 +7,7 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import '../models/audio_detail.dart';
 import '../models/library_entry.dart';
 import '../models/music_track.dart';
+import '../platform/app_platform.dart';
 import 'path_matcher.dart';
 
 class AppDatabase {
@@ -20,7 +20,7 @@ class AppDatabase {
   static AppDatabase get instance => _instance ??= AppDatabase._();
 
   static void initializeForPlatform() {
-    if (!Platform.isWindows && !Platform.isLinux) return;
+    if (!AppPlatform.usesDesktopDatabase) return;
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfi;
   }

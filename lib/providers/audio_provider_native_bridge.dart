@@ -109,7 +109,5 @@ extension AudioProviderNativeBridge on AudioProvider {
 }
 
 bool _isWindowsDriveUri(Uri uri) {
-  return Platform.isWindows &&
-      uri.pathSegments.isNotEmpty &&
-      RegExp(r'^[A-Za-z]:$').hasMatch(uri.pathSegments.first);
+  return isWindowsDriveFileUri(uri);
 }

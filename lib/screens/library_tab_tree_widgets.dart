@@ -720,7 +720,6 @@ class _LibraryFeaturedCardContent extends StatelessWidget {
       expanded: expanded,
       showExpandIndicator: showExpandIndicator,
       playTooltip: i18n.tr('play'),
-      enableMarquee: false,
     );
   }
 }
@@ -742,7 +741,6 @@ class _SingleAudioFileCardContent extends StatelessWidget {
     return LibraryLikeSingleAudioCardContent(
       title: title,
       lines: _audioDetailInfoLines(i18n, detail, detailLoading),
-      enableMarquee: false,
     );
   }
 }

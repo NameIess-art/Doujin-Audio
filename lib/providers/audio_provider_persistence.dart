@@ -179,6 +179,8 @@ extension AudioProviderPersistence on AudioProvider {
       _showPlaybackCard = map['showPlaybackCard'] as bool? ?? true;
       _autoPlayAddedSessions = map['autoPlayAddedSessions'] as bool? ?? true;
       _autoCheckUpdates = map['autoCheckUpdates'] as bool? ?? false;
+      _settingsRepository.recordPlaybackProgress =
+          map['recordPlaybackProgress'] as bool? ?? true;
       _dlsiteMetadataLanguage = _decodeDlsiteMetadataLanguage(
         map['dlsiteMetadataLanguage'],
       );
@@ -200,6 +202,7 @@ extension AudioProviderPersistence on AudioProvider {
         'showPlaybackCard': _showPlaybackCard,
         'autoPlayAddedSessions': _autoPlayAddedSessions,
         'autoCheckUpdates': _autoCheckUpdates,
+        'recordPlaybackProgress': _settingsRepository.recordPlaybackProgress,
         'dlsiteMetadataLanguage': _dlsiteMetadataLanguage.name,
         'maxCacheBytes': _maxCacheBytes,
       });
@@ -465,6 +468,13 @@ extension AudioProviderPersistence on AudioProvider {
   Future<void> setAutoCheckUpdates(bool enabled) async {
     if (_autoCheckUpdates == enabled) return;
     _autoCheckUpdates = enabled;
+    _notifySettingsChanged();
+    unawaited(_savePlaybackSettings());
+  }
+
+  Future<void> setRecordPlaybackProgress(bool enabled) async {
+    if (_settingsRepository.recordPlaybackProgress == enabled) return;
+    _settingsRepository.recordPlaybackProgress = enabled;
     _notifySettingsChanged();
     unawaited(_savePlaybackSettings());
   }

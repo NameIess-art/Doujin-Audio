@@ -285,24 +285,9 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
   @override
   Widget build(BuildContext context) {
     final provider = context.read<AudioProvider>();
-    final sessionOrderState = context.select<AudioProvider, SessionOrderState>(
-      (value) => SessionOrderState(
-        sessionIds: value.activeSessions.map((session) => session.id).toList(),
-      ),
-    );
-    final detailState = context.select<AudioProvider, SessionDetailViewState?>((
-      value,
-    ) {
-      final session = value.sessionById(_currentSessionId);
-      if (session == null) return null;
-      return SessionDetailViewState(
-        sessionId: session.id,
-        trackPath: session.currentTrackPath,
-        isPlaying: session.state.playing,
-        isLoading: session.isLoading,
-        channelSwapEnabled: session.channelSwapEnabled,
-      );
-    });
+    final uiState = ref.watch(sessionDetailUiProvider(_currentSessionId));
+    final sessionOrderState = uiState.sessionOrder;
+    final detailState = uiState.detail;
     final session = provider.sessionById(_currentSessionId);
 
     if (session == null || detailState == null) {
@@ -321,9 +306,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
       return const Scaffold(body: SizedBox.shrink());
     }
 
-    final currentCoverGen = context.select<AudioProvider, int>(
-      (value) => value.coverGeneration,
-    );
+    final currentCoverGen = uiState.coverGeneration;
     if (_lastTrackPath != detailState.trackPath ||
         _lastCoverGeneration != currentCoverGen) {
       _lastTrackPath = detailState.trackPath;

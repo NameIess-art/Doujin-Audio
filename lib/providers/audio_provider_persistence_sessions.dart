@@ -38,7 +38,9 @@ extension AudioProviderPersistenceSessions on AudioProvider {
         final loopMode = SessionLoopMode
             .values[loopModeIndex.clamp(0, SessionLoopMode.values.length - 1)];
         final volume = item.volume.clamp(0.0, _maxSessionVolume);
-        final restoredPositionMs = item.positionMs;
+        
+        final recordProgress = _settingsRepository.recordPlaybackProgress;
+        final restoredPositionMs = recordProgress ? item.positionMs : 0;
         final restoredPosition = Duration(
           milliseconds: max(0, restoredPositionMs),
         );

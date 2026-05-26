@@ -30,7 +30,7 @@ class _LibraryTreeItem extends StatelessWidget {
   }
 }
 
-class _FolderNodeWidget extends StatefulWidget {
+class _FolderNodeWidget extends ConsumerStatefulWidget {
   const _FolderNodeWidget({
     required this.folder,
     required this.initiallyExpanded,
@@ -42,10 +42,10 @@ class _FolderNodeWidget extends StatefulWidget {
   final String searchQuery;
 
   @override
-  State<_FolderNodeWidget> createState() => _FolderNodeWidgetState();
+  ConsumerState<_FolderNodeWidget> createState() => _FolderNodeWidgetState();
 }
 
-class _FolderNodeWidgetState extends State<_FolderNodeWidget> {
+class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
   static const double _rootFolderTileHeight = 160;
   static const double _childFolderTileHeight = 62;
   static const double _childFolderTitleBlockHeight = 50;
@@ -112,11 +112,9 @@ class _FolderNodeWidgetState extends State<_FolderNodeWidget> {
   @override
   Widget build(BuildContext context) {
     final i18n = context.watch<AppLanguageProvider>();
-    final provider = context.read<AudioProvider>();
-    final categorySnapshot = context
-        .select<AudioProvider, AudioLibraryCategorySnapshot?>(
-          (value) => value.audioLibraryCategorySnapshotSync,
-        );
+    final provider = ref.read(audioProviderFacadeProvider);
+    ref.watch(libraryUiProvider.select((state) => state.detailRevision));
+    final categorySnapshot = provider.audioLibraryCategorySnapshotSync;
     final cs = Theme.of(context).colorScheme;
     final isRootFolder = widget.folder.depth == 0;
     final hasChildren = widget.folder.children.isNotEmpty;
@@ -335,14 +333,18 @@ class _TrackNodeWidget extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final i18n = context.watch<AppLanguageProvider>();
     final provider = ref.read(audioProviderFacadeProvider);
-    final categorySnapshot = context
-        .select<AudioProvider, AudioLibraryCategorySnapshot?>(
-          (value) => value.audioLibraryCategorySnapshotSync,
-        );
+    ref.watch(libraryUiProvider.select((state) => state.detailRevision));
+    final categorySnapshot = provider.audioLibraryCategorySnapshotSync;
     final cs = Theme.of(context).colorScheme;
     final track = trackNode.track;
-    final isAlreadyPlaying = context.select<AudioProvider, bool>(
-      (value) => value.isTrackActive(track.path),
+    final isAlreadyPlaying = ref.watch(
+      playbackStateProvider.select(
+        (value) =>
+            value.valueOrNull?.activeSessions.any(
+              (session) => session.currentTrackPath == track.path,
+            ) ??
+            false,
+      ),
     );
     final cardShape = RoundedRectangleBorder(
       side: track.isSingle
@@ -509,8 +511,12 @@ class _LibraryCoverThumbnail extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    context.select<AudioProvider, int>((value) => value.coverGeneration);
-    final provider = context.read<AudioProvider>();
+    ref.watch(
+      playbackStateProvider.select(
+        (value) => value.valueOrNull?.coverGeneration ?? 0,
+      ),
+    );
+    final provider = ref.read(audioProviderFacadeProvider);
     final isScrolling = ScrollActivityGate.isScrollingOf(context);
     final coverPathFuture = isScrolling
         ? SynchronousFuture<String?>(
@@ -593,8 +599,12 @@ class _LibraryTrackCoverThumbnail extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    context.select<AudioProvider, int>((value) => value.coverGeneration);
-    final provider = context.read<AudioProvider>();
+    ref.watch(
+      playbackStateProvider.select(
+        (value) => value.valueOrNull?.coverGeneration ?? 0,
+      ),
+    );
+    final provider = ref.read(audioProviderFacadeProvider);
     final isScrolling = ScrollActivityGate.isScrollingOf(context);
     final coverPathFuture = isScrolling
         ? SynchronousFuture<String?>(provider.resolvedCoverPathForTrack(track))

@@ -55,6 +55,7 @@ class LibraryState {
     this.scanFailureCount = 0,
     this.structureRevision = 0,
     this.contentRevision = 0,
+    this.detailRevision = 0,
     this.isInitialized = false,
   });
 
@@ -69,6 +70,7 @@ class LibraryState {
   final int scanFailureCount;
   final int structureRevision;
   final int contentRevision;
+  final int detailRevision;
   final bool isInitialized;
 
   @override
@@ -85,6 +87,7 @@ class LibraryState {
         other.scanFailureCount == scanFailureCount &&
         other.structureRevision == structureRevision &&
         other.contentRevision == contentRevision &&
+        other.detailRevision == detailRevision &&
         other.isInitialized == isInitialized;
   }
 
@@ -101,6 +104,7 @@ class LibraryState {
     scanFailureCount,
     structureRevision,
     contentRevision,
+    detailRevision,
     isInitialized,
   );
 }
@@ -240,6 +244,7 @@ class PlaybackStateSliceData {
     this.playingSessionCount = 0,
     this.focusedSessionId,
     this.multiThreadPlaybackEnabled = false,
+    this.coverGeneration = 0,
     this.sessionStateVersion = 0,
     this.isInitialized = false,
   });
@@ -248,6 +253,7 @@ class PlaybackStateSliceData {
   final int playingSessionCount;
   final String? focusedSessionId;
   final bool multiThreadPlaybackEnabled;
+  final int coverGeneration;
   final int sessionStateVersion;
   final bool isInitialized;
 
@@ -259,6 +265,7 @@ class PlaybackStateSliceData {
         other.playingSessionCount == playingSessionCount &&
         other.focusedSessionId == focusedSessionId &&
         other.multiThreadPlaybackEnabled == multiThreadPlaybackEnabled &&
+        other.coverGeneration == coverGeneration &&
         other.isInitialized == isInitialized;
   }
 
@@ -269,6 +276,7 @@ class PlaybackStateSliceData {
     playingSessionCount,
     focusedSessionId,
     multiThreadPlaybackEnabled,
+    coverGeneration,
     isInitialized,
   );
 }
@@ -351,6 +359,7 @@ class SettingsState {
     this.autoCheckUpdates = false,
     this.dlsiteMetadataLanguage = AppLanguage.ja,
     this.maxCacheBytes = 300 * 1024 * 1024,
+    this.recordPlaybackProgress = true,
   });
 
   final String converterFormat;
@@ -362,6 +371,7 @@ class SettingsState {
   final bool autoCheckUpdates;
   final AppLanguage dlsiteMetadataLanguage;
   final int maxCacheBytes;
+  final bool recordPlaybackProgress;
 
   @override
   bool operator ==(Object other) {
@@ -374,7 +384,8 @@ class SettingsState {
         other.autoPlayAddedSessions == autoPlayAddedSessions &&
         other.autoCheckUpdates == autoCheckUpdates &&
         other.dlsiteMetadataLanguage == dlsiteMetadataLanguage &&
-        other.maxCacheBytes == maxCacheBytes;
+        other.maxCacheBytes == maxCacheBytes &&
+        other.recordPlaybackProgress == recordPlaybackProgress;
   }
 
   @override
@@ -388,6 +399,7 @@ class SettingsState {
     autoCheckUpdates,
     dlsiteMetadataLanguage,
     maxCacheBytes,
+    recordPlaybackProgress,
   );
 }
 
@@ -950,7 +962,7 @@ class LibraryService {
     onSaveLibraryExclusions?.call();
   }
 
-  void syncSlice({required bool isInitialized}) {
+  void syncSlice({required bool isInitialized, required int detailRevision}) {
     slice.update(
       LibraryState(
         libraryTrackCount: library.length,
@@ -964,6 +976,7 @@ class LibraryService {
         scanFailureCount: scanFailureCount,
         structureRevision: structureRevision,
         contentRevision: contentRevision,
+        detailRevision: detailRevision,
         isInitialized: isInitialized,
       ),
     );
@@ -1074,6 +1087,7 @@ class PlaybackSessionService {
     required int playingSessionCount,
     required String? focusedSessionId,
     required bool multiThreadPlaybackEnabled,
+    required int coverGeneration,
     required bool isInitialized,
   }) {
     slice.update(
@@ -1082,6 +1096,7 @@ class PlaybackSessionService {
         playingSessionCount: playingSessionCount,
         focusedSessionId: focusedSessionId,
         multiThreadPlaybackEnabled: multiThreadPlaybackEnabled,
+        coverGeneration: coverGeneration,
         sessionStateVersion: sessionStateVersion,
         isInitialized: isInitialized,
       ),
@@ -1381,6 +1396,7 @@ class SettingsRepository {
   bool keepAliveHasTimer = false;
   bool keepAliveUsesUnifiedNotifications = false;
   bool keepAliveKeepsForegroundService = false;
+  bool recordPlaybackProgress = true;
   final AudioStateSlice<SettingsState> slice = AudioStateSlice<SettingsState>(
     const SettingsState(),
   );
@@ -1397,6 +1413,7 @@ class SettingsRepository {
         autoCheckUpdates: autoCheckUpdates,
         dlsiteMetadataLanguage: dlsiteMetadataLanguage,
         maxCacheBytes: maxCacheBytes,
+        recordPlaybackProgress: recordPlaybackProgress,
       ),
     );
   }

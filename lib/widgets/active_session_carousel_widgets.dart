@@ -1,6 +1,6 @@
 part of 'active_session_carousel.dart';
 
-class _ActiveSessionCard extends StatelessWidget {
+class _ActiveSessionCard extends ConsumerWidget {
   const _ActiveSessionCard({
     required this.session,
     required this.provider,
@@ -13,23 +13,28 @@ class _ActiveSessionCard extends StatelessWidget {
   final Future<String?> coverPathFuture;
   final VoidCallback onOpen;
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     const cardRadius = 20.0;
 
-    final view = context
-        .select<
-          AudioProvider,
-          ({bool playing, bool loading, String trackPath})
-        >((value) {
-          final currentSession = value.sessionById(session.id) ?? session;
-          return (
-            playing: currentSession.state.playing,
-            loading: currentSession.isLoading,
-            trackPath: currentSession.currentTrackPath,
-          );
-        });
+    final view = ref.watch(
+      playbackStateProvider.select((value) {
+        final playbackState = value.valueOrNull;
+        final currentSession =
+            playbackState?.activeSessions.firstWhere(
+              (candidate) => candidate.id == session.id,
+              orElse: () => session,
+            ) ??
+            session;
+        return (
+          playing: currentSession.state.playing,
+          loading: currentSession.isLoading,
+          trackPath: currentSession.currentTrackPath,
+          channelSwapEnabled: currentSession.channelSwapEnabled,
+        );
+      }),
+    );
     final isPlaying = view.playing;
     final currentTrack = provider.trackByPath(view.trackPath);
     final displayName =
@@ -108,7 +113,8 @@ class _ActiveSessionCard extends StatelessWidget {
     BuildContext context,
     ColorScheme cs,
     bool isPlaying,
-    ({bool playing, bool loading, String trackPath}) view,
+    ({bool channelSwapEnabled, bool loading, bool playing, String trackPath})
+    view,
     MusicTrack? currentTrack,
     String displayName,
   ) {
@@ -149,7 +155,7 @@ class _ActiveSessionCard extends StatelessWidget {
                     builder: (context, ref, child) {
                       final settings = ref.watch(subtitleSettingsProvider);
                       final showSub = settings.isGlobalEnabled(session.id);
-                      if (!showSub && !session.channelSwapEnabled) {
+                      if (!showSub && !view.channelSwapEnabled) {
                         return const SizedBox.shrink();
                       }
                       return Padding(
@@ -163,9 +169,9 @@ class _ActiveSessionCard extends StatelessWidget {
                                 size: 10,
                                 color: cs.primary,
                               ),
-                            if (showSub && session.channelSwapEnabled)
+                            if (showSub && view.channelSwapEnabled)
                               const SizedBox(width: 2),
-                            if (session.channelSwapEnabled)
+                            if (view.channelSwapEnabled)
                               Icon(
                                 Icons.swap_horiz_rounded,
                                 size: 10,

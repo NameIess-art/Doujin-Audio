@@ -12,10 +12,8 @@ import 'package:provider/provider.dart' hide Consumer;
 import '../i18n/app_language_provider.dart';
 import '../providers/audio_provider.dart';
 import '../providers/audio_provider_riverpod.dart';
-import '../providers/subtitle_settings_provider.dart';
 import '../services/app_preferences.dart';
 import '../services/app_update_service.dart';
-import '../services/audio_state_services.dart';
 import '../services/notifications_platform_service.dart';
 import '../services/permission_action_controller.dart';
 import '../services/power_platform_service.dart';
@@ -413,19 +411,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
     }
   }
 
-  List<PlaybackSession> _buildOverlaySessions(PlaybackStateSliceData? state) {
-    if (state == null) return const <PlaybackSession>[];
-    final sessions = state.activeSessions;
-    if (state.multiThreadPlaybackEnabled || sessions.isEmpty) {
-      return sessions;
-    }
-    final retainedSession = sessions.firstWhere(
-      (session) => session.state.playing || session.isLoading,
-      orElse: () => sessions.first,
-    );
-    return <PlaybackSession>[retainedSession];
-  }
-
   @override
   Widget build(BuildContext context) {
     final i18n = context.watch<AppLanguageProvider>();
@@ -451,30 +436,30 @@ class _MainScreenState extends ConsumerState<MainScreen>
             systemStatusBarContrastEnforced: false,
             systemNavigationBarContrastEnforced: false,
           );
-    final playbackState = ref.watch(playbackStateProvider).valueOrNull;
-    final settingsState = ref.watch(settingsStateProvider).valueOrNull;
-    if ((settingsState?.autoCheckUpdates ?? false) &&
-        (playbackState?.isInitialized ?? false) &&
+    final overlayUi = ref.watch(mainOverlayUiProvider);
+    final autoCheckUpdates = ref.watch(
+      settingsStateProvider.select(
+        (value) => value.valueOrNull?.autoCheckUpdates ?? false,
+      ),
+    );
+    if (autoCheckUpdates &&
+        overlayUi.isInitialized &&
         !_autoUpdateCheckQueued) {
       _autoUpdateCheckQueued = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         unawaited(_checkForUpdatesOnLaunch());
       });
     }
-    final hasPlayingSession = (playbackState?.playingSessionCount ?? 0) > 0;
-    final overlaySessions = _buildOverlaySessions(playbackState);
-    final activeSessionCount = playbackState?.activeSessions.length ?? 0;
-    final showCard = settingsState?.showPlaybackCard ?? false;
-    final visibleSessions = showCard ? overlaySessions : <PlaybackSession>[];
+    final hasPlayingSession = overlayUi.hasPlayingSession;
+    final activeSessionCount = overlayUi.activeSessionCount;
+    final showCard = overlayUi.showPlaybackCard;
+    final visibleSessions = overlayUi.visibleSessions;
     if (_lastShowCard != showCard) {
       _lastShowCard = showCard;
       _needsMeasurement = true;
     }
-    final subtitleSettings = ref.watch(subtitleSettingsProvider);
-    final subtitleSessions = overlaySessions
-        .where((session) => subtitleSettings.isGlobalEnabled(session.id))
-        .toList(growable: false);
-    final hasNowPlaying = visibleSessions.isNotEmpty;
+    final subtitleSessions = overlayUi.subtitleSessions;
+    final hasNowPlaying = overlayUi.hasNowPlaying;
     if (activeSessionCount > 0 &&
         !_notificationPermissionCheckDone &&
         !_notificationPermissionCheckQueued) {
@@ -491,7 +476,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
         unawaited(_maybePromptForBackgroundPlaybackReliability());
       });
     }
-    if (!_isDataReady && (playbackState?.isInitialized ?? false)) {
+    if (!_isDataReady && overlayUi.isInitialized) {
       _isDataReady = true;
     }
     final width = MediaQuery.sizeOf(context).width;

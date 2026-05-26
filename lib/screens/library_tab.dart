@@ -279,57 +279,10 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     super.build(context);
     final i18n = context.watch<AppLanguageProvider>();
     final provider = ref.read(audioProviderFacadeProvider);
-    final detailRevision = context.select<AudioProvider, int>(
-      (value) => value.audioDetailRevision,
-    );
-    final libraryUiState = ref.watch(
-      libraryStateProvider.select((value) {
-        final state = value.valueOrNull ?? const LibraryState();
-        final showForegroundScan =
-            state.isScanning && !state.isBackgroundScanning;
-        // Pull-to-refresh runs as a background scan and does not surface the
-        // progress card, so ignore those transient updates here to avoid
-        // rebuilding the heavy library tree when content has not changed.
-        return (
-          structureRevision: state.structureRevision,
-          contentRevision: state.contentRevision,
-          isInitialized: state.isInitialized,
-          isScanning: showForegroundScan,
-          scanCurrentFolder: showForegroundScan ? state.scanCurrentFolder : '',
-          scanFoundCount: showForegroundScan ? state.scanFoundCount : 0,
-          scanDuplicateCount: showForegroundScan ? state.scanDuplicateCount : 0,
-          scanFailureCount: showForegroundScan ? state.scanFailureCount : 0,
-        );
-      }),
-    );
-    final libraryHeaderState = context
-        .select<AudioProvider, LibraryHeaderState>(
-          (value) => libraryHeaderStateFromSlice(
-            LibraryState(
-              libraryTrackCount: value.libraryTrackCount,
-              watchedFolderCount: value.watchedFolderCount,
-              watchedLibraryCount: value.watchedLibraryCount,
-              isInitialized: libraryUiState.isInitialized,
-            ),
-          ),
-        );
-    final listState = context.select<AudioProvider, LibraryListState>(
-      (value) => LibraryListState(
-        rawTree: value.libraryTree,
-        watchedFolders: value.watchedFolders,
-        watchedLibraries: value.watchedLibraries,
-        watchedFolderCount: value.watchedFolderCount,
-        watchedLibraryCount: value.watchedLibraryCount,
-        isScanning: libraryUiState.isScanning,
-        isBackgroundScanning: false,
-        scanCurrentFolder: libraryUiState.scanCurrentFolder,
-        scanFoundCount: libraryUiState.scanFoundCount,
-        scanDuplicateCount: libraryUiState.scanDuplicateCount,
-        scanFailureCount: libraryUiState.scanFailureCount,
-        structureRevision: libraryUiState.contentRevision,
-        isInitialized: libraryUiState.isInitialized,
-      ),
-    );
+    final libraryUiState = ref.watch(libraryUiProvider);
+    final detailRevision = libraryUiState.detailRevision;
+    final libraryHeaderState = libraryUiState.header;
+    final listState = libraryUiState.list;
     _ensureCategorySnapshot(
       provider: provider,
       structureRevision: listState.structureRevision,

@@ -95,7 +95,7 @@ class _SessionsEmptyState extends StatelessWidget {
   }
 }
 
-class _SessionListCard extends StatefulWidget {
+class _SessionListCard extends ConsumerStatefulWidget {
   const _SessionListCard({
     required this.session,
     required this.provider,
@@ -107,10 +107,10 @@ class _SessionListCard extends StatefulWidget {
   final VoidCallback onOpen;
 
   @override
-  State<_SessionListCard> createState() => _SessionListCardState();
+  ConsumerState<_SessionListCard> createState() => _SessionListCardState();
 }
 
-class _SessionListCardState extends State<_SessionListCard>
+class _SessionListCardState extends ConsumerState<_SessionListCard>
     with SingleTickerProviderStateMixin {
   Future<String?>? _coverPathFuture;
   String? _lastTrackPath;
@@ -143,16 +143,20 @@ class _SessionListCardState extends State<_SessionListCard>
     _updateFutureIfNeeded(cachedOnly: true);
   }
 
-  void _updateFutureIfNeeded({required bool cachedOnly}) {
-    final trackPath = widget.session.currentTrackPath;
-    final currentGen = widget.provider.coverGeneration;
-    if (_lastTrackPath != trackPath ||
+  void _updateFutureIfNeeded({
+    required bool cachedOnly,
+    String? trackPath,
+    int? coverGeneration,
+  }) {
+    final effectiveTrackPath = trackPath ?? widget.session.currentTrackPath;
+    final currentGen = coverGeneration ?? widget.provider.coverGeneration;
+    if (_lastTrackPath != effectiveTrackPath ||
         _lastCoverGeneration != currentGen ||
         _lastCoverWasCachedOnly && !cachedOnly) {
-      _lastTrackPath = trackPath;
+      _lastTrackPath = effectiveTrackPath;
       _lastCoverGeneration = currentGen;
       _lastCoverWasCachedOnly = cachedOnly;
-      final track = widget.provider.trackByPath(trackPath);
+      final track = widget.provider.trackByPath(effectiveTrackPath);
       _coverPathFuture = _coverFutureForTrack(
         widget.provider,
         track,
@@ -190,38 +194,34 @@ class _SessionListCardState extends State<_SessionListCard>
     final cs = Theme.of(context).colorScheme;
     final session = widget.session;
     final provider = widget.provider;
-    final coverGeneration = context.select<AudioProvider, int>(
-      (value) => value.coverGeneration,
-    );
+    final uiState = ref.watch(sessionDetailUiProvider(widget.session.id));
+    final coverGeneration = uiState.coverGeneration;
     final isScrolling = ScrollActivityGate.isScrollingOf(context);
-    final sessionView = context
-        .select<
-          AudioProvider,
-          ({
-            MusicTrack? track,
-            String trackPath,
-            SessionLoopMode loopMode,
-            bool isLoading,
-            bool isPlaying,
-            bool channelSwapEnabled,
-          })
-        >((value) {
-          final currentSession =
-              value.sessionById(widget.session.id) ?? session;
-          return (
-            track: value.trackByPath(currentSession.currentTrackPath),
-            trackPath: currentSession.currentTrackPath,
-            loopMode: currentSession.loopMode,
-            isLoading: currentSession.isLoading,
-            isPlaying: currentSession.state.playing,
-            channelSwapEnabled: currentSession.channelSwapEnabled,
-          );
-        });
-    if (_lastCoverGeneration != coverGeneration) {
+    final detailState = uiState.detail;
+    final trackPath = detailState?.trackPath ?? session.currentTrackPath;
+    final sessionView = (
+      track: provider.trackByPath(trackPath),
+      trackPath: trackPath,
+      loopMode: detailState?.loopMode ?? session.loopMode,
+      isLoading: detailState?.isLoading ?? session.isLoading,
+      isPlaying: detailState?.isPlaying ?? session.state.playing,
+      channelSwapEnabled:
+          detailState?.channelSwapEnabled ?? session.channelSwapEnabled,
+    );
+    if (_lastTrackPath != trackPath ||
+        _lastCoverGeneration != coverGeneration) {
       _lastCoverGeneration = coverGeneration;
-      _updateFutureIfNeeded(cachedOnly: isScrolling);
+      _updateFutureIfNeeded(
+        cachedOnly: isScrolling,
+        trackPath: trackPath,
+        coverGeneration: coverGeneration,
+      );
     } else if (_lastCoverWasCachedOnly && !isScrolling) {
-      _updateFutureIfNeeded(cachedOnly: false);
+      _updateFutureIfNeeded(
+        cachedOnly: false,
+        trackPath: trackPath,
+        coverGeneration: coverGeneration,
+      );
     }
     final track = sessionView.track;
     final displayName =

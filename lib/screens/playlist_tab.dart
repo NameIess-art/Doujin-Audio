@@ -194,6 +194,12 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     final listCacheExtent = (_headerHeight + 404)
         .clamp(_headerHeight + 4, 720.0)
         .toDouble();
+    final isWindows = Platform.isWindows ||
+        MediaQuery.orientationOf(context) == Orientation.landscape;
+    final topExpansion = isWindows ? 0.0 : 150.0;
+    final bottomExpansion = isWindows ? 0.0 : 350.0;
+    final topPadding = topExpansion == 0 ? 4.0 : 154.0;
+    final bottomPadding = bottomExpansion == 0 ? 16.0 : 350.0;
 
     return ScrollActivityGate(
       child: Stack(
@@ -210,11 +216,11 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
             child: ContentBoundReorderArea(
               headerHeight: _headerHeight,
               bottomInset: listBottomInset,
-              topExpansion: 150,
-              bottomExpansion: 350,
+              topExpansion: topExpansion,
+              bottomExpansion: bottomExpansion,
               scrollController: _scrollController,
-              showScrollbar: Platform.isWindows,
-              scrollbarMainAxisMargin: Platform.isWindows ? 12 : 0,
+              showScrollbar: isWindows,
+              scrollbarMainAxisMargin: isWindows ? 12 : 0,
               child: !listState.isInitialized
                   ? const SizedBox.shrink(key: ValueKey('initializing'))
                   : Stack(
@@ -235,15 +241,15 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                               key: const ValueKey('session_list'),
                               scrollController: _scrollController,
                               isDragging: _isReordering,
-                              contentMarginTop: 150,
-                              contentMarginBottom: 350,
+                              contentMarginTop: topExpansion,
+                              contentMarginBottom: bottomExpansion,
                               child: ReorderableListView.builder(
                                 scrollController: _scrollController,
-                                padding: const EdgeInsets.fromLTRB(
+                                padding: EdgeInsets.fromLTRB(
                                   16,
-                                  154,
+                                  topPadding,
                                   16,
-                                  350,
+                                  bottomPadding,
                                 ),
                                 cacheExtent: listCacheExtent,
                                 clipBehavior: Clip.none,
@@ -311,7 +317,10 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
               key: _headerKey,
               icon: Icons.graphic_eq_rounded,
               title: i18n.tr('playback_sessions'),
-              marqueeTitle: !Platform.isWindows,
+              marqueeTitle: i18n.language == AppLanguage.ja && Platform.isAndroid,
+              forceMarqueeTitle: i18n.language == AppLanguage.ja &&
+                  Platform.isAndroid &&
+                  MediaQuery.orientationOf(context) == Orientation.portrait,
               isLoading: !listState.isInitialized,
               subtitle: sessionSummary,
               subtitleFontSize: 11,

@@ -1,15 +1,30 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:just_audio/just_audio.dart';
+import 'package:media_kit/media_kit.dart' as media;
 
 import 'native_playback_bridge.dart';
 import 'native_result.dart';
 import 'path_matcher.dart';
-import 'windows_ffmpeg_service.dart';
+import '../platform/app_platform.dart';
+
+const String _channelSwapAudioFilter =
+    '@channel_swap:lavfi=[pan=stereo|c0=c1|c1=c0]';
+const String _channelSwapAudioFilterLabel = '@channel_swap';
 
 class DartPlaybackBridge implements NativePlaybackBridgeBase {
+  DartPlaybackBridge() {
+    _ensureMediaKitInitialized();
+  }
+
+  static bool _mediaKitInitialized = false;
+
+  static void _ensureMediaKitInitialized() {
+    if (_mediaKitInitialized) return;
+    media.MediaKit.ensureInitialized();
+    _mediaKitInitialized = true;
+  }
+
   final Map<String, _DartPlaybackSession> _sessions = {};
   final StreamController<NativePlaybackSnapshot> _snapshots =
       StreamController<NativePlaybackSnapshot>.broadcast();
@@ -80,9 +95,8 @@ class DartPlaybackBridge implements NativePlaybackBridgeBase {
         initialIndex: queueStartIndex ?? 0,
         initialPosition: startPosition,
       );
-      await session.player.setVolume(_playerVolumeFor(session.volume));
       await _applyLoopAndShuffle(
-        session.player,
+        session,
         repeatOne: repeatOne,
         repeatAll: repeatAll,
         shuffle: shuffle,
@@ -109,7 +123,7 @@ class DartPlaybackBridge implements NativePlaybackBridgeBase {
   Future<NativeResult<NativePlaybackSnapshot>> pause(String sessionId) async {
     final session = _sessions[sessionId];
     if (session == null) return NativeFailure('Unknown session: $sessionId');
-    await session.player.pause();
+    await session.pause();
     return NativeSuccess(_emit(sessionId));
   }
 
@@ -117,7 +131,7 @@ class DartPlaybackBridge implements NativePlaybackBridgeBase {
   Future<NativeResult<NativePlaybackSnapshot>> stop(String sessionId) async {
     final session = _sessions[sessionId];
     if (session == null) return NativeFailure('Unknown session: $sessionId');
-    await session.player.stop();
+    await session.stop();
     return NativeSuccess(_emit(sessionId));
   }
 
@@ -128,7 +142,7 @@ class DartPlaybackBridge implements NativePlaybackBridgeBase {
   ) async {
     final session = _sessions[sessionId];
     if (session == null) return NativeFailure('Unknown session: $sessionId');
-    await session.player.seek(position);
+    await session.seek(position);
     return NativeSuccess(_emit(sessionId));
   }
 
@@ -156,7 +170,7 @@ class DartPlaybackBridge implements NativePlaybackBridgeBase {
     final session = _sessions[sessionId];
     if (session == null) return NativeFailure('Unknown session: $sessionId');
     await _applyLoopAndShuffle(
-      session.player,
+      session,
       repeatOne: repeatOne,
       repeatAll: repeatAll,
       shuffle: shuffle,
@@ -172,11 +186,8 @@ class DartPlaybackBridge implements NativePlaybackBridgeBase {
     final session = _sessions[sessionId];
     if (session == null) return NativeFailure('Unknown session: $sessionId');
     try {
-      if (enabled && Platform.isWindows && !WindowsFfmpegService.isAvailable) {
-        return const NativeFailure('Bundled FFmpeg is unavailable.');
-      }
       await session.setChannelSwapEnabled(enabled);
-      return NativeSuccess(_emit(sessionId));
+      return NativeSuccess(_snapshotFor(sessionId));
     } catch (error) {
       return NativeFailure(error.toString());
     }
@@ -192,9 +203,7 @@ class DartPlaybackBridge implements NativePlaybackBridgeBase {
 
   @override
   Future<NativeResult<void>> pauseAll() async {
-    await Future.wait(
-      _sessions.values.map((session) => session.player.pause()),
-    );
+    await Future.wait(_sessions.values.map((session) => session.pause()));
     for (final sessionId in _sessions.keys) {
       _emit(sessionId);
     }
@@ -238,7 +247,7 @@ class DartPlaybackBridge implements NativePlaybackBridgeBase {
 
   Future<void> _playSession(_DartPlaybackSession session) async {
     try {
-      await session.player.play();
+      await session.play();
     } catch (error) {
       debugPrint('DartPlaybackBridge.play error: $error');
     } finally {
@@ -290,15 +299,16 @@ class DartPlaybackBridge implements NativePlaybackBridgeBase {
   }
 
   Future<void> _applyLoopAndShuffle(
-    AudioPlayer player, {
+    _DartPlaybackSession session, {
     required bool repeatOne,
     required bool repeatAll,
     required bool shuffle,
   }) async {
-    await player.setLoopMode(
-      repeatOne ? LoopMode.one : (repeatAll ? LoopMode.all : LoopMode.off),
+    await session.setPlaybackMode(
+      repeatOne: repeatOne,
+      repeatAll: repeatAll,
+      shuffle: shuffle,
     );
-    await player.setShuffleModeEnabled(shuffle);
   }
 
   NativePlaybackSnapshot _emit(String sessionId) {
@@ -311,7 +321,6 @@ class DartPlaybackBridge implements NativePlaybackBridgeBase {
 
   NativePlaybackSnapshot _snapshotFor(String sessionId) {
     final session = _sessions[sessionId]!;
-    final player = session.player;
     final item = session.currentItem;
     return NativePlaybackSnapshot(
       sessionId: sessionId,
@@ -320,12 +329,12 @@ class DartPlaybackBridge implements NativePlaybackBridgeBase {
       title: item?.title,
       subtitle: item?.subtitle,
       artUri: item?.artUri,
-      playing: player.playing,
-      playWhenReady: player.playing,
-      processingState: _processingStateName(player.processingState),
-      position: player.position,
-      bufferedPosition: player.bufferedPosition,
-      duration: player.duration,
+      playing: session.playing,
+      playWhenReady: session.playWhenReady,
+      processingState: session.processingState,
+      position: session.position,
+      bufferedPosition: session.bufferedPosition,
+      duration: session.duration,
       volume: session.volume,
       boostGain: _boostGainFor(session.volume),
       channelSwapEnabled: session.channelSwapEnabled,
@@ -335,76 +344,92 @@ class DartPlaybackBridge implements NativePlaybackBridgeBase {
 
 class _DartPlaybackSession {
   _DartPlaybackSession({required this.sessionId, required this.onChanged}) {
-    void bind(Stream<dynamic> stream) {
+    void bind<T>(Stream<T> stream, void Function(T value) update) {
       subscriptions.add(
         stream.listen(
-          (_) => _notifyChanged(),
+          (value) {
+            if (suppressPlaybackEvents) return;
+            update(value);
+            _notifyChanged();
+          },
           onError: (e, st) {
             debugPrint('DartPlaybackSession stream error: $e\n$st');
+            error = e.toString();
             _notifyChanged();
           },
         ),
       );
     }
 
-    bind(player.playerStateStream);
-    bind(player.positionStream);
-    bind(player.bufferedPositionStream);
-    bind(player.durationStream);
-    bind(player.currentIndexStream);
+    bind<bool>(player.stream.playing, (value) {
+      playing = value;
+      if (value) {
+        playWhenReady = true;
+        completed = false;
+        error = null;
+      }
+    });
+    bind<bool>(player.stream.completed, (value) {
+      completed = value;
+      if (value) {
+        playing = false;
+        playWhenReady = false;
+      }
+    });
+    bind<bool>(player.stream.buffering, (value) => buffering = value);
+    bind<Duration>(player.stream.position, (value) => position = value);
+    bind<Duration>(player.stream.buffer, (value) => bufferedPosition = value);
+    bind<Duration>(player.stream.duration, (value) {
+      duration = value == Duration.zero ? null : value;
+    });
+    bind<media.Playlist>(player.stream.playlist, (value) {
+      currentIndex = value.index.clamp(0, items.isEmpty ? 0 : items.length - 1);
+    });
+    bind<String>(player.stream.error, (value) {
+      error = value;
+      playing = false;
+      playWhenReady = false;
+      opening = false;
+      debugPrint('DartPlaybackSession media_kit error: $value');
+    });
   }
 
   final String sessionId;
   final VoidCallback onChanged;
-  final AudioPlayer player = AudioPlayer();
+  final media.Player player = media.Player();
   final List<StreamSubscription<dynamic>> subscriptions = [];
   List<_DartPlaybackItem> items = const <_DartPlaybackItem>[];
+  int currentIndex = 0;
   double volume = 1.0;
   bool channelSwapEnabled = false;
-  bool _suppressPlayerEvents = false;
-  bool _sourceRequiresFfmpeg = false;
-  double _sourceBoostGain = 1.0;
-  bool _sourceChannelSwapEnabled = false;
+  bool playing = false;
+  bool playWhenReady = false;
+  bool buffering = false;
+  bool completed = false;
+  bool opening = false;
+  bool suppressPlaybackEvents = false;
+  Duration position = Duration.zero;
+  Duration bufferedPosition = Duration.zero;
+  Duration? duration;
+  String? error;
 
   Future<void> setVolume(double nextVolume, {bool reloadSource = true}) async {
     volume = _normalizeSessionVolume(nextVolume);
-    final needsSourceReload =
-        items.isNotEmpty &&
-        reloadSource &&
-        Platform.isWindows &&
-        WindowsFfmpegService.isAvailable &&
-        (_sourceRequiresFfmpeg != _targetRequiresFfmpegSource ||
-            (_sourceBoostGain - _targetBoostGain).abs() >= 0.01 ||
-            _sourceChannelSwapEnabled != channelSwapEnabled);
-
-    if (needsSourceReload) {
-      final wasPlaying = player.playing;
-      final currentIndex = (player.currentIndex ?? 0).clamp(
-        0,
-        items.isEmpty ? 0 : items.length - 1,
-      );
-      final currentPosition = player.position;
-      await _withPlayerEventsSuppressed(() async {
-        await _setPlayerSources(
-          initialIndex: currentIndex,
-          initialPosition: currentPosition,
-        );
-        await player.setVolume(_playerVolume);
-      });
-      if (wasPlaying) {
-        unawaited(player.play());
-      }
-      onChanged();
-      return;
-    }
-
-    await player.setVolume(_playerVolume);
+    await player.setVolume(volume * 100);
   }
 
   _DartPlaybackItem? get currentItem {
     if (items.isEmpty) return null;
-    final index = player.currentIndex ?? 0;
-    return items[index.clamp(0, items.length - 1)];
+    return items[currentIndex.clamp(0, items.length - 1)];
+  }
+
+  String get processingState {
+    if (error != null) return 'idle';
+    if (opening) return 'loading';
+    if (completed) return 'completed';
+    if (buffering) return 'buffering';
+    if (items.isEmpty) return 'idle';
+    return 'ready';
   }
 
   Future<void> setItems(
@@ -413,115 +438,160 @@ class _DartPlaybackSession {
     required Duration initialPosition,
   }) async {
     items = List.of(nextItems);
-    await _setPlayerSources(
-      initialIndex: initialIndex,
-      initialPosition: initialPosition,
-    );
-  }
+    if (items.isEmpty) {
+      await stop();
+      return;
+    }
 
-  Future<void> setChannelSwapEnabled(bool enabled) async {
-    if (channelSwapEnabled == enabled) return;
-    final wasPlaying = player.playing;
-    final currentIndex = (player.currentIndex ?? 0).clamp(
-      0,
-      items.isEmpty ? 0 : items.length - 1,
-    );
-    final currentPosition = player.position;
-    final previous = channelSwapEnabled;
-    channelSwapEnabled = enabled;
+    opening = true;
+    completed = false;
+    error = null;
+    currentIndex = initialIndex.clamp(0, items.length - 1);
+    onChanged();
+
     try {
-      if (items.isNotEmpty) {
-        await _withPlayerEventsSuppressed(() async {
-          await _setPlayerSources(
-            initialIndex: currentIndex,
-            initialPosition: currentPosition,
-          );
-          await player.setVolume(_playerVolume);
-        });
-        if (wasPlaying) {
-          unawaited(player.play());
-        }
-        onChanged();
+      await player.open(
+        media.Playlist(
+          items.map(_mediaFor).toList(growable: false),
+          index: currentIndex,
+        ),
+        play: false,
+      );
+      await player.setVolume(volume * 100);
+      await _applyChannelSwap();
+      if (initialPosition > Duration.zero) {
+        await player.seek(initialPosition);
       }
-    } catch (_) {
-      channelSwapEnabled = previous;
-      rethrow;
-    }
-  }
-
-  Future<void> _withPlayerEventsSuppressed(
-    Future<void> Function() action,
-  ) async {
-    _suppressPlayerEvents = true;
-    try {
-      await action();
+      position = initialPosition;
     } finally {
-      _suppressPlayerEvents = false;
-    }
-  }
-
-  void _notifyChanged() {
-    if (!_suppressPlayerEvents) {
+      opening = false;
       onChanged();
     }
   }
 
-  Future<void> _setPlayerSources({
-    required int initialIndex,
-    required Duration initialPosition,
-  }) async {
-    if (items.isEmpty) {
-      await player.stop();
-      _sourceRequiresFfmpeg = false;
-      _sourceBoostGain = 1.0;
-      _sourceChannelSwapEnabled = false;
-      return;
+  Future<void> setChannelSwapEnabled(bool enabled) async {
+    if (channelSwapEnabled == enabled) return;
+    final previous = channelSwapEnabled;
+    final previousPlaying = playing;
+    final previousPlayWhenReady = playWhenReady;
+    final previousBuffering = buffering;
+    final previousCompleted = completed;
+    final previousOpening = opening;
+    final previousPosition = position;
+    final previousBufferedPosition = bufferedPosition;
+    final previousDuration = duration;
+    final previousError = error;
+
+    void restorePlaybackState() {
+      playing = previousPlaying;
+      playWhenReady = previousPlayWhenReady;
+      buffering = previousBuffering;
+      completed = previousCompleted;
+      opening = previousOpening;
+      position = previousPosition;
+      bufferedPosition = previousBufferedPosition;
+      duration = previousDuration;
+      error = previousError;
     }
-    if (items.length == 1) {
-      await player.setAudioSource(
-        _audioSourceFor(items.first),
-        initialPosition: initialPosition,
-      );
-      _markSourceConfigApplied();
-      return;
+
+    channelSwapEnabled = enabled;
+    suppressPlaybackEvents = true;
+    try {
+      await _applyChannelSwap();
+      restorePlaybackState();
+    } catch (_) {
+      channelSwapEnabled = previous;
+      await _applyChannelSwap();
+      restorePlaybackState();
+      rethrow;
+    } finally {
+      scheduleMicrotask(() {
+        suppressPlaybackEvents = false;
+      });
     }
-    await player.setAudioSources(
-      items.map(_audioSourceFor).toList(growable: false),
-      initialIndex: initialIndex,
-      initialPosition: initialPosition,
-    );
-    _markSourceConfigApplied();
   }
 
-  AudioSource _audioSourceFor(_DartPlaybackItem item) {
+  void _notifyChanged() {
+    onChanged();
+  }
+
+  Future<void> setPlaybackMode({
+    required bool repeatOne,
+    required bool repeatAll,
+    required bool shuffle,
+  }) async {
+    await player.setPlaylistMode(
+      repeatOne
+          ? media.PlaylistMode.single
+          : repeatAll
+          ? media.PlaylistMode.loop
+          : media.PlaylistMode.none,
+    );
+    await player.setShuffle(shuffle);
+  }
+
+  Future<void> play() async {
+    playWhenReady = true;
+    completed = false;
+    error = null;
+    onChanged();
+    await player.play();
+  }
+
+  Future<void> pause() async {
+    playWhenReady = false;
+    await player.pause();
+    playing = false;
+    onChanged();
+  }
+
+  Future<void> stop() async {
+    playWhenReady = false;
+    playing = false;
+    buffering = false;
+    completed = false;
+    opening = false;
+    position = Duration.zero;
+    bufferedPosition = Duration.zero;
+    duration = null;
+    items = const <_DartPlaybackItem>[];
+    currentIndex = 0;
+    await player.stop();
+    onChanged();
+  }
+
+  Future<void> seek(Duration nextPosition) async {
+    final shouldResume = playWhenReady || playing;
+    completed = false;
+    position = nextPosition;
+    onChanged();
+    await player.seek(nextPosition);
+    if (shouldResume) {
+      playWhenReady = true;
+      await player.play();
+    }
+  }
+
+  media.Media _mediaFor(_DartPlaybackItem item) {
     final itemPath = item.path;
     if (itemPath == null || PathMatcher.isRemoteUri(itemPath)) {
-      return AudioSource.uri(item.uri);
+      return media.Media(item.uri.toString());
     }
-    if (_targetRequiresFfmpegSource) {
-      return _FfmpegStreamAudioSource(
-        itemPath,
-        channelSwap: channelSwapEnabled,
-        volumeGain: _targetBoostGain,
-      );
-    }
-    return AudioSource.uri(Uri.file(itemPath));
+    return media.Media(itemPath);
   }
 
-  void _markSourceConfigApplied() {
-    _sourceRequiresFfmpeg = _targetRequiresFfmpegSource;
-    _sourceBoostGain = _targetBoostGain;
-    _sourceChannelSwapEnabled = channelSwapEnabled;
+  Future<void> _applyChannelSwap() async {
+    final platform = player.platform;
+    if (platform is media.NativePlayer) {
+      await platform.command([
+        'af',
+        channelSwapEnabled ? 'add' : 'remove',
+        channelSwapEnabled
+            ? _channelSwapAudioFilter
+            : _channelSwapAudioFilterLabel,
+      ]);
+    }
   }
-
-  bool get _targetRequiresFfmpegSource =>
-      Platform.isWindows &&
-      WindowsFfmpegService.isAvailable &&
-      (channelSwapEnabled || _targetBoostGain > 1.0);
-
-  double get _playerVolume => _playerVolumeFor(volume);
-
-  double get _targetBoostGain => _boostGainFor(volume);
 
   Future<void> dispose() async {
     for (final subscription in subscriptions) {
@@ -534,10 +604,6 @@ class _DartPlaybackSession {
 
 double _normalizeSessionVolume(double volume) {
   return volume.clamp(0.0, 2.0);
-}
-
-double _playerVolumeFor(double volume) {
-  return _normalizeSessionVolume(volume).clamp(0.0, 1.0);
 }
 
 double _boostGainFor(double volume) {
@@ -562,188 +628,8 @@ class _DartPlaybackItem {
 
 String? _pathFromUri(Uri uri) {
   if (uri.scheme == 'file') {
-    return uri.toFilePath(windows: _isWindowsDriveUri(uri));
+    return uri.toFilePath(windows: isWindowsDriveFileUri(uri));
   }
   if (PathMatcher.isRemoteUri(uri.toString())) return uri.toString();
   return null;
-}
-
-bool _isWindowsDriveUri(Uri uri) {
-  return Platform.isWindows &&
-      uri.pathSegments.isNotEmpty &&
-      RegExp(r'^[A-Za-z]:$').hasMatch(uri.pathSegments.first);
-}
-
-String _processingStateName(ProcessingState state) {
-  switch (state) {
-    case ProcessingState.idle:
-      return 'idle';
-    case ProcessingState.loading:
-      return 'loading';
-    case ProcessingState.buffering:
-      return 'buffering';
-    case ProcessingState.ready:
-      return 'ready';
-    case ProcessingState.completed:
-      return 'completed';
-  }
-}
-
-// added for test
-
-// _LocalFileStreamAudioSource removed
-
-class _FfmpegStreamAudioSource extends StreamAudioSource {
-  _FfmpegStreamAudioSource(
-    this.path, {
-    required this.channelSwap,
-    required this.volumeGain,
-  });
-
-  final String path;
-  final bool channelSwap;
-  final double volumeGain;
-  int? _sourceLength;
-
-  Future<void> _initDuration() async {
-    if (_sourceLength != null) return;
-    try {
-      final result = await Process.run(WindowsFfmpegService.ffprobePath, [
-        '-v',
-        'error',
-        '-show_entries',
-        'format=duration',
-        '-of',
-        'default=noprint_wrappers=1:nokey=1',
-        path,
-      ]);
-      if (result.exitCode == 0) {
-        final seconds = double.tryParse(result.stdout.toString().trim());
-        if (seconds != null) {
-          // WAV 44.1kHz 16-bit stereo = 176400 bytes/sec + 44 byte header
-          _sourceLength = (seconds * 176400).round() + 44;
-        }
-      }
-    } catch (e) {
-      debugPrint('Ffmpeg ffprobe error: $e');
-    }
-    // Fallback if probe fails (forces non-seekable playback but streams work)
-    _sourceLength ??= 2000000000;
-  }
-
-  @override
-  Future<StreamAudioResponse> request([int? start, int? end]) async {
-    await _initDuration();
-
-    final startOffset = start ?? 0;
-    final effectiveEnd = end ?? _sourceLength!;
-
-    // Align start offset to 4-byte boundaries (16-bit stereo frame = 4 bytes)
-    // to avoid sending corrupted PCM data causing Media Foundation to crash/noise.
-    int offsetBytes = startOffset < 44 ? 0 : startOffset - 44;
-    final alignedOffsetBytes = (offsetBytes ~/ 4) * 4;
-    final skipBytes = offsetBytes - alignedOffsetBytes;
-    final seconds = alignedOffsetBytes / 176400;
-
-    final args = <String>['-v', 'quiet'];
-    if (seconds > 0) {
-      args.addAll(['-ss', seconds.toStringAsFixed(3)]);
-    }
-    args.addAll(['-i', path]);
-
-    final filters = <String>[
-      if (channelSwap) 'pan=stereo|c0=c1|c1=c0',
-      if (volumeGain > 1.0) 'volume=${volumeGain.toStringAsFixed(3)}',
-    ];
-    if (filters.isNotEmpty) {
-      args.addAll(['-af', filters.join(',')]);
-    }
-
-    args.addAll([
-      '-vn',
-      '-map_metadata',
-      '-1',
-      '-fflags',
-      '+bitexact',
-      '-flags:a',
-      '+bitexact',
-      '-c:a',
-      'pcm_s16le',
-      '-ar',
-      '44100',
-      '-ac',
-      '2',
-      '-f',
-      's16le',
-      'pipe:1',
-    ]);
-
-    final process = await Process.start(WindowsFfmpegService.ffmpegPath, args);
-    process.stderr.listen((_) {}).onError((_) {});
-
-    Stream<List<int>> generateStream() async* {
-      try {
-        if (startOffset < 44) {
-          final header = _generateWavHeader(_sourceLength! - 44);
-          yield header.sublist(startOffset);
-        }
-        var bytesSkipped = 0;
-        await for (final chunk in process.stdout) {
-          if (bytesSkipped < skipBytes) {
-            final toSkip = skipBytes - bytesSkipped;
-            if (chunk.length <= toSkip) {
-              bytesSkipped += chunk.length;
-              continue;
-            } else {
-              bytesSkipped += toSkip;
-              yield chunk.sublist(toSkip);
-            }
-          } else {
-            yield chunk;
-          }
-        }
-      } finally {
-        process.kill();
-      }
-    }
-
-    return StreamAudioResponse(
-      sourceLength: _sourceLength,
-      contentLength: effectiveEnd - startOffset,
-      offset: startOffset,
-      stream: generateStream(),
-      contentType: 'audio/wav',
-    );
-  }
-
-  Uint8List _generateWavHeader(int dataLength) {
-    final header = Uint8List(44);
-    final view = ByteData.view(header.buffer);
-    header[0] = 82;
-    header[1] = 73;
-    header[2] = 70;
-    header[3] = 70;
-    view.setUint32(4, dataLength + 36, Endian.little);
-    header[8] = 87;
-    header[9] = 65;
-    header[10] = 86;
-    header[11] = 69;
-    header[12] = 102;
-    header[13] = 109;
-    header[14] = 116;
-    header[15] = 32;
-    view.setUint32(16, 16, Endian.little);
-    view.setUint16(20, 1, Endian.little);
-    view.setUint16(22, 2, Endian.little);
-    view.setUint32(24, 44100, Endian.little);
-    view.setUint32(28, 176400, Endian.little);
-    view.setUint16(32, 4, Endian.little);
-    view.setUint16(34, 16, Endian.little);
-    header[36] = 100;
-    header[37] = 97;
-    header[38] = 116;
-    header[39] = 97;
-    view.setUint32(40, dataLength, Endian.little);
-    return header;
-  }
 }

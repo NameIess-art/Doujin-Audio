@@ -1,12 +1,4 @@
-import 'dart:convert';
-import 'dart:io';
-
 import 'package:file_picker/file_picker.dart';
-import 'package:ffmpeg_kit_flutter_new_audio/ffmpeg_kit.dart';
-import 'package:ffmpeg_kit_flutter_new_audio/ffmpeg_kit_config.dart';
-import 'package:ffmpeg_kit_flutter_new_audio/ffprobe_kit.dart';
-import 'package:ffmpeg_kit_flutter_new_audio/return_code.dart';
-import 'package:ffmpeg_kit_flutter_new_audio/statistics.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as path;
@@ -17,7 +9,7 @@ import '../providers/audio_provider.dart';
 import '../providers/audio_provider_riverpod.dart';
 import '../services/audio_state_services.dart';
 import '../services/video_conversion_plan.dart';
-import '../services/windows_ffmpeg_service.dart';
+import '../services/video_conversion_runner.dart';
 import '../widgets/app_feedback.dart';
 import '../widgets/top_page_header.dart';
 
@@ -37,7 +29,7 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
   double _progress = 0.0;
   String _statusMessage = '';
   int _videoDurationMs = 0;
-  Process? _windowsConversionProcess;
+  final VideoConversionRunner _conversionRunner = VideoConversionRunner();
 
   Future<void> _pickVideoFile() async {
     final i18n = context.read<AppLanguageProvider>();
@@ -64,29 +56,7 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
   }
 
   Future<void> _getVideoDuration(String videoPath) async {
-    int durationMs = 0;
-    if (Platform.isWindows) {
-      try {
-        final result = await Process.run(WindowsFfmpegService.ffprobePath, [
-          '-v',
-          'error',
-          '-show_entries',
-          'format=duration',
-          '-of',
-          'default=noprint_wrappers=1:nokey=1',
-          videoPath,
-        ]);
-        if (result.exitCode == 0) {
-          durationMs = parseVideoDurationMs(result.stdout.toString().trim());
-        }
-      } catch (e) {
-        debugPrint('Windows ffprobe error: $e');
-      }
-    } else {
-      final mediaInformation = await FFprobeKit.getMediaInformation(videoPath);
-      final information = mediaInformation.getMediaInformation();
-      durationMs = parseVideoDurationMs(information?.getDuration());
-    }
+    final durationMs = await _conversionRunner.readDurationMs(videoPath);
 
     if (!mounted) return;
     setState(() {
@@ -121,94 +91,41 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
       bitrate: selectedBitrate,
     );
 
-    if (Platform.isWindows) {
-      try {
-        if (!WindowsFfmpegService.isAvailable) {
-          setState(() {
-            _isConverting = false;
-            _statusMessage = i18n.tr('conversion_failed');
-          });
-          return;
-        }
-        _windowsConversionProcess = await Process.start(
-          WindowsFfmpegService.ffmpegPath,
-          ['-y', ...plan.commandArgs],
-        );
-        _windowsConversionProcess!.stderr.transform(utf8.decoder).listen((
-          data,
-        ) {
-          if (!mounted || _videoDurationMs <= 0) return;
-          final timeInMilliseconds = parseFfmpegProgressTimeMs(data);
-          if (timeInMilliseconds <= 0) return;
-          setState(() {
-            _progress = (timeInMilliseconds / _videoDurationMs).clamp(0.0, 1.0);
-            _statusMessage = i18n.tr('converting_percent', {
-              'percent': (_progress * 100).toStringAsFixed(1),
-            });
+    final result = await _conversionRunner.convert(
+      plan: plan,
+      durationMs: _videoDurationMs,
+      onProgress: (progress) {
+        if (!mounted) return;
+        setState(() {
+          _progress = progress;
+          _statusMessage = i18n.tr('converting_percent', {
+            'percent': (_progress * 100).toStringAsFixed(1),
           });
         });
+      },
+    );
+    if (!mounted) return;
 
-        final process = _windowsConversionProcess;
-        final returnCode = await process!.exitCode;
-        if (!mounted) return;
-
-        final wasCanceled = _windowsConversionProcess == null;
-        _windowsConversionProcess = null;
-        if (returnCode == 0 && !wasCanceled) {
-          _onConversionSuccess(i18n, plan.outputPath);
-        } else if (wasCanceled) {
-          setState(() {
-            _isConverting = false;
-            _statusMessage = i18n.tr('conversion_canceled');
-          });
-        } else {
-          setState(() {
-            _isConverting = false;
-            _statusMessage = i18n.tr('conversion_failed');
-          });
-        }
-      } catch (e) {
-        if (!mounted) return;
+    switch (result.status) {
+      case VideoConversionStatus.success:
+        _onConversionSuccess(i18n, plan.outputPath);
+        break;
+      case VideoConversionStatus.canceled:
+        setState(() {
+          _isConverting = false;
+          _statusMessage = i18n.tr('conversion_canceled');
+        });
+        break;
+      case VideoConversionStatus.failed:
         setState(() {
           _isConverting = false;
           _statusMessage = i18n.tr('conversion_failed');
         });
-        debugPrint('Windows FFMPEG Error: $e');
-      }
-    } else {
-      FFmpegKitConfig.enableStatisticsCallback((Statistics statistics) {
-        if (!mounted) return;
-        if (_videoDurationMs > 0) {
-          final timeInMilliseconds = statistics.getTime();
-          setState(() {
-            _progress = (timeInMilliseconds / _videoDurationMs).clamp(0.0, 1.0);
-            _statusMessage = i18n.tr('converting_percent', {
-              'percent': (_progress * 100).toStringAsFixed(1),
-            });
-          });
+        final errorMessage = result.errorMessage;
+        if (errorMessage != null && errorMessage.isNotEmpty) {
+          debugPrint('FFMPEG Error: $errorMessage');
         }
-      });
-
-      await FFmpegKit.executeAsync(plan.command, (session) async {
-        final returnCode = await session.getReturnCode();
-        if (!mounted) return;
-
-        if (ReturnCode.isSuccess(returnCode)) {
-          _onConversionSuccess(i18n, plan.outputPath);
-        } else if (ReturnCode.isCancel(returnCode)) {
-          setState(() {
-            _isConverting = false;
-            _statusMessage = i18n.tr('conversion_canceled');
-          });
-        } else {
-          final logs = await session.getLogsAsString();
-          setState(() {
-            _isConverting = false;
-            _statusMessage = i18n.tr('conversion_failed');
-          });
-          debugPrint('FFMPEG Error: $logs');
-        }
-      });
+        break;
     }
   }
 
@@ -231,16 +148,19 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
 
   void _cancelConversion() {
     final i18n = context.read<AppLanguageProvider>();
-    if (Platform.isWindows) {
-      _windowsConversionProcess?.kill();
-      _windowsConversionProcess = null;
-    } else {
-      FFmpegKit.cancel();
-    }
+    _conversionRunner.cancel();
     setState(() {
       _isConverting = false;
       _statusMessage = i18n.tr('canceling_conversion');
     });
+  }
+
+  @override
+  void dispose() {
+    if (_isConverting) {
+      _conversionRunner.cancel();
+    }
+    super.dispose();
   }
 
   @override

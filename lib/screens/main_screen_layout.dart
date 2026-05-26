@@ -13,7 +13,8 @@ extension _MainScreenLayout on _MainScreenState {
               ? const EdgeInsets.fromLTRB(24, 22, 24, 22)
               : const EdgeInsets.fromLTRB(12, 12, 16, 12))
         : EdgeInsets.zero;
-    final isWindows = Platform.isWindows;
+    final isWindows = Platform.isWindows ||
+        MediaQuery.orientationOf(context) == Orientation.landscape;
 
     Widget pageShell(int actualIndex) {
       final Widget page = TickerMode(
@@ -271,7 +272,8 @@ extension _MainScreenLayout on _MainScreenState {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
-    final isWindows = Platform.isWindows;
+    final isWindows = Platform.isWindows ||
+        MediaQuery.orientationOf(context) == Orientation.landscape;
 
     return Container(
       width: 292,

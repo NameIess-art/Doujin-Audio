@@ -349,7 +349,8 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     final headerContentHeight = topTotalHeight + headerControlsFullHeight;
     // Remove the extra 96px to make content flush with the bottom dock.
     final listBottomInset = bottomInset;
-    final isWindows = Platform.isWindows;
+    final isWindows = Platform.isWindows ||
+        MediaQuery.orientationOf(context) == Orientation.landscape;
     final listTopExpansion = isWindows ? 0.0 : 150.0;
     final listBottomExpansion = isWindows ? 0.0 : 350.0;
     final listTopPadding = 4 + headerControlsFullHeight + listTopExpansion;

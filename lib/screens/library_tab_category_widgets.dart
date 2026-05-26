@@ -629,7 +629,6 @@ class _AudioLibraryCategoryEntryTitle extends StatelessWidget {
               LibraryLikeTwoLineMarqueeText(
                 text: entry.title,
                 style: titleStyle,
-                enableMarquee: false,
               ),
               const SizedBox(height: 5),
               _LibrarySecondaryInfoLine(

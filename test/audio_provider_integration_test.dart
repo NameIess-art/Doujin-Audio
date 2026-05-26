@@ -76,6 +76,99 @@ void main() {
     test('trackByPath returns null for unknown path', () {
       expect(provider.trackByPath('/nonexistent/path.mp3'), isNull);
     });
+
+    test(
+      'channel swap keeps current playback state when native reports transient completion',
+      () async {
+        var setChannelSwapCalls = 0;
+        bool? lastChannelSwapEnabled;
+
+        final tempDir = await Directory.systemTemp.createTemp(
+          'channel_swap_state_',
+        );
+        addTearDown(() async {
+          if (await tempDir.exists()) {
+            await tempDir.delete(recursive: true);
+          }
+        });
+        final trackFile = File(
+          '${tempDir.path}${Platform.pathSeparator}track.mp3',
+        );
+        await trackFile.writeAsBytes(const <int>[1, 2, 3]);
+        final track = MusicTrack(
+          path: trackFile.path,
+          displayName: 'track',
+          groupKey: tempDir.path,
+          groupTitle: 'Folder',
+          groupSubtitle: tempDir.path,
+          isSingle: false,
+        );
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+              switch (call.method) {
+                case NativePlaybackMethod.prepareSession:
+                  return <String, Object?>{'ok': true, 'value': null};
+                case NativePlaybackMethod.setChannelSwap:
+                  setChannelSwapCalls++;
+                  final args = call.arguments as Map<Object?, Object?>;
+                  lastChannelSwapEnabled = args['enabled'] as bool?;
+                  return <String, Object?>{
+                    'ok': true,
+                    'value': <String, Object?>{
+                      'sessionId': args['sessionId'] as String,
+                      'uri': Uri.file(trackFile.path).toString(),
+                      'path': trackFile.path,
+                      'title': 'track',
+                      'playing': false,
+                      'playWhenReady': false,
+                      'processingState': 'completed',
+                      'positionMs': 0,
+                      'bufferedPositionMs': 0,
+                      'durationMs': const Duration(minutes: 3).inMilliseconds,
+                      'volume': 1.0,
+                      'boostGain': 1.0,
+                      'channelSwap': true,
+                    },
+                  };
+                default:
+                  return <String, Object?>{'ok': true, 'value': null};
+              }
+            });
+        provider.addTracks(<MusicTrack>[track], notify: false, persist: false);
+        await provider.spawnSession(track, autoPlay: false);
+
+        final session = provider.activeSessions.single;
+        for (var i = 0; i < 20; i++) {
+          if (session.loadedPath != null && !session.isLoading) break;
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+        }
+        session.applyNativeSnapshot(
+          NativePlaybackSnapshot(
+            sessionId: session.id,
+            uri: Uri.file(trackFile.path).toString(),
+            path: trackFile.path,
+            title: 'track',
+            playing: true,
+            playWhenReady: true,
+            processingState: 'ready',
+            position: const Duration(seconds: 42),
+            bufferedPosition: const Duration(seconds: 45),
+            duration: const Duration(minutes: 3),
+            volume: 1.0,
+            boostGain: 1.0,
+            channelSwapEnabled: false,
+          ),
+        );
+        await provider.setSessionChannelSwap(session.id, true);
+
+        expect(setChannelSwapCalls, 1);
+        expect(lastChannelSwapEnabled, isTrue);
+        expect(session.channelSwapEnabled, isTrue);
+        expect(session.state.playing, isTrue);
+        expect(session.state.processingState, ProcessingState.ready);
+        expect(session.position, const Duration(seconds: 42));
+      },
+    );
   });
 
   group('custom queue session restore', () {

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as path;
 
@@ -1045,7 +1046,7 @@ class AsmrLibraryController extends ChangeNotifier {
         continue;
       }
       result.add(category);
-      if (result.length == 5) {
+      if (!Platform.isWindows && result.length == 5) {
         break;
       }
     }

@@ -1,3 +1,4 @@
+import 'dart:io';
 import '../models/asmr_models.dart';
 import 'app_preferences.dart';
 
@@ -94,7 +95,7 @@ abstract final class AsmrPreferences {
         continue;
       }
       result.add(value);
-      if (result.length == 5) {
+      if (!Platform.isWindows && result.length == 5) {
         break;
       }
     }

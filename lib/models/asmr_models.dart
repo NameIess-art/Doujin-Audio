@@ -382,7 +382,8 @@ class AsmrTrackFile {
 
   bool get isFolder => type == 'folder';
   bool get isAudio =>
-      type == 'audio' && _asmrAudioExtensions.contains(resolvedExtension);
+      (type == 'audio' || type == 'video') &&
+      _asmrAudioExtensions.contains(resolvedExtension);
   bool get isSubtitle =>
       !isFolder && _asmrSubtitleExtensions.contains(resolvedExtension);
   bool get hasBrowsableContent =>
@@ -404,8 +405,13 @@ class AsmrTrackFile {
     String? remoteMetadataKind,
     Map<String, Object?>? remoteMetadata,
   }) {
-    final playbackUrl = (lowQualityUrl ?? streamUrl ?? downloadUrl ?? '')
-        .trim();
+    var playbackUrl = lowQualityUrl?.trim() ?? '';
+    if (playbackUrl.isEmpty) {
+      playbackUrl = streamUrl?.trim() ?? '';
+    }
+    if (playbackUrl.isEmpty) {
+      playbackUrl = downloadUrl?.trim() ?? '';
+    }
     return MusicTrack(
       path: playbackUrl,
       displayName: displayTitle,
@@ -462,6 +468,13 @@ const Set<String> _asmrAudioExtensions = <String>{
   '.opus',
   '.wav',
   '.flac',
+  '.mp4',
+  '.m4v',
+  '.webm',
+  '.mkv',
+  '.avi',
+  '.mov',
+  '.wmv',
 };
 
 const Set<String> _asmrSubtitleExtensions = <String>{

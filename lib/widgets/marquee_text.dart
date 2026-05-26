@@ -9,6 +9,7 @@ class MarqueeText extends StatefulWidget {
   final Duration pauseDuration;
   final double scrollSpeed;
   final double edgePadding;
+  final bool forceMarquee;
 
   const MarqueeText({
     super.key,
@@ -17,6 +18,7 @@ class MarqueeText extends StatefulWidget {
     this.pauseDuration = const Duration(milliseconds: 1500),
     this.scrollSpeed = 30.0,
     this.edgePadding = 8.0,
+    this.forceMarquee = false,
   });
 
   @override
@@ -145,12 +147,32 @@ class _MarqueeTextState extends State<MarqueeText> {
         ).createShader(bounds);
       },
       blendMode: BlendMode.dstIn,
-      child: SingleChildScrollView(
-        controller: _scrollController,
-        scrollDirection: Axis.horizontal,
-        physics: const NeverScrollableScrollPhysics(),
-        padding: EdgeInsets.symmetric(horizontal: widget.edgePadding),
-        child: Text(widget.text, style: widget.style),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          String displayText = widget.text;
+          if (widget.forceMarquee && constraints.maxWidth < double.infinity) {
+            final textPainter = TextPainter(
+              text: TextSpan(text: widget.text, style: widget.style),
+              textDirection: Directionality.of(context),
+              maxLines: 1,
+            )..layout();
+            if (textPainter.width > 0 && textPainter.width <= constraints.maxWidth) {
+              final duplicateCount = (constraints.maxWidth / textPainter.width).ceil() + 2;
+              final spacedText = '${widget.text}        ';
+              displayText = spacedText * duplicateCount;
+            }
+          }
+          return NotificationListener<ScrollNotification>(
+            onNotification: (_) => true,
+            child: SingleChildScrollView(
+              controller: _scrollController,
+              scrollDirection: Axis.horizontal,
+              physics: const NeverScrollableScrollPhysics(),
+              padding: EdgeInsets.symmetric(horizontal: widget.edgePadding),
+              child: Text(displayText, style: widget.style),
+            ),
+          );
+        },
       ),
     );
   }

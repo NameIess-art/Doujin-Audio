@@ -306,7 +306,7 @@ const Map<String, String> appLanguageEn = {
       'Could not open exact alarm settings. Please change it manually in system settings.',
   'clear_app_cache': 'Clear app cache',
   'clear_app_cache_subtitle':
-      'Delete cached covers, video frames, update APKs, and download temp files.',
+      'Delete cached covers, video frames, update packages, and download temp files.',
   'clear_app_cache_confirm':
       'This clears cache files created by the app. Library source files will not be deleted. Continue?',
   'app_cache_cleaned': 'Cleared {size} of cache.',
@@ -317,7 +317,7 @@ const Map<String, String> appLanguageEn = {
   'check': 'Check',
   'check_updates': 'Check for updates',
   'check_updates_subtitle':
-      'Automatically check GitHub Releases and download the latest APK.',
+      'Automatically check GitHub Releases and download the latest update package.',
   'auto_check_updates': 'Automatically check for updates',
   'auto_check_updates_subtitle':
       'When enabled, checks on app launch and only prompts when a new version is available.',
@@ -349,7 +349,7 @@ const Map<String, String> appLanguageEn = {
   'bitrate_not_used':
       '{format} uses built-in encoding parameters. Bitrate setting is ignored.',
   'about': 'About',
-  'app_version': 'NL Audio v0.9.6',
+  'app_version': 'NL Audio v0.9.7',
   'app_desc': 'Supports concurrent sessions and high-fidelity audio playback.',
   'language': 'Language',
   'language_subtitle': 'Switch UI language',

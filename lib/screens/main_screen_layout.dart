@@ -33,22 +33,30 @@ extension _MainScreenLayout on _MainScreenState {
                     decoration: BoxDecoration(
                       color: isWindows ? cs.surface : cs.surfaceContainerLow,
                       borderRadius: isWindows
-                          ? const BorderRadius.only(topLeft: Radius.circular(8))
+                          ? const BorderRadius.only(
+                              topLeft: Radius.circular(12),
+                            )
                           : radius,
                       border: isWindows
                           ? Border(
                               left: BorderSide(
-                                color: cs.outlineVariant.withValues(alpha: 0.5),
+                                color: cs.outlineVariant.withValues(alpha: 0.25),
                               ),
                               top: BorderSide(
-                                color: cs.outlineVariant.withValues(alpha: 0.5),
-                              ),
+                                color: cs.outlineVariant.withValues(alpha: 0.25),
+                              )
                             )
                           : Border.all(
                               color: cs.outlineVariant.withValues(alpha: 0.85),
                             ),
                       boxShadow: isWindows
-                          ? null
+                          ? [
+                              BoxShadow(
+                                color: cs.shadow.withValues(alpha: 0.04),
+                                blurRadius: 16,
+                                offset: const Offset(-2, -2),
+                              ),
+                            ]
                           : [
                               BoxShadow(
                                 color: cs.shadow.withValues(alpha: 0.1),
@@ -59,7 +67,9 @@ extension _MainScreenLayout on _MainScreenState {
                     ),
                     child: ClipRRect(
                       borderRadius: isWindows
-                          ? const BorderRadius.only(topLeft: Radius.circular(8))
+                          ? const BorderRadius.only(
+                              topLeft: Radius.circular(12),
+                            )
                           : radius,
                       clipBehavior: Clip.hardEdge,
                       child: ColoredBox(
@@ -75,7 +85,7 @@ extension _MainScreenLayout on _MainScreenState {
     }
 
     return PageView.builder(
-      key: _pageViewKey,
+      key: ValueKey<int>(_metricsEpoch),
       controller: _pageController,
       clipBehavior: Clip.none,
       physics: const _TelegramLikeScrollPhysics(
@@ -276,11 +286,13 @@ extension _MainScreenLayout on _MainScreenState {
         MediaQuery.orientationOf(context) == Orientation.landscape;
 
     return Container(
-      width: 292,
+      width: isWindows ? 260 : 292,
       margin: isWindows
           ? EdgeInsets.zero
           : const EdgeInsets.fromLTRB(16, 18, 8, 18),
-      padding: const EdgeInsets.fromLTRB(10, 16, 10, 10),
+      padding: isWindows
+          ? const EdgeInsets.fromLTRB(16, 16, 16, 16)
+          : const EdgeInsets.fromLTRB(10, 16, 10, 10),
       decoration: BoxDecoration(
         color: isWindows ? Colors.transparent : cs.surfaceContainerLow,
         borderRadius: isWindows ? BorderRadius.zero : BorderRadius.circular(26),
@@ -336,11 +348,12 @@ extension _MainScreenLayout on _MainScreenState {
               data: Theme.of(context).copyWith(
                 navigationRailTheme: Theme.of(context).navigationRailTheme
                     .copyWith(
-                      indicatorColor: _currentIndex == 0
-                          ? (isDark
-                                ? const Color(0xFF1E3A8A)
-                                : const Color(0xFFDBEAFE))
-                          : null,
+                      indicatorShape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      indicatorColor: isDark
+                          ? cs.primary.withValues(alpha: 0.15)
+                          : cs.primaryContainer.withValues(alpha: 0.6),
                     ),
               ),
               child: NavigationRail(
@@ -348,9 +361,9 @@ extension _MainScreenLayout on _MainScreenState {
                 selectedIndex: _currentIndex,
                 onDestinationSelected: _switchPage,
                 extended: true,
-                minExtendedWidth: 256,
+                minExtendedWidth: isWindows ? 228 : 256,
                 useIndicator: true,
-                groupAlignment: 0.0, // Center aligned for better layout
+                groupAlignment: isWindows ? -1.0 : 0.0, // Top aligned for desktop apps
                 destinations: _MainScreenState._destinations
                     .asMap()
                     .entries
@@ -371,12 +384,15 @@ extension _MainScreenLayout on _MainScreenState {
                         ),
                         label: Text(
                           i18n.tr(item.labelKey),
-                          style: isSelected && isAsmr
+                          style: isSelected
                               ? TextStyle(
-                                  color: asmrBlue,
+                                  color: isAsmr ? asmrBlue : cs.primary,
                                   fontWeight: FontWeight.w800,
                                 )
-                              : null,
+                              : TextStyle(
+                                  color: cs.onSurfaceVariant.withValues(alpha: 0.8),
+                                  fontWeight: FontWeight.w600,
+                                ),
                         ),
                       );
                     })

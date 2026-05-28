@@ -4,7 +4,12 @@ on:
   push:
     branches:
       - main
+    tags:
+      - 'v*'
   pull_request:
+
+permissions:
+  contents: read
 
 jobs:
   verify:
@@ -40,3 +45,85 @@ jobs:
 
       - name: Build split release APKs
         run: flutter build apk --release --split-per-abi
+
+  release-android:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build split release APKs
+        run: flutter build apk --release --split-per-abi
+
+      - name: Upload Android release APKs
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+
+  release-windows:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs:
+      - verify
+      - release-android
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Enable Windows desktop
+        run: flutter config --enable-windows-desktop
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Download Windows FFmpeg tools
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $zip = Join-Path $env:RUNNER_TEMP 'ffmpeg.zip'
+          $extract = Join-Path $env:RUNNER_TEMP 'ffmpeg'
+          Invoke-WebRequest `
+            -Uri 'https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip' `
+            -OutFile $zip
+          Expand-Archive -LiteralPath $zip -DestinationPath $extract -Force
+          $bin = Get-ChildItem -LiteralPath $extract -Directory |
+            Select-Object -First 1 |
+            ForEach-Object { Join-Path $_.FullName 'bin' }
+          New-Item -ItemType Directory -Force -Path assets\ffmpeg | Out-Null
+          Copy-Item -LiteralPath (Join-Path $bin 'ffmpeg.exe') -Destination assets\ffmpeg\ffmpeg.exe -Force
+          Copy-Item -LiteralPath (Join-Path $bin 'ffprobe.exe') -Destination assets\ffmpeg\ffprobe.exe -Force
+
+      - name: Build Windows release
+        run: flutter build windows
+
+      - name: Create Windows ZIP
+        shell: pwsh
+        run: |
+          $zipName = "NamelessAudio-windows-x64-${{ github.ref_name }}.zip"
+          Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath $zipName -Force
+
+      - name: Upload Windows release ZIP
+        uses: softprops/action-gh-release@v2
+        with:
+          files: NamelessAudio-windows-x64-${{ github.ref_name }}.zip

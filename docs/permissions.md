@@ -37,7 +37,7 @@ If notification permission is denied or rich playback notifications are disabled
 
 ## App Updates
 
-- `INTERNET`: checks GitHub Releases and downloads update APKs.
+- `INTERNET`: checks GitHub Releases and downloads update packages.
 - `REQUEST_INSTALL_PACKAGES`: allows the in-app update flow to hand a downloaded APK to the Android installer.
 
 If this permission is denied, users can still install updates manually from the release APK.

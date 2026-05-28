@@ -34,21 +34,21 @@ class ThemeProvider with ChangeNotifier {
         onSecondary: Colors.white,
         tertiary: const Color(0xFF7A6C93),
         onTertiary: Colors.white,
-        surface: const Color(0xFFF7F4EE),
-        onSurface: const Color(0xFF1A1820),
-        surfaceContainerHighest: const Color(0xFFE2DBD1),
-        surfaceContainerHigh: const Color(0xFFEEE8DF),
-        surfaceContainer: const Color(0xFFF3EEE6),
-        surfaceContainerLow: const Color(0xFFFCFAF6),
+        surface: const Color(0xFFFAFAFA),
+        onSurface: const Color(0xFF1A1A1E),
+        surfaceContainerHighest: const Color(0xFFE4E4E9),
+        surfaceContainerHigh: const Color(0xFFEBEBEF),
+        surfaceContainer: const Color(0xFFF0F0F3),
+        surfaceContainerLow: const Color(0xFFF7F7F8),
         primaryContainer: const Color(0xFFF9D7DE),
         onPrimaryContainer: const Color(0xFF521D29),
         secondaryContainer: const Color(0xFFDEE5EF),
         onSecondaryContainer: const Color(0xFF202835),
         tertiaryContainer: const Color(0xFFE6DDF4),
         onTertiaryContainer: const Color(0xFF2B213A),
-        outline: const Color(0xFF8B7F78),
-        outlineVariant: const Color(0xFFD8CEC3),
-        shadow: const Color(0xFF211B1A),
+        outline: const Color(0xFF8B8891),
+        outlineVariant: const Color(0xFFD4D4D8),
+        shadow: const Color(0xFF18181B),
       );
 
   static final ColorScheme _darkScheme =
@@ -62,24 +62,24 @@ class ThemeProvider with ChangeNotifier {
         onSecondary: const Color(0xFF171D27),
         tertiary: const Color(0xFFD7C8F1),
         onTertiary: const Color(0xFF20182C),
-        surface: const Color(0xFF0F0F10),
-        onSurface: const Color(0xFFF6F1EA),
-        surfaceDim: const Color(0xFF0B0B0C),
+        surface: const Color(0xFF121214),
+        onSurface: const Color(0xFFFAFAFA),
+        surfaceDim: const Color(0xFF0E0E10),
         surfaceBright: const Color(0xFF2C2C32),
-        surfaceContainerLowest: const Color(0xFF080809),
-        surfaceContainerLow: const Color(0xFF161619),
-        surfaceContainer: const Color(0xFF1D1D21),
-        surfaceContainerHigh: const Color(0xFF242429),
-        surfaceContainerHighest: const Color(0xFF2B2B31),
-        onSurfaceVariant: const Color(0xFFC7C2CC),
+        surfaceContainerLowest: const Color(0xFF0A0A0B),
+        surfaceContainerLow: const Color(0xFF18181B),
+        surfaceContainer: const Color(0xFF202024),
+        surfaceContainerHigh: const Color(0xFF27272C),
+        surfaceContainerHighest: const Color(0xFF323238),
+        onSurfaceVariant: const Color(0xFFA1A1AA),
         primaryContainer: const Color(0xFF4D2430),
         onPrimaryContainer: const Color(0xFFFFD9E0),
         secondaryContainer: const Color(0xFF2B3340),
         onSecondaryContainer: const Color(0xFFE6EBF5),
         tertiaryContainer: const Color(0xFF372B4B),
         onTertiaryContainer: const Color(0xFFF2E8FF),
-        outline: const Color(0xFF8B8891),
-        outlineVariant: const Color(0xFF3D3D44),
+        outline: const Color(0xFF71717A),
+        outlineVariant: const Color(0xFF3F3F46),
         shadow: Colors.black,
       );
 
@@ -165,9 +165,9 @@ class ThemeProvider with ChangeNotifier {
         shadowColor: scheme.shadow.withValues(alpha: 0.12),
         surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(isDesktop ? 16 : 24),
           side: BorderSide(
-            color: scheme.outlineVariant.withValues(alpha: 0.82),
+            color: scheme.outlineVariant.withValues(alpha: isDesktop ? 0.4 : 0.82),
           ),
         ),
       ),
@@ -284,8 +284,8 @@ class ThemeProvider with ChangeNotifier {
       ),
       scrollbarTheme: ScrollbarThemeData(
         thickness: WidgetStateProperty.resolveWith((states) {
-          if (states.contains(WidgetState.hovered)) return 8;
-          return 4;
+          if (states.contains(WidgetState.hovered)) return isDesktop ? 6 : 8;
+          return isDesktop ? 3 : 4;
         }),
         thumbColor: WidgetStateProperty.resolveWith((states) {
           if (states.contains(WidgetState.dragged)) {

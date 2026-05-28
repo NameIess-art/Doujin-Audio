@@ -314,15 +314,15 @@ void main() {
 
     test('library exclusion matcher handles tracks and folder ancestors', () {
       final matcher = LibraryExclusionMatcher(
-        libraryPath: r'C:\Music',
-        excludedTrackPaths: <String>[r'C:\Music\Singles\skip.mp3'],
-        excludedFolderPaths: <String>[r'C:\Music\Albums\Muted'],
+        libraryPath: '/Music',
+        excludedTrackPaths: <String>['/Music/Singles/skip.mp3'],
+        excludedFolderPaths: <String>['/Music/Albums/Muted'],
       );
 
-      expect(matcher.isExcluded(r'C:\Music\Singles\skip.mp3'), isTrue);
-      expect(matcher.isExcluded(r'C:\Music\Albums\Muted\01.mp3'), isTrue);
-      expect(matcher.isExcluded(r'C:\Music\Albums\Muted'), isTrue);
-      expect(matcher.isExcluded(r'C:\Music\Albums\Active\01.mp3'), isFalse);
+      expect(matcher.isExcluded('/Music/Singles/skip.mp3'), isTrue);
+      expect(matcher.isExcluded('/Music/Albums/Muted/01.mp3'), isTrue);
+      expect(matcher.isExcluded('/Music/Albums/Muted'), isTrue);
+      expect(matcher.isExcluded('/Music/Albums/Active/01.mp3'), isFalse);
     });
 
     test('library exclusion matcher handles synthetic content URI folders', () {

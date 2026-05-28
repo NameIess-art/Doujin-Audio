@@ -53,3 +53,6 @@ app.*.map.json
 # Local deployment scripts
 script/
 assets/ffmpeg/*.exe
+
+# Local agent instructions
+AGENTS.md

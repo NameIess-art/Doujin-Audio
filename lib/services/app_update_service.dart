@@ -86,22 +86,26 @@ class AppUpdateService {
       final assets = (data['assets'] as List<dynamic>? ?? const [])
           .whereType<Map<String, dynamic>>()
           .toList(growable: false);
-      final apkAsset = _selectApkAsset(assets);
-      if (apkAsset == null) {
+      final updateAsset = _selectUpdateAsset(assets);
+      if (updateAsset == null) {
         throw const FormatException(
-          'No APK asset was found in the latest release.',
+          'No update asset was found in the latest release.',
         );
       }
-      final assetUrl = apkAsset['browser_download_url'] as String? ?? '';
+      final assetUrl = updateAsset['browser_download_url'] as String? ?? '';
       if (assetUrl.isEmpty) {
-        throw const FormatException('APK asset does not have a download URL.');
+        throw const FormatException(
+          'Update asset does not have a download URL.',
+        );
       }
       return AppUpdateInfo(
         currentVersion: currentVersion,
         latestVersionName: latestVersionName,
         tagName: tagName,
         releaseName: data['name'] as String?,
-        assetName: apkAsset['name'] as String? ?? 'NamelessAudio-$tagName.apk',
+        assetName:
+            updateAsset['name'] as String? ??
+            'NamelessAudio-$tagName${Platform.isWindows ? '.zip' : '.apk'}',
         assetUrl: assetUrl,
         releaseUrl:
             data['html_url'] as String? ??
@@ -126,7 +130,7 @@ class AppUpdateService {
       final buildNumber = (raw?['buildNumber'] as num?)?.toInt() ?? 0;
       return AppVersionInfo(versionName: versionName, buildNumber: buildNumber);
     } catch (_) {
-      return const AppVersionInfo(versionName: '0.9.6', buildNumber: 906);
+      return const AppVersionInfo(versionName: '0.9.7', buildNumber: 907);
     }
   }
 
@@ -153,7 +157,7 @@ class AppUpdateService {
       );
       final response = await request.close();
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        throw const HttpException('APK download failed.');
+        throw const HttpException('Update download failed.');
       }
 
       final total = response.contentLength;
@@ -183,6 +187,7 @@ class AppUpdateService {
   }
 
   static Future<bool> canInstallUnknownApps() async {
+    if (!Platform.isAndroid) return true;
     try {
       return await _channel.invokeMethod<bool>(
             UpdateMethod.canInstallUnknownApps,
@@ -194,6 +199,7 @@ class AppUpdateService {
   }
 
   static Future<bool> openInstallPermissionSettings() async {
+    if (!Platform.isAndroid) return false;
     try {
       return await _channel.invokeMethod<bool>(
             UpdateMethod.openInstallPermissionSettings,
@@ -204,7 +210,8 @@ class AppUpdateService {
     }
   }
 
-  static Future<UpdateInstallResult> installApk(File file) async {
+  static Future<UpdateInstallResult> installUpdate(File file) async {
+    if (Platform.isWindows) return _installWindowsZip(file);
     final raw = await _channel.invokeMapMethod<String, Object?>(
       UpdateMethod.installApk,
       {'path': file.path},
@@ -214,6 +221,13 @@ class AppUpdateService {
       needsPermission: raw?['needsPermission'] == true,
       message: raw?['message'] as String?,
     );
+  }
+
+  static Map<String, dynamic>? _selectUpdateAsset(
+    List<Map<String, dynamic>> assets,
+  ) {
+    if (Platform.isWindows) return _selectWindowsZipAsset(assets);
+    return _selectApkAsset(assets);
   }
 
   static Map<String, dynamic>? _selectApkAsset(
@@ -237,6 +251,77 @@ class AppUpdateService {
       return score(left).compareTo(score(right));
     });
     return apkAssets.first;
+  }
+
+  static Map<String, dynamic>? _selectWindowsZipAsset(
+    List<Map<String, dynamic>> assets,
+  ) {
+    final zipAssets = assets
+        .where((asset) {
+          final name = (asset['name'] as String? ?? '').toLowerCase();
+          return name.endsWith('.zip');
+        })
+        .toList(growable: false);
+    if (zipAssets.isEmpty) return null;
+    zipAssets.sort((left, right) {
+      int score(Map<String, dynamic> asset) {
+        final name = (asset['name'] as String? ?? '').toLowerCase();
+        var score = 10;
+        if (name.contains('windows')) score -= 6;
+        if (name.contains('win')) score -= 4;
+        if (name.contains('x64') || name.contains('amd64')) score -= 2;
+        if (name.contains('symbols') || name.contains('debug')) score += 6;
+        return score;
+      }
+
+      return score(left).compareTo(score(right));
+    });
+    return zipAssets.first;
+  }
+
+  static Future<UpdateInstallResult> _installWindowsZip(File file) async {
+    if (!await file.exists() || await file.length() <= 0) {
+      return const UpdateInstallResult(
+        ok: false,
+        needsPermission: false,
+        message: 'Update ZIP does not exist.',
+      );
+    }
+
+    final exePath = Platform.resolvedExecutable;
+    final installDir = File(exePath).parent.path;
+    final tempDir = await getTemporaryDirectory();
+    final script = File(
+      path.join(
+        tempDir.path,
+        'nameless_audio_windows_update_${DateTime.now().millisecondsSinceEpoch}.ps1',
+      ),
+    );
+    await script.writeAsString(_windowsUpdateScript);
+
+    try {
+      await Process.start('powershell.exe', [
+        '-NoProfile',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-WindowStyle',
+        'Hidden',
+        '-File',
+        script.path,
+        file.path,
+        installDir,
+        exePath,
+        pid.toString(),
+      ], mode: ProcessStartMode.detached);
+      Timer(const Duration(milliseconds: 500), () => exit(0));
+      return const UpdateInstallResult(ok: true, needsPermission: false);
+    } catch (error) {
+      return UpdateInstallResult(
+        ok: false,
+        needsPermission: false,
+        message: error.toString(),
+      );
+    }
   }
 
   static String _versionNameFromTag(String tagName) {
@@ -271,12 +356,68 @@ class AppUpdateService {
   }
 
   static String _safeFileName(String value) {
+    final extension = path.extension(value).toLowerCase();
+    final updateExtension = extension == '.zip' || extension == '.apk'
+        ? extension
+        : (Platform.isWindows ? '.zip' : '.apk');
     final cleaned = PathDisplay.safeFileName(
       value,
       replacement: '_',
       collapseWhitespace: false,
       fallback: 'NamelessAudio-update',
     );
-    return cleaned.endsWith('.apk') ? cleaned : '$cleaned.apk';
+    return cleaned.toLowerCase().endsWith(updateExtension)
+        ? cleaned
+        : '$cleaned$updateExtension';
   }
 }
+
+const String _windowsUpdateScript = r'''
+param(
+  [Parameter(Mandatory=$true)][string]$ZipPath,
+  [Parameter(Mandatory=$true)][string]$InstallDir,
+  [Parameter(Mandatory=$true)][string]$ExePath,
+  [Parameter(Mandatory=$true)][int]$AppProcessId
+)
+
+$ErrorActionPreference = 'Stop'
+$logPath = Join-Path $env:TEMP 'nameless_audio_windows_update.log'
+
+function Write-UpdateLog([string]$Message) {
+  $timestamp = Get-Date -Format o
+  Add-Content -LiteralPath $logPath -Value "$timestamp $Message"
+}
+
+try {
+  Write-UpdateLog "waiting pid=$AppProcessId"
+  Wait-Process -Id $AppProcessId -ErrorAction SilentlyContinue
+  Start-Sleep -Milliseconds 400
+
+  $staging = Join-Path $env:TEMP ("nameless_audio_update_" + [Guid]::NewGuid().ToString("N"))
+  New-Item -ItemType Directory -Force -Path $staging | Out-Null
+  Write-UpdateLog "expanding $ZipPath to $staging"
+  Expand-Archive -LiteralPath $ZipPath -DestinationPath $staging -Force
+
+  $exeName = Split-Path -Leaf $ExePath
+  $payloadExe = Get-ChildItem -LiteralPath $staging -Filter $exeName -Recurse -File |
+    Select-Object -First 1
+  if ($null -eq $payloadExe) {
+    throw "Cannot find $exeName inside update ZIP."
+  }
+  $payloadDir = $payloadExe.Directory.FullName
+  Write-UpdateLog "copying $payloadDir to $InstallDir"
+  Copy-Item -Path (Join-Path $payloadDir '*') -Destination $InstallDir -Recurse -Force
+
+  Write-UpdateLog "restarting $ExePath"
+  Start-Process -FilePath $ExePath -WorkingDirectory $InstallDir
+  Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction SilentlyContinue
+  Write-UpdateLog 'update complete'
+} catch {
+  Write-UpdateLog ("update failed: " + $_.Exception.Message)
+  Add-Type -AssemblyName PresentationFramework
+  [System.Windows.MessageBox]::Show(
+    "NL Audio update failed.`n`n$($_.Exception.Message)`n`nLog: $logPath",
+    "NL Audio Updater"
+  ) | Out-Null
+}
+''';

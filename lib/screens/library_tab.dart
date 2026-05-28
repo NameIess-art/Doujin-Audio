@@ -124,7 +124,15 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
       icon: Icons.library_music_rounded,
     );
     if (!confirmed || !mounted) return;
-    await ref.read(audioProviderFacadeProvider).removeLibrary(libraryPath);
+    final provider = ref.read(audioProviderFacadeProvider);
+    final isWatchedLibrary = provider.watchedLibraries.any(
+      (source) => PathMatcher.equalsNormalized(source, libraryPath),
+    );
+    if (isWatchedLibrary) {
+      await provider.removeLibrary(libraryPath);
+    } else {
+      await provider.removeFolderFromLibrary(libraryPath);
+    }
     if (mounted) {
       showAppSnackBar(
         context,
@@ -302,7 +310,8 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     final headerContentHeight = topTotalHeight + headerControlsFullHeight;
     // Remove the extra 96px to make content flush with the bottom dock.
     final listBottomInset = bottomInset;
-    final isWindows = Platform.isWindows ||
+    final isWindows =
+        Platform.isWindows ||
         MediaQuery.orientationOf(context) == Orientation.landscape;
     final listTopExpansion = isWindows ? 0.0 : 150.0;
     final listBottomExpansion = isWindows ? 0.0 : 350.0;
@@ -321,6 +330,15 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         listState.isScanning &&
         libraryHeaderState.hasWatchedSources;
     final canPullRefresh = listState.canPullRefresh;
+    final editableSources = <String>[
+      ...listState.watchedLibraries,
+      ...listState.watchedFolders.where(
+        (folderPath) => !listState.watchedLibraries.any(
+          (libraryPath) =>
+              PathMatcher.equalsNormalized(libraryPath, folderPath),
+        ),
+      ),
+    ];
 
     Widget dynamicSearchBar() {
       return _CollapsingSearchBar(
@@ -610,7 +628,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                 fitSubtitleToWidth: true,
                 trailing: SizedBox(
                   width:
-                      (listState.watchedLibraries.isEmpty ? 52 : 104) +
+                      (editableSources.isEmpty ? 52 : 104) +
                       (isWindows ? 52 : 0),
                   height: 44,
                   child: Row(
@@ -624,12 +642,12 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                           icon: const Icon(Icons.refresh_rounded),
                           tooltip: i18n.tr('refresh_watched_folder'),
                         ),
-                      if (listState.watchedLibraries.isNotEmpty)
+                      if (editableSources.isNotEmpty)
                         UnifiedPopupMenuButton<String>(
                           icon: Icons.edit_note_rounded,
                           tooltip: i18n.tr('edit_library'),
                           menuWidth: 280,
-                          entries: listState.watchedLibraries
+                          entries: editableSources
                               .map(
                                 (libraryPath) =>
                                     UnifiedMenuEntry<String>.action(

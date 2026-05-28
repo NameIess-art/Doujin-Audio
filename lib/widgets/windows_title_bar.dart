@@ -16,23 +16,23 @@ class WindowsTitleBar extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Container(
-      height: 32,
+      height: 40,
       color: Colors.transparent,
       child: Row(
         children: [
-          const SizedBox(width: 16),
+          const SizedBox(width: 20),
           Icon(
             Icons.graphic_eq_rounded,
-            size: 16,
+            size: 18,
             color: isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 10),
           Text(
             'Nameless Audio',
             style: TextStyle(
-              fontSize: 12,
+              fontSize: 13,
               color: cs.onSurface,
-              fontWeight: FontWeight.w600,
+              fontWeight: FontWeight.w700,
             ),
           ),
           Expanded(
@@ -44,9 +44,13 @@ class WindowsTitleBar extends StatelessWidget {
               child: const SizedBox.expand(),
             ),
           ),
-          WindowCaption(
-            brightness: isDark ? Brightness.dark : Brightness.light,
-            backgroundColor: Colors.transparent,
+          SizedBox(
+            width: 138,
+            height: 40,
+            child: WindowCaption(
+              brightness: isDark ? Brightness.dark : Brightness.light,
+              backgroundColor: Colors.transparent,
+            ),
           ),
         ],
       ),

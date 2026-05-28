@@ -57,7 +57,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
   int _currentIndex = 1;
   late final PageController _pageController;
   late final List<Widget> _pages;
-  final GlobalKey _pageViewKey = GlobalKey();
   final GlobalKey _bottomDockKey = GlobalKey();
   final GlobalKey _dockContentKey = GlobalKey();
   double _measuredBottomInset = 0;
@@ -82,6 +81,8 @@ class _MainScreenState extends ConsumerState<MainScreen>
   String? _pendingNotificationSessionId;
   String? _lastOpenedNotificationSessionId;
   DateTime? _lastOpenedNotificationAt;
+  int _metricsEpoch = 0;
+  Timer? _metricsRecoveryTimer;
 
   int? _pendingTargetIndex;
   void _setLocalState(VoidCallback fn) => setState(fn);
@@ -223,18 +224,25 @@ class _MainScreenState extends ConsumerState<MainScreen>
       },
     );
     if (shouldDownload == true && mounted) {
-      await _ensureInstallPermissionThenRun(
-        context,
-        () => _downloadAndInstallUpdate(info),
-      );
+      if (Platform.isAndroid) {
+        await _ensureInstallPermissionThenRun(
+          context,
+          () => _downloadAndInstallUpdate(info),
+        );
+      } else {
+        await _downloadAndInstallUpdate(info);
+      }
     }
   }
 
   Future<void> _downloadAndInstallUpdate(AppUpdateInfo info) async {
     final i18n = context.read<AppLanguageProvider>();
-    File apkFile;
+    File updateFile;
     try {
-      apkFile = await AppUpdateService.downloadUpdate(info, onProgress: (_) {});
+      updateFile = await AppUpdateService.downloadUpdate(
+        info,
+        onProgress: (_) {},
+      );
     } catch (_) {
       if (!mounted) return;
       showAppSnackBar(
@@ -247,12 +255,12 @@ class _MainScreenState extends ConsumerState<MainScreen>
     }
 
     try {
-      final result = await AppUpdateService.installApk(apkFile);
+      final result = await AppUpdateService.installUpdate(updateFile);
       if (!mounted) return;
       if (result.needsPermission) {
         await _ensureInstallPermissionThenRun(
           context,
-          () => _installDownloadedApk(apkFile),
+          () => _installDownloadedUpdate(updateFile),
         );
         return;
       }
@@ -282,11 +290,11 @@ class _MainScreenState extends ConsumerState<MainScreen>
     }
   }
 
-  Future<void> _installDownloadedApk(File apkFile) async {
+  Future<void> _installDownloadedUpdate(File updateFile) async {
     if (!mounted) return;
     final i18n = context.read<AppLanguageProvider>();
     try {
-      final result = await AppUpdateService.installApk(apkFile);
+      final result = await AppUpdateService.installUpdate(updateFile);
       if (!mounted) return;
       if (!result.ok) {
         showAppSnackBar(
@@ -317,6 +325,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
   @override
   void dispose() {
     _pageController.dispose();
+    _metricsRecoveryTimer?.cancel();
     _notificationSessionNavigationTimer?.cancel();
     _permissionActionController.dispose();
     _notificationsPlatformService.setOpenSessionHandler(null);
@@ -326,7 +335,33 @@ class _MainScreenState extends ConsumerState<MainScreen>
 
   @override
   void didChangeMetrics() {
-    _needsMeasurement = true;
+    _metricsRecoveryTimer?.cancel();
+    _metricsRecoveryTimer = Timer(
+      const Duration(milliseconds: 16),
+      _recoverAfterMetricsChange,
+    );
+  }
+
+  void _recoverAfterMetricsChange() {
+    if (!mounted) return;
+    setState(() {
+      _metricsEpoch++;
+      _needsMeasurement = true;
+      _measuredBottomInset = 0;
+      _measuredDockContent = 0;
+      _pendingTargetIndex = null;
+    });
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (_pageController.hasClients) {
+        _pageController.jumpToPage(_currentIndex.clamp(0, _pages.length - 1));
+      }
+      _measureBottomDock();
+      ref
+          .read(audioProviderFacadeProvider)
+          .scheduleUiWarmup(currentPageIndex: _currentIndex, immediate: true);
+    });
   }
 
   @override

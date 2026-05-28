@@ -18,15 +18,18 @@ extension _SettingsTabActions on _SettingsTabState {
     );
   }
 
-  Future<void> _installDownloadedApk(BuildContext context, File apkFile) async {
+  Future<void> _installDownloadedUpdate(
+    BuildContext context,
+    File updateFile,
+  ) async {
     final i18n = context.read<AppLanguageProvider>();
     try {
-      final result = await AppUpdateService.installApk(apkFile);
+      final result = await AppUpdateService.installUpdate(updateFile);
       if (!context.mounted) return;
       if (result.needsPermission) {
         await _ensureInstallPermissionThenRun(
           context,
-          () => _installDownloadedApk(context, apkFile),
+          () => _installDownloadedUpdate(context, updateFile),
         );
         return;
       }
@@ -281,10 +284,14 @@ extension _SettingsTabActions on _SettingsTabState {
       },
     );
     if (shouldDownload == true && context.mounted) {
-      await _ensureInstallPermissionThenRun(
-        context,
-        () => _downloadAndInstallUpdate(context, info),
-      );
+      if (Platform.isAndroid) {
+        await _ensureInstallPermissionThenRun(
+          context,
+          () => _downloadAndInstallUpdate(context, info),
+        );
+      } else {
+        await _downloadAndInstallUpdate(context, info);
+      }
     }
   }
 
@@ -298,9 +305,9 @@ extension _SettingsTabActions on _SettingsTabState {
       _downloadProgress = 0;
     });
 
-    File apkFile;
+    File updateFile;
     try {
-      apkFile = await AppUpdateService.downloadUpdate(
+      updateFile = await AppUpdateService.downloadUpdate(
         info,
         onProgress: (progress) {
           if (!mounted) return;
@@ -323,6 +330,6 @@ extension _SettingsTabActions on _SettingsTabState {
     }
 
     if (!context.mounted) return;
-    await _installDownloadedApk(context, apkFile);
+    await _installDownloadedUpdate(context, updateFile);
   }
 }

@@ -5,6 +5,8 @@ import 'app_preferences.dart';
 abstract final class AsmrPreferences {
   static const String _favoriteWorksKey = 'asmr_favorite_works_v1';
   static const String _historyWorksKey = 'asmr_history_works_v1';
+  static const String _syncOpsKey = 'asmr_sync_ops_v1';
+  static const String _lastSyncAtKey = 'asmr_last_sync_at_v1';
   static const String _visibleCategoriesKey = 'asmr_visible_categories_v1';
   static const String _contentLanguageKey = 'asmr_content_language_v1';
 
@@ -78,6 +80,40 @@ abstract final class AsmrPreferences {
       _historyWorksKey,
       works.map((work) => work.toJson()).toList(growable: false),
     );
+  }
+
+  static Future<List<AsmrSyncOperation>> loadSyncOperations() async {
+    final raw = await AppPreferences.readJson<List<AsmrSyncOperation>>(
+      _syncOpsKey,
+      (value) {
+        final list = value as List<dynamic>? ?? const <dynamic>[];
+        return list
+            .whereType<Map<String, dynamic>>()
+            .map(AsmrSyncOperation.fromJson)
+            .where((operation) => operation.workId > 0)
+            .toList(growable: false);
+      },
+    );
+    return raw ?? const <AsmrSyncOperation>[];
+  }
+
+  static Future<void> saveSyncOperations(
+    List<AsmrSyncOperation> operations,
+  ) async {
+    await AppPreferences.writeJson(
+      _syncOpsKey,
+      operations.map((operation) => operation.toJson()).toList(growable: false),
+    );
+  }
+
+  static Future<DateTime?> loadLastSyncAt() async {
+    return DateTime.tryParse(
+      await AppPreferences.getString(_lastSyncAtKey) ?? '',
+    );
+  }
+
+  static Future<void> saveLastSyncAt(DateTime value) async {
+    await AppPreferences.setString(_lastSyncAtKey, value.toIso8601String());
   }
 
   static List<AsmrCategoryType> _sanitizeCategories(List<String>? raw) {

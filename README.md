@@ -2,9 +2,9 @@
 
 Nameless Audio 是一个 Flutter + Android 原生 + Windows 桌面混合实现的本地音频播放器，面向 ASMR、语音作品和大体量本地音频库。它同时支持 ASMR.ONE 在线浏览与下载、本地曲库管理、多会话播放、字幕、睡眠计时器、DLsite 元数据、视频转音频和应用内更新。
 
-当前版本：`0.9.7+907`
+当前版本：`0.9.71+971`
 
-最新发布页：[v0.9.7](https://github.com/NameIess-art/nameless-audio/releases/tag/v0.9.7)
+最新发布页：[v0.9.71](https://github.com/NameIess-art/nameless-audio/releases/tag/v0.9.71)
 
 许可证：[MIT](LICENSE)
 
@@ -21,12 +21,12 @@ Nameless Audio 是一个 Flutter + Android 原生 + Windows 桌面混合实现�
 
 ## 下载
 
-从 [GitHub Release v0.9.7](https://github.com/NameIess-art/nameless-audio/releases/tag/v0.9.7) 下载：
+从 [GitHub Release v0.9.71](https://github.com/NameIess-art/nameless-audio/releases/tag/v0.9.71) 下载：
 
 | 文件 | 适用设备 |
 |---|---|
 | `app-arm64-v8a-release.apk` | 大多数 64 位 Android 手机，优先推荐 |
-| `NamelessAudio-windows-x64-v0.9.7.zip` | Windows x64 桌面环境 |
+| `NamelessAudio-windows-x64-v0.9.71.zip` | Windows x64 桌面环境 |
 
 Windows 版请解压整个 ZIP 后运行 `nameless_audio.exe`。不要只复制 exe，播放器、视频转音频和字幕窗口依赖同目录 DLL、`data/` 目录、MPV 与 FFmpeg 文件。
 
@@ -199,7 +199,7 @@ Windows 构建会下载完整 libmpv，并把 `assets/ffmpeg/ffmpeg.exe`、`asse
 
 ```powershell
 flutter build windows --release
-Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath dist\NamelessAudio-windows-x64-v0.9.7.zip -Force
+Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath dist\NamelessAudio-windows-x64-v0.9.71.zip -Force
 ```
 
 ## audio_service fork notes
@@ -207,6 +207,12 @@ Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath dist\
 - 项目当前通过 `dependency_overrides` 指向 `third_party/audio_service`。
 - Fork 相关定制说明位于 `third_party/audio_service/CUSTOMIZATION.md`。
 - 后续同步上游时，请同时更新该说明文件中的来源版本、改动文件和保留原因。
+
+## 发行说明 v0.9.71
+
+- 修复 Android 点击搜索框时页面抽搐、焦点不稳定导致无法搜索的问题；键盘弹出不再触发横竖屏恢复用的页面重建。
+- 修复“编辑曲库”菜单错误显示曲库根目录下子文件夹的问题；菜单只显示曲库根文件夹和真正独立导入的文件夹。
+- 发布 Android arm64-v8a APK 与 Windows x64 ZIP，Windows ZIP 继续包含完整 libmpv、FFmpeg 和 FFprobe。
 
 ## 发行说明 v0.9.7
 
@@ -221,6 +227,7 @@ Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath dist\
 
 ## 近期重要变更
 
+- `v0.9.71`：修复 Android 搜索框点击后页面抽搐；修复编辑曲库菜单显示曲库根下子文件夹；发布 Android arm64 与 Windows x64 ZIP。
 - `v0.9.7`：新增 Windows ZIP 自更新；修复 Windows 声道调换、全局悬浮字幕和横竖屏切换恢复；发布 Android arm64 与 Windows x64 ZIP。
 - `v0.9.6`：修复多线程播放按钮回退；优化封面加载转圈、ASMR.ONE 封面主动加载、列表滚动性能、封面解析和 Warmup 调度；更新 README。
 - `v0.9.5`：优化曲库扫描性能和扫描进度；改进 ASMR.ONE 推荐页刷新、算法和加载行为；更新 README；清理非必要文件。

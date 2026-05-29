@@ -334,8 +334,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
       ...listState.watchedLibraries,
       ...listState.watchedFolders.where(
         (folderPath) => !listState.watchedLibraries.any(
-          (libraryPath) =>
-              PathMatcher.equalsNormalized(libraryPath, folderPath),
+          (libraryPath) => PathMatcher.isWithinOrEqual(folderPath, libraryPath),
         ),
       ),
     ];

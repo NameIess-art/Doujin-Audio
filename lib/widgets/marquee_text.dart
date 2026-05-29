@@ -134,35 +134,51 @@ class _MarqueeTextState extends State<MarqueeText> {
       });
     }
     final cs = Theme.of(context).colorScheme;
-    return ShaderMask(
-      shaderCallback: (Rect bounds) {
-        return LinearGradient(
-          colors: [
-            cs.surface.withValues(alpha: 0.0),
-            cs.surface,
-            cs.surface,
-            cs.surface.withValues(alpha: 0.0),
-          ],
-          stops: const [0.0, 0.05, 0.95, 1.0],
-        ).createShader(bounds);
-      },
-      blendMode: BlendMode.dstIn,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          String displayText = widget.text;
-          if (widget.forceMarquee && constraints.maxWidth < double.infinity) {
-            final textPainter = TextPainter(
-              text: TextSpan(text: widget.text, style: widget.style),
-              textDirection: Directionality.of(context),
-              maxLines: 1,
-            )..layout();
-            if (textPainter.width > 0 && textPainter.width <= constraints.maxWidth) {
-              final duplicateCount = (constraints.maxWidth / textPainter.width).ceil() + 2;
-              final spacedText = '${widget.text}        ';
-              displayText = spacedText * duplicateCount;
-            }
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        bool needsMarquee = widget.forceMarquee;
+        String displayText = widget.text;
+
+        if (constraints.maxWidth < double.infinity) {
+          final textPainter = TextPainter(
+            text: TextSpan(text: widget.text, style: widget.style),
+            textDirection: Directionality.of(context),
+            maxLines: 1,
+          )..layout();
+
+          if (textPainter.width > constraints.maxWidth) {
+            needsMarquee = true;
+          } else if (widget.forceMarquee && textPainter.width > 0) {
+            final duplicateCount =
+                (constraints.maxWidth / textPainter.width).ceil() + 2;
+            final spacedText = '${widget.text}        ';
+            displayText = spacedText * duplicateCount;
           }
-          return NotificationListener<ScrollNotification>(
+        }
+
+        if (!needsMarquee) {
+          return Text(
+            widget.text,
+            style: widget.style,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          );
+        }
+
+        return ShaderMask(
+          shaderCallback: (Rect bounds) {
+            return LinearGradient(
+              colors: [
+                cs.surface.withValues(alpha: 0.0),
+                cs.surface,
+                cs.surface,
+                cs.surface.withValues(alpha: 0.0),
+              ],
+              stops: const [0.0, 0.05, 0.95, 1.0],
+            ).createShader(bounds);
+          },
+          blendMode: BlendMode.dstIn,
+          child: NotificationListener<ScrollNotification>(
             onNotification: (_) => true,
             child: SingleChildScrollView(
               controller: _scrollController,
@@ -171,9 +187,9 @@ class _MarqueeTextState extends State<MarqueeText> {
               padding: EdgeInsets.symmetric(horizontal: widget.edgePadding),
               child: Text(displayText, style: widget.style),
             ),
-          );
-        },
-      ),
+          ),
+        );
+      },
     );
   }
 }

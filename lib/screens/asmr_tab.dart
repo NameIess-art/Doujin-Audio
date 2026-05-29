@@ -859,7 +859,6 @@ class _AsmrCategoryListState extends State<_AsmrCategoryList>
     with AutomaticKeepAliveClientMixin {
   final GlobalKey<GlassRefreshIndicatorState> _refreshIndicatorKey =
       GlobalKey<GlassRefreshIndicatorState>();
-  final Set<String> _primedCoverUrls = <String>{};
   bool _refreshTriggeredInCurrentScroll = false;
 
   @override
@@ -875,10 +874,6 @@ class _AsmrCategoryListState extends State<_AsmrCategoryList>
       ),
     );
     final works = state.works;
-    final isScrolling = ScrollActivityGate.isScrollingOf(context);
-    if (!isScrolling) {
-      _primeVisibleCovers(works);
-    }
     final i18n = context.watch<AppLanguageProvider>();
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
@@ -1018,37 +1013,6 @@ class _AsmrCategoryListState extends State<_AsmrCategoryList>
         ),
       ),
     );
-  }
-
-  void _primeVisibleCovers(List<AsmrWork> works) {
-    if (works.isEmpty) {
-      _primedCoverUrls.clear();
-      return;
-    }
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) {
-        return;
-      }
-      final scrollController = widget.scrollController;
-      final firstVisibleIndex = scrollController.hasClients
-          ? scrollController.offset ~/ 168
-          : 0;
-      final lastIndex = works.length - 1;
-      final start = firstVisibleIndex.clamp(0, lastIndex).toInt();
-      final end = (start + 8).clamp(start, lastIndex).toInt();
-      for (var index = start; index <= end; index++) {
-        final url = _asmrWorkListCoverUrl(works[index]);
-        if (url.isEmpty || !_primedCoverUrls.add(url)) {
-          continue;
-        }
-        unawaited(
-          precacheImage(NetworkImage(url), context).catchError((_) {
-            _primedCoverUrls.remove(url);
-            return null;
-          }),
-        );
-      }
-    });
   }
 }
 
@@ -1865,7 +1829,7 @@ class _AsmrWorkTreeCardState extends State<_AsmrWorkTreeCard> {
       onWillReveal: _expansionController.collapse,
       child: Card(
         margin: EdgeInsets.zero,
-        clipBehavior: Clip.antiAlias,
+        clipBehavior: Clip.hardEdge,
         shape: cardShape,
         color: cs.surface,
         child: Theme(
@@ -2288,6 +2252,7 @@ class _AsmrWorkCoverState extends State<_AsmrWorkCover> {
     final height = width * 0.8;
     final url = widget.url.trim();
     return ClipRRect(
+      clipBehavior: Clip.hardEdge,
       borderRadius: BorderRadius.circular(12),
       child: SizedBox(
         width: width,

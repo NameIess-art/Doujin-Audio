@@ -503,18 +503,34 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                     child: child,
                   );
                 },
-                child: ClipPath(
-                  clipper: ShapeBorderClipper(shape: widget.shape),
-                  child: DecoratedBox(
-                    decoration: ShapeDecoration(
-                      color: cs.surface,
-                      shape: widget.shape,
-                    ),
-                    child: IgnorePointer(
-                      ignoring: _isOpen,
-                      child: widget.child,
-                    ),
-                  ),
+                child: Builder(
+                  builder: (context) {
+                    final content = DecoratedBox(
+                      decoration: ShapeDecoration(
+                        color: cs.surface,
+                        shape: widget.shape,
+                      ),
+                      child: IgnorePointer(
+                        ignoring: _isOpen,
+                        child: widget.child,
+                      ),
+                    );
+
+                    if (widget.shape is RoundedRectangleBorder) {
+                      return ClipRRect(
+                        borderRadius: (widget.shape as RoundedRectangleBorder)
+                            .borderRadius
+                            .resolve(Directionality.of(context)),
+                        child: content,
+                      );
+                    }
+
+                    return ClipPath(
+                      clipBehavior: Clip.hardEdge,
+                      clipper: ShapeBorderClipper(shape: widget.shape),
+                      child: content,
+                    );
+                  },
                 ),
               ),
               if (_isOpen)

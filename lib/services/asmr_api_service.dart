@@ -12,6 +12,100 @@ class AsmrApiService {
   final HttpClient _httpClient;
   final Uri _baseUri;
 
+  Future<AsmrAuthSession> login({
+    required String name,
+    required String password,
+  }) async {
+    final response = await _sendJsonRequest(
+      method: 'POST',
+      path: '/api/auth/me',
+      body: <String, Object?>{'name': name, 'password': password},
+    );
+    final token = (response['token'] as String?) ?? '';
+    final user = response['user'] as Map<String, dynamic>? ?? response;
+    final userName =
+        (user['name'] as String?) ??
+        (user['username'] as String?) ??
+        (user['userName'] as String?) ??
+        name;
+    if (token.trim().isEmpty) {
+      throw const HttpException('ASMR login response did not include a token.');
+    }
+    return AsmrAuthSession(token: token, userName: userName);
+  }
+
+  Future<AsmrAuthSession?> checkSession(String token) async {
+    final response = await _sendJsonRequest(
+      method: 'GET',
+      path: '/api/auth/me',
+      token: token,
+    );
+    final user = response['user'] as Map<String, dynamic>? ?? response;
+    final loggedIn = user['loggedIn'] as bool? ?? token.trim().isNotEmpty;
+    if (!loggedIn) {
+      return null;
+    }
+    final userName =
+        (user['name'] as String?) ??
+        (user['username'] as String?) ??
+        (user['userName'] as String?) ??
+        '';
+    return AsmrAuthSession(token: token, userName: userName);
+  }
+
+  Future<List<AsmrReviewRecord>> fetchReviews({
+    required String token,
+    String? filter,
+    int page = 1,
+    String order = 'updated_at',
+    String sort = 'desc',
+    AsmrContentLanguage language = AsmrContentLanguage.zh,
+  }) async {
+    final query = <String, String>{
+      'order': order,
+      'sort': sort,
+      'page': '$page',
+    };
+    if (filter != null && filter.isNotEmpty) {
+      query['filter'] = filter;
+    }
+    final response = await _sendJsonRequest(
+      method: 'GET',
+      path: '/api/review',
+      token: token,
+      queryParameters: query,
+    );
+    return (response['works'] as List<dynamic>? ?? const <dynamic>[])
+        .whereType<Map<String, dynamic>>()
+        .map((json) => AsmrReviewRecord.fromJson(json, language: language))
+        .toList(growable: false);
+  }
+
+  Future<void> putReviewProgress({
+    required int workId,
+    required String progress,
+    required String token,
+  }) async {
+    await _send(
+      method: 'PUT',
+      path: '/api/review',
+      token: token,
+      body: <String, Object?>{'work_id': workId, 'progress': progress},
+    );
+  }
+
+  Future<void> deleteReview({
+    required int workId,
+    required String token,
+  }) async {
+    await _send(
+      method: 'DELETE',
+      path: '/api/review',
+      token: token,
+      queryParameters: <String, String>{'work_id': '$workId'},
+    );
+  }
+
   Future<AsmrWorkPage> fetchWorks({
     required String order,
     required String sort,
@@ -150,8 +244,9 @@ class AsmrApiService {
     final response = await request.close();
     final responseBody = await utf8.decodeStream(response);
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw HttpException(
+      throw AsmrApiException(
         'ASMR API request failed (${response.statusCode}): $responseBody',
+        statusCode: response.statusCode,
         uri: uri,
       );
     }
@@ -160,4 +255,10 @@ class AsmrApiService {
     }
     return json.decode(responseBody);
   }
+}
+
+class AsmrApiException extends HttpException {
+  const AsmrApiException(super.message, {required this.statusCode, super.uri});
+
+  final int statusCode;
 }

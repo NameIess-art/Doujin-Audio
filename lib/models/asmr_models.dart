@@ -56,6 +56,110 @@ enum AsmrContentLanguage {
   }
 }
 
+enum AsmrSyncOperationType {
+  favoriteAdd,
+  favoriteRemove,
+  historyListening;
+
+  static AsmrSyncOperationType fromName(String? name) {
+    return AsmrSyncOperationType.values.firstWhere(
+      (type) => type.name == name,
+      orElse: () => AsmrSyncOperationType.favoriteAdd,
+    );
+  }
+}
+
+enum AsmrSyncPhase { idle, syncing, succeeded, failed }
+
+@immutable
+class AsmrAuthSession {
+  const AsmrAuthSession({required this.token, required this.userName});
+
+  final String token;
+  final String userName;
+
+  bool get isValid => token.trim().isNotEmpty;
+}
+
+@immutable
+class AsmrReviewRecord {
+  const AsmrReviewRecord({
+    required this.work,
+    required this.progress,
+    required this.updatedAt,
+  });
+
+  final AsmrWork work;
+  final String progress;
+  final DateTime? updatedAt;
+
+  bool get hasProtectedProgress =>
+      progress == 'marked' ||
+      progress == 'listened' ||
+      progress == 'replay' ||
+      progress == 'postponed';
+
+  factory AsmrReviewRecord.fromJson(
+    Map<String, dynamic> json, {
+    AsmrContentLanguage language = AsmrContentLanguage.zh,
+  }) {
+    return AsmrReviewRecord(
+      work: AsmrWork.fromJson(json, language: language),
+      progress: (json['progress'] as String?) ?? '',
+      updatedAt: AsmrWork._dateTimeOrNull(
+        json['updated_at'] ?? json['updatedAt'],
+      ),
+    );
+  }
+}
+
+@immutable
+class AsmrSyncOperation {
+  const AsmrSyncOperation({
+    required this.type,
+    required this.workId,
+    required this.sourceId,
+    required this.createdAt,
+    this.retryCount = 0,
+  });
+
+  final AsmrSyncOperationType type;
+  final int workId;
+  final String sourceId;
+  final DateTime createdAt;
+  final int retryCount;
+
+  AsmrSyncOperation copyWith({int? retryCount}) {
+    return AsmrSyncOperation(
+      type: type,
+      workId: workId,
+      sourceId: sourceId,
+      createdAt: createdAt,
+      retryCount: retryCount ?? this.retryCount,
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'type': type.name,
+    'workId': workId,
+    'sourceId': sourceId,
+    'createdAt': createdAt.toIso8601String(),
+    'retryCount': retryCount,
+  };
+
+  factory AsmrSyncOperation.fromJson(Map<String, dynamic> json) {
+    return AsmrSyncOperation(
+      type: AsmrSyncOperationType.fromName(json['type'] as String?),
+      workId: (json['workId'] as num?)?.toInt() ?? 0,
+      sourceId: (json['sourceId'] as String?) ?? '',
+      createdAt:
+          AsmrWork._dateTimeOrNull(json['createdAt']) ??
+          DateTime.fromMillisecondsSinceEpoch(0),
+      retryCount: (json['retryCount'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
 @immutable
 class AsmrWorkPage {
   const AsmrWorkPage({

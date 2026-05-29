@@ -232,7 +232,12 @@ class _AsmrTabState extends State<AsmrTab>
         .map((work) => work.id)
         .toList(growable: false);
 
-    await controller.refreshCategory(category, searchQuery: _searchQuery);
+    await Future.wait(<Future<void>>[
+      controller.refreshCategory(category, searchQuery: _searchQuery),
+      if (controller.isAsmrAccountLoggedIn)
+        controller.syncAsmrAccount(force: true),
+    ]);
+    
     if (!mounted) {
       return;
     }
@@ -341,7 +346,9 @@ class _AsmrTabState extends State<AsmrTab>
                       CheckboxListTile(
                         value: selected.contains(category),
                         onChanged:
-                            !Platform.isWindows && !selected.contains(category) && selected.length >= 5
+                            !Platform.isWindows &&
+                                !selected.contains(category) &&
+                                selected.length >= 5
                             ? null
                             : (checked) {
                                 setDialogState(() {
@@ -405,6 +412,12 @@ class _AsmrTabState extends State<AsmrTab>
     unawaited(_refreshCurrentCategory());
   }
 
+  Future<void> _showAccountDialog() {
+    return _showAsmrPanel<void>(
+      builder: (context) => const _AsmrAccountPanel(),
+    );
+  }
+
   @override
   void dispose() {
     _scrollToTopTabListenable?.removeListener(_handleScrollToTopSignal);
@@ -440,7 +453,8 @@ class _AsmrTabState extends State<AsmrTab>
     final i18n = context.watch<AppLanguageProvider>();
     final currentCategory = _currentCategory;
     final currentScrollController = _scrollControllers[currentCategory]!;
-    final isWindows = Platform.isWindows ||
+    final isWindows =
+        Platform.isWindows ||
         MediaQuery.orientationOf(context) == Orientation.landscape;
     final bottomInset = MobileOverlayInset.of(context);
     final headerControlsFullHeight = _headerControlsFullHeight;
@@ -605,6 +619,7 @@ class _AsmrTabState extends State<AsmrTab>
                       tooltip: 'Refresh',
                     ),
                   _AsmrMoreMenuButton(
+                    onAccount: _showAccountDialog,
                     onCategories: _showCategoryDialog,
                     onLanguage: _showLanguageDialog,
                   ),
@@ -1398,12 +1413,305 @@ class _AsmrSelectionTile extends StatelessWidget {
   }
 }
 
+class _AsmrAccountPanel extends StatefulWidget {
+  const _AsmrAccountPanel();
+
+  @override
+  State<_AsmrAccountPanel> createState() => _AsmrAccountPanelState();
+}
+
+class _AsmrAccountPanelState extends State<_AsmrAccountPanel> {
+  final TextEditingController _accountController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
+  bool _submitting = false;
+
+  @override
+  void dispose() {
+    _accountController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _login() async {
+    if (_submitting) {
+      return;
+    }
+    final account = _accountController.text.trim();
+    final password = _passwordController.text;
+    if (account.isEmpty || password.isEmpty) {
+      return;
+    }
+    setState(() => _submitting = true);
+    try {
+      await context.read<AsmrLibraryController>().loginAsmrAccount(
+        account,
+        password,
+      );
+      if (!mounted) {
+        return;
+      }
+      showAppSnackBar(
+        context,
+        context.read<AppLanguageProvider>().tr('asmr_login_success'),
+        tone: AppFeedbackTone.success,
+        icon: Icons.verified_user_rounded,
+        iconColor: _accountAccentColor(context),
+      );
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      showAppSnackBar(
+        context,
+        context.read<AppLanguageProvider>().tr('asmr_login_failed'),
+        tone: AppFeedbackTone.destructive,
+        icon: Icons.error_outline_rounded,
+        iconColor: _accountAccentColor(context),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _submitting = false);
+      }
+    }
+  }
+
+  Future<void> _sync() async {
+    if (_submitting) {
+      return;
+    }
+    setState(() => _submitting = true);
+    final controller = context.read<AsmrLibraryController>();
+    try {
+      await controller.syncAsmrAccount(force: true);
+      if (!mounted) {
+        return;
+      }
+      final syncState = controller.syncViewState;
+      final failed = syncState.phase == AsmrSyncPhase.failed;
+      showAppSnackBar(
+        context,
+        context.read<AppLanguageProvider>().tr(
+          failed ? 'asmr_account_sync_failed' : 'asmr_account_sync_done',
+        ),
+        tone: failed ? AppFeedbackTone.destructive : AppFeedbackTone.success,
+        icon: failed ? Icons.sync_problem_rounded : Icons.sync_rounded,
+        iconColor: _accountAccentColor(context),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _submitting = false);
+      }
+    }
+  }
+
+  Future<void> _logout() async {
+    if (_submitting) {
+      return;
+    }
+    setState(() => _submitting = true);
+    await context.read<AsmrLibraryController>().logoutAsmrAccount();
+    if (!mounted) {
+      return;
+    }
+    setState(() => _submitting = false);
+    showAppSnackBar(
+      context,
+      context.read<AppLanguageProvider>().tr('asmr_logout_success'),
+      icon: Icons.logout_rounded,
+      iconColor: _accountAccentColor(context),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final i18n = context.watch<AppLanguageProvider>();
+    final authState = context.select<AsmrLibraryController, AsmrAuthViewState>(
+      (controller) => controller.authViewState,
+    );
+    final syncState = context.select<AsmrLibraryController, AsmrSyncViewState>(
+      (controller) => controller.syncViewState,
+    );
+    final syncing = syncState.phase == AsmrSyncPhase.syncing || _submitting;
+
+    if (!authState.isLoggedIn) {
+      final canLogin =
+          _accountController.text.trim().isNotEmpty &&
+          _passwordController.text.isNotEmpty &&
+          !syncing;
+      return _AsmrPanelCard(
+        icon: Icons.account_circle_rounded,
+        title: i18n.tr('asmr_account_title'),
+        actions: [
+          _AsmrPanelAction(
+            label: i18n.tr('close'),
+            onPressed: syncing ? null : () => Navigator.of(context).pop(),
+          ),
+          _AsmrPanelAction(
+            label: syncing
+                ? i18n.tr('asmr_account_syncing')
+                : i18n.tr('asmr_login_action'),
+            onPressed: canLogin ? _login : null,
+            filled: true,
+          ),
+        ],
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _accountController,
+              enabled: !syncing,
+              textInputAction: TextInputAction.next,
+              decoration: InputDecoration(
+                labelText: i18n.tr('asmr_login_account'),
+                prefixIcon: const Icon(Icons.person_outline_rounded),
+              ),
+              onChanged: (_) => setState(() {}),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _passwordController,
+              enabled: !syncing,
+              obscureText: true,
+              textInputAction: TextInputAction.done,
+              onSubmitted: (_) {
+                if (canLogin) {
+                  unawaited(_login());
+                }
+              },
+              decoration: InputDecoration(
+                labelText: i18n.tr('asmr_login_password'),
+                prefixIcon: const Icon(Icons.lock_outline_rounded),
+              ),
+              onChanged: (_) => setState(() {}),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final lastSyncAt = syncState.lastSyncAt;
+    return _AsmrPanelCard(
+      icon: Icons.account_circle_rounded,
+      title: i18n.tr('asmr_account_title'),
+      actions: [
+        _AsmrPanelAction(
+          label: i18n.tr('asmr_logout_action'),
+          onPressed: syncing ? null : _logout,
+        ),
+        _AsmrPanelAction(
+          label: syncing
+              ? i18n.tr('asmr_account_syncing')
+              : i18n.tr('asmr_account_sync_now'),
+          onPressed: syncing ? null : _sync,
+          filled: true,
+        ),
+      ],
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _AsmrAccountStatusLine(
+            icon: Icons.person_outline_rounded,
+            text: i18n.tr('asmr_logged_in_as', {
+              'name': authState.userName.isEmpty ? '-' : authState.userName,
+            }),
+          ),
+          const SizedBox(height: 12),
+          _AsmrAccountStatusLine(
+            icon: Icons.schedule_rounded,
+            text: lastSyncAt == null
+                ? i18n.tr('asmr_account_not_synced')
+                : i18n.tr('asmr_account_last_sync', {
+                    'time': _formatAsmrSyncTime(lastSyncAt),
+                  }),
+          ),
+          const SizedBox(height: 12),
+          _AsmrAccountStatusLine(
+            icon: syncState.phase == AsmrSyncPhase.failed
+                ? Icons.sync_problem_rounded
+                : Icons.sync_rounded,
+            text: _syncStatusText(i18n, syncState),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _syncStatusText(
+    AppLanguageProvider i18n,
+    AsmrSyncViewState syncState,
+  ) {
+    if (syncState.phase == AsmrSyncPhase.syncing) {
+      return i18n.tr('asmr_account_syncing');
+    }
+    if (syncState.phase == AsmrSyncPhase.failed) {
+      return i18n.tr('asmr_account_sync_failed');
+    }
+    if (syncState.pendingCount > 0) {
+      return i18n.tr('asmr_account_pending_count', {
+        'count': syncState.pendingCount.toString(),
+      });
+    }
+    return i18n.tr('asmr_account_sync_done');
+  }
+
+  Color _accountAccentColor(BuildContext context) {
+    return Theme.of(context).brightness == Brightness.dark
+        ? _kAsmrBlueDark
+        : _kAsmrBlueLight;
+  }
+}
+
+class _AsmrAccountStatusLine extends StatelessWidget {
+  const _AsmrAccountStatusLine({required this.icon, required this.text});
+
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: cs.surfaceContainerHighest.withValues(alpha: 0.52),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        child: Row(
+          children: [
+            Icon(icon, size: 20, color: cs.primary),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                text,
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+String _formatAsmrSyncTime(DateTime value) {
+  final local = value.toLocal();
+  String twoDigits(int number) => number.toString().padLeft(2, '0');
+  return '${local.year}-${twoDigits(local.month)}-${twoDigits(local.day)} '
+      '${twoDigits(local.hour)}:${twoDigits(local.minute)}';
+}
+
 class _AsmrMoreMenuButton extends StatelessWidget {
   const _AsmrMoreMenuButton({
+    required this.onAccount,
     required this.onCategories,
     required this.onLanguage,
   });
 
+  final VoidCallback onAccount;
   final VoidCallback onCategories;
   final VoidCallback onLanguage;
 
@@ -1417,6 +1725,11 @@ class _AsmrMoreMenuButton extends StatelessWidget {
       selectAfterDismiss: false,
       entries: [
         UnifiedMenuEntry<_AsmrMoreAction>.action(
+          value: _AsmrMoreAction.account,
+          icon: Icons.account_circle_rounded,
+          label: i18n.tr('asmr_account_menu'),
+        ),
+        UnifiedMenuEntry<_AsmrMoreAction>.action(
           value: _AsmrMoreAction.categories,
           icon: Icons.category_rounded,
           label: i18n.tr('asmr_categories_title'),
@@ -1429,6 +1742,9 @@ class _AsmrMoreMenuButton extends StatelessWidget {
       ],
       onSelected: (value) {
         switch (value) {
+          case _AsmrMoreAction.account:
+            onAccount();
+            break;
           case _AsmrMoreAction.categories:
             onCategories();
             break;
@@ -1441,7 +1757,7 @@ class _AsmrMoreMenuButton extends StatelessWidget {
   }
 }
 
-enum _AsmrMoreAction { categories, language }
+enum _AsmrMoreAction { account, categories, language }
 
 class _AsmrWorkTreeCard extends StatefulWidget {
   const _AsmrWorkTreeCard({required this.work, required this.searchQuery});

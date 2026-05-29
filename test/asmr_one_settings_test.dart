@@ -5,6 +5,7 @@ import 'package:nameless_audio/models/music_track.dart';
 import 'package:nameless_audio/services/audio_database_repository.dart';
 import 'package:nameless_audio/services/app_preferences.dart';
 import 'package:nameless_audio/services/asmr_api_service.dart';
+import 'package:nameless_audio/services/asmr_auth_service.dart';
 import 'package:nameless_audio/services/asmr_library_controller.dart';
 import 'package:nameless_audio/services/asmr_preferences.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -345,6 +346,144 @@ void main() {
     expect(identical(first.visibleTree, second.visibleTree), isTrue);
     expect(first.visibleTree?.map((node) => node.title), <String>['Disc']);
   });
+
+  test('ASMR auth service stores restores and clears token', () async {
+    await resetPrefs();
+    final api = _FakeAsmrApiService();
+    final tokenStore = _MemoryAsmrTokenStore();
+    final auth = AsmrAuthService(apiService: api, tokenStore: tokenStore);
+
+    final session = await auth.login('alice', 'password');
+
+    expect(session.token, 'token-alice');
+    expect(tokenStore.token, 'token-alice');
+    expect((await auth.restoreSession())?.userName, 'alice');
+
+    await auth.logout();
+
+    expect(tokenStore.token, isNull);
+    expect(await auth.restoreSession(), isNull);
+  });
+
+  test(
+    'ASMR account sync maps favorites to marked review progress and retries',
+    () async {
+      await resetPrefs();
+      final local = _work(id: 71, title: 'Local Favorite');
+      final remote = _work(id: 72, title: 'Remote Favorite');
+      await AsmrPreferences.saveFavoriteWorks(<AsmrWork>[local]);
+      final api = _FakeAsmrApiService(
+        remoteReviewRecords: <AsmrReviewRecord>[
+          AsmrReviewRecord(
+            work: remote,
+            progress: 'marked',
+            updatedAt: DateTime(2026, 5),
+          ),
+        ],
+        failPutReviewCount: 1,
+      );
+      final controller = AsmrLibraryController(
+        apiService: api,
+        authService: AsmrAuthService(
+          apiService: api,
+          tokenStore: _MemoryAsmrTokenStore(),
+        ),
+        audioDatabaseRepository: _FakeAudioDatabaseRepository(
+          const <MusicTrack>[],
+        ),
+      );
+      await controller.initialize(defaultLanguage: AsmrContentLanguage.en);
+
+      await controller.loginAsmrAccount('alice', 'password');
+
+      expect(controller.isAsmrAccountLoggedIn, isTrue);
+      expect(controller.syncViewState.phase, AsmrSyncPhase.failed);
+      expect(controller.syncViewState.pendingCount, 1);
+      expect(
+        controller.worksFor(AsmrCategoryType.favorites).map((work) => work.id),
+        containsAll(<int>[71, 72]),
+      );
+
+      await controller.syncAsmrAccount(force: true);
+
+      expect(controller.syncViewState.phase, AsmrSyncPhase.succeeded);
+      expect(controller.syncViewState.pendingCount, 0);
+      expect(api.reviewPuts, <String>['71:marked']);
+    },
+  );
+
+  test(
+    'ASMR account sync removes remote marked progress when unfavorited',
+    () async {
+      await resetPrefs();
+      final work = _work(id: 82, title: 'Marked Favorite');
+      await AsmrPreferences.saveFavoriteWorks(<AsmrWork>[work]);
+      final api = _FakeAsmrApiService(
+        remoteReviewRecords: <AsmrReviewRecord>[
+          AsmrReviewRecord(
+            work: work,
+            progress: 'marked',
+            updatedAt: DateTime(2026, 5),
+          ),
+        ],
+      );
+      final controller = AsmrLibraryController(
+        apiService: api,
+        authService: AsmrAuthService(
+          apiService: api,
+          tokenStore: _MemoryAsmrTokenStore(),
+        ),
+        audioDatabaseRepository: _FakeAudioDatabaseRepository(
+          const <MusicTrack>[],
+        ),
+      );
+      await controller.initialize(defaultLanguage: AsmrContentLanguage.en);
+
+      await controller.loginAsmrAccount('alice', 'password');
+      await controller.toggleFavorite(work.copyWith(isFavorite: true));
+      await controller.syncAsmrAccount();
+
+      expect(controller.syncViewState.phase, AsmrSyncPhase.succeeded);
+      expect(controller.syncViewState.pendingCount, 0);
+      expect(api.deletedReviewWorkIds, <int>[82]);
+    },
+  );
+
+  test(
+    'ASMR account sync keeps marked favorites from history downgrade',
+    () async {
+      await resetPrefs();
+      final work = _work(id: 83, title: 'Marked Favorite');
+      final api = _FakeAsmrApiService(
+        remoteReviewRecords: <AsmrReviewRecord>[
+          AsmrReviewRecord(
+            work: work,
+            progress: 'marked',
+            updatedAt: DateTime(2026, 5),
+          ),
+        ],
+      );
+      final controller = AsmrLibraryController(
+        apiService: api,
+        authService: AsmrAuthService(
+          apiService: api,
+          tokenStore: _MemoryAsmrTokenStore(),
+        ),
+        audioDatabaseRepository: _FakeAudioDatabaseRepository(
+          const <MusicTrack>[],
+        ),
+      );
+      await controller.initialize(defaultLanguage: AsmrContentLanguage.en);
+
+      await controller.loginAsmrAccount('alice', 'password');
+      await controller.recordHistory(work);
+      await controller.syncAsmrAccount(force: true);
+
+      expect(controller.syncViewState.phase, AsmrSyncPhase.succeeded);
+      expect(controller.syncViewState.pendingCount, 0);
+      expect(api.reviewPuts.where((call) => call == '83:listening'), isEmpty);
+    },
+  );
 }
 
 class _FakeAsmrApiService extends AsmrApiService {
@@ -353,15 +492,40 @@ class _FakeAsmrApiService extends AsmrApiService {
     this.recommendationPageCount = 2,
     this.recommendationWorks,
     this.trackTree = const <AsmrTrackFile>[],
+    this.remoteReviewRecords = const <AsmrReviewRecord>[],
+    this.failPutReviewCount = 0,
   }) : super(baseUri: Uri.parse('https://example.test'));
 
   final List<String> fetchWorkOrders = <String>[];
   final List<String> fetchWorkRequests = <String>[];
   final List<String> searchKeywords = <String>[];
+  final List<String> reviewPuts = <String>[];
+  final List<int> deletedReviewWorkIds = <int>[];
   final bool largeRecommendationPool;
   final int recommendationPageCount;
   final List<AsmrWork>? recommendationWorks;
   final List<AsmrTrackFile> trackTree;
+  final List<AsmrReviewRecord> remoteReviewRecords;
+  int failPutReviewCount;
+  String _lastLoginName = '';
+
+  @override
+  Future<AsmrAuthSession> login({
+    required String name,
+    required String password,
+  }) async {
+    _lastLoginName = name;
+    return AsmrAuthSession(token: 'token-$name', userName: name);
+  }
+
+  @override
+  Future<AsmrAuthSession?> checkSession(String token) async {
+    if (token.isEmpty) {
+      return null;
+    }
+    final name = _lastLoginName.isEmpty ? 'restored' : _lastLoginName;
+    return AsmrAuthSession(token: token, userName: name);
+  }
 
   @override
   Future<AsmrWorkPage> fetchWorks({
@@ -456,6 +620,61 @@ class _FakeAsmrApiService extends AsmrApiService {
     int workId, {
     String? token,
   }) async => trackTree;
+
+  @override
+  Future<List<AsmrReviewRecord>> fetchReviews({
+    required String token,
+    String? filter,
+    int page = 1,
+    String order = 'updated_at',
+    String sort = 'desc',
+    AsmrContentLanguage language = AsmrContentLanguage.zh,
+  }) async {
+    if (page > 1) {
+      return const <AsmrReviewRecord>[];
+    }
+    return remoteReviewRecords
+        .where((record) => filter == null || record.progress == filter)
+        .toList(growable: false);
+  }
+
+  @override
+  Future<void> putReviewProgress({
+    required int workId,
+    required String progress,
+    required String token,
+  }) async {
+    if (failPutReviewCount > 0) {
+      failPutReviewCount--;
+      throw const HttpException('put review failed');
+    }
+    reviewPuts.add('$workId:$progress');
+  }
+
+  @override
+  Future<void> deleteReview({
+    required int workId,
+    required String token,
+  }) async {
+    deletedReviewWorkIds.add(workId);
+  }
+}
+
+class _MemoryAsmrTokenStore implements AsmrTokenStore {
+  String? token;
+
+  @override
+  Future<void> clearToken() async {
+    token = null;
+  }
+
+  @override
+  Future<String?> readToken() async => token;
+
+  @override
+  Future<void> writeToken(String token) async {
+    this.token = token;
+  }
 }
 
 class _FakeAudioDatabaseRepository extends AudioDatabaseRepository {

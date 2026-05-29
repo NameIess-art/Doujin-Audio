@@ -83,6 +83,8 @@ class _MainScreenState extends ConsumerState<MainScreen>
   DateTime? _lastOpenedNotificationAt;
   int _metricsEpoch = 0;
   Timer? _metricsRecoveryTimer;
+  Size? _lastRecoveredViewSize;
+  Orientation? _lastRecoveredOrientation;
 
   int? _pendingTargetIndex;
   void _setLocalState(VoidCallback fn) => setState(fn);
@@ -125,6 +127,8 @@ class _MainScreenState extends ConsumerState<MainScreen>
       _queueNotificationSessionNavigation,
     );
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _rememberCurrentViewMetrics();
       final provider = ref.read(audioProviderFacadeProvider);
       unawaited(_consumePendingNotificationSession());
       unawaited(_ensureManageFilesPermission());
@@ -342,8 +346,56 @@ class _MainScreenState extends ConsumerState<MainScreen>
     );
   }
 
+  Size _currentLogicalViewSize() {
+    final view = View.maybeOf(context);
+    if (view != null &&
+        view.physicalSize.width > 0 &&
+        view.physicalSize.height > 0 &&
+        view.devicePixelRatio > 0) {
+      return view.physicalSize / view.devicePixelRatio;
+    }
+    return MediaQuery.sizeOf(context);
+  }
+
+  Orientation _orientationForSize(Size size) {
+    return size.width > size.height
+        ? Orientation.landscape
+        : Orientation.portrait;
+  }
+
+  void _rememberCurrentViewMetrics() {
+    final size = _currentLogicalViewSize();
+    _lastRecoveredViewSize = size;
+    _lastRecoveredOrientation = _orientationForSize(size);
+  }
+
+  bool _hasRecoverableViewMetricChange() {
+    final size = _currentLogicalViewSize();
+    final orientation = _orientationForSize(size);
+    final previousSize = _lastRecoveredViewSize;
+    final previousOrientation = _lastRecoveredOrientation;
+
+    _lastRecoveredViewSize = size;
+    _lastRecoveredOrientation = orientation;
+
+    if (previousSize == null || previousOrientation == null) {
+      return false;
+    }
+
+    return (previousSize.width - size.width).abs() > 0.5 ||
+        (previousSize.height - size.height).abs() > 0.5 ||
+        previousOrientation != orientation;
+  }
+
   void _recoverAfterMetricsChange() {
     if (!mounted) return;
+    if (!_hasRecoverableViewMetricChange()) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _measureBottomDock();
+      });
+      return;
+    }
+
     setState(() {
       _metricsEpoch++;
       _needsMeasurement = true;

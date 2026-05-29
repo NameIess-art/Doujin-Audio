@@ -31,13 +31,11 @@ internal class NativePlaybackWakeLock(
             }
         }
 
-        if (wakeLock?.isHeld == false) {
-            try {
-                wakeLock?.acquire()
-                acquiredAny = true
-            } catch (e: Exception) {
-                logWarn("wakelock_acquire_failed", e)
-            }
+        try {
+            wakeLock?.acquire()
+            acquiredAny = true
+        } catch (e: Exception) {
+            logWarn("wakelock_acquire_failed", e)
         }
 
         if (wifiLock == null) {
@@ -54,13 +52,11 @@ internal class NativePlaybackWakeLock(
             }
         }
 
-        if (wifiLock?.isHeld == false) {
-            try {
-                wifiLock?.acquire()
-                acquiredAny = true
-            } catch (e: Exception) {
-                logWarn("wifilock_acquire_failed", e)
-            }
+        try {
+            wifiLock?.acquire()
+            acquiredAny = true
+        } catch (e: Exception) {
+            logWarn("wifilock_acquire_failed", e)
         }
 
         if (acquiredAny) {

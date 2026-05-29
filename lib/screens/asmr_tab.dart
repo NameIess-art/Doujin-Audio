@@ -474,25 +474,24 @@ class _AsmrTabState extends State<AsmrTab>
                 padding: const EdgeInsets.fromLTRB(12, 1, 12, 7),
                 child: Row(
                   children: [
-                    for (var index = 0; index < _categories.length; index++)
+                    for (var index = 0; index < _categories.length; index++) ...[
+                      if (index > 0) const SizedBox(width: 8),
                       Expanded(
-                        child: Padding(
-                          padding: EdgeInsets.only(left: index == 0 ? 0 : 8),
-                          child: _AsmrCategoryButton(
-                            label: i18n.tr(
-                              _asmrCategoryLabelKey(_categories[index]),
-                            ),
-                            selected: _tabController.index == index,
-                            onTap: () {
-                              if (_tabController.index == index) {
-                                return;
-                              }
-                              FocusScope.of(context).unfocus();
-                              _tabController.animateTo(index);
-                            },
+                        child: _AsmrCategoryButton(
+                          label: i18n.tr(
+                            _asmrCategoryLabelKey(_categories[index]),
                           ),
+                          selected: _tabController.index == index,
+                          onTap: () {
+                            if (_tabController.index == index) {
+                              return;
+                            }
+                            FocusScope.of(context).unfocus();
+                            _tabController.animateTo(index);
+                          },
                         ),
                       ),
+                    ],
                   ],
                 ),
               ),
@@ -1932,7 +1931,7 @@ class _AsmrRootCardContent extends StatelessWidget {
           _AsmrWorkCover(url: _asmrWorkListCoverUrl(work), width: coverWidth),
       onPlay: onPlay,
       expanded: expanded,
-      showExpandIndicator: hasChildren,
+      showExpandIndicator: true,
       playTooltip: i18n.tr('asmr_add_to_playlist'),
       accentColor: asmrBlue,
     );

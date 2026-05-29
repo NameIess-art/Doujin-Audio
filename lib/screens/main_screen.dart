@@ -378,6 +378,10 @@ class _MainScreenState extends ConsumerState<MainScreen>
     _lastRecoveredViewSize = size;
     _lastRecoveredOrientation = orientation;
 
+    if (Platform.isWindows) {
+      return false;
+    }
+
     if (previousSize == null || previousOrientation == null) {
       return false;
     }

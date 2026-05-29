@@ -2,9 +2,9 @@
 
 Nameless Audio 是一个 Flutter + Android 原生 + Windows 桌面混合实现的本地音频播放器，面向 ASMR、语音作品和大体量本地音频库。它同时支持 ASMR.ONE 在线浏览与下载、本地曲库管理、多会话播放、字幕、睡眠计时器、DLsite 元数据、视频转音频和应用内更新。
 
-当前版本：`0.9.71+971`
+当前版本：`0.9.8+980`
 
-最新发布页：[v0.9.71](https://github.com/NameIess-art/nameless-audio/releases/tag/v0.9.71)
+最新发布页：[v0.9.8](https://github.com/NameIess-art/nameless-audio/releases/tag/v0.9.8)
 
 许可证：[MIT](LICENSE)
 
@@ -21,12 +21,12 @@ Nameless Audio 是一个 Flutter + Android 原生 + Windows 桌面混合实现�
 
 ## 下载
 
-从 [GitHub Release v0.9.71](https://github.com/NameIess-art/nameless-audio/releases/tag/v0.9.71) 下载：
+从 [GitHub Release v0.9.8](https://github.com/NameIess-art/nameless-audio/releases/tag/v0.9.8) 下载：
 
 | 文件 | 适用设备 |
 |---|---|
 | `app-arm64-v8a-release.apk` | 大多数 64 位 Android 手机，优先推荐 |
-| `NamelessAudio-windows-x64-v0.9.71.zip` | Windows x64 桌面环境 |
+| `NamelessAudio-windows-x64-v0.9.8.zip` | Windows x64 桌面环境 |
 
 Windows 版请解压整个 ZIP 后运行 `nameless_audio.exe`。不要只复制 exe，播放器、视频转音频和字幕窗口依赖同目录 DLL、`data/` 目录、MPV 与 FFmpeg 文件。
 
@@ -199,7 +199,7 @@ Windows 构建会下载完整 libmpv，并把 `assets/ffmpeg/ffmpeg.exe`、`asse
 
 ```powershell
 flutter build windows --release
-Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath dist\NamelessAudio-windows-x64-v0.9.71.zip -Force
+Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath dist\NamelessAudio-windows-x64-v0.9.8.zip -Force
 ```
 
 ## audio_service fork notes
@@ -207,6 +207,13 @@ Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath dist\
 - 项目当前通过 `dependency_overrides` 指向 `third_party/audio_service`。
 - Fork 相关定制说明位于 `third_party/audio_service/CUSTOMIZATION.md`。
 - 后续同步上游时，请同时更新该说明文件中的来源版本、改动文件和保留原因。
+
+## 发行说明 v0.9.8
+
+- 修复 Windows 应用内更新下载完成后只退出、不覆盖更新的问题；更新脚本会等待主进程退出，必要时请求管理员权限，失败时写入日志并显示提示。
+- 修复 GitHub API 匿名限流导致“检查更新失败”的问题；API 失败时会回退到 GitHub Release 页面解析最新版本和下载资产。
+- 修复 Windows 拉伸窗口大小时主页面 PageView 反复重建，导致音频库页面跳转和明显卡顿的问题。
+- 发布 Android arm64-v8a APK 与 Windows x64 ZIP；Windows ZIP 继续包含完整 libmpv、FFmpeg 和 FFprobe。
 
 ## 发行说明 v0.9.71
 
@@ -227,6 +234,7 @@ Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath dist\
 
 ## 近期重要变更
 
+- `v0.9.8`：修复 Windows 应用内 ZIP 更新、GitHub API 限流导致检查更新失败、Windows 拉伸窗口时页面跳转卡顿；发布 Android arm64 与 Windows x64 ZIP。
 - `v0.9.71`：修复 Android 搜索框点击后页面抽搐；修复编辑曲库菜单显示曲库根下子文件夹；发布 Android arm64 与 Windows x64 ZIP。
 - `v0.9.7`：新增 Windows ZIP 自更新；修复 Windows 声道调换、全局悬浮字幕和横竖屏切换恢复；发布 Android arm64 与 Windows x64 ZIP。
 - `v0.9.6`：修复多线程播放按钮回退；优化封面加载转圈、ASMR.ONE 封面主动加载、列表滚动性能、封面解析和 Warmup 调度；更新 README。

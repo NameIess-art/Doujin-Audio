@@ -60,65 +60,145 @@ class AppUpdateService {
   static const String repo = 'nameless-audio';
   static const String latestReleaseApi =
       'https://api.github.com/repos/$owner/$repo/releases/latest';
+  static const String latestReleasePage =
+      'https://github.com/$owner/$repo/releases/latest';
+  static const String releasesPage = 'https://github.com/$owner/$repo/releases';
   static const MethodChannel _channel = MethodChannel(UpdateChannel.name);
 
   static Future<AppUpdateInfo> checkLatest() async {
     final currentVersion = await currentAppVersion();
     final client = HttpClient();
     try {
-      final request = await client.getUrl(Uri.parse(latestReleaseApi));
-      request.headers.set(
-        HttpHeaders.acceptHeader,
-        'application/vnd.github+json',
-      );
-      request.headers.set(
-        HttpHeaders.userAgentHeader,
-        'Nameless Audio updater',
-      );
-      final response = await request.close();
-      final body = await response.transform(utf8.decoder).join();
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        throw const HttpException('GitHub release request failed.');
+      try {
+        return await _checkLatestFromApi(client, currentVersion);
+      } catch (_) {
+        return await _checkLatestFromReleasePage(client, currentVersion);
       }
-      final data = jsonDecode(body) as Map<String, dynamic>;
-      final tagName = (data['tag_name'] as String? ?? '').trim();
-      final latestVersionName = _versionNameFromTag(tagName);
-      final assets = (data['assets'] as List<dynamic>? ?? const [])
-          .whereType<Map<String, dynamic>>()
-          .toList(growable: false);
-      final updateAsset = _selectUpdateAsset(assets);
-      if (updateAsset == null) {
-        throw const FormatException(
-          'No update asset was found in the latest release.',
-        );
-      }
-      final assetUrl = updateAsset['browser_download_url'] as String? ?? '';
-      if (assetUrl.isEmpty) {
-        throw const FormatException(
-          'Update asset does not have a download URL.',
-        );
-      }
-      return AppUpdateInfo(
-        currentVersion: currentVersion,
-        latestVersionName: latestVersionName,
-        tagName: tagName,
-        releaseName: data['name'] as String?,
-        assetName:
-            updateAsset['name'] as String? ??
-            'NamelessAudio-$tagName${Platform.isWindows ? '.zip' : '.apk'}',
-        assetUrl: assetUrl,
-        releaseUrl:
-            data['html_url'] as String? ??
-            'https://github.com/$owner/$repo/releases/latest',
-        publishedAt: DateTime.tryParse(data['published_at'] as String? ?? ''),
-        isUpdateAvailable: _isNewerVersion(
-          latestVersionName,
-          currentVersion.versionName,
-        ),
-      );
     } finally {
       client.close(force: true);
     }
+  }
+
+  static Future<AppUpdateInfo> _checkLatestFromApi(
+    HttpClient client,
+    AppVersionInfo currentVersion,
+  ) async {
+    final request = await client.getUrl(Uri.parse(latestReleaseApi));
+    request.headers.set(
+      HttpHeaders.acceptHeader,
+      'application/vnd.github+json',
+    );
+    request.headers.set(HttpHeaders.userAgentHeader, 'Nameless Audio updater');
+    final response = await request.close();
+    final body = await response.transform(utf8.decoder).join();
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw const HttpException('GitHub release request failed.');
+    }
+    final data = jsonDecode(body) as Map<String, dynamic>;
+    final assets = (data['assets'] as List<dynamic>? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .toList(growable: false);
+    return _buildUpdateInfo(
+      currentVersion: currentVersion,
+      tagName: (data['tag_name'] as String? ?? '').trim(),
+      releaseName: data['name'] as String?,
+      releaseUrl:
+          data['html_url'] as String? ??
+          'https://github.com/$owner/$repo/releases/latest',
+      publishedAt: DateTime.tryParse(data['published_at'] as String? ?? ''),
+      assets: assets,
+    );
+  }
+
+  static Future<AppUpdateInfo> _checkLatestFromReleasePage(
+    HttpClient client,
+    AppVersionInfo currentVersion,
+  ) async {
+    final tagName = await _resolveLatestReleaseTag(client);
+    final assets = await _fetchExpandedReleaseAssets(client, tagName);
+    return _buildUpdateInfo(
+      currentVersion: currentVersion,
+      tagName: tagName,
+      releaseName: 'Nameless Audio $tagName',
+      releaseUrl: 'https://github.com/$owner/$repo/releases/tag/$tagName',
+      assets: assets,
+    );
+  }
+
+  static Future<String> _resolveLatestReleaseTag(HttpClient client) async {
+    final request = await client.getUrl(Uri.parse(latestReleasePage));
+    request.followRedirects = false;
+    request.headers.set(HttpHeaders.userAgentHeader, 'Nameless Audio updater');
+    final response = await request.close();
+    final body = await response.transform(utf8.decoder).join();
+    final location = response.headers.value(HttpHeaders.locationHeader);
+    if (location != null && location.isNotEmpty) {
+      final tagName = _tagNameFromReleaseUri(
+        Uri.parse(latestReleasePage).resolve(location),
+      );
+      if (tagName != null) return tagName;
+    }
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      final tagName = _tagNameFromReleaseHtml(body);
+      if (tagName != null) return tagName;
+    }
+    throw const HttpException('GitHub latest release page request failed.');
+  }
+
+  static Future<List<Map<String, dynamic>>> _fetchExpandedReleaseAssets(
+    HttpClient client,
+    String tagName,
+  ) async {
+    final uri = Uri.parse('$releasesPage/expanded_assets/$tagName');
+    final request = await client.getUrl(uri);
+    request.headers.set(HttpHeaders.userAgentHeader, 'Nameless Audio updater');
+    final response = await request.close();
+    final body = await response.transform(utf8.decoder).join();
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw const HttpException('GitHub release asset page request failed.');
+    }
+    final assets = _parseExpandedReleaseAssets(body);
+    if (assets.isEmpty) {
+      throw const FormatException('No release assets were found.');
+    }
+    return assets;
+  }
+
+  static AppUpdateInfo _buildUpdateInfo({
+    required AppVersionInfo currentVersion,
+    required String tagName,
+    required String releaseUrl,
+    required List<Map<String, dynamic>> assets,
+    String? releaseName,
+    DateTime? publishedAt,
+  }) {
+    final latestVersionName = _versionNameFromTag(tagName);
+    final updateAsset = _selectUpdateAsset(assets);
+    if (updateAsset == null) {
+      throw const FormatException(
+        'No update asset was found in the latest release.',
+      );
+    }
+    final assetUrl = updateAsset['browser_download_url'] as String? ?? '';
+    if (assetUrl.isEmpty) {
+      throw const FormatException('Update asset does not have a download URL.');
+    }
+    return AppUpdateInfo(
+      currentVersion: currentVersion,
+      latestVersionName: latestVersionName,
+      tagName: tagName,
+      releaseName: releaseName,
+      assetName:
+          updateAsset['name'] as String? ??
+          'NamelessAudio-$tagName${Platform.isWindows ? '.zip' : '.apk'}',
+      assetUrl: assetUrl,
+      releaseUrl: releaseUrl,
+      publishedAt: publishedAt,
+      isUpdateAvailable: _isNewerVersion(
+        latestVersionName,
+        currentVersion.versionName,
+      ),
+    );
   }
 
   static Future<AppVersionInfo> currentAppVersion() async {
@@ -130,7 +210,7 @@ class AppUpdateService {
       final buildNumber = (raw?['buildNumber'] as num?)?.toInt() ?? 0;
       return AppVersionInfo(versionName: versionName, buildNumber: buildNumber);
     } catch (_) {
-      return const AppVersionInfo(versionName: '0.9.71', buildNumber: 971);
+      return const AppVersionInfo(versionName: '0.9.8', buildNumber: 980);
     }
   }
 
@@ -279,6 +359,48 @@ class AppUpdateService {
     return zipAssets.first;
   }
 
+  static List<Map<String, dynamic>> _parseExpandedReleaseAssets(String html) {
+    final links = RegExp(
+      r'href="([^"]*/releases/download/[^"]+)"',
+    ).allMatches(html);
+    final assets = <Map<String, dynamic>>[];
+    final seen = <String>{};
+    for (final link in links) {
+      final rawHref = link.group(1)?.replaceAll('&amp;', '&') ?? '';
+      if (rawHref.isEmpty || !seen.add(rawHref)) continue;
+      final uri = Uri.parse('https://github.com').resolve(rawHref);
+      final name = uri.pathSegments.isNotEmpty
+          ? Uri.decodeComponent(uri.pathSegments.last)
+          : '';
+      if (name.isEmpty) continue;
+      assets.add({'name': name, 'browser_download_url': uri.toString()});
+    }
+    return assets;
+  }
+
+  static String? _tagNameFromReleaseHtml(String html) {
+    final canonical = RegExp(
+      r'<link[^>]+rel="canonical"[^>]+href="([^"]+)"',
+    ).firstMatch(html);
+    if (canonical != null) {
+      final tagName = _tagNameFromReleaseUri(Uri.parse(canonical.group(1)!));
+      if (tagName != null) return tagName;
+    }
+    final releaseLink = RegExp(
+      r'''/releases/tag/([^"'<>\s]+)''',
+    ).firstMatch(html);
+    if (releaseLink == null) return null;
+    return Uri.decodeComponent(releaseLink.group(1)!).trim();
+  }
+
+  static String? _tagNameFromReleaseUri(Uri uri) {
+    final segments = uri.pathSegments;
+    final tagIndex = segments.indexOf('tag');
+    if (tagIndex < 0 || tagIndex + 1 >= segments.length) return null;
+    final tagName = Uri.decodeComponent(segments[tagIndex + 1]).trim();
+    return tagName.isEmpty ? null : tagName;
+  }
+
   static Future<UpdateInstallResult> _installWindowsZip(File file) async {
     if (!await file.exists() || await file.length() <= 0) {
       return const UpdateInstallResult(
@@ -297,15 +419,14 @@ class AppUpdateService {
         'nameless_audio_windows_update_${DateTime.now().millisecondsSinceEpoch}.ps1',
       ),
     );
-    await script.writeAsString(_windowsUpdateScript);
+    await script.writeAsString(_windowsUpdateScript, flush: true);
 
     try {
-      await Process.start('powershell.exe', [
+      await Process.start(_windowsPowerShellExecutable(), [
         '-NoProfile',
         '-ExecutionPolicy',
         'Bypass',
-        '-WindowStyle',
-        'Hidden',
+        '-STA',
         '-File',
         script.path,
         file.path,
@@ -313,7 +434,7 @@ class AppUpdateService {
         exePath,
         pid.toString(),
       ], mode: ProcessStartMode.detached);
-      Timer(const Duration(milliseconds: 500), () => exit(0));
+      Timer(const Duration(milliseconds: 800), () => exit(0));
       return const UpdateInstallResult(ok: true, needsPermission: false);
     } catch (error) {
       return UpdateInstallResult(
@@ -322,6 +443,18 @@ class AppUpdateService {
         message: error.toString(),
       );
     }
+  }
+
+  static String _windowsPowerShellExecutable() {
+    final systemRoot = Platform.environment['SystemRoot'] ?? r'C:\Windows';
+    final powerShell = path.join(
+      systemRoot,
+      'System32',
+      'WindowsPowerShell',
+      'v1.0',
+      'powershell.exe',
+    );
+    return File(powerShell).existsSync() ? powerShell : 'powershell.exe';
   }
 
   static String _versionNameFromTag(String tagName) {
@@ -348,11 +481,19 @@ class AppUpdateService {
 
   static List<int> _versionParts(String value) {
     final base = value.split('+').first;
-    return base
+    final parts = base
         .split(RegExp(r'[^0-9]+'))
         .where((part) => part.isNotEmpty)
         .map((part) => int.tryParse(part) ?? 0)
         .toList(growable: false);
+    if (parts.length == 3 &&
+        parts[0] == 0 &&
+        parts[1] == 9 &&
+        parts[2] >= 70 &&
+        parts[2] < 80) {
+      return [0, 9, 7, parts[2] - 70];
+    }
+    return parts;
   }
 
   static String _safeFileName(String value) {
@@ -377,7 +518,8 @@ param(
   [Parameter(Mandatory=$true)][string]$ZipPath,
   [Parameter(Mandatory=$true)][string]$InstallDir,
   [Parameter(Mandatory=$true)][string]$ExePath,
-  [Parameter(Mandatory=$true)][int]$AppProcessId
+  [Parameter(Mandatory=$true)][int]$AppProcessId,
+  [switch]$Elevated
 )
 
 $ErrorActionPreference = 'Stop'
@@ -388,10 +530,82 @@ function Write-UpdateLog([string]$Message) {
   Add-Content -LiteralPath $logPath -Value "$timestamp $Message"
 }
 
-try {
+function Wait-AppExit {
   Write-UpdateLog "waiting pid=$AppProcessId"
-  Wait-Process -Id $AppProcessId -ErrorAction SilentlyContinue
+  $deadline = (Get-Date).AddSeconds(30)
+  while ((Get-Date) -lt $deadline) {
+    $process = Get-Process -Id $AppProcessId -ErrorAction SilentlyContinue
+    if ($null -eq $process) {
+      Start-Sleep -Milliseconds 400
+      return
+    }
+    Start-Sleep -Milliseconds 250
+  }
+  throw 'The application did not exit in time for the update.'
+}
+
+function Test-InstallDirWritable {
+  try {
+    $probe = Join-Path $InstallDir ('.nameless_audio_update_write_test_' + [Guid]::NewGuid().ToString('N') + '.tmp')
+    Set-Content -LiteralPath $probe -Value 'test' -Encoding UTF8
+    Remove-Item -LiteralPath $probe -Force
+    return $true
+  } catch {
+    return $false
+  }
+}
+
+function Quote-Argument([string]$Value) {
+  return '"' + ($Value -replace '"', '\"') + '"'
+}
+
+function Start-ElevatedUpdater {
+  $powerShell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+  if (-not (Test-Path -LiteralPath $powerShell)) {
+    $powerShell = 'powershell.exe'
+  }
+  $args = @(
+    '-NoProfile',
+    '-ExecutionPolicy',
+    'Bypass',
+    '-STA',
+    '-File',
+    (Quote-Argument $PSCommandPath),
+    (Quote-Argument $ZipPath),
+    (Quote-Argument $InstallDir),
+    (Quote-Argument $ExePath),
+    $AppProcessId,
+    '-Elevated'
+  ) -join ' '
+  Write-UpdateLog 'requesting elevated updater'
+  Start-Process -FilePath $powerShell -ArgumentList $args -Verb RunAs -WorkingDirectory $InstallDir
+}
+
+function Show-Failure([string]$Message) {
+  try {
+    Add-Type -AssemblyName PresentationFramework
+    [System.Windows.MessageBox]::Show(
+      "Nameless Audio update failed.`n`n$Message`n`nLog: $logPath",
+      'Nameless Audio Updater'
+    ) | Out-Null
+  } catch {
+    Start-Process -FilePath 'notepad.exe' -ArgumentList (Quote-Argument $logPath) -ErrorAction SilentlyContinue
+  }
+}
+
+try {
+  Write-UpdateLog "start zip=$ZipPath install=$InstallDir exe=$ExePath pid=$AppProcessId elevated=$Elevated"
+  Wait-AppExit
   Start-Sleep -Milliseconds 400
+
+  if (-not (Test-InstallDirWritable)) {
+    if (-not $Elevated) {
+      Start-ElevatedUpdater
+      Write-UpdateLog 'elevated updater started'
+      exit 0
+    }
+    throw "Cannot write to install directory: $InstallDir"
+  }
 
   $staging = Join-Path $env:TEMP ("nameless_audio_update_" + [Guid]::NewGuid().ToString("N"))
   New-Item -ItemType Directory -Force -Path $staging | Out-Null
@@ -405,8 +619,13 @@ try {
     throw "Cannot find $exeName inside update ZIP."
   }
   $payloadDir = $payloadExe.Directory.FullName
-  Write-UpdateLog "copying $payloadDir to $InstallDir"
-  Copy-Item -Path (Join-Path $payloadDir '*') -Destination $InstallDir -Recurse -Force
+  Write-UpdateLog "copying $payloadDir to $InstallDir with robocopy"
+  & robocopy $payloadDir $InstallDir /E /COPY:DAT /R:15 /W:1 /NFL /NDL /NP | Out-Null
+  $robocopyExitCode = $LASTEXITCODE
+  Write-UpdateLog "robocopy exit code=$robocopyExitCode"
+  if ($robocopyExitCode -ge 8) {
+    throw "File copy failed with robocopy exit code $robocopyExitCode."
+  }
 
   Write-UpdateLog "restarting $ExePath"
   Start-Process -FilePath $ExePath -WorkingDirectory $InstallDir
@@ -414,10 +633,6 @@ try {
   Write-UpdateLog 'update complete'
 } catch {
   Write-UpdateLog ("update failed: " + $_.Exception.Message)
-  Add-Type -AssemblyName PresentationFramework
-  [System.Windows.MessageBox]::Show(
-    "NL Audio update failed.`n`n$($_.Exception.Message)`n`nLog: $logPath",
-    "NL Audio Updater"
-  ) | Out-Null
+  Show-Failure $_.Exception.Message
 }
 ''';

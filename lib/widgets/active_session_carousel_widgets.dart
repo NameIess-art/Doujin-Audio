@@ -41,66 +41,57 @@ class _ActiveSessionCard extends ConsumerWidget {
         currentTrack?.displayName ??
         path.basenameWithoutExtension(view.trackPath);
     final screenSize = MediaQuery.sizeOf(context);
-    final isSmallWindow = screenSize.width < 450 || screenSize.height < 400;
     final isTinyWindow = screenSize.width < 300 || screenSize.height < 300;
-
-    final targetAlpha = isSmallWindow
-        ? (isDark ? 0.65 : 0.75)
-        : (isDark ? 0.45 : 0.55);
 
     return Semantics(
       button: true,
       label: displayName,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(cardRadius),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 32, sigmaY: 32),
-          child: Material(
-            color: Colors.transparent,
-            child: InkWell(
-              borderRadius: BorderRadius.circular(cardRadius),
-              onTap: onOpen,
-              child: Ink(
-                height: 74,
-                decoration: BoxDecoration(
-                  color:
-                      (isDark ? cs.surfaceBright : cs.surfaceContainerHighest)
-                          .withValues(alpha: targetAlpha),
-                  borderRadius: BorderRadius.circular(cardRadius),
-                  border: Border.all(
-                    color: cs.outlineVariant.withValues(
-                      alpha: isDark ? 0.3 : 0.5,
-                    ),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(cardRadius),
+            onTap: onOpen,
+            child: Ink(
+              height: 74,
+              decoration: BoxDecoration(
+                color: (isDark ? cs.surfaceBright : cs.surfaceContainerHighest)
+                    .withValues(alpha: 0.92),
+                borderRadius: BorderRadius.circular(cardRadius),
+                border: Border.all(
+                  color: cs.outlineVariant.withValues(
+                    alpha: isDark ? 0.3 : 0.5,
                   ),
-                  boxShadow: isTinyWindow
-                      ? null
-                      : [
-                          BoxShadow(
-                            color: cs.shadow.withValues(
-                              alpha: isPlaying ? 0.26 : 0.18,
-                            ),
-                            blurRadius: isPlaying ? 34 : 26,
-                            spreadRadius: -7,
-                            offset: const Offset(0, 18),
-                          ),
-                          BoxShadow(
-                            color: cs.primary.withValues(
-                              alpha: isPlaying ? 0.08 : 0.04,
-                            ),
-                            blurRadius: 18,
-                            spreadRadius: -10,
-                            offset: const Offset(0, 8),
-                          ),
-                        ],
                 ),
-                child: _buildCardContent(
-                  context,
-                  cs,
-                  isPlaying,
-                  view,
-                  currentTrack,
-                  displayName,
-                ),
+                boxShadow: isTinyWindow
+                    ? null
+                    : [
+                        BoxShadow(
+                          color: cs.shadow.withValues(
+                            alpha: isPlaying ? 0.26 : 0.18,
+                          ),
+                          blurRadius: isPlaying ? 34 : 26,
+                          spreadRadius: -7,
+                          offset: const Offset(0, 18),
+                        ),
+                        BoxShadow(
+                          color: cs.primary.withValues(
+                            alpha: isPlaying ? 0.08 : 0.04,
+                          ),
+                          blurRadius: 18,
+                          spreadRadius: -10,
+                          offset: const Offset(0, 8),
+                        ),
+                      ],
+              ),
+              child: _buildCardContent(
+                context,
+                cs,
+                isPlaying,
+                view,
+                currentTrack,
+                displayName,
               ),
             ),
           ),

@@ -705,7 +705,6 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                 ),
                 bottomSpacing: 4,
                 padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
-                backgroundOpacity: isWindows ? 1 : null,
                 additionalChild: dynamicSearchBar(),
               ),
             ),

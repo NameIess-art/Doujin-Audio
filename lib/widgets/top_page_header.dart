@@ -1,6 +1,3 @@
-import 'dart:io';
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -25,7 +22,6 @@ class TopPageHeader extends StatelessWidget {
     this.isLoading = false,
     this.marqueeTitle = false,
     this.forceMarqueeTitle = false,
-    this.backgroundOpacity,
   });
 
   final IconData? icon;
@@ -43,14 +39,11 @@ class TopPageHeader extends StatelessWidget {
   final bool isLoading;
   final bool marqueeTitle;
   final bool forceMarqueeTitle;
-  final double? backgroundOpacity;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final i18n = context.watch<AppLanguageProvider>();
-    final screenSize = MediaQuery.sizeOf(context);
-    final isSmallWindow = screenSize.width < 450 || screenSize.height < 400;
     final topPadding = useSafeAreaTop ? MediaQuery.paddingOf(context).top : 0.0;
     final resolvedTitle = isLoading ? i18n.tr('loading_dot') : title;
     final titleStyle = Theme.of(context).textTheme.headlineMedium?.copyWith(
@@ -133,56 +126,22 @@ class TopPageHeader extends StatelessWidget {
       ),
     );
 
-    const blurTarget = 24.0;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final alphaTarget = isSmallWindow
-        ? (isDark ? 0.65 : 0.75)
-        : (isDark ? 0.45 : 0.55);
-    final resolvedAlphaTarget = Platform.isWindows
-        ? 1.0
-        : (backgroundOpacity ?? alphaTarget);
-
-    return TweenAnimationBuilder<double>(
-      tween: Tween<double>(end: blurTarget),
-      duration: const Duration(milliseconds: 240),
-      curve: Curves.easeOutCubic,
-      builder: (context, blur, _) {
-        return TweenAnimationBuilder<double>(
-          tween: Tween<double>(end: resolvedAlphaTarget),
-          duration: const Duration(milliseconds: 240),
-          curve: Curves.easeOutCubic,
-          builder: (context, alpha, _) {
-            final headerWidget = Container(
-              padding: EdgeInsets.only(top: topPadding),
-              decoration: BoxDecoration(
-                color: cs.surface.withValues(alpha: alpha),
-                border: Border(
-                  bottom: BorderSide(
-                    color: cs.outlineVariant.withValues(alpha: 0.15),
-                    width: 0.5,
-                  ),
-                ),
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [headerContent, ?additionalChild],
-              ),
-            );
-
-            if (blur <= 0.1) {
-              return headerWidget;
-            }
-
-            return ClipRect(
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
-                child: headerWidget,
-              ),
-            );
-          },
-        );
-      },
+    return Container(
+      padding: EdgeInsets.only(top: topPadding),
+      decoration: BoxDecoration(
+        color: cs.surface.withValues(alpha: 0.92),
+        border: Border(
+          bottom: BorderSide(
+            color: cs.outlineVariant.withValues(alpha: 0.15),
+            width: 0.5,
+          ),
+        ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [headerContent, ?additionalChild],
+      ),
     );
   }
 }

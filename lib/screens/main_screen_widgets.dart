@@ -116,87 +116,71 @@ class _FloatingGlassPanel extends StatelessWidget {
   const _FloatingGlassPanel({
     required this.child,
     this.padding = EdgeInsets.zero,
-    this.borderOpacity = 0.42,
     this.shadowOpacity = 0.22,
     this.showTopHighlight = true,
-    this.primaryFillOpacity = 0.88,
-    this.secondaryFillOpacity = 0.10,
     this.tinyMode = false,
   });
 
   final Widget child;
   final double radius = 100;
   final EdgeInsetsGeometry padding;
-  final double borderOpacity;
   final double shadowOpacity;
   final bool showTopHighlight;
-  final double primaryFillOpacity;
-  final double secondaryFillOpacity;
   final bool tinyMode;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final screenSize = MediaQuery.sizeOf(context);
-    final isSmallWindow = screenSize.width < 450 || screenSize.height < 400;
-
-    // Lower alpha for true glass effect
-    final targetAlpha = isSmallWindow
-        ? (isDark ? 0.65 : 0.75)
-        : (isDark ? 0.45 : 0.55);
     final bgColor = isDark ? cs.surfaceBright : cs.surfaceContainerHighest;
 
-    Widget buildPanel() => BackdropFilter(
-      filter: ImageFilter.blur(sigmaX: 32, sigmaY: 32),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(radius),
-          color: bgColor.withValues(alpha: targetAlpha),
-          border: Border.all(
-            color: cs.outlineVariant.withValues(alpha: isDark ? 0.3 : 0.5),
-          ),
-          boxShadow: tinyMode
-              ? null
-              : [
-                  BoxShadow(
-                    color: cs.shadow.withValues(alpha: shadowOpacity * 0.8),
-                    blurRadius: 34,
-                    spreadRadius: -6,
-                    offset: const Offset(0, 18),
-                  ),
-                  BoxShadow(
-                    color: cs.primary.withValues(alpha: isDark ? 0.08 : 0.05),
-                    blurRadius: 18,
-                    spreadRadius: -10,
-                    offset: const Offset(0, 8),
-                  ),
-                ],
+    Widget buildPanel() => DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(radius),
+        color: bgColor.withValues(alpha: 0.92),
+        border: Border.all(
+          color: cs.outlineVariant.withValues(alpha: isDark ? 0.3 : 0.5),
         ),
-        child: Stack(
-          children: [
-            if (showTopHighlight && !tinyMode)
-              Positioned.fill(
-                child: IgnorePointer(
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(radius),
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          Colors.white.withValues(alpha: isDark ? 0.18 : 0.45),
-                          Colors.white.withValues(alpha: 0),
-                        ],
-                        stops: const [0, 0.15],
-                      ),
+        boxShadow: tinyMode
+            ? null
+            : [
+                BoxShadow(
+                  color: cs.shadow.withValues(alpha: shadowOpacity * 0.8),
+                  blurRadius: 34,
+                  spreadRadius: -6,
+                  offset: const Offset(0, 18),
+                ),
+                BoxShadow(
+                  color: cs.primary.withValues(alpha: isDark ? 0.08 : 0.05),
+                  blurRadius: 18,
+                  spreadRadius: -10,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+      ),
+      child: Stack(
+        children: [
+          if (showTopHighlight && !tinyMode)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(radius),
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.white.withValues(alpha: isDark ? 0.18 : 0.45),
+                        Colors.white.withValues(alpha: 0),
+                      ],
+                      stops: const [0, 0.15],
                     ),
                   ),
                 ),
               ),
-            Padding(padding: padding, child: child),
-          ],
-        ),
+            ),
+          Padding(padding: padding, child: child),
+        ],
       ),
     );
 

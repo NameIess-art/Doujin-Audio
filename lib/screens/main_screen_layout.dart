@@ -258,11 +258,8 @@ extension _MainScreenLayout on _MainScreenState {
                   widthFactor: 0.9,
                   child: _FloatingGlassPanel(
                     padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
-                    borderOpacity: 0.12,
                     shadowOpacity: 0.18,
                     showTopHighlight: false,
-                    primaryFillOpacity: 0.82,
-                    secondaryFillOpacity: 0.70,
                     tinyMode: tinyMode,
                     child: _buildBottomBar(context),
                   ),

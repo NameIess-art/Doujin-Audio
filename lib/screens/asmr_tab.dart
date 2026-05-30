@@ -628,7 +628,6 @@ class _AsmrTabState extends State<AsmrTab>
             isLoading: !globalState.initialized,
             bottomSpacing: 4,
             padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
-            backgroundOpacity: isWindows ? 1 : null,
             additionalChild: collapsingHeaderControls(),
           ),
         ),

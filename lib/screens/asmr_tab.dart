@@ -776,6 +776,9 @@ class _AsmrSearchBar extends StatelessWidget {
                 style: Theme.of(
                   context,
                 ).textTheme.bodyMedium?.copyWith(fontSize: 13),
+                textInputAction: TextInputAction.search,
+                onTapOutside: (event) => FocusManager.instance.primaryFocus?.unfocus(),
+                onSubmitted: (_) => FocusManager.instance.primaryFocus?.unfocus(),
                 decoration: InputDecoration(
                   filled: true,
                   fillColor: cs.surfaceContainerHigh,

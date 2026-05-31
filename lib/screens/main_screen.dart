@@ -45,8 +45,6 @@ class MainScreen extends ConsumerStatefulWidget {
 
 class _MainScreenState extends ConsumerState<MainScreen>
     with WidgetsBindingObserver {
-  static const Duration _pageTransitionDuration = Duration(milliseconds: 240);
-  static const Curve _pageTransitionCurve = Curves.easeOutCubic;
   static const double _desktopBreakpoint = 980;
   static const String _backgroundKeepAliveInitializedKey =
       'background_keep_alive_initialized_v2';
@@ -85,8 +83,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
   Size? _lastRecoveredViewSize;
   Orientation? _lastRecoveredOrientation;
 
-  int? _pendingTargetIndex;
-  int? _sourceIndexForAnimation;
   void _setLocalState(VoidCallback fn) => setState(fn);
 
   static const List<_MainDestination> _destinations = [
@@ -404,7 +400,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
       _metricsEpoch++;
       _needsMeasurement = true;
       _measuredBottomInset = 0;
-      _pendingTargetIndex = null;
     });
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -459,31 +454,17 @@ class _MainScreenState extends ConsumerState<MainScreen>
       Feedback.forTap(context);
     }
 
-    final int previousIndex = _pageController.page?.round() ?? _currentIndex;
-    _pendingTargetIndex = index;
-    _sourceIndexForAnimation = previousIndex;
     setState(() {
       _currentIndex = index;
     });
 
-    if (!_pageController.hasClients) return;
-
-    _pageController
-        .animateToPage(
-          index,
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeOutCubic,
-        )
-        .whenComplete(() {
-          if (!mounted) return;
-          if (_pendingTargetIndex == index) {
-            setState(() {
-              _pendingTargetIndex = null;
-              _sourceIndexForAnimation = null;
-            });
-          }
-          provider.scheduleUiWarmup(currentPageIndex: index);
-        });
+    if (_pageController.hasClients) {
+      _pageController.jumpToPage(index);
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _currentIndex != index) return;
+      provider.scheduleUiWarmup(currentPageIndex: index);
+    });
   }
 
   @override

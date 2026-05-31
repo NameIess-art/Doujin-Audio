@@ -558,6 +558,7 @@ class _LibraryCoverThumbnail extends ConsumerWidget {
           borderRadius: BorderRadius.circular(12),
           child: AsyncCoverImage(
             future: coverPathFuture,
+            initialPath: provider.resolvedCoverPathForFolder(folderPath),
             duration: Duration.zero,
             fallbackBuilder: (_) => fallback(),
             loadingBuilder: (_) => Stack(
@@ -640,6 +641,7 @@ class _LibraryTrackCoverThumbnail extends ConsumerWidget {
         borderRadius: BorderRadius.circular(12),
         child: AsyncCoverImage(
           future: coverPathFuture,
+          initialPath: provider.resolvedCoverPathForTrack(track),
           duration: Duration.zero,
           fallbackBuilder: (_) => fallback(),
           loadingBuilder: (_) => CoverLoadingIndicator(

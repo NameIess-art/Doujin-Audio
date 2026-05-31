@@ -22,8 +22,8 @@ class ThemeProvider with ChangeNotifier {
   Future<void> toggleTheme(bool value) async {
     if (_isDarkMode == value) return;
     _isDarkMode = value;
-    await AppPreferences.setBool('isDarkMode', value);
     notifyListeners();
+    await AppPreferences.setBool('isDarkMode', value);
   }
 
   static final ColorScheme _lightScheme =

@@ -86,6 +86,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
   Orientation? _lastRecoveredOrientation;
 
   int? _pendingTargetIndex;
+  int? _sourceIndexForAnimation;
   void _setLocalState(VoidCallback fn) => setState(fn);
 
   static const List<_MainDestination> _destinations = [
@@ -458,46 +459,31 @@ class _MainScreenState extends ConsumerState<MainScreen>
       Feedback.forTap(context);
     }
 
-    int? adjacentPageIndex;
-    if (_pageController.hasClients) {
-      final int previousIndex = _pageController.page?.round() ?? _currentIndex;
-      if ((index - previousIndex).abs() > 1) {
-        adjacentPageIndex = index > previousIndex ? index - 1 : index + 1;
-      }
-    }
-
+    final int previousIndex = _pageController.page?.round() ?? _currentIndex;
     _pendingTargetIndex = index;
+    _sourceIndexForAnimation = previousIndex;
     setState(() {
       _currentIndex = index;
     });
 
-    if (adjacentPageIndex != null && _pageController.hasClients) {
-      _pageController.jumpToPage(adjacentPageIndex);
-    }
-
     if (!_pageController.hasClients) return;
 
-    final width = MediaQuery.sizeOf(context).width;
-    final isLandscape =
-        MediaQuery.orientationOf(context) == Orientation.landscape;
-    final isDesktop =
-        Platform.isWindows || width >= _desktopBreakpoint || isLandscape;
-
-    if (Platform.isAndroid || isDesktop) {
-      _pageController.jumpToPage(index);
-      provider.scheduleUiWarmup(currentPageIndex: index);
-    } else {
-      _pageController
-          .animateToPage(
-            index,
-            duration: _pageTransitionDuration,
-            curve: _pageTransitionCurve,
-          )
-          .whenComplete(() {
-            if (!mounted) return;
-            provider.scheduleUiWarmup(currentPageIndex: index);
-          });
-    }
+    _pageController
+        .animateToPage(
+          index,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOutCubic,
+        )
+        .whenComplete(() {
+          if (!mounted) return;
+          if (_pendingTargetIndex == index) {
+            setState(() {
+              _pendingTargetIndex = null;
+              _sourceIndexForAnimation = null;
+            });
+          }
+          provider.scheduleUiWarmup(currentPageIndex: index);
+        });
   }
 
   @override

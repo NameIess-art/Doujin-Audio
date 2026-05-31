@@ -503,7 +503,7 @@ class _ActiveSessionProgressStripState
   }
 }
 
-class _ActiveSessionCover extends StatelessWidget {
+class _ActiveSessionCover extends ConsumerWidget {
   const _ActiveSessionCover({
     required this.sessionId,
     required this.track,
@@ -515,7 +515,8 @@ class _ActiveSessionCover extends StatelessWidget {
   final Future<String?> coverPathFuture;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final provider = ref.read(audioProviderFacadeProvider);
     final cs = Theme.of(context).colorScheme;
 
     Widget fallback() {
@@ -573,12 +574,13 @@ class _ActiveSessionCover extends StatelessWidget {
                 )
               : AsyncCoverImage(
                   future: coverPathFuture,
-                  fallbackBuilder: (_) => fallback(),
-                  loadingBuilder: (_) => CoverLoadingIndicator(
-                    size: 28,
-                    strokeWidth: 2.6,
-                    color: cs.primary,
-                  ),
+                  initialPath: provider.resolvedCoverPathForTrack(track),
+                      fallbackBuilder: (_) => fallback(),
+                      loadingBuilder: (_) => CoverLoadingIndicator(
+                        size: 28,
+                        strokeWidth: 2.6,
+                        color: cs.primary,
+                      ),
                   imageBuilder: (context, coverPath) {
                     final dpr = MediaQuery.devicePixelRatioOf(context);
                     return Image(

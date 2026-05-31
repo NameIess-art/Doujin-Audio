@@ -13,6 +13,10 @@ class ScanMergeIsolatePayload {
     required this.i18nImportedFiles,
     required this.i18nManuallySelectedFiles,
     required this.exclusionMatcher,
+    this.sourceFolderPath,
+    this.retainedTrackPaths = const <String>{},
+    this.retainedEntryPaths = const <String>{},
+    this.entrySnapshot,
   });
 
   final List<ScannedTrack> scannedTracks;
@@ -22,6 +26,10 @@ class ScanMergeIsolatePayload {
   final String i18nImportedFiles;
   final String i18nManuallySelectedFiles;
   final LibraryExclusionMatcher? exclusionMatcher;
+  final String? sourceFolderPath;
+  final Set<String> retainedTrackPaths;
+  final Set<String> retainedEntryPaths;
+  final LibraryEntrySnapshot? entrySnapshot;
 }
 
 class ScanMergeIsolateResult {
@@ -29,10 +37,14 @@ class ScanMergeIsolateResult {
     required this.trackBatch,
     required this.entryBatch,
     required this.duplicatesCount,
+    this.removedTrackPaths = const <String>[],
+    this.removedEntryPaths = const <String>[],
   });
   final List<MusicTrack> trackBatch;
   final List<MusicTrack> entryBatch;
   final int duplicatesCount;
+  final List<String> removedTrackPaths;
+  final List<String> removedEntryPaths;
 }
 
 ScanMergeIsolateResult processScannedTracksInIsolate(
@@ -159,9 +171,58 @@ ScanMergeIsolateResult processScannedTracksInIsolate(
     }
   }
 
+  final removedTrackPaths = <String>[];
+  final removedEntryPaths = <String>[];
+  final sourceFolderPath = payload.sourceFolderPath;
+  if (sourceFolderPath != null) {
+    final normalizedSourceFolder = PathMatcher.normalize(sourceFolderPath);
+    if (payload.retainedTrackPaths.isNotEmpty) {
+      for (final track in payload.library) {
+        if (!PathMatcher.isWithinOrEqualNormalized(
+          track.path,
+          normalizedSourceFolder,
+        )) {
+          continue;
+        }
+        if (!PathMatcher.containsEquivalent(
+          payload.retainedTrackPaths,
+          track.path,
+        )) {
+          removedTrackPaths.add(track.path);
+        }
+      }
+    }
+
+    final snapshot = payload.entrySnapshot;
+    if (snapshot != null && payload.retainedEntryPaths.isNotEmpty) {
+      for (final entry in snapshot.entriesByPath.values) {
+        if (!PathMatcher.isWithinOrEqualNormalized(
+          entry.path,
+          normalizedSourceFolder,
+        )) {
+          continue;
+        }
+        final retained = entry.isFolder
+            ? payload.retainedEntryPaths.any(
+                (path) =>
+                    PathMatcher.isWithinOrEqualNormalized(path, entry.path),
+              )
+            : PathMatcher.containsEquivalent(
+                payload.retainedEntryPaths,
+                entry.path,
+              );
+        if (!retained) {
+          removedEntryPaths.add(entry.path);
+        }
+      }
+    }
+  }
+
   return ScanMergeIsolateResult(
     trackBatch: trackBatch,
     entryBatch: entryBatch,
     duplicatesCount: duplicates,
+    removedTrackPaths: List<String>.unmodifiable(removedTrackPaths),
+    removedEntryPaths: List<String>.unmodifiable(removedEntryPaths),
   );
 }

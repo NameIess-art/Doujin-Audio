@@ -23,6 +23,7 @@ class AsyncCoverImage extends StatefulWidget {
   const AsyncCoverImage({
     super.key,
     required this.future,
+    this.initialPath,
     required this.imageBuilder,
     required this.fallbackBuilder,
     this.loadingBuilder,
@@ -30,6 +31,7 @@ class AsyncCoverImage extends StatefulWidget {
   });
 
   final Future<String?> future;
+  final String? initialPath;
   final Widget Function(BuildContext context, String path) imageBuilder;
   final WidgetBuilder fallbackBuilder;
   final WidgetBuilder? loadingBuilder;
@@ -47,7 +49,13 @@ class _AsyncCoverImageState extends State<AsyncCoverImage> {
   @override
   void initState() {
     super.initState();
-    _bindFuture(widget.future);
+    bool hasInitial = false;
+    if (widget.initialPath != null && widget.initialPath!.isNotEmpty) {
+      _resolvedPath = widget.initialPath;
+      _isResolved = true;
+      hasInitial = true;
+    }
+    _bindFuture(widget.future, keepState: hasInitial);
   }
 
   @override
@@ -58,16 +66,18 @@ class _AsyncCoverImageState extends State<AsyncCoverImage> {
     }
   }
 
-  void _bindFuture(Future<String?> future) {
+  void _bindFuture(Future<String?> future, {bool keepState = false}) {
     final token = ++_token;
-    if (mounted) {
-      setState(() {
+    if (!keepState) {
+      if (mounted) {
+        setState(() {
+          _resolvedPath = null;
+          _isResolved = false;
+        });
+      } else {
         _resolvedPath = null;
         _isResolved = false;
-      });
-    } else {
-      _resolvedPath = null;
-      _isResolved = false;
+      }
     }
     future
         .then((path) {

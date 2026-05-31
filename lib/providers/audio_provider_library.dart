@@ -602,6 +602,12 @@ extension AudioProviderLibrary on AudioProvider {
     });
   }
 
+  void removeTracksByPath(Iterable<String> trackPaths) {
+    final removedPaths = trackPaths.toSet();
+    if (removedPaths.isEmpty) return;
+    _removeTracksWhere((track) => removedPaths.contains(track.path));
+  }
+
   void removeLibraryEntriesDeletedFromFolder(
     String libraryPath,
     String folderPath,
@@ -613,6 +619,25 @@ extension AudioProviderLibrary on AudioProvider {
           folderPath,
           retainedPaths,
         );
+    if (removedPaths.isEmpty) return;
+    if (!_skipDisposePersistence) {
+      unawaited(
+        _audioDatabaseRepository.deleteLibraryEntries(
+          libraryPath,
+          removedPaths,
+        ),
+      );
+    }
+  }
+
+  void removeLibraryEntriesByPaths(
+    String libraryPath,
+    Iterable<String> entryPaths,
+  ) {
+    final removedPaths = _libraryService.removeLibraryEntriesByPaths(
+      libraryPath,
+      entryPaths,
+    );
     if (removedPaths.isEmpty) return;
     if (!_skipDisposePersistence) {
       unawaited(
@@ -665,8 +690,8 @@ extension AudioProviderLibrary on AudioProvider {
     Iterable<String> folderPaths = const <String>[],
     Iterable<String> removeWatchedFolders = const <String>[],
     Iterable<String> addWatchedFolders = const <String>[],
-    Set<String> retainedTrackPaths = const <String>{},
-    Set<String> retainedEntryPaths = const <String>{},
+    Iterable<String> removeTrackPaths = const <String>[],
+    Iterable<String> removeEntryPaths = const <String>[],
     bool persist = true,
   }) {
     for (final folderPath in removeWatchedFolders) {
@@ -687,15 +712,13 @@ extension AudioProviderLibrary on AudioProvider {
     if (tracks.isNotEmpty) {
       addOrReplaceTracks(tracks, notify: false, persist: persist);
     }
-    if (retainedTrackPaths.isNotEmpty) {
-      removeTracksDeletedFromFolder(sourceFolderPath, retainedTrackPaths);
+    final trackPathsToRemove = removeTrackPaths.toList(growable: false);
+    if (trackPathsToRemove.isNotEmpty) {
+      removeTracksByPath(trackPathsToRemove);
     }
-    if (retainedEntryPaths.isNotEmpty) {
-      removeLibraryEntriesDeletedFromFolder(
-        libraryRoot,
-        sourceFolderPath,
-        retainedEntryPaths,
-      );
+    final entryPathsToRemove = removeEntryPaths.toList(growable: false);
+    if (entryPathsToRemove.isNotEmpty) {
+      removeLibraryEntriesByPaths(libraryRoot, entryPathsToRemove);
     }
     return _library.length - beforeCount;
   }

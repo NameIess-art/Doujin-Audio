@@ -259,8 +259,9 @@ class _AsmrDetailHero extends StatelessWidget {
             child: Image.network(
               work.mainCoverUrl.isNotEmpty ? work.mainCoverUrl : work.coverUrl,
               fit: BoxFit.cover,
-              cacheWidth: (110 * MediaQuery.devicePixelRatioOf(context))
-                  .round(),
+              cacheWidth:
+                  (110 * MediaQuery.devicePixelRatioOf(context).clamp(1.0, 1.5))
+                      .round(),
               loadingBuilder: (context, child, loadingProgress) =>
                   loadingProgress == null
                   ? child

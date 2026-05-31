@@ -864,6 +864,37 @@ class LibraryService {
     return removedPaths;
   }
 
+  List<String> removeLibraryEntriesByPaths(
+    String libraryPath,
+    Iterable<String> entryPaths,
+  ) {
+    final normalizedLibraryPath = PathMatcher.normalize(libraryPath);
+    final entries = libraryEntriesByLibrary[normalizedLibraryPath];
+    if (entries == null || entries.isEmpty) return const <String>[];
+    final normalizedEntryPaths = entryPaths.map(PathMatcher.normalize).toSet();
+    if (normalizedEntryPaths.isEmpty) return const <String>[];
+
+    final removedPaths = <String>[];
+    entries.removeWhere((entryPath, entry) {
+      if (!normalizedEntryPaths.contains(PathMatcher.normalize(entryPath))) {
+        return false;
+      }
+      removedPaths.add(entry.path);
+      return true;
+    });
+
+    if (removedPaths.isNotEmpty) {
+      final folders = excludedLibraryFolders[normalizedLibraryPath];
+      final tracks = excludedLibraryTracks[normalizedLibraryPath];
+      for (final removedPath in removedPaths) {
+        if (folders != null) _removePathsWithin(folders, removedPath);
+        if (tracks != null) _removePathsWithin(tracks, removedPath);
+      }
+    }
+
+    return removedPaths;
+  }
+
   List<String> setLibraryEntriesSubtreeState(
     String libraryPath,
     String rootPath,

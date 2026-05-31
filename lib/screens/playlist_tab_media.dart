@@ -1,6 +1,6 @@
 part of 'playlist_tab.dart';
 
-class _SessionHeroArtwork extends StatelessWidget {
+class _SessionHeroArtwork extends ConsumerWidget {
   const _SessionHeroArtwork({
     required this.sessionId,
     required this.height,
@@ -14,7 +14,8 @@ class _SessionHeroArtwork extends StatelessWidget {
   final Future<String?> coverPathFuture;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final provider = ref.read(audioProviderFacadeProvider);
     final cs = Theme.of(context).colorScheme;
     final dpr = MediaQuery.devicePixelRatioOf(context);
 
@@ -79,7 +80,7 @@ class _SessionHeroArtwork extends StatelessWidget {
                       Image.network(
                         track!.remoteCoverUrl!,
                         fit: BoxFit.cover,
-                        cacheWidth: cacheW,
+                        cacheWidth: (cacheW * dpr.clamp(1.0, 1.5) / dpr).round(),
                         loadingBuilder: (context, child, loadingProgress) =>
                             loadingProgress == null
                             ? child
@@ -96,6 +97,7 @@ class _SessionHeroArtwork extends StatelessWidget {
                       AsyncCoverImage(
                         duration: Duration.zero,
                         future: coverPathFuture,
+                        initialPath: provider.resolvedCoverPathForTrack(track),
                         fallbackBuilder: (_) => fallback(),
                         loadingBuilder: (_) => Stack(
                           fit: StackFit.expand,
@@ -115,7 +117,7 @@ class _SessionHeroArtwork extends StatelessWidget {
                             child: Image(
                               image: resizeFileImageIfNeeded(
                                 path: coverPath,
-                                cacheWidth: cacheW,
+                                cacheWidth: (cacheW * dpr.clamp(1.0, 1.5) / dpr).round(),
                               ),
                               fit: BoxFit.cover,
                               gaplessPlayback: true,
@@ -150,7 +152,7 @@ class _SessionHeroArtwork extends StatelessWidget {
   }
 }
 
-class _SessionCoverThumbnail extends StatelessWidget {
+class _SessionCoverThumbnail extends ConsumerWidget {
   const _SessionCoverThumbnail({
     required this.sessionId,
     required this.track,
@@ -162,7 +164,8 @@ class _SessionCoverThumbnail extends StatelessWidget {
   final Future<String?> coverPathFuture;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final provider = ref.read(audioProviderFacadeProvider);
     final cs = Theme.of(context).colorScheme;
 
     Widget fallback({bool hideIcon = false}) {
@@ -208,7 +211,7 @@ class _SessionCoverThumbnail extends StatelessWidget {
               ? Image.network(
                   track!.remoteCoverUrl!,
                   fit: BoxFit.cover,
-                  cacheWidth: (96 * MediaQuery.devicePixelRatioOf(context))
+                  cacheWidth: (96 * MediaQuery.devicePixelRatioOf(context).clamp(1.0, 1.5))
                       .round(),
                   loadingBuilder: (context, child, loadingProgress) =>
                       loadingProgress == null
@@ -221,6 +224,7 @@ class _SessionCoverThumbnail extends StatelessWidget {
               : AsyncCoverImage(
                   duration: Duration.zero,
                   future: coverPathFuture,
+                  initialPath: provider.resolvedCoverPathForTrack(track),
                   fallbackBuilder: (_) => fallback(),
                   loadingBuilder: (_) => Stack(
                     fit: StackFit.expand,
@@ -236,7 +240,7 @@ class _SessionCoverThumbnail extends StatelessWidget {
                     return Image(
                       image: resizeFileImageIfNeeded(
                         path: coverPath,
-                        cacheWidth: (96 * dpr).round(),
+                        cacheWidth: (96 * dpr.clamp(1.0, 1.5)).round(),
                       ),
                       fit: BoxFit.cover,
                       gaplessPlayback: true,

@@ -127,8 +127,8 @@ class LibraryRefreshChunk {
     this.folderPaths = const <String>[],
     this.removeWatchedFolders = const <String>[],
     this.addWatchedFolders = const <String>[],
-    this.retainedTrackPaths = const <String>{},
-    this.retainedEntryPaths = const <String>{},
+    this.removeTrackPaths = const <String>[],
+    this.removeEntryPaths = const <String>[],
     this.progressLabel = '',
     this.duplicateCount = 0,
     this.failureCount = 0,
@@ -140,8 +140,8 @@ class LibraryRefreshChunk {
   final List<String> folderPaths;
   final List<String> removeWatchedFolders;
   final List<String> addWatchedFolders;
-  final Set<String> retainedTrackPaths;
-  final Set<String> retainedEntryPaths;
+  final List<String> removeTrackPaths;
+  final List<String> removeEntryPaths;
   final String progressLabel;
   final int duplicateCount;
   final int failureCount;
@@ -271,8 +271,8 @@ class LibraryScannerService {
           folderPaths: chunk.folderPaths,
           removeWatchedFolders: chunk.removeWatchedFolders,
           addWatchedFolders: chunk.addWatchedFolders,
-          retainedTrackPaths: chunk.retainedTrackPaths,
-          retainedEntryPaths: chunk.retainedEntryPaths,
+          removeTrackPaths: chunk.removeTrackPaths,
+          removeEntryPaths: chunk.removeEntryPaths,
         );
         for (final childFolder in chunk.addWatchedFolders) {
           unawaited(_prefillRjDetailForFolder(provider, childFolder));
@@ -509,6 +509,10 @@ class LibraryScannerService {
       i18nImportedFiles: i18n.tr('imported_files'),
       i18nManuallySelectedFiles: i18n.tr('manually_selected_files'),
       exclusionMatcher: mergeContext.exclusionMatcher,
+      sourceFolderPath: sourceFolderPath,
+      retainedTrackPaths: retainedTrackPaths,
+      retainedEntryPaths: retainedEntryPaths,
+      entrySnapshot: mergeContext.entrySnapshot,
     );
     final result = await Isolate.run(
       () => processScannedTracksInIsolate(payload),
@@ -536,8 +540,8 @@ class LibraryScannerService {
       folderPaths: folderPaths,
       removeWatchedFolders: removeWatchedFolders,
       addWatchedFolders: addWatchedFolders,
-      retainedTrackPaths: retainedTrackPaths,
-      retainedEntryPaths: retainedEntryPaths,
+      removeTrackPaths: result.removedTrackPaths,
+      removeEntryPaths: result.removedEntryPaths,
       duplicateCount: result.duplicatesCount,
       failureCount: failureCount,
       progressPrefix: progressPrefix,
@@ -559,8 +563,8 @@ class LibraryScannerService {
     required List<String> folderPaths,
     required List<String> removeWatchedFolders,
     required List<String> addWatchedFolders,
-    required Set<String> retainedTrackPaths,
-    required Set<String> retainedEntryPaths,
+    required List<String> removeTrackPaths,
+    required List<String> removeEntryPaths,
     required int duplicateCount,
     required int failureCount,
     required String progressPrefix,
@@ -580,8 +584,8 @@ class LibraryScannerService {
           folderPaths: folderPaths,
           removeWatchedFolders: removeWatchedFolders,
           addWatchedFolders: addWatchedFolders,
-          retainedTrackPaths: retainedTrackPaths,
-          retainedEntryPaths: retainedEntryPaths,
+          removeTrackPaths: removeTrackPaths,
+          removeEntryPaths: removeEntryPaths,
           progressLabel: label,
           duplicateCount: duplicateCount,
           failureCount: failureCount,
@@ -609,8 +613,8 @@ class LibraryScannerService {
               ? removeWatchedFolders
               : const <String>[],
           addWatchedFolders: isLast ? addWatchedFolders : const <String>[],
-          retainedTrackPaths: isLast ? retainedTrackPaths : const <String>{},
-          retainedEntryPaths: isLast ? retainedEntryPaths : const <String>{},
+          removeTrackPaths: isLast ? removeTrackPaths : const <String>[],
+          removeEntryPaths: isLast ? removeEntryPaths : const <String>[],
           progressLabel: label,
           duplicateCount: isLast ? duplicateCount : 0,
           failureCount: isLast ? failureCount : 0,

@@ -627,7 +627,7 @@ class _FolderCoverSelectorState extends State<_FolderCoverSelector> {
                         File(_images[index]),
                         fit: BoxFit.cover,
                         cacheWidth:
-                            (400 * MediaQuery.devicePixelRatioOf(context))
+                            (140 * MediaQuery.devicePixelRatioOf(context))
                                 .round(),
                         errorBuilder: (_, _, _) => DecoratedBox(
                           decoration: BoxDecoration(

@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -369,7 +368,9 @@ class _AsmrTabState extends State<AsmrTab>
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 4,
+                        ),
                         controlAffinity: ListTileControlAffinity.leading,
                         dense: true,
                       ),
@@ -484,7 +485,11 @@ class _AsmrTabState extends State<AsmrTab>
                 padding: const EdgeInsets.fromLTRB(12, 1, 12, 7),
                 child: Row(
                   children: [
-                    for (var index = 0; index < _categories.length; index++) ...[
+                    for (
+                      var index = 0;
+                      index < _categories.length;
+                      index++
+                    ) ...[
                       if (index > 0) const SizedBox(width: 8),
                       Expanded(
                         child: _AsmrCategoryButton(
@@ -786,8 +791,10 @@ class _AsmrSearchBar extends StatelessWidget {
                   context,
                 ).textTheme.bodyMedium?.copyWith(fontSize: 13),
                 textInputAction: TextInputAction.search,
-                onTapOutside: (event) => FocusManager.instance.primaryFocus?.unfocus(),
-                onSubmitted: (_) => FocusManager.instance.primaryFocus?.unfocus(),
+                onTapOutside: (event) =>
+                    FocusManager.instance.primaryFocus?.unfocus(),
+                onSubmitted: (_) =>
+                    FocusManager.instance.primaryFocus?.unfocus(),
                 decoration: InputDecoration(
                   filled: true,
                   fillColor: cs.surfaceContainerHigh,
@@ -1121,16 +1128,9 @@ class _AsmrPanelOverlay extends StatelessWidget {
                   behavior: HitTestBehavior.opaque,
                   onTap: () => Navigator.of(context).maybePop(),
                   child: showBackdrop
-                      ? ClipRect(
-                          child: BackdropFilter(
-                            filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
-                            child: DecoratedBox(
-                              decoration: BoxDecoration(
-                                color: cs.scrim.withValues(
-                                  alpha: 0.12 + (0.10 * progress),
-                                ),
-                              ),
-                            ),
+                      ? DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: cs.scrim.withValues(alpha: 0.80 * progress),
                           ),
                         )
                       : const SizedBox.expand(),
@@ -1139,20 +1139,17 @@ class _AsmrPanelOverlay extends StatelessWidget {
               SafeArea(
                 child: FadeTransition(
                   opacity: curved,
-                  child: ScaleTransition(
-                    scale: Tween<double>(begin: 0.88, end: 1.0).animate(curved),
-                    child: Padding(
-                      padding: outerPadding,
-                      child: Align(
-                        alignment: isDesktop
-                            ? Alignment.center
-                            : Alignment.topCenter,
-                        child: ConstrainedBox(
-                          constraints: BoxConstraints(maxWidth: maxWidth),
-                          child: Theme(
-                            data: _asmrPanelTheme(context),
-                            child: Builder(builder: builder),
-                          ),
+                  child: Padding(
+                    padding: outerPadding,
+                    child: Align(
+                      alignment: isDesktop
+                          ? Alignment.center
+                          : Alignment.topCenter,
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(maxWidth: maxWidth),
+                        child: Theme(
+                          data: _asmrPanelTheme(context),
+                          child: Builder(builder: builder),
                         ),
                       ),
                     ),

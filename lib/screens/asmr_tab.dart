@@ -340,8 +340,12 @@ class _AsmrTabState extends State<AsmrTab>
                 ),
               ],
               child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
+                child: GridView.count(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  crossAxisCount: 2,
+                  mainAxisExtent: 56,
+                  padding: EdgeInsets.zero,
                   children: [
                     for (final category in kAsmrSelectableCategories)
                       CheckboxListTile(
@@ -360,7 +364,12 @@ class _AsmrTabState extends State<AsmrTab>
                                   }
                                 });
                               },
-                        title: Text(i18n.tr(_asmrCategoryLabelKey(category))),
+                        title: Text(
+                          i18n.tr(_asmrCategoryLabelKey(category)),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 4),
                         controlAffinity: ListTileControlAffinity.leading,
                         dense: true,
                       ),

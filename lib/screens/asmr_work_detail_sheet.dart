@@ -256,8 +256,10 @@ class _AsmrDetailHero extends StatelessWidget {
           child: SizedBox(
             width: 110,
             height: 146,
-            child: Image.network(
-              work.mainCoverUrl.isNotEmpty ? work.mainCoverUrl : work.coverUrl,
+            child: RetryingNetworkImage(
+              url: work.mainCoverUrl.isNotEmpty
+                  ? work.mainCoverUrl
+                  : work.coverUrl,
               fit: BoxFit.cover,
               cacheWidth:
                   (110 * MediaQuery.devicePixelRatioOf(context).clamp(1.0, 1.5))
@@ -270,7 +272,7 @@ class _AsmrDetailHero extends StatelessWidget {
                       strokeWidth: 3,
                       color: asmrBlue,
                     ),
-              errorBuilder: (_, _, _) => DecoratedBox(
+              fallbackBuilder: (_) => DecoratedBox(
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     begin: Alignment.topLeft,

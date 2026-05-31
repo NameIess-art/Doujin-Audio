@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -26,16 +27,22 @@ class AsyncCoverImage extends StatefulWidget {
     this.initialPath,
     required this.imageBuilder,
     required this.fallbackBuilder,
+    this.retryFutureBuilder,
     this.loadingBuilder,
     this.duration = const Duration(milliseconds: 600),
+    this.retryDelay = const Duration(seconds: 2),
+    this.maxRetryAttempts = 12,
   });
 
   final Future<String?> future;
   final String? initialPath;
   final Widget Function(BuildContext context, String path) imageBuilder;
   final WidgetBuilder fallbackBuilder;
+  final Future<String?> Function()? retryFutureBuilder;
   final WidgetBuilder? loadingBuilder;
   final Duration duration;
+  final Duration retryDelay;
+  final int maxRetryAttempts;
 
   @override
   State<AsyncCoverImage> createState() => _AsyncCoverImageState();
@@ -45,6 +52,8 @@ class _AsyncCoverImageState extends State<AsyncCoverImage> {
   String? _resolvedPath;
   bool _isResolved = false;
   int _token = 0;
+  int _retryAttempt = 0;
+  Timer? _retryTimer;
 
   @override
   void initState() {
@@ -62,12 +71,27 @@ class _AsyncCoverImageState extends State<AsyncCoverImage> {
   void didUpdateWidget(covariant AsyncCoverImage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!identical(oldWidget.future, widget.future)) {
+      _retryAttempt = 0;
       _bindFuture(widget.future);
     }
   }
 
-  void _bindFuture(Future<String?> future, {bool keepState = false}) {
+  @override
+  void dispose() {
+    _retryTimer?.cancel();
+    super.dispose();
+  }
+
+  void _bindFuture(
+    Future<String?> future, {
+    bool keepState = false,
+    bool resetRetry = true,
+  }) {
     final token = ++_token;
+    _retryTimer?.cancel();
+    if (resetRetry) {
+      _retryAttempt = 0;
+    }
     if (!keepState) {
       if (mounted) {
         setState(() {
@@ -86,6 +110,11 @@ class _AsyncCoverImageState extends State<AsyncCoverImage> {
             _resolvedPath = path;
             _isResolved = true;
           });
+          if (path == null || path.isEmpty) {
+            _scheduleRetry(token);
+          } else {
+            _retryAttempt = 0;
+          }
         })
         .catchError((_) {
           if (!mounted || token != _token) return;
@@ -93,7 +122,23 @@ class _AsyncCoverImageState extends State<AsyncCoverImage> {
             _resolvedPath = null;
             _isResolved = true;
           });
+          _scheduleRetry(token);
         });
+  }
+
+  void _scheduleRetry(int token) {
+    final retryFutureBuilder = widget.retryFutureBuilder;
+    if (retryFutureBuilder == null ||
+        _retryAttempt >= widget.maxRetryAttempts ||
+        _retryTimer?.isActive == true) {
+      return;
+    }
+    final nextAttempt = _retryAttempt + 1;
+    _retryTimer = Timer(widget.retryDelay, () {
+      if (!mounted || token != _token) return;
+      _retryAttempt = nextAttempt;
+      _bindFuture(retryFutureBuilder(), keepState: true, resetRetry: false);
+    });
   }
 
   @override
@@ -155,6 +200,212 @@ class CoverLoadingIndicator extends StatelessWidget {
           color: color ?? cs.primary,
         ),
       ),
+    );
+  }
+}
+
+class RetryingNetworkImage extends StatelessWidget {
+  const RetryingNetworkImage({
+    super.key,
+    required this.url,
+    required this.fallbackBuilder,
+    this.loadingBuilder,
+    this.fit,
+    this.alignment = Alignment.center,
+    this.cacheWidth,
+    this.cacheHeight,
+    this.color,
+    this.colorBlendMode,
+    this.filterQuality = FilterQuality.medium,
+    this.gaplessPlayback = true,
+    this.retryDelay = const Duration(seconds: 2),
+    this.maxRetryAttempts = 12,
+  });
+
+  final String url;
+  final WidgetBuilder fallbackBuilder;
+  final ImageLoadingBuilder? loadingBuilder;
+  final BoxFit? fit;
+  final AlignmentGeometry alignment;
+  final int? cacheWidth;
+  final int? cacheHeight;
+  final Color? color;
+  final BlendMode? colorBlendMode;
+  final FilterQuality filterQuality;
+  final bool gaplessPlayback;
+  final Duration retryDelay;
+  final int maxRetryAttempts;
+
+  @override
+  Widget build(BuildContext context) {
+    final trimmedUrl = url.trim();
+    if (trimmedUrl.isEmpty) {
+      return fallbackBuilder(context);
+    }
+    return RetryingImage(
+      retryKey: trimmedUrl,
+      imageProviderBuilder: () => ResizeImage.resizeIfNeeded(
+        cacheWidth,
+        cacheHeight,
+        NetworkImage(trimmedUrl),
+      ),
+      fallbackBuilder: fallbackBuilder,
+      loadingBuilder: loadingBuilder,
+      fit: fit,
+      alignment: alignment,
+      color: color,
+      colorBlendMode: colorBlendMode,
+      filterQuality: filterQuality,
+      gaplessPlayback: gaplessPlayback,
+      retryDelay: retryDelay,
+      maxRetryAttempts: maxRetryAttempts,
+    );
+  }
+}
+
+class RetryingFileImage extends StatelessWidget {
+  const RetryingFileImage({
+    super.key,
+    required this.path,
+    required this.fallbackBuilder,
+    this.loadingBuilder,
+    this.fit,
+    this.alignment = Alignment.center,
+    this.cacheWidth,
+    this.cacheHeight,
+    this.color,
+    this.colorBlendMode,
+    this.filterQuality = FilterQuality.medium,
+    this.gaplessPlayback = true,
+    this.retryDelay = const Duration(seconds: 2),
+    this.maxRetryAttempts = 12,
+  });
+
+  final String path;
+  final WidgetBuilder fallbackBuilder;
+  final ImageLoadingBuilder? loadingBuilder;
+  final BoxFit? fit;
+  final AlignmentGeometry alignment;
+  final int? cacheWidth;
+  final int? cacheHeight;
+  final Color? color;
+  final BlendMode? colorBlendMode;
+  final FilterQuality filterQuality;
+  final bool gaplessPlayback;
+  final Duration retryDelay;
+  final int maxRetryAttempts;
+
+  @override
+  Widget build(BuildContext context) {
+    if (path.isEmpty) {
+      return fallbackBuilder(context);
+    }
+    return RetryingImage(
+      retryKey: path,
+      imageProviderBuilder: () => resizeFileImageIfNeeded(
+        path: path,
+        cacheWidth: cacheWidth,
+        cacheHeight: cacheHeight,
+      ),
+      fallbackBuilder: fallbackBuilder,
+      loadingBuilder: loadingBuilder,
+      fit: fit,
+      alignment: alignment,
+      color: color,
+      colorBlendMode: colorBlendMode,
+      filterQuality: filterQuality,
+      gaplessPlayback: gaplessPlayback,
+      retryDelay: retryDelay,
+      maxRetryAttempts: maxRetryAttempts,
+    );
+  }
+}
+
+class RetryingImage extends StatefulWidget {
+  const RetryingImage({
+    super.key,
+    required this.retryKey,
+    required this.imageProviderBuilder,
+    required this.fallbackBuilder,
+    this.loadingBuilder,
+    this.fit,
+    this.alignment = Alignment.center,
+    this.color,
+    this.colorBlendMode,
+    this.filterQuality = FilterQuality.medium,
+    this.gaplessPlayback = true,
+    this.retryDelay = const Duration(seconds: 2),
+    this.maxRetryAttempts = 12,
+  });
+
+  final Object retryKey;
+  final ImageProvider<Object> Function() imageProviderBuilder;
+  final WidgetBuilder fallbackBuilder;
+  final ImageLoadingBuilder? loadingBuilder;
+  final BoxFit? fit;
+  final AlignmentGeometry alignment;
+  final Color? color;
+  final BlendMode? colorBlendMode;
+  final FilterQuality filterQuality;
+  final bool gaplessPlayback;
+  final Duration retryDelay;
+  final int maxRetryAttempts;
+
+  @override
+  State<RetryingImage> createState() => _RetryingImageState();
+}
+
+class _RetryingImageState extends State<RetryingImage> {
+  int _retryAttempt = 0;
+  Timer? _retryTimer;
+
+  @override
+  void didUpdateWidget(covariant RetryingImage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.retryKey != widget.retryKey) {
+      _retryTimer?.cancel();
+      _retryAttempt = 0;
+    }
+  }
+
+  @override
+  void dispose() {
+    _retryTimer?.cancel();
+    super.dispose();
+  }
+
+  void _scheduleRetry(ImageProvider<Object> provider) {
+    if (_retryAttempt >= widget.maxRetryAttempts ||
+        _retryTimer?.isActive == true) {
+      return;
+    }
+    final nextAttempt = _retryAttempt + 1;
+    _retryTimer = Timer(widget.retryDelay, () {
+      if (!mounted) return;
+      provider.evict().ignore();
+      setState(() {
+        _retryAttempt = nextAttempt;
+      });
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final provider = widget.imageProviderBuilder();
+    return Image(
+      key: ValueKey('${widget.retryKey}#$_retryAttempt'),
+      image: provider,
+      fit: widget.fit,
+      alignment: widget.alignment,
+      color: widget.color,
+      colorBlendMode: widget.colorBlendMode,
+      filterQuality: widget.filterQuality,
+      gaplessPlayback: widget.gaplessPlayback,
+      loadingBuilder: widget.loadingBuilder,
+      errorBuilder: (context, error, stackTrace) {
+        _scheduleRetry(provider);
+        return widget.fallbackBuilder(context);
+      },
     );
   }
 }

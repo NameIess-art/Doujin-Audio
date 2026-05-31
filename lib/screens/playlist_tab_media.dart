@@ -77,10 +77,11 @@ class _SessionHeroArtwork extends ConsumerWidget {
                   fit: StackFit.expand,
                   children: [
                     if (track?.remoteCoverUrl?.trim().isNotEmpty == true)
-                      Image.network(
-                        track!.remoteCoverUrl!,
+                      RetryingNetworkImage(
+                        url: track!.remoteCoverUrl!,
                         fit: BoxFit.cover,
-                        cacheWidth: (cacheW * dpr.clamp(1.0, 1.5) / dpr).round(),
+                        cacheWidth: (cacheW * dpr.clamp(1.0, 1.5) / dpr)
+                            .round(),
                         loadingBuilder: (context, child, loadingProgress) =>
                             loadingProgress == null
                             ? child
@@ -91,13 +92,15 @@ class _SessionHeroArtwork extends ConsumerWidget {
                                   alpha: 0.75,
                                 ),
                               ),
-                        errorBuilder: (_, _, _) => fallback(),
+                        fallbackBuilder: (_) => fallback(),
                       )
                     else
                       AsyncCoverImage(
                         duration: Duration.zero,
                         future: coverPathFuture,
                         initialPath: provider.resolvedCoverPathForTrack(track),
+                        retryFutureBuilder: () =>
+                            _coverFutureForTrack(provider, track),
                         fallbackBuilder: (_) => fallback(),
                         loadingBuilder: (_) => Stack(
                           fit: StackFit.expand,
@@ -114,14 +117,12 @@ class _SessionHeroArtwork extends ConsumerWidget {
                         ),
                         imageBuilder: (context, coverPath) {
                           return RepaintBoundary(
-                            child: Image(
-                              image: resizeFileImageIfNeeded(
-                                path: coverPath,
-                                cacheWidth: (cacheW * dpr.clamp(1.0, 1.5) / dpr).round(),
-                              ),
+                            child: RetryingFileImage(
+                              path: coverPath,
+                              cacheWidth: (cacheW * dpr.clamp(1.0, 1.5) / dpr)
+                                  .round(),
                               fit: BoxFit.cover,
-                              gaplessPlayback: true,
-                              errorBuilder: (_, _, _) => fallback(),
+                              fallbackBuilder: (_) => fallback(),
                             ),
                           );
                         },
@@ -208,23 +209,29 @@ class _SessionCoverThumbnail extends ConsumerWidget {
           borderRadius: BorderRadius.circular(14),
           clipBehavior: Clip.antiAlias,
           child: track?.remoteCoverUrl?.trim().isNotEmpty == true
-              ? Image.network(
-                  track!.remoteCoverUrl!,
+              ? RetryingNetworkImage(
+                  url: track!.remoteCoverUrl!,
                   fit: BoxFit.cover,
-                  cacheWidth: (96 * MediaQuery.devicePixelRatioOf(context).clamp(1.0, 1.5))
-                      .round(),
+                  cacheWidth:
+                      (96 *
+                              MediaQuery.devicePixelRatioOf(
+                                context,
+                              ).clamp(1.0, 1.5))
+                          .round(),
                   loadingBuilder: (context, child, loadingProgress) =>
                       loadingProgress == null
                       ? child
                       : CoverLoadingIndicator(
                           color: cs.onPrimaryContainer.withValues(alpha: 0.75),
                         ),
-                  errorBuilder: (_, _, _) => fallback(),
+                  fallbackBuilder: (_) => fallback(),
                 )
               : AsyncCoverImage(
                   duration: Duration.zero,
                   future: coverPathFuture,
                   initialPath: provider.resolvedCoverPathForTrack(track),
+                  retryFutureBuilder: () =>
+                      _coverFutureForTrack(provider, track),
                   fallbackBuilder: (_) => fallback(),
                   loadingBuilder: (_) => Stack(
                     fit: StackFit.expand,
@@ -237,14 +244,11 @@ class _SessionCoverThumbnail extends ConsumerWidget {
                   ),
                   imageBuilder: (context, coverPath) {
                     final dpr = MediaQuery.devicePixelRatioOf(context);
-                    return Image(
-                      image: resizeFileImageIfNeeded(
-                        path: coverPath,
-                        cacheWidth: (96 * dpr.clamp(1.0, 1.5)).round(),
-                      ),
+                    return RetryingFileImage(
+                      path: coverPath,
+                      cacheWidth: (96 * dpr.clamp(1.0, 1.5)).round(),
                       fit: BoxFit.cover,
-                      gaplessPlayback: true,
-                      errorBuilder: (_, _, _) => fallback(),
+                      fallbackBuilder: (_) => fallback(),
                     );
                   },
                 ),

@@ -557,8 +557,8 @@ class _ActiveSessionCover extends ConsumerWidget {
           borderRadius: BorderRadius.circular(14),
           clipBehavior: Clip.antiAlias,
           child: track?.remoteCoverUrl?.trim().isNotEmpty == true
-              ? Image.network(
-                  track!.remoteCoverUrl!.trim(),
+              ? RetryingNetworkImage(
+                  url: track!.remoteCoverUrl!.trim(),
                   fit: BoxFit.cover,
                   cacheWidth: (58 * MediaQuery.devicePixelRatioOf(context))
                       .round(),
@@ -570,27 +570,26 @@ class _ActiveSessionCover extends ConsumerWidget {
                           strokeWidth: 2.6,
                           color: cs.primary,
                         ),
-                  errorBuilder: (_, _, _) => fallback(),
+                  fallbackBuilder: (_) => fallback(),
                 )
               : AsyncCoverImage(
                   future: coverPathFuture,
                   initialPath: provider.resolvedCoverPathForTrack(track),
-                      fallbackBuilder: (_) => fallback(),
-                      loadingBuilder: (_) => CoverLoadingIndicator(
-                        size: 28,
-                        strokeWidth: 2.6,
-                        color: cs.primary,
-                      ),
+                  retryFutureBuilder: () =>
+                      _sessionCoverFutureForTrack(provider, track),
+                  fallbackBuilder: (_) => fallback(),
+                  loadingBuilder: (_) => CoverLoadingIndicator(
+                    size: 28,
+                    strokeWidth: 2.6,
+                    color: cs.primary,
+                  ),
                   imageBuilder: (context, coverPath) {
                     final dpr = MediaQuery.devicePixelRatioOf(context);
-                    return Image(
-                      image: resizeFileImageIfNeeded(
-                        path: coverPath,
-                        cacheWidth: (58 * dpr).round(),
-                      ),
+                    return RetryingFileImage(
+                      path: coverPath,
+                      cacheWidth: (58 * dpr).round(),
                       fit: BoxFit.cover,
-                      gaplessPlayback: true,
-                      errorBuilder: (_, _, _) => fallback(),
+                      fallbackBuilder: (_) => fallback(),
                     );
                   },
                 ),

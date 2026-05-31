@@ -8,6 +8,7 @@ import '../i18n/app_language_provider.dart';
 import '../providers/audio_provider.dart';
 import '../services/path_display.dart';
 import '../widgets/app_feedback.dart';
+import '../widgets/async_cover_image.dart';
 import 'dlsite_metadata_review_page.dart';
 
 const _multiValueSeparator = '\uFF0C';
@@ -623,13 +624,13 @@ class _FolderCoverSelectorState extends State<_FolderCoverSelector> {
                     itemCount: _images.length,
                     onPageChanged: _handlePageChanged,
                     itemBuilder: (context, index) {
-                      return Image.file(
-                        File(_images[index]),
+                      return RetryingFileImage(
+                        path: _images[index],
                         fit: BoxFit.cover,
                         cacheWidth:
                             (140 * MediaQuery.devicePixelRatioOf(context))
                                 .round(),
-                        errorBuilder: (_, _, _) => DecoratedBox(
+                        fallbackBuilder: (_) => DecoratedBox(
                           decoration: BoxDecoration(
                             color: cs.surfaceContainerHighest,
                           ),

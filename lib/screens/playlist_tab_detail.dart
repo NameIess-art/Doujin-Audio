@@ -685,8 +685,8 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
             // Dynamic Blurred Background
             Positioned.fill(
               child: track?.remoteCoverUrl?.trim().isNotEmpty == true
-                  ? Image.network(
-                      track!.remoteCoverUrl!.trim(),
+                  ? RetryingNetworkImage(
+                      url: track!.remoteCoverUrl!.trim(),
                       fit: BoxFit.cover,
                       cacheWidth:
                           (MediaQuery.sizeOf(context).width *
@@ -705,27 +705,25 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                                 color: cs.primary,
                               ),
                             ),
-                      errorBuilder: (_, _, _) =>
-                          ColoredBox(color: cs.surfaceDim),
+                      fallbackBuilder: (_) => ColoredBox(color: cs.surfaceDim),
                     )
                   : AsyncCoverImage(
                       duration: Duration.zero,
                       future: coverPathFuture,
                       initialPath: provider.resolvedCoverPathForTrack(track),
+                      retryFutureBuilder: () =>
+                          _coverFutureForTrack(provider, track),
                       fallbackBuilder: (_) => ColoredBox(color: cs.surfaceDim),
                       imageBuilder: (context, coverPath) {
                         final mediaSize = MediaQuery.sizeOf(context);
                         final dpr = MediaQuery.devicePixelRatioOf(context);
-                        return Image(
-                          image: resizeFileImageIfNeeded(
-                            path: coverPath,
-                            cacheWidth: (mediaSize.width * dpr).round(),
-                          ),
+                        return RetryingFileImage(
+                          path: coverPath,
+                          cacheWidth: (mediaSize.width * dpr).round(),
                           fit: BoxFit.cover,
-                          gaplessPlayback: true,
                           color: cs.surface.withValues(alpha: 0.45),
                           colorBlendMode: BlendMode.darken,
-                          errorBuilder: (_, _, _) =>
+                          fallbackBuilder: (_) =>
                               ColoredBox(color: cs.surfaceDim),
                         );
                       },

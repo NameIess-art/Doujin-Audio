@@ -241,7 +241,7 @@ class PlaybackKeepAliveService : Service() {
                 "$packageName:playback_keep_alive"
             ).apply {
                 setReferenceCounted(false)
-                acquire()
+                acquire(20 * 60 * 1000L)
             }
             
             val wifiManager = applicationContext.getSystemService(WIFI_SERVICE) as? WifiManager

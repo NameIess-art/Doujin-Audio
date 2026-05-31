@@ -66,6 +66,9 @@ class AsmrAuthService {
         await _tokenStore.clearToken();
         return null;
       }
+      if (session.token != token) {
+        await _tokenStore.writeToken(session.token);
+      }
       return session;
     } catch (error) {
       if (error is AsmrApiException &&

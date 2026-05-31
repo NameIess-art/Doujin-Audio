@@ -47,6 +47,7 @@ const Map<String, String> appLanguageJa = {
   'asmr_favorite_removed': 'お気に入りを解除しました。',
   'asmr_category_sales': '販売数',
   'asmr_category_rating': '評価',
+  'asmr_category_reviews': 'レビュー数',
   'asmr_category_release': '発売',
   'asmr_category_collected': '収録',
   'asmr_category_recommendation': 'おすすめ',
@@ -136,9 +137,7 @@ const Map<String, String> appLanguageJa = {
   'asmr_download_downloaded': 'ダウンロード済み',
   'asmr_download_total_size': '合計サイズ',
   'asmr_download_cancelled_and_cleared': 'ダウンロードをキャンセルし、取得済み内容を削除しました',
-  'asmr_download_summary_selected': '{count} 個のファイルを選択中。ダウンロード時は元のフォルダ構成を保持します',
-  'asmr_download_summary_total':
-      '合計 {fileCount} 個のファイル、{folderCount} 個のフォルダ。音声、字幕、画像、文書などすべてのファイル項目を含みます',
+  'asmr_download_summary_selected': '{count} 個のファイルを選択中、合計 {size}',
   'asmr_download_empty_folder': '空のフォルダ',
   'asmr_download_status_preparing': '準備中',
   'asmr_download_status_downloading': 'ダウンロード中',

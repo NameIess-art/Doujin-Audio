@@ -35,7 +35,7 @@ class MainActivity : AudioServiceActivity() {
         AudioPickerCoordinator(this)
     }
 
-    override fun getRenderMode(): RenderMode = RenderMode.texture
+    override fun getRenderMode(): RenderMode = RenderMode.surface
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)

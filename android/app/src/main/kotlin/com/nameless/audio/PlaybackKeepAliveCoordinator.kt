@@ -32,11 +32,9 @@ private object PlaybackWakeLockController {
                 }
             } catch (_: Exception) {}
         }
-        if (wakeLock?.isHeld == false) {
-            try {
-                wakeLock?.acquire()
-            } catch (_: Exception) {}
-        }
+        try {
+            wakeLock?.acquire(20 * 60 * 1000L)
+        } catch (_: Exception) {}
 
         if (wifiLock == null) {
             try {

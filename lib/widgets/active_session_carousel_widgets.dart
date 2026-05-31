@@ -57,7 +57,7 @@ class _ActiveSessionCard extends ConsumerWidget {
               height: 74,
               decoration: BoxDecoration(
                 color: (isDark ? cs.surfaceBright : cs.surfaceContainerHighest)
-                    .withValues(alpha: 0.92),
+                    .withValues(alpha: 0.98),
                 borderRadius: BorderRadius.circular(cardRadius),
                 border: Border.all(
                   color: cs.outlineVariant.withValues(

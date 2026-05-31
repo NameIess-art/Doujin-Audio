@@ -50,6 +50,7 @@ const Map<String, String> appLanguageEn = {
   'asmr_favorite_removed': 'Removed from favorites.',
   'asmr_category_sales': 'Sales',
   'asmr_category_rating': 'Rating',
+  'asmr_category_reviews': 'Reviews',
   'asmr_category_release': 'Release',
   'asmr_category_collected': 'Collected',
   'asmr_category_recommendation': 'Recommend',
@@ -147,10 +148,7 @@ const Map<String, String> appLanguageEn = {
   'asmr_download_total_size': 'Total size',
   'asmr_download_cancelled_and_cleared':
       'Download cancelled and downloaded content cleared',
-  'asmr_download_summary_selected':
-      '{count} files selected. The original folder structure will be kept when downloading',
-  'asmr_download_summary_total':
-      '{fileCount} files and {folderCount} folders total, including audio, subtitles, images, documents, and other file nodes',
+  'asmr_download_summary_selected': '{count} files selected, {size} total',
   'asmr_download_empty_folder': 'Empty folder',
   'asmr_download_status_preparing': 'Preparing',
   'asmr_download_status_downloading': 'Downloading',

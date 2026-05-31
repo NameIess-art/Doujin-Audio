@@ -313,10 +313,9 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     final isWindows =
         Platform.isWindows ||
         MediaQuery.orientationOf(context) == Orientation.landscape;
-    final listTopExpansion = isWindows ? 0.0 : 150.0;
-    final listBottomExpansion = isWindows ? 0.0 : 350.0;
-    final listTopPadding = 4 + headerControlsFullHeight + listTopExpansion;
-    final listBottomPadding = isWindows ? 16.0 : listBottomExpansion;
+    const double expansion = 160.0;
+    final listTopPadding = 4 + headerControlsFullHeight + expansion;
+    final listBottomPadding = 16.0 + expansion;
     final listViewportBottomInset = listBottomInset + (isWindows ? 16.0 : 0.0);
     // Reduced cacheExtent to significantly lower memory footprint and improve
     // scroll/swipe performance.
@@ -375,9 +374,6 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     }
 
     Widget emptyListBody() {
-      // Padding adjustment for restricted Positioned viewport.
-      // We expand the Positioned by 80px to pre-render items under the glass,
-      // so we add 80px to the internal padding to keep the content visually in place.
       final relativeTop = listTopPadding;
       final relativeBottom = listBottomPadding;
 
@@ -481,8 +477,8 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
               child: ContentBoundReorderArea(
                 headerHeight: _headerHeight,
                 bottomInset: listViewportBottomInset,
-                topExpansion: listTopExpansion,
-                bottomExpansion: listBottomExpansion,
+                topExpansion: expansion,
+                bottomExpansion: expansion,
                 scrollController: _scrollController,
                 showScrollbar: isWindows,
                 scrollbarMainAxisMargin: isWindows ? 8 : 0,

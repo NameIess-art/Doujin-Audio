@@ -87,10 +87,12 @@ class _SessionDetailContentState extends State<_SessionDetailContent>
         path.basenameWithoutExtension(session.currentTrackPath);
     final i18n = context.read<AppLanguageProvider>();
     final rootFolderName = provider.getRootFolderName(session.currentTrackPath);
-    final folderName = track?.remoteMetadataKind == 'asmr.one'
-        ? i18n.tr('asmr_online_playback')
-        : rootFolderName.isNotEmpty
+    final folderName = rootFolderName.isNotEmpty
         ? rootFolderName
+        : (track != null && !track.isSingle && track.groupTitle.isNotEmpty)
+        ? track.groupTitle
+        : track?.remoteMetadataKind == 'asmr.one'
+        ? i18n.tr('asmr_online_playback')
         : i18n.tr('imported_files');
     final hasSiblings =
         provider.tracksInSameGroup(session.currentTrackPath).length > 1;

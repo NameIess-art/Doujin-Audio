@@ -40,6 +40,14 @@ class AsmrDownloadSelectionModel {
     return count;
   }
 
+  int selectedTotalSizeBytes() {
+    var bytes = 0;
+    for (final node in rootNodes) {
+      bytes += _selectedSizeBytes(node);
+    }
+    return bytes;
+  }
+
   void selectAll() {
     for (final node in rootNodes) {
       _setSubtree(node, true);
@@ -122,6 +130,31 @@ class AsmrDownloadSelectionModel {
       count += _countAllLeaves(child);
     }
     return count;
+  }
+
+  int _selectedSizeBytes(AsmrDownloadSelectionNode node) {
+    if (node.selected) {
+      return _subtreeSizeBytes(node);
+    }
+    if (!node.indeterminate) {
+      return 0;
+    }
+    var bytes = 0;
+    for (final child in node.children) {
+      bytes += _selectedSizeBytes(child);
+    }
+    return bytes;
+  }
+
+  int _subtreeSizeBytes(AsmrDownloadSelectionNode node) {
+    if (!node.track.isFolder) {
+      return node.track.size;
+    }
+    var bytes = 0;
+    for (final child in node.children) {
+      bytes += _subtreeSizeBytes(child);
+    }
+    return bytes;
   }
 }
 

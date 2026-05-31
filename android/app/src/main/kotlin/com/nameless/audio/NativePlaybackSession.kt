@@ -1,4 +1,4 @@
-﻿package com.nameless.audio
+package com.nameless.audio
 
 import android.media.audiofx.LoudnessEnhancer
 import android.net.Uri
@@ -405,6 +405,7 @@ internal class NativePlaybackSession(
     fun release() {
         _player?.release()
         _player = null
+        releaseLoudnessEnhancer()
     }
 }
 

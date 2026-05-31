@@ -129,7 +129,7 @@ class TopPageHeader extends StatelessWidget {
     return Container(
       padding: EdgeInsets.only(top: topPadding),
       decoration: BoxDecoration(
-        color: cs.surface.withValues(alpha: 0.92),
+        color: cs.surface.withValues(alpha: 0.98),
         border: Border(
           bottom: BorderSide(
             color: cs.outlineVariant.withValues(alpha: 0.15),

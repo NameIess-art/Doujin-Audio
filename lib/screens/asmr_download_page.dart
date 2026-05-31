@@ -243,23 +243,12 @@ class _AsmrDownloadPageState extends State<AsmrDownloadPage> {
     final selection = _selection;
     final i18n = context.watch<AppLanguageProvider>();
     final selectedLeafCount = selection?.selectedLeafCount() ?? 0;
+    final selectedTotalSizeBytes = selection?.selectedTotalSizeBytes() ?? 0;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
     final onAsmrBlue = isDark
         ? const Color(0xFF0F172A)
         : const Color(0xFFFFFFFF);
-    final totalFileCount = selection == null
-        ? 0
-        : selection.rootNodes.fold<int>(
-            0,
-            (sum, node) => sum + _countDownloadFiles(node),
-          );
-    final totalFolderCount = selection == null
-        ? 0
-        : selection.rootNodes.fold<int>(
-            0,
-            (sum, node) => sum + _countDownloadFolders(node),
-          );
     final hasDestination = (_destinationRoot?.trim().isNotEmpty ?? false);
 
     return Scaffold(
@@ -288,8 +277,7 @@ class _AsmrDownloadPageState extends State<AsmrDownloadPage> {
                   child: _DownloadSummaryCard(
                     work: widget.work,
                     selectedLeafCount: selectedLeafCount,
-                    totalFileCount: totalFileCount,
-                    totalFolderCount: totalFolderCount,
+                    selectedTotalSizeBytes: selectedTotalSizeBytes,
                   ),
                 ),
                 Expanded(
@@ -500,14 +488,12 @@ class _DownloadSummaryCard extends StatelessWidget {
   const _DownloadSummaryCard({
     required this.work,
     required this.selectedLeafCount,
-    required this.totalFileCount,
-    required this.totalFolderCount,
+    required this.selectedTotalSizeBytes,
   });
 
   final AsmrWork work;
   final int selectedLeafCount;
-  final int totalFileCount;
-  final int totalFolderCount;
+  final int selectedTotalSizeBytes;
 
   @override
   Widget build(BuildContext context) {
@@ -534,16 +520,7 @@ class _DownloadSummaryCard extends StatelessWidget {
           Text(
             i18n.tr('asmr_download_summary_selected', {
               'count': selectedLeafCount,
-            }),
-            style: Theme.of(
-              context,
-            ).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            i18n.tr('asmr_download_summary_total', {
-              'fileCount': totalFileCount,
-              'folderCount': totalFolderCount,
+              'size': _formatFileSize(selectedTotalSizeBytes),
             }),
             style: Theme.of(
               context,
@@ -894,27 +871,6 @@ String _formatFileSize(int bytes) {
 }
 
 String _formatBytes(int bytes) => _formatFileSize(bytes);
-
-int _countDownloadFiles(AsmrDownloadSelectionNode node) {
-  if (node.track.isFolder) {
-    return node.children.fold<int>(
-      0,
-      (sum, child) => sum + _countDownloadFiles(child),
-    );
-  }
-  return 1;
-}
-
-int _countDownloadFolders(AsmrDownloadSelectionNode node) {
-  if (!node.track.isFolder) {
-    return 0;
-  }
-  return 1 +
-      node.children.fold<int>(
-        0,
-        (sum, child) => sum + _countDownloadFolders(child),
-      );
-}
 
 IconData _fileIconFor(AsmrTrackFile track) {
   if (track.isSubtitle) {

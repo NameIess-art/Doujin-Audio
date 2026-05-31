@@ -14,7 +14,7 @@ internal class NativePlaybackWakeLock(
 
     fun isHeld(): Boolean = wakeLock?.isHeld == true || wifiLock?.isHeld == true
 
-    fun acquire() {
+    fun acquire(timeoutMs: Long? = 20 * 60 * 1000L) {
         var acquiredAny = false
 
         if (wakeLock == null) {
@@ -32,7 +32,11 @@ internal class NativePlaybackWakeLock(
         }
 
         try {
-            wakeLock?.acquire()
+            if (timeoutMs != null) {
+                wakeLock?.acquire(timeoutMs)
+            } else {
+                wakeLock?.acquire()
+            }
             acquiredAny = true
         } catch (e: Exception) {
             logWarn("wakelock_acquire_failed", e)
@@ -42,7 +46,7 @@ internal class NativePlaybackWakeLock(
             try {
                 val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
                 wifiLock = wifiManager?.createWifiLock(
-                    WifiManager.WIFI_MODE_FULL,
+                    WifiManager.WIFI_MODE_FULL_HIGH_PERF,
                     "${context.packageName}:native_playback_wifi"
                 )?.apply {
                     setReferenceCounted(false)
@@ -63,6 +67,29 @@ internal class NativePlaybackWakeLock(
             logInfo("wakelock_acquired held=${wakeLock?.isHeld == true} wifiHeld=${wifiLock?.isHeld == true}")
         } else if (wakeLock?.isHeld == true || wifiLock?.isHeld == true) {
             logInfo("wakelock_acquire_skip already_held")
+        }
+    }
+
+    fun refresh(timeoutMs: Long? = 20 * 60 * 1000L) {
+        if (wakeLock == null) {
+            acquire(timeoutMs)
+            return
+        }
+        try {
+            if (timeoutMs != null) {
+                wakeLock?.acquire(timeoutMs)
+            } else {
+                wakeLock?.acquire()
+            }
+            logInfo("wakelock_refreshed timeoutMs=$timeoutMs")
+        } catch (e: Exception) {
+            logWarn("wakelock_refresh_failed", e)
+        }
+        
+        try {
+            wifiLock?.acquire()
+        } catch (e: Exception) {
+            logWarn("wifilock_refresh_failed", e)
         }
     }
 

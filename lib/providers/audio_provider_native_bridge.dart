@@ -61,7 +61,6 @@ extension AudioProviderNativeBridge on AudioProvider {
     final existingSession = _sessions[normalizedSnapshot.sessionId];
     final previousTrackPath = existingSession?.currentTrackPath;
     final previousState = existingSession?.state;
-    final previousPosition = existingSession?.position;
     final previousIsPlaybackStarting = existingSession?.isPlaybackStarting;
     final applied = _playbackService.applyNativeSnapshot(normalizedSnapshot);
     if (!applied) return;
@@ -99,7 +98,6 @@ extension AudioProviderNativeBridge on AudioProvider {
     }
     if (session != null &&
         (session.state != previousState ||
-            session.position != previousPosition ||
             session.isPlaybackStarting != previousIsPlaybackStarting)) {
       _syncKeepCpuAwake();
       _syncNotificationState();

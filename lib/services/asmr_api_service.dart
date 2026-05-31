@@ -50,7 +50,11 @@ class AsmrApiService {
         (user['username'] as String?) ??
         (user['userName'] as String?) ??
         '';
-    return AsmrAuthSession(token: token, userName: userName);
+    final newToken = (response['token'] as String?)?.trim();
+    return AsmrAuthSession(
+      token: (newToken != null && newToken.isNotEmpty) ? newToken : token,
+      userName: userName,
+    );
   }
 
   Future<List<AsmrReviewRecord>> fetchReviews({

@@ -137,7 +137,7 @@ class _FloatingGlassPanel extends StatelessWidget {
     Widget buildPanel() => DecoratedBox(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(radius),
-        color: bgColor.withValues(alpha: 0.92),
+        color: bgColor.withValues(alpha: 0.98),
         border: Border.all(
           color: cs.outlineVariant.withValues(alpha: isDark ? 0.3 : 0.5),
         ),

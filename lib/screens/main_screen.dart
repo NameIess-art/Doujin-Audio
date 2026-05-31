@@ -60,7 +60,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
   final GlobalKey _bottomDockKey = GlobalKey();
   final GlobalKey _dockContentKey = GlobalKey();
   double _measuredBottomInset = 0;
-  double _measuredDockContent = 0;
   bool _notificationPermissionCheckDone = false;
   bool _notificationPermissionCheckQueued = false;
   bool _notificationSettingsDialogVisible = false;
@@ -404,7 +403,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
       _metricsEpoch++;
       _needsMeasurement = true;
       _measuredBottomInset = 0;
-      _measuredDockContent = 0;
       _pendingTargetIndex = null;
     });
 
@@ -485,7 +483,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
     final isDesktop =
         Platform.isWindows || width >= _desktopBreakpoint || isLandscape;
 
-    if (isDesktop) {
+    if (Platform.isAndroid || isDesktop) {
       _pageController.jumpToPage(index);
       provider.scheduleUiWarmup(currentPageIndex: index);
     } else {
@@ -622,33 +620,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
                             MobileOverlayInset(
                               bottomInset: mobileContentInset,
                               child: _buildAnimatedBody(isDesktop: false),
-                            ),
-                            Positioned(
-                              left: 0,
-                              right: 0,
-                              bottom: 0,
-                              height: _measuredDockContent > 0
-                                  ? _measuredDockContent + 36
-                                  : 136,
-                              child: IgnorePointer(
-                                child: ShaderMask(
-                                  shaderCallback: (bounds) =>
-                                      const LinearGradient(
-                                        begin: Alignment.topCenter,
-                                        end: Alignment.bottomCenter,
-                                        colors: [
-                                          Colors.transparent,
-                                          Colors.white,
-                                        ],
-                                        stops: [0, 0.45],
-                                      ).createShader(bounds),
-                                  child: RepaintBoundary(
-                                    child: isTinyWindow
-                                        ? const SizedBox.expand()
-                                        : const SizedBox.expand(),
-                                  ),
-                                ),
-                              ),
                             ),
                             _buildMobileBottomDock(
                               context,

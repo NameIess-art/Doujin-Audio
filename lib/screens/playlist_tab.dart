@@ -33,7 +33,6 @@ import '../widgets/scroll_activity_gate.dart';
 import '../widgets/swipe_reveal_card.dart';
 import '../widgets/top_page_header.dart';
 import '../widgets/unified_popup_menu.dart';
-import '../widgets/waterfall_flow_stagger.dart';
 import '../models/asmr_models.dart';
 import 'audio_detail_sheet.dart';
 import 'asmr_work_detail_sheet.dart';
@@ -183,10 +182,9 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     final isWindows =
         Platform.isWindows ||
         MediaQuery.orientationOf(context) == Orientation.landscape;
-    final topExpansion = isWindows ? 0.0 : 150.0;
-    final bottomExpansion = isWindows ? 0.0 : 350.0;
-    final topPadding = topExpansion == 0 ? 4.0 : 154.0;
-    final bottomPadding = bottomExpansion == 0 ? 16.0 : 350.0;
+    const double expansion = 160.0;
+    final topPadding = 4.0 + expansion;
+    final bottomPadding = 16.0 + expansion;
 
     return ScrollActivityGate(
       child: Stack(
@@ -203,8 +201,8 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
             child: ContentBoundReorderArea(
               headerHeight: _headerHeight,
               bottomInset: listBottomInset,
-              topExpansion: topExpansion,
-              bottomExpansion: bottomExpansion,
+              topExpansion: expansion,
+              bottomExpansion: expansion,
               scrollController: _scrollController,
               showScrollbar: isWindows,
               scrollbarMainAxisMargin: isWindows ? 12 : 0,
@@ -228,8 +226,8 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                               key: const ValueKey('session_list'),
                               scrollController: _scrollController,
                               isDragging: _isReordering,
-                              contentMarginTop: topExpansion,
-                              contentMarginBottom: bottomExpansion,
+                              contentMarginTop: topPadding,
+                              contentMarginBottom: bottomPadding,
                               child: ReorderableListView.builder(
                                 scrollController: _scrollController,
                                 padding: EdgeInsets.fromLTRB(
@@ -270,20 +268,16 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                                     );
                                   }
                                   final session = listState.sessions[index];
-                                  return WaterfallFlowStagger(
-                                    key: ValueKey('stagger_${session.id}'),
+                                  return ReorderableHoldDragStartListener(
+                                    key: ValueKey(session.id),
                                     index: index,
-                                    child: ReorderableHoldDragStartListener(
-                                      key: ValueKey(session.id),
-                                      index: index,
-                                      child: RepaintBoundary(
-                                        child: _SessionListCard(
-                                          session: session,
-                                          provider: provider,
-                                          onOpen: () => _openSessionDetail(
-                                            context,
-                                            session.id,
-                                          ),
+                                    child: RepaintBoundary(
+                                      child: _SessionListCard(
+                                        session: session,
+                                        provider: provider,
+                                        onOpen: () => _openSessionDetail(
+                                          context,
+                                          session.id,
                                         ),
                                       ),
                                     ),

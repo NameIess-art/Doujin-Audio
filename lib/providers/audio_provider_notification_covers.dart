@@ -226,7 +226,7 @@ extension AudioProviderNotificationCovers on AudioProvider {
     if (PathMatcher.isRemoteUri(pathValue)) {
       return null;
     }
-    if (track?.isSingle == true && track?.isVideo == true) {
+    if (track?.isVideo == true) {
       return PathMatcher.normalize(pathValue);
     }
     final scopedFolder = _resolveCoverScopeFolderPath(
@@ -282,32 +282,34 @@ extension AudioProviderNotificationCovers on AudioProvider {
           track,
           trackPath: pathValue,
         );
-        if (pathValue.startsWith('content://')) {
-          if (track != null) {
-            coverPath = await _resolveContentCoverPathForTrack(
-              track,
-              rootFolder: coverScopeFolder,
-            );
-          } else {
-            coverPath = await _resolveContentCoverPathForFolder(
-              coverScopeFolder ?? pathValue,
-            );
-          }
+        if (track?.isSingle == true && track?.isVideo == true) {
+          coverPath = await _resolveVideoFramePathForTrack(track!);
         } else {
-          final candidateDirectories = <String>[
-            coverScopeFolder ?? coverSearchKey,
-          ];
-          for (final candidateDirectory in candidateDirectories) {
-            coverPath = await _findNotificationCoverPath(candidateDirectory);
-            if (coverPath != null) {
-              break;
+          if (pathValue.startsWith('content://')) {
+            if (track != null) {
+              coverPath = await _resolveContentCoverPathForTrack(
+                track,
+                rootFolder: coverScopeFolder,
+              );
+            } else {
+              coverPath = await _resolveContentCoverPathForFolder(
+                coverScopeFolder ?? pathValue,
+              );
+            }
+          } else {
+            final candidateDirectories = <String>[
+              coverScopeFolder ?? coverSearchKey,
+            ];
+            for (final candidateDirectory in candidateDirectories) {
+              coverPath = await _findNotificationCoverPath(candidateDirectory);
+              if (coverPath != null) {
+                break;
+              }
             }
           }
-        }
-        if (coverPath == null &&
-            track?.isSingle == true &&
-            track?.isVideo == true) {
-          coverPath = await _resolveVideoFramePathForTrack(track!);
+          if (coverPath == null && track?.isVideo == true) {
+            coverPath = await _resolveVideoFramePathForTrack(track!);
+          }
         }
       }
 

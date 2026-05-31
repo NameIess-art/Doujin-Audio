@@ -425,14 +425,6 @@ extension _MainScreenLayout on _MainScreenState {
         _setLocalState(() => _measuredBottomInset = h);
       }
     }
-    final contentBox =
-        _dockContentKey.currentContext?.findRenderObject() as RenderBox?;
-    if (contentBox != null && contentBox.hasSize && mounted) {
-      final h = contentBox.size.height;
-      if (h > 0 && (_measuredDockContent - h).abs() > 0.5) {
-        _setLocalState(() => _measuredDockContent = h);
-      }
-    }
   }
 
   double _mobileContentInset({required bool hasNowPlaying}) {

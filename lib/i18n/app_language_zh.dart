@@ -47,6 +47,7 @@ const Map<String, String> appLanguageZh = {
   'asmr_favorite_removed': '已取消收藏。',
   'asmr_category_sales': '销量',
   'asmr_category_rating': '评价',
+  'asmr_category_reviews': '评论数',
   'asmr_category_release': '发售',
   'asmr_category_collected': '收录',
   'asmr_category_recommendation': '推荐',
@@ -136,9 +137,7 @@ const Map<String, String> appLanguageZh = {
   'asmr_download_downloaded': '已下载',
   'asmr_download_total_size': '总大小',
   'asmr_download_cancelled_and_cleared': '已取消下载并清除已下载内容',
-  'asmr_download_summary_selected': '已选择 {count} 个文件，下载时会保留原目录结构',
-  'asmr_download_summary_total':
-      '共 {fileCount} 个文件、{folderCount} 个文件夹，包含音频、字幕、图片、文档等所有文件节点',
+  'asmr_download_summary_selected': '已选择 {count} 个文件，合计 {size}',
   'asmr_download_empty_folder': '空文件夹',
   'asmr_download_status_preparing': '准备中',
   'asmr_download_status_downloading': '下载中',

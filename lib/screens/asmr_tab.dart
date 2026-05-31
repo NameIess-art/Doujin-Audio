@@ -237,7 +237,7 @@ class _AsmrTabState extends State<AsmrTab>
       if (controller.isAsmrAccountLoggedIn)
         controller.syncAsmrAccount(force: true),
     ]);
-    
+
     if (!mounted) {
       return;
     }
@@ -2362,6 +2362,7 @@ String _asmrCategoryLabelKey(AsmrCategoryType category) {
     AsmrCategoryType.recommendation => 'asmr_category_recommendation',
     AsmrCategoryType.sales => 'asmr_category_sales',
     AsmrCategoryType.rating => 'asmr_category_rating',
+    AsmrCategoryType.reviews => 'asmr_category_reviews',
     AsmrCategoryType.release => 'asmr_category_release',
     AsmrCategoryType.favorites => 'asmr_category_favorites',
     AsmrCategoryType.history => 'asmr_category_history',

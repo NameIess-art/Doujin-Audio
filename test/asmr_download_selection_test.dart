@@ -85,6 +85,39 @@ void main() {
     );
   });
 
+  test('selectedTotalSizeBytes sums selected files only', () {
+    final tree = <AsmrTrackFile>[
+      folder(
+        'Root',
+        'Root',
+        children: [
+          file('Track 1', 'Root/Track 1.mp3'),
+          folder(
+            'Images',
+            'Root/Images',
+            children: [
+              file('Cover.png', 'Root/Images/Cover.png', size: 2048),
+              file('Booklet.png', 'Root/Images/Booklet.png', size: 4096),
+            ],
+          ),
+          file('Readme.txt', 'Root/Readme.txt', size: 512),
+        ],
+      ),
+    ];
+    final model = AsmrDownloadSelectionModel(tree);
+
+    model.togglePath('Root/Images', true);
+    model.togglePath('Root/Readme.txt', true);
+
+    expect(model.selectedLeafCount(), 3);
+    expect(model.selectedTotalSizeBytes(), 6656);
+
+    model.togglePath('Root/Images/Cover.png', false);
+
+    expect(model.selectedLeafCount(), 2);
+    expect(model.selectedTotalSizeBytes(), 4608);
+  });
+
   test('selecting a leaf selects its direct parent and keeps higher ancestors indeterminate', () {
     final tree = <AsmrTrackFile>[
       folder(

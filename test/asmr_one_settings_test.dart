@@ -126,6 +126,56 @@ void main() {
     },
   );
 
+  test('ASMR recommendation tolerates one failed candidate source', () async {
+    await resetPrefs();
+    final api = _FakeAsmrApiService(
+      failingFetchOrders: const <String>{'release'},
+    );
+    final controller = AsmrLibraryController(
+      apiService: api,
+      audioDatabaseRepository: _FakeAudioDatabaseRepository(
+        const <MusicTrack>[],
+      ),
+    );
+    await controller.initialize(defaultLanguage: AsmrContentLanguage.en);
+
+    await controller.refreshCategory(AsmrCategoryType.recommendation);
+
+    expect(controller.lastError, isNull);
+    expect(
+      controller
+          .worksFor(AsmrCategoryType.recommendation)
+          .map((work) => work.id),
+      containsAll(<int>[9, 10, 11]),
+    );
+    expect(
+      controller
+          .worksFor(AsmrCategoryType.recommendation)
+          .map((work) => work.id),
+      isNot(contains(12)),
+    );
+  });
+
+  test('ASMR review count category uses review count ordering', () async {
+    await resetPrefs();
+    final api = _FakeAsmrApiService();
+    final controller = AsmrLibraryController(
+      apiService: api,
+      audioDatabaseRepository: _FakeAudioDatabaseRepository(
+        const <MusicTrack>[],
+      ),
+    );
+    await controller.initialize(defaultLanguage: AsmrContentLanguage.en);
+
+    await controller.refreshCategory(AsmrCategoryType.reviews);
+
+    expect(api.fetchWorkOrders, contains('review_count:desc'));
+    expect(
+      controller.worksFor(AsmrCategoryType.reviews).map((work) => work.id),
+      <int>[13],
+    );
+  });
+
   test('ASMR recommendation search uses ordinary search candidates', () async {
     await resetPrefs();
     final api = _FakeAsmrApiService();
@@ -494,6 +544,7 @@ class _FakeAsmrApiService extends AsmrApiService {
     this.trackTree = const <AsmrTrackFile>[],
     this.remoteReviewRecords = const <AsmrReviewRecord>[],
     this.failPutReviewCount = 0,
+    this.failingFetchOrders = const <String>{},
   }) : super(baseUri: Uri.parse('https://example.test'));
 
   final List<String> fetchWorkOrders = <String>[];
@@ -506,6 +557,7 @@ class _FakeAsmrApiService extends AsmrApiService {
   final List<AsmrWork>? recommendationWorks;
   final List<AsmrTrackFile> trackTree;
   final List<AsmrReviewRecord> remoteReviewRecords;
+  final Set<String> failingFetchOrders;
   int failPutReviewCount;
   String _lastLoginName = '';
 
@@ -538,6 +590,9 @@ class _FakeAsmrApiService extends AsmrApiService {
   }) async {
     fetchWorkOrders.add('$order:$sort');
     fetchWorkRequests.add('$order:$sort:$page');
+    if (failingFetchOrders.contains(order)) {
+      throw HttpException('Simulated ASMR work fetch failure for $order');
+    }
     final explicitWorks = recommendationWorks;
     if (explicitWorks != null) {
       return AsmrWorkPage(
@@ -585,6 +640,8 @@ class _FakeAsmrApiService extends AsmrApiService {
           ),
         if (order == 'rate_average_2dp')
           _work(id: 11, title: 'Highly Rated', rating: 4.9),
+        if (order == 'review_count')
+          _work(id: 13, title: 'Most Reviewed', reviewCount: 1200),
         if (order == 'release')
           _work(id: 12, title: 'Latest', releaseDate: DateTime(2026, 5)),
       ],

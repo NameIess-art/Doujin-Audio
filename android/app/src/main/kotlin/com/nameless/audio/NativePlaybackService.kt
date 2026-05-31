@@ -248,9 +248,10 @@ class NativePlaybackService : MediaSessionService() {
                 mainHandler.postDelayed(this, FOREGROUND_WATCHDOG_INTERVAL_MS)
                 return
             }
+            
+            playbackWakeLock.refresh()
+
             if (playbackForegroundStarted) {
-                // Periodically refresh the wakelock to prevent aggressive OEM Doze suspensions.
-                acquireWakeLock()
                 try {
                     val manager = getSystemService(Context.NOTIFICATION_SERVICE) as? android.app.NotificationManager
                     val session = sessions[focusedSessionId]

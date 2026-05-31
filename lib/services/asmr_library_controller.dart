@@ -203,6 +203,7 @@ class AsmrLibraryController extends ChangeNotifier {
     AsmrCategoryType.recommendation: 40,
     AsmrCategoryType.sales: 40,
     AsmrCategoryType.rating: 40,
+    AsmrCategoryType.reviews: 40,
     AsmrCategoryType.release: 40,
     AsmrCategoryType.favorites: 60,
     AsmrCategoryType.history: 60,
@@ -651,6 +652,13 @@ class AsmrLibraryController extends ChangeNotifier {
             requestId: requestId,
           );
           break;
+        case AsmrCategoryType.reviews:
+          await _loadWorks(
+            category,
+            searchQuery: normalizedQuery,
+            requestId: requestId,
+          );
+          break;
         case AsmrCategoryType.release:
           await _loadWorks(
             category,
@@ -713,13 +721,24 @@ class AsmrLibraryController extends ChangeNotifier {
     required String searchQuery,
     required int requestId,
   }) async {
-    final pageGroups = await Future.wait(<Future<List<AsmrWorkPage>>>[
-      for (final sourceCategory in _recommendationCandidateCategories)
-        _loadRecommendationCandidatePages(
-          sourceCategory,
-          searchQuery: searchQuery,
-        ),
-    ]);
+    final pageGroups = <List<AsmrWorkPage>>[];
+    Object? firstError;
+    for (final sourceCategory in _recommendationCandidateCategories) {
+      try {
+        pageGroups.add(
+          await _loadRecommendationCandidatePages(
+            sourceCategory,
+            searchQuery: searchQuery,
+          ),
+        );
+      } catch (error) {
+        firstError ??= error;
+        debugPrint(
+          'AsmrLibraryController recommendation candidate load error '
+          '($sourceCategory): $error',
+        );
+      }
+    }
     if (_refreshRequestSerial[category] != requestId) {
       return;
     }
@@ -728,6 +747,9 @@ class AsmrLibraryController extends ChangeNotifier {
       for (final work in page.works) {
         candidatesById.putIfAbsent(work.id, () => work);
       }
+    }
+    if (candidatesById.isEmpty && firstError != null) {
+      throw firstError;
     }
     final localTracks = await _loadLocalTracksForRecommendation();
     if (_refreshRequestSerial[category] != requestId) {
@@ -830,6 +852,8 @@ class AsmrLibraryController extends ChangeNotifier {
         return (order: 'dl_count', sort: 'desc');
       case AsmrCategoryType.rating:
         return (order: 'rate_average_2dp', sort: 'desc');
+      case AsmrCategoryType.reviews:
+        return (order: 'review_count', sort: 'desc');
       case AsmrCategoryType.release:
         return (order: 'release', sort: 'desc');
       case AsmrCategoryType.favorites:

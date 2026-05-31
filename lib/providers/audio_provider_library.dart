@@ -722,20 +722,28 @@ extension AudioProviderLibrary on AudioProvider {
   }) async {
     if (_libraryBatchDepth <= 0) return;
     _libraryBatchDepth--;
-    if (_libraryBatchDepth > 0 || !_libraryBatchChanged) return;
+    if (_libraryBatchDepth > 0) return;
 
+    final didChangeLibrary = _libraryBatchChanged;
+    final entriesToPersist = List<LibraryEntry>.from(
+      _libraryBatchPersistEntriesByKey.values,
+    );
+    if (!didChangeLibrary && entriesToPersist.isEmpty) return;
     final tracksToPersist = List<MusicTrack>.from(_libraryBatchPersistTracks);
     final didChangeGroupOrder = _libraryBatchChangedGroupOrder;
     _libraryBatchChanged = false;
     _libraryBatchChangedGroupOrder = false;
     _libraryBatchPersistTracks.clear();
+    _libraryBatchPersistEntriesByKey.clear();
 
-    _clearResolvedCoverPaths();
-    _rebuildLibraryIndexes();
-    _syncGroupOrderFromLibrary();
-    _syncLibraryNodeOrder(persist: false);
-    if (notify) {
-      _notifyLibraryChanged();
+    if (didChangeLibrary) {
+      _clearResolvedCoverPaths();
+      _rebuildLibraryIndexes();
+      _syncGroupOrderFromLibrary();
+      _syncLibraryNodeOrder(persist: false);
+      if (notify) {
+        _notifyLibraryChanged();
+      }
     }
     final persistenceTasks = <Future<void>>[];
     if (tracksToPersist.isNotEmpty && !_skipDisposePersistence) {
@@ -743,10 +751,17 @@ extension AudioProviderLibrary on AudioProvider {
         _audioDatabaseRepository.upsertTracks(tracksToPersist),
       );
     }
-    if (didChangeGroupOrder) {
+    if (entriesToPersist.isNotEmpty && !_skipDisposePersistence) {
+      persistenceTasks.add(
+        _audioDatabaseRepository.upsertLibraryEntries(entriesToPersist),
+      );
+    }
+    if (didChangeLibrary && didChangeGroupOrder) {
       persistenceTasks.add(_saveGroupOrder());
     }
-    persistenceTasks.add(_saveLibraryNodeOrder());
+    if (didChangeLibrary) {
+      persistenceTasks.add(_saveLibraryNodeOrder());
+    }
     if (waitForPersistence) {
       await Future.wait(persistenceTasks);
     } else {
@@ -957,9 +972,7 @@ extension AudioProviderLibrary on AudioProvider {
     if (entries.isEmpty) return;
     _libraryService.replaceLibraryEntries(entries);
     entrySnapshot?.remember(entries);
-    if (persist && !_skipDisposePersistence) {
-      unawaited(_audioDatabaseRepository.upsertLibraryEntries(entries));
-    }
+    _queueOrPersistLibraryEntries(entries, persist: persist);
   }
 
   List<LibraryEntry> _filterFreshLibraryEntries(
@@ -988,9 +1001,29 @@ extension AudioProviderLibrary on AudioProvider {
     }
     if (entries.isEmpty) return;
     _libraryService.replaceLibraryEntries(entries);
-    if (persist && !_skipDisposePersistence) {
-      unawaited(_audioDatabaseRepository.upsertLibraryEntries(entries));
+    _queueOrPersistLibraryEntries(entries, persist: persist);
+  }
+
+  void _queueOrPersistLibraryEntries(
+    List<LibraryEntry> entries, {
+    required bool persist,
+  }) {
+    if (entries.isEmpty || !persist || _skipDisposePersistence) return;
+    if (_libraryBatchDepth > 0) {
+      for (final entry in entries) {
+        _libraryBatchPersistEntriesByKey[_libraryEntryBatchKey(entry)] = entry;
+      }
+      return;
     }
+    unawaited(_audioDatabaseRepository.upsertLibraryEntries(entries));
+  }
+
+  String _libraryEntryBatchKey(LibraryEntry entry) {
+    return [
+      PathMatcher.normalize(entry.libraryPath),
+      PathMatcher.normalize(entry.path),
+      entry.kind.dbValue,
+    ].join('\x1F');
   }
 
   List<LibraryEntry> _buildLibraryEntries(

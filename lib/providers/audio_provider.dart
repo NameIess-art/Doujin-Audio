@@ -240,6 +240,8 @@ class AudioProvider with ChangeNotifier {
 
   List<MusicTrack> get _libraryBatchPersistTracks =>
       _libraryService.libraryBatchPersistTracks;
+  Map<String, LibraryEntry> get _libraryBatchPersistEntriesByKey =>
+      _libraryService.libraryBatchPersistEntriesByKey;
   Timer? get _scanProgressNotifyTimer =>
       _libraryService.scanProgressNotifyTimer;
   set _scanProgressNotifyTimer(Timer? value) {
@@ -531,6 +533,7 @@ class AudioProvider with ChangeNotifier {
     TimerService? timerService,
     NotificationCoordinatorService? notificationStateService,
     SettingsRepository? settingsRepository,
+    bool skipPersistence = true,
   }) : _notificationService = notificationService,
        _audioDatabaseRepository =
            audioDatabaseRepository ?? AudioDatabaseRepository(),
@@ -552,7 +555,7 @@ class AudioProvider with ChangeNotifier {
        _notificationStateService =
            notificationStateService ?? NotificationCoordinatorService(),
        _settingsRepository = settingsRepository ?? SettingsRepository(),
-       _skipDisposePersistence = true {
+       _skipDisposePersistence = skipPersistence {
     _initializeControllers();
     _syncAllStateSlices();
   }

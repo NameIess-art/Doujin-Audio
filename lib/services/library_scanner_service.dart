@@ -165,20 +165,6 @@ class LibraryRefreshFolderResult {
   final int failureCount;
 }
 
-class LibraryRefreshPlan {
-  const LibraryRefreshPlan({
-    this.folderResults = const <LibraryRefreshFolderResult>[],
-    this.totalAdded = 0,
-    this.totalDuplicates = 0,
-    this.totalFailures = 0,
-  });
-
-  final List<LibraryRefreshFolderResult> folderResults;
-  final int totalAdded;
-  final int totalDuplicates;
-  final int totalFailures;
-}
-
 class LibraryScannerService {
   LibraryScannerService();
 
@@ -262,54 +248,91 @@ class LibraryScannerService {
 
     provider.setScanning(true, background: true, notify: false);
     var totalAdded = 0;
-    try {
-      final plan = await _buildLibraryRefreshPlan(
-        provider: provider,
-        i18n: i18n,
-        watchedFolders: watchedFolders,
-        watchedLibraries: watchedLibraries,
-      );
-      if (!provider.isScanning) return;
+    var chunkDuplicateCount = 0;
+    var chunkFailureCount = 0;
+    var chunkIndex = 0;
+    var batchOpen = true;
+    var batchStarted = false;
 
-      provider.beginStagedLibraryRefresh();
-      int chunkDuplicateCount = 0;
-      int chunkFailureCount = 0;
-      int chunkIndex = 0;
-      var batchOpen = true;
+    Future<void> applyFolderResult(LibraryRefreshFolderResult result) async {
+      if (!provider.isScanning || !batchOpen || result.chunks.isEmpty) {
+        return;
+      }
+      if (!batchStarted) {
+        provider.beginStagedLibraryRefresh();
+        batchStarted = true;
+      }
+      for (final chunk in result.chunks) {
+        if (!provider.isScanning || !batchOpen) break;
+        totalAdded += provider.applyStagedLibraryRefreshChunk(
+          sourceFolderPath: chunk.sourceFolderPath,
+          libraryRoot: chunk.libraryRoot,
+          tracks: chunk.tracks,
+          folderPaths: chunk.folderPaths,
+          removeWatchedFolders: chunk.removeWatchedFolders,
+          addWatchedFolders: chunk.addWatchedFolders,
+          retainedTrackPaths: chunk.retainedTrackPaths,
+          retainedEntryPaths: chunk.retainedEntryPaths,
+        );
+        for (final childFolder in chunk.addWatchedFolders) {
+          unawaited(_prefillRjDetailForFolder(provider, childFolder));
+        }
+        chunkDuplicateCount += chunk.duplicateCount;
+        chunkFailureCount += chunk.failureCount;
+        chunkIndex++;
+        provider.setScanProgress(
+          currentFolder: chunk.progressLabel,
+          foundCount: totalAdded,
+          duplicateCount: chunkDuplicateCount,
+          failureCount: chunkFailureCount,
+        );
+        if (chunkIndex % 2 == 0) {
+          batchOpen = await provider.flushStagedLibraryRefreshChunk();
+        }
+      }
+    }
+
+    try {
+      final foldersToRefresh = LinkedHashSet<String>.from(watchedFolders);
       try {
-        for (final folderResult in plan.folderResults) {
+        for (final libraryRoot in watchedLibraries) {
           if (!provider.isScanning || !batchOpen) break;
-          for (final chunk in folderResult.chunks) {
-            if (!provider.isScanning || !batchOpen) break;
-            totalAdded += provider.applyStagedLibraryRefreshChunk(
-              sourceFolderPath: chunk.sourceFolderPath,
-              libraryRoot: chunk.libraryRoot,
-              tracks: chunk.tracks,
-              folderPaths: chunk.folderPaths,
-              removeWatchedFolders: chunk.removeWatchedFolders,
-              addWatchedFolders: chunk.addWatchedFolders,
-              retainedTrackPaths: chunk.retainedTrackPaths,
-              retainedEntryPaths: chunk.retainedEntryPaths,
-            );
-            for (final childFolder in chunk.addWatchedFolders) {
-              unawaited(_prefillRjDetailForFolder(provider, childFolder));
-            }
-            chunkDuplicateCount += chunk.duplicateCount;
-            chunkFailureCount += chunk.failureCount;
-            chunkIndex++;
-            provider.setScanProgress(
-              currentFolder: chunk.progressLabel,
-              foundCount: totalAdded,
-              duplicateCount: chunkDuplicateCount,
-              failureCount: chunkFailureCount,
-            );
-            if (chunkIndex % 2 == 0) {
-              batchOpen = await provider.flushStagedLibraryRefreshChunk();
-            }
-          }
+          foldersToRefresh.removeWhere(
+            (folderPath) =>
+                PathMatcher.isWithinOrEqual(folderPath, libraryRoot),
+          );
+          await applyFolderResult(
+            await _scanLibraryRootForRefresh(
+              libraryRoot: libraryRoot,
+              provider: provider,
+              i18n: i18n,
+            ),
+          );
+        }
+
+        final totalFolders = foldersToRefresh.length;
+        var processedFolders = 0;
+        for (final folderPath in foldersToRefresh) {
+          if (!provider.isScanning || !batchOpen) break;
+          processedFolders++;
+          final libraryRoot = watchedLibraries.firstWhere(
+            (root) => PathMatcher.isWithinOrEqual(folderPath, root),
+            orElse: () => '',
+          );
+          await applyFolderResult(
+            await _scanWatchedFolderForRefresh(
+              folderPath: folderPath,
+              effectiveLibraryRoot: libraryRoot.isEmpty
+                  ? folderPath
+                  : libraryRoot,
+              provider: provider,
+              i18n: i18n,
+              progressPrefix: '[$processedFolders/$totalFolders]',
+            ),
+          );
         }
       } finally {
-        if (batchOpen) {
+        if (batchStarted && batchOpen) {
           await provider.finishStagedLibraryRefresh();
         }
       }
@@ -324,67 +347,6 @@ class LibraryScannerService {
         );
       }
     }
-  }
-
-  Future<LibraryRefreshPlan> _buildLibraryRefreshPlan({
-    required AudioProvider provider,
-    required AppLanguageProvider i18n,
-    required List<String> watchedFolders,
-    required List<String> watchedLibraries,
-  }) async {
-    final folderResults = <LibraryRefreshFolderResult>[];
-    final foldersToRefresh = LinkedHashSet<String>.from(watchedFolders);
-    for (final libraryRoot in watchedLibraries) {
-      if (!provider.isScanning) break;
-      foldersToRefresh.removeWhere(
-        (folderPath) => PathMatcher.isWithinOrEqual(folderPath, libraryRoot),
-      );
-      folderResults.add(
-        await _scanLibraryRootForRefresh(
-          libraryRoot: libraryRoot,
-          provider: provider,
-          i18n: i18n,
-        ),
-      );
-    }
-
-    final totalFolders = foldersToRefresh.length;
-    var processedFolders = 0;
-    for (final folderPath in foldersToRefresh) {
-      if (!provider.isScanning) break;
-      processedFolders++;
-      final libraryRoot = watchedLibraries.firstWhere(
-        (root) => PathMatcher.isWithinOrEqual(folderPath, root),
-        orElse: () => '',
-      );
-      folderResults.add(
-        await _scanWatchedFolderForRefresh(
-          folderPath: folderPath,
-          effectiveLibraryRoot: libraryRoot.isEmpty ? folderPath : libraryRoot,
-          provider: provider,
-          i18n: i18n,
-          progressPrefix: '[$processedFolders/$totalFolders]',
-        ),
-      );
-    }
-
-    return LibraryRefreshPlan(
-      folderResults: List<LibraryRefreshFolderResult>.unmodifiable(
-        folderResults,
-      ),
-      totalAdded: folderResults.fold<int>(
-        0,
-        (sum, result) => sum + result.addedCount,
-      ),
-      totalDuplicates: folderResults.fold<int>(
-        0,
-        (sum, result) => sum + result.duplicateCount,
-      ),
-      totalFailures: folderResults.fold<int>(
-        0,
-        (sum, result) => sum + result.failureCount,
-      ),
-    );
   }
 
   Future<LibraryRefreshFolderResult> _scanLibraryRootForRefresh({

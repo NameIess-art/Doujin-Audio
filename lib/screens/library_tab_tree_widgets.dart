@@ -387,9 +387,16 @@ class _TrackNodeWidget extends ConsumerWidget {
               : cs.surface,
           child: track.isVideo
               ? ListTile(
-                  contentPadding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+                  contentPadding: const EdgeInsets.fromLTRB(12, 2, 12, 2),
                   minTileHeight: _FolderNodeWidgetState._rootFolderTileHeight,
-                  shape: cardShape,
+                  onTap: () {
+                    Feedback.forTap(context);
+                    unawaited(provider.spawnSession(track, autoPlay: true));
+                    _showSessionCreatedSnack(
+                      context,
+                      i18n.tr('session_created', {'name': track.displayName}),
+                    );
+                  },
                   title: _SingleVideoFileCardContent(
                     track: track,
                     title: track.displayName,

@@ -476,6 +476,8 @@ class LibraryService {
   bool libraryBatchChanged = false;
   bool libraryBatchChangedGroupOrder = false;
   final List<MusicTrack> libraryBatchPersistTracks = <MusicTrack>[];
+  final Map<String, LibraryEntry> libraryBatchPersistEntriesByKey =
+      <String, LibraryEntry>{};
   Timer? scanProgressNotifyTimer;
   int structureRevision = 0;
   final AudioStateSlice<LibraryState> slice = AudioStateSlice<LibraryState>(

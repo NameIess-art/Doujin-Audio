@@ -367,18 +367,23 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage>
       backgroundColor: cs.surface,
       body: Stack(
         children: [
-          ListView(
+          ListView.builder(
             padding: EdgeInsets.fromLTRB(
               16,
               MediaQuery.paddingOf(context).top + 92,
               16,
               24,
             ),
-            children: [
-              _buildSearchBar(i18n),
-              const SizedBox(height: 12),
-              if (isEmpty)
-                Padding(
+            itemCount: isEmpty ? 2 : editTree.length + 1,
+            itemBuilder: (context, index) {
+              if (index == 0) {
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: _buildSearchBar(i18n),
+                );
+              }
+              if (isEmpty) {
+                return Padding(
                   padding: const EdgeInsets.only(top: 96),
                   child: Center(
                     child: Text(
@@ -391,16 +396,16 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage>
                       ),
                     ),
                   ),
-                )
-              else ...[
-                for (final node in editTree)
-                  _LibraryEditTreeNodeWidget(
-                    libraryPath: widget.libraryPath,
-                    node: node,
-                    initiallyExpanded: _searchQuery.isNotEmpty,
-                  ),
-              ],
-            ],
+                );
+              }
+              final node = editTree[index - 1];
+              return _LibraryEditTreeNodeWidget(
+                key: ValueKey(node.pathValue),
+                libraryPath: widget.libraryPath,
+                node: node,
+                initiallyExpanded: _searchQuery.isNotEmpty,
+              );
+            },
           ),
           Positioned(
             top: 0,
@@ -1118,15 +1123,17 @@ class _LibraryEditFolderTreeTileState
             ],
           ),
         ),
-        children: [
-          for (final child in widget.folder.children)
-            _LibraryEditTreeNodeWidget(
-              key: ValueKey(child.pathValue),
-              libraryPath: widget.libraryPath,
-              node: child,
-              initiallyExpanded: widget.initiallyExpanded,
-            ),
-        ],
+        children: _expanded || widget.initiallyExpanded
+            ? [
+                for (final child in widget.folder.children)
+                  _LibraryEditTreeNodeWidget(
+                    key: ValueKey(child.pathValue),
+                    libraryPath: widget.libraryPath,
+                    node: child,
+                    initiallyExpanded: widget.initiallyExpanded,
+                  ),
+              ]
+            : const <Widget>[],
       ),
     );
 

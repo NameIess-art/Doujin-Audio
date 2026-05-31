@@ -8,15 +8,8 @@ class _ImmediateTimerScrim extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     return Positioned.fill(
       child: IgnorePointer(
-        child: ClipRect(
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: cs.scrim.withValues(alpha: 0.12),
-              ),
-            ),
-          ),
+        child: DecoratedBox(
+          decoration: BoxDecoration(color: cs.scrim.withValues(alpha: 0.80)),
         ),
       ),
     );

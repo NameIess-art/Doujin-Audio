@@ -204,7 +204,6 @@ class _TimerOverlaySheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
     final maxWidth = isDesktop ? 472.0 : 404.0;
     final outerPadding = EdgeInsets.fromLTRB(
       isDesktop ? 28 : 16,
@@ -223,9 +222,6 @@ class _TimerOverlaySheet extends StatelessWidget {
       child: AnimatedBuilder(
         animation: curved,
         builder: (context, child) {
-          final progress = curved.value.clamp(0.0, 1.0);
-          final showBackdrop = animation.status != AnimationStatus.reverse;
-
           return Stack(
             fit: StackFit.expand,
             children: [
@@ -233,41 +229,25 @@ class _TimerOverlaySheet extends StatelessWidget {
                 child: GestureDetector(
                   behavior: HitTestBehavior.opaque,
                   onTap: () => Navigator.of(context).maybePop(),
-                  child: showBackdrop
-                      ? ClipRect(
-                          child: BackdropFilter(
-                            filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
-                            child: DecoratedBox(
-                              decoration: BoxDecoration(
-                                color: cs.scrim.withValues(
-                                  alpha: 0.12 + (0.10 * progress),
-                                ),
-                              ),
-                            ),
-                          ),
-                        )
-                      : const SizedBox.expand(),
+                  child: const SizedBox.expand(),
                 ),
               ),
               SafeArea(
                 child: FadeTransition(
                   opacity: curved,
-                  child: ScaleTransition(
-                    scale: Tween<double>(begin: 0.88, end: 1.0).animate(curved),
-                    child: Padding(
-                      padding: outerPadding,
-                      child: Align(
-                        alignment: isDesktop
-                            ? Alignment.center
-                            : Alignment.topCenter,
-                        child: ConstrainedBox(
-                          constraints: BoxConstraints(maxWidth: maxWidth),
-                          child: TimerTab(
-                            showHeader: false,
-                            useSafeArea: false,
-                            compactOnly: true,
-                            initialCompactDetail: openDetail,
-                          ),
+                  child: Padding(
+                    padding: outerPadding,
+                    child: Align(
+                      alignment: isDesktop
+                          ? Alignment.center
+                          : Alignment.topCenter,
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(maxWidth: maxWidth),
+                        child: TimerTab(
+                          showHeader: false,
+                          useSafeArea: false,
+                          compactOnly: true,
+                          initialCompactDetail: openDetail,
                         ),
                       ),
                     ),

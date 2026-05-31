@@ -154,10 +154,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
   Widget build(BuildContext context) {
     super.build(context);
     final i18n = context.watch<AppLanguageProvider>();
-    final themeProvider = context.watch<ThemeProvider>();
     final audioProvider = ref.read(audioProviderFacadeProvider);
-    final playbackSettings =
-        ref.watch(settingsStateProvider).valueOrNull ?? const SettingsState();
     final bottomInset = MobileOverlayInset.of(context);
     final cs = Theme.of(context).colorScheme;
     final descStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -187,30 +184,36 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                   children: [
                     _SectionHeader(title: i18n.tr('section_appearance')),
                     const SizedBox(height: 2),
-                    SwitchListTile(
-                      value: themeProvider.isDarkMode,
-                      onChanged: themeProvider.toggleTheme,
-                      title: Text(i18n.tr('dark_mode')),
-                      subtitle: Text(
-                        i18n.tr('dark_mode_subtitle'),
-                        style: descStyle,
-                      ),
-                      secondary: Container(
-                        width: 38,
-                        height: 38,
-                        decoration: BoxDecoration(
-                          color: cs.primaryContainer,
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Icon(
-                          Icons.dark_mode_rounded,
-                          color: cs.onPrimaryContainer,
-                        ),
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
+                    Consumer(
+                      builder: (context, ref, _) {
+                        final isDarkMode = context.select<ThemeProvider, bool>((p) => p.isDarkMode);
+                        final toggleTheme = context.read<ThemeProvider>().toggleTheme;
+                        return SwitchListTile(
+                          value: isDarkMode,
+                          onChanged: toggleTheme,
+                          title: Text(i18n.tr('dark_mode')),
+                          subtitle: Text(
+                            i18n.tr('dark_mode_subtitle'),
+                            style: descStyle,
+                          ),
+                          secondary: Container(
+                            width: 38,
+                            height: 38,
+                            decoration: BoxDecoration(
+                              color: cs.primaryContainer,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Icon(
+                              Icons.dark_mode_rounded,
+                              color: cs.onPrimaryContainer,
+                            ),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        );
+                      },
                     ),
                     const SizedBox(height: 2),
                     ListTile(
@@ -261,30 +264,35 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                       ),
                     ),
                     const SizedBox(height: 2),
-                    SwitchListTile(
-                      value: playbackSettings.showPlaybackCard,
-                      onChanged: audioProvider.setShowPlaybackCard,
-                      title: Text(i18n.tr('show_playback_card')),
-                      subtitle: Text(
-                        i18n.tr('show_playback_card_subtitle'),
-                        style: descStyle,
-                      ),
-                      secondary: Container(
-                        width: 38,
-                        height: 38,
-                        decoration: BoxDecoration(
-                          color: cs.primaryContainer,
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Icon(
-                          Icons.play_circle_outline_rounded,
-                          color: cs.onPrimaryContainer,
-                        ),
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
+                    Consumer(
+                      builder: (context, ref, _) {
+                        final showPlaybackCard = ref.watch(settingsStateProvider.select((s) => s.valueOrNull?.showPlaybackCard ?? true));
+                        return SwitchListTile(
+                          value: showPlaybackCard,
+                          onChanged: audioProvider.setShowPlaybackCard,
+                          title: Text(i18n.tr('show_playback_card')),
+                          subtitle: Text(
+                            i18n.tr('show_playback_card_subtitle'),
+                            style: descStyle,
+                          ),
+                          secondary: Container(
+                            width: 38,
+                            height: 38,
+                            decoration: BoxDecoration(
+                              color: cs.primaryContainer,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Icon(
+                              Icons.play_circle_outline_rounded,
+                              color: cs.onPrimaryContainer,
+                            ),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        );
+                      },
                     ),
                     const SizedBox(height: 2),
                     ListTile(
@@ -319,137 +327,157 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                     const SizedBox(height: 12),
                     _SectionHeader(title: i18n.tr('section_playback')),
                     const SizedBox(height: 2),
-                    ListTile(
-                      title: Text(i18n.tr('dlsite_metadata_language')),
-                      subtitle: Text(
-                        i18n.tr('dlsite_metadata_language_subtitle'),
-                        style: descStyle,
-                      ),
-                      leading: Container(
-                        width: 38,
-                        height: 38,
-                        decoration: BoxDecoration(
-                          color: cs.secondaryContainer,
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Icon(
-                          Icons.public_rounded,
-                          color: cs.onSecondaryContainer,
-                        ),
-                      ),
-                      trailing: DropdownButtonHideUnderline(
-                        child: DropdownButton<AppLanguage>(
-                          value: playbackSettings.dlsiteMetadataLanguage,
-                          borderRadius: BorderRadius.circular(12),
+                    Consumer(
+                      builder: (context, ref, _) {
+                        final dlsiteLanguage = ref.watch(settingsStateProvider.select((s) => s.valueOrNull?.dlsiteMetadataLanguage ?? AppLanguage.ja));
+                        return ListTile(
+                          title: Text(i18n.tr('dlsite_metadata_language')),
+                          subtitle: Text(
+                            i18n.tr('dlsite_metadata_language_subtitle'),
+                            style: descStyle,
+                          ),
+                          leading: Container(
+                            width: 38,
+                            height: 38,
+                            decoration: BoxDecoration(
+                              color: cs.secondaryContainer,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Icon(
+                              Icons.public_rounded,
+                              color: cs.onSecondaryContainer,
+                            ),
+                          ),
+                          trailing: DropdownButtonHideUnderline(
+                            child: DropdownButton<AppLanguage>(
+                              value: dlsiteLanguage,
+                              borderRadius: BorderRadius.circular(12),
+                              onChanged: (value) {
+                                if (value != null) {
+                                  audioProvider.setDlsiteMetadataLanguage(value);
+                                }
+                              },
+                              items: AppLanguage.values
+                                  .map(
+                                    (lang) => DropdownMenuItem<AppLanguage>(
+                                      value: lang,
+                                      child: Text(
+                                        i18n.languageName(lang),
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                    ),
+                                  )
+                                  .toList(),
+                            ),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 2,
+                          ),
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 2),
+                    Consumer(
+                      builder: (context, ref, _) {
+                        final multiThreadEnabled = ref.watch(settingsStateProvider.select((s) => s.valueOrNull?.multiThreadPlaybackEnabled ?? false));
+                        return SwitchListTile(
+                          value: multiThreadEnabled,
                           onChanged: (value) {
-                            if (value != null) {
-                              audioProvider.setDlsiteMetadataLanguage(value);
+                            audioProvider.setMultiThreadPlaybackEnabled(value);
+                            if (!value) {
+                              ref
+                                  .read(subtitleSettingsProvider.notifier)
+                                  .turnOffAllSubtitles();
                             }
                           },
-                          items: AppLanguage.values
-                              .map(
-                                (lang) => DropdownMenuItem<AppLanguage>(
-                                  value: lang,
-                                  child: Text(
-                                    i18n.languageName(lang),
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                ),
-                              )
-                              .toList(),
-                        ),
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 2,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    SwitchListTile(
-                      value: playbackSettings.multiThreadPlaybackEnabled,
-                      onChanged: (value) {
-                        audioProvider.setMultiThreadPlaybackEnabled(value);
-                        if (!value) {
-                          ref
-                              .read(subtitleSettingsProvider.notifier)
-                              .turnOffAllSubtitles();
-                        }
+                          title: Text(i18n.tr('multi_thread_playback')),
+                          subtitle: Text(
+                            i18n.tr('multi_thread_playback_subtitle'),
+                            style: descStyle,
+                          ),
+                          secondary: Container(
+                            width: 38,
+                            height: 38,
+                            decoration: BoxDecoration(
+                              color: cs.secondaryContainer,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Icon(
+                              Icons.multitrack_audio_rounded,
+                              color: cs.onSecondaryContainer,
+                            ),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        );
                       },
-                      title: Text(i18n.tr('multi_thread_playback')),
-                      subtitle: Text(
-                        i18n.tr('multi_thread_playback_subtitle'),
-                        style: descStyle,
-                      ),
-                      secondary: Container(
-                        width: 38,
-                        height: 38,
-                        decoration: BoxDecoration(
-                          color: cs.secondaryContainer,
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Icon(
-                          Icons.multitrack_audio_rounded,
-                          color: cs.onSecondaryContainer,
-                        ),
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
                     ),
                     const SizedBox(height: 2),
-                    SwitchListTile(
-                      value: playbackSettings.autoPlayAddedSessions,
-                      onChanged: audioProvider.setAutoPlayAddedSessions,
-                      title: Text(i18n.tr('auto_play_added_sessions')),
-                      subtitle: Text(
-                        i18n.tr('auto_play_added_sessions_subtitle'),
-                        style: descStyle,
-                      ),
-                      secondary: Container(
-                        width: 38,
-                        height: 38,
-                        decoration: BoxDecoration(
-                          color: cs.primaryContainer,
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Icon(
-                          Icons.playlist_play_rounded,
-                          color: cs.onPrimaryContainer,
-                        ),
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
+                    Consumer(
+                      builder: (context, ref, _) {
+                        final autoPlay = ref.watch(settingsStateProvider.select((s) => s.valueOrNull?.autoPlayAddedSessions ?? true));
+                        return SwitchListTile(
+                          value: autoPlay,
+                          onChanged: audioProvider.setAutoPlayAddedSessions,
+                          title: Text(i18n.tr('auto_play_added_sessions')),
+                          subtitle: Text(
+                            i18n.tr('auto_play_added_sessions_subtitle'),
+                            style: descStyle,
+                          ),
+                          secondary: Container(
+                            width: 38,
+                            height: 38,
+                            decoration: BoxDecoration(
+                              color: cs.primaryContainer,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Icon(
+                              Icons.playlist_play_rounded,
+                              color: cs.onPrimaryContainer,
+                            ),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        );
+                      },
                     ),
                     const SizedBox(height: 2),
-                    SwitchListTile(
-                      value: playbackSettings.recordPlaybackProgress,
-                      onChanged: audioProvider.setRecordPlaybackProgress,
-                      title: Text(i18n.tr('record_playback_progress')),
-                      subtitle: Text(
-                        i18n.tr('record_playback_progress_subtitle'),
-                        style: descStyle,
-                      ),
-                      secondary: Container(
-                        width: 38,
-                        height: 38,
-                        decoration: BoxDecoration(
-                          color: cs.secondaryContainer,
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Icon(
-                          Icons.restore_rounded,
-                          color: cs.onSecondaryContainer,
-                        ),
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
+                    Consumer(
+                      builder: (context, ref, _) {
+                        final recordProgress = ref.watch(settingsStateProvider.select((s) => s.valueOrNull?.recordPlaybackProgress ?? true));
+                        return SwitchListTile(
+                          value: recordProgress,
+                          onChanged: audioProvider.setRecordPlaybackProgress,
+                          title: Text(i18n.tr('record_playback_progress')),
+                          subtitle: Text(
+                            i18n.tr('record_playback_progress_subtitle'),
+                            style: descStyle,
+                          ),
+                          secondary: Container(
+                            width: 38,
+                            height: 38,
+                            decoration: BoxDecoration(
+                              color: cs.secondaryContainer,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Icon(
+                              Icons.restore_rounded,
+                              color: cs.onSecondaryContainer,
+                            ),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        );
+                      },
                     ),
                     if (!Platform.isWindows) ...[
                       const SizedBox(height: 12),
@@ -538,61 +566,62 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                     _SectionHeader(title: i18n.tr('section_other')),
                     const SizedBox(height: 2),
                     if (!Platform.isWindows) ...[
-                      ListTile(
-                        title: Text(i18n.tr('max_cache_size')),
-                        subtitle: Text(
-                          i18n.tr('max_cache_size_subtitle', {
-                            'size': AppCacheService.formatBytes(
-                              playbackSettings.maxCacheBytes,
+                      Consumer(
+                        builder: (context, ref, _) {
+                          final maxCacheBytes = ref.watch(settingsStateProvider.select((s) => s.valueOrNull?.maxCacheBytes ?? AppCacheService.defaultMaxCacheBytes));
+                          return ListTile(
+                            title: Text(i18n.tr('max_cache_size')),
+                            subtitle: Text(
+                              i18n.tr('max_cache_size_subtitle', {
+                                'size': AppCacheService.formatBytes(maxCacheBytes),
+                              }),
+                              style: descStyle,
                             ),
-                          }),
-                          style: descStyle,
-                        ),
-                        leading: Container(
-                          width: 38,
-                          height: 38,
-                          decoration: BoxDecoration(
-                            color: cs.primaryContainer,
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Icon(
-                            Icons.storage_rounded,
-                            color: cs.onPrimaryContainer,
-                          ),
-                        ),
-                        trailing: DropdownButtonHideUnderline(
-                          child: DropdownButton<int>(
-                            value:
-                                _cacheLimitOptions.contains(
-                                  playbackSettings.maxCacheBytes,
-                                )
-                                ? playbackSettings.maxCacheBytes
-                                : AppCacheService.defaultMaxCacheBytes,
-                            borderRadius: BorderRadius.circular(12),
-                            onChanged: (value) {
-                              if (value != null) {
-                                audioProvider.setMaxCacheBytes(value);
-                              }
-                            },
-                            items: _cacheLimitOptions
-                                .map(
-                                  (value) => DropdownMenuItem<int>(
-                                    value: value,
-                                    child: Text(
-                                      AppCacheService.formatBytes(value),
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w700,
+                            leading: Container(
+                              width: 38,
+                              height: 38,
+                              decoration: BoxDecoration(
+                                color: cs.primaryContainer,
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Icon(
+                                Icons.storage_rounded,
+                                color: cs.onPrimaryContainer,
+                              ),
+                            ),
+                            trailing: DropdownButtonHideUnderline(
+                              child: DropdownButton<int>(
+                                value:
+                                    _cacheLimitOptions.contains(maxCacheBytes)
+                                    ? maxCacheBytes
+                                    : AppCacheService.defaultMaxCacheBytes,
+                                borderRadius: BorderRadius.circular(12),
+                                onChanged: (value) {
+                                  if (value != null) {
+                                    audioProvider.setMaxCacheBytes(value);
+                                  }
+                                },
+                                items: _cacheLimitOptions
+                                    .map(
+                                      (value) => DropdownMenuItem<int>(
+                                        value: value,
+                                        child: Text(
+                                          AppCacheService.formatBytes(value),
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
                                       ),
-                                    ),
-                                  ),
-                                )
-                                .toList(),
-                          ),
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 2,
-                        ),
+                                    )
+                                    .toList(),
+                              ),
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 2,
+                            ),
+                          );
+                        },
                       ),
                       const SizedBox(height: 2),
                       ListTile(
@@ -630,30 +659,35 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                       onCheck: () => _checkForUpdates(context),
                     ),
                     const SizedBox(height: 2),
-                    SwitchListTile(
-                      value: playbackSettings.autoCheckUpdates,
-                      onChanged: audioProvider.setAutoCheckUpdates,
-                      title: Text(i18n.tr('auto_check_updates')),
-                      subtitle: Text(
-                        i18n.tr('auto_check_updates_subtitle'),
-                        style: descStyle,
-                      ),
-                      secondary: Container(
-                        width: 38,
-                        height: 38,
-                        decoration: BoxDecoration(
-                          color: cs.secondaryContainer,
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Icon(
-                          Icons.update_rounded,
-                          color: cs.onSecondaryContainer,
-                        ),
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
+                    Consumer(
+                      builder: (context, ref, _) {
+                        final autoCheckUpdates = ref.watch(settingsStateProvider.select((s) => s.valueOrNull?.autoCheckUpdates ?? false));
+                        return SwitchListTile(
+                          value: autoCheckUpdates,
+                          onChanged: audioProvider.setAutoCheckUpdates,
+                          title: Text(i18n.tr('auto_check_updates')),
+                          subtitle: Text(
+                            i18n.tr('auto_check_updates_subtitle'),
+                            style: descStyle,
+                          ),
+                          secondary: Container(
+                            width: 38,
+                            height: 38,
+                            decoration: BoxDecoration(
+                              color: cs.secondaryContainer,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Icon(
+                              Icons.update_rounded,
+                              color: cs.onSecondaryContainer,
+                            ),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        );
+                      },
                     ),
                   ],
                 ),

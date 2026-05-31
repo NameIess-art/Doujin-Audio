@@ -17,9 +17,50 @@ extension _MainScreenLayout on _MainScreenState {
         MediaQuery.orientationOf(context) == Orientation.landscape;
 
     Widget pageShell(int actualIndex) {
-      final Widget page = TickerMode(
-        enabled: actualIndex == _currentIndex,
-        child: _pages[actualIndex],
+      final Widget page = AnimatedBuilder(
+        animation: _pageController,
+        builder: (context, child) {
+          double opacity = 1.0;
+          double dx = 0.0;
+          if (_pageController.hasClients &&
+              _pageController.position.haveDimensions) {
+            final pageValue = _pageController.page ?? _currentIndex.toDouble();
+            if (_pendingTargetIndex != null && _sourceIndexForAnimation != null) {
+              final target = _pendingTargetIndex!;
+              final source = _sourceIndexForAnimation!;
+              final directionMultiplier =
+                  Directionality.of(context) == TextDirection.rtl ? -1 : 1;
+              dx = (pageValue - actualIndex) * directionMultiplier;
+              
+              if (source == target) {
+                opacity = actualIndex == target ? 1.0 : 0.0;
+              } else {
+                final double t = ((pageValue - source) / (target - source)).clamp(0.0, 1.0);
+                if (actualIndex == target) {
+                  opacity = Curves.easeOutCubic.transform(t);
+                } else if (actualIndex == source) {
+                  opacity = Curves.easeOutCubic.transform(1 - t);
+                } else {
+                  opacity = 0.0;
+                }
+              }
+            } else {
+              final distance = (pageValue - actualIndex).abs();
+              opacity = Curves.easeOutCubic.transform((1 - distance).clamp(0.0, 1.0));
+            }
+          }
+          return FractionalTranslation(
+            translation: Offset(dx, 0),
+            child: Opacity(
+              opacity: opacity,
+              child: child,
+            ),
+          );
+        },
+        child: TickerMode(
+          enabled: actualIndex == _currentIndex,
+          child: _pages[actualIndex],
+        ),
       );
 
       return Align(
@@ -92,10 +133,7 @@ extension _MainScreenLayout on _MainScreenState {
         parent: ClampingScrollPhysics(),
       ),
       onPageChanged: (index) {
-        if (_pendingTargetIndex != null && index != _pendingTargetIndex) {
-          return;
-        }
-        _pendingTargetIndex = null;
+        if (_pendingTargetIndex != null) return;
         if (_currentIndex == index) return;
         _setLocalState(() {
           _currentIndex = index;

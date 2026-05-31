@@ -313,14 +313,14 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     final isWindows =
         Platform.isWindows ||
         MediaQuery.orientationOf(context) == Orientation.landscape;
-    const double expansion = 160.0;
+    const double expansion = 320.0;
     final listTopPadding = 4 + headerControlsFullHeight + expansion;
     final listBottomPadding = 16.0 + expansion;
     final listViewportBottomInset = listBottomInset + (isWindows ? 16.0 : 0.0);
     // Reduced cacheExtent to significantly lower memory footprint and improve
     // scroll/swipe performance.
-    final listCacheExtent = (headerContentHeight + 400)
-        .clamp(headerContentHeight, 720.0)
+    final listCacheExtent = (headerContentHeight + 800)
+        .clamp(headerContentHeight, 1600.0)
         .toDouble();
     final hasLibrary = listState.hasLibrary;
     final showLibrarySkeleton =

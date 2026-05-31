@@ -176,13 +176,13 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
         '${i18n.tr('sessions_count', {'count': headerState.sessionCount})} · '
         '${i18n.tr('playing_count', {'count': headerState.playingCount})}';
     final listBottomInset = MobileOverlayInset.of(context);
-    final listCacheExtent = (_headerHeight + 404)
-        .clamp(_headerHeight + 4, 720.0)
+    final listCacheExtent = (_headerHeight + 800)
+        .clamp(_headerHeight + 4, 1600.0)
         .toDouble();
     final isWindows =
         Platform.isWindows ||
         MediaQuery.orientationOf(context) == Orientation.landscape;
-    const double expansion = 160.0;
+    const double expansion = 320.0;
     final topPadding = 4.0 + expansion;
     final bottomPadding = 16.0 + expansion;
 
@@ -330,27 +330,36 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                         icon: const Icon(Icons.alarm_rounded),
                         tooltip: i18n.tr('timer'),
                       ),
-                    IconButton(
-                      onPressed: !listState.hasSessions
-                          ? null
-                          : () {
-                              provider.pauseAllSessions();
-                              showAppSnackBar(
-                                context,
-                                i18n.tr('all_paused'),
-                                tone: AppFeedbackTone.warning,
-                                icon: Icons.pause_circle_outline_rounded,
-                              );
-                            },
-                      icon: const Icon(Icons.pause_circle_outline_rounded),
-                      tooltip: i18n.tr('pause_all_sessions'),
-                    ),
-                    IconButton(
-                      onPressed: !listState.hasSessions
-                          ? null
-                          : () => _confirmClearAll(context, provider),
-                      icon: const Icon(Icons.delete_sweep_rounded),
-                      tooltip: i18n.tr('clear_all_sessions'),
+                    UnifiedPopupMenuButton<String>(
+                      icon: Icons.more_horiz_rounded,
+                      tooltip: i18n.tr('more_actions'),
+                      enabled: listState.hasSessions,
+                      entries: [
+                        UnifiedMenuEntry<String>.action(
+                          value: 'pause_all',
+                          icon: Icons.pause_circle_outline_rounded,
+                          label: i18n.tr('pause_all_sessions'),
+                        ),
+                        UnifiedMenuEntry<String>.action(
+                          value: 'clear_all',
+                          icon: Icons.delete_sweep_rounded,
+                          label: i18n.tr('clear_all_sessions'),
+                          destructive: true,
+                        ),
+                      ],
+                      onSelected: (value) {
+                        if (value == 'pause_all') {
+                          provider.pauseAllSessions();
+                          showAppSnackBar(
+                            context,
+                            i18n.tr('all_paused'),
+                            tone: AppFeedbackTone.warning,
+                            icon: Icons.pause_circle_outline_rounded,
+                          );
+                        } else if (value == 'clear_all') {
+                          _confirmClearAll(context, provider);
+                        }
+                      },
                     ),
                   ],
                 ),

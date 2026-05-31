@@ -5,13 +5,16 @@ import 'package:audio_service/audio_service.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:nameless_audio/i18n/app_language_provider.dart';
 import 'package:nameless_audio/providers/audio_provider.dart';
 import 'package:nameless_audio/services/app_database.dart';
 import 'package:nameless_audio/services/audio_database_repository.dart';
+import 'package:nameless_audio/services/library_scanner_service.dart';
 import 'package:nameless_audio/services/native_playback_bridge.dart';
 import 'package:nameless_audio/services/playback_notification_handler.dart';
 import 'package:nameless_audio/services/playback_notification_service.dart';
 import 'package:nameless_audio/services/platform_channels.dart';
+import 'package:path/path.dart' as path;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
@@ -1390,6 +1393,60 @@ void main() {
       expect(rows, hasLength(1));
       expect(rows.single['display_name'], '01 renamed');
     });
+
+    test(
+      'unchanged watched folder refresh keeps library revision stable',
+      () async {
+        final folder = await Directory.systemTemp.createTemp(
+          'library_noop_refresh_',
+        );
+        addTearDown(() async {
+          if (await folder.exists()) {
+            await folder.delete(recursive: true);
+          }
+        });
+
+        final trackPath = '${folder.path}${Platform.pathSeparator}01.mp3';
+        await File(trackPath).writeAsBytes(const <int>[1, 2, 3]);
+
+        final normalizedFolderPath = path.normalize(folder.path);
+        final track = MusicTrack(
+          path: trackPath,
+          displayName: '01',
+          groupKey: normalizedFolderPath,
+          groupTitle: path.basename(normalizedFolderPath),
+          groupSubtitle: normalizedFolderPath,
+          isSingle: false,
+          fileSizeBytes: 3,
+          modifiedAt: await File(trackPath).lastModified(),
+        );
+        provider.addWatchedFolder(normalizedFolderPath, notify: false);
+        provider.addTracks(<MusicTrack>[track], notify: false, persist: false);
+        provider.recordLibraryEntriesForTracks(
+          normalizedFolderPath,
+          <MusicTrack>[track],
+          persist: false,
+        );
+
+        final beforeRevision = provider.libraryContentRevision;
+        var notificationCount = 0;
+        provider.addListener(() {
+          notificationCount++;
+        });
+
+        final scanner = LibraryScannerService();
+        await scanner.refreshWatchedFolders(
+          provider: provider,
+          i18n: AppLanguageProvider(),
+          showSnack: (_) {},
+          silent: true,
+        );
+
+        expect(provider.libraryContentRevision, beforeRevision);
+        expect(notificationCount, 0);
+        expect(provider.trackByPath(trackPath), isNotNull);
+      },
+    );
 
     test('addOrReplaceTracks ignores unchanged rescan metadata', () async {
       final initialModifiedAt = DateTime.fromMillisecondsSinceEpoch(1000);

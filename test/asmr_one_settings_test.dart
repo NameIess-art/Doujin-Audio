@@ -732,6 +732,15 @@ class _MemoryAsmrTokenStore implements AsmrTokenStore {
   Future<void> writeToken(String token) async {
     this.token = token;
   }
+
+  @override
+  Future<void> clearCredentials() async {}
+
+  @override
+  Future<Map<String, String>?> readCredentials() async => null;
+
+  @override
+  Future<void> writeCredentials(String username, String password) async {}
 }
 
 class _FakeAudioDatabaseRepository extends AudioDatabaseRepository {

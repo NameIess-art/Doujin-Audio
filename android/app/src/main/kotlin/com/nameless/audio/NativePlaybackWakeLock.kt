@@ -14,7 +14,7 @@ internal class NativePlaybackWakeLock(
 
     fun isHeld(): Boolean = wakeLock?.isHeld == true || wifiLock?.isHeld == true
 
-    fun acquire(timeoutMs: Long? = 20 * 60 * 1000L) {
+    fun acquire(timeoutMs: Long? = null) {
         var acquiredAny = false
 
         if (wakeLock == null) {
@@ -70,7 +70,7 @@ internal class NativePlaybackWakeLock(
         }
     }
 
-    fun refresh(timeoutMs: Long? = 20 * 60 * 1000L) {
+    fun refresh(timeoutMs: Long? = null) {
         if (wakeLock == null) {
             acquire(timeoutMs)
             return

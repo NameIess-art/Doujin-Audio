@@ -711,6 +711,7 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                   : AsyncCoverImage(
                       duration: Duration.zero,
                       future: coverPathFuture,
+                      initialPath: provider.resolvedCoverPathForTrack(track),
                       fallbackBuilder: (_) => ColoredBox(color: cs.surfaceDim),
                       imageBuilder: (context, coverPath) {
                         final mediaSize = MediaQuery.sizeOf(context);

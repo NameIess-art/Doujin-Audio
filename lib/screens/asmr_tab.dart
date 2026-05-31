@@ -172,7 +172,7 @@ class _AsmrTabState extends State<AsmrTab>
   }
 
   void _handleTabChanged() {
-    if (!mounted || _tabController.indexIsChanging) {
+    if (!mounted) {
       return;
     }
     setState(() {});
@@ -2266,8 +2266,9 @@ class _AsmrWorkCoverState extends State<_AsmrWorkCover> {
                 fit: BoxFit.cover,
                 filterQuality: FilterQuality.low,
                 gaplessPlayback: true,
-                cacheWidth: (width * MediaQuery.devicePixelRatioOf(context))
-                    .round(),
+                cacheWidth:
+                    (width * MediaQuery.devicePixelRatioOf(context).clamp(1.0, 1.5))
+                        .round(),
                 loadingBuilder: (context, child, loadingProgress) {
                   if (loadingProgress == null) {
                     return child;

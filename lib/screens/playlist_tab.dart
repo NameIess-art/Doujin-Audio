@@ -183,8 +183,8 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
         Platform.isWindows ||
         MediaQuery.orientationOf(context) == Orientation.landscape;
     const double expansion = 320.0;
-    final topPadding = 4.0 + expansion;
-    final bottomPadding = 16.0 + expansion;
+    const topPadding = 4.0 + expansion;
+    const bottomPadding = 16.0 + expansion;
 
     return ScrollActivityGate(
       child: Stack(
@@ -215,7 +215,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                           _SessionsEmptyState(
                             key: const ValueKey('empty_state'),
                             bottomInset: 100,
-                            topInset: _headerHeight + 64,
+                            topInset: expansion + 64,
                           ),
                         if (listState.hasSessions)
                           Theme(
@@ -230,7 +230,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                               contentMarginBottom: bottomPadding,
                               child: ReorderableListView.builder(
                                 scrollController: _scrollController,
-                                padding: EdgeInsets.fromLTRB(
+                                padding: const EdgeInsets.fromLTRB(
                                   16,
                                   topPadding,
                                   16,

@@ -104,6 +104,64 @@ class NativeScanPayload {
   final Set<String> paths;
 }
 
+class FolderScanChunk {
+  const FolderScanChunk({
+    this.tracks = const <ScannedTrack>[],
+    this.paths = const <String>{},
+    this.folders = const <String>[],
+    this.failureCount = 0,
+  });
+
+  final List<ScannedTrack> tracks;
+  final Set<String> paths;
+  final List<String> folders;
+  final int failureCount;
+}
+
+class FolderScanSessionEvent {
+  const FolderScanSessionEvent({
+    required this.sessionId,
+    required this.type,
+    required this.chunk,
+    this.errorCode,
+    this.errorMessage,
+  });
+
+  final String sessionId;
+  final String type;
+  final FolderScanChunk chunk;
+  final String? errorCode;
+  final String? errorMessage;
+
+  bool get isChunk => type == 'chunk';
+  bool get isDone => type == 'done';
+  bool get isError => type == 'error';
+
+  factory FolderScanSessionEvent.fromPayload(Map<Object?, Object?> payload) {
+    final rawTracks = payload['tracks'];
+    final trackPayload = rawTracks is List ? rawTracks : const <Object?>[];
+    final parsedTracks = _parseNativeScanPayload(trackPayload);
+    final eventPaths = _stringSetFromPayload(
+      payload['paths'],
+    ).map(PathMatcher.normalize).toSet();
+    final folders = _stringSetFromPayload(
+      payload['folders'],
+    ).map(PathMatcher.normalize).toList(growable: false);
+    return FolderScanSessionEvent(
+      sessionId: payload['sessionId']?.toString() ?? '',
+      type: payload['type']?.toString() ?? '',
+      chunk: FolderScanChunk(
+        tracks: parsedTracks.tracks,
+        paths: eventPaths.isEmpty ? parsedTracks.paths : eventPaths,
+        folders: folders,
+        failureCount: (payload['failureCount'] as num?)?.toInt() ?? 0,
+      ),
+      errorCode: payload['code']?.toString(),
+      errorMessage: payload['message']?.toString(),
+    );
+  }
+}
+
 class LibraryScanMergeContext {
   LibraryScanMergeContext({
     required AudioProvider provider,
@@ -171,12 +229,16 @@ class LibraryScannerService {
   static const MethodChannel _fileCacheChannel = MethodChannel(
     FileCacheChannel.name,
   );
+  static const EventChannel _fileCacheScanEvents = EventChannel(
+    FileCacheChannel.scanEvents,
+  );
 
   static const Duration _foregroundRefreshCommitInterval = Duration(
     milliseconds: 400,
   );
 
   DateTime? _lastBatchFlushTime;
+  int _scanSessionSeed = 0;
 
   bool _pathsOverlap(String first, String second) {
     return PathMatcher.isWithinOrEqual(first, second) ||
@@ -861,9 +923,115 @@ class LibraryScannerService {
     if (!Platform.isAndroid) {
       return const NativeScanResult.notSupported();
     }
+    final streamedScan = await _scanFolderViaNativeStream(folderPath);
+    if (streamedScan.ok || !streamedScan.notSupported) {
+      return streamedScan;
+    }
+    return _scanFolderViaNativeLegacy(folderPath);
+  }
+
+  Future<NativeScanResult> _scanFolderViaNativeStream(String folderPath) async {
+    final sessionId =
+        '${DateTime.now().microsecondsSinceEpoch}-${_scanSessionSeed++}';
+    final tracks = <ScannedTrack>[];
+    final paths = <String>{};
+    final completer = Completer<NativeScanResult>();
+    StreamSubscription<dynamic>? subscription;
+
+    void complete(NativeScanResult result) {
+      if (!completer.isCompleted) {
+        completer.complete(result);
+      }
+    }
+
+    try {
+      subscription = _fileCacheScanEvents
+          .receiveBroadcastStream(<String, Object?>{'sessionId': sessionId})
+          .listen(
+            (event) {
+              if (event is! Map) return;
+              final scanEvent = FolderScanSessionEvent.fromPayload(
+                event.cast<Object?, Object?>(),
+              );
+              if (scanEvent.sessionId != sessionId) return;
+              if (scanEvent.isChunk) {
+                tracks.addAll(scanEvent.chunk.tracks);
+                paths.addAll(scanEvent.chunk.paths);
+                return;
+              }
+              if (scanEvent.isDone) {
+                complete(
+                  NativeScanResult.success(
+                    List<ScannedTrack>.unmodifiable(tracks),
+                    Set<String>.unmodifiable(paths),
+                  ),
+                );
+                return;
+              }
+              if (scanEvent.isError) {
+                complete(
+                  NativeScanResult.failed(
+                    code: scanEvent.errorCode,
+                    message: scanEvent.errorMessage,
+                  ),
+                );
+              }
+            },
+            onError: (Object error) {
+              complete(
+                NativeScanResult.failed(
+                  code: 'scan_event_error',
+                  message: error.toString(),
+                ),
+              );
+            },
+          );
+
+      final started = await _fileCacheChannel.invokeMethod<bool>(
+        FileCacheMethod.startFolderScan,
+        <String, Object?>{
+          'sessionId': sessionId,
+          'folder': folderPath,
+          'chunkSize': 120,
+        },
+      );
+      if (started != true) {
+        return const NativeScanResult.notSupported();
+      }
+      return await completer.future;
+    } on MissingPluginException {
+      return const NativeScanResult.notSupported();
+    } on PlatformException catch (error) {
+      if (error.code == 'notImplemented') {
+        return const NativeScanResult.notSupported();
+      }
+      return NativeScanResult.failed(code: error.code, message: error.message);
+    } catch (error) {
+      return NativeScanResult.failed(
+        code: 'scan_unknown_error',
+        message: error.toString(),
+      );
+    } finally {
+      await subscription?.cancel();
+      if (!completer.isCompleted) {
+        unawaited(_cancelNativeFolderScan(sessionId));
+      }
+    }
+  }
+
+  Future<void> _cancelNativeFolderScan(String sessionId) async {
+    try {
+      await _fileCacheChannel.invokeMethod<bool>(
+        FileCacheMethod.cancelFolderScan,
+        <String, Object?>{'sessionId': sessionId},
+      );
+    } catch (_) {}
+  }
+
+  Future<NativeScanResult> _scanFolderViaNativeLegacy(String folderPath) async {
     try {
       final data = await _fileCacheChannel.invokeMethod<List<dynamic>>(
-        'scanFolder',
+        FileCacheMethod.scanFolder,
         {'folder': folderPath},
       );
       if (data == null) {
@@ -953,7 +1121,7 @@ class LibraryScannerService {
     if (Platform.isAndroid) {
       try {
         final data = await _fileCacheChannel.invokeMethod<List<dynamic>>(
-          'listChildFolders',
+          FileCacheMethod.listChildFolders,
           {'folder': folderPath},
         );
         if (data != null) {

@@ -2,6 +2,7 @@ package com.nameless.audio
 
 internal object PlatformChannelNames {
     const val FILE_CACHE = "nameless_audio/file_cache"
+    const val FILE_CACHE_SCAN_EVENTS = "nameless_audio/file_cache/scan_events"
     const val NATIVE_PLAYBACK = "nameless_audio/native_playback"
     const val NATIVE_PLAYBACK_EVENTS = "nameless_audio/native_playback/events"
     const val NOTIFICATIONS = "nameless_audio/notifications"
@@ -89,6 +90,8 @@ internal object FileCacheMethods {
     const val RESOLVE_TRACK_SUBTITLE = "resolveTrackSubtitle"
     const val RESOLVE_VIDEO_FRAME = "resolveVideoFrame"
     const val SCAN_FOLDER = "scanFolder"
+    const val START_FOLDER_SCAN = "startFolderScan"
+    const val CANCEL_FOLDER_SCAN = "cancelFolderScan"
     const val SET_APPLICATION_CACHE_LIMIT = "setApplicationCacheLimit"
     const val WRITE_AUDIO_DETAIL_BACKUP = "writeAudioDetailBackup"
     const val WRITE_FILE_BYTES_TO_FOLDER = "writeFileBytesToFolder"

@@ -1,7 +1,7 @@
 import 'dart:async';
 
 class WarmupScheduler {
-  WarmupScheduler({this.maxConcurrent = 2, this.maxQueueSize = 12});
+  WarmupScheduler({this.maxConcurrent = 1, this.maxQueueSize = 12});
 
   final int maxConcurrent;
   final int maxQueueSize;
@@ -9,16 +9,27 @@ class WarmupScheduler {
   final List<_QueuedWarmupTask> _pending = <_QueuedWarmupTask>[];
   final Set<String> _queuedKeys = <String>{};
   final Set<String> _activeKeys = <String>{};
+  Timer? _cooldownTimer;
 
   int _currentGeneration = 0;
+  bool _isCoolingDown = false;
 
   int get currentGeneration => _currentGeneration;
   int get pendingCount => _pending.length;
   int get activeCount => _activeKeys.length;
 
-  void beginGeneration(int generation) {
+  void beginGeneration(int generation, {Duration cooldown = Duration.zero}) {
     _currentGeneration = generation;
     _dropStalePending();
+    _cooldownTimer?.cancel();
+    _isCoolingDown = cooldown > Duration.zero;
+    if (_isCoolingDown) {
+      _cooldownTimer = Timer(cooldown, () {
+        _cooldownTimer = null;
+        _isCoolingDown = false;
+        _pump();
+      });
+    }
     _pump();
   }
 
@@ -61,6 +72,9 @@ class WarmupScheduler {
   }
 
   void clear() {
+    _cooldownTimer?.cancel();
+    _cooldownTimer = null;
+    _isCoolingDown = false;
     _pending.clear();
     _queuedKeys.clear();
   }
@@ -84,6 +98,7 @@ class WarmupScheduler {
   }
 
   void _pump() {
+    if (_isCoolingDown) return;
     while (_activeKeys.length < maxConcurrent && _pending.isNotEmpty) {
       final nextTask = _pending.removeAt(0);
       _queuedKeys.remove(nextTask.key);

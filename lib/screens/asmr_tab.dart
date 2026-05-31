@@ -13,6 +13,7 @@ import '../services/asmr_download_manager.dart';
 import '../services/asmr_library_controller.dart';
 import '../services/search_query_utils.dart';
 import '../widgets/app_feedback.dart';
+import '../widgets/app_transitions.dart';
 import '../widgets/async_cover_image.dart';
 import '../widgets/glass_refresh_indicator.dart';
 import '../widgets/marquee_text.dart';
@@ -299,7 +300,7 @@ class _AsmrTabState extends State<AsmrTab>
       barrierLabel: i18n.tr('close'),
       barrierDismissible: true,
       barrierColor: Colors.transparent,
-      transitionDuration: const Duration(milliseconds: 240),
+      transitionDuration: kSecondaryOverlayConfig.transitionDuration,
       pageBuilder: (dialogContext, animation, secondaryAnimation) {
         return _AsmrPanelOverlay(animation: animation, builder: builder);
       },
@@ -1097,7 +1098,6 @@ class _AsmrPanelOverlay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
     final mediaSize = MediaQuery.sizeOf(context);
     final isDesktop = mediaSize.width >= 760;
     final maxWidth = isDesktop ? 472.0 : 404.0;
@@ -1130,7 +1130,10 @@ class _AsmrPanelOverlay extends StatelessWidget {
                   child: showBackdrop
                       ? DecoratedBox(
                           decoration: BoxDecoration(
-                            color: cs.scrim.withValues(alpha: 0.80 * progress),
+                            color: kSecondaryOverlayConfig.scrimColor(
+                              context,
+                              progress,
+                            ),
                           ),
                         )
                       : const SizedBox.expand(),
@@ -1875,39 +1878,42 @@ class _AsmrWorkTreeCardState extends State<_AsmrWorkTreeCard> {
               hasChildren: (visibleTree?.isNotEmpty ?? false) || isTreeLoading,
               onPlay: () => unawaited(_playWork(context)),
             ),
-            children: [
-              if (isTreeLoading && visibleTree == null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8, bottom: 12),
-                  child: Center(
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2.2,
-                      color: asmrBlue,
-                    ),
-                  ),
-                )
-              else if (visibleTree == null || visibleTree.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: 4, bottom: 12),
-                  child: Text(
-                    i18n.tr('asmr_empty_track_tree'),
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: cs.onSurfaceVariant,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                )
-              else
-                for (final node in visibleTree)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 6),
-                    child: _AsmrTrackTreeNode(
-                      work: widget.work,
-                      node: node,
-                      searchQuery: widget.searchQuery,
-                    ),
-                  ),
-            ],
+            children: _expanded
+                ? [
+                    if (isTreeLoading && visibleTree == null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8, bottom: 12),
+                        child: Center(
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.2,
+                            color: asmrBlue,
+                          ),
+                        ),
+                      )
+                    else if (visibleTree == null || visibleTree.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4, bottom: 12),
+                        child: Text(
+                          i18n.tr('asmr_empty_track_tree'),
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: cs.onSurfaceVariant,
+                                fontWeight: FontWeight.w600,
+                              ),
+                        ),
+                      )
+                    else
+                      for (final node in visibleTree)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: _AsmrTrackTreeNode(
+                            work: widget.work,
+                            node: node,
+                            searchQuery: widget.searchQuery,
+                          ),
+                        ),
+                  ]
+                : const <Widget>[],
           ),
         ),
       ),
@@ -1971,9 +1977,14 @@ class _AsmrTrackTreeNodeState extends State<_AsmrTrackTreeNode> {
   @override
   Widget build(BuildContext context) {
     if (widget.node.isFolder) {
-      final visibleChildren = widget.node.children
-          .where((child) => child.hasBrowsableContent)
-          .toList(growable: false);
+      final hasVisibleChildren = widget.node.children.any(
+        (child) => child.hasBrowsableContent,
+      );
+      final visibleChildren = _expanded
+          ? widget.node.children
+                .where((child) => child.hasBrowsableContent)
+                .toList(growable: false)
+          : const <AsmrTrackFile>[];
       final cs = Theme.of(context).colorScheme;
       final isDark = Theme.of(context).brightness == Brightness.dark;
       final asmrBlue = isDark
@@ -2051,7 +2062,7 @@ class _AsmrTrackTreeNodeState extends State<_AsmrTrackTreeNode> {
                   icon: const Icon(Icons.add_circle_rounded, size: 25),
                 ),
                 const SizedBox(width: 2),
-                if (visibleChildren.isNotEmpty)
+                if (hasVisibleChildren)
                   Padding(
                     padding: const EdgeInsets.only(right: 6),
                     child: IgnorePointer(

@@ -18,6 +18,7 @@ abstract final class PowerChannel {
 
 abstract final class FileCacheChannel {
   static const String name = 'nameless_audio/file_cache';
+  static const String scanEvents = 'nameless_audio/file_cache/scan_events';
 }
 
 abstract final class NotificationsChannel {
@@ -80,6 +81,8 @@ abstract final class FileCacheMethod {
   static const String resolveVideoFrame = 'resolveVideoFrame';
   static const String cacheFromUri = 'cacheFromUri';
   static const String scanFolder = 'scanFolder';
+  static const String startFolderScan = 'startFolderScan';
+  static const String cancelFolderScan = 'cancelFolderScan';
   static const String listChildFolders = 'listChildFolders';
   static const String renameDocument = 'renameDocument';
   static const String readAudioDetailBackup = 'readAudioDetailBackup';

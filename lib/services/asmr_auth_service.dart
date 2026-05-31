@@ -1,8 +1,10 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../models/asmr_models.dart';
+import 'app_preferences.dart';
 import 'asmr_api_service.dart';
 
 abstract class AsmrTokenStore {
@@ -24,64 +26,80 @@ class SecureAsmrTokenStore implements AsmrTokenStore {
   static const String _tokenKey = 'asmr_one_jwt_token_v1';
   static const String _nameKey = 'asmr_one_name_v1';
   static const String _passKey = 'asmr_one_pass_v1';
+  static const String _migratedKey = 'asmr_auth_migrated_v1';
 
   final FlutterSecureStorage _storage;
 
+  Future<void> _ensureMigrated() async {
+    final migrated = await AppPreferences.getBool(_migratedKey);
+    if (migrated == true) return;
+
+    try {
+      final token = await _storage.read(key: _tokenKey);
+      final name = await _storage.read(key: _nameKey);
+      final pass = await _storage.read(key: _passKey);
+
+      if (token != null && token.isNotEmpty) {
+        await AppPreferences.setString(_tokenKey, token);
+      }
+      if (name != null && pass != null && name.isNotEmpty) {
+        await AppPreferences.setString(_nameKey, name);
+        // Basic obfuscation so it's not plain text in the XML
+        final encodedPass = base64.encode(utf8.encode(pass));
+        await AppPreferences.setString(_passKey, encodedPass);
+      }
+    } catch (_) {}
+
+    await AppPreferences.setBool(_migratedKey, true);
+  }
+
   @override
   Future<String?> readToken() async {
-    try {
-      return await _storage.read(key: _tokenKey);
-    } catch (_) {
-      return null;
-    }
+    await _ensureMigrated();
+    return AppPreferences.getString(_tokenKey);
   }
 
   @override
   Future<void> writeToken(String token) async {
-    try {
-      await _storage.write(key: _tokenKey, value: token);
-    } catch (_) {
-      // Secure storage can be unavailable in tests or unsupported shells.
-    }
+    await _ensureMigrated();
+    await AppPreferences.setString(_tokenKey, token);
   }
 
   @override
   Future<void> clearToken() async {
-    try {
-      await _storage.delete(key: _tokenKey);
-    } catch (_) {
-      // See writeToken.
-    }
+    await _ensureMigrated();
+    await AppPreferences.remove(_tokenKey);
   }
 
   @override
   Future<Map<String, String>?> readCredentials() async {
-    try {
-      final name = await _storage.read(key: _nameKey);
-      final pass = await _storage.read(key: _passKey);
-      if (name != null && pass != null && name.isNotEmpty) {
+    await _ensureMigrated();
+    final name = await AppPreferences.getString(_nameKey);
+    final encodedPass = await AppPreferences.getString(_passKey);
+    if (name != null && encodedPass != null && name.isNotEmpty) {
+      try {
+        final pass = utf8.decode(base64.decode(encodedPass));
         return {'name': name, 'password': pass};
+      } catch (_) {
+        return null;
       }
-      return null;
-    } catch (_) {
-      return null;
     }
+    return null;
   }
 
   @override
   Future<void> writeCredentials(String name, String password) async {
-    try {
-      await _storage.write(key: _nameKey, value: name);
-      await _storage.write(key: _passKey, value: password);
-    } catch (_) {}
+    await _ensureMigrated();
+    await AppPreferences.setString(_nameKey, name);
+    final encodedPass = base64.encode(utf8.encode(password));
+    await AppPreferences.setString(_passKey, encodedPass);
   }
 
   @override
   Future<void> clearCredentials() async {
-    try {
-      await _storage.delete(key: _nameKey);
-      await _storage.delete(key: _passKey);
-    } catch (_) {}
+    await _ensureMigrated();
+    await AppPreferences.remove(_nameKey);
+    await AppPreferences.remove(_passKey);
   }
 }
 

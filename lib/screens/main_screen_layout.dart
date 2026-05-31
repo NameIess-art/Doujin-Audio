@@ -13,7 +13,8 @@ extension _MainScreenLayout on _MainScreenState {
               ? const EdgeInsets.fromLTRB(24, 22, 24, 22)
               : const EdgeInsets.fromLTRB(12, 12, 16, 12))
         : EdgeInsets.zero;
-    final isWindows = Platform.isWindows ||
+    final isWindows =
+        Platform.isWindows ||
         MediaQuery.orientationOf(context) == Orientation.landscape;
 
     Widget pageShell(int actualIndex) {
@@ -40,11 +41,15 @@ extension _MainScreenLayout on _MainScreenState {
                       border: isWindows
                           ? Border(
                               left: BorderSide(
-                                color: cs.outlineVariant.withValues(alpha: 0.25),
+                                color: cs.outlineVariant.withValues(
+                                  alpha: 0.25,
+                                ),
                               ),
                               top: BorderSide(
-                                color: cs.outlineVariant.withValues(alpha: 0.25),
-                              )
+                                color: cs.outlineVariant.withValues(
+                                  alpha: 0.25,
+                                ),
+                              ),
                             )
                           : Border.all(
                               color: cs.outlineVariant.withValues(alpha: 0.85),
@@ -129,7 +134,7 @@ extension _MainScreenLayout on _MainScreenState {
       barrierLabel: i18n.tr('close'),
       barrierDismissible: true,
       barrierColor: Colors.transparent,
-      transitionDuration: const Duration(milliseconds: 240),
+      transitionDuration: kSecondaryOverlayConfig.transitionDuration,
       pageBuilder: (dialogContext, animation, secondaryAnimation) {
         return _TimerOverlaySheet(
           isDesktop: isDesktop,
@@ -275,7 +280,8 @@ extension _MainScreenLayout on _MainScreenState {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
-    final isWindows = Platform.isWindows ||
+    final isWindows =
+        Platform.isWindows ||
         MediaQuery.orientationOf(context) == Orientation.landscape;
 
     return Container(
@@ -356,7 +362,9 @@ extension _MainScreenLayout on _MainScreenState {
                 extended: true,
                 minExtendedWidth: isWindows ? 228 : 256,
                 useIndicator: true,
-                groupAlignment: isWindows ? -1.0 : 0.0, // Top aligned for desktop apps
+                groupAlignment: isWindows
+                    ? -1.0
+                    : 0.0, // Top aligned for desktop apps
                 destinations: _MainScreenState._destinations
                     .asMap()
                     .entries
@@ -383,7 +391,9 @@ extension _MainScreenLayout on _MainScreenState {
                                   fontWeight: FontWeight.w800,
                                 )
                               : TextStyle(
-                                  color: cs.onSurfaceVariant.withValues(alpha: 0.8),
+                                  color: cs.onSurfaceVariant.withValues(
+                                    alpha: 0.8,
+                                  ),
                                   fontWeight: FontWeight.w600,
                                 ),
                         ),

@@ -5,7 +5,7 @@ import 'package:nameless_audio/services/warmup_scheduler.dart';
 
 void main() {
   test('deduplicates queued work by key within a generation', () {
-    final scheduler = WarmupScheduler(maxConcurrent: 1, maxQueueSize: 4);
+    final scheduler = WarmupScheduler(maxQueueSize: 4);
     scheduler.beginGeneration(1);
 
     final acceptedFirst = scheduler.schedule(
@@ -28,7 +28,7 @@ void main() {
   test(
     'limits concurrent work and starts queued task after completion',
     () async {
-      final scheduler = WarmupScheduler(maxConcurrent: 1, maxQueueSize: 4);
+      final scheduler = WarmupScheduler(maxQueueSize: 4);
       scheduler.beginGeneration(2);
 
       final firstStarted = Completer<void>();
@@ -69,7 +69,7 @@ void main() {
   );
 
   test('drops stale queued work when generation advances', () async {
-    final scheduler = WarmupScheduler(maxConcurrent: 1, maxQueueSize: 4);
+    final scheduler = WarmupScheduler(maxQueueSize: 4);
     scheduler.beginGeneration(3);
 
     final releaseFirst = Completer<void>();
@@ -102,7 +102,7 @@ void main() {
   });
 
   test('clears queued work by group without touching active work', () async {
-    final scheduler = WarmupScheduler(maxConcurrent: 1, maxQueueSize: 4);
+    final scheduler = WarmupScheduler(maxQueueSize: 4);
     scheduler.beginGeneration(5);
 
     final releaseActive = Completer<void>();
@@ -146,5 +146,62 @@ void main() {
 
     expect(droppedRan, isFalse);
     expect(keptRan, isTrue);
+  });
+
+  test('defers queued work during generation cooldown', () async {
+    final scheduler = WarmupScheduler(maxQueueSize: 4);
+    scheduler.beginGeneration(6, cooldown: const Duration(milliseconds: 20));
+
+    var ran = false;
+    scheduler.schedule(
+      key: 'deferred',
+      priority: 0,
+      generation: 6,
+      task: () async {
+        ran = true;
+      },
+    );
+
+    await Future<void>.delayed(Duration.zero);
+    expect(ran, isFalse);
+    expect(scheduler.pendingCount, 1);
+
+    await Future<void>.delayed(const Duration(milliseconds: 25));
+    await Future<void>.delayed(Duration.zero);
+
+    expect(ran, isTrue);
+    expect(scheduler.pendingCount, 0);
+  });
+
+  test('new generation cancels previous cooldown timer', () async {
+    final scheduler = WarmupScheduler(maxQueueSize: 4);
+    scheduler.beginGeneration(7, cooldown: const Duration(milliseconds: 40));
+
+    var staleRan = false;
+    scheduler.schedule(
+      key: 'stale-cooldown',
+      priority: 0,
+      generation: 7,
+      task: () async {
+        staleRan = true;
+      },
+    );
+
+    scheduler.beginGeneration(8);
+    var freshRan = false;
+    scheduler.schedule(
+      key: 'fresh',
+      priority: 0,
+      generation: 8,
+      task: () async {
+        freshRan = true;
+      },
+    );
+
+    await Future<void>.delayed(Duration.zero);
+    await Future<void>.delayed(Duration.zero);
+
+    expect(staleRan, isFalse);
+    expect(freshRan, isTrue);
   });
 }

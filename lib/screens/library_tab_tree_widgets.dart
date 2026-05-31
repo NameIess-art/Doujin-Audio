@@ -559,6 +559,8 @@ class _LibraryCoverThumbnail extends ConsumerWidget {
           child: AsyncCoverImage(
             future: coverPathFuture,
             initialPath: provider.resolvedCoverPathForFolder(folderPath),
+            retryFutureBuilder: () =>
+                provider.coverPathFutureForFolder(folderPath),
             duration: Duration.zero,
             fallbackBuilder: (_) => fallback(),
             loadingBuilder: (_) => Stack(
@@ -574,14 +576,11 @@ class _LibraryCoverThumbnail extends ConsumerWidget {
             ),
             imageBuilder: (context, coverPath) {
               final dpr = MediaQuery.devicePixelRatioOf(context);
-              return Image(
-                image: resizeFileImageIfNeeded(
-                  path: coverPath,
-                  cacheWidth: (width * dpr).round(),
-                ),
+              return RetryingFileImage(
+                path: coverPath,
+                cacheWidth: (width * dpr).round(),
                 fit: BoxFit.cover,
-                gaplessPlayback: true,
-                errorBuilder: (_, _, _) => fallback(),
+                fallbackBuilder: (_) => fallback(),
               );
             },
           ),
@@ -642,6 +641,7 @@ class _LibraryTrackCoverThumbnail extends ConsumerWidget {
         child: AsyncCoverImage(
           future: coverPathFuture,
           initialPath: provider.resolvedCoverPathForTrack(track),
+          retryFutureBuilder: () => provider.coverPathFutureForTrack(track),
           duration: Duration.zero,
           fallbackBuilder: (_) => fallback(),
           loadingBuilder: (_) => CoverLoadingIndicator(
@@ -651,14 +651,11 @@ class _LibraryTrackCoverThumbnail extends ConsumerWidget {
           ),
           imageBuilder: (context, coverPath) {
             final dpr = MediaQuery.devicePixelRatioOf(context);
-            return Image(
-              image: resizeFileImageIfNeeded(
-                path: coverPath,
-                cacheWidth: (width * dpr).round(),
-              ),
+            return RetryingFileImage(
+              path: coverPath,
+              cacheWidth: (width * dpr).round(),
               fit: BoxFit.cover,
-              gaplessPlayback: true,
-              errorBuilder: (_, _, _) => fallback(),
+              fallbackBuilder: (_) => fallback(),
             );
           },
         ),

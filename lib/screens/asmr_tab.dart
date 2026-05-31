@@ -14,6 +14,7 @@ import '../services/asmr_download_manager.dart';
 import '../services/asmr_library_controller.dart';
 import '../services/search_query_utils.dart';
 import '../widgets/app_feedback.dart';
+import '../widgets/async_cover_image.dart';
 import '../widgets/glass_refresh_indicator.dart';
 import '../widgets/marquee_text.dart';
 import '../widgets/library_like_cards.dart';
@@ -2196,62 +2197,18 @@ class _AsmrTrackLeafRow extends StatelessWidget {
   }
 }
 
-class _AsmrWorkCover extends StatefulWidget {
+class _AsmrWorkCover extends StatelessWidget {
   const _AsmrWorkCover({required this.url, required this.width});
 
   final String url;
   final double width;
 
   @override
-  State<_AsmrWorkCover> createState() => _AsmrWorkCoverState();
-}
-
-class _AsmrWorkCoverState extends State<_AsmrWorkCover> {
-  static const int _maxRetryCount = 3;
-  int _retryCount = 0;
-  Timer? _retryTimer;
-
-  @override
-  void didUpdateWidget(covariant _AsmrWorkCover oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.url != widget.url) {
-      _retryTimer?.cancel();
-      _retryCount = 0;
-    }
-  }
-
-  @override
-  void dispose() {
-    _retryTimer?.cancel();
-    super.dispose();
-  }
-
-  void _scheduleRetry() {
-    if (_retryCount >= _maxRetryCount || _retryTimer?.isActive == true) {
-      return;
-    }
-    final url = widget.url.trim();
-    if (url.isEmpty) {
-      return;
-    }
-    final attempt = _retryCount + 1;
-    _retryTimer = Timer(Duration(milliseconds: 450 * attempt), () {
-      if (!mounted) {
-        return;
-      }
-      NetworkImage(url).evict().ignore();
-      setState(() {
-        _retryCount = attempt;
-      });
-    });
-  }
-
-  @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final width = widget.width;
+    final width = this.width;
     final height = width * 0.8;
-    final url = widget.url.trim();
+    final url = this.url.trim();
     return ClipRRect(
       clipBehavior: Clip.hardEdge,
       borderRadius: BorderRadius.circular(12),
@@ -2260,14 +2217,15 @@ class _AsmrWorkCoverState extends State<_AsmrWorkCover> {
         height: height,
         child: url.isEmpty
             ? _AsmrCoverFallback(colorScheme: cs)
-            : Image.network(
-                url,
-                key: ValueKey('$url#$_retryCount'),
+            : RetryingNetworkImage(
+                url: url,
                 fit: BoxFit.cover,
                 filterQuality: FilterQuality.low,
-                gaplessPlayback: true,
                 cacheWidth:
-                    (width * MediaQuery.devicePixelRatioOf(context).clamp(1.0, 1.5))
+                    (width *
+                            MediaQuery.devicePixelRatioOf(
+                              context,
+                            ).clamp(1.0, 1.5))
                         .round(),
                 loadingBuilder: (context, child, loadingProgress) {
                   if (loadingProgress == null) {
@@ -2275,10 +2233,7 @@ class _AsmrWorkCoverState extends State<_AsmrWorkCover> {
                   }
                   return _AsmrCoverLoading(colorScheme: cs);
                 },
-                errorBuilder: (_, _, _) {
-                  _scheduleRetry();
-                  return _AsmrCoverFallback(colorScheme: cs);
-                },
+                fallbackBuilder: (_) => _AsmrCoverFallback(colorScheme: cs),
               ),
       ),
     );

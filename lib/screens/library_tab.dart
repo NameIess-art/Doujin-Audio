@@ -315,7 +315,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         MediaQuery.orientationOf(context) == Orientation.landscape;
     const double expansion = 320.0;
     final listTopPadding = 4 + headerControlsFullHeight + expansion;
-    final listBottomPadding = 16.0 + expansion;
+    const listBottomPadding = 16.0 + expansion;
     final listViewportBottomInset = listBottomInset + (isWindows ? 16.0 : 0.0);
     // Reduced cacheExtent to significantly lower memory footprint and improve
     // scroll/swipe performance.
@@ -375,7 +375,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
 
     Widget emptyListBody() {
       final relativeTop = listTopPadding;
-      final relativeBottom = listBottomPadding;
+      const relativeBottom = listBottomPadding;
 
       if (_effectiveSearchQuery.isNotEmpty) {
         return ListView(

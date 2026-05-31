@@ -9,7 +9,11 @@ class _ImmediateTimerScrim extends StatelessWidget {
     return Positioned.fill(
       child: IgnorePointer(
         child: DecoratedBox(
-          decoration: BoxDecoration(color: cs.scrim.withValues(alpha: 0.80)),
+          decoration: BoxDecoration(
+            color: cs.scrim.withValues(
+              alpha: kSecondaryOverlayConfig.backgroundOpacity,
+            ),
+          ),
         ),
       ),
     );

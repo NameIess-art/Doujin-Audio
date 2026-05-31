@@ -223,11 +223,19 @@ class MainActivity : AudioServiceActivity() {
             NotificationsMethodHandler(this) { consumePendingNotificationSessionId() }
         )
 
+        val fileCacheOperations = FileCacheOperations(this)
+        val fileCacheScanStreamHandler = FileCacheScanStreamHandler(this, fileCacheOperations)
+        EventChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            PlatformChannelNames.FILE_CACHE_SCAN_EVENTS
+        ).setStreamHandler(fileCacheScanStreamHandler)
+
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, PlatformChannelNames.FILE_CACHE)
             .setMethodCallHandler(
                 FileCacheMethodHandler(
                     activity = this,
-                    operations = FileCacheOperations(this),
+                    operations = fileCacheOperations,
+                    scanStreamHandler = fileCacheScanStreamHandler,
                     launchPickAudioSource = audioPickerCoordinator::launchPickAudioSource,
                     launchPickAudioFiles = audioPickerCoordinator::launchPickAudioFiles,
                     launchPickAudioFolder = audioPickerCoordinator::launchPickAudioFolder

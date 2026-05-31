@@ -24,6 +24,7 @@ import 'settings_tab.dart';
 import 'timer_tab.dart';
 import '../widgets/active_session_carousel.dart';
 import '../widgets/app_feedback.dart';
+import '../widgets/app_transitions.dart';
 import '../widgets/confirm_action_dialog.dart';
 import '../widgets/mobile_overlay_inset.dart';
 import '../widgets/windows_title_bar.dart';

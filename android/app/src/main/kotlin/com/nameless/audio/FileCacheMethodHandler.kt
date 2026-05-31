@@ -7,6 +7,7 @@ import io.flutter.plugin.common.MethodChannel
 internal class FileCacheMethodHandler(
     private val activity: Activity,
     private val operations: FileCacheOperations,
+    private val scanStreamHandler: FileCacheScanStreamHandler,
     private val launchPickAudioSource: (MethodChannel.Result) -> Unit,
     private val launchPickAudioFiles: (MethodChannel.Result) -> Unit,
     private val launchPickAudioFolder: (MethodChannel.Result) -> Unit
@@ -68,22 +69,30 @@ internal class FileCacheMethodHandler(
                     val tracks = operations.scanFolder(folder)
                     val payload = ArrayList<HashMap<String, Any?>>(tracks.size)
                     for (track in tracks) {
-                        payload.add(
-                            hashMapOf(
-                                "path" to track.path,
-                                "title" to track.title,
-                                "groupKey" to track.groupKey,
-                                "groupTitle" to track.groupTitle,
-                                "groupSubtitle" to track.groupSubtitle,
-                                "isVideo" to track.isVideo,
-                                "scannedAtMs" to track.scannedAtMs,
-                                "fileSizeBytes" to track.fileSizeBytes,
-                                "modifiedAtMs" to track.modifiedAtMs
-                            )
-                        )
+                        payload.add(track.toScanPayload())
                     }
                     payload
                 }
+            }
+            FileCacheMethods.START_FOLDER_SCAN -> {
+                val sessionId = call.argument<String>("sessionId")
+                val folder = call.argument<String>("folder")
+                val chunkSize = call.argument<Int>("chunkSize") ?: 120
+                if (sessionId.isNullOrBlank() || folder.isNullOrBlank()) {
+                    result.error("invalid_args", "sessionId and folder are required", null)
+                    return
+                }
+                scanStreamHandler.startFolderScan(sessionId, folder, chunkSize)
+                result.success(true)
+            }
+            FileCacheMethods.CANCEL_FOLDER_SCAN -> {
+                val sessionId = call.argument<String>("sessionId")
+                if (sessionId.isNullOrBlank()) {
+                    result.error("invalid_args", "sessionId is required", null)
+                    return
+                }
+                scanStreamHandler.cancelFolderScan(sessionId)
+                result.success(true)
             }
             FileCacheMethods.LIST_CHILD_FOLDERS -> {
                 val folder = call.argument<String>("folder")

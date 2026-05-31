@@ -2,9 +2,9 @@
 
 Nameless Audio 是一个 Flutter + Android 原生 + Windows 桌面混合实现的本地音频播放器，面向 ASMR、语音作品和大体量本地音频库。它同时支持 ASMR.ONE 在线浏览与下载、本地曲库管理、多会话播放、字幕、睡眠计时器、DLsite 元数据、视频转音频和应用内更新。
 
-当前版本：`0.9.8+980`
+当前版本：`0.9.9+990`
 
-最新发布页：[v0.9.8](https://github.com/NameIess-art/nameless-audio/releases/tag/v0.9.8)
+最新发布页：[v0.9.9](https://github.com/NameIess-art/nameless-audio/releases/tag/v0.9.9)
 
 许可证：[MIT](LICENSE)
 
@@ -21,12 +21,12 @@ Nameless Audio 是一个 Flutter + Android 原生 + Windows 桌面混合实现�
 
 ## 下载
 
-从 [GitHub Release v0.9.8](https://github.com/NameIess-art/nameless-audio/releases/tag/v0.9.8) 下载：
+从 [GitHub Release v0.9.9](https://github.com/NameIess-art/nameless-audio/releases/tag/v0.9.9) 下载：
 
 | 文件 | 适用设备 |
 |---|---|
 | `app-arm64-v8a-release.apk` | 大多数 64 位 Android 手机，优先推荐 |
-| `NamelessAudio-windows-x64-v0.9.8.zip` | Windows x64 桌面环境 |
+| `NamelessAudio-windows-x64-v0.9.9.zip` | Windows x64 桌面环境 |
 
 Windows 版请解压整个 ZIP 后运行 `nameless_audio.exe`。不要只复制 exe，播放器、视频转音频和字幕窗口依赖同目录 DLL、`data/` 目录、MPV 与 FFmpeg 文件。
 
@@ -43,15 +43,16 @@ Windows 版请解压整个 ZIP 后运行 `nameless_audio.exe`。不要只复制 
 - 左右声道调换：按会话开启，Android 走原生声道映射，Windows 走 mpv 音频滤镜。
 - 播放状态持久化：本地曲目的播放位置、收藏状态、会话顺序和队列会保存，重启后可恢复。
 - 横竖屏恢复：Android 在横屏与竖屏切换后会重新测量底部导航、恢复当前页面并重新调度 UI warmup，减少空白或错位。
+- 息屏后台播放增强：通过 `foregroundServiceType` 与唤醒锁机制保障息屏状态下的长时间稳定播放，不再受休眠超时打断。
 
 ### ASMR.ONE 在线播放与下载
 
 - 分类浏览：支持收录、推荐、销量、评分、发售、收藏和历史分类。
-- 分类显示设置：可按偏好选择 ASMR.ONE 首页展示入口，隐藏不常用分类。
+- 分类显示设置：可按偏好选择 ASMR.ONE 首页展示入口，隐藏不常用分类，分类选择浮层采用双列网格排布。
 - 个性化推荐：综合本地曲库、ASMR.ONE 收藏与播放历史，按标签、声优、社团、作品质量、新鲜度和小众匹配权重排序。
 - 推荐刷新探索：刷新时基于随机种子调整完整候选顺序，避免内容固定。
 - 搜索：支持作品名、标签、声优、社团和 RJ 号，多关键词分隔。
-- 登录与收藏：可登录 ASMR.ONE，读取收藏列表，并添加或取消收藏作品。
+- 登录与收藏：可登录 ASMR.ONE，读取收藏列表，并添加或取消收藏作品。采用防丢策略存储凭证，避开系统 Keystore 漏洞。
 - 作品详情：展示 RJ 号、社团、标签、声优、发售日、时长、销量、评分、评论数、年龄分级、语言版本和简介。
 - 在线添加播放：读取作品音频树，把单个文件或文件夹节点加入播放队列。
 - 字幕匹配：远端字幕会匹配到对应音频，支持标题缺少后缀、双扩展名等常见命名。
@@ -88,7 +89,7 @@ Windows 版请解压整个 ZIP 后运行 `nameless_audio.exe`。不要只复制 
 
 ### 播放列表、会话详情与字幕
 
-- 会话列表：支持拖拽排序、左滑移除、暂停全部和清空全部。
+- 会话列表：支持拖拽排序、左滑移除，并通过统一“更多”菜单支持暂停全部和清空全部。
 - 底部播放卡片：可选常驻底部卡片，同步封面、进度、字幕和播放状态。
 - 会话详情页：以封面作为模糊背景，提供进度条、快进快退、循环模式、音量、计时器、字幕和声道控制。
 - 轨道切换：在会话详情页直接切换当前文件夹或分组内的其他音轨，无需新建会话。
@@ -112,6 +113,8 @@ Windows 版请解压整个 ZIP 后运行 `nameless_audio.exe`。不要只复制 
 - 统一播放通知：支持单会话和多会话通知样式，提供播放、暂停、上一首、下一首、恢复通知和清空通知。
 - 富通知开关：关闭的是富播放通知样式，播放中仍保留系统前台通知以保证后台稳定。
 - 后台运行引导：可跳转系统电池优化、后台运行、通知、悬浮窗、精确定时和未知来源安装设置。
+- 沉浸式动效：主页面切换采用快速淡入淡出动效，不相邻页面切换直接跨级不渲染中间层。
+- 设置页防卡顿：重构顶层架构，主题切换、开关选项触发均采用最小化局部渲染，保障交互顺滑。
 - 深色模式：支持跟随系统或手动切换。
 - 多语言：支持中文、日文和英文界面。
 - 多线程播放开关：可控制是否允许多个活跃播放会话同时存在。
@@ -199,7 +202,7 @@ Windows 构建会下载完整 libmpv，并把 `assets/ffmpeg/ffmpeg.exe`、`asse
 
 ```powershell
 flutter build windows --release
-Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath dist\NamelessAudio-windows-x64-v0.9.8.zip -Force
+Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath dist\NamelessAudio-windows-x64-v0.9.9.zip -Force
 ```
 
 ## audio_service fork notes
@@ -207,6 +210,18 @@ Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath dist\
 - 项目当前通过 `dependency_overrides` 指向 `third_party/audio_service`。
 - Fork 相关定制说明位于 `third_party/audio_service/CUSTOMIZATION.md`。
 - 后续同步上游时，请同时更新该说明文件中的来源版本、改动文件和保留原因。
+
+## 发行说明 v0.9.9
+
+- 修复了息屏长时间播放后由于 Android 保活机制打断导致的暂停问题。
+- 重构页面切换动效，增加快速淡入淡出动画，且非相邻页面切换时不渲染中间层，提升切换跟手感。
+- 修复 ASMR.ONE 账号在 Android 端因 Keystore 数据丢失导致登录信息重置的问题，使用本地防丢存储策略平滑迁移凭证。
+- 修复设置页面大面积 Widget 重绘引起的明显卡顿，采用粒度化 `Consumer` 和状态分离以保证流畅度。
+- 将播放列表中的“暂停全部”和“移除全部”合并进右上角的统一“更多”菜单中。
+- 修复播放列表为空时，提示文案布局溢出顶部头界面的错位问题。
+- ASMR.ONE 分类选择弹窗调整为更高效紧凑的两列竖排网格。
+- 移除了单独视频卡片整片点击播放事件，优化了一轮封面图片的加载速度。
+- 发布 Android arm64-v8a APK 与 Windows x64 ZIP，Windows ZIP 继续包含完整 libmpv、FFmpeg 和 FFprobe。
 
 ## 发行说明 v0.9.8
 
@@ -234,6 +249,7 @@ Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath dist\
 
 ## 近期重要变更
 
+- `v0.9.9`：大幅优化后台稳定性、UI页面过渡动效、设置页面性能以及解决账户状态丢失的严重缺陷。
 - `v0.9.8`：修复 Windows 应用内 ZIP 更新、GitHub API 限流导致检查更新失败、Windows 拉伸窗口时页面跳转卡顿；发布 Android arm64 与 Windows x64 ZIP。
 - `v0.9.71`：修复 Android 搜索框点击后页面抽搐；修复编辑曲库菜单显示曲库根下子文件夹；发布 Android arm64 与 Windows x64 ZIP。
 - `v0.9.7`：新增 Windows ZIP 自更新；修复 Windows 声道调换、全局悬浮字幕和横竖屏切换恢复；发布 Android arm64 与 Windows x64 ZIP。

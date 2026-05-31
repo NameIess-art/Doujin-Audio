@@ -12,18 +12,30 @@ extension AudioProviderWarmup on AudioProvider {
     _warmupGeneration = generation;
     _deferredWarmupTimer?.cancel();
     if (immediate) {
-      _runUiWarmup(generation: generation, currentPageIndex: currentPageIndex);
+      _runUiWarmup(
+        generation: generation,
+        currentPageIndex: currentPageIndex,
+        navigationCooldown: Duration.zero,
+      );
       return;
     }
     _deferredWarmupTimer = Timer(const Duration(milliseconds: 140), () {
       _deferredWarmupTimer = null;
-      _runUiWarmup(generation: generation, currentPageIndex: currentPageIndex);
+      _runUiWarmup(
+        generation: generation,
+        currentPageIndex: currentPageIndex,
+        navigationCooldown: const Duration(milliseconds: 120),
+      );
     });
   }
 
-  void _runUiWarmup({required int generation, required int currentPageIndex}) {
+  void _runUiWarmup({
+    required int generation,
+    required int currentPageIndex,
+    required Duration navigationCooldown,
+  }) {
     if (generation != _warmupGeneration) return;
-    _warmupScheduler.beginGeneration(generation);
+    _warmupScheduler.beginGeneration(generation, cooldown: navigationCooldown);
     _scheduleSessionWarmup(generation: generation);
     if ((currentPageIndex - _mainTabIndexLibrary).abs() <= 1) {
       _scheduleLibraryWarmup(generation: generation);

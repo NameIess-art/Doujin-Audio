@@ -1335,6 +1335,62 @@ void main() {
       },
     );
 
+    test('library entry persistence is deferred until batch close', () async {
+      provider.dispose();
+      final countingRepository = _CountingAudioDatabaseRepository(
+        AppDatabase.test(db),
+      );
+      provider = AudioProvider.test(
+        notificationService: notificationService,
+        audioDatabaseRepository: countingRepository,
+        skipPersistence: false,
+      );
+
+      const libraryPath = '/library/root';
+      const trackPath = '/library/root/work/01.mp3';
+      final firstTrack = MusicTrack(
+        path: trackPath,
+        displayName: '01',
+        groupKey: '/library/root/work',
+        groupTitle: 'work',
+        groupSubtitle: '/library/root/work',
+        isSingle: false,
+        scannedAt: DateTime.fromMillisecondsSinceEpoch(1000),
+      );
+      final renamedTrack = MusicTrack(
+        path: trackPath,
+        displayName: '01 renamed',
+        groupKey: '/library/root/work',
+        groupTitle: 'work',
+        groupSubtitle: '/library/root/work',
+        isSingle: false,
+        scannedAt: DateTime.fromMillisecondsSinceEpoch(2000),
+      );
+
+      provider.beginLibraryBatch();
+      provider.recordLibraryEntriesForTracks(libraryPath, <MusicTrack>[
+        firstTrack,
+      ]);
+      provider.recordLibraryEntriesForTracks(libraryPath, <MusicTrack>[
+        renamedTrack,
+      ]);
+
+      expect(provider.libraryEntriesForLibrary(libraryPath), isNotEmpty);
+      expect(countingRepository.upsertLibraryEntriesCallCount, 0);
+      expect(await db.query('library_entries'), isEmpty);
+
+      await provider.endLibraryBatch();
+
+      expect(countingRepository.upsertLibraryEntriesCallCount, 1);
+      final rows = await db.query(
+        'library_entries',
+        where: 'kind = ?',
+        whereArgs: [LibraryEntryKind.track.dbValue],
+      );
+      expect(rows, hasLength(1));
+      expect(rows.single['display_name'], '01 renamed');
+    });
+
     test('addOrReplaceTracks ignores unchanged rescan metadata', () async {
       final initialModifiedAt = DateTime.fromMillisecondsSinceEpoch(1000);
       final initialScannedAt = DateTime.fromMillisecondsSinceEpoch(2000);
@@ -1661,4 +1717,23 @@ void main() {
       expect(provider.hasLibraryExclusions(folder.path), isFalse);
     });
   });
+}
+
+class _CountingAudioDatabaseRepository extends AudioDatabaseRepository {
+  _CountingAudioDatabaseRepository(AppDatabase database)
+    : super(database: database);
+
+  int upsertLibraryEntriesCallCount = 0;
+
+  @override
+  Future<void> upsertLibraryEntries(
+    List<LibraryEntry> entries, {
+    int? scanGeneration,
+  }) {
+    upsertLibraryEntriesCallCount++;
+    return super.upsertLibraryEntries(entries, scanGeneration: scanGeneration);
+  }
+
+  @override
+  Future<void> saveAllSessions(List<PersistedSession> sessions) async {}
 }

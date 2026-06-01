@@ -351,23 +351,42 @@ class _WheelPicker extends StatefulWidget {
 
 class _WheelPickerState extends State<_WheelPicker> {
   late FixedExtentScrollController _controller;
+  int _lastReportedValue = -1;
 
   @override
   void initState() {
     super.initState();
     _controller = FixedExtentScrollController(initialItem: widget.value);
+    _lastReportedValue = widget.value;
   }
 
   @override
   void didUpdateWidget(_WheelPicker oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.value != oldWidget.value) {
-      if (_controller.hasClients && _controller.selectedItem != widget.value) {
-        _controller.animateToItem(
-          widget.value,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOutCubic,
-        );
+      if (_controller.hasClients) {
+        final currentLogicalIndex = _controller.selectedItem;
+        final maxCount = widget.max + 1;
+        // In Dart, % operator on negative numbers returns a positive modulo
+        // consistent with Euclidean division, which is perfect for this.
+        final currentItemIndex = currentLogicalIndex % maxCount;
+        
+        int diff = widget.value - currentItemIndex;
+        if (diff > maxCount ~/ 2) {
+          diff -= maxCount;
+        } else if (diff < -(maxCount ~/ 2)) {
+          diff += maxCount;
+        }
+        
+        final targetLogicalIndex = currentLogicalIndex + diff;
+        
+        if (currentLogicalIndex != targetLogicalIndex) {
+          _controller.animateToItem(
+            targetLogicalIndex,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOutCubic,
+          );
+        }
       }
     }
   }
@@ -407,12 +426,15 @@ class _WheelPickerState extends State<_WheelPicker> {
             diameterRatio: 1.5,
             physics: const FixedExtentScrollPhysics(),
             onSelectedItemChanged: (index) {
-              HapticFeedback.selectionClick();
-              widget.onChanged(index);
+              final actualIndex = index % (widget.max + 1);
+              if (actualIndex != _lastReportedValue) {
+                _lastReportedValue = actualIndex;
+                HapticFeedback.selectionClick();
+                widget.onChanged(actualIndex);
+              }
             },
-            childDelegate: ListWheelChildBuilderDelegate(
-              childCount: widget.max + 1,
-              builder: (context, index) {
+            childDelegate: ListWheelChildLoopingListDelegate(
+              children: List.generate(widget.max + 1, (index) {
                 return Center(
                   child: Text(
                     index.toString().padLeft(2, '0'),
@@ -424,7 +446,7 @@ class _WheelPickerState extends State<_WheelPicker> {
                     ),
                   ),
                 );
-              },
+              }),
             ),
           ),
         ),

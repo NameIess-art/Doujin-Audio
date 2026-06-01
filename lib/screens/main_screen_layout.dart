@@ -18,9 +18,13 @@ extension _MainScreenLayout on _MainScreenState {
         MediaQuery.orientationOf(context) == Orientation.landscape;
 
     Widget pageShell(int actualIndex) {
-      final Widget page = TickerMode(
-        enabled: actualIndex == _currentIndex,
-        child: _pages[actualIndex],
+      final bool isActive = actualIndex == _currentIndex;
+      final Widget page = Offstage(
+        offstage: !isActive,
+        child: TickerMode(
+          enabled: isActive,
+          child: ExcludeFocus(excluding: !isActive, child: _pages[actualIndex]),
+        ),
       );
 
       return Align(
@@ -89,26 +93,17 @@ extension _MainScreenLayout on _MainScreenState {
       );
     }
 
-    return PageView.builder(
+    return Stack(
       key: ValueKey<int>(_metricsEpoch),
-      controller: _pageController,
       clipBehavior: Clip.none,
-      physics: const _TelegramLikeScrollPhysics(
-        parent: ClampingScrollPhysics(),
-      ),
-      onPageChanged: (index) {
-        if (_currentIndex == index) return;
-        _setLocalState(() {
-          _currentIndex = index;
-        });
-        ref
-            .read(audioProviderFacadeProvider)
-            .scheduleUiWarmup(currentPageIndex: index);
-      },
-      itemCount: _pages.length,
-      itemBuilder: (context, i) {
-        return pageShell(i);
-      },
+      children: List.generate(_pages.length, (i) {
+        final bool isActive = i == _currentIndex;
+        return IgnorePointer(
+          key: ValueKey<int>(i),
+          ignoring: !isActive,
+          child: pageShell(i),
+        );
+      }),
     );
   }
 
@@ -456,30 +451,5 @@ extension _MainScreenLayout on _MainScreenState {
     final systemBottom = MediaQuery.of(context).padding.bottom;
     if (hasNowPlaying) return systemBottom + 158;
     return systemBottom + 64;
-  }
-}
-
-class _TelegramLikeScrollPhysics extends PageScrollPhysics {
-  const _TelegramLikeScrollPhysics({super.parent});
-
-  @override
-  _TelegramLikeScrollPhysics applyTo(ScrollPhysics? ancestor) {
-    return _TelegramLikeScrollPhysics(parent: buildParent(ancestor));
-  }
-
-  @override
-  double? get dragStartDistanceMotionThreshold => 36.0;
-
-  @override
-  double get minFlingVelocity => 800.0;
-
-  @override
-  Tolerance toleranceFor(ScrollMetrics metrics) {
-    final Tolerance base = super.toleranceFor(metrics);
-    return Tolerance(
-      distance: base.distance,
-      time: base.time,
-      velocity: base.velocity * 16.0,
-    );
   }
 }

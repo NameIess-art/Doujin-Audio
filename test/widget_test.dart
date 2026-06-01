@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart' show ProviderScope;
 import 'package:nameless_audio/main.dart';
 import 'package:nameless_audio/i18n/app_language_provider.dart';
@@ -76,5 +77,12 @@ void main() {
     expect(find.text(languageProvider.tr('nav_library')), findsWidgets);
     expect(find.text(languageProvider.tr('nav_sessions')), findsWidgets);
     expect(find.text(languageProvider.tr('nav_settings')), findsWidgets);
+    expect(
+      tester
+          .widgetList<Offstage>(find.byType(Offstage))
+          .where((widget) => widget.offstage)
+          .length,
+      greaterThanOrEqualTo(3),
+    );
   });
 }

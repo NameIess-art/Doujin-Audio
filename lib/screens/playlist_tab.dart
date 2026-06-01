@@ -212,8 +212,8 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                       clipBehavior: Clip.none,
                       children: [
                         if (!listState.hasSessions)
-                          _SessionsEmptyState(
-                            key: const ValueKey('empty_state'),
+                          const _SessionsEmptyState(
+                            key: ValueKey('empty_state'),
                             bottomInset: 100,
                             topInset: expansion + 64,
                           ),

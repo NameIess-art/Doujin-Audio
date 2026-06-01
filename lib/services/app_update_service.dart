@@ -423,6 +423,8 @@ class AppUpdateService {
 
     try {
       await Process.start(_windowsPowerShellExecutable(), [
+        '-WindowStyle',
+        'Hidden',
         '-NoProfile',
         '-ExecutionPolicy',
         'Bypass',
@@ -434,7 +436,8 @@ class AppUpdateService {
         exePath,
         pid.toString(),
       ], mode: ProcessStartMode.detached);
-      Timer(const Duration(milliseconds: 800), () => exit(0));
+      // Wait slightly longer before exit to ensure powershell starts successfully
+      Timer(const Duration(milliseconds: 1500), () => exit(0));
       return const UpdateInstallResult(ok: true, needsPermission: false);
     } catch (error) {
       return UpdateInstallResult(
@@ -536,10 +539,10 @@ function Wait-AppExit {
   while ((Get-Date) -lt $deadline) {
     $process = Get-Process -Id $AppProcessId -ErrorAction SilentlyContinue
     if ($null -eq $process) {
-      Start-Sleep -Milliseconds 400
+      Start-Sleep -Seconds 2
       return
     }
-    Start-Sleep -Milliseconds 250
+    Start-Sleep -Milliseconds 500
   }
   throw 'The application did not exit in time for the update.'
 }
@@ -565,6 +568,8 @@ function Start-ElevatedUpdater {
     $powerShell = 'powershell.exe'
   }
   $args = @(
+    '-WindowStyle',
+    'Hidden',
     '-NoProfile',
     '-ExecutionPolicy',
     'Bypass',
@@ -586,7 +591,9 @@ function Show-Failure([string]$Message) {
     Add-Type -AssemblyName PresentationFramework
     [System.Windows.MessageBox]::Show(
       "Nameless Audio update failed.`n`n$Message`n`nLog: $logPath",
-      'Nameless Audio Updater'
+      'Nameless Audio Updater',
+      'OK',
+      'Error'
     ) | Out-Null
   } catch {
     Start-Process -FilePath 'notepad.exe' -ArgumentList (Quote-Argument $logPath) -ErrorAction SilentlyContinue
@@ -596,7 +603,6 @@ function Show-Failure([string]$Message) {
 try {
   Write-UpdateLog "start zip=$ZipPath install=$InstallDir exe=$ExePath pid=$AppProcessId elevated=$Elevated"
   Wait-AppExit
-  Start-Sleep -Milliseconds 400
 
   if (-not (Test-InstallDirWritable)) {
     if (-not $Elevated) {
@@ -610,7 +616,9 @@ try {
   $staging = Join-Path $env:TEMP ("nameless_audio_update_" + [Guid]::NewGuid().ToString("N"))
   New-Item -ItemType Directory -Force -Path $staging | Out-Null
   Write-UpdateLog "expanding $ZipPath to $staging"
-  Expand-Archive -LiteralPath $ZipPath -DestinationPath $staging -Force
+  
+  Add-Type -AssemblyName System.IO.Compression.FileSystem
+  [System.IO.Compression.ZipFile]::ExtractToDirectory($ZipPath, $staging)
 
   $exeName = Split-Path -Leaf $ExePath
   $payloadExe = Get-ChildItem -LiteralPath $staging -Filter $exeName -Recurse -File |
@@ -636,3 +644,4 @@ try {
   Show-Failure $_.Exception.Message
 }
 ''';
+

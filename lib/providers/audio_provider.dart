@@ -474,7 +474,7 @@ class AudioProvider with ChangeNotifier {
     });
   }
 
-  AudioProvider({
+  factory AudioProvider({
     required PlaybackNotificationService notificationService,
     AudioDatabaseRepository? audioDatabaseRepository,
     AudioDetailRepository? audioDetailRepository,
@@ -487,40 +487,35 @@ class AudioProvider with ChangeNotifier {
     TimerService? timerService,
     NotificationCoordinatorService? notificationStateService,
     SettingsRepository? settingsRepository,
-  }) : _notificationService = notificationService,
-       _audioDatabaseRepository =
-           audioDatabaseRepository ?? AudioDatabaseRepository(),
-       _audioDetailRepository =
-           audioDetailRepository ??
-           AudioDetailRepository(
-             databaseRepository:
-                 audioDatabaseRepository ?? AudioDatabaseRepository(),
-           ),
-       _dlsiteMetadataService =
-           dlsiteMetadataService ?? DlsiteMetadataService(),
-       _nativePlaybackRepository =
-           nativePlaybackRepository ?? NativePlaybackRepository(),
-       _playbackCommandRunner = playbackCommandRunner,
-       _powerPlatformService = powerPlatformService ?? PowerPlatformService(),
-       _libraryService = libraryService ?? LibraryService(),
-       _playbackService = playbackService ?? PlaybackSessionService(),
-       _timerService = timerService ?? TimerService(),
-       _notificationStateService =
-           notificationStateService ?? NotificationCoordinatorService(),
-       _settingsRepository = settingsRepository ?? SettingsRepository(),
-       _skipDisposePersistence = false {
-    _initializeControllers();
-    _nativePlaybackRepository.startListening();
-    _nativePlaybackSubscription = _nativePlaybackRepository.snapshots.listen(
-      _handleNativePlaybackSnapshot,
+  }) {
+    final resolvedAudioDatabaseRepository =
+        audioDatabaseRepository ?? AudioDatabaseRepository();
+    return AudioProvider._(
+      notificationService: notificationService,
+      audioDatabaseRepository: resolvedAudioDatabaseRepository,
+      audioDetailRepository:
+          audioDetailRepository ??
+          AudioDetailRepository(
+            databaseRepository: resolvedAudioDatabaseRepository,
+          ),
+      dlsiteMetadataService: dlsiteMetadataService ?? DlsiteMetadataService(),
+      nativePlaybackRepository:
+          nativePlaybackRepository ?? NativePlaybackRepository(),
+      playbackCommandRunner: playbackCommandRunner,
+      powerPlatformService: powerPlatformService ?? PowerPlatformService(),
+      libraryService: libraryService ?? LibraryService(),
+      playbackService: playbackService ?? PlaybackSessionService(),
+      timerService: timerService ?? TimerService(),
+      notificationStateService:
+          notificationStateService ?? NotificationCoordinatorService(),
+      settingsRepository: settingsRepository ?? SettingsRepository(),
+      skipDisposePersistence: false,
+      startNativeRuntime: true,
     );
-    _bindNotificationHandler();
-    _syncAllStateSlices();
-    _loadData();
   }
 
   @visibleForTesting
-  AudioProvider.test({
+  factory AudioProvider.test({
     required PlaybackNotificationService notificationService,
     AudioDatabaseRepository? audioDatabaseRepository,
     AudioDetailRepository? audioDetailRepository,
@@ -534,30 +529,75 @@ class AudioProvider with ChangeNotifier {
     NotificationCoordinatorService? notificationStateService,
     SettingsRepository? settingsRepository,
     bool skipPersistence = true,
+  }) {
+    final resolvedAudioDatabaseRepository =
+        audioDatabaseRepository ?? AudioDatabaseRepository();
+    return AudioProvider._(
+      notificationService: notificationService,
+      audioDatabaseRepository: resolvedAudioDatabaseRepository,
+      audioDetailRepository:
+          audioDetailRepository ??
+          AudioDetailRepository(
+            databaseRepository: resolvedAudioDatabaseRepository,
+          ),
+      dlsiteMetadataService: dlsiteMetadataService ?? DlsiteMetadataService(),
+      nativePlaybackRepository:
+          nativePlaybackRepository ?? NativePlaybackRepository(),
+      playbackCommandRunner: playbackCommandRunner,
+      powerPlatformService: powerPlatformService ?? PowerPlatformService(),
+      libraryService: libraryService ?? LibraryService(),
+      playbackService: playbackService ?? PlaybackSessionService(),
+      timerService: timerService ?? TimerService(),
+      notificationStateService:
+          notificationStateService ?? NotificationCoordinatorService(),
+      settingsRepository: settingsRepository ?? SettingsRepository(),
+      skipDisposePersistence: skipPersistence,
+      startNativeRuntime: false,
+    );
+  }
+
+  AudioProvider._({
+    required PlaybackNotificationService notificationService,
+    required AudioDatabaseRepository audioDatabaseRepository,
+    required AudioDetailRepository audioDetailRepository,
+    required DlsiteMetadataService dlsiteMetadataService,
+    required NativePlaybackRepository nativePlaybackRepository,
+    required PlaybackCommandRunner playbackCommandRunner,
+    required PowerPlatformService powerPlatformService,
+    required LibraryService libraryService,
+    required PlaybackSessionService playbackService,
+    required TimerService timerService,
+    required NotificationCoordinatorService notificationStateService,
+    required SettingsRepository settingsRepository,
+    required bool skipDisposePersistence,
+    required bool startNativeRuntime,
   }) : _notificationService = notificationService,
-       _audioDatabaseRepository =
-           audioDatabaseRepository ?? AudioDatabaseRepository(),
-       _audioDetailRepository =
-           audioDetailRepository ??
-           AudioDetailRepository(
-             databaseRepository:
-                 audioDatabaseRepository ?? AudioDatabaseRepository(),
-           ),
-       _dlsiteMetadataService =
-           dlsiteMetadataService ?? DlsiteMetadataService(),
-       _nativePlaybackRepository =
-           nativePlaybackRepository ?? NativePlaybackRepository(),
+       _audioDatabaseRepository = audioDatabaseRepository,
+       _audioDetailRepository = audioDetailRepository,
+       _dlsiteMetadataService = dlsiteMetadataService,
+       _nativePlaybackRepository = nativePlaybackRepository,
        _playbackCommandRunner = playbackCommandRunner,
-       _powerPlatformService = powerPlatformService ?? PowerPlatformService(),
-       _libraryService = libraryService ?? LibraryService(),
-       _playbackService = playbackService ?? PlaybackSessionService(),
-       _timerService = timerService ?? TimerService(),
-       _notificationStateService =
-           notificationStateService ?? NotificationCoordinatorService(),
-       _settingsRepository = settingsRepository ?? SettingsRepository(),
-       _skipDisposePersistence = skipPersistence {
+       _powerPlatformService = powerPlatformService,
+       _libraryService = libraryService,
+       _playbackService = playbackService,
+       _timerService = timerService,
+       _notificationStateService = notificationStateService,
+       _settingsRepository = settingsRepository,
+       _skipDisposePersistence = skipDisposePersistence {
     _initializeControllers();
+    if (startNativeRuntime) {
+      _startNativeRuntime();
+    }
     _syncAllStateSlices();
+  }
+
+  void _startNativeRuntime() {
+    _nativePlaybackRepository.startListening();
+    _nativePlaybackSubscription = _nativePlaybackRepository.snapshots.listen(
+      _handleNativePlaybackSnapshot,
+    );
+    _bindNotificationHandler();
+    _loadData();
   }
 
   void _initializeControllers() {

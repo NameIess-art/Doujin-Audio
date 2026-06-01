@@ -31,15 +31,17 @@ internal class NativePlaybackWakeLock(
             }
         }
 
-        try {
-            if (timeoutMs != null) {
-                wakeLock?.acquire(timeoutMs)
-            } else {
-                wakeLock?.acquire()
+        wakeLock?.let { lock ->
+            try {
+                if (timeoutMs != null) {
+                    lock.acquire(timeoutMs)
+                } else {
+                    lock.acquire()
+                }
+                acquiredAny = lock.isHeld
+            } catch (e: Exception) {
+                logWarn("wakelock_acquire_failed", e)
             }
-            acquiredAny = true
-        } catch (e: Exception) {
-            logWarn("wakelock_acquire_failed", e)
         }
 
         if (wifiLock == null) {
@@ -56,11 +58,13 @@ internal class NativePlaybackWakeLock(
             }
         }
 
-        try {
-            wifiLock?.acquire()
-            acquiredAny = true
-        } catch (e: Exception) {
-            logWarn("wifilock_acquire_failed", e)
+        wifiLock?.let { lock ->
+            try {
+                lock.acquire()
+                acquiredAny = acquiredAny || lock.isHeld
+            } catch (e: Exception) {
+                logWarn("wifilock_acquire_failed", e)
+            }
         }
 
         if (acquiredAny) {

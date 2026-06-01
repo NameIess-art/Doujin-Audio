@@ -54,7 +54,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
       NotificationsPlatformService();
 
   int _currentIndex = 1;
-  late final PageController _pageController;
   late final List<Widget> _pages;
   final GlobalKey _bottomDockKey = GlobalKey();
   final GlobalKey _dockContentKey = GlobalKey();
@@ -118,7 +117,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
       PlaylistTab(onTimerTap: _openTimerFromPlaylist),
       const SettingsTab(),
     ];
-    _pageController = PageController(initialPage: _currentIndex);
     WidgetsBinding.instance.addObserver(this);
     _notificationsPlatformService.setOpenSessionHandler(
       _queueNotificationSessionNavigation,
@@ -325,7 +323,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
 
   @override
   void dispose() {
-    _pageController.dispose();
     _metricsRecoveryTimer?.cancel();
     _notificationSessionNavigationTimer?.cancel();
     _permissionActionController.dispose();
@@ -405,9 +402,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      if (_pageController.hasClients) {
-        _pageController.jumpToPage(_currentIndex.clamp(0, _pages.length - 1));
-      }
       _measureBottomDock();
       ref
           .read(audioProviderFacadeProvider)
@@ -459,9 +453,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
       _currentIndex = index;
     });
 
-    if (_pageController.hasClients) {
-      _pageController.jumpToPage(index);
-    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || _currentIndex != index) return;
       provider.scheduleUiWarmup(currentPageIndex: index);

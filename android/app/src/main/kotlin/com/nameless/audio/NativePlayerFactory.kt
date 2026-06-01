@@ -10,6 +10,8 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.audio.ChannelMappingAudioProcessor
 import androidx.media3.exoplayer.audio.DefaultAudioSink
 
+internal fun nativePlaybackWakeMode(): Int = C.WAKE_MODE_LOCAL
+
 internal interface NativePlayerEventCallbacks {
     fun onPlaybackStateChanged(sessionId: String, playbackState: Int)
     fun onMediaItemTransition(sessionId: String, reason: Int)
@@ -40,44 +42,46 @@ internal class NativePlayerFactory(
                 .build()
         }
 
-        return ExoPlayer.Builder(context, renderersFactory).build().also { player ->
-            player.setWakeMode(C.WAKE_MODE_NETWORK)
-            player.setAudioAttributes(
-                androidx.media3.common.AudioAttributes.Builder()
-                    .setUsage(C.USAGE_MEDIA)
-                    .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
-                    .build(),
-                /* handleAudioFocus = */ false,
-            )
-            player.addListener(object : Player.Listener {
-                override fun onPlaybackStateChanged(playbackState: Int) {
-                    callbacks.onPlaybackStateChanged(sessionId, playbackState)
-                }
+        return ExoPlayer.Builder(context, renderersFactory)
+            .setWakeMode(nativePlaybackWakeMode())
+            .build()
+            .also { player ->
+                player.setAudioAttributes(
+                    androidx.media3.common.AudioAttributes.Builder()
+                        .setUsage(C.USAGE_MEDIA)
+                        .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+                        .build(),
+                    /* handleAudioFocus = */ false,
+                )
+                player.addListener(object : Player.Listener {
+                    override fun onPlaybackStateChanged(playbackState: Int) {
+                        callbacks.onPlaybackStateChanged(sessionId, playbackState)
+                    }
 
-                override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-                    callbacks.onMediaItemTransition(sessionId, reason)
-                }
+                    override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                        callbacks.onMediaItemTransition(sessionId, reason)
+                    }
 
-                override fun onEvents(player: Player, events: Player.Events) {
-                    callbacks.onPlayerEvents(sessionId)
-                }
+                    override fun onEvents(player: Player, events: Player.Events) {
+                        callbacks.onPlayerEvents(sessionId)
+                    }
 
-                override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
-                    callbacks.onPlayWhenReadyChanged(sessionId, playWhenReady, reason)
-                }
+                    override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                        callbacks.onPlayWhenReadyChanged(sessionId, playWhenReady, reason)
+                    }
 
-                override fun onIsPlayingChanged(isPlaying: Boolean) {
-                    callbacks.onIsPlayingChanged(sessionId, isPlaying)
-                }
+                    override fun onIsPlayingChanged(isPlaying: Boolean) {
+                        callbacks.onIsPlayingChanged(sessionId, isPlaying)
+                    }
 
-                override fun onPlayerError(error: PlaybackException) {
-                    callbacks.onPlayerError(sessionId, error)
-                }
+                    override fun onPlayerError(error: PlaybackException) {
+                        callbacks.onPlayerError(sessionId, error)
+                    }
 
-                override fun onAudioSessionIdChanged(audioSessionId: Int) {
-                    callbacks.onAudioSessionIdChanged(sessionId, audioSessionId)
-                }
-            })
-        }
+                    override fun onAudioSessionIdChanged(audioSessionId: Int) {
+                        callbacks.onAudioSessionIdChanged(sessionId, audioSessionId)
+                    }
+                })
+            }
     }
 }

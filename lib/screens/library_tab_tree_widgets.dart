@@ -113,7 +113,9 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
   Widget build(BuildContext context) {
     final i18n = context.watch<AppLanguageProvider>();
     final provider = ref.read(audioProviderFacadeProvider);
-    ref.watch(libraryUiProvider.select((state) => state.detailRevision));
+    ref.watch(
+      libraryUiProvider.select((state) => state.categorySnapshotRevision),
+    );
     final categorySnapshot = provider.audioLibraryCategorySnapshotSync;
     final cs = Theme.of(context).colorScheme;
     final isRootFolder = widget.folder.depth == 0;
@@ -333,7 +335,9 @@ class _TrackNodeWidget extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final i18n = context.watch<AppLanguageProvider>();
     final provider = ref.read(audioProviderFacadeProvider);
-    ref.watch(libraryUiProvider.select((state) => state.detailRevision));
+    ref.watch(
+      libraryUiProvider.select((state) => state.categorySnapshotRevision),
+    );
     final categorySnapshot = provider.audioLibraryCategorySnapshotSync;
     final cs = Theme.of(context).colorScheme;
     final track = trackNode.track;

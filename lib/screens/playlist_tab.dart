@@ -16,6 +16,7 @@ import '../i18n/app_language_provider.dart';
 import '../providers/audio_provider.dart';
 import '../providers/audio_provider_riverpod.dart';
 import '../providers/subtitle_settings_provider.dart';
+import '../services/audio_state_services.dart';
 import '../services/path_matcher.dart';
 import '../services/permission_action_controller.dart';
 import '../services/subtitle_parser.dart';
@@ -172,6 +173,9 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     final i18n = context.watch<AppLanguageProvider>();
     final provider = ref.read(audioProviderFacadeProvider);
     final uiState = ref.watch(playlistUiProvider);
+    final settingsState =
+        ref.watch(settingsStateProvider).valueOrNull ?? const SettingsState();
+    final cardPositionsLocked = settingsState.cardPositionsLocked;
     final headerState = uiState.header;
     final listState = uiState.list;
     final sessionSummary =
@@ -227,7 +231,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                             child: ReorderAutoScroller(
                               key: const ValueKey('session_list'),
                               scrollController: _scrollController,
-                              isDragging: _isReordering,
+                              isDragging: !cardPositionsLocked && _isReordering,
                               contentMarginTop: topPadding,
                               contentMarginBottom: bottomPadding,
                               child: ReorderableListView.builder(
@@ -244,10 +248,12 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                                 keyboardDismissBehavior:
                                     ScrollViewKeyboardDismissBehavior.onDrag,
                                 onReorder: (oldIndex, newIndex) {
+                                  if (cardPositionsLocked) return;
                                   setState(() => _isReordering = false);
                                   provider.reorderSessions(oldIndex, newIndex);
                                 },
                                 onReorderStart: (_) {
+                                  if (cardPositionsLocked) return;
                                   setState(() => _isReordering = true);
                                   unawaited(HapticFeedback.heavyImpact());
                                 },
@@ -270,19 +276,26 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                                     );
                                   }
                                   final session = listState.sessions[index];
+                                  final child = RepaintBoundary(
+                                    child: _SessionListCard(
+                                      session: session,
+                                      provider: provider,
+                                      onOpen: () => _openSessionDetail(
+                                        context,
+                                        session.id,
+                                      ),
+                                    ),
+                                  );
+                                  if (cardPositionsLocked) {
+                                    return KeyedSubtree(
+                                      key: ValueKey(session.id),
+                                      child: child,
+                                    );
+                                  }
                                   return ReorderableHoldDragStartListener(
                                     key: ValueKey(session.id),
                                     index: index,
-                                    child: RepaintBoundary(
-                                      child: _SessionListCard(
-                                        session: session,
-                                        provider: provider,
-                                        onOpen: () => _openSessionDetail(
-                                          context,
-                                          session.id,
-                                        ),
-                                      ),
-                                    ),
+                                    child: child,
                                   );
                                 },
                               ),
@@ -335,18 +348,28 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                     UnifiedPopupMenuButton<String>(
                       icon: Icons.more_horiz_rounded,
                       tooltip: i18n.tr('more_actions'),
-                      enabled: listState.hasSessions,
                       entries: [
                         UnifiedMenuEntry<String>.action(
                           value: 'pause_all',
                           icon: Icons.pause_circle_outline_rounded,
                           label: i18n.tr('pause_all_sessions'),
+                          enabled: listState.hasSessions,
                         ),
                         UnifiedMenuEntry<String>.action(
                           value: 'clear_all',
                           icon: Icons.delete_sweep_rounded,
                           label: i18n.tr('clear_all_sessions'),
                           destructive: true,
+                          enabled: listState.hasSessions,
+                        ),
+                        const UnifiedMenuEntry<String>.divider(),
+                        UnifiedMenuEntry<String>.action(
+                          value: 'toggle_card_positions_locked',
+                          icon: Icons.push_pin_rounded,
+                          label: i18n.tr('fixed_card_positions'),
+                          trailing: cardPositionsLocked
+                              ? const Icon(Icons.check_rounded, size: 18)
+                              : null,
                         ),
                       ],
                       onSelected: (value) {
@@ -360,6 +383,12 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                           );
                         } else if (value == 'clear_all') {
                           _confirmClearAll(context, provider);
+                        } else if (value == 'toggle_card_positions_locked') {
+                          unawaited(
+                            provider.setCardPositionsLocked(
+                              !cardPositionsLocked,
+                            ),
+                          );
                         }
                       },
                     ),

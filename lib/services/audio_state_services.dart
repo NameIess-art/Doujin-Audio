@@ -57,6 +57,7 @@ class LibraryState {
     this.structureRevision = 0,
     this.contentRevision = 0,
     this.detailRevision = 0,
+    this.categorySnapshotRevision = 0,
     this.isInitialized = false,
   });
 
@@ -72,6 +73,7 @@ class LibraryState {
   final int structureRevision;
   final int contentRevision;
   final int detailRevision;
+  final int categorySnapshotRevision;
   final bool isInitialized;
 
   @override
@@ -89,6 +91,7 @@ class LibraryState {
         other.structureRevision == structureRevision &&
         other.contentRevision == contentRevision &&
         other.detailRevision == detailRevision &&
+        other.categorySnapshotRevision == categorySnapshotRevision &&
         other.isInitialized == isInitialized;
   }
 
@@ -106,6 +109,7 @@ class LibraryState {
     structureRevision,
     contentRevision,
     detailRevision,
+    categorySnapshotRevision,
     isInitialized,
   );
 }
@@ -360,6 +364,7 @@ class SettingsState {
     this.autoCheckUpdates = false,
     this.dlsiteMetadataLanguage = AppLanguage.ja,
     this.cardInfoFields = CardInfoField.defaults,
+    this.cardPositionsLocked = false,
     this.maxCacheBytes = 300 * 1024 * 1024,
     this.recordPlaybackProgress = true,
   });
@@ -373,6 +378,7 @@ class SettingsState {
   final bool autoCheckUpdates;
   final AppLanguage dlsiteMetadataLanguage;
   final List<CardInfoField> cardInfoFields;
+  final bool cardPositionsLocked;
   final int maxCacheBytes;
   final bool recordPlaybackProgress;
 
@@ -388,6 +394,7 @@ class SettingsState {
         other.autoCheckUpdates == autoCheckUpdates &&
         other.dlsiteMetadataLanguage == dlsiteMetadataLanguage &&
         listEquals(other.cardInfoFields, cardInfoFields) &&
+        other.cardPositionsLocked == cardPositionsLocked &&
         other.maxCacheBytes == maxCacheBytes &&
         other.recordPlaybackProgress == recordPlaybackProgress;
   }
@@ -403,6 +410,7 @@ class SettingsState {
     autoCheckUpdates,
     dlsiteMetadataLanguage,
     Object.hashAll(cardInfoFields),
+    cardPositionsLocked,
     maxCacheBytes,
     recordPlaybackProgress,
   );
@@ -1000,7 +1008,11 @@ class LibraryService {
     onSaveLibraryExclusions?.call();
   }
 
-  void syncSlice({required bool isInitialized, required int detailRevision}) {
+  void syncSlice({
+    required bool isInitialized,
+    required int detailRevision,
+    int categorySnapshotRevision = 0,
+  }) {
     slice.update(
       LibraryState(
         libraryTrackCount: library.length,
@@ -1015,6 +1027,7 @@ class LibraryService {
         structureRevision: structureRevision,
         contentRevision: contentRevision,
         detailRevision: detailRevision,
+        categorySnapshotRevision: categorySnapshotRevision,
         isInitialized: isInitialized,
       ),
     );
@@ -1429,6 +1442,7 @@ class SettingsRepository {
   bool autoCheckUpdates = false;
   AppLanguage dlsiteMetadataLanguage = AppLanguage.ja;
   List<CardInfoField> cardInfoFields = CardInfoField.defaults;
+  bool cardPositionsLocked = false;
   int maxCacheBytes = 300 * 1024 * 1024;
   bool keepCpuAwake = false;
   bool keepAliveHasPlayback = false;
@@ -1452,6 +1466,7 @@ class SettingsRepository {
         autoCheckUpdates: autoCheckUpdates,
         dlsiteMetadataLanguage: dlsiteMetadataLanguage,
         cardInfoFields: List<CardInfoField>.unmodifiable(cardInfoFields),
+        cardPositionsLocked: cardPositionsLocked,
         maxCacheBytes: maxCacheBytes,
         recordPlaybackProgress: recordPlaybackProgress,
       ),

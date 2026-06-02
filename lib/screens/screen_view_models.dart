@@ -120,22 +120,26 @@ class LibraryUiState {
     required this.header,
     required this.list,
     required this.detailRevision,
+    required this.categorySnapshotRevision,
   });
 
   final LibraryHeaderState header;
   final LibraryListState list;
   final int detailRevision;
+  final int categorySnapshotRevision;
 
   @override
   bool operator ==(Object other) {
     return other is LibraryUiState &&
         other.header == header &&
         other.list == list &&
-        other.detailRevision == detailRevision;
+        other.detailRevision == detailRevision &&
+        other.categorySnapshotRevision == categorySnapshotRevision;
   }
 
   @override
-  int get hashCode => Object.hash(header, list, detailRevision);
+  int get hashCode =>
+      Object.hash(header, list, detailRevision, categorySnapshotRevision);
 }
 
 @immutable

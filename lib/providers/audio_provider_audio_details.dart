@@ -109,27 +109,119 @@ extension AudioProviderAudioDetails on AudioProvider {
   }
 
   Future<DlsiteMetadata> fetchPreferredMetadata(String rjCode) async {
+    DlsiteMetadata? asmrMetadata;
     try {
-      return await _asmrMetadataService.fetchByRjCode(
+      asmrMetadata = await _asmrMetadataService.fetchByRjCode(
         rjCode,
         language: _dlsiteMetadataLanguage,
       );
     } catch (_) {
       return fetchDlsiteMetadata(rjCode);
     }
+    if (!_metadataHasMissingValue(asmrMetadata)) {
+      return asmrMetadata;
+    }
+    try {
+      final dlsiteMetadata = await fetchDlsiteMetadata(rjCode);
+      return _mergeMetadata(asmrMetadata, dlsiteMetadata);
+    } catch (_) {
+      return asmrMetadata;
+    }
   }
 
   Future<List<DlsiteMetadata>> searchPreferredMetadataByTitles(
     Iterable<String> titles,
   ) async {
+    List<DlsiteMetadata>? asmrResults;
     try {
-      return await _asmrMetadataService.searchByTitleCandidates(
+      asmrResults = await _asmrMetadataService.searchByTitleCandidates(
         titles,
         language: _dlsiteMetadataLanguage,
       );
     } catch (_) {
       return searchDlsiteMetadataByTitles(titles);
     }
+
+    if (asmrResults.every((metadata) => !_metadataHasMissingValue(metadata))) {
+      return asmrResults;
+    }
+    try {
+      final dlsiteResults = await searchDlsiteMetadataByTitles(titles);
+      return _mergeMetadataLists(asmrResults, dlsiteResults);
+    } catch (_) {
+      return asmrResults;
+    }
+  }
+
+  bool _metadataHasMissingValue(DlsiteMetadata metadata) {
+    return metadata.rjCode.trim().isEmpty ||
+        metadata.workTitle.trim().isEmpty ||
+        metadata.circleName.trim().isEmpty ||
+        metadata.voiceActors.isEmpty ||
+        metadata.tags.isEmpty ||
+        metadata.releaseDate == null ||
+        metadata.salesCount == null ||
+        metadata.rating == null;
+  }
+
+  List<DlsiteMetadata> _mergeMetadataLists(
+    List<DlsiteMetadata> primary,
+    List<DlsiteMetadata> fallback,
+  ) {
+    final fallbackByKey = <String, DlsiteMetadata>{};
+    for (final metadata in fallback) {
+      final key = _metadataMergeKey(metadata);
+      if (key.isNotEmpty) {
+        fallbackByKey.putIfAbsent(key, () => metadata);
+      }
+    }
+
+    final singleFallback = primary.length == 1 && fallback.length == 1
+        ? fallback.single
+        : null;
+    return primary
+        .map((metadata) {
+          final fallbackMetadata =
+              fallbackByKey[_metadataMergeKey(metadata)] ?? singleFallback;
+          return fallbackMetadata == null
+              ? metadata
+              : _mergeMetadata(metadata, fallbackMetadata);
+        })
+        .toList(growable: false);
+  }
+
+  String _metadataMergeKey(DlsiteMetadata metadata) {
+    final rjCode = metadata.rjCode.trim().toUpperCase();
+    if (rjCode.isNotEmpty) return 'rj:$rjCode';
+    final title = metadata.workTitle.trim().toLowerCase();
+    return title.isEmpty ? '' : 'title:$title';
+  }
+
+  DlsiteMetadata _mergeMetadata(
+    DlsiteMetadata primary,
+    DlsiteMetadata fallback,
+  ) {
+    return primary.copyWith(
+      rjCode: _fallbackString(primary.rjCode, fallback.rjCode),
+      workTitle: _fallbackString(primary.workTitle, fallback.workTitle),
+      circleName: _fallbackString(primary.circleName, fallback.circleName),
+      voiceActors: primary.voiceActors.isNotEmpty
+          ? primary.voiceActors
+          : fallback.voiceActors,
+      tags: primary.tags.isNotEmpty ? primary.tags : fallback.tags,
+      releaseDate: primary.releaseDate ?? fallback.releaseDate,
+      salesCount: primary.salesCount ?? fallback.salesCount,
+      rating: primary.rating ?? fallback.rating,
+      coverUrl: _fallbackNullableString(primary.coverUrl, fallback.coverUrl),
+    );
+  }
+
+  String _fallbackString(String primary, String fallback) {
+    return primary.trim().isNotEmpty ? primary : fallback;
+  }
+
+  String? _fallbackNullableString(String? primary, String? fallback) {
+    return primary != null && primary.trim().isNotEmpty ? primary : fallback;
   }
 
   DlsiteMetadataQuery buildDlsiteMetadataQuery(AudioDetail detail) {

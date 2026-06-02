@@ -187,6 +187,8 @@ extension AudioProviderPersistence on AudioProvider {
       _settingsRepository.cardInfoFields = CardInfoField.decode(
         map['cardInfoFields'],
       );
+      _settingsRepository.cardPositionsLocked =
+          map['cardPositionsLocked'] as bool? ?? false;
       _maxCacheBytes =
           (map['maxCacheBytes'] as num?)?.toInt() ??
           AppCacheService.defaultMaxCacheBytes;
@@ -210,6 +212,7 @@ extension AudioProviderPersistence on AudioProvider {
         'cardInfoFields': _settingsRepository.cardInfoFields
             .map((field) => field.name)
             .toList(growable: false),
+        'cardPositionsLocked': _settingsRepository.cardPositionsLocked,
         'maxCacheBytes': _maxCacheBytes,
       });
       await prefs.setString(_kPlaybackSettingsKey, encoded);
@@ -496,6 +499,13 @@ extension AudioProviderPersistence on AudioProvider {
     final normalized = CardInfoField.normalize(fields);
     if (listEquals(_settingsRepository.cardInfoFields, normalized)) return;
     _settingsRepository.cardInfoFields = normalized;
+    _notifySettingsChanged();
+    unawaited(_savePlaybackSettings());
+  }
+
+  Future<void> setCardPositionsLocked(bool locked) async {
+    if (_settingsRepository.cardPositionsLocked == locked) return;
+    _settingsRepository.cardPositionsLocked = locked;
     _notifySettingsChanged();
     unawaited(_savePlaybackSettings());
   }

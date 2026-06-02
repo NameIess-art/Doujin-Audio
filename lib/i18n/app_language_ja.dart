@@ -19,6 +19,7 @@ const Map<String, String> appLanguageJa = {
   'import_library': '曲庫を追加',
   'refresh_watched_folder': '監視フォルダを更新',
   'more_actions': 'その他の操作',
+  'fixed_card_positions': 'カード位置を固定',
   'batch_metadata': 'データを一括補完',
   'batch_metadata_hint':
       'ASMR.ONE の作品情報を優先して取得し、失敗した場合は DLsite を使用します。現在の作品を確認すると、次の作品へ進みます。',

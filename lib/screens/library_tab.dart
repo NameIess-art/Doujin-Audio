@@ -52,7 +52,11 @@ String _displayTrackName(String trackPath) {
   return PathDisplay.fileName(trackPath, withoutExtension: true);
 }
 
-enum _LibraryMoreAction { manageLibraries, batchMetadata }
+enum _LibraryMoreAction {
+  manageLibraries,
+  batchMetadata,
+  toggleCardPositionsLocked,
+}
 
 class LibraryTab extends ConsumerStatefulWidget {
   const LibraryTab({super.key});
@@ -263,6 +267,9 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     final i18n = context.watch<AppLanguageProvider>();
     final provider = ref.read(audioProviderFacadeProvider);
     final libraryUiState = ref.watch(libraryUiProvider);
+    final settingsState =
+        ref.watch(settingsStateProvider).valueOrNull ?? const SettingsState();
+    final cardPositionsLocked = settingsState.cardPositionsLocked;
     final detailRevision = libraryUiState.detailRevision;
     final libraryHeaderState = libraryUiState.header;
     final listState = libraryUiState.list;
@@ -496,7 +503,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                         triggerMode: GlassRefreshIndicatorTriggerMode.anywhere,
                         child: ReorderAutoScroller(
                           scrollController: _scrollController,
-                          isDragging: _isReordering,
+                          isDragging: !cardPositionsLocked && _isReordering,
                           contentMarginTop: listTopPadding,
                           contentMarginBottom: listBottomPadding,
                           child: ReorderableListView.builder(
@@ -520,10 +527,12 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                             keyboardDismissBehavior:
                                 ScrollViewKeyboardDismissBehavior.onDrag,
                             onReorder: (oldIndex, newIndex) {
+                              if (cardPositionsLocked) return;
                               setState(() => _isReordering = false);
                               provider.reorderLibraryNodes(oldIndex, newIndex);
                             },
                             onReorderStart: (index) {
+                              if (cardPositionsLocked) return;
                               setState(() => _isReordering = true);
                               unawaited(HapticFeedback.heavyImpact());
                             },
@@ -542,12 +551,19 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                                 );
                               }
                               final node = tree[index];
+                              final child = RepaintBoundary(
+                                child: _LibraryTreeItem(node: node),
+                              );
+                              if (cardPositionsLocked) {
+                                return KeyedSubtree(
+                                  key: ValueKey(node.path),
+                                  child: child,
+                                );
+                              }
                               return ReorderableHoldDragStartListener(
                                 key: ValueKey(node.path),
                                 index: index,
-                                child: RepaintBoundary(
-                                  child: _LibraryTreeItem(node: node),
-                                ),
+                                child: child,
                               );
                             },
                           ),
@@ -648,6 +664,15 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                             icon: Icons.library_add_check_rounded,
                             label: i18n.tr('batch_metadata'),
                           ),
+                          const UnifiedMenuEntry<_LibraryMoreAction>.divider(),
+                          UnifiedMenuEntry<_LibraryMoreAction>.action(
+                            value: _LibraryMoreAction.toggleCardPositionsLocked,
+                            icon: Icons.push_pin_rounded,
+                            label: i18n.tr('fixed_card_positions'),
+                            trailing: cardPositionsLocked
+                                ? const Icon(Icons.check_rounded, size: 18)
+                                : null,
+                          ),
                         ],
                         onSelected: (value) {
                           switch (value) {
@@ -656,6 +681,13 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                               break;
                             case _LibraryMoreAction.batchMetadata:
                               _openBatchMetadataPage();
+                              break;
+                            case _LibraryMoreAction.toggleCardPositionsLocked:
+                              unawaited(
+                                provider.setCardPositionsLocked(
+                                  !cardPositionsLocked,
+                                ),
+                              );
                               break;
                           }
                         },

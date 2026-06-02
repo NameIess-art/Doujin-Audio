@@ -19,6 +19,7 @@ const Map<String, String> appLanguageEn = {
   'import_library': 'Import Library',
   'refresh_watched_folder': 'Refresh watched folders',
   'more_actions': 'More actions',
+  'fixed_card_positions': 'Fix card positions',
   'batch_metadata': 'Batch complete metadata',
   'batch_metadata_hint':
       'Fetch ASMR.ONE work information first, then fall back to DLsite. Review each work before moving to the next one.',

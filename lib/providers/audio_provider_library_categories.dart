@@ -35,6 +35,8 @@ extension AudioProviderLibraryCategories on AudioProvider {
                     _libraryService.structureRevision &&
                 snapshot.detailRevision == _audioDetailRevision) {
               _audioLibraryCategorySnapshot = snapshot;
+              _audioLibraryCategorySnapshotRevision++;
+              _syncLibraryStateSlice();
               _notifyPresentationListeners();
             }
           })

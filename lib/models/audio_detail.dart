@@ -161,17 +161,21 @@ class AudioDetail {
 
   bool get hasMissingMetadata =>
       rjCode.trim().isEmpty ||
-      workTitle.trim().isEmpty ||
       circleName.trim().isEmpty ||
       voiceActors.isEmpty ||
-      tags.isEmpty;
+      tags.isEmpty ||
+      releaseDate == null ||
+      salesCount == null ||
+      rating == null;
 
   bool get hasNoMetadata =>
       rjCode.trim().isEmpty &&
-      workTitle.trim().isEmpty &&
       circleName.trim().isEmpty &&
       voiceActors.isEmpty &&
-      tags.isEmpty;
+      tags.isEmpty &&
+      releaseDate == null &&
+      salesCount == null &&
+      rating == null;
 
   bool get hasRjCode => rjCode.trim().isNotEmpty;
 

@@ -19,6 +19,7 @@ const Map<String, String> appLanguageZh = {
   'import_library': '导入曲库',
   'refresh_watched_folder': '刷新监听文件夹',
   'more_actions': '更多操作',
+  'fixed_card_positions': '固定卡片位置',
   'batch_metadata': '批量补全数据',
   'batch_metadata_hint':
       '将从上到下优先获取 ASMR.ONE 作品信息，失败时回退到 DLsite。确认当前作品后，会继续处理下一个作品。',

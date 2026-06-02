@@ -7,6 +7,9 @@ AudioDetail _detail({
   String circleName = 'Circle',
   List<String> voiceActors = const <String>['Voice actor'],
   List<String> tags = const <String>['ASMR'],
+  bool includeReleaseDate = true,
+  int? salesCount = 1234,
+  double? rating = 4.5,
   String path = '/library/Work title',
 }) {
   return AudioDetail(
@@ -16,6 +19,9 @@ AudioDetail _detail({
     circleName: circleName,
     voiceActors: voiceActors,
     tags: tags,
+    releaseDate: includeReleaseDate ? DateTime(2024, 5, 6) : null,
+    salesCount: salesCount,
+    rating: rating,
   );
 }
 
@@ -23,12 +29,30 @@ void main() {
   test('metadata is missing when any supported work field is empty', () {
     expect(_detail().hasMissingMetadata, isFalse);
     expect(_detail(rjCode: '').hasMissingMetadata, isTrue);
-    expect(_detail(workTitle: '').hasMissingMetadata, isTrue);
+    expect(_detail(workTitle: '').hasMissingMetadata, isFalse);
     expect(_detail(circleName: '').hasMissingMetadata, isTrue);
     expect(_detail(voiceActors: const <String>[]).hasMissingMetadata, isTrue);
     expect(_detail(tags: const <String>[]).hasMissingMetadata, isTrue);
-    expect(_detail().copyWith(salesCount: null).hasMissingMetadata, isFalse);
-    expect(_detail().copyWith(rating: null).hasMissingMetadata, isFalse);
+    expect(_detail().copyWith(releaseDate: null).hasMissingMetadata, isTrue);
+    expect(_detail().copyWith(salesCount: null).hasMissingMetadata, isTrue);
+    expect(_detail().copyWith(rating: null).hasMissingMetadata, isTrue);
+  });
+
+  test('metadata is absent only when every required work field is empty', () {
+    expect(
+      _detail(
+        rjCode: '',
+        workTitle: 'Optional title',
+        circleName: '',
+        voiceActors: const <String>[],
+        tags: const <String>[],
+        includeReleaseDate: false,
+        salesCount: null,
+        rating: null,
+      ).hasNoMetadata,
+      isTrue,
+    );
+    expect(_detail(rjCode: '').hasNoMetadata, isFalse);
   });
 
   test(

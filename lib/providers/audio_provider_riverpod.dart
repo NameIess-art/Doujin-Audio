@@ -105,6 +105,7 @@ final libraryUiProvider = Provider<LibraryUiState>((ref) {
         structureRevision: state.structureRevision,
         contentRevision: state.contentRevision,
         detailRevision: state.detailRevision,
+        categorySnapshotRevision: state.categorySnapshotRevision,
         isInitialized: state.isInitialized,
       );
     }),
@@ -129,6 +130,7 @@ final libraryUiProvider = Provider<LibraryUiState>((ref) {
       isInitialized: libraryState.isInitialized,
     ),
     detailRevision: libraryState.detailRevision,
+    categorySnapshotRevision: libraryState.categorySnapshotRevision,
   );
 });
 

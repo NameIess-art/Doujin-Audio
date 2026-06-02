@@ -10,6 +10,7 @@ import 'package:nameless_audio/screens/audio_detail_sheet.dart';
 import 'package:nameless_audio/screens/dlsite_metadata_batch_page.dart';
 import 'package:nameless_audio/screens/dlsite_metadata_review_page.dart';
 import 'package:nameless_audio/screens/library_tab.dart';
+import 'package:nameless_audio/screens/playlist_tab.dart';
 import 'package:nameless_audio/screens/settings_tab.dart';
 import 'package:nameless_audio/services/asmr_metadata_service.dart';
 import 'package:nameless_audio/services/audio_database_repository.dart';
@@ -95,6 +96,15 @@ class _FakeDlsiteMetadataService extends DlsiteMetadataService {
       rating: 4.5,
     );
   }
+
+  @override
+  Future<List<DlsiteMetadata>> searchByTitleCandidates(
+    Iterable<String> titles, {
+    AppLanguage language = AppLanguage.ja,
+    int limit = 6,
+  }) async {
+    return <DlsiteMetadata>[await fetchByRjCode('RJ123456')];
+  }
 }
 
 class _FakeAsmrMetadataService extends AsmrMetadataService {
@@ -106,13 +116,18 @@ class _FakeAsmrMetadataService extends AsmrMetadataService {
     return DlsiteMetadata(
       rjCode: rjCode,
       workTitle: 'ASMR fetched title',
-      circleName: 'ASMR Circle',
+      circleName: '',
       voiceActors: const <String>['ASMR Voice'],
       tags: const <String>['ASMR'],
-      releaseDate: DateTime(2024, 5, 6),
-      salesCount: 1234,
-      rating: 4.5,
     );
+  }
+
+  @override
+  Future<List<DlsiteMetadata>> searchByTitleCandidates(
+    Iterable<String> titles, {
+    AppLanguage language = AppLanguage.zh,
+  }) async {
+    return <DlsiteMetadata>[await fetchByRjCode('RJ123456')];
   }
 }
 
@@ -421,12 +436,78 @@ void main() {
 
     expect(find.text(languageProvider.tr('edit_library')), findsOneWidget);
     expect(find.text(languageProvider.tr('batch_metadata')), findsOneWidget);
+    expect(
+      find.text(languageProvider.tr('fixed_card_positions')),
+      findsOneWidget,
+    );
     await tester.tap(find.text(languageProvider.tr('edit_library')));
     await tester.pumpAndSettle();
 
     expect(find.text('root'), findsOneWidget);
     expect(find.text('standalone'), findsNothing);
     expect(find.text('child'), findsNothing);
+  });
+
+  testWidgets('playlist more menu toggles fixed card positions', (
+    WidgetTester tester,
+  ) async {
+    final handler = PlaybackNotificationHandler();
+    final notificationService = PlaybackNotificationService(handler);
+    final audioDatabaseRepository = AudioDatabaseRepository();
+    final nativePlaybackRepository = NativePlaybackRepository();
+    const playbackCommandRunner = PlaybackCommandRunner();
+    final libraryService = LibraryService();
+    final playbackService = PlaybackSessionService();
+    final timerService = TimerService();
+    final notificationCoordinatorService = NotificationCoordinatorService();
+    final settingsRepository = SettingsRepository();
+    final languageProvider = AppLanguageProvider();
+    final audioProvider = AudioProvider.test(
+      notificationService: notificationService,
+      audioDatabaseRepository: audioDatabaseRepository,
+      nativePlaybackRepository: nativePlaybackRepository,
+      libraryService: libraryService,
+      playbackService: playbackService,
+      timerService: timerService,
+      notificationStateService: notificationCoordinatorService,
+      settingsRepository: settingsRepository,
+    );
+
+    addTearDown(audioProvider.dispose);
+    playbackService.syncSlice(
+      activeSessions: const [],
+      playingSessionCount: 0,
+      focusedSessionId: null,
+      multiThreadPlaybackEnabled: false,
+      coverGeneration: 0,
+      isInitialized: true,
+    );
+
+    await tester.pumpWidget(
+      _buildTestApp(
+        audioProvider: audioProvider,
+        audioDatabaseRepository: audioDatabaseRepository,
+        nativePlaybackRepository: nativePlaybackRepository,
+        playbackCommandRunner: playbackCommandRunner,
+        libraryService: libraryService,
+        playbackService: playbackService,
+        timerService: timerService,
+        notificationCoordinatorService: notificationCoordinatorService,
+        settingsRepository: settingsRepository,
+        languageProvider: languageProvider,
+        child: const PlaylistTab(),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.byTooltip(languageProvider.tr('more_actions')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(
+      find.text(languageProvider.tr('fixed_card_positions')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('settings detail section configures card info fields', (
@@ -566,8 +647,8 @@ void main() {
           languageProvider: languageProvider,
           child: DlsiteMetadataBatchPage(
             entries: [
-              const AudioLibraryCategoryEntry(
-                target: AudioDetailTarget(
+              AudioLibraryCategoryEntry(
+                target: const AudioDetailTarget(
                   targetType: AudioDetailTargetType.libraryRootFolder,
                   targetPath: '/library/Complete',
                 ),
@@ -575,15 +656,18 @@ void main() {
                 path: '/library/Complete',
                 isFolder: true,
                 detail: AudioDetail(
-                  target: AudioDetailTarget(
+                  target: const AudioDetailTarget(
                     targetType: AudioDetailTargetType.libraryRootFolder,
                     targetPath: '/library/Complete',
                   ),
                   rjCode: 'RJ123456',
                   workTitle: 'Complete',
                   circleName: 'Circle',
-                  voiceActors: <String>['Voice'],
-                  tags: <String>['ASMR'],
+                  voiceActors: const <String>['Voice'],
+                  tags: const <String>['ASMR'],
+                  releaseDate: DateTime(2024, 5, 6),
+                  salesCount: 1234,
+                  rating: 4.5,
                 ),
                 tracks: <MusicTrack>[],
               ),
@@ -721,10 +805,50 @@ void main() {
         .whereType<String>()
         .toSet();
     expect(textFieldValues, contains('ASMR fetched title'));
+    expect(textFieldValues, contains('Circle'));
     expect(textFieldValues, contains('2024-05-06'));
     expect(textFieldValues, contains('1234'));
     expect(textFieldValues, contains('4.5'));
   });
+
+  test(
+    'preferred title metadata fills missing ASMR fields from DLsite',
+    () async {
+      final handler = PlaybackNotificationHandler();
+      final notificationService = PlaybackNotificationService(handler);
+      final audioDatabaseRepository = AudioDatabaseRepository();
+      final nativePlaybackRepository = NativePlaybackRepository();
+      final libraryService = LibraryService();
+      final playbackService = PlaybackSessionService();
+      final timerService = TimerService();
+      final notificationCoordinatorService = NotificationCoordinatorService();
+      final settingsRepository = SettingsRepository();
+      final audioProvider = AudioProvider.test(
+        notificationService: notificationService,
+        audioDatabaseRepository: audioDatabaseRepository,
+        nativePlaybackRepository: nativePlaybackRepository,
+        libraryService: libraryService,
+        playbackService: playbackService,
+        timerService: timerService,
+        notificationStateService: notificationCoordinatorService,
+        settingsRepository: settingsRepository,
+        dlsiteMetadataService: _FakeDlsiteMetadataService(),
+        asmrMetadataService: _FakeAsmrMetadataService(),
+      );
+
+      addTearDown(audioProvider.dispose);
+
+      final metadata = (await audioProvider.searchPreferredMetadataByTitles(
+        const <String>['Work'],
+      )).single;
+
+      expect(metadata.workTitle, 'ASMR fetched title');
+      expect(metadata.circleName, 'Circle');
+      expect(metadata.releaseDate, DateTime(2024, 5, 6));
+      expect(metadata.salesCount, 1234);
+      expect(metadata.rating, 4.5);
+    },
+  );
 
   testWidgets('audio detail fetch opens metadata scope page', (
     WidgetTester tester,

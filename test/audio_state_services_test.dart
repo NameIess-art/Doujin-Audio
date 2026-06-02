@@ -22,6 +22,7 @@ void main() {
         ..autoPlayAddedSessions = false
         ..autoCheckUpdates = true
         ..dlsiteMetadataLanguage = AppLanguage.en
+        ..cardPositionsLocked = true
         ..maxCacheBytes = 500 * 1024 * 1024;
       repository.syncSlice();
 
@@ -56,6 +57,7 @@ void main() {
               'dlsite language',
               AppLanguage.en,
             )
+            .having((state) => state.cardPositionsLocked, 'fixed cards', isTrue)
             .having(
               (state) => state.maxCacheBytes,
               'max cache',

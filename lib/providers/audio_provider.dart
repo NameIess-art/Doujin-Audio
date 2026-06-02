@@ -162,6 +162,7 @@ class AudioProvider with ChangeNotifier {
   int _audioLibraryCategoryFutureStructureRevision = -1;
   int _audioLibraryCategoryFutureDetailRevision = -1;
   int _audioDetailRevision = 0;
+  int _audioLibraryCategorySnapshotRevision = 0;
   bool _notifyListenersQueued = false;
   bool _isDisposed = false;
 
@@ -777,6 +778,7 @@ class AudioProvider with ChangeNotifier {
     _libraryService.syncSlice(
       isInitialized: _isInitialized,
       detailRevision: _audioDetailRevision,
+      categorySnapshotRevision: _audioLibraryCategorySnapshotRevision,
     );
   }
 

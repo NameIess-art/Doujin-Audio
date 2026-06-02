@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/i18n/app_language_provider.dart';
 import 'package:nameless_audio/models/dlsite_metadata.dart';
@@ -12,6 +15,28 @@ void main() {
       dlsiteAcceptLanguageForLanguage(AppLanguage.en),
       'en-US,en;q=0.9,ja-JP;q=0.8,zh-CN;q=0.7',
     );
+  });
+
+  test('stops DLsite lookup after bounded network timeouts', () async {
+    final client = _HangingHttpClient();
+    final service = DlsiteMetadataService(
+      httpClient: client,
+      requestTimeout: const Duration(milliseconds: 1),
+    );
+
+    await expectLater(
+      service.fetchByRjCode('RJ01014447'),
+      throwsA(
+        isA<DlsiteMetadataException>()
+            .having((error) => error.isNetworkFailure, 'network failure', true)
+            .having(
+              (error) => error.message,
+              'message',
+              'DLsite request timed out',
+            ),
+      ),
+    );
+    expect(client.getUrlCalls, 2);
   });
 
   test('parses DLsite product json into editable metadata', () {
@@ -195,4 +220,17 @@ void main() {
 
     expect(score, 2);
   });
+}
+
+class _HangingHttpClient implements HttpClient {
+  int getUrlCalls = 0;
+
+  @override
+  Future<HttpClientRequest> getUrl(Uri url) {
+    getUrlCalls += 1;
+    return Completer<HttpClientRequest>().future;
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

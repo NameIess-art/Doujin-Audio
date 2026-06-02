@@ -6,9 +6,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/i18n/app_language_provider.dart';
 import 'package:nameless_audio/providers/audio_provider.dart';
 import 'package:nameless_audio/providers/audio_provider_riverpod.dart';
+import 'package:nameless_audio/screens/dlsite_metadata_batch_page.dart';
+import 'package:nameless_audio/screens/dlsite_metadata_review_page.dart';
 import 'package:nameless_audio/screens/library_tab.dart';
 import 'package:nameless_audio/services/audio_database_repository.dart';
 import 'package:nameless_audio/services/audio_state_services.dart';
+import 'package:nameless_audio/services/dlsite_metadata_service.dart';
 import 'package:nameless_audio/services/native_playback_repository.dart';
 import 'package:nameless_audio/services/playback_command_runner.dart';
 import 'package:nameless_audio/services/playback_notification_handler.dart';
@@ -66,6 +69,22 @@ Widget _buildTestApp({
       child: MaterialApp(home: Scaffold(body: child)),
     ),
   );
+}
+
+class _FakeDlsiteMetadataService extends DlsiteMetadataService {
+  @override
+  Future<DlsiteMetadata> fetchByRjCode(
+    String rjCode, {
+    AppLanguage language = AppLanguage.ja,
+  }) async {
+    return DlsiteMetadata(
+      rjCode: rjCode,
+      workTitle: 'Fetched title',
+      circleName: 'Circle',
+      voiceActors: const <String>['Voice'],
+      tags: const <String>['ASMR'],
+    );
+  }
 }
 
 void main() {
@@ -306,8 +325,83 @@ void main() {
     },
   );
 
+  testWidgets('library more menu opens formal library management only', (
+    WidgetTester tester,
+  ) async {
+    final handler = PlaybackNotificationHandler();
+    final notificationService = PlaybackNotificationService(handler);
+    final audioDatabaseRepository = AudioDatabaseRepository();
+    final nativePlaybackRepository = NativePlaybackRepository();
+    const playbackCommandRunner = PlaybackCommandRunner();
+    final libraryService = LibraryService();
+    final playbackService = PlaybackSessionService();
+    final timerService = TimerService();
+    final notificationCoordinatorService = NotificationCoordinatorService();
+    final settingsRepository = SettingsRepository();
+    final languageProvider = AppLanguageProvider();
+    final audioProvider = AudioProvider.test(
+      notificationService: notificationService,
+      audioDatabaseRepository: audioDatabaseRepository,
+      nativePlaybackRepository: nativePlaybackRepository,
+      libraryService: libraryService,
+      playbackService: playbackService,
+      timerService: timerService,
+      notificationStateService: notificationCoordinatorService,
+      settingsRepository: settingsRepository,
+    );
+
+    addTearDown(audioProvider.dispose);
+
+    const libraryRoot = '/library/root';
+    const childFolder = '/library/root/child';
+    const standaloneFolder = '/library/standalone';
+    audioProvider.addWatchedLibrary(libraryRoot, notify: false);
+    audioProvider.addWatchedFolder(childFolder, notify: false);
+    audioProvider.addWatchedFolder(standaloneFolder, notify: false);
+    audioProvider.recordLibraryEntriesForTracks(
+      standaloneFolder,
+      const <MusicTrack>[],
+      persist: false,
+    );
+    libraryService.syncSlice(isInitialized: true, detailRevision: 0);
+
+    await tester.pumpWidget(
+      _buildTestApp(
+        audioProvider: audioProvider,
+        audioDatabaseRepository: audioDatabaseRepository,
+        nativePlaybackRepository: nativePlaybackRepository,
+        playbackCommandRunner: playbackCommandRunner,
+        libraryService: libraryService,
+        playbackService: playbackService,
+        timerService: timerService,
+        notificationCoordinatorService: notificationCoordinatorService,
+        settingsRepository: settingsRepository,
+        languageProvider: languageProvider,
+        child: const LibraryTab(),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.byTooltip(languageProvider.tr('more_actions')), findsOneWidget);
+    expect(find.byTooltip(languageProvider.tr('import_audio')), findsOneWidget);
+    expect(find.byTooltip(languageProvider.tr('edit_library')), findsNothing);
+    await tester.tap(find.byTooltip(languageProvider.tr('more_actions')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(find.text(languageProvider.tr('edit_library')), findsOneWidget);
+    expect(find.text(languageProvider.tr('batch_metadata')), findsOneWidget);
+    await tester.tap(find.text(languageProvider.tr('edit_library')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('root'), findsOneWidget);
+    expect(find.text('standalone'), findsNothing);
+    expect(find.text('child'), findsNothing);
+  });
+
   testWidgets(
-    'library tab edit menu includes roots and standalone folders only',
+    'batch metadata page defaults to missing works and shows counts',
     (WidgetTester tester) async {
       final handler = PlaybackNotificationHandler();
       final notificationService = PlaybackNotificationService(handler);
@@ -333,19 +427,6 @@ void main() {
 
       addTearDown(audioProvider.dispose);
 
-      const libraryRoot = '/library/root';
-      const childFolder = '/library/root/child';
-      const standaloneFolder = '/library/standalone';
-      audioProvider.addWatchedLibrary(libraryRoot, notify: false);
-      audioProvider.addWatchedFolder(childFolder, notify: false);
-      audioProvider.addWatchedFolder(standaloneFolder, notify: false);
-      audioProvider.recordLibraryEntriesForTracks(
-        standaloneFolder,
-        const <MusicTrack>[],
-        persist: false,
-      );
-      libraryService.syncSlice(isInitialized: true, detailRevision: 0);
-
       await tester.pumpWidget(
         _buildTestApp(
           audioProvider: audioProvider,
@@ -358,25 +439,137 @@ void main() {
           notificationCoordinatorService: notificationCoordinatorService,
           settingsRepository: settingsRepository,
           languageProvider: languageProvider,
-          child: const LibraryTab(),
+          child: DlsiteMetadataBatchPage(
+            entries: [
+              const AudioLibraryCategoryEntry(
+                target: AudioDetailTarget(
+                  targetType: AudioDetailTargetType.libraryRootFolder,
+                  targetPath: '/library/Complete',
+                ),
+                title: 'Complete',
+                path: '/library/Complete',
+                isFolder: true,
+                detail: AudioDetail(
+                  target: AudioDetailTarget(
+                    targetType: AudioDetailTargetType.libraryRootFolder,
+                    targetPath: '/library/Complete',
+                  ),
+                  rjCode: 'RJ123456',
+                  workTitle: 'Complete',
+                  circleName: 'Circle',
+                  voiceActors: <String>['Voice'],
+                  tags: <String>['ASMR'],
+                ),
+                tracks: <MusicTrack>[],
+              ),
+              AudioLibraryCategoryEntry(
+                target: const AudioDetailTarget(
+                  targetType: AudioDetailTargetType.libraryRootFolder,
+                  targetPath: '/library/Missing',
+                ),
+                title: 'Missing',
+                path: '/library/Missing',
+                isFolder: true,
+                detail: AudioDetail.empty(
+                  const AudioDetailTarget(
+                    targetType: AudioDetailTargetType.libraryRootFolder,
+                    targetPath: '/library/Missing',
+                  ),
+                ),
+                tracks: const <MusicTrack>[],
+              ),
+            ],
+          ),
         ),
       );
       await tester.pump();
-      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
 
       expect(
-        find.byTooltip(languageProvider.tr('edit_library')),
+        find.text('${languageProvider.tr('batch_metadata_missing')} (1)'),
         findsOneWidget,
       );
-      await tester.tap(find.byTooltip(languageProvider.tr('edit_library')));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 250));
-
-      expect(find.text('root'), findsOneWidget);
-      expect(find.text('standalone'), findsOneWidget);
-      expect(find.text('child'), findsNothing);
+      expect(
+        find.text('${languageProvider.tr('batch_metadata_all')} (2)'),
+        findsOneWidget,
+      );
+      expect(
+        tester
+            .widget<RadioGroup<Object?>>(
+              find.byKey(const ValueKey('batch_metadata_scope_group')),
+            )
+            .groupValue
+            .toString(),
+        contains('missingOnly'),
+      );
     },
   );
+
+  testWidgets('DLsite review batch mode shows progress and skip action', (
+    WidgetTester tester,
+  ) async {
+    final handler = PlaybackNotificationHandler();
+    final notificationService = PlaybackNotificationService(handler);
+    final audioDatabaseRepository = AudioDatabaseRepository();
+    final nativePlaybackRepository = NativePlaybackRepository();
+    const playbackCommandRunner = PlaybackCommandRunner();
+    final libraryService = LibraryService();
+    final playbackService = PlaybackSessionService();
+    final timerService = TimerService();
+    final notificationCoordinatorService = NotificationCoordinatorService();
+    final settingsRepository = SettingsRepository();
+    final languageProvider = AppLanguageProvider();
+    final audioProvider = AudioProvider.test(
+      notificationService: notificationService,
+      audioDatabaseRepository: audioDatabaseRepository,
+      nativePlaybackRepository: nativePlaybackRepository,
+      libraryService: libraryService,
+      playbackService: playbackService,
+      timerService: timerService,
+      notificationStateService: notificationCoordinatorService,
+      settingsRepository: settingsRepository,
+      dlsiteMetadataService: _FakeDlsiteMetadataService(),
+    );
+
+    addTearDown(audioProvider.dispose);
+
+    await tester.pumpWidget(
+      _buildTestApp(
+        audioProvider: audioProvider,
+        audioDatabaseRepository: audioDatabaseRepository,
+        nativePlaybackRepository: nativePlaybackRepository,
+        playbackCommandRunner: playbackCommandRunner,
+        libraryService: libraryService,
+        playbackService: playbackService,
+        timerService: timerService,
+        notificationCoordinatorService: notificationCoordinatorService,
+        settingsRepository: settingsRepository,
+        languageProvider: languageProvider,
+        child: DlsiteMetadataReviewPage(
+          detail: AudioDetail.empty(
+            const AudioDetailTarget(
+              targetType: AudioDetailTargetType.libraryRootFolder,
+              targetPath: '/library/Work',
+            ),
+          ),
+          rjCode: 'RJ123456',
+          batchIndex: 2,
+          batchTotal: 3,
+          allowSkip: true,
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(
+      find.text(
+        '${languageProvider.tr('dlsite_review_title')} · ${languageProvider.tr('batch_metadata_progress', {'current': 2, 'total': 3})}',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text(languageProvider.tr('skip')), findsOneWidget);
+  });
 
   testWidgets('library edit keeps restored content folder visible', (
     WidgetTester tester,

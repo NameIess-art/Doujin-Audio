@@ -218,9 +218,10 @@ class _AudioDetailSheetState extends State<AudioDetailSheet> {
 
   Future<void> _confirmFetchInfo(AudioDetail detail) async {
     final i18n = context.read<AppLanguageProvider>();
-    final normalizedRjCode = AudioDetail.findRjCodeInText(detail.rjCode);
-    final searchTitles = _dlsiteTitleSearchCandidates(detail);
-    if (normalizedRjCode == null && searchTitles.isEmpty) {
+    final query = context.read<AudioProvider>().buildDlsiteMetadataQuery(
+      detail,
+    );
+    if (!query.hasQuery) {
       showAppSnackBar(
         context,
         i18n.tr('audio_detail_fetch_missing_query'),
@@ -235,17 +236,16 @@ class _AudioDetailSheetState extends State<AudioDetailSheet> {
     );
     if (!confirmed || !mounted) return;
 
-    final updated = await Navigator.of(context).push<AudioDetail>(
+    final result = await Navigator.of(context).push<DlsiteMetadataReviewResult>(
       MaterialPageRoute(
         builder: (_) => DlsiteMetadataReviewPage(
           detail: detail,
-          rjCode: normalizedRjCode,
-          searchTitles: normalizedRjCode == null
-              ? searchTitles
-              : const <String>[],
+          rjCode: query.rjCode,
+          searchTitles: query.searchTitles,
         ),
       ),
     );
+    final updated = result?.detail;
     if (updated == null || !mounted) return;
     setState(() {
       _detail = updated;
@@ -917,16 +917,4 @@ List<String> _splitMultiValue(String rawValue) {
 
 bool _looksLikeRjCode(String value) {
   return value.isEmpty || RegExp(r'^RJ\d+$').hasMatch(value);
-}
-
-List<String> _dlsiteTitleSearchCandidates(AudioDetail detail) {
-  final seen = <String>{};
-  final candidates = <String>[
-    _targetDisplayName(detail.target),
-    detail.workTitle,
-  ];
-  return candidates
-      .map((value) => value.trim())
-      .where((value) => value.isNotEmpty && seen.add(value))
-      .toList(growable: false);
 }

@@ -8,17 +8,39 @@ import '../providers/audio_provider.dart';
 import '../widgets/app_feedback.dart';
 import '../widgets/async_cover_image.dart';
 
+enum DlsiteMetadataReviewOutcome { applied, skipped }
+
+class DlsiteMetadataReviewResult {
+  const DlsiteMetadataReviewResult.applied(this.detail)
+    : outcome = DlsiteMetadataReviewOutcome.applied;
+
+  const DlsiteMetadataReviewResult.skipped()
+    : outcome = DlsiteMetadataReviewOutcome.skipped,
+      detail = null;
+
+  final DlsiteMetadataReviewOutcome outcome;
+  final AudioDetail? detail;
+
+  bool get isApplied => outcome == DlsiteMetadataReviewOutcome.applied;
+}
+
 class DlsiteMetadataReviewPage extends StatefulWidget {
   const DlsiteMetadataReviewPage({
     super.key,
     required this.detail,
     this.rjCode,
     this.searchTitles = const <String>[],
+    this.batchIndex,
+    this.batchTotal,
+    this.allowSkip = false,
   }) : assert(rjCode != null || searchTitles.length > 0);
 
   final AudioDetail detail;
   final String? rjCode;
   final List<String> searchTitles;
+  final int? batchIndex;
+  final int? batchTotal;
+  final bool allowSkip;
 
   @override
   State<DlsiteMetadataReviewPage> createState() =>
@@ -127,7 +149,9 @@ class _DlsiteMetadataReviewPageState extends State<DlsiteMetadataReviewPage> {
           tone: AppFeedbackTone.warning,
         );
       }
-      Navigator.of(context).pop(result.detail);
+      Navigator.of(
+        context,
+      ).pop(DlsiteMetadataReviewResult.applied(result.detail));
     } catch (_) {
       if (!mounted) return;
       setState(() {
@@ -141,6 +165,11 @@ class _DlsiteMetadataReviewPageState extends State<DlsiteMetadataReviewPage> {
     }
   }
 
+  void _skip() {
+    if (_saving) return;
+    Navigator.of(context).pop(const DlsiteMetadataReviewResult.skipped());
+  }
+
   @override
   Widget build(BuildContext context) {
     final i18n = context.watch<AppLanguageProvider>();
@@ -152,7 +181,11 @@ class _DlsiteMetadataReviewPageState extends State<DlsiteMetadataReviewPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(i18n.tr('dlsite_review_title')),
+        title: Text(
+          widget.batchIndex == null || widget.batchTotal == null
+              ? i18n.tr('dlsite_review_title')
+              : '${i18n.tr('dlsite_review_title')} · ${i18n.tr('batch_metadata_progress', {'current': widget.batchIndex, 'total': widget.batchTotal})}',
+        ),
         actions: [
           if (_candidates.length > 1 && !_loading)
             IconButton(
@@ -183,7 +216,10 @@ class _DlsiteMetadataReviewPageState extends State<DlsiteMetadataReviewPage> {
         child: _loading
             ? const Center(child: CircularProgressIndicator())
             : _error != null
-            ? _DlsiteErrorView(onRetry: _fetch)
+            ? _DlsiteErrorView(
+                onRetry: _fetch,
+                onSkip: widget.allowSkip ? _skip : null,
+              )
             : ListView(
                 padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
                 children: [
@@ -264,6 +300,13 @@ class _DlsiteMetadataReviewPageState extends State<DlsiteMetadataReviewPage> {
                         : const Icon(Icons.check_rounded),
                     label: Text(i18n.tr('confirm')),
                   ),
+                  if (widget.allowSkip) ...[
+                    const SizedBox(height: 8),
+                    TextButton(
+                      onPressed: _saving ? null : _skip,
+                      child: Text(i18n.tr('skip')),
+                    ),
+                  ],
                 ],
               ),
       ),
@@ -350,9 +393,10 @@ class _ReviewTextField extends StatelessWidget {
 }
 
 class _DlsiteErrorView extends StatelessWidget {
-  const _DlsiteErrorView({required this.onRetry});
+  const _DlsiteErrorView({required this.onRetry, this.onSkip});
 
   final VoidCallback onRetry;
+  final VoidCallback? onSkip;
 
   @override
   Widget build(BuildContext context) {
@@ -376,6 +420,10 @@ class _DlsiteErrorView extends StatelessWidget {
               icon: const Icon(Icons.refresh_rounded),
               label: Text(i18n.tr('retry')),
             ),
+            if (onSkip != null) ...[
+              const SizedBox(height: 8),
+              TextButton(onPressed: onSkip, child: Text(i18n.tr('skip'))),
+            ],
           ],
         ),
       ),

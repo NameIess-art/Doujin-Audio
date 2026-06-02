@@ -839,6 +839,9 @@ class AsmrDownloadManager extends ChangeNotifier {
       circleName: work.circleName,
       voiceActors: work.voiceActors,
       tags: work.tags,
+      releaseDate: work.releaseDate,
+      salesCount: work.dlCount > 0 ? work.dlCount : null,
+      rating: work.rating > 0 ? work.rating.clamp(0, 5).toDouble() : null,
       createdAt: DateTime.now(),
       updatedAt: DateTime.now(),
     ).normalizedForSave(DateTime.now());

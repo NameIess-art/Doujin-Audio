@@ -27,7 +27,31 @@ void main() {
     expect(_detail(circleName: '').hasMissingMetadata, isTrue);
     expect(_detail(voiceActors: const <String>[]).hasMissingMetadata, isTrue);
     expect(_detail(tags: const <String>[]).hasMissingMetadata, isTrue);
+    expect(_detail().copyWith(salesCount: null).hasMissingMetadata, isFalse);
+    expect(_detail().copyWith(rating: null).hasMissingMetadata, isFalse);
   });
+
+  test(
+    'card info fields default to current metadata and cap at five items',
+    () {
+      expect(CardInfoField.defaults, const <CardInfoField>[
+        CardInfoField.rjCode,
+        CardInfoField.voiceActors,
+        CardInfoField.circleName,
+        CardInfoField.tags,
+      ]);
+
+      final normalized = CardInfoField.normalize(CardInfoField.values);
+      expect(normalized, hasLength(CardInfoField.maxSelected));
+      expect(normalized, const <CardInfoField>[
+        CardInfoField.rjCode,
+        CardInfoField.voiceActors,
+        CardInfoField.circleName,
+        CardInfoField.tags,
+        CardInfoField.releaseDate,
+      ]);
+    },
+  );
 
   test('DLsite query prefers an RJ code over title candidates', () {
     final query = DlsiteMetadataQuery.fromDetail(

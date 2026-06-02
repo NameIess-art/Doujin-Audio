@@ -38,7 +38,7 @@ class AppDatabase {
     final dbPath = await getDatabasesPath();
     final db = await openDatabase(
       p.join(dbPath, 'audio_player.db'),
-      version: 12,
+      version: 13,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -193,6 +193,16 @@ class AppDatabase {
     if (oldVersion < 12) {
       await _createTimeSegmentLabelsTable(db);
     }
+    if (oldVersion < 13) {
+      await _addColumnIfMissing(
+        db,
+        'audio_details',
+        'release_date_ms',
+        'INTEGER NOT NULL DEFAULT 0',
+      );
+      await _addColumnIfMissing(db, 'audio_details', 'sales_count', 'INTEGER');
+      await _addColumnIfMissing(db, 'audio_details', 'rating', 'REAL');
+    }
     await _createTrackIndexes(db);
   }
 
@@ -240,6 +250,9 @@ class AppDatabase {
         circle_name TEXT NOT NULL DEFAULT '',
         voice_actors_json TEXT NOT NULL DEFAULT '[]',
         tags_json TEXT NOT NULL DEFAULT '[]',
+        release_date_ms INTEGER NOT NULL DEFAULT 0,
+        sales_count INTEGER,
+        rating REAL,
         created_at_ms INTEGER NOT NULL DEFAULT 0,
         updated_at_ms INTEGER NOT NULL DEFAULT 0,
         UNIQUE(target_type, target_path)

@@ -33,6 +33,7 @@ class DlsiteMetadataReviewPage extends StatefulWidget {
     this.batchIndex,
     this.batchTotal,
     this.allowSkip = false,
+    this.missingOnly = false,
   }) : assert(rjCode != null || searchTitles.length > 0);
 
   final AudioDetail detail;
@@ -41,6 +42,7 @@ class DlsiteMetadataReviewPage extends StatefulWidget {
   final int? batchIndex;
   final int? batchTotal;
   final bool allowSkip;
+  final bool missingOnly;
 
   @override
   State<DlsiteMetadataReviewPage> createState() =>
@@ -52,6 +54,9 @@ class _DlsiteMetadataReviewPageState extends State<DlsiteMetadataReviewPage> {
   final _circleController = TextEditingController();
   final _voiceActorsController = TextEditingController();
   final _tagsController = TextEditingController();
+  final _releaseDateController = TextEditingController();
+  final _salesController = TextEditingController();
+  final _ratingController = TextEditingController();
 
   DlsiteMetadata? _metadata;
   List<DlsiteMetadata> _candidates = const <DlsiteMetadata>[];
@@ -73,6 +78,9 @@ class _DlsiteMetadataReviewPageState extends State<DlsiteMetadataReviewPage> {
     _circleController.dispose();
     _voiceActorsController.dispose();
     _tagsController.dispose();
+    _releaseDateController.dispose();
+    _salesController.dispose();
+    _ratingController.dispose();
     super.dispose();
   }
 
@@ -88,8 +96,8 @@ class _DlsiteMetadataReviewPageState extends State<DlsiteMetadataReviewPage> {
       final provider = context.read<AudioProvider>();
       final rjCode = widget.rjCode;
       final candidates = rjCode != null
-          ? <DlsiteMetadata>[await provider.fetchDlsiteMetadata(rjCode)]
-          : await provider.searchDlsiteMetadataByTitles(widget.searchTitles);
+          ? <DlsiteMetadata>[await provider.fetchPreferredMetadata(rjCode)]
+          : await provider.searchPreferredMetadataByTitles(widget.searchTitles);
       if (!mounted) return;
       _showCandidate(0, candidates);
     } catch (error) {
@@ -110,6 +118,9 @@ class _DlsiteMetadataReviewPageState extends State<DlsiteMetadataReviewPage> {
     _circleController.text = metadata.circleName;
     _voiceActorsController.text = metadata.voiceActors.join('\uFF0C');
     _tagsController.text = metadata.tags.join('\uFF0C');
+    _releaseDateController.text = _formatDateValue(metadata.releaseDate);
+    _salesController.text = metadata.salesCount?.toString() ?? '';
+    _ratingController.text = _formatRatingValue(metadata.rating);
     setState(() {
       _candidateIndex = nextIndex;
       _candidates = nextCandidates;
@@ -133,6 +144,13 @@ class _DlsiteMetadataReviewPageState extends State<DlsiteMetadataReviewPage> {
         _voiceActorsController.text.split('\uFF0C'),
       ),
       tags: AudioDetail.normalizeList(_tagsController.text.split('\uFF0C')),
+      releaseDate: _parseDateValue(_releaseDateController.text.trim()),
+      salesCount: _salesController.text.trim().isEmpty
+          ? null
+          : int.tryParse(_salesController.text.trim()),
+      rating: _ratingController.text.trim().isEmpty
+          ? null
+          : double.tryParse(_ratingController.text.trim()),
     );
 
     try {
@@ -140,6 +158,7 @@ class _DlsiteMetadataReviewPageState extends State<DlsiteMetadataReviewPage> {
         widget.detail,
         edited,
         saveCover: _saveCover,
+        missingOnly: widget.missingOnly,
       );
       if (!mounted) return;
       if (result.coverFailed) {
@@ -187,6 +206,11 @@ class _DlsiteMetadataReviewPageState extends State<DlsiteMetadataReviewPage> {
               : '${i18n.tr('dlsite_review_title')} · ${i18n.tr('batch_metadata_progress', {'current': widget.batchIndex, 'total': widget.batchTotal})}',
         ),
         actions: [
+          if (widget.allowSkip)
+            TextButton(
+              onPressed: _saving ? null : _skip,
+              child: Text(i18n.tr('skip')),
+            ),
           if (_candidates.length > 1 && !_loading)
             IconButton(
               onPressed: _candidateIndex <= 0 || _saving
@@ -288,6 +312,19 @@ class _DlsiteMetadataReviewPageState extends State<DlsiteMetadataReviewPage> {
                     label: i18n.tr('audio_detail_tags'),
                     hint: i18n.tr('audio_detail_multi_hint'),
                   ),
+                  _ReviewTextField(
+                    controller: _releaseDateController,
+                    label: i18n.tr('audio_detail_release_date'),
+                    hint: 'YYYY-MM-DD',
+                  ),
+                  _ReviewTextField(
+                    controller: _salesController,
+                    label: i18n.tr('audio_detail_sales_count'),
+                  ),
+                  _ReviewTextField(
+                    controller: _ratingController,
+                    label: i18n.tr('audio_detail_rating'),
+                  ),
                   const SizedBox(height: 18),
                   FilledButton.icon(
                     onPressed: _saving ? null : _apply,
@@ -300,18 +337,33 @@ class _DlsiteMetadataReviewPageState extends State<DlsiteMetadataReviewPage> {
                         : const Icon(Icons.check_rounded),
                     label: Text(i18n.tr('confirm')),
                   ),
-                  if (widget.allowSkip) ...[
-                    const SizedBox(height: 8),
-                    TextButton(
-                      onPressed: _saving ? null : _skip,
-                      child: Text(i18n.tr('skip')),
-                    ),
-                  ],
                 ],
               ),
       ),
     );
   }
+}
+
+String _formatDateValue(DateTime? value) {
+  if (value == null) return '';
+  return '${value.year.toString().padLeft(4, '0')}-'
+      '${value.month.toString().padLeft(2, '0')}-'
+      '${value.day.toString().padLeft(2, '0')}';
+}
+
+DateTime? _parseDateValue(String value) {
+  if (value.isEmpty) return null;
+  final match = RegExp(r'^(\d{4})-(\d{1,2})-(\d{1,2})$').firstMatch(value);
+  if (match == null) return DateTime.tryParse(value);
+  final year = int.parse(match.group(1)!);
+  final month = int.parse(match.group(2)!);
+  final day = int.parse(match.group(3)!);
+  return DateTime(year, month, day);
+}
+
+String _formatRatingValue(double? value) {
+  if (value == null || value <= 0) return '';
+  return value.toStringAsFixed(value.truncateToDouble() == value ? 0 : 1);
 }
 
 class _ReviewInfoLine extends StatelessWidget {

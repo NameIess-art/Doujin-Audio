@@ -7,6 +7,9 @@ class DlsiteMetadata {
     required this.circleName,
     required this.voiceActors,
     required this.tags,
+    this.releaseDate,
+    this.salesCount,
+    this.rating,
     this.coverUrl,
   });
 
@@ -26,6 +29,17 @@ class DlsiteMetadata {
       circleName: circleName ?? '',
       voiceActors: _creatorNames(json, 'voice_by'),
       tags: _genreNames(json),
+      releaseDate:
+          _dateValue(json['regist_date']) ?? _dateValue(json['release_date']),
+      salesCount:
+          _intValue(json['dl_count']) ??
+          _intValue(json['sales']) ??
+          _intValue(json['sales_count']),
+      rating: _ratingValue(
+        json['rate_average_2dp'] ??
+            json['rate_average'] ??
+            json['rate_average_star'],
+      ),
       coverUrl: _normalizeUrl(_nestedString(json['image_main'], 'url')),
     );
   }
@@ -35,6 +49,9 @@ class DlsiteMetadata {
   final String circleName;
   final List<String> voiceActors;
   final List<String> tags;
+  final DateTime? releaseDate;
+  final int? salesCount;
+  final double? rating;
   final String? coverUrl;
 
   DlsiteMetadata copyWith({
@@ -43,6 +60,9 @@ class DlsiteMetadata {
     String? circleName,
     List<String>? voiceActors,
     List<String>? tags,
+    Object? releaseDate = _copyUnset,
+    Object? salesCount = _copyUnset,
+    Object? rating = _copyUnset,
     String? coverUrl,
   }) {
     return DlsiteMetadata(
@@ -51,10 +71,19 @@ class DlsiteMetadata {
       circleName: circleName ?? this.circleName,
       voiceActors: voiceActors ?? this.voiceActors,
       tags: tags ?? this.tags,
+      releaseDate: releaseDate == _copyUnset
+          ? this.releaseDate
+          : releaseDate as DateTime?,
+      salesCount: salesCount == _copyUnset
+          ? this.salesCount
+          : salesCount as int?,
+      rating: rating == _copyUnset ? this.rating : rating as double?,
       coverUrl: coverUrl ?? this.coverUrl,
     );
   }
 }
+
+const Object _copyUnset = Object();
 
 String? _stringValue(Object? value) {
   if (value is! String) return null;
@@ -65,6 +94,30 @@ String? _stringValue(Object? value) {
 String? _nestedString(Object? object, String key) {
   if (object is! Map) return null;
   return _stringValue(object[key]);
+}
+
+DateTime? _dateValue(Object? value) {
+  final raw = _stringValue(value);
+  if (raw == null) return null;
+  return DateTime.tryParse(raw.replaceAll('/', '-'));
+}
+
+int? _intValue(Object? value) {
+  if (value is num) return value.toInt();
+  final raw = _stringValue(value);
+  if (raw == null) return null;
+  final digits = raw.replaceAll(RegExp(r'[^0-9]'), '');
+  return digits.isEmpty ? null : int.tryParse(digits);
+}
+
+double? _ratingValue(Object? value) {
+  if (value == null) return null;
+  final raw = value is num
+      ? value.toDouble()
+      : double.tryParse(value.toString());
+  if (raw == null || raw <= 0) return null;
+  final normalized = raw > 5 ? raw / 10 : raw;
+  return normalized.clamp(0, 5).toDouble();
 }
 
 List<String> _creatorNames(Map<String, dynamic> json, String key) {

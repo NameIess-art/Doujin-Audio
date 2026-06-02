@@ -240,6 +240,9 @@ void main() {
       circleName: 'Circle',
       voiceActors: const <String>['A', 'B'],
       tags: const <String>['tag'],
+      releaseDate: DateTime(2024, 5, 6),
+      salesCount: 1234,
+      rating: 4.5,
       createdAt: DateTime.fromMillisecondsSinceEpoch(1000),
       updatedAt: DateTime.fromMillisecondsSinceEpoch(2000),
     );
@@ -250,11 +253,44 @@ void main() {
     expect(loaded?.rjCode, 'RJ123456');
     expect(loaded?.voiceActors, const <String>['A', 'B']);
     expect(loaded?.tags, const <String>['tag']);
+    expect(loaded?.releaseDate, DateTime(2024, 5, 6));
+    expect(loaded?.salesCount, 1234);
+    expect(loaded?.rating, 4.5);
 
     await appDatabase.deleteAudioDetail(target);
 
     expect(await appDatabase.loadAudioDetail(target), isNull);
   });
+
+  test(
+    'audio detail backup json keeps optional extended fields compatible',
+    () {
+      final target = AudioDetailTarget.libraryRootFolder('/library/root');
+      final detail = AudioDetail.empty(target).copyWith(
+        releaseDate: DateTime(2024, 5, 6),
+        salesCount: 1234,
+        rating: 4.5,
+      );
+
+      final restored = AudioDetail.fromBackupJson(
+        target,
+        detail.toBackupJson(),
+      );
+      expect(restored, isNotNull);
+      expect(restored.releaseDate, DateTime(2024, 5, 6));
+      expect(restored.salesCount, 1234);
+      expect(restored.rating, 4.5);
+
+      final oldRestored = AudioDetail.fromBackupJson(target, {
+        'schemaVersion': 1,
+        'type': 'audio-detail',
+      });
+      expect(oldRestored, isNotNull);
+      expect(oldRestored.releaseDate, isNull);
+      expect(oldRestored.salesCount, isNull);
+      expect(oldRestored.rating, isNull);
+    },
+  );
 
   test('schema creates audio detail target index', () async {
     final indexes = await db.rawQuery('PRAGMA index_list(audio_details)');

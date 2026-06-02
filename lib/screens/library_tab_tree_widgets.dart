@@ -720,9 +720,12 @@ class _LibraryFeaturedCardContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final i18n = context.watch<AppLanguageProvider>();
+    final fields = context.select<AudioProvider, List<CardInfoField>>(
+      (provider) => provider.cardInfoFields,
+    );
     return LibraryLikeFeaturedCardContent(
       title: title,
-      lines: _audioDetailInfoLines(i18n, detail, detailLoading),
+      lines: _audioDetailInfoLines(i18n, detail, detailLoading, fields),
       coverBuilder: coverBuilder,
       onPlay: onPlay,
       expanded: expanded,
@@ -746,9 +749,12 @@ class _SingleAudioFileCardContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final i18n = context.watch<AppLanguageProvider>();
+    final fields = context.select<AudioProvider, List<CardInfoField>>(
+      (provider) => provider.cardInfoFields,
+    );
     return LibraryLikeSingleAudioCardContent(
       title: title,
-      lines: _audioDetailInfoLines(i18n, detail, detailLoading),
+      lines: _audioDetailInfoLines(i18n, detail, detailLoading, fields),
     );
   }
 }
@@ -789,118 +795,101 @@ List<_AudioDetailInfoLineData> _audioDetailInfoLines(
   AppLanguageProvider i18n,
   AudioDetail? detail,
   bool detailLoading,
+  List<CardInfoField> fields,
 ) {
   final d = detail;
   if (detailLoading || d == null) {
     return const <_AudioDetailInfoLineData>[];
   }
 
-  return <_AudioDetailInfoLineData>[
-    if (d.rjCode.trim().isNotEmpty)
-      _AudioDetailInfoLineData('RJ', d.rjCode.trim()),
-    if (d.voiceActors.isNotEmpty)
-      _AudioDetailInfoLineData(
-        'CV',
-        AudioDetail.normalizeList(d.voiceActors).join('\uFF0C'),
-      ),
-    if (d.circleName.trim().isNotEmpty)
-      _AudioDetailInfoLineData(
-        i18n.tr('library_category_circles'),
-        d.circleName.trim(),
-      ),
-    if (d.tags.isNotEmpty) _tagsDetailInfoLine(i18n, d.tags),
-  ];
+  final result = <_AudioDetailInfoLineData>[];
+  for (final field in fields) {
+    switch (field) {
+      case CardInfoField.rjCode:
+        if (d.rjCode.trim().isNotEmpty) {
+          result.add(_AudioDetailInfoLineData('RJ', d.rjCode.trim()));
+        }
+        break;
+      case CardInfoField.voiceActors:
+        if (d.voiceActors.isNotEmpty) {
+          result.add(
+            _AudioDetailInfoLineData(
+              'CV',
+              AudioDetail.normalizeList(d.voiceActors).join('\uFF0C'),
+            ),
+          );
+        }
+        break;
+      case CardInfoField.circleName:
+        if (d.circleName.trim().isNotEmpty) {
+          result.add(
+            _AudioDetailInfoLineData(
+              i18n.tr('library_category_circles'),
+              d.circleName.trim(),
+            ),
+          );
+        }
+        break;
+      case CardInfoField.tags:
+        if (d.tags.isNotEmpty) {
+          result.add(_tagsDetailInfoLine(i18n, d.tags, fields.length));
+        }
+        break;
+      case CardInfoField.releaseDate:
+        final value = _formatLibraryCardDate(d.releaseDate);
+        if (value.isNotEmpty) {
+          result.add(
+            _AudioDetailInfoLineData(i18n.tr('card_info_release_date'), value),
+          );
+        }
+        break;
+      case CardInfoField.salesCount:
+        final value = d.salesCount;
+        if (value != null && value > 0) {
+          result.add(
+            _AudioDetailInfoLineData(
+              i18n.tr('card_info_sales_count'),
+              value.toString(),
+            ),
+          );
+        }
+        break;
+      case CardInfoField.rating:
+        final value = _formatLibraryCardRating(d.rating);
+        if (value.isNotEmpty) {
+          result.add(
+            _AudioDetailInfoLineData(i18n.tr('card_info_rating'), value),
+          );
+        }
+        break;
+    }
+  }
+  return result;
 }
 
 _AudioDetailInfoLineData _tagsDetailInfoLine(
   AppLanguageProvider i18n,
   List<String> tags,
+  int selectedFieldCount,
 ) {
   final text = AudioDetail.normalizeList(tags).join('\uFF0C');
   return _AudioDetailInfoLineData(
     i18n.tr('library_category_tags'),
     text,
-    lines: _shouldReserveTwoInfoLines(text) ? 2 : 1,
+    lines: selectedFieldCount >= CardInfoField.maxSelected ? 1 : 2,
   );
 }
 
-bool _shouldReserveTwoInfoLines(String text) => text.characters.length > 18;
-
-class _LibrarySecondaryInfoLine extends StatelessWidget {
-  const _LibrarySecondaryInfoLine({required this.icon, required this.text});
-
-  final IconData icon;
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final style =
-        Theme.of(context).textTheme.labelSmall?.copyWith(
-          fontWeight: FontWeight.w800,
-          color: cs.primary,
-          fontSize: 10,
-          height: 1.05,
-        ) ??
-        TextStyle(
-          fontWeight: FontWeight.w800,
-          color: cs.primary,
-          fontSize: 10,
-          height: 1.05,
-        );
-    return SizedBox(
-      width: double.infinity,
-      height: 14,
-      child: Row(
-        children: [
-          Icon(icon, size: 12, color: cs.primary),
-          const SizedBox(width: 5),
-          Expanded(
-            child: MarqueeText(text: text, style: style),
-          ),
-        ],
-      ),
-    );
-  }
+String _formatLibraryCardDate(DateTime? value) {
+  if (value == null) return '';
+  return '${value.year.toString().padLeft(4, '0')}-'
+      '${value.month.toString().padLeft(2, '0')}-'
+      '${value.day.toString().padLeft(2, '0')}';
 }
 
-class _LibraryTertiaryInfoLine extends StatelessWidget {
-  const _LibraryTertiaryInfoLine({required this.icon, required this.text});
-
-  final IconData icon;
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return SizedBox(
-      height: 14,
-      child: Row(
-        children: [
-          Icon(
-            icon,
-            size: 12,
-            color: cs.onSurfaceVariant.withValues(alpha: 0.65),
-          ),
-          const SizedBox(width: 5),
-          Flexible(
-            child: Text(
-              text,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                fontWeight: FontWeight.w600,
-                fontStyle: FontStyle.italic,
-                color: cs.onSurfaceVariant.withValues(alpha: 0.65),
-                fontSize: 9,
-                height: 1.05,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+String _formatLibraryCardRating(double? value) {
+  if (value == null || value <= 0) return '';
+  return value.toStringAsFixed(value.truncateToDouble() == value ? 0 : 1);
 }
 
 class _HighlightedText extends StatelessWidget {

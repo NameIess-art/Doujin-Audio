@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:path/path.dart' as path;
 import '../i18n/app_language_provider.dart';
+import '../models/card_info_field.dart';
 import '../models/library_node.dart';
 import '../models/library_entry.dart';
 import '../models/music_track.dart';
@@ -358,6 +359,7 @@ class SettingsState {
     this.autoPlayAddedSessions = true,
     this.autoCheckUpdates = false,
     this.dlsiteMetadataLanguage = AppLanguage.ja,
+    this.cardInfoFields = CardInfoField.defaults,
     this.maxCacheBytes = 300 * 1024 * 1024,
     this.recordPlaybackProgress = true,
   });
@@ -370,6 +372,7 @@ class SettingsState {
   final bool autoPlayAddedSessions;
   final bool autoCheckUpdates;
   final AppLanguage dlsiteMetadataLanguage;
+  final List<CardInfoField> cardInfoFields;
   final int maxCacheBytes;
   final bool recordPlaybackProgress;
 
@@ -384,6 +387,7 @@ class SettingsState {
         other.autoPlayAddedSessions == autoPlayAddedSessions &&
         other.autoCheckUpdates == autoCheckUpdates &&
         other.dlsiteMetadataLanguage == dlsiteMetadataLanguage &&
+        listEquals(other.cardInfoFields, cardInfoFields) &&
         other.maxCacheBytes == maxCacheBytes &&
         other.recordPlaybackProgress == recordPlaybackProgress;
   }
@@ -398,6 +402,7 @@ class SettingsState {
     autoPlayAddedSessions,
     autoCheckUpdates,
     dlsiteMetadataLanguage,
+    Object.hashAll(cardInfoFields),
     maxCacheBytes,
     recordPlaybackProgress,
   );
@@ -1423,6 +1428,7 @@ class SettingsRepository {
   bool autoPlayAddedSessions = true;
   bool autoCheckUpdates = false;
   AppLanguage dlsiteMetadataLanguage = AppLanguage.ja;
+  List<CardInfoField> cardInfoFields = CardInfoField.defaults;
   int maxCacheBytes = 300 * 1024 * 1024;
   bool keepCpuAwake = false;
   bool keepAliveHasPlayback = false;
@@ -1445,6 +1451,7 @@ class SettingsRepository {
         autoPlayAddedSessions: autoPlayAddedSessions,
         autoCheckUpdates: autoCheckUpdates,
         dlsiteMetadataLanguage: dlsiteMetadataLanguage,
+        cardInfoFields: List<CardInfoField>.unmodifiable(cardInfoFields),
         maxCacheBytes: maxCacheBytes,
         recordPlaybackProgress: recordPlaybackProgress,
       ),

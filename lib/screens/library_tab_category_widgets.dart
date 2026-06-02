@@ -428,7 +428,6 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
       borderRadius: BorderRadius.circular(14),
     );
     const cardHeight = _FolderNodeWidgetState._rootFolderTileHeight;
-    final countText = i18n.tr('audio_count', {'count': entry.tracks.length});
     final folderNode = folder;
 
     if (entry.isFolder && folderNode != null) {
@@ -517,31 +516,17 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
             ? SizedBox(
                 height: cardHeight,
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 5, 6, 5),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: _AudioLibraryCategoryEntryTitle(
-                          entry: entry,
-                          secondaryIcon: secondaryIcon,
-                          secondaryText: secondaryText,
-                          countText: countText,
-                        ),
-                      ),
-                      IconButton(
-                        onPressed: firstTrack == null
-                            ? null
-                            : () => _play(context, provider),
-                        style: IconButton.styleFrom(
-                          foregroundColor: cs.primary,
-                          minimumSize: const Size(40, 44),
-                          maximumSize: const Size(40, 44),
-                          padding: EdgeInsets.zero,
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        ),
-                        icon: const Icon(Icons.add_circle_rounded, size: 25),
-                      ),
-                    ],
+                  padding: const EdgeInsets.fromLTRB(12, 2, 12, 2),
+                  child: _RootFolderCardContent(
+                    folderPath: entry.path,
+                    folderName: entry.title,
+                    detail: entry.detail,
+                    detailLoading: false,
+                    expanded: false,
+                    hasChildren: false,
+                    onPlay: firstTrack == null
+                        ? () {}
+                        : () => _play(context, provider),
                   ),
                 ),
               )
@@ -593,65 +578,6 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
                 ),
               ),
       ),
-    );
-  }
-}
-
-class _AudioLibraryCategoryEntryTitle extends StatelessWidget {
-  const _AudioLibraryCategoryEntryTitle({
-    required this.entry,
-    required this.secondaryIcon,
-    required this.secondaryText,
-    required this.countText,
-  });
-
-  final AudioLibraryCategoryEntry entry;
-  final IconData secondaryIcon;
-  final String secondaryText;
-  final String countText;
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final titleStyle =
-        Theme.of(context).textTheme.titleMedium?.copyWith(
-          fontWeight: FontWeight.w900,
-          fontSize: 14,
-          height: 1.06,
-          color: cs.onSurface,
-        ) ??
-        const TextStyle();
-    return Row(
-      children: [
-        if (entry.isFolder) ...[
-          _LibraryCoverThumbnail(folderPath: entry.path),
-          const SizedBox(width: 14),
-        ],
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              LibraryLikeTwoLineMarqueeText(
-                text: entry.title,
-                style: titleStyle,
-              ),
-              const SizedBox(height: 5),
-              _LibrarySecondaryInfoLine(
-                icon: secondaryIcon,
-                text: secondaryText,
-              ),
-              if (entry.isFolder) ...[
-                const SizedBox(height: 4),
-                _LibraryTertiaryInfoLine(
-                  icon: Icons.library_music_rounded,
-                  text: countText,
-                ),
-              ],
-            ],
-          ),
-        ),
-      ],
     );
   }
 }

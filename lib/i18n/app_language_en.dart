@@ -21,8 +21,10 @@ const Map<String, String> appLanguageEn = {
   'more_actions': 'More actions',
   'batch_metadata': 'Batch complete metadata',
   'batch_metadata_hint':
-      'Fetch DLsite work information from top to bottom. Review each work before moving to the next one.',
-  'batch_metadata_missing': 'Missing data only',
+      'Fetch ASMR.ONE work information first, then fall back to DLsite. Review each work before moving to the next one.',
+  'batch_metadata_no_metadata': 'Works missing all data',
+  'batch_metadata_any_missing': 'Works with missing data',
+  'batch_metadata_has_rj_code': 'Works with an RJ code',
   'batch_metadata_all': 'All data',
   'batch_metadata_start': 'Start',
   'batch_metadata_progress': '{current} / {total}',
@@ -212,6 +214,9 @@ const Map<String, String> appLanguageEn = {
   'audio_detail_circle_name': 'Circle',
   'audio_detail_voice_actors': 'Voice actors',
   'audio_detail_tags': 'Tags',
+  'audio_detail_release_date': 'Release date',
+  'audio_detail_sales_count': 'Sales',
+  'audio_detail_rating': 'Rating',
   'audio_detail_empty': 'Not filled',
   'audio_detail_edit_title': 'Edit {name}',
   'audio_detail_multi_hint':
@@ -224,8 +229,14 @@ const Map<String, String> appLanguageEn = {
   'audio_detail_save_failed': 'Save failed. Please try again.',
   'audio_detail_load_failed': 'Load failed. Please try again.',
   'audio_detail_fetch_info': 'Fetch info',
-  'audio_detail_fetch_confirm':
-      'Fetch work information from DLsite using the RJ number first. If the RJ number is empty or invalid, use the folder/file name or work title for a similar-title search. You can edit it on the next page before applying it.',
+  'audio_detail_fetch_scope_title': 'Choose fetch range',
+  'audio_detail_fetch_scope_hint':
+      'ASMR.ONE is checked first, then DLsite is used as a fallback. Choose which fields to write.',
+  'audio_detail_fetch_scope_all_hint':
+      'Overwrite current details with the fetched metadata.',
+  'audio_detail_fetch_scope_missing_hint':
+      'Only fill empty details and keep existing values unchanged.',
+  'metadata_scope_missing': 'Missing data',
   'audio_detail_fetch_missing_query':
       'Fill in an RJ number, folder/file name, or work title first.',
   'audio_detail_cover_swipe_hint': 'Swipe left or right to change',
@@ -238,10 +249,10 @@ const Map<String, String> appLanguageEn = {
   'audio_detail_rename_done': 'Renamed.',
   'audio_detail_rename_failed':
       'Rename failed. Check whether the file exists or is in use.',
-  'dlsite_review_title': 'Review DLsite info',
+  'dlsite_review_title': 'Review work data',
   'dlsite_save_cover': 'Save cover to folder',
   'dlsite_fetch_failed':
-      'Failed to fetch DLsite info. Check the RJ number, folder/file name, work title, or network and try again.',
+      'Failed to fetch work data. Check the RJ number, folder/file name, work title, or network and try again.',
   'dlsite_cover_save_failed':
       'Info was saved, but the cover could not be saved.',
   'confirm': 'Confirm',
@@ -292,6 +303,13 @@ const Map<String, String> appLanguageEn = {
   'show_playback_card': 'Show playback card',
   'show_playback_card_subtitle':
       'Show the current playback card at the bottom of the screen.',
+  'section_detail_info': 'Details',
+  'card_info_display': 'Card info display',
+  'card_info_display_subtitle': 'Selected {count} / {max}; up to five items.',
+  'card_info_none': 'No detail fields',
+  'card_info_release_date': 'Release',
+  'card_info_sales_count': 'Sales',
+  'card_info_rating': 'Rating',
   'auto_play_added_sessions': 'Play immediately after adding',
   'auto_play_added_sessions_subtitle':
       'Create library-added audio sessions in the playing state.',

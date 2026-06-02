@@ -149,6 +149,18 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
     );
   }
 
+  void _showCardInfoFieldsSettings(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (_) => const _CardInfoFieldsSettingsSheet(),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     super.build(context);
@@ -324,7 +336,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                       onTap: () => _showSubtitleWindowSettings(context),
                     ),
                     const SizedBox(height: 12),
-                    _SectionHeader(title: i18n.tr('section_playback')),
+                    _SectionHeader(title: i18n.tr('section_detail_info')),
                     const SizedBox(height: 2),
                     Consumer(
                       builder: (context, ref, _) {
@@ -378,6 +390,55 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                         );
                       },
                     ),
+                    const SizedBox(height: 2),
+                    Consumer(
+                      builder: (context, ref, _) {
+                        final fields = ref.watch(
+                          settingsStateProvider.select(
+                            (s) =>
+                                s.valueOrNull?.cardInfoFields ??
+                                CardInfoField.defaults,
+                          ),
+                        );
+                        final summary = fields.isEmpty
+                            ? i18n.tr('card_info_none')
+                            : fields
+                                  .map(
+                                    (field) => _cardInfoFieldLabel(i18n, field),
+                                  )
+                                  .join('\uFF0C');
+                        return ListTile(
+                          title: Text(i18n.tr('card_info_display')),
+                          subtitle: Text(summary, style: descStyle),
+                          leading: Container(
+                            width: 38,
+                            height: 38,
+                            decoration: BoxDecoration(
+                              color: cs.secondaryContainer,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Icon(
+                              Icons.badge_rounded,
+                              color: cs.onSecondaryContainer,
+                            ),
+                          ),
+                          trailing: Icon(
+                            Icons.chevron_right_rounded,
+                            size: 20,
+                            color: cs.onSurfaceVariant,
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          onTap: () => _showCardInfoFieldsSettings(context),
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    _SectionHeader(title: i18n.tr('section_playback')),
                     const SizedBox(height: 2),
                     Consumer(
                       builder: (context, ref, _) {

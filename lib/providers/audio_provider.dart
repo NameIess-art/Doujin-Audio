@@ -15,6 +15,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../i18n/app_language_provider.dart';
 import '../models/audio_detail.dart';
 import '../models/audio_library_category.dart';
+import '../models/card_info_field.dart';
 import '../models/dlsite_metadata.dart';
 import '../models/library_entry.dart';
 import '../models/library_node.dart';
@@ -28,6 +29,7 @@ import '../services/audio_database_repository.dart';
 import '../services/audio_detail_repository.dart';
 import '../services/audio_state_services.dart';
 import '../services/app_database.dart';
+import '../services/asmr_metadata_service.dart';
 import '../services/dlsite_metadata_service.dart';
 import '../services/library_organizer.dart';
 import '../services/media_file_support.dart';
@@ -42,6 +44,7 @@ export '../models/library_node.dart';
 export '../models/library_entry.dart';
 export '../models/audio_detail.dart';
 export '../models/audio_library_category.dart';
+export '../models/card_info_field.dart';
 export '../models/dlsite_metadata.dart';
 export '../models/music_track.dart';
 export '../models/playback_mode.dart';
@@ -114,6 +117,7 @@ class AudioProvider with ChangeNotifier {
   final AudioDatabaseRepository _audioDatabaseRepository;
   final AudioDetailRepository _audioDetailRepository;
   final DlsiteMetadataService _dlsiteMetadataService;
+  final AsmrMetadataService _asmrMetadataService;
   final NativePlaybackRepository _nativePlaybackRepository;
   final PlaybackCommandRunner _playbackCommandRunner;
   final PowerPlatformService _powerPlatformService;
@@ -486,6 +490,7 @@ class AudioProvider with ChangeNotifier {
     AudioDatabaseRepository? audioDatabaseRepository,
     AudioDetailRepository? audioDetailRepository,
     DlsiteMetadataService? dlsiteMetadataService,
+    AsmrMetadataService? asmrMetadataService,
     NativePlaybackRepository? nativePlaybackRepository,
     PlaybackCommandRunner playbackCommandRunner = const PlaybackCommandRunner(),
     PowerPlatformService? powerPlatformService,
@@ -506,6 +511,7 @@ class AudioProvider with ChangeNotifier {
             databaseRepository: resolvedAudioDatabaseRepository,
           ),
       dlsiteMetadataService: dlsiteMetadataService ?? DlsiteMetadataService(),
+      asmrMetadataService: asmrMetadataService ?? AsmrMetadataService(),
       nativePlaybackRepository:
           nativePlaybackRepository ?? NativePlaybackRepository(),
       playbackCommandRunner: playbackCommandRunner,
@@ -527,6 +533,7 @@ class AudioProvider with ChangeNotifier {
     AudioDatabaseRepository? audioDatabaseRepository,
     AudioDetailRepository? audioDetailRepository,
     DlsiteMetadataService? dlsiteMetadataService,
+    AsmrMetadataService? asmrMetadataService,
     NativePlaybackRepository? nativePlaybackRepository,
     PlaybackCommandRunner playbackCommandRunner = const PlaybackCommandRunner(),
     PowerPlatformService? powerPlatformService,
@@ -548,6 +555,7 @@ class AudioProvider with ChangeNotifier {
             databaseRepository: resolvedAudioDatabaseRepository,
           ),
       dlsiteMetadataService: dlsiteMetadataService ?? DlsiteMetadataService(),
+      asmrMetadataService: asmrMetadataService ?? AsmrMetadataService(),
       nativePlaybackRepository:
           nativePlaybackRepository ?? NativePlaybackRepository(),
       playbackCommandRunner: playbackCommandRunner,
@@ -568,6 +576,7 @@ class AudioProvider with ChangeNotifier {
     required AudioDatabaseRepository audioDatabaseRepository,
     required AudioDetailRepository audioDetailRepository,
     required DlsiteMetadataService dlsiteMetadataService,
+    required AsmrMetadataService asmrMetadataService,
     required NativePlaybackRepository nativePlaybackRepository,
     required PlaybackCommandRunner playbackCommandRunner,
     required PowerPlatformService powerPlatformService,
@@ -582,6 +591,7 @@ class AudioProvider with ChangeNotifier {
        _audioDatabaseRepository = audioDatabaseRepository,
        _audioDetailRepository = audioDetailRepository,
        _dlsiteMetadataService = dlsiteMetadataService,
+       _asmrMetadataService = asmrMetadataService,
        _nativePlaybackRepository = nativePlaybackRepository,
        _playbackCommandRunner = playbackCommandRunner,
        _powerPlatformService = powerPlatformService,

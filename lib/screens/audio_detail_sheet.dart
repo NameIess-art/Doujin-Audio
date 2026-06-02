@@ -229,12 +229,10 @@ class _AudioDetailSheetState extends State<AudioDetailSheet> {
       );
       return;
     }
-    final confirmed = await _confirmAction(
-      title: i18n.tr('audio_detail_fetch_info'),
-      message: i18n.tr('audio_detail_fetch_confirm'),
-      confirmLabel: i18n.tr('audio_detail_fetch_info'),
+    final scope = await Navigator.of(context).push<_AudioDetailFetchScope>(
+      MaterialPageRoute(builder: (_) => const _AudioDetailFetchScopePage()),
     );
-    if (!confirmed || !mounted) return;
+    if (scope == null || !mounted) return;
 
     final result = await Navigator.of(context).push<DlsiteMetadataReviewResult>(
       MaterialPageRoute(
@@ -242,6 +240,7 @@ class _AudioDetailSheetState extends State<AudioDetailSheet> {
           detail: detail,
           rjCode: query.rjCode,
           searchTitles: query.searchTitles,
+          missingOnly: scope == _AudioDetailFetchScope.missing,
         ),
       ),
     );
@@ -833,13 +832,56 @@ class _AudioDetailRow extends StatelessWidget {
   }
 }
 
+enum _AudioDetailFetchScope { all, missing }
+
+class _AudioDetailFetchScopePage extends StatelessWidget {
+  const _AudioDetailFetchScopePage();
+
+  @override
+  Widget build(BuildContext context) {
+    final i18n = context.watch<AppLanguageProvider>();
+    return Scaffold(
+      appBar: AppBar(title: Text(i18n.tr('audio_detail_fetch_scope_title'))),
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+          children: [
+            Text(
+              i18n.tr('audio_detail_fetch_scope_hint'),
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 12),
+            ListTile(
+              leading: const Icon(Icons.select_all_rounded),
+              title: Text(i18n.tr('batch_metadata_all')),
+              subtitle: Text(i18n.tr('audio_detail_fetch_scope_all_hint')),
+              onTap: () =>
+                  Navigator.of(context).pop(_AudioDetailFetchScope.all),
+            ),
+            ListTile(
+              leading: const Icon(Icons.playlist_add_check_rounded),
+              title: Text(i18n.tr('metadata_scope_missing')),
+              subtitle: Text(i18n.tr('audio_detail_fetch_scope_missing_hint')),
+              onTap: () =>
+                  Navigator.of(context).pop(_AudioDetailFetchScope.missing),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 enum _AudioDetailField {
   targetName,
   rjCode,
   workTitle,
   circleName,
   voiceActors,
-  tags;
+  tags,
+  releaseDate,
+  salesCount,
+  rating;
 
   bool get isMulti =>
       this == _AudioDetailField.voiceActors || this == _AudioDetailField.tags;
@@ -855,6 +897,9 @@ enum _AudioDetailField {
       _AudioDetailField.circleName => i18n.tr('audio_detail_circle_name'),
       _AudioDetailField.voiceActors => i18n.tr('audio_detail_voice_actors'),
       _AudioDetailField.tags => i18n.tr('audio_detail_tags'),
+      _AudioDetailField.releaseDate => i18n.tr('audio_detail_release_date'),
+      _AudioDetailField.salesCount => i18n.tr('audio_detail_sales_count'),
+      _AudioDetailField.rating => i18n.tr('audio_detail_rating'),
     };
   }
 
@@ -868,6 +913,9 @@ enum _AudioDetailField {
         _multiValueSeparator,
       ),
       _AudioDetailField.tags => detail.tags.join(_multiValueSeparator),
+      _AudioDetailField.releaseDate => _formatDateValue(detail.releaseDate),
+      _AudioDetailField.salesCount => detail.salesCount?.toString() ?? '',
+      _AudioDetailField.rating => _formatRatingValue(detail.rating),
     };
   }
 
@@ -901,8 +949,42 @@ enum _AudioDetailField {
       _AudioDetailField.tags => detail.copyWith(
         tags: _splitMultiValue(rawValue),
       ),
+      _AudioDetailField.releaseDate => detail.copyWith(
+        releaseDate: _parseDateValue(trimmed),
+      ),
+      _AudioDetailField.salesCount => detail.copyWith(
+        salesCount: trimmed.isEmpty ? null : int.tryParse(trimmed),
+      ),
+      _AudioDetailField.rating => detail.copyWith(
+        rating: trimmed.isEmpty ? null : double.tryParse(trimmed),
+      ),
     };
   }
+}
+
+String _formatDateValue(DateTime? value) {
+  if (value == null) return '';
+  return '${value.year.toString().padLeft(4, '0')}-'
+      '${value.month.toString().padLeft(2, '0')}-'
+      '${value.day.toString().padLeft(2, '0')}';
+}
+
+DateTime? _parseDateValue(String value) {
+  if (value.isEmpty) return null;
+  final match = RegExp(r'^(\d{4})-(\d{1,2})-(\d{1,2})$').firstMatch(value);
+  if (match == null) return DateTime.tryParse(value);
+  final year = int.parse(match.group(1)!);
+  final month = int.parse(match.group(2)!);
+  final day = int.parse(match.group(3)!);
+  return DateTime(year, month, day);
+}
+
+String _formatRatingValue(double? value) {
+  if (value == null || value <= 0) return '';
+  final rounded = value.toStringAsFixed(
+    value.truncateToDouble() == value ? 0 : 1,
+  );
+  return rounded;
 }
 
 String _targetDisplayName(AudioDetailTarget target) {

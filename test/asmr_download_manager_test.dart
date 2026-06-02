@@ -1,6 +1,8 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:nameless_audio/models/audio_detail.dart';
 import 'package:nameless_audio/models/asmr_models.dart';
 import 'package:nameless_audio/services/asmr_download_manager.dart';
 
@@ -136,10 +138,65 @@ void main() {
       manager.dispose();
     },
   );
+
+  test('download backup includes ASMR.ONE extended metadata', () async {
+    final tempDir = await Directory.systemTemp.createTemp(
+      'asmr_download_backup_',
+    );
+    final manager = AsmrDownloadManager();
+    final work = _work(
+      releaseDate: DateTime(2024, 5, 6),
+      dlCount: 1234,
+      rating: 4.5,
+    );
+    try {
+      await manager.startDownload(
+        work: work,
+        selectedRoots: const <AsmrTrackFile>[
+          AsmrTrackFile(
+            hash: 'folder',
+            title: 'Folder',
+            type: 'folder',
+            streamUrl: null,
+            downloadUrl: null,
+            lowQualityUrl: null,
+            duration: Duration.zero,
+            size: 0,
+            children: <AsmrTrackFile>[],
+            workId: 1,
+            workTitle: 'Work',
+            sourceId: 'RJ123456',
+            relativePath: 'Folder',
+          ),
+        ],
+        destinationRoot: tempDir.path,
+        conflictPolicy: AsmrDownloadConflictPolicy.skip,
+      );
+
+      final backupPath =
+          '${tempDir.path}${Platform.pathSeparator}RJ123456 - Work'
+          '${Platform.pathSeparator}nameless-audio.json';
+      final backup = await File(backupPath).readAsString();
+      final detail = AudioDetail.fromBackupJson(
+        AudioDetailTarget.libraryRootFolder(
+          '${tempDir.path}${Platform.pathSeparator}RJ123456 - Work',
+        ),
+        Map<String, dynamic>.from(jsonDecode(backup) as Map),
+      );
+      expect(detail.releaseDate, DateTime(2024, 5, 6));
+      expect(detail.salesCount, 1234);
+      expect(detail.rating, 4.5);
+    } finally {
+      manager.dispose();
+      if (await tempDir.exists()) {
+        await tempDir.delete(recursive: true);
+      }
+    }
+  });
 }
 
-AsmrWork _work() {
-  return const AsmrWork(
+AsmrWork _work({DateTime? releaseDate, int dlCount = 0, double rating = 0}) {
+  return AsmrWork(
     id: 1,
     title: 'Work',
     circleName: 'Circle',
@@ -149,13 +206,13 @@ AsmrWork _work() {
     coverUrl: '',
     thumbnailUrl: '',
     mainCoverUrl: '',
-    releaseDate: null,
+    releaseDate: releaseDate,
     createDate: null,
     duration: Duration.zero,
-    dlCount: 0,
+    dlCount: dlCount,
     reviewCount: 0,
-    rating: 0,
-    voiceActors: <String>[],
-    tags: <String>[],
+    rating: rating,
+    voiceActors: const <String>[],
+    tags: const <String>[],
   );
 }

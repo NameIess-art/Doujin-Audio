@@ -1344,6 +1344,45 @@ void main() {
     );
   });
 
+  group('metadata apply scope', () {
+    test(
+      'missingOnly fills empty fields without overwriting existing data',
+      () async {
+        final target = AudioDetailTarget.libraryRootFolder('/library/work');
+        final detail = AudioDetail.empty(target).copyWith(
+          rjCode: 'RJ111111',
+          workTitle: 'Existing title',
+          voiceActors: const <String>['Existing voice'],
+        );
+
+        final result = await provider.applyDlsiteMetadata(
+          detail,
+          DlsiteMetadata(
+            rjCode: 'RJ222222',
+            workTitle: 'Fetched title',
+            circleName: 'Fetched circle',
+            voiceActors: const <String>['Fetched voice'],
+            tags: const <String>['ASMR'],
+            releaseDate: DateTime(2024, 5, 6),
+            salesCount: 1234,
+            rating: 4.5,
+          ),
+          saveCover: false,
+          missingOnly: true,
+        );
+
+        expect(result.detail.rjCode, 'RJ111111');
+        expect(result.detail.workTitle, 'Existing title');
+        expect(result.detail.voiceActors, const <String>['Existing voice']);
+        expect(result.detail.circleName, 'Fetched circle');
+        expect(result.detail.tags, const <String>['ASMR']);
+        expect(result.detail.releaseDate, DateTime(2024, 5, 6));
+        expect(result.detail.salesCount, 1234);
+        expect(result.detail.rating, 4.5);
+      },
+    );
+  });
+
   group('cover loading state', () {
     test(
       'reports a folder cover lookup as loading only while in flight',

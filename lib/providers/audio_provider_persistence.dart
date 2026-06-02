@@ -184,6 +184,9 @@ extension AudioProviderPersistence on AudioProvider {
       _dlsiteMetadataLanguage = _decodeDlsiteMetadataLanguage(
         map['dlsiteMetadataLanguage'],
       );
+      _settingsRepository.cardInfoFields = CardInfoField.decode(
+        map['cardInfoFields'],
+      );
       _maxCacheBytes =
           (map['maxCacheBytes'] as num?)?.toInt() ??
           AppCacheService.defaultMaxCacheBytes;
@@ -204,6 +207,9 @@ extension AudioProviderPersistence on AudioProvider {
         'autoCheckUpdates': _autoCheckUpdates,
         'recordPlaybackProgress': _settingsRepository.recordPlaybackProgress,
         'dlsiteMetadataLanguage': _dlsiteMetadataLanguage.name,
+        'cardInfoFields': _settingsRepository.cardInfoFields
+            .map((field) => field.name)
+            .toList(growable: false),
         'maxCacheBytes': _maxCacheBytes,
       });
       await prefs.setString(_kPlaybackSettingsKey, encoded);
@@ -482,6 +488,14 @@ extension AudioProviderPersistence on AudioProvider {
   Future<void> setDlsiteMetadataLanguage(AppLanguage language) async {
     if (_dlsiteMetadataLanguage == language) return;
     _dlsiteMetadataLanguage = language;
+    _notifySettingsChanged();
+    unawaited(_savePlaybackSettings());
+  }
+
+  Future<void> setCardInfoFields(Iterable<CardInfoField> fields) async {
+    final normalized = CardInfoField.normalize(fields);
+    if (listEquals(_settingsRepository.cardInfoFields, normalized)) return;
+    _settingsRepository.cardInfoFields = normalized;
     _notifySettingsChanged();
     unawaited(_savePlaybackSettings());
   }

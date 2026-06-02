@@ -795,3 +795,92 @@ class _RgbSliderRowState extends State<_RgbSliderRow> {
     );
   }
 }
+
+class _CardInfoFieldsSettingsSheet extends ConsumerWidget {
+  const _CardInfoFieldsSettingsSheet();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final i18n = context.watch<AppLanguageProvider>();
+    final cs = Theme.of(context).colorScheme;
+    final audioProvider = ref.read(audioProviderFacadeProvider);
+    final selected = ref.watch(
+      settingsStateProvider.select(
+        (state) => state.valueOrNull?.cardInfoFields ?? CardInfoField.defaults,
+      ),
+    );
+    final selectedSet = selected.toSet();
+
+    void toggle(CardInfoField field) {
+      final next = selected.toList(growable: true);
+      if (selectedSet.contains(field)) {
+        next.remove(field);
+      } else {
+        if (next.length >= CardInfoField.maxSelected) return;
+        next.add(field);
+      }
+      audioProvider.setCardInfoFields(next);
+    }
+
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              i18n.tr('card_info_display'),
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              i18n.tr('card_info_display_subtitle', {
+                'count': selected.length.toString(),
+                'max': CardInfoField.maxSelected.toString(),
+              }),
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+            ),
+            const SizedBox(height: 12),
+            for (final field in CardInfoField.values)
+              CheckboxListTile(
+                value: selectedSet.contains(field),
+                onChanged:
+                    selectedSet.contains(field) ||
+                        selected.length < CardInfoField.maxSelected
+                    ? (_) => toggle(field)
+                    : null,
+                title: Text(_cardInfoFieldLabel(i18n, field)),
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+              ),
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerRight,
+              child: FilledButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: Text(i18n.tr('done')),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+String _cardInfoFieldLabel(AppLanguageProvider i18n, CardInfoField field) {
+  return switch (field) {
+    CardInfoField.rjCode => i18n.tr('audio_detail_rj_code'),
+    CardInfoField.voiceActors => i18n.tr('audio_detail_voice_actors'),
+    CardInfoField.circleName => i18n.tr('audio_detail_circle_name'),
+    CardInfoField.tags => i18n.tr('audio_detail_tags'),
+    CardInfoField.releaseDate => i18n.tr('audio_detail_release_date'),
+    CardInfoField.salesCount => i18n.tr('audio_detail_sales_count'),
+    CardInfoField.rating => i18n.tr('audio_detail_rating'),
+  };
+}

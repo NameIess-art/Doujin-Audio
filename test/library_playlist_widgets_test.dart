@@ -6,9 +6,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/i18n/app_language_provider.dart';
 import 'package:nameless_audio/providers/audio_provider.dart';
 import 'package:nameless_audio/providers/audio_provider_riverpod.dart';
+import 'package:nameless_audio/screens/audio_detail_sheet.dart';
 import 'package:nameless_audio/screens/dlsite_metadata_batch_page.dart';
 import 'package:nameless_audio/screens/dlsite_metadata_review_page.dart';
 import 'package:nameless_audio/screens/library_tab.dart';
+import 'package:nameless_audio/screens/settings_tab.dart';
+import 'package:nameless_audio/services/asmr_metadata_service.dart';
 import 'package:nameless_audio/services/audio_database_repository.dart';
 import 'package:nameless_audio/services/audio_state_services.dart';
 import 'package:nameless_audio/services/dlsite_metadata_service.dart';
@@ -16,6 +19,7 @@ import 'package:nameless_audio/services/native_playback_repository.dart';
 import 'package:nameless_audio/services/playback_command_runner.dart';
 import 'package:nameless_audio/services/playback_notification_handler.dart';
 import 'package:nameless_audio/services/playback_notification_service.dart';
+import 'package:nameless_audio/theme/theme_provider.dart';
 import 'package:provider/provider.dart' as legacy_provider;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -65,6 +69,9 @@ Widget _buildTestApp({
       providers: [
         legacy_provider.ChangeNotifierProvider.value(value: languageProvider),
         legacy_provider.ChangeNotifierProvider.value(value: audioProvider),
+        legacy_provider.ChangeNotifierProvider<ThemeProvider>(
+          create: (_) => ThemeProvider(),
+        ),
       ],
       child: MaterialApp(home: Scaffold(body: child)),
     ),
@@ -83,6 +90,28 @@ class _FakeDlsiteMetadataService extends DlsiteMetadataService {
       circleName: 'Circle',
       voiceActors: const <String>['Voice'],
       tags: const <String>['ASMR'],
+      releaseDate: DateTime(2024, 5, 6),
+      salesCount: 1234,
+      rating: 4.5,
+    );
+  }
+}
+
+class _FakeAsmrMetadataService extends AsmrMetadataService {
+  @override
+  Future<DlsiteMetadata> fetchByRjCode(
+    String rjCode, {
+    AppLanguage language = AppLanguage.zh,
+  }) async {
+    return DlsiteMetadata(
+      rjCode: rjCode,
+      workTitle: 'ASMR fetched title',
+      circleName: 'ASMR Circle',
+      voiceActors: const <String>['ASMR Voice'],
+      tags: const <String>['ASMR'],
+      releaseDate: DateTime(2024, 5, 6),
+      salesCount: 1234,
+      rating: 4.5,
     );
   }
 }
@@ -400,6 +429,102 @@ void main() {
     expect(find.text('child'), findsNothing);
   });
 
+  testWidgets('settings detail section configures card info fields', (
+    WidgetTester tester,
+  ) async {
+    final handler = PlaybackNotificationHandler();
+    final notificationService = PlaybackNotificationService(handler);
+    final audioDatabaseRepository = AudioDatabaseRepository();
+    final nativePlaybackRepository = NativePlaybackRepository();
+    const playbackCommandRunner = PlaybackCommandRunner();
+    final libraryService = LibraryService();
+    final playbackService = PlaybackSessionService();
+    final timerService = TimerService();
+    final notificationCoordinatorService = NotificationCoordinatorService();
+    final settingsRepository = SettingsRepository();
+    final languageProvider = AppLanguageProvider();
+    final audioProvider = AudioProvider.test(
+      notificationService: notificationService,
+      audioDatabaseRepository: audioDatabaseRepository,
+      nativePlaybackRepository: nativePlaybackRepository,
+      libraryService: libraryService,
+      playbackService: playbackService,
+      timerService: timerService,
+      notificationStateService: notificationCoordinatorService,
+      settingsRepository: settingsRepository,
+    );
+
+    addTearDown(audioProvider.dispose);
+
+    await tester.pumpWidget(
+      _buildTestApp(
+        audioProvider: audioProvider,
+        audioDatabaseRepository: audioDatabaseRepository,
+        nativePlaybackRepository: nativePlaybackRepository,
+        playbackCommandRunner: playbackCommandRunner,
+        libraryService: libraryService,
+        playbackService: playbackService,
+        timerService: timerService,
+        notificationCoordinatorService: notificationCoordinatorService,
+        settingsRepository: settingsRepository,
+        languageProvider: languageProvider,
+        child: const SettingsTab(),
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      find.text(languageProvider.tr('section_detail_info')),
+      findsOneWidget,
+    );
+    expect(
+      find.text(languageProvider.tr('dlsite_metadata_language')),
+      findsOneWidget,
+    );
+    expect(find.text(languageProvider.tr('card_info_display')), findsOneWidget);
+
+    await tester.scrollUntilVisible(
+      find.text(languageProvider.tr('card_info_display')),
+      300,
+    );
+    await tester.tap(find.text(languageProvider.tr('card_info_display')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(
+        languageProvider.tr('card_info_display_subtitle', {
+          'count': '4',
+          'max': '5',
+        }),
+      ),
+      findsOneWidget,
+    );
+
+    await tester.tap(
+      find.widgetWithText(
+        CheckboxListTile,
+        languageProvider.tr('audio_detail_release_date'),
+      ),
+    );
+    await tester.pump();
+
+    expect(audioProvider.cardInfoFields, hasLength(CardInfoField.maxSelected));
+    final salesTile = tester.widget<CheckboxListTile>(
+      find.widgetWithText(
+        CheckboxListTile,
+        languageProvider.tr('audio_detail_sales_count'),
+      ),
+    );
+    final ratingTile = tester.widget<CheckboxListTile>(
+      find.widgetWithText(
+        CheckboxListTile,
+        languageProvider.tr('audio_detail_rating'),
+      ),
+    );
+    expect(salesTile.onChanged, isNull);
+    expect(ratingTile.onChanged, isNull);
+  });
+
   testWidgets(
     'batch metadata page defaults to missing works and shows counts',
     (WidgetTester tester) async {
@@ -486,7 +611,15 @@ void main() {
       await tester.pump(const Duration(milliseconds: 100));
 
       expect(
-        find.text('${languageProvider.tr('batch_metadata_missing')} (1)'),
+        find.text('${languageProvider.tr('batch_metadata_any_missing')} (1)'),
+        findsOneWidget,
+      );
+      expect(
+        find.text('${languageProvider.tr('batch_metadata_no_metadata')} (1)'),
+        findsOneWidget,
+      );
+      expect(
+        find.text('${languageProvider.tr('batch_metadata_has_rj_code')} (1)'),
         findsOneWidget,
       );
       expect(
@@ -500,12 +633,12 @@ void main() {
             )
             .groupValue
             .toString(),
-        contains('missingOnly'),
+        contains('anyMissing'),
       );
     },
   );
 
-  testWidgets('DLsite review batch mode shows progress and skip action', (
+  testWidgets('metadata review batch mode shows progress and skip action', (
     WidgetTester tester,
   ) async {
     final handler = PlaybackNotificationHandler();
@@ -529,6 +662,7 @@ void main() {
       notificationStateService: notificationCoordinatorService,
       settingsRepository: settingsRepository,
       dlsiteMetadataService: _FakeDlsiteMetadataService(),
+      asmrMetadataService: _FakeAsmrMetadataService(),
     );
 
     addTearDown(audioProvider.dispose);
@@ -560,7 +694,7 @@ void main() {
       ),
     );
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pumpAndSettle();
 
     expect(
       find.text(
@@ -569,6 +703,99 @@ void main() {
       findsOneWidget,
     );
     expect(find.text(languageProvider.tr('skip')), findsOneWidget);
+    expect(
+      find.text(languageProvider.tr('audio_detail_release_date')),
+      findsOneWidget,
+    );
+    expect(
+      find.text(languageProvider.tr('audio_detail_sales_count')),
+      findsOneWidget,
+    );
+    expect(
+      find.text(languageProvider.tr('audio_detail_rating')),
+      findsOneWidget,
+    );
+    final textFieldValues = tester
+        .widgetList<TextField>(find.byType(TextField))
+        .map((field) => field.controller?.text)
+        .whereType<String>()
+        .toSet();
+    expect(textFieldValues, contains('ASMR fetched title'));
+    expect(textFieldValues, contains('2024-05-06'));
+    expect(textFieldValues, contains('1234'));
+    expect(textFieldValues, contains('4.5'));
+  });
+
+  testWidgets('audio detail fetch opens metadata scope page', (
+    WidgetTester tester,
+  ) async {
+    final handler = PlaybackNotificationHandler();
+    final notificationService = PlaybackNotificationService(handler);
+    final audioDatabaseRepository = AudioDatabaseRepository();
+    final nativePlaybackRepository = NativePlaybackRepository();
+    const playbackCommandRunner = PlaybackCommandRunner();
+    final libraryService = LibraryService();
+    final playbackService = PlaybackSessionService();
+    final timerService = TimerService();
+    final notificationCoordinatorService = NotificationCoordinatorService();
+    final settingsRepository = SettingsRepository();
+    final languageProvider = AppLanguageProvider();
+    final audioProvider = AudioProvider.test(
+      notificationService: notificationService,
+      audioDatabaseRepository: audioDatabaseRepository,
+      nativePlaybackRepository: nativePlaybackRepository,
+      libraryService: libraryService,
+      playbackService: playbackService,
+      timerService: timerService,
+      notificationStateService: notificationCoordinatorService,
+      settingsRepository: settingsRepository,
+    );
+
+    addTearDown(audioProvider.dispose);
+    const target = AudioDetailTarget(
+      targetType: AudioDetailTargetType.libraryRootFolder,
+      targetPath: '/library/Work',
+    );
+    await tester.runAsync(
+      () => audioProvider.saveAudioDetail(AudioDetail.empty(target)),
+    );
+
+    await tester.pumpWidget(
+      _buildTestApp(
+        audioProvider: audioProvider,
+        audioDatabaseRepository: audioDatabaseRepository,
+        nativePlaybackRepository: nativePlaybackRepository,
+        playbackCommandRunner: playbackCommandRunner,
+        libraryService: libraryService,
+        playbackService: playbackService,
+        timerService: timerService,
+        notificationCoordinatorService: notificationCoordinatorService,
+        settingsRepository: settingsRepository,
+        languageProvider: languageProvider,
+        child: const AudioDetailSheet(target: target),
+      ),
+    );
+    await tester.pump();
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 50)),
+    );
+    await tester.pump();
+
+    await tester.tap(find.text(languageProvider.tr('audio_detail_fetch_info')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(languageProvider.tr('audio_detail_fetch_scope_title')),
+      findsOneWidget,
+    );
+    expect(
+      find.text(languageProvider.tr('batch_metadata_all')),
+      findsOneWidget,
+    );
+    expect(
+      find.text(languageProvider.tr('metadata_scope_missing')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('library edit keeps restored content folder visible', (

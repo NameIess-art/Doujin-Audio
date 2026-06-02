@@ -7,7 +7,7 @@ import '../i18n/app_language_provider.dart';
 import '../providers/audio_provider.dart';
 import 'dlsite_metadata_review_page.dart';
 
-enum _BatchMetadataScope { missingOnly, all }
+enum _BatchMetadataScope { anyMissing, noMetadata, hasRjCode, all }
 
 class DlsiteMetadataBatchPage extends StatefulWidget {
   const DlsiteMetadataBatchPage({super.key, @visibleForTesting this.entries});
@@ -23,7 +23,7 @@ class DlsiteMetadataBatchPage extends StatefulWidget {
 class _DlsiteMetadataBatchPageState extends State<DlsiteMetadataBatchPage> {
   List<AudioLibraryCategoryEntry> _entries =
       const <AudioLibraryCategoryEntry>[];
-  _BatchMetadataScope _scope = _BatchMetadataScope.missingOnly;
+  _BatchMetadataScope _scope = _BatchMetadataScope.anyMissing;
   _BatchMetadataSummary? _summary;
   Object? _error;
   bool _loading = true;
@@ -31,12 +31,21 @@ class _DlsiteMetadataBatchPageState extends State<DlsiteMetadataBatchPage> {
   int _currentIndex = 0;
   int _activeTotal = 0;
 
-  List<AudioLibraryCategoryEntry> get _missingEntries => _entries
+  List<AudioLibraryCategoryEntry> get _anyMissingEntries => _entries
       .where((entry) => entry.detail.hasMissingMetadata)
       .toList(growable: false);
 
+  List<AudioLibraryCategoryEntry> get _noMetadataEntries => _entries
+      .where((entry) => entry.detail.hasNoMetadata)
+      .toList(growable: false);
+
+  List<AudioLibraryCategoryEntry> get _hasRjCodeEntries =>
+      _entries.where((entry) => entry.detail.hasRjCode).toList(growable: false);
+
   List<AudioLibraryCategoryEntry> get _selectedEntries => switch (_scope) {
-    _BatchMetadataScope.missingOnly => _missingEntries,
+    _BatchMetadataScope.anyMissing => _anyMissingEntries,
+    _BatchMetadataScope.noMetadata => _noMetadataEntries,
+    _BatchMetadataScope.hasRjCode => _hasRjCodeEntries,
     _BatchMetadataScope.all => _entries,
   };
 
@@ -163,7 +172,9 @@ class _DlsiteMetadataBatchPageState extends State<DlsiteMetadataBatchPage> {
             : _BatchMetadataSetupView(
                 scope: _scope,
                 allCount: _entries.length,
-                missingCount: _missingEntries.length,
+                noMetadataCount: _noMetadataEntries.length,
+                anyMissingCount: _anyMissingEntries.length,
+                hasRjCodeCount: _hasRjCodeEntries.length,
                 running: _running,
                 currentIndex: _currentIndex,
                 activeTotal: _activeTotal,
@@ -195,7 +206,9 @@ class _BatchMetadataSetupView extends StatelessWidget {
   const _BatchMetadataSetupView({
     required this.scope,
     required this.allCount,
-    required this.missingCount,
+    required this.noMetadataCount,
+    required this.anyMissingCount,
+    required this.hasRjCodeCount,
     required this.running,
     required this.currentIndex,
     required this.activeTotal,
@@ -205,7 +218,9 @@ class _BatchMetadataSetupView extends StatelessWidget {
 
   final _BatchMetadataScope scope;
   final int allCount;
-  final int missingCount;
+  final int noMetadataCount;
+  final int anyMissingCount;
+  final int hasRjCodeCount;
   final bool running;
   final int currentIndex;
   final int activeTotal;
@@ -249,9 +264,21 @@ class _BatchMetadataSetupView extends StatelessWidget {
           child: Column(
             children: [
               RadioListTile<_BatchMetadataScope>(
-                value: _BatchMetadataScope.missingOnly,
+                value: _BatchMetadataScope.anyMissing,
                 title: Text(
-                  '${i18n.tr('batch_metadata_missing')} ($missingCount)',
+                  '${i18n.tr('batch_metadata_any_missing')} ($anyMissingCount)',
+                ),
+              ),
+              RadioListTile<_BatchMetadataScope>(
+                value: _BatchMetadataScope.noMetadata,
+                title: Text(
+                  '${i18n.tr('batch_metadata_no_metadata')} ($noMetadataCount)',
+                ),
+              ),
+              RadioListTile<_BatchMetadataScope>(
+                value: _BatchMetadataScope.hasRjCode,
+                title: Text(
+                  '${i18n.tr('batch_metadata_has_rj_code')} ($hasRjCodeCount)',
                 ),
               ),
               RadioListTile<_BatchMetadataScope>(

@@ -108,6 +108,30 @@ extension AudioProviderAudioDetails on AudioProvider {
     );
   }
 
+  Future<DlsiteMetadata> fetchPreferredMetadata(String rjCode) async {
+    try {
+      return await _asmrMetadataService.fetchByRjCode(
+        rjCode,
+        language: _dlsiteMetadataLanguage,
+      );
+    } catch (_) {
+      return fetchDlsiteMetadata(rjCode);
+    }
+  }
+
+  Future<List<DlsiteMetadata>> searchPreferredMetadataByTitles(
+    Iterable<String> titles,
+  ) async {
+    try {
+      return await _asmrMetadataService.searchByTitleCandidates(
+        titles,
+        language: _dlsiteMetadataLanguage,
+      );
+    } catch (_) {
+      return searchDlsiteMetadataByTitles(titles);
+    }
+  }
+
   DlsiteMetadataQuery buildDlsiteMetadataQuery(AudioDetail detail) {
     return DlsiteMetadataQuery.fromDetail(detail);
   }
@@ -116,13 +140,43 @@ extension AudioProviderAudioDetails on AudioProvider {
     AudioDetail detail,
     DlsiteMetadata metadata, {
     required bool saveCover,
+    bool missingOnly = false,
   }) async {
     final nextDetail = detail.copyWith(
-      rjCode: metadata.rjCode,
-      workTitle: metadata.workTitle,
-      circleName: metadata.circleName,
-      voiceActors: metadata.voiceActors,
-      tags: metadata.tags,
+      rjCode: _metadataStringValue(
+        current: detail.rjCode,
+        fetched: metadata.rjCode,
+        missingOnly: missingOnly,
+      ),
+      workTitle: _metadataStringValue(
+        current: detail.workTitle,
+        fetched: metadata.workTitle,
+        missingOnly: missingOnly,
+      ),
+      circleName: _metadataStringValue(
+        current: detail.circleName,
+        fetched: metadata.circleName,
+        missingOnly: missingOnly,
+      ),
+      voiceActors: _metadataListValue(
+        current: detail.voiceActors,
+        fetched: metadata.voiceActors,
+        missingOnly: missingOnly,
+      ),
+      tags: _metadataListValue(
+        current: detail.tags,
+        fetched: metadata.tags,
+        missingOnly: missingOnly,
+      ),
+      releaseDate: missingOnly && detail.releaseDate != null
+          ? detail.releaseDate
+          : metadata.releaseDate,
+      salesCount: missingOnly && detail.salesCount != null
+          ? detail.salesCount
+          : metadata.salesCount,
+      rating: missingOnly && detail.rating != null
+          ? detail.rating
+          : metadata.rating,
     );
     final saveResult = await saveAudioDetail(nextDetail);
 
@@ -150,6 +204,22 @@ extension AudioProviderAudioDetails on AudioProvider {
       coverPath: coverPath,
       coverError: coverError,
     );
+  }
+
+  String _metadataStringValue({
+    required String current,
+    required String fetched,
+    required bool missingOnly,
+  }) {
+    return missingOnly && current.trim().isNotEmpty ? current : fetched;
+  }
+
+  List<String> _metadataListValue({
+    required List<String> current,
+    required List<String> fetched,
+    required bool missingOnly,
+  }) {
+    return missingOnly && current.isNotEmpty ? current : fetched;
   }
 
   Future<AudioDetailRenameResult> renameAudioDetailTarget(

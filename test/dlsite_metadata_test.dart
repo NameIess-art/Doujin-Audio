@@ -44,6 +44,9 @@ void main() {
       'workno': 'RJ01014447',
       'work_name': 'Work title',
       'maker_name': 'Circle',
+      'regist_date': '2024-05-06',
+      'dl_count': '1,234',
+      'rate_average_star': 50,
       'image_main': {'url': '//img.dlsite.jp/path/cover.jpg'},
       'creaters': {
         'voice_by': [
@@ -64,6 +67,9 @@ void main() {
     expect(metadata.voiceActors, const <String>['Voice A', 'Voice B']);
     expect(metadata.tags, const <String>['ASMR', 'Ear cleaning']);
     expect(metadata.coverUrl, 'https://img.dlsite.jp/path/cover.jpg');
+    expect(metadata.releaseDate, DateTime(2024, 5, 6));
+    expect(metadata.salesCount, 1234);
+    expect(metadata.rating, 5.0);
   });
 
   test('decodes DLsite product json wrapped as list or object', () {

@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+const Object _copyUnset = Object();
+
 enum AudioDetailTargetType {
   libraryRootFolder('libraryRootFolder', 'library-root-folder'),
   singleAudioFile('singleAudioFile', 'single-audio-file');
@@ -56,6 +58,9 @@ class AudioDetail {
     required this.circleName,
     required this.voiceActors,
     required this.tags,
+    this.releaseDate,
+    this.salesCount,
+    this.rating,
     this.createdAt,
     this.updatedAt,
   });
@@ -88,6 +93,9 @@ class AudioDetail {
       circleName: (row['circle_name'] as String?) ?? '',
       voiceActors: _decodeStringList(row['voice_actors_json']),
       tags: _decodeStringList(row['tags_json']),
+      releaseDate: _dateTimeFromMs(row['release_date_ms']),
+      salesCount: _intOrNull(row['sales_count']),
+      rating: _doubleOrNull(row['rating']),
       createdAt: _dateTimeFromMs(row['created_at_ms']),
       updatedAt: _dateTimeFromMs(row['updated_at_ms']),
     );
@@ -124,6 +132,9 @@ class AudioDetail {
         (json['tags'] as List<dynamic>? ?? const <dynamic>[])
             .whereType<String>(),
       ),
+      releaseDate: _dateTimeFromIso(json['releaseDate']),
+      salesCount: _intOrNull(json['salesCount']),
+      rating: _doubleOrNull(json['rating']),
       createdAt: _dateTimeFromIso(json['createdAt']),
       updatedAt: _dateTimeFromIso(json['updatedAt']),
     );
@@ -135,6 +146,9 @@ class AudioDetail {
   final String circleName;
   final List<String> voiceActors;
   final List<String> tags;
+  final DateTime? releaseDate;
+  final int? salesCount;
+  final double? rating;
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
@@ -152,6 +166,15 @@ class AudioDetail {
       voiceActors.isEmpty ||
       tags.isEmpty;
 
+  bool get hasNoMetadata =>
+      rjCode.trim().isEmpty &&
+      workTitle.trim().isEmpty &&
+      circleName.trim().isEmpty &&
+      voiceActors.isEmpty &&
+      tags.isEmpty;
+
+  bool get hasRjCode => rjCode.trim().isNotEmpty;
+
   AudioDetail copyWith({
     AudioDetailTarget? target,
     String? rjCode,
@@ -159,6 +182,9 @@ class AudioDetail {
     String? circleName,
     List<String>? voiceActors,
     List<String>? tags,
+    Object? releaseDate = _copyUnset,
+    Object? salesCount = _copyUnset,
+    Object? rating = _copyUnset,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -169,6 +195,13 @@ class AudioDetail {
       circleName: circleName ?? this.circleName,
       voiceActors: voiceActors ?? this.voiceActors,
       tags: tags ?? this.tags,
+      releaseDate: releaseDate == _copyUnset
+          ? this.releaseDate
+          : releaseDate as DateTime?,
+      salesCount: salesCount == _copyUnset
+          ? this.salesCount
+          : salesCount as int?,
+      rating: rating == _copyUnset ? this.rating : rating as double?,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
@@ -182,6 +215,11 @@ class AudioDetail {
       circleName: circleName.trim(),
       voiceActors: normalizeList(voiceActors),
       tags: normalizeList(tags),
+      releaseDate: releaseDate,
+      salesCount: salesCount == null || salesCount! < 0 ? null : salesCount,
+      rating: rating == null || rating! < 0
+          ? null
+          : rating!.clamp(0, 5).toDouble(),
       createdAt: createdAt ?? now,
       updatedAt: now,
     );
@@ -196,6 +234,9 @@ class AudioDetail {
       'circle_name': circleName,
       'voice_actors_json': json.encode(voiceActors),
       'tags_json': json.encode(tags),
+      'release_date_ms': releaseDate?.millisecondsSinceEpoch ?? 0,
+      'sales_count': salesCount,
+      'rating': rating,
       'created_at_ms': createdAt?.millisecondsSinceEpoch ?? 0,
       'updated_at_ms': updatedAt?.millisecondsSinceEpoch ?? 0,
     };
@@ -212,6 +253,9 @@ class AudioDetail {
       'circleName': circleName,
       'voiceActors': voiceActors,
       'tags': tags,
+      'releaseDate': releaseDate?.toIso8601String(),
+      'salesCount': salesCount,
+      'rating': rating,
       'createdAt': createdAt?.toIso8601String(),
       'updatedAt': updatedAt?.toIso8601String(),
     };
@@ -255,4 +299,20 @@ DateTime? _dateTimeFromMs(Object? value) {
 DateTime? _dateTimeFromIso(Object? value) {
   if (value is! String || value.isEmpty) return null;
   return DateTime.tryParse(value);
+}
+
+int? _intOrNull(Object? value) {
+  if (value is num) return value.toInt();
+  if (value is String && value.trim().isNotEmpty) {
+    return int.tryParse(value.trim());
+  }
+  return null;
+}
+
+double? _doubleOrNull(Object? value) {
+  if (value is num) return value.toDouble();
+  if (value is String && value.trim().isNotEmpty) {
+    return double.tryParse(value.trim());
+  }
+  return null;
 }

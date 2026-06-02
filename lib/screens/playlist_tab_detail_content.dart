@@ -2,6 +2,7 @@ part of 'playlist_tab.dart';
 
 class _SessionDetailContent extends StatefulWidget {
   const _SessionDetailContent({
+    super.key,
     required this.session,
     required this.provider,
     this.filenameKey,
@@ -22,21 +23,67 @@ class _SessionDetailContent extends StatefulWidget {
 class _SessionDetailContentState extends State<_SessionDetailContent>
     with SingleTickerProviderStateMixin {
   late final AnimationController _playPauseController;
+  late final TextEditingController _segmentNameController;
   bool _wasPlaying = false;
+  bool _segmentPanelExpanded = false;
+  bool _segmentEditorVisible = false;
+  bool _segmentLoading = false;
+  List<TimeSegmentLabel> _segmentLabels = const <TimeSegmentLabel>[];
+  String? _segmentTrackKey;
+  String? _selectedSegmentId;
+  Duration? _draftStart;
+  Duration? _draftEnd;
+  int? _draftColorValue;
+  Timer? _segmentNameDebounce;
+  bool _syncingSegmentText = false;
+  bool _savingSegment = false;
+  bool _segmentSaveQueued = false;
+  int _segmentDraftGeneration = 0;
+
+  bool get isSegmentPanelExpanded => _segmentPanelExpanded;
+
+  void expandSegmentPanel() {
+    if (_segmentPanelExpanded) return;
+    setState(() {
+      _segmentPanelExpanded = true;
+    });
+  }
+
+  void collapseSegmentPanel() {
+    if (!_segmentPanelExpanded) return;
+    setState(() {
+      _segmentPanelExpanded = false;
+      _clearSegmentDraft();
+    });
+  }
 
   @override
   void initState() {
     super.initState();
     _wasPlaying = widget.session.state.playing;
+    _segmentNameController = TextEditingController();
     _playPauseController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 300),
       value: _wasPlaying ? 1.0 : 0.0,
     );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _syncSegmentTrack();
+    });
+    _segmentNameController.addListener(_handleSegmentNameChanged);
+  }
+
+  @override
+  void didUpdateWidget(covariant _SessionDetailContent oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _syncSegmentTrack();
   }
 
   @override
   void dispose() {
+    _segmentNameDebounce?.cancel();
+    _segmentNameController.removeListener(_handleSegmentNameChanged);
+    _segmentNameController.dispose();
     _playPauseController.dispose();
     super.dispose();
   }
@@ -63,6 +110,244 @@ class _SessionDetailContentState extends State<_SessionDetailContent>
         ? i18n.tr('random_order')
         : i18n.tr('sequential_order');
     return '$order - $scope';
+  }
+
+  void _syncSegmentTrack() {
+    final track = widget.provider.trackByPath(widget.session.currentTrackPath);
+    final nextKey = track == null
+        ? PathMatcher.normalize(widget.session.currentTrackPath)
+        : widget.provider.timeSegmentTrackKeyForTrack(track);
+    if (nextKey == _segmentTrackKey) return;
+    _segmentTrackKey = nextKey;
+    _segmentDraftGeneration++;
+    _segmentEditorVisible = false;
+    _selectedSegmentId = null;
+    _draftStart = null;
+    _draftEnd = null;
+    _draftColorValue = null;
+    _setSegmentNameText('');
+    unawaited(_loadSegmentLabels(nextKey));
+  }
+
+  Future<void> _loadSegmentLabels(String trackKey) async {
+    setState(() {
+      _segmentLoading = true;
+    });
+    final labels = await widget.provider.loadTimeSegmentLabels(trackKey);
+    if (!mounted || _segmentTrackKey != trackKey) return;
+    final selected = labels
+        .where((label) => label.id == _selectedSegmentId)
+        .firstOrNull;
+    setState(() {
+      _segmentLabels = labels;
+      _segmentLoading = false;
+      if (selected != null) {
+        _applySelectedSegment(selected);
+      }
+    });
+  }
+
+  void _handleSegmentNameChanged() {
+    if (_syncingSegmentText) return;
+    _segmentNameDebounce?.cancel();
+    _segmentNameDebounce = Timer(
+      const Duration(milliseconds: 350),
+      () => unawaited(_trySaveSegmentDraft()),
+    );
+  }
+
+  void _setSegmentNameText(String value) {
+    _syncingSegmentText = true;
+    _segmentNameController.text = value;
+    _segmentNameController.selection = TextSelection.collapsed(
+      offset: value.length,
+    );
+    _syncingSegmentText = false;
+  }
+
+  void _clearSegmentDraft() {
+    _segmentDraftGeneration++;
+    _segmentEditorVisible = false;
+    _selectedSegmentId = null;
+    _draftStart = null;
+    _draftEnd = null;
+    _draftColorValue = null;
+    _setSegmentNameText('');
+  }
+
+  TimeSegmentLabel? get _selectedSegment {
+    final selectedId = _selectedSegmentId;
+    if (selectedId == null) return null;
+    return _segmentLabels.where((label) => label.id == selectedId).firstOrNull;
+  }
+
+  void _applySelectedSegment(TimeSegmentLabel label) {
+    _selectedSegmentId = label.id;
+    _draftStart = label.start;
+    _draftEnd = label.end;
+    _draftColorValue = label.colorValue;
+    _setSegmentNameText(label.name);
+  }
+
+  void _selectSegment(TimeSegmentLabel label) {
+    setState(() {
+      _segmentDraftGeneration++;
+      _applySelectedSegment(label);
+      _segmentPanelExpanded = true;
+      _segmentEditorVisible = true;
+    });
+  }
+
+  void _startNewSegment() {
+    setState(() {
+      _segmentDraftGeneration++;
+      _selectedSegmentId = null;
+      _draftStart = null;
+      _draftEnd = null;
+      _draftColorValue = widget.provider.nextTimeSegmentColor(_segmentLabels);
+      _setSegmentNameText('');
+      _segmentPanelExpanded = true;
+      _segmentEditorVisible = true;
+    });
+  }
+
+  void _toggleSelectedSegmentLoop() {
+    final selected = _selectedSegment;
+    if (selected == null) return;
+    widget.provider.toggleTimeSegmentLoop(
+      sessionId: widget.session.id,
+      label: selected,
+    );
+    setState(() {});
+  }
+
+  void _handleSegmentManualSeek(Duration position) {
+    widget.provider.handleTimeSegmentManualSeek(widget.session.id, position);
+  }
+
+  void _setDraftStartToCurrent() {
+    setState(() {
+      _draftStart = _clampToDuration(widget.session.position);
+      _draftColorValue ??= widget.provider.nextTimeSegmentColor(_segmentLabels);
+    });
+    unawaited(_trySaveSegmentDraft());
+  }
+
+  void _setDraftEndToCurrent() {
+    setState(() {
+      _draftEnd = _clampToDuration(widget.session.position);
+      _draftColorValue ??= widget.provider.nextTimeSegmentColor(_segmentLabels);
+    });
+    unawaited(_trySaveSegmentDraft());
+  }
+
+  Duration _clampToDuration(Duration value) {
+    final duration = widget.session.duration;
+    if (duration != null && duration > Duration.zero && value >= duration) {
+      return duration;
+    }
+    if (value <= Duration.zero) return Duration.zero;
+    return Duration(seconds: value.inSeconds);
+  }
+
+  Future<void> _editDraftTime({required bool isStart}) async {
+    final current = isStart ? _draftStart : _draftEnd;
+    final next = await _showSegmentTimeInputDialog(context, initial: current);
+    if (next == null || !mounted) return;
+    setState(() {
+      if (isStart) {
+        _draftStart = _clampToDuration(next);
+      } else {
+        _draftEnd = _clampToDuration(next);
+      }
+      _draftColorValue ??= widget.provider.nextTimeSegmentColor(_segmentLabels);
+    });
+    unawaited(_trySaveSegmentDraft());
+  }
+
+  Future<void> _trySaveSegmentDraft() async {
+    if (_savingSegment) {
+      _segmentSaveQueued = true;
+      return;
+    }
+    final trackKey = _segmentTrackKey;
+    final name = _segmentNameController.text.trim();
+    final start = _draftStart;
+    final end = _draftEnd;
+    final draftGeneration = _segmentDraftGeneration;
+    if (trackKey == null ||
+        name.isEmpty ||
+        start == null ||
+        end == null ||
+        end <= start) {
+      return;
+    }
+    _savingSegment = true;
+    try {
+      final existing = _selectedSegmentId == null
+          ? null
+          : _segmentLabels
+                .where((label) => label.id == _selectedSegmentId)
+                .firstOrNull;
+      final label = widget.provider.buildTimeSegmentLabel(
+        trackKey: trackKey,
+        name: name,
+        start: start,
+        end: end,
+        colorValue:
+            existing?.colorValue ??
+            _draftColorValue ??
+            widget.provider.nextTimeSegmentColor(_segmentLabels),
+        existing: existing,
+      );
+      await widget.provider.saveTimeSegmentLabel(label);
+      if (!mounted || _segmentTrackKey != trackKey) return;
+      setState(() {
+        if (_segmentDraftGeneration == draftGeneration) {
+          _selectedSegmentId ??= label.id;
+        }
+        _segmentLabels =
+            [
+              for (final current in _segmentLabels)
+                if (current.id != label.id) current,
+              label,
+            ]..sort((a, b) {
+              final startOrder = a.start.compareTo(b.start);
+              return startOrder != 0
+                  ? startOrder
+                  : a.createdAt.compareTo(b.createdAt);
+            });
+      });
+    } finally {
+      _savingSegment = false;
+      if (_segmentSaveQueued && mounted) {
+        _segmentSaveQueued = false;
+        unawaited(_trySaveSegmentDraft());
+      }
+    }
+  }
+
+  Future<void> _deleteSelectedSegment() async {
+    final selected = _segmentLabels
+        .where((label) => label.id == _selectedSegmentId)
+        .firstOrNull;
+    if (selected == null) return;
+    final i18n = context.read<AppLanguageProvider>();
+    final confirmed = await showConfirmActionDialog(
+      context: context,
+      title: i18n.tr('segment_delete_title'),
+      message: i18n.tr('segment_delete_confirm', {'name': selected.name}),
+      cancelLabel: i18n.tr('cancel'),
+      confirmLabel: i18n.tr('remove'),
+      icon: Icons.sell_rounded,
+    );
+    if (!confirmed || !mounted) return;
+    await widget.provider.deleteTimeSegmentLabel(selected.id);
+    if (!mounted) return;
+    final trackKey = _segmentTrackKey;
+    if (trackKey == null) return;
+    setState(_clearSegmentDraft);
+    await _loadSegmentLabels(trackKey);
   }
 
   @override
@@ -146,228 +431,50 @@ class _SessionDetailContentState extends State<_SessionDetailContent>
             key: ValueKey(session.id),
             session: session,
             provider: provider,
+            timeSegmentLabels: _segmentLabels,
+            selectedSegmentId: _segmentPanelExpanded
+                ? _selectedSegmentId
+                : null,
+            onManualSeek: _handleSegmentManualSeek,
           ),
         ),
-        const SizedBox(height: 0),
-        SizedBox(
-          height: 92,
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final compact = constraints.maxWidth < 400;
-              final skipIconSize = compact ? 48.0 : 54.0;
-              final playIconSize = compact ? 76.0 : 86.0;
-              final loadingSize = compact ? 38.0 : 44.0;
-
-              return Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  IconButton(
-                    tooltip: i18n.tr('previous_track'),
-                    constraints: BoxConstraints.tightFor(
-                      width: compact ? 56 : 64,
-                      height: compact ? 56 : 64,
-                    ),
-                    padding: EdgeInsets.zero,
-                    onPressed: session.isLoading
-                        ? null
-                        : () {
-                            HapticFeedback.selectionClick();
-                            provider.seekSessionToPrev(session.id);
-                          },
-                    icon: Icon(
-                      Icons.skip_previous_rounded,
-                      size: skipIconSize,
-                      color: cs.onSurface,
-                    ),
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 180),
+          switchInCurve: Curves.easeOutCubic,
+          switchOutCurve: Curves.easeInCubic,
+          child: _segmentPanelExpanded
+              ? _TimeSegmentPanel(
+                  key: const ValueKey('segments'),
+                  labels: _segmentLabels,
+                  selectedId: _selectedSegmentId,
+                  showEditor: _segmentEditorVisible,
+                  loading: _segmentLoading,
+                  nameController: _segmentNameController,
+                  draftStart: _draftStart,
+                  draftEnd: _draftEnd,
+                  draftColorValue: _draftColorValue,
+                  loopSegmentId: provider.timeSegmentLoopLabelIdForSession(
+                    session.id,
+                    trackKey: _segmentTrackKey,
                   ),
-                  IconButton(
-                    constraints: BoxConstraints.tightFor(
-                      width: compact ? 56 : 64,
-                      height: compact ? 56 : 64,
-                    ),
-                    padding: EdgeInsets.zero,
-                    onPressed: session.isLoading
-                        ? null
-                        : () {
-                            HapticFeedback.selectionClick();
-                            final newPos =
-                                session.position - const Duration(seconds: 5);
-                            provider.seekSession(
-                              session.id,
-                              newPos < Duration.zero ? Duration.zero : newPos,
-                            );
-                          },
-                    icon: Icon(
-                      Icons.replay_5_rounded,
-                      size: skipIconSize * 0.8,
-                      color: cs.onSurface,
-                    ),
-                  ),
-                  IconButton(
-                    tooltip: isPlaying ? i18n.tr('pause') : i18n.tr('play'),
-                    constraints: BoxConstraints.tightFor(
-                      width: compact ? 80 : 92,
-                      height: compact ? 80 : 92,
-                    ),
-                    padding: EdgeInsets.zero,
-                    onPressed: session.isLoading
-                        ? null
-                        : () {
-                            HapticFeedback.mediumImpact();
-                            provider.toggleSessionPlayPause(session.id);
-                          },
-                    iconSize: playIconSize,
-                    icon: AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 150),
-                      switchInCurve: Curves.easeOutCubic,
-                      switchOutCurve: Curves.easeInCubic,
-                      transitionBuilder: (child, animation) {
-                        return FadeTransition(
-                          opacity: animation,
-                          child: ScaleTransition(
-                            scale: Tween<double>(
-                              begin: 0.92,
-                              end: 1,
-                            ).animate(animation),
-                            child: child,
-                          ),
-                        );
-                      },
-                      child: session.isLoading
-                          ? SizedBox(
-                              key: const ValueKey('loading'),
-                              width: loadingSize,
-                              height: loadingSize,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 3,
-                                color: cs.onSurface,
-                              ),
-                            )
-                          : AnimatedIcon(
-                              icon: AnimatedIcons.play_pause,
-                              progress: _playPauseController,
-                              key: const ValueKey('play_pause_anim'),
-                              size: playIconSize,
-                              color: cs.onSurface,
-                            ),
-                    ),
-                  ),
-                  IconButton(
-                    constraints: BoxConstraints.tightFor(
-                      width: compact ? 56 : 64,
-                      height: compact ? 56 : 64,
-                    ),
-                    padding: EdgeInsets.zero,
-                    onPressed: session.isLoading
-                        ? null
-                        : () {
-                            HapticFeedback.selectionClick();
-                            provider.seekSession(
-                              session.id,
-                              session.position + const Duration(seconds: 5),
-                            );
-                          },
-                    icon: Icon(
-                      Icons.forward_5_rounded,
-                      size: skipIconSize * 0.8,
-                      color: cs.onSurface,
-                    ),
-                  ),
-                  IconButton(
-                    tooltip: i18n.tr('next_track'),
-                    constraints: BoxConstraints.tightFor(
-                      width: compact ? 56 : 64,
-                      height: compact ? 56 : 64,
-                    ),
-                    padding: EdgeInsets.zero,
-                    onPressed: session.isLoading
-                        ? null
-                        : () {
-                            HapticFeedback.selectionClick();
-                            provider.seekSessionToNext(session.id);
-                          },
-                    icon: Icon(
-                      Icons.skip_next_rounded,
-                      size: skipIconSize,
-                      color: cs.onSurface,
-                    ),
-                  ),
-                ],
-              );
-            },
-          ),
-        ),
-        const SizedBox(height: 0),
-        Container(
-          margin: const EdgeInsets.only(top: 8),
-          decoration: BoxDecoration(
-            color: cs.surfaceContainerHighest.withValues(alpha: 0.35),
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(
-              color: cs.outlineVariant.withValues(alpha: 0.15),
-            ),
-            boxShadow: [
-              // Bottom rim highlight for inset depth
-              BoxShadow(
-                color: Colors.white.withValues(alpha: 0.12),
-                offset: const Offset(0, 1),
-              ),
-              // Top inner shadow simulation
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.08),
-                offset: const Offset(0, 1),
-                blurRadius: 4,
-                spreadRadius: -2,
-              ),
-            ],
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                Colors.black.withValues(alpha: 0.06),
-                Colors.transparent,
-              ],
-              stops: const [0.0, 0.15],
-            ),
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-          child: SizedBox(
-            height: 52,
-            child: Row(
-              children: [
-                _ExpandableLoopOptions(session: session, provider: provider),
-                const SizedBox(width: 8),
-                IconButton(
-                  constraints: const BoxConstraints.tightFor(
-                    width: 48,
-                    height: 48,
-                  ),
-                  padding: EdgeInsets.zero,
-                  onPressed: hasSiblings
-                      ? () {
-                          HapticFeedback.selectionClick();
-                          _showTrackSwitcher(context);
-                        }
-                      : null,
-                  tooltip: context.read<AppLanguageProvider>().tr(
-                    'switch_audio',
-                  ),
-                  icon: Icon(
-                    Icons.queue_music_rounded,
-                    size: 24,
-                    color: cs.onSurface,
-                  ),
+                  onSelect: _selectSegment,
+                  onAdd: _startNewSegment,
+                  onSetStart: _setDraftStartToCurrent,
+                  onSetEnd: _setDraftEndToCurrent,
+                  onEditStart: () => _editDraftTime(isStart: true),
+                  onEditEnd: () => _editDraftTime(isStart: false),
+                  onDelete: _deleteSelectedSegment,
+                  onToggleLoop: _toggleSelectedSegmentLoop,
+                )
+              : _PlaybackControlPanel(
+                  key: const ValueKey('controls'),
+                  session: session,
+                  provider: provider,
+                  playPauseController: _playPauseController,
+                  isPlaying: isPlaying,
+                  hasSiblings: hasSiblings,
+                  onShowTrackSwitcher: () => _showTrackSwitcher(context),
                 ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: _SessionVolumeSlider(
-                    session: session,
-                    provider: provider,
-                  ),
-                ),
-              ],
-            ),
-          ),
         ),
       ],
     );

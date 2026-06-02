@@ -174,6 +174,102 @@ void main() {
     );
   });
 
+  group('time segment loop session isolation', () {
+    test(
+      'other audio seeks and track switches keep the original audio loop',
+      () async {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+              return <String, Object?>{'ok': true, 'value': null};
+            });
+        const loopTrack = MusicTrack(
+          path: 'https://example.com/loop.mp3',
+          displayName: 'loop',
+          groupKey: 'loop',
+          groupTitle: 'Loop',
+          groupSubtitle: 'Loop',
+          isSingle: true,
+        );
+        const otherTrack = MusicTrack(
+          path: 'https://example.com/other-01.mp3',
+          displayName: 'other-01',
+          groupKey: 'other',
+          groupTitle: 'Other',
+          groupSubtitle: 'Other',
+          isSingle: false,
+        );
+        const otherNextTrack = MusicTrack(
+          path: 'https://example.com/other-02.mp3',
+          displayName: 'other-02',
+          groupKey: 'other',
+          groupTitle: 'Other',
+          groupSubtitle: 'Other',
+          isSingle: false,
+        );
+
+        await provider.spawnSession(loopTrack, autoPlay: false);
+        await provider.spawnSessionWithQueue(const <MusicTrack>[
+          otherTrack,
+          otherNextTrack,
+        ], autoPlay: false);
+        for (var i = 0; i < 50; i++) {
+          if (provider.activeSessions.every((session) => !session.isLoading)) {
+            break;
+          }
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+        }
+
+        final loopSession = provider.activeSessions.firstWhere(
+          (session) => session.currentTrackPath == loopTrack.path,
+        );
+        final otherSession = provider.activeSessions.firstWhere(
+          (session) => session.currentTrackPath == otherTrack.path,
+        );
+        final trackKey = provider.timeSegmentTrackKeyForTrack(loopTrack);
+        final now = DateTime(2026, 6, 2);
+        final label = TimeSegmentLabel(
+          id: 'loop-segment',
+          trackKey: trackKey,
+          name: 'Loop segment',
+          start: const Duration(seconds: 10),
+          end: const Duration(seconds: 20),
+          colorValue: kTimeSegmentLabelPalette.first,
+          createdAt: now,
+          updatedAt: now,
+        );
+
+        provider.toggleTimeSegmentLoop(sessionId: loopSession.id, label: label);
+        await Future<void>.delayed(Duration.zero);
+
+        expect(
+          provider.timeSegmentLoopLabelIdForSession(
+            loopSession.id,
+            trackKey: trackKey,
+          ),
+          label.id,
+        );
+
+        const otherSeekPosition = Duration(seconds: 90);
+        provider.handleTimeSegmentManualSeek(
+          otherSession.id,
+          otherSeekPosition,
+        );
+        await provider.seekSession(otherSession.id, otherSeekPosition);
+        await provider.seekSessionToNext(otherSession.id);
+        await provider.seekSessionToPrev(otherSession.id);
+
+        expect(otherSession.currentTrackPath, otherTrack.path);
+        expect(
+          provider.timeSegmentLoopLabelIdForSession(
+            loopSession.id,
+            trackKey: trackKey,
+          ),
+          label.id,
+        );
+      },
+    );
+  });
+
   group('custom queue session restore', () {
     test('restores ASMR custom queues and exposes sibling tracks', () async {
       const sessionId = 'asmr_session';

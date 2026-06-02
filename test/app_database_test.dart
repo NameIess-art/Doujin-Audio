@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/models/audio_detail.dart';
 import 'package:nameless_audio/models/library_entry.dart';
 import 'package:nameless_audio/models/music_track.dart';
+import 'package:nameless_audio/models/time_segment_label.dart';
 import 'package:nameless_audio/services/app_database.dart';
 import 'package:nameless_audio/services/path_matcher.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -263,6 +264,98 @@ void main() {
         .toSet();
 
     expect(indexNames, contains('idx_audio_details_target'));
+  });
+
+  test('time segment labels round-trip sort and delete by id', () async {
+    final first = TimeSegmentLabel(
+      id: 'segment_1',
+      trackKey: '/library/a.mp3',
+      name: 'Opening',
+      start: const Duration(seconds: 5),
+      end: const Duration(seconds: 12),
+      colorValue: 0xFFE57373,
+      createdAt: DateTime.fromMillisecondsSinceEpoch(1000),
+      updatedAt: DateTime.fromMillisecondsSinceEpoch(1000),
+    );
+    final second = TimeSegmentLabel(
+      id: 'segment_2',
+      trackKey: '/library/a.mp3',
+      name: 'Earlier',
+      start: const Duration(seconds: 1),
+      end: const Duration(seconds: 3),
+      colorValue: 0xFF64B5F6,
+      createdAt: DateTime.fromMillisecondsSinceEpoch(2000),
+      updatedAt: DateTime.fromMillisecondsSinceEpoch(2000),
+    );
+
+    await appDatabase.upsertTimeSegmentLabel(first);
+    await appDatabase.upsertTimeSegmentLabel(second);
+
+    var labels = await appDatabase.loadTimeSegmentLabels('/library/a.mp3');
+    expect(labels.map((label) => label.id), ['segment_2', 'segment_1']);
+    expect(labels.last.name, 'Opening');
+    expect(labels.last.start, const Duration(seconds: 5));
+
+    await appDatabase.deleteTimeSegmentLabel('segment_2');
+
+    labels = await appDatabase.loadTimeSegmentLabels('/library/a.mp3');
+    expect(labels.map((label) => label.id), ['segment_1']);
+  });
+
+  test('time segment labels retarget track keys after rename', () async {
+    final label = TimeSegmentLabel(
+      id: 'segment_1',
+      trackKey: PathMatcher.normalize('/library/old/01.mp3'),
+      name: 'Part',
+      start: const Duration(seconds: 2),
+      end: const Duration(seconds: 8),
+      colorValue: 0xFFE57373,
+      createdAt: DateTime.fromMillisecondsSinceEpoch(1000),
+      updatedAt: DateTime.fromMillisecondsSinceEpoch(1000),
+    );
+    await appDatabase.upsertTimeSegmentLabel(label);
+
+    await appDatabase.retargetTimeSegmentLabelsWithinPath(
+      oldRoot: '/library/old',
+      newRoot: '/library/new',
+    );
+
+    expect(
+      await appDatabase.loadTimeSegmentLabels(
+        PathMatcher.normalize('/library/old/01.mp3'),
+      ),
+      isEmpty,
+    );
+    final moved = await appDatabase.loadTimeSegmentLabels(
+      PathMatcher.normalize('/library/new/01.mp3'),
+    );
+    expect(moved.single.id, 'segment_1');
+
+    await appDatabase.retargetTimeSegmentLabels(
+      oldTrackKey: PathMatcher.normalize('/library/new/01.mp3'),
+      newTrackKey: PathMatcher.normalize('/library/new/renamed.mp3'),
+    );
+
+    expect(
+      await appDatabase.loadTimeSegmentLabels(
+        PathMatcher.normalize('/library/new/01.mp3'),
+      ),
+      isEmpty,
+    );
+    final renamed = await appDatabase.loadTimeSegmentLabels(
+      PathMatcher.normalize('/library/new/renamed.mp3'),
+    );
+    expect(renamed.single.name, 'Part');
+  });
+
+  test('schema creates time segment label track index', () async {
+    final indexes = await db.rawQuery('PRAGMA index_list(time_segment_labels)');
+    final indexNames = indexes
+        .map((row) => row['name'] as String?)
+        .whereType<String>()
+        .toSet();
+
+    expect(indexNames, contains('idx_time_segment_labels_track'));
   });
 
   test('library entries persist full tree rows and state updates', () async {

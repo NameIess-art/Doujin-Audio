@@ -230,6 +230,10 @@ extension AudioProviderAudioDetails on AudioProvider {
     String folderName,
   ) async {
     _rememberRetargetedPath(oldFolderPath, newFolderPath);
+    await _audioDatabaseRepository.retargetTimeSegmentLabelsWithinPath(
+      oldRoot: oldFolderPath,
+      newRoot: newFolderPath,
+    );
     final updatedTracks = <MusicTrack>[];
     for (var i = 0; i < _library.length; i++) {
       final track = _library[i];
@@ -440,6 +444,10 @@ extension AudioProviderAudioDetails on AudioProvider {
     String displayName,
   ) async {
     _rememberRetargetedPath(oldTrackPath, newTrackPath);
+    await _audioDatabaseRepository.retargetTimeSegmentLabels(
+      oldTrackKey: PathMatcher.normalize(oldTrackPath),
+      newTrackKey: PathMatcher.normalize(newTrackPath),
+    );
     final track = _libraryByPath[oldTrackPath];
     if (track != null) {
       final updatedTrack = _copyTrack(

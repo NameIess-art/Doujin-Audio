@@ -7,6 +7,7 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import '../models/audio_detail.dart';
 import '../models/library_entry.dart';
 import '../models/music_track.dart';
+import '../models/time_segment_label.dart';
 import '../platform/app_platform.dart';
 import 'path_matcher.dart';
 
@@ -37,7 +38,7 @@ class AppDatabase {
     final dbPath = await getDatabasesPath();
     final db = await openDatabase(
       p.join(dbPath, 'audio_player.db'),
-      version: 11,
+      version: 12,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -87,6 +88,7 @@ class AppDatabase {
     ''');
     await _createAudioDetailsTable(db);
     await _createLibraryEntriesTable(db);
+    await _createTimeSegmentLabelsTable(db);
   }
 
   static Future<void> _onUpgrade(
@@ -188,6 +190,9 @@ class AppDatabase {
         'TEXT',
       );
     }
+    if (oldVersion < 12) {
+      await _createTimeSegmentLabelsTable(db);
+    }
     await _createTrackIndexes(db);
   }
 
@@ -278,6 +283,25 @@ class AppDatabase {
     await db.execute(
       'CREATE INDEX IF NOT EXISTS idx_library_entries_scan_generation '
       'ON library_entries(library_path, scan_generation)',
+    );
+  }
+
+  static Future<void> _createTimeSegmentLabelsTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS time_segment_labels (
+        id TEXT PRIMARY KEY,
+        track_key TEXT NOT NULL,
+        name TEXT NOT NULL,
+        start_ms INTEGER NOT NULL,
+        end_ms INTEGER NOT NULL,
+        color_value INTEGER NOT NULL,
+        created_at_ms INTEGER NOT NULL,
+        updated_at_ms INTEGER NOT NULL
+      )
+    ''');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_time_segment_labels_track '
+      'ON time_segment_labels(track_key, start_ms, created_at_ms)',
     );
   }
 
@@ -416,6 +440,74 @@ class AppDatabase {
       where: 'target_type = ? AND target_path = ?',
       whereArgs: [target.targetType.dbValue, normalizedTargetPath],
     );
+  }
+
+  // ---- Time segment labels ----
+
+  Future<List<TimeSegmentLabel>> loadTimeSegmentLabels(String trackKey) async {
+    final db = await database;
+    final rows = await db.query(
+      'time_segment_labels',
+      where: 'track_key = ?',
+      whereArgs: [trackKey],
+      orderBy: 'start_ms ASC, created_at_ms ASC',
+    );
+    return rows.map(TimeSegmentLabel.fromRow).toList(growable: false);
+  }
+
+  Future<void> upsertTimeSegmentLabel(TimeSegmentLabel label) async {
+    final db = await database;
+    await db.insert(
+      'time_segment_labels',
+      label.toRow(),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<void> deleteTimeSegmentLabel(String id) async {
+    final db = await database;
+    await db.delete('time_segment_labels', where: 'id = ?', whereArgs: [id]);
+  }
+
+  Future<void> retargetTimeSegmentLabels({
+    required String oldTrackKey,
+    required String newTrackKey,
+  }) async {
+    if (oldTrackKey == newTrackKey) return;
+    final db = await database;
+    await db.update(
+      'time_segment_labels',
+      {'track_key': newTrackKey},
+      where: 'track_key = ?',
+      whereArgs: [oldTrackKey],
+    );
+  }
+
+  Future<void> retargetTimeSegmentLabelsWithinPath({
+    required String oldRoot,
+    required String newRoot,
+  }) async {
+    final db = await database;
+    final rows = await db.query('time_segment_labels');
+    final batch = db.batch();
+    for (final row in rows) {
+      final id = row['id'] as String;
+      final trackKey = row['track_key'] as String;
+      if (!PathMatcher.isWithinOrEqual(trackKey, oldRoot)) continue;
+      final nextTrackKey = PathMatcher.replaceWithinOrEqual(
+        trackKey,
+        oldRoot,
+        newRoot,
+      );
+      if (nextTrackKey == trackKey) continue;
+      batch.update(
+        'time_segment_labels',
+        {'track_key': nextTrackKey},
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+    }
+    await batch.commit(noResult: true);
   }
 
   // ---- Library entries ----

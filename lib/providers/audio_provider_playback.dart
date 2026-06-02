@@ -75,6 +75,7 @@ extension AudioProviderPlayback on AudioProvider {
     for (final session in removedSessions) {
       session.isPlaybackStarting = false;
       _deferredVolumeReloadSessionIds.remove(session.id);
+      _forgetTimeSegmentLoopSession(session.id);
       _clearNotificationSubtitleForSession(session.id);
       if (_notificationFocusSessionId == session.id) {
         _notificationFocusSessionId = null;
@@ -272,7 +273,11 @@ extension AudioProviderPlayback on AudioProvider {
     if (session == null || session.isLoading) return;
     final nextPath = _nextPathFor(session, forward: true);
     if (nextPath != null) {
-      await _prepareAndPlay(session, nextPath: nextPath, forceStartAtZero: true);
+      await _prepareAndPlay(
+        session,
+        nextPath: nextPath,
+        forceStartAtZero: true,
+      );
     }
   }
 
@@ -293,7 +298,11 @@ extension AudioProviderPlayback on AudioProvider {
     }
     final prevPath = _nextPathFor(session, forward: false);
     if (prevPath != null) {
-      await _prepareAndPlay(session, nextPath: prevPath, forceStartAtZero: true);
+      await _prepareAndPlay(
+        session,
+        nextPath: prevPath,
+        forceStartAtZero: true,
+      );
     }
   }
 
@@ -317,6 +326,7 @@ extension AudioProviderPlayback on AudioProvider {
     for (final session in removedSessions) {
       session.isPlaybackStarting = false;
       _deferredVolumeReloadSessionIds.remove(session.id);
+      _forgetTimeSegmentLoopSession(session.id);
       _clearNotificationSubtitleForSession(session.id);
     }
     _notificationFocusSessionId = null;

@@ -21,6 +21,7 @@ import '../models/library_node.dart';
 import '../models/music_track.dart';
 import '../models/playback_mode.dart';
 import '../models/playback_session.dart';
+import '../models/time_segment_label.dart';
 import '../platform/app_platform.dart';
 import '../services/app_cache_service.dart';
 import '../services/audio_database_repository.dart';
@@ -45,6 +46,7 @@ export '../models/dlsite_metadata.dart';
 export '../models/music_track.dart';
 export '../models/playback_mode.dart';
 export '../models/playback_session.dart';
+export '../models/time_segment_label.dart';
 import '../services/native_playback_bridge.dart';
 import '../services/playback_notification_service.dart';
 import '../services/playback_command_runner.dart';
@@ -72,6 +74,7 @@ part 'audio_provider_native_bridge.dart';
 part 'audio_provider_controllers.dart';
 part 'audio_provider_library_covers.dart';
 part 'audio_provider_warmup.dart';
+part 'audio_provider_time_segments.dart';
 
 const _kLibraryKey = 'library_v1';
 const _kSessionsKey = 'sessions_v1';
@@ -140,6 +143,10 @@ class AudioProvider with ChangeNotifier {
   bool _isInitialized = false;
   final Set<String> _deferredVolumeReloadSessionIds = <String>{};
   final Map<String, String> _retargetedPathAliases = <String, String>{};
+  final Map<String, _TimeSegmentLoopRuntime> _timeSegmentLoopsBySessionId =
+      <String, _TimeSegmentLoopRuntime>{};
+  final Set<String> _timeSegmentLoopBoundSessionIds = <String>{};
+  final Set<String> _timeSegmentLoopSeekPendingSessionIds = <String>{};
   final ValueNotifier<int?> _scrollToTopTabNotifier = ValueNotifier<int?>(null);
   ValueListenable<int?> get scrollToTopTabListenable => _scrollToTopTabNotifier;
   final ValueNotifier<String?> _carouselSnapNotifier = ValueNotifier<String?>(
@@ -682,6 +689,9 @@ class AudioProvider with ChangeNotifier {
       session.dispose();
     }
     _sessions.clear();
+    _timeSegmentLoopsBySessionId.clear();
+    _timeSegmentLoopBoundSessionIds.clear();
+    _timeSegmentLoopSeekPendingSessionIds.clear();
     super.dispose();
   }
 

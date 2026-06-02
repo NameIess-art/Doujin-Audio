@@ -554,9 +554,11 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
     with WidgetsBindingObserver {
   final _filenameKey = GlobalKey();
   final _progressBarKey = GlobalKey();
+  final _detailContentKey = GlobalKey<_SessionDetailContentState>();
   final PermissionActionController _permissionActionController =
       PermissionActionController();
   Size? _lastSize;
+  double _segmentPanelDragDelta = 0;
 
   @override
   void initState() {
@@ -676,9 +678,43 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
         onHorizontalDragUpdate: onHorizontalDragUpdate,
         onHorizontalDragEnd: onHorizontalDragEnd,
         onHorizontalDragCancel: onHorizontalDragCancel,
-        onVerticalDragUpdate: onVerticalDragUpdate,
-        onVerticalDragEnd: onVerticalDragEnd,
-        onVerticalDragCancel: onVerticalDragCancel,
+        onVerticalDragUpdate: (details) {
+          final delta = details.primaryDelta ?? 0;
+          final detailState = _detailContentKey.currentState;
+          final panelExpanded = detailState?.isSegmentPanelExpanded ?? false;
+          if ((panelExpanded && delta > 0) ||
+              (!panelExpanded &&
+                  delta < 0 &&
+                  widget.dismissAnimation.value <= 0.01)) {
+            _segmentPanelDragDelta += delta;
+            return;
+          }
+          onVerticalDragUpdate?.call(details);
+        },
+        onVerticalDragEnd: (details) {
+          final velocity = details.primaryVelocity ?? 0;
+          final detailState = _detailContentKey.currentState;
+          final panelExpanded = detailState?.isSegmentPanelExpanded ?? false;
+          final shouldExpand =
+              !panelExpanded &&
+              (_segmentPanelDragDelta < -42 || velocity < -400);
+          final shouldCollapse =
+              panelExpanded && (_segmentPanelDragDelta > 42 || velocity > 400);
+          _segmentPanelDragDelta = 0;
+          if (shouldExpand) {
+            detailState?.expandSegmentPanel();
+            return;
+          }
+          if (shouldCollapse) {
+            detailState?.collapseSegmentPanel();
+            return;
+          }
+          onVerticalDragEnd?.call(details);
+        },
+        onVerticalDragCancel: () {
+          _segmentPanelDragDelta = 0;
+          onVerticalDragCancel?.call();
+        },
         child: Stack(
           fit: StackFit.expand,
           children: [
@@ -982,6 +1018,7 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                                   isLandscape ? 32 : 8,
                                 ),
                                 child: _SessionDetailContent(
+                                  key: _detailContentKey,
                                   session: session,
                                   provider: provider,
                                   filenameKey: _filenameKey,

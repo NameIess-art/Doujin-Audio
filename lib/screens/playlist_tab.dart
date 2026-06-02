@@ -16,6 +16,7 @@ import '../i18n/app_language_provider.dart';
 import '../providers/audio_provider.dart';
 import '../providers/audio_provider_riverpod.dart';
 import '../providers/subtitle_settings_provider.dart';
+import '../services/path_matcher.dart';
 import '../services/permission_action_controller.dart';
 import '../services/subtitle_parser.dart';
 import '../services/subtitle_overlay_controller.dart';
@@ -44,6 +45,7 @@ part 'playlist_tab_detail_content.dart';
 part 'playlist_tab_media.dart';
 part 'playlist_tab_loop.dart';
 part 'playlist_tab_progress.dart';
+part 'playlist_tab_segments.dart';
 part 'playlist_tab_volume_timer.dart';
 
 Future<String?> _coverFutureForTrack(

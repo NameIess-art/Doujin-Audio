@@ -3,6 +3,7 @@ import 'package:sqflite/sqflite.dart';
 import '../models/audio_detail.dart';
 import '../models/library_entry.dart';
 import '../models/music_track.dart';
+import '../models/time_segment_label.dart';
 import 'app_database.dart';
 
 class AudioDatabaseRepository {
@@ -60,6 +61,38 @@ class AudioDatabaseRepository {
 
   Future<void> deleteAudioDetail(AudioDetailTarget target) {
     return _database.deleteAudioDetail(target);
+  }
+
+  Future<List<TimeSegmentLabel>> loadTimeSegmentLabels(String trackKey) {
+    return _database.loadTimeSegmentLabels(trackKey);
+  }
+
+  Future<void> upsertTimeSegmentLabel(TimeSegmentLabel label) {
+    return _database.upsertTimeSegmentLabel(label);
+  }
+
+  Future<void> deleteTimeSegmentLabel(String id) {
+    return _database.deleteTimeSegmentLabel(id);
+  }
+
+  Future<void> retargetTimeSegmentLabels({
+    required String oldTrackKey,
+    required String newTrackKey,
+  }) {
+    return _database.retargetTimeSegmentLabels(
+      oldTrackKey: oldTrackKey,
+      newTrackKey: newTrackKey,
+    );
+  }
+
+  Future<void> retargetTimeSegmentLabelsWithinPath({
+    required String oldRoot,
+    required String newRoot,
+  }) {
+    return _database.retargetTimeSegmentLabelsWithinPath(
+      oldRoot: oldRoot,
+      newRoot: newRoot,
+    );
   }
 
   Future<List<LibraryEntry>> loadAllLibraryEntries() {

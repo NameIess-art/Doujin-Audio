@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -11,21 +12,26 @@ import 'path_matcher.dart';
 import 'platform_channels.dart';
 
 class DlsiteMetadataException implements Exception {
-  const DlsiteMetadataException(this.message);
+  const DlsiteMetadataException(this.message, {this.isNetworkFailure = false});
 
   final String message;
+  final bool isNetworkFailure;
 
   @override
   String toString() => message;
 }
 
 class DlsiteMetadataService {
-  DlsiteMetadataService({HttpClient? httpClient})
-    : _httpClient = httpClient ?? HttpClient();
+  DlsiteMetadataService({
+    HttpClient? httpClient,
+    Duration requestTimeout = const Duration(seconds: 8),
+  }) : _httpClient = httpClient ?? HttpClient(),
+       _requestTimeout = requestTimeout;
 
   static const MethodChannel _fileCacheChannel = MethodChannel(
     FileCacheChannel.name,
   );
+  static const int _maxRequestAttempts = 2;
   static const List<String> _productSites = <String>[
     'maniax',
     'home',
@@ -36,6 +42,7 @@ class DlsiteMetadataService {
   ];
 
   final HttpClient _httpClient;
+  final Duration _requestTimeout;
 
   Future<DlsiteMetadata> fetchByRjCode(
     String rjCode, {
@@ -58,6 +65,9 @@ class DlsiteMetadataService {
             'workno': normalized,
           });
           return await _fetchProductMetadata(uri, language: candidateLanguage);
+        } on DlsiteMetadataException catch (error) {
+          lastError = error;
+          if (error.isNetworkFailure) rethrow;
         } catch (error) {
           lastError = error;
         }
@@ -78,6 +88,9 @@ class DlsiteMetadataService {
               metadata.workTitle.isNotEmpty) {
             return metadata;
           }
+        } on DlsiteMetadataException catch (error) {
+          lastError = error;
+          if (error.isNetworkFailure) rethrow;
         } catch (error) {
           lastError = error;
         }
@@ -109,6 +122,8 @@ class DlsiteMetadataService {
           metadata,
           keywords.length + 100,
         );
+      } on DlsiteMetadataException catch (error) {
+        if (error.isNetworkFailure) rethrow;
       } catch (_) {
         // Fall through to title search if an embedded RJ code is stale.
       }
@@ -123,6 +138,8 @@ class DlsiteMetadataService {
           final score = scoreDlsiteMetadataTitleMatch(metadata, keywords);
           if (score <= 0) continue;
           resultsByRjCode[rjCode] = _ScoredDlsiteMetadata(metadata, score);
+        } on DlsiteMetadataException catch (error) {
+          if (error.isNetworkFailure) rethrow;
         } catch (_) {
           // Search results can contain products unavailable through the JSON
           // endpoint; keep later candidates usable.
@@ -159,6 +176,8 @@ class DlsiteMetadataService {
         final response = await _get(suggestUri, language: language);
         final rjCodes = extractDlsiteProductIdsFromSuggestResponse(response);
         if (rjCodes.isNotEmpty) return rjCodes;
+      } on DlsiteMetadataException catch (error) {
+        if (error.isNetworkFailure) rethrow;
       } catch (_) {
         // Keep title search resilient when DLsite changes or blocks one endpoint.
       }
@@ -173,6 +192,8 @@ class DlsiteMetadataService {
         final response = await _get(searchUri, language: language);
         final rjCodes = extractDlsiteProductIdsFromSearchHtml(response);
         if (rjCodes.isNotEmpty) return rjCodes;
+      } on DlsiteMetadataException catch (error) {
+        if (error.isNetworkFailure) rethrow;
       } catch (_) {}
     }
     return const <String>[];
@@ -225,28 +246,39 @@ class DlsiteMetadataService {
 
   Future<String> _get(Uri uri, {required AppLanguage language}) async {
     Object? lastError;
-    for (var attempt = 0; attempt < 3; attempt += 1) {
+    for (var attempt = 0; attempt < _maxRequestAttempts; attempt += 1) {
       try {
-        final request = await _httpClient.getUrl(uri);
+        final request = await _httpClient.getUrl(uri).timeout(_requestTimeout);
         _applyHeaders(request, language);
-        final response = await request.close();
-        final bytes = await response.fold<List<int>>(
-          <int>[],
-          (buffer, chunk) => buffer..addAll(chunk),
-        );
+        final response = await request.close().timeout(_requestTimeout);
+        final bytes = await response
+            .fold<List<int>>(<int>[], (buffer, chunk) => buffer..addAll(chunk))
+            .timeout(_requestTimeout);
         if (response.statusCode >= 200 && response.statusCode < 300) {
           return utf8.decode(bytes);
         }
         final error = DlsiteMetadataException(
           'DLsite request failed: ${response.statusCode}',
         );
-        if (!_shouldRetryStatus(response.statusCode) || attempt == 2) {
+        if (!_shouldRetryStatus(response.statusCode) ||
+            attempt == _maxRequestAttempts - 1) {
           throw error;
         }
         lastError = error;
-      } on IOException catch (error) {
-        if (attempt == 2) rethrow;
+      } on TimeoutException {
+        const error = DlsiteMetadataException(
+          'DLsite request timed out',
+          isNetworkFailure: true,
+        );
+        if (attempt == _maxRequestAttempts - 1) throw error;
         lastError = error;
+      } on IOException catch (error) {
+        final networkError = DlsiteMetadataException(
+          'DLsite request failed: $error',
+          isNetworkFailure: true,
+        );
+        if (attempt == _maxRequestAttempts - 1) throw networkError;
+        lastError = networkError;
       }
       await Future<void>.delayed(Duration(milliseconds: 250 * (attempt + 1)));
     }

@@ -35,6 +35,7 @@ import '../widgets/top_page_header.dart';
 import '../widgets/unified_popup_menu.dart';
 import '../widgets/glass_refresh_indicator.dart';
 import 'audio_detail_sheet.dart';
+import 'dlsite_metadata_batch_page.dart';
 import 'screen_view_models.dart';
 import 'video_converter_tab.dart';
 
@@ -51,6 +52,8 @@ String _displaySourceName(String sourcePath) {
 String _displayTrackName(String trackPath) {
   return PathDisplay.fileName(trackPath, withoutExtension: true);
 }
+
+enum _LibraryMoreAction { manageLibraries, batchMetadata }
 
 class LibraryTab extends ConsumerStatefulWidget {
   const LibraryTab({super.key});
@@ -102,45 +105,18 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     ).push(MaterialPageRoute(builder: (_) => const VideoConverterTab()));
   }
 
-  Future<void> _openLibraryEditPage(String libraryPath) async {
+  Future<void> _openLibraryManagementPage() async {
     if (!mounted) return;
-    await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => LibraryEditPage(libraryPath: libraryPath),
-      ),
-    );
+    await Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const LibraryManagementPage()));
   }
 
-  Future<void> _confirmRemoveLibrary(String libraryPath) async {
-    final i18n = context.read<AppLanguageProvider>();
-    final confirmed = await showConfirmActionDialog(
-      context: context,
-      title: i18n.tr('remove_library'),
-      message: i18n.tr('remove_library_confirm', {
-        'name': _displaySourceName(libraryPath),
-      }),
-      cancelLabel: i18n.tr('cancel'),
-      confirmLabel: i18n.tr('remove'),
-      icon: Icons.library_music_rounded,
-    );
-    if (!confirmed || !mounted) return;
-    final provider = ref.read(audioProviderFacadeProvider);
-    final isWatchedLibrary = provider.watchedLibraries.any(
-      (source) => PathMatcher.equalsNormalized(source, libraryPath),
-    );
-    if (isWatchedLibrary) {
-      await provider.removeLibrary(libraryPath);
-    } else {
-      await provider.removeFolderFromLibrary(libraryPath);
-    }
-    if (mounted) {
-      showAppSnackBar(
-        context,
-        i18n.tr('library_removed'),
-        tone: AppFeedbackTone.destructive,
-        icon: Icons.delete_outline_rounded,
-      );
-    }
+  Future<void> _openBatchMetadataPage() async {
+    if (!mounted) return;
+    await Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const DlsiteMetadataBatchPage()));
   }
 
   Future<void> _scheduleWatchedFoldersRefresh({
@@ -329,15 +305,6 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         listState.isScanning &&
         libraryHeaderState.hasWatchedSources;
     final canPullRefresh = listState.canPullRefresh;
-    final editableSources = <String>[
-      ...listState.watchedLibraries,
-      ...listState.watchedFolders.where(
-        (folderPath) => !listState.watchedLibraries.any(
-          (libraryPath) => PathMatcher.isWithinOrEqual(folderPath, libraryPath),
-        ),
-      ),
-    ];
-
     Widget dynamicSearchBar() {
       return _CollapsingSearchBar(
         controller: _scrollController,
@@ -622,9 +589,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                 subtitleFontSize: 11,
                 fitSubtitleToWidth: true,
                 trailing: SizedBox(
-                  width:
-                      (editableSources.isEmpty ? 52 : 104) +
-                      (isWindows ? 52 : 0),
+                  width: 104 + (isWindows ? 52 : 0),
                   height: 44,
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.end,
@@ -637,35 +602,9 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                           icon: const Icon(Icons.refresh_rounded),
                           tooltip: i18n.tr('refresh_watched_folder'),
                         ),
-                      if (editableSources.isNotEmpty)
-                        UnifiedPopupMenuButton<String>(
-                          icon: Icons.edit_note_rounded,
-                          tooltip: i18n.tr('edit_library'),
-                          menuWidth: 280,
-                          entries: editableSources
-                              .map(
-                                (libraryPath) =>
-                                    UnifiedMenuEntry<String>.action(
-                                      value: libraryPath,
-                                      icon: Icons.folder_copy_rounded,
-                                      label: _displaySourceName(libraryPath),
-                                      trailingValue: libraryPath,
-                                      trailing: Icon(
-                                        Icons.delete_outline_rounded,
-                                        size: 20,
-                                        color: Theme.of(
-                                          context,
-                                        ).colorScheme.error,
-                                      ),
-                                    ),
-                              )
-                              .toList(growable: false),
-                          onSelected: _openLibraryEditPage,
-                          onTrailingSelected: _confirmRemoveLibrary,
-                        ),
                       UnifiedPopupMenuButton<int>(
                         icon: Icons.add_circle_outline_rounded,
-                        tooltip: i18n.tr('more_actions'),
+                        tooltip: i18n.tr('import_audio'),
                         entries: [
                           UnifiedMenuEntry<int>.action(
                             value: 0,
@@ -694,6 +633,32 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                           if (value == 1) _addLibrary();
                           if (value == 2) _addFiles();
                           if (value == 3) _openVideoConverterPage();
+                        },
+                      ),
+                      UnifiedPopupMenuButton<_LibraryMoreAction>(
+                        icon: Icons.more_horiz_rounded,
+                        tooltip: i18n.tr('more_actions'),
+                        entries: [
+                          UnifiedMenuEntry<_LibraryMoreAction>.action(
+                            value: _LibraryMoreAction.manageLibraries,
+                            icon: Icons.edit_note_rounded,
+                            label: i18n.tr('edit_library'),
+                          ),
+                          UnifiedMenuEntry<_LibraryMoreAction>.action(
+                            value: _LibraryMoreAction.batchMetadata,
+                            icon: Icons.library_add_check_rounded,
+                            label: i18n.tr('batch_metadata'),
+                          ),
+                        ],
+                        onSelected: (value) {
+                          switch (value) {
+                            case _LibraryMoreAction.manageLibraries:
+                              _openLibraryManagementPage();
+                              break;
+                            case _LibraryMoreAction.batchMetadata:
+                              _openBatchMetadataPage();
+                              break;
+                          }
                         },
                       ),
                     ],

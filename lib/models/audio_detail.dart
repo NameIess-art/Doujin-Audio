@@ -145,6 +145,13 @@ class AudioDetail {
       voiceActors.isEmpty &&
       tags.isEmpty;
 
+  bool get hasMissingMetadata =>
+      rjCode.trim().isEmpty ||
+      workTitle.trim().isEmpty ||
+      circleName.trim().isEmpty ||
+      voiceActors.isEmpty ||
+      tags.isEmpty;
+
   AudioDetail copyWith({
     AudioDetailTarget? target,
     String? rjCode,

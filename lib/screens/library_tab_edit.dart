@@ -66,6 +66,119 @@ class _LibraryEditTrackViewState {
   final bool inheritedExcluded;
 }
 
+class LibraryManagementPage extends ConsumerWidget {
+  const LibraryManagementPage({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final i18n = context.watch<AppLanguageProvider>();
+    final cs = Theme.of(context).colorScheme;
+    final libraries = ref.watch(
+      libraryUiProvider.select((state) => state.list.watchedLibraries),
+    );
+    return Scaffold(
+      backgroundColor: cs.surface,
+      body: Stack(
+        children: [
+          if (libraries.isEmpty)
+            Center(
+              child: Text(
+                i18n.tr('library_manage_empty'),
+                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                  color: cs.onSurfaceVariant,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            )
+          else
+            ListView.builder(
+              padding: EdgeInsets.fromLTRB(
+                16,
+                MediaQuery.paddingOf(context).top + 92,
+                16,
+                24,
+              ),
+              itemCount: libraries.length,
+              itemBuilder: (context, index) {
+                final libraryPath = libraries[index];
+                return Card(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  child: ListTile(
+                    title: Text(_displaySourceName(libraryPath)),
+                    subtitle: Text(
+                      PathDisplay.displayPathFor(libraryPath),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) =>
+                            LibraryEditPage(libraryPath: libraryPath),
+                      ),
+                    ),
+                    trailing: IconButton(
+                      tooltip: i18n.tr('remove_library'),
+                      onPressed: () => _confirmRemoveWatchedLibrary(
+                        context,
+                        ref,
+                        libraryPath,
+                      ),
+                      icon: Icon(Icons.delete_outline_rounded, color: cs.error),
+                    ),
+                  ),
+                );
+              },
+            ),
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: TopPageHeader(
+              icon: Icons.edit_note_rounded,
+              title: i18n.tr('edit_library'),
+              trailing: IconButton(
+                tooltip: i18n.tr('close'),
+                onPressed: () => Navigator.of(context).maybePop(),
+                icon: const Icon(Icons.close_rounded),
+              ),
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+              bottomSpacing: 16,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+Future<bool> _confirmRemoveWatchedLibrary(
+  BuildContext context,
+  WidgetRef ref,
+  String libraryPath,
+) async {
+  final i18n = context.read<AppLanguageProvider>();
+  final confirmed = await showConfirmActionDialog(
+    context: context,
+    title: i18n.tr('remove_library'),
+    message: i18n.tr('remove_library_confirm', {
+      'name': _displaySourceName(libraryPath),
+    }),
+    cancelLabel: i18n.tr('cancel'),
+    confirmLabel: i18n.tr('remove'),
+    icon: Icons.library_music_rounded,
+  );
+  if (!confirmed || !context.mounted) return false;
+  await ref.read(audioProviderFacadeProvider).removeLibrary(libraryPath);
+  if (!context.mounted) return true;
+  showAppSnackBar(
+    context,
+    i18n.tr('library_removed'),
+    tone: AppFeedbackTone.destructive,
+    icon: Icons.delete_outline_rounded,
+  );
+  return true;
+}
+
 class LibraryEditPage extends ConsumerStatefulWidget {
   const LibraryEditPage({super.key, required this.libraryPath});
 
@@ -208,28 +321,12 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage>
   }
 
   Future<void> _confirmRemoveLibrary(BuildContext context) async {
-    final i18n = context.read<AppLanguageProvider>();
-    final confirmed = await showConfirmActionDialog(
-      context: context,
-      title: i18n.tr('remove_library'),
-      message: i18n.tr('remove_library_confirm', {
-        'name': _displaySourceName(widget.libraryPath),
-      }),
-      cancelLabel: i18n.tr('cancel'),
-      confirmLabel: i18n.tr('remove'),
-      icon: Icons.library_music_rounded,
+    final removed = await _confirmRemoveWatchedLibrary(
+      context,
+      ref,
+      widget.libraryPath,
     );
-    if (!confirmed || !context.mounted) return;
-    await ref
-        .read(audioProviderFacadeProvider)
-        .removeLibrary(widget.libraryPath);
-    if (context.mounted) {
-      showAppSnackBar(
-        context,
-        i18n.tr('library_removed'),
-        tone: AppFeedbackTone.destructive,
-        icon: Icons.delete_outline_rounded,
-      );
+    if (removed && context.mounted) {
       await Navigator.of(context).maybePop();
     }
   }

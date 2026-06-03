@@ -28,6 +28,7 @@ void main() {
               'bufferedPositionMs': 3000,
               'durationMs': 5000,
               'volume': 0.75,
+              'speed': 1.5,
               'channelSwap': false,
             },
           };
@@ -40,6 +41,41 @@ void main() {
     expect(result.valueOrNull!.sessionId, 'session-1');
     expect(result.valueOrNull!.position, const Duration(milliseconds: 1500));
     expect(result.valueOrNull!.volume, closeTo(0.75, 0.001));
+    expect(result.valueOrNull!.speed, closeTo(1.5, 0.001));
+  });
+
+  test('setSpeed forwards session id and speed to native playback', () async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          expect(call.method, NativePlaybackMethod.setSpeed);
+          expect(call.arguments, <String, Object?>{
+            'sessionId': 'session-1',
+            'speed': 1.25,
+          });
+          return <String, Object?>{
+            'ok': true,
+            'value': <String, Object?>{
+              'sessionId': 'session-1',
+              'playing': false,
+              'playWhenReady': false,
+              'processingState': 'ready',
+              'positionMs': 0,
+              'bufferedPositionMs': 0,
+              'durationMs': 5000,
+              'speed': 1.25,
+              'volume': 1.0,
+              'channelSwap': false,
+            },
+          };
+        });
+
+    final result = await NativePlaybackBridge.instance.setSpeed(
+      'session-1',
+      1.25,
+    );
+
+    expect(result.isOk, isTrue);
+    expect(result.valueOrNull?.speed, closeTo(1.25, 0.001));
   });
 
   test(
@@ -82,6 +118,7 @@ void main() {
       expect(snapshot.isOk, isTrue);
       expect(snapshot.valueOrNull?.focusedSessionId, 'focus-1');
       expect(snapshot.valueOrNull?.sessions, hasLength(1));
+      expect(snapshot.valueOrNull?.sessions.single.speed, 1.0);
       expect(failure.isFailure, isTrue);
       expect(failure.errorOrNull, 'native unavailable');
     },

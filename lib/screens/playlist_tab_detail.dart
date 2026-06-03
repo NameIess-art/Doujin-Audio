@@ -22,6 +22,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
   int _lastCoverGeneration = -1;
   double? _subtitleDefaultTop;
   final Set<String> _primedAdjacentCoverKeys = <String>{};
+  final ValueNotifier<bool> _segmentPanelExpandedNotifier = ValueNotifier(false);
 
   @override
   void initState() {
@@ -45,6 +46,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
 
   @override
   void dispose() {
+    _segmentPanelExpandedNotifier.dispose();
     _dismissController.dispose();
     _slideController.dispose();
     super.dispose();
@@ -377,11 +379,17 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
               if (dismissProgress > 0.03)
                 const SizedBox.shrink()
               else
-                FloatingSubtitleWindow(
-                  key: ValueKey('subtitle_$_currentSessionId'),
-                  sessionId: _currentSessionId,
-
-                  defaultTop: _subtitleDefaultTop,
+                ValueListenableBuilder<bool>(
+                  valueListenable: _segmentPanelExpandedNotifier,
+                  builder: (context, expanded, child) {
+                    if (expanded) return const SizedBox.shrink();
+                    return child!;
+                  },
+                  child: FloatingSubtitleWindow(
+                    key: ValueKey('subtitle_$_currentSessionId'),
+                    sessionId: _currentSessionId,
+                    defaultTop: _subtitleDefaultTop,
+                  ),
                 ),
             ],
           );
@@ -410,6 +418,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
                 coverPathFuture: coverPathFuture,
                 slideAnimation: _slideAnimation,
                 dismissAnimation: _dismissController,
+                segmentPanelExpandedNotifier: _segmentPanelExpandedNotifier,
                 onClose: () async {
                   _saveSubtitlePositionBeforeDismiss();
                   ref
@@ -424,14 +433,19 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
                 onHorizontalDragUpdate: Platform.isWindows
                     ? null
                     : (details) {
+                        if (_segmentPanelExpandedNotifier.value) return;
                         _horizontalDragDelta += details.primaryDelta ?? 0;
                       },
                 onHorizontalDragEnd: Platform.isWindows
                     ? null
-                    : (details) => _handleHorizontalDragEnd(details, provider),
+                    : (details) {
+                        if (_segmentPanelExpandedNotifier.value) return;
+                        _handleHorizontalDragEnd(details, provider);
+                      },
                 onHorizontalDragCancel: Platform.isWindows
                     ? null
                     : () {
+                        if (_segmentPanelExpandedNotifier.value) return;
                         _horizontalDragDelta = 0;
                       },
                 onVerticalDragUpdate: enableVerticalDismiss
@@ -527,6 +541,7 @@ class _SessionDetailScaffold extends ConsumerStatefulWidget {
   final VoidCallback? onVerticalDragCancel;
   final void Function(double)? onSubtitleAnchorComputed;
   final Animation<double> switchAnimation;
+  final ValueNotifier<bool>? segmentPanelExpandedNotifier;
 
   const _SessionDetailScaffold({
     required this.session,
@@ -543,6 +558,7 @@ class _SessionDetailScaffold extends ConsumerStatefulWidget {
     this.onVerticalDragCancel,
     this.onSubtitleAnchorComputed,
     required this.dismissAnimation,
+    this.segmentPanelExpandedNotifier,
   });
 
   @override
@@ -1026,6 +1042,7 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                                   subtitleFontSize: ref
                                       .watch(subtitleSettingsProvider)
                                       .fontSize,
+                                  segmentPanelExpandedNotifier: widget.segmentPanelExpandedNotifier,
                                 ),
                               );
 

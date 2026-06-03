@@ -452,6 +452,8 @@ const Map<String, String> appLanguageJa = {
   'font_size': 'フォントサイズ',
   'volume': '音量',
   'volume_range_hint': '0-120',
+  'playback_speed': '再生速度',
+  'speed_reset': '1.0x に戻す',
   'segment_add': '区間ラベルを追加',
   'segment_start': '開始',
   'segment_end': '終了',

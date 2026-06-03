@@ -17,6 +17,7 @@ class NativePlaybackSnapshot {
     required this.position,
     required this.bufferedPosition,
     required this.volume,
+    this.speed = 1.0,
     required this.boostGain,
     required this.channelSwapEnabled,
     this.uri,
@@ -41,6 +42,7 @@ class NativePlaybackSnapshot {
   final Duration bufferedPosition;
   final Duration? duration;
   final double volume;
+  final double speed;
   final double boostGain;
   final bool channelSwapEnabled;
   final String? error;
@@ -65,6 +67,7 @@ class NativePlaybackSnapshot {
     Duration? duration,
     bool clearDuration = false,
     double? volume,
+    double? speed,
     double? boostGain,
     bool? channelSwapEnabled,
     String? error,
@@ -84,6 +87,7 @@ class NativePlaybackSnapshot {
       bufferedPosition: bufferedPosition ?? this.bufferedPosition,
       duration: clearDuration ? null : (duration ?? this.duration),
       volume: volume ?? this.volume,
+      speed: speed ?? this.speed,
       boostGain: boostGain ?? this.boostGain,
       channelSwapEnabled: channelSwapEnabled ?? this.channelSwapEnabled,
       error: clearError ? null : (error ?? this.error),
@@ -117,6 +121,7 @@ class NativePlaybackSnapshot {
           ? null
           : Duration(milliseconds: (map['durationMs'] as num).round()),
       volume: (map['volume'] as num?)?.toDouble() ?? 1.0,
+      speed: (map['speed'] as num?)?.toDouble() ?? 1.0,
       boostGain: (map['boostGain'] as num?)?.toDouble() ?? 1.0,
       channelSwapEnabled: map['channelSwap'] as bool? ?? false,
       error: map['error'] as String?,
@@ -167,6 +172,7 @@ abstract interface class NativePlaybackBridgeBase {
     double volume = 1.0,
     bool repeatOne = false,
     bool autoPlay = false,
+    double speed = 1.0,
     List<Map<String, Object?>>? queue,
     int? queueStartIndex,
     bool repeatAll = false,
@@ -189,6 +195,11 @@ abstract interface class NativePlaybackBridgeBase {
     double volume, {
     bool reloadSource = true,
   });
+
+  Future<NativeResult<NativePlaybackSnapshot>> setSpeed(
+    String sessionId,
+    double speed,
+  );
 
   Future<NativeResult<NativePlaybackSnapshot>> setRepeatOne(
     String sessionId,
@@ -326,6 +337,7 @@ class NativePlaybackBridge implements NativePlaybackBridgeBase {
     double volume = 1.0,
     bool repeatOne = false,
     bool autoPlay = false,
+    double speed = 1.0,
     List<Map<String, Object?>>? queue,
     int? queueStartIndex,
     bool repeatAll = false,
@@ -343,6 +355,7 @@ class NativePlaybackBridge implements NativePlaybackBridgeBase {
       if (artUri != null) 'artUri': artUri.toString(),
       'startPositionMs': startPosition.inMilliseconds,
       'volume': volume,
+      'speed': speed,
       'repeatOne': repeatOne,
       'autoPlay': autoPlay,
 
@@ -391,6 +404,17 @@ class NativePlaybackBridge implements NativePlaybackBridgeBase {
     return _invokeSnapshot(NativePlaybackMethod.setVolume, {
       'sessionId': sessionId,
       'volume': volume,
+    });
+  }
+
+  @override
+  Future<NativeResult<NativePlaybackSnapshot>> setSpeed(
+    String sessionId,
+    double speed,
+  ) {
+    return _invokeSnapshot(NativePlaybackMethod.setSpeed, {
+      'sessionId': sessionId,
+      'speed': speed,
     });
   }
 

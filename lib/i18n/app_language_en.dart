@@ -500,6 +500,8 @@ const Map<String, String> appLanguageEn = {
   'font_size': 'Font size',
   'volume': 'Volume',
   'volume_range_hint': '0-120',
+  'playback_speed': 'Speed',
+  'speed_reset': 'Reset to 1.0x',
   'segment_add': 'Add segment label',
   'segment_start': 'Start',
   'segment_end': 'End',

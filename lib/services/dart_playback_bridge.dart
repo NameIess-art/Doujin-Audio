@@ -60,6 +60,7 @@ class DartPlaybackBridge implements NativePlaybackBridgeBase {
     double volume = 1.0,
     bool repeatOne = false,
     bool autoPlay = false,
+    double speed = 1.0,
     List<Map<String, Object?>>? queue,
     int? queueStartIndex,
     bool repeatAll = false,
@@ -90,6 +91,7 @@ class DartPlaybackBridge implements NativePlaybackBridgeBase {
         queueStartIndex: queueStartIndex,
       );
       session.volume = _normalizeSessionVolume(volume);
+      session.speed = _normalizeSessionSpeed(speed);
       await session.setItems(
         items,
         initialIndex: queueStartIndex ?? 0,
@@ -155,6 +157,17 @@ class DartPlaybackBridge implements NativePlaybackBridgeBase {
     final session = _sessions[sessionId];
     if (session == null) return NativeFailure('Unknown session: $sessionId');
     await session.setVolume(volume, reloadSource: reloadSource);
+    return NativeSuccess(_emit(sessionId));
+  }
+
+  @override
+  Future<NativeResult<NativePlaybackSnapshot>> setSpeed(
+    String sessionId,
+    double speed,
+  ) async {
+    final session = _sessions[sessionId];
+    if (session == null) return NativeFailure('Unknown session: $sessionId');
+    await session.setSpeed(speed);
     return NativeSuccess(_emit(sessionId));
   }
 
@@ -336,6 +349,7 @@ class DartPlaybackBridge implements NativePlaybackBridgeBase {
       bufferedPosition: session.bufferedPosition,
       duration: session.duration,
       volume: session.volume,
+      speed: session.speed,
       boostGain: _boostGainFor(session.volume),
       channelSwapEnabled: session.channelSwapEnabled,
     );
@@ -401,6 +415,7 @@ class _DartPlaybackSession {
   List<_DartPlaybackItem> items = const <_DartPlaybackItem>[];
   int currentIndex = 0;
   double volume = 1.0;
+  double speed = 1.0;
   bool channelSwapEnabled = false;
   bool playing = false;
   bool playWhenReady = false;
@@ -417,6 +432,11 @@ class _DartPlaybackSession {
   Future<void> setVolume(double nextVolume, {bool reloadSource = true}) async {
     volume = _normalizeSessionVolume(nextVolume);
     await player.setVolume(volume * 100);
+  }
+
+  Future<void> setSpeed(double nextSpeed) async {
+    speed = _normalizeSessionSpeed(nextSpeed);
+    await player.setRate(speed);
   }
 
   _DartPlaybackItem? get currentItem {
@@ -459,6 +479,7 @@ class _DartPlaybackSession {
         play: false,
       );
       await player.setVolume(volume * 100);
+      await player.setRate(speed);
       await _applyChannelSwap();
       if (initialPosition > Duration.zero) {
         _pendingSeekPosition = initialPosition;
@@ -620,6 +641,10 @@ class _DartPlaybackSession {
 
 double _normalizeSessionVolume(double volume) {
   return volume.clamp(0.0, 2.0);
+}
+
+double _normalizeSessionSpeed(double speed) {
+  return speed.clamp(0.5, 2.0);
 }
 
 double _boostGainFor(double volume) {

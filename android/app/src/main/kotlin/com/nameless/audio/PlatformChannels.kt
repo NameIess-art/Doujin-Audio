@@ -18,6 +18,7 @@ internal object NativePlaybackMethods {
     const val STOP = "stop"
     const val SEEK = "seek"
     const val SET_VOLUME = "setVolume"
+    const val SET_SPEED = "setSpeed"
     const val SET_REPEAT_ONE = "setRepeatOne"
     const val SET_CHANNEL_SWAP = "setChannelSwap"
     const val REMOVE_SESSION = "removeSession"

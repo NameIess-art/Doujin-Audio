@@ -213,6 +213,7 @@ void main() {
         trackPath: 'https://example.com/track.mp3',
         loopModeIndex: 1,
         volume: 0.8,
+        speed: 1.5,
         positionMs: 1200,
         durationMs: 3200,
         customQueueTracks: <MusicTrack>[queueTrack],
@@ -224,6 +225,7 @@ void main() {
     final loaded = await appDatabase.loadAllSessions();
     expect(loaded, hasLength(1));
     expect(loaded.single.trackPath, 'https://example.com/track.mp3');
+    expect(loaded.single.speed, closeTo(1.5, 0.001));
     expect(loaded.single.customQueueTracks, hasLength(1));
     expect(
       loaded.single.customQueueTracks!.single.toJson(),

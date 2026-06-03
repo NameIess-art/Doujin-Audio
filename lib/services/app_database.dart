@@ -38,7 +38,7 @@ class AppDatabase {
     final dbPath = await getDatabasesPath();
     final db = await openDatabase(
       p.join(dbPath, 'audio_player.db'),
-      version: 13,
+      version: 14,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -76,6 +76,7 @@ class AppDatabase {
         track_path TEXT NOT NULL,
         loop_mode INTEGER NOT NULL,
         volume REAL NOT NULL,
+        speed REAL NOT NULL DEFAULT 1.0,
         position_ms INTEGER NOT NULL DEFAULT 0,
         duration_ms INTEGER NOT NULL DEFAULT 0,
         custom_queue_tracks_json TEXT,
@@ -202,6 +203,14 @@ class AppDatabase {
       );
       await _addColumnIfMissing(db, 'audio_details', 'sales_count', 'INTEGER');
       await _addColumnIfMissing(db, 'audio_details', 'rating', 'REAL');
+    }
+    if (oldVersion < 14) {
+      await _addColumnIfMissing(
+        db,
+        'sessions',
+        'speed',
+        'REAL NOT NULL DEFAULT 1.0',
+      );
     }
     await _createTrackIndexes(db);
   }
@@ -652,6 +661,7 @@ class AppDatabase {
             trackPath: trackPath,
             loopModeIndex: (item['loopMode'] as num?)?.toInt() ?? 1,
             volume: (item['volume'] as num?)?.toDouble() ?? 1.0,
+            speed: (item['speed'] as num?)?.toDouble() ?? 1.0,
             positionMs: (item['positionMs'] as num?)?.toInt() ?? 0,
             durationMs: (item['durationMs'] as num?)?.toInt() ?? 0,
             customQueueTracks: null,
@@ -771,6 +781,7 @@ class AppDatabase {
     'track_path': session.trackPath,
     'loop_mode': session.loopModeIndex,
     'volume': session.volume,
+    'speed': session.speed,
     'position_ms': session.positionMs,
     'duration_ms': session.durationMs,
     'custom_queue_tracks_json': _encodeTracks(session.customQueueTracks),
@@ -787,6 +798,7 @@ class AppDatabase {
         trackPath: row['track_path'] as String,
         loopModeIndex: row['loop_mode'] as int,
         volume: (row['volume'] as num).toDouble(),
+        speed: (row['speed'] as num?)?.toDouble() ?? 1.0,
         positionMs: row['position_ms'] as int,
         durationMs: row['duration_ms'] as int? ?? 0,
         customQueueTracks: _decodeTracks(row['custom_queue_tracks_json']),
@@ -844,6 +856,7 @@ class PersistedSession {
     required this.trackPath,
     required this.loopModeIndex,
     required this.volume,
+    this.speed = 1.0,
     required this.positionMs,
     required this.durationMs,
     required this.customQueueTracks,
@@ -858,6 +871,7 @@ class PersistedSession {
   final String trackPath;
   final int loopModeIndex;
   final double volume;
+  final double speed;
   final int positionMs;
   final int durationMs;
   final List<MusicTrack>? customQueueTracks;

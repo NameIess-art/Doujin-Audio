@@ -77,12 +77,13 @@ void main() {
     expect(find.text(languageProvider.tr('nav_library')), findsWidgets);
     expect(find.text(languageProvider.tr('nav_sessions')), findsWidgets);
     expect(find.text(languageProvider.tr('nav_settings')), findsWidgets);
-    expect(
-      tester
-          .widgetList<Offstage>(find.byType(Offstage))
-          .where((widget) => widget.offstage)
-          .length,
-      greaterThanOrEqualTo(3),
+    final pageFades = List<AnimatedOpacity>.generate(
+      4,
+      (index) => tester.widget<AnimatedOpacity>(
+        find.byKey(ValueKey<String>('main_page_fade_$index')),
+      ),
     );
+    expect(pageFades.where((widget) => widget.opacity == 1).length, 1);
+    expect(pageFades.where((widget) => widget.opacity == 0).length, 3);
   });
 }

@@ -19,11 +19,20 @@ extension _MainScreenLayout on _MainScreenState {
 
     Widget pageShell(int actualIndex) {
       final bool isActive = actualIndex == _currentIndex;
-      final Widget page = Offstage(
-        offstage: !isActive,
+      final Widget page = AnimatedOpacity(
+        key: ValueKey<String>('main_page_fade_$actualIndex'),
+        opacity: isActive ? 1 : 0,
+        duration: const Duration(milliseconds: 120),
+        curve: Curves.easeOutCubic,
         child: TickerMode(
           enabled: isActive,
-          child: ExcludeFocus(excluding: !isActive, child: _pages[actualIndex]),
+          child: ExcludeFocus(
+            excluding: !isActive,
+            child: ExcludeSemantics(
+              excluding: !isActive,
+              child: _pages[actualIndex],
+            ),
+          ),
         ),
       );
 

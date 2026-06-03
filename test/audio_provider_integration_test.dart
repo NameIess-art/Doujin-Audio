@@ -172,6 +172,63 @@ void main() {
         expect(session.position, const Duration(seconds: 42));
       },
     );
+
+    test('setSessionSpeed snaps to fixed options and calls native', () async {
+      var setSpeedCalls = 0;
+      double? lastNativeSpeed;
+
+      const track = MusicTrack(
+        path: 'https://example.com/speed.mp3',
+        displayName: 'track',
+        groupKey: 'speed',
+        groupTitle: 'Speed',
+        groupSubtitle: 'Speed',
+        isSingle: false,
+      );
+
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+            switch (call.method) {
+              case NativePlaybackMethod.prepareSession:
+                return <String, Object?>{'ok': true, 'value': null};
+              case NativePlaybackMethod.setSpeed:
+                setSpeedCalls++;
+                final args = call.arguments as Map<Object?, Object?>;
+                lastNativeSpeed = (args['speed'] as num?)?.toDouble();
+                return <String, Object?>{
+                  'ok': true,
+                  'value': <String, Object?>{
+                    'sessionId': args['sessionId'] as String,
+                    'uri': track.path,
+                    'path': track.path,
+                    'title': 'track',
+                    'playing': false,
+                    'playWhenReady': false,
+                    'processingState': 'ready',
+                    'positionMs': 0,
+                    'bufferedPositionMs': 0,
+                    'durationMs': const Duration(minutes: 3).inMilliseconds,
+                    'volume': 1.0,
+                    'speed': lastNativeSpeed,
+                    'boostGain': 1.0,
+                    'channelSwap': false,
+                  },
+                };
+              default:
+                return <String, Object?>{'ok': true, 'value': null};
+            }
+          });
+
+      provider.addTracks(<MusicTrack>[track], notify: false, persist: false);
+      await provider.spawnSession(track, autoPlay: false);
+      final session = provider.activeSessions.single;
+
+      await provider.setSessionSpeed(session.id, 1.6);
+
+      expect(setSpeedCalls, 1);
+      expect(lastNativeSpeed, closeTo(1.5, 0.001));
+      expect(session.speed, closeTo(1.5, 0.001));
+    });
   });
 
   group('time segment loop session isolation', () {

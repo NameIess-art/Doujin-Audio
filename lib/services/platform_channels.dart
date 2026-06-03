@@ -39,6 +39,7 @@ abstract final class NativePlaybackMethod {
   static const String stop = 'stop';
   static const String seek = 'seek';
   static const String setVolume = 'setVolume';
+  static const String setSpeed = 'setSpeed';
   static const String setRepeatOne = 'setRepeatOne';
   static const String setChannelSwap = 'setChannelSwap';
   static const String removeSession = 'removeSession';

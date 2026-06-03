@@ -13,6 +13,7 @@ data class StoredNativePlaybackSession(
     val artUri: String?,
     val positionMs: Long,
     val volume: Float,
+    val speed: Float,
     val repeatOne: Boolean,
     val repeatAll: Boolean,
     val shuffleModeEnabled: Boolean,
@@ -80,6 +81,7 @@ object NativePlaybackStateStore {
                     .put("artUri", session.artUri)
                     .put("positionMs", session.positionMs)
                     .put("volume", session.volume.toDouble())
+                    .put("speed", session.speed.toDouble())
                     .put("repeatOne", session.repeatOne)
                     .put("repeatAll", session.repeatAll)
                     .put("shuffleModeEnabled", session.shuffleModeEnabled)
@@ -140,6 +142,7 @@ object NativePlaybackStateStore {
                             artUri = item.optNullableString("artUri"),
                             positionMs = item.optLong("positionMs", 0L).coerceAtLeast(0L),
                             volume = item.optDouble("volume", 1.0).toFloat(),
+                            speed = item.optDouble("speed", 1.0).toFloat(),
                             repeatOne = item.optBoolean("repeatOne", false),
                             repeatAll = item.optBoolean("repeatAll", false),
                             shuffleModeEnabled = item.optBoolean("shuffleModeEnabled", false),

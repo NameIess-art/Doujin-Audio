@@ -440,6 +440,8 @@ const Map<String, String> appLanguageZh = {
   'font_size': '字号',
   'volume': '音量',
   'volume_range_hint': '0-120',
+  'playback_speed': '倍速',
+  'speed_reset': '恢复 1.0x',
   'segment_add': '添加时间段标签',
   'segment_start': '起点',
   'segment_end': '终点',

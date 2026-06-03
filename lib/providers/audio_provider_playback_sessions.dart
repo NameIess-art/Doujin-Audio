@@ -264,6 +264,7 @@ extension AudioProviderPlaybackSessions on AudioProvider {
             artUri: artUri,
             startPosition: startPosition,
             volume: session.volume,
+            speed: session.speed,
             repeatOne: session.loopMode == SessionLoopMode.single,
             queue: _nativePlaybackQueueFor(
               session,

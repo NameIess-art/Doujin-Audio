@@ -408,6 +408,7 @@ class NativePlaybackService : MediaSessionService() {
         val startPositionMs = (args["startPositionMs"] as? Number)?.toLong() ?: 0L
         val autoPlay = args["autoPlay"] as? Boolean ?: false
         val volume = (args["volume"] as? Number)?.toFloat() ?: 1f
+        val speed = (args["speed"] as? Number)?.toFloat() ?: 1f
         val repeatOne = args["repeatOne"] as? Boolean ?: false
         val queue = parseQueue(args["queue"]).ifEmpty {
             listOf(NativeMediaItemDescriptor(path, uri, title, subtitle, artUri))
@@ -432,6 +433,7 @@ class NativePlaybackService : MediaSessionService() {
                 queueStartIndex = queueStartIndex,
                 startPositionMs = startPositionMs,
                 volume = volume,
+                speed = speed,
                 repeatOne = repeatOne,
                 repeatAll = repeatAll,
                 shuffleModeEnabled = shuffle,
@@ -508,6 +510,14 @@ class NativePlaybackService : MediaSessionService() {
     fun setVolume(sessionId: String, volume: Float): Map<String, Any?> {
         val session = sessions[sessionId] ?: return errorResult("Unknown session.")
         session.applyVolume(volume)
+        publishSessionState(sessionId)
+        schedulePersistSessionState()
+        return okResult(session.snapshot())
+    }
+
+    fun setSpeed(sessionId: String, speed: Float): Map<String, Any?> {
+        val session = sessions[sessionId] ?: return errorResult("Unknown session.")
+        session.applySpeed(speed)
         publishSessionState(sessionId)
         schedulePersistSessionState()
         return okResult(session.snapshot())
@@ -1187,6 +1197,7 @@ class NativePlaybackService : MediaSessionService() {
                     queueStartIndex = queueStartIndex,
                     startPositionMs = stored.positionMs,
                     volume = stored.volume,
+                    speed = stored.speed,
                     repeatOne = stored.repeatOne,
                     repeatAll = stored.repeatAll,
                     shuffleModeEnabled = stored.shuffleModeEnabled,
@@ -1256,6 +1267,7 @@ class NativePlaybackService : MediaSessionService() {
                         queueStartIndex = queueStartIndex,
                         startPositionMs = stored.positionMs,
                         volume = stored.volume,
+                        speed = stored.speed,
                         repeatOne = stored.repeatOne,
                         repeatAll = stored.repeatAll,
                         shuffleModeEnabled = stored.shuffleModeEnabled,

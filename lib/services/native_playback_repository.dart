@@ -35,6 +35,7 @@ class NativePlaybackRepository {
     double volume = 1.0,
     bool repeatOne = false,
     bool autoPlay = false,
+    double speed = 1.0,
     List<Map<String, Object?>>? queue,
     int? queueStartIndex,
     bool repeatAll = false,
@@ -51,6 +52,7 @@ class NativePlaybackRepository {
       volume: volume,
       repeatOne: repeatOne,
       autoPlay: autoPlay,
+      speed: speed,
       queue: queue,
       queueStartIndex: queueStartIndex,
       repeatAll: repeatAll,
@@ -83,6 +85,13 @@ class NativePlaybackRepository {
     bool reloadSource = true,
   }) {
     return _bridge.setVolume(sessionId, volume, reloadSource: reloadSource);
+  }
+
+  Future<NativeResult<NativePlaybackSnapshot>> setSpeed(
+    String sessionId,
+    double speed,
+  ) {
+    return _bridge.setSpeed(sessionId, speed);
   }
 
   Future<NativeResult<NativePlaybackSnapshot>> setRepeatOne(

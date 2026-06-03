@@ -4,6 +4,15 @@ const PlaybackQueueResolver _playbackQueueResolver = PlaybackQueueResolver();
 const TimerRuntimeCalculator _timerRuntimeCalculator = TimerRuntimeCalculator();
 const double _maxSessionVolume = 2.0;
 
+double _nearestPlaybackSpeed(double speed) {
+  const options = AudioProvider.playbackSpeedOptions;
+  return options.reduce((best, candidate) {
+    final bestDistance = (best - speed).abs();
+    final candidateDistance = (candidate - speed).abs();
+    return candidateDistance < bestDistance ? candidate : best;
+  });
+}
+
 extension AudioProviderPlayback on AudioProvider {
   bool get _hasArmedTimerRuntime {
     return _timerRuntimeCalculator.hasArmedRuntime(
@@ -240,6 +249,51 @@ extension AudioProviderPlayback on AudioProvider {
     );
     if (notify) {
       _notifyPlaybackChanged();
+    }
+    if (persist) {
+      _scheduleSaveSessionState();
+    }
+  }
+
+  Future<void> setSessionSpeed(
+    String sessionId,
+    double speed, {
+    bool persist = true,
+    bool notify = true,
+  }) async {
+    final session = _sessions[sessionId];
+    if (session == null) return;
+    final nextSpeed = _nearestPlaybackSpeed(speed);
+    if ((session.speed - nextSpeed).abs() < 0.001) {
+      if (persist) {
+        _scheduleSaveSessionState();
+      }
+      return;
+    }
+    final previous = session.speed;
+    session.speed = nextSpeed;
+    _markActiveSessionsDirty();
+    if (notify) {
+      _notifyPlaybackChanged();
+      _syncNotificationState();
+    }
+
+    final response = await _nativePlaybackRepository.setSpeed(
+      session.id,
+      nextSpeed,
+    );
+
+    if (response.isFailure) {
+      session.speed = previous;
+      _markActiveSessionsDirty();
+      debugPrint(
+        'AudioProvider.setSessionSpeed error: ${response.errorOrNull}',
+      );
+      if (notify) {
+        _notifyPlaybackChanged();
+        _syncNotificationState();
+      }
+      return;
     }
     if (persist) {
       _scheduleSaveSessionState();

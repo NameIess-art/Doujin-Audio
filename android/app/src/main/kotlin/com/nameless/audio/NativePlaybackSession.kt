@@ -5,6 +5,7 @@ import android.net.Uri
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.audio.ChannelMappingAudioProcessor
@@ -34,6 +35,7 @@ internal class NativePlaybackSession(
     var subtitle: String? = null
     var artUri: String? = null
     var volume: Float = 1f
+    var speed: Float = 1f
     var repeatOne: Boolean = false
     var repeatAll: Boolean = false
     var shuffleModeEnabled: Boolean = false
@@ -77,6 +79,7 @@ internal class NativePlaybackSession(
                 lastPositionMs
             )
             applyVolumeToPlayer(p)
+            applySpeedToPlayer(p)
             p.repeatMode = repeatModeFor(descriptors.size)
             p.shuffleModeEnabled = shuffleModeEnabled && descriptors.size > 1
             p.playWhenReady = lastPlayWhenReady
@@ -109,6 +112,7 @@ internal class NativePlaybackSession(
         queueStartIndex: Int,
         startPositionMs: Long,
         volume: Float,
+        speed: Float,
         repeatOne: Boolean,
         repeatAll: Boolean,
         shuffleModeEnabled: Boolean,
@@ -122,6 +126,7 @@ internal class NativePlaybackSession(
         this.artUri = descriptor.artUri
         this.lastPositionMs = startPositionMs
         this.volume = PlaybackVolumeMapper.normalize(volume)
+        this.speed = normalizeSpeed(speed)
         this.repeatOne = repeatOne
         this.repeatAll = repeatAll
         this.shuffleModeEnabled = shuffleModeEnabled
@@ -138,6 +143,7 @@ internal class NativePlaybackSession(
             startPositionMs.coerceAtLeast(0L)
         )
         applyVolumeToPlayer(p)
+        applySpeedToPlayer(p)
         p.repeatMode = repeatModeFor(this.queue.size)
         p.shuffleModeEnabled = shuffleModeEnabled && this.queue.size > 1
         p.playWhenReady = autoPlay
@@ -162,11 +168,20 @@ internal class NativePlaybackSession(
         playerOrNull()?.let(::applyVolumeToPlayer)
     }
 
+    fun applySpeed(speed: Float) {
+        this.speed = normalizeSpeed(speed)
+        playerOrNull()?.let(::applySpeedToPlayer)
+    }
+
     private fun applyVolumeToPlayer(player: ExoPlayer) {
         val normalizedVolume = PlaybackVolumeMapper.normalize(volume)
         this.volume = normalizedVolume
         player.volume = PlaybackVolumeMapper.playerVolume(normalizedVolume)
         syncLoudnessEnhancer(player.audioSessionId)
+    }
+
+    private fun applySpeedToPlayer(player: ExoPlayer) {
+        player.playbackParameters = PlaybackParameters(normalizeSpeed(speed))
     }
 
     fun onAudioSessionIdChanged(audioSessionId: Int) {
@@ -239,6 +254,7 @@ internal class NativePlaybackSession(
             queueStartIndex = queueStartIndex,
             startPositionMs = currentPositionMs,
             volume = volume,
+            speed = speed,
             repeatOne = repeatOne,
             repeatAll = repeatAll,
             shuffleModeEnabled = shuffleModeEnabled,
@@ -269,6 +285,7 @@ internal class NativePlaybackSession(
             queueStartIndex = currentIndex,
             startPositionMs = currentPositionMs,
             volume = volume,
+            speed = speed,
             repeatOne = isRepeatOne,
             repeatAll = repeatAll,
             shuffleModeEnabled = shuffleModeEnabled,
@@ -302,6 +319,7 @@ internal class NativePlaybackSession(
             "durationMs" to lastDurationMs,
             "bufferedPositionMs" to lastBufferedPositionMs,
             "volume" to volume.toDouble(),
+            "speed" to speed.toDouble(),
             "boostGain" to PlaybackVolumeMapper.boostGain(volume).toDouble(),
             "channelSwap" to channelSwapEnabled,
             "error" to p?.playerError?.message
@@ -326,6 +344,7 @@ internal class NativePlaybackSession(
             artUri = artUri,
             positionMs = currentPos,
             volume = volume,
+            speed = speed,
             repeatOne = repeatOne,
             repeatAll = repeatAll,
             shuffleModeEnabled = shuffleModeEnabled,
@@ -408,6 +427,8 @@ internal class NativePlaybackSession(
         releaseLoudnessEnhancer()
     }
 }
+
+private fun normalizeSpeed(speed: Float): Float = speed.coerceIn(0.5f, 2.0f)
 
 internal fun ExoPlayer.playbackStateName(): String {
     return playbackStateName(playbackState)

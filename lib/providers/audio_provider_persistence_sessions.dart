@@ -38,7 +38,8 @@ extension AudioProviderPersistenceSessions on AudioProvider {
         final loopMode = SessionLoopMode
             .values[loopModeIndex.clamp(0, SessionLoopMode.values.length - 1)];
         final volume = item.volume.clamp(0.0, _maxSessionVolume);
-        
+        final speed = _nearestPlaybackSpeed(item.speed);
+
         final recordProgress = _settingsRepository.recordPlaybackProgress;
         final restoredPositionMs = recordProgress ? item.positionMs : 0;
         final restoredPosition = Duration(
@@ -65,6 +66,7 @@ extension AudioProviderPersistenceSessions on AudioProvider {
         session.setOptimisticDuration(Duration(milliseconds: item.durationMs));
         session.lastPersistedPositionBucket = restoredPosition.inSeconds ~/ 5;
         session.channelSwapEnabled = item.channelSwapEnabled;
+        session.speed = speed;
         _sessions[session.id] = session;
         _markActiveSessionsDirty();
         _bindSessionListeners(session);
@@ -111,6 +113,7 @@ extension AudioProviderPersistenceSessions on AudioProvider {
             subtitle: track.groupTitle,
             startPosition: session.lastKnownPosition,
             volume: session.volume,
+            speed: session.speed,
             repeatOne: session.loopMode == SessionLoopMode.single,
             queue: _nativePlaybackQueueFor(
               session,
@@ -208,6 +211,7 @@ extension AudioProviderPersistenceSessions on AudioProvider {
               trackPath: session.currentTrackPath,
               loopModeIndex: session.loopMode.index,
               volume: session.volume,
+              speed: session.speed,
               positionMs: positionMs,
               durationMs: session.duration?.inMilliseconds ?? 0,
               customQueueTracks: session.customQueueTracks,

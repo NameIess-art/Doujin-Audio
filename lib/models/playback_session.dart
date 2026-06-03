@@ -109,6 +109,9 @@ class PlaybackSession {
     if ((volume - snapshot.volume).abs() >= 0.001) {
       volume = snapshot.volume;
     }
+    if ((speed - snapshot.speed).abs() >= 0.001) {
+      speed = snapshot.speed;
+    }
     nativeBoostGain = snapshot.boostGain;
     channelSwapEnabled = snapshot.channelSwapEnabled;
     if (snapshot.uri != null && loadedPath == null) {

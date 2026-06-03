@@ -8,6 +8,7 @@ class _SessionDetailContent extends StatefulWidget {
     this.filenameKey,
     this.progressBarKey,
     this.subtitleFontSize = 16,
+    this.segmentPanelExpandedNotifier,
   });
 
   final PlaybackSession session;
@@ -15,6 +16,7 @@ class _SessionDetailContent extends StatefulWidget {
   final GlobalKey? filenameKey;
   final GlobalKey? progressBarKey;
   final double subtitleFontSize;
+  final ValueNotifier<bool>? segmentPanelExpandedNotifier;
 
   @override
   State<_SessionDetailContent> createState() => _SessionDetailContentState();
@@ -47,6 +49,7 @@ class _SessionDetailContentState extends State<_SessionDetailContent>
     setState(() {
       _segmentPanelExpanded = true;
     });
+    widget.segmentPanelExpandedNotifier?.value = true;
   }
 
   void collapseSegmentPanel() {
@@ -55,6 +58,7 @@ class _SessionDetailContentState extends State<_SessionDetailContent>
       _segmentPanelExpanded = false;
       _clearSegmentDraft();
     });
+    widget.segmentPanelExpandedNotifier?.value = false;
   }
 
   @override
@@ -445,6 +449,8 @@ class _SessionDetailContentState extends State<_SessionDetailContent>
           child: _segmentPanelExpanded
               ? _TimeSegmentPanel(
                   key: const ValueKey('segments'),
+                  session: session,
+                  provider: provider,
                   labels: _segmentLabels,
                   selectedId: _selectedSegmentId,
                   showEditor: _segmentEditorVisible,

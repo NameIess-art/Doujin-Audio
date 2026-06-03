@@ -44,6 +44,7 @@ void main() {
           bufferedPosition: Duration(seconds: 20),
           duration: Duration(minutes: 3),
           volume: 0.42,
+          speed: 1.5,
           boostGain: 1.0,
           channelSwapEnabled: false,
         ),
@@ -56,6 +57,7 @@ void main() {
       expect(first.duration, const Duration(minutes: 3));
       expect(first.bufferedPosition, const Duration(seconds: 20));
       expect(first.volume, closeTo(0.42, 0.001));
+      expect(first.speed, closeTo(1.5, 0.001));
       expect(first.loadedPath, '/audio/one.mp3');
       expect(firstStates, hasLength(1));
 

@@ -142,6 +142,15 @@ class AudioProvider with ChangeNotifier {
     '256k',
     '320k',
   ];
+  static const List<double> playbackSpeedOptions = [
+    0.5,
+    0.75,
+    1.0,
+    1.25,
+    1.5,
+    1.75,
+    2.0,
+  ];
 
   int _sessionSeed = 0;
   bool _isInitialized = false;

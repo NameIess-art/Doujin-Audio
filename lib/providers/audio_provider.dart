@@ -15,6 +15,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../i18n/app_language_provider.dart';
 import '../models/audio_detail.dart';
 import '../models/audio_library_category.dart';
+import '../models/audio_effects.dart';
 import '../models/card_info_field.dart';
 import '../models/dlsite_metadata.dart';
 import '../models/library_entry.dart';
@@ -33,6 +34,7 @@ import '../services/asmr_metadata_service.dart';
 import '../services/dlsite_metadata_service.dart';
 import '../services/library_organizer.dart';
 import '../services/media_file_support.dart';
+import '../services/native_result.dart';
 import '../services/native_playback_repository.dart';
 import '../services/playback_queue_resolver.dart';
 import '../services/platform_channels.dart';
@@ -44,6 +46,7 @@ export '../models/library_node.dart';
 export '../models/library_entry.dart';
 export '../models/audio_detail.dart';
 export '../models/audio_library_category.dart';
+export '../models/audio_effects.dart';
 export '../models/card_info_field.dart';
 export '../models/dlsite_metadata.dart';
 export '../models/music_track.dart';
@@ -150,6 +153,38 @@ class AudioProvider with ChangeNotifier {
     1.5,
     1.75,
     2.0,
+  ];
+  static const List<EqPreset> builtInEqPresets = [
+    EqPreset(
+      id: 'flat',
+      labelKey: 'eq_preset_flat',
+      bandLevels: <int, double>{},
+    ),
+    EqPreset(
+      id: 'asmr_immersive',
+      labelKey: 'eq_preset_asmr_immersive',
+      bandLevels: <int, double>{60: 2.5, 170: 1.5, 310: -1.0, 3000: 1.5, 6000: 2.5, 12000: 3.5},
+    ),
+    EqPreset(
+      id: 'voice_clear',
+      labelKey: 'eq_preset_voice_clear',
+      bandLevels: <int, double>{170: -2.0, 310: -1.0, 1000: 1.5, 3000: 3.0, 6000: 1.5},
+    ),
+    EqPreset(
+      id: 'ear_massage',
+      labelKey: 'eq_preset_ear_massage',
+      bandLevels: <int, double>{60: 3.0, 170: 1.0, 1000: -1.5, 3000: 1.0, 6000: 3.5, 12000: 4.5},
+    ),
+    EqPreset(
+      id: 'night_soft',
+      labelKey: 'eq_preset_night_soft',
+      bandLevels: <int, double>{60: -2.0, 170: -1.5, 3000: -1.5, 6000: -3.0, 12000: -4.5},
+    ),
+    EqPreset(
+      id: 'bass_boost',
+      labelKey: 'eq_preset_bass_boost',
+      bandLevels: <int, double>{60: 4.5, 170: 3.0, 310: 1.0, 6000: -1.0},
+    ),
   ];
 
   int _sessionSeed = 0;

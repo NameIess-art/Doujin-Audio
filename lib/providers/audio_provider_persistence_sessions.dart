@@ -67,6 +67,7 @@ extension AudioProviderPersistenceSessions on AudioProvider {
         session.lastPersistedPositionBucket = restoredPosition.inSeconds ~/ 5;
         session.channelSwapEnabled = item.channelSwapEnabled;
         session.speed = speed;
+        session.audioEffects = item.audioEffects;
         _sessions[session.id] = session;
         _markActiveSessionsDirty();
         _bindSessionListeners(session);
@@ -129,10 +130,14 @@ extension AudioProviderPersistenceSessions on AudioProvider {
           if (!prepareResult.isOk) {
             continue;
           }
-          if (session.channelSwapEnabled) {
-            await _nativePlaybackRepository.setChannelSwap(
+          if (session.channelSwapEnabled ||
+              session.audioEffects.hasEnabledEffects) {
+            await _nativePlaybackRepository.setAudioEffects(
               session.id,
-              session.channelSwapEnabled,
+              NativeAudioEffects(
+                state: session.audioEffects,
+                channelSwapEnabled: session.channelSwapEnabled,
+              ),
             );
           }
           session.loadedPath = track.path;
@@ -216,6 +221,7 @@ extension AudioProviderPersistenceSessions on AudioProvider {
               durationMs: session.duration?.inMilliseconds ?? 0,
               customQueueTracks: session.customQueueTracks,
               channelSwapEnabled: session.channelSwapEnabled,
+              audioEffects: session.audioEffects,
               createdAtMs: session.createdAt.millisecondsSinceEpoch,
               updatedAtMs: now.millisecondsSinceEpoch,
               lastPlayedAtMs: session.state.playing

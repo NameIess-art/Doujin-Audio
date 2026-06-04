@@ -172,10 +172,8 @@ class _PlaybackControlPanel extends StatelessWidget {
             },
           ),
         ),
-        Container(
-          margin: const EdgeInsets.only(top: 8),
-          decoration: _controlPanelDecoration(cs),
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+        Padding(
+          padding: const EdgeInsets.only(top: 8, left: 4, right: 4, bottom: 2),
           child: SizedBox(
             height: 52,
             child: Row(
@@ -267,12 +265,12 @@ class _TimeSegmentPanel extends StatefulWidget {
 
 class _TimeSegmentPanelState extends State<_TimeSegmentPanel> {
   late final PageController _pageController;
-  int _pageIndex = 0;
+  int _pageIndex = 2;
 
   @override
   void initState() {
     super.initState();
-    _pageController = PageController();
+    _pageController = PageController(initialPage: _pageIndex);
   }
 
   @override
@@ -284,6 +282,17 @@ class _TimeSegmentPanelState extends State<_TimeSegmentPanel> {
   void _handlePageChanged(int index) {
     if (_pageIndex == index) return;
     setState(() => _pageIndex = index);
+  }
+
+  void _animateToPanelPage(int index) {
+    if (_pageIndex == index) return;
+    HapticFeedback.selectionClick();
+    setState(() => _pageIndex = index);
+    _pageController.animateToPage(
+      index,
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOutCubic,
+    );
   }
 
   @override
@@ -303,7 +312,7 @@ class _TimeSegmentPanelState extends State<_TimeSegmentPanel> {
 
     return Container(
       height: targetHeight,
-      padding: const EdgeInsets.fromLTRB(16, 6, 16, 16),
+      padding: const EdgeInsets.fromLTRB(0, 6, 0, 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -316,8 +325,14 @@ class _TimeSegmentPanelState extends State<_TimeSegmentPanel> {
           const SizedBox(height: 8),
           _SegmentPanelPageHeader(
             pageIndex: _pageIndex,
-            segmentLabel: '时间段标记',
-            speedLabel: i18n.tr('playback_speed'),
+            onSelected: _animateToPanelPage,
+            labels: [
+              i18n.tr('equalizer'),
+              i18n.tr('audio_features'),
+              i18n.tr('playback_speed'),
+              i18n.tr('audio_detail_tags'),
+              i18n.tr('volume_balance'),
+            ],
           ),
           const SizedBox(height: 12),
           Expanded(
@@ -325,14 +340,26 @@ class _TimeSegmentPanelState extends State<_TimeSegmentPanel> {
               controller: _pageController,
               onPageChanged: _handlePageChanged,
               children: [
+                _EqualizerPage(
+                  session: widget.session,
+                  provider: widget.provider,
+                ),
+                _AudioFeaturesPage(
+                  session: widget.session,
+                  provider: widget.provider,
+                ),
+                _SpeedWheelPage(
+                  key: ValueKey<String>('speed_${widget.session.id}'),
+                  session: widget.session,
+                  provider: widget.provider,
+                ),
                 _buildSegmentPage(
                   context,
                   selected: selected,
                   activeColor: activeColor,
                   loopActive: loopActive,
                 ),
-                _SpeedWheelPage(
-                  key: ValueKey<String>('speed_${widget.session.id}'),
+                _VolumeBalancePage(
                   session: widget.session,
                   provider: widget.provider,
                 ),
@@ -535,42 +562,483 @@ class _TimeSegmentPanelState extends State<_TimeSegmentPanel> {
 class _SegmentPanelPageHeader extends StatelessWidget {
   const _SegmentPanelPageHeader({
     required this.pageIndex,
-    required this.segmentLabel,
-    required this.speedLabel,
+    required this.onSelected,
+    required this.labels,
   });
 
   final int pageIndex;
-  final String segmentLabel;
-  final String speedLabel;
+  final ValueChanged<int> onSelected;
+  final List<String> labels;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final labels = <String>[segmentLabel, speedLabel];
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: List.generate(labels.length, (index) {
-        final selected = index == pageIndex;
-        return AnimatedContainer(
-          duration: const Duration(milliseconds: 140),
-          curve: Curves.easeOutCubic,
-          margin: const EdgeInsets.symmetric(horizontal: 4),
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-          decoration: BoxDecoration(
-            color: selected
-                ? cs.primary.withValues(alpha: 0.16)
-                : Colors.transparent,
-            borderRadius: BorderRadius.circular(999),
-          ),
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: List.generate(labels.length, (index) {
+          final selected = index == pageIndex;
+          return Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 2),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(999),
+              onTap: () => onSelected(index),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 140),
+                curve: Curves.easeOutCubic,
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                decoration: BoxDecoration(
+                  color: selected
+                      ? cs.primary.withValues(alpha: 0.16)
+                      : Colors.transparent,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  labels[index],
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: selected ? cs.primary : cs.onSurfaceVariant,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ),
+          );
+        }),
+      ),
+    );
+  }
+}
+
+class _AudioFeaturesPage extends StatelessWidget {
+  const _AudioFeaturesPage({required this.session, required this.provider});
+
+  final PlaybackSession session;
+  final AudioProvider provider;
+
+  @override
+  Widget build(BuildContext context) {
+    final i18n = context.read<AppLanguageProvider>();
+    final liveProvider = context.watch<AudioProvider>();
+    final liveSession = liveProvider.sessionById(session.id) ?? session;
+    final effects = liveSession.audioEffects;
+    return ListView(
+      padding: const EdgeInsets.only(top: 6),
+      children: [
+        _FeatureSwitchTile(
+          title: i18n.tr('skip_silence'),
+          subtitle: i18n.tr('skip_silence_desc'),
+          icon: Icons.fast_forward_rounded,
+          value: effects.skipSilenceEnabled,
+          onChanged: (value) {
+            HapticFeedback.selectionClick();
+            unawaited(
+              liveProvider.setSessionSkipSilence(liveSession.id, value),
+            );
+          },
+        ),
+        const SizedBox(height: 10),
+        _FeatureSwitchTile(
+          title: i18n.tr('noise_reduction'),
+          subtitle: i18n.tr('noise_reduction_desc'),
+          icon: Icons.graphic_eq_rounded,
+          value: effects.noiseReductionEnabled,
+          onChanged: (value) {
+            HapticFeedback.selectionClick();
+            unawaited(
+              liveProvider.setSessionNoiseReduction(liveSession.id, value),
+            );
+          },
+        ),
+        const SizedBox(height: 10),
+        _FeatureSwitchTile(
+          title: i18n.tr('volume_normalization'),
+          subtitle: i18n.tr('volume_normalization_desc'),
+          icon: Icons.compress_rounded,
+          value: effects.volumeNormalizationEnabled,
+          onChanged: (value) {
+            HapticFeedback.selectionClick();
+            unawaited(
+              liveProvider.setSessionVolumeNormalization(liveSession.id, value),
+            );
+          },
+        ),
+        const SizedBox(height: 10),
+        _FeatureSwitchTile(
+          title: i18n.tr('channel_swap'),
+          subtitle: i18n.tr('channel_swap_desc'),
+          icon: Icons.swap_horiz_rounded,
+          value: liveSession.channelSwapEnabled,
+          onChanged: (value) {
+            HapticFeedback.selectionClick();
+            unawaited(
+              liveProvider.setSessionChannelSwap(liveSession.id, value),
+            );
+          },
+        ),
+      ],
+    );
+  }
+}
+
+class _FeatureSwitchTile extends StatelessWidget {
+  const _FeatureSwitchTile({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: cs.surfaceContainerHighest.withValues(alpha: 0.18),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.35)),
+      ),
+      child: SwitchListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 14),
+        value: value,
+        onChanged: onChanged,
+        secondary: Icon(
+          icon,
+          color: value ? cs.primary : cs.onSurfaceVariant,
+          size: 22,
+        ),
+        title: Text(
+          title,
+          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+        ),
+        subtitle: Padding(
+          padding: const EdgeInsets.only(top: 2),
           child: Text(
-            labels[index],
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              color: selected ? cs.primary : cs.onSurfaceVariant,
-              fontWeight: FontWeight.w800,
+            subtitle,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 11,
+              color: cs.onSurfaceVariant,
+              height: 1.2,
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _VolumeBalancePage extends StatelessWidget {
+  const _VolumeBalancePage({required this.session, required this.provider});
+
+  final PlaybackSession session;
+  final AudioProvider provider;
+
+  @override
+  Widget build(BuildContext context) {
+    final liveProvider = context.watch<AudioProvider>();
+    final liveSession = liveProvider.sessionById(session.id) ?? session;
+    final panning = liveSession.audioEffects.panning;
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Icon(
+                  Icons.headphones_outlined,
+                  color: colorScheme.onSurfaceVariant,
+                ),
+                Icon(
+                  Icons.headphones_outlined,
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Text(
+                  'L',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: colorScheme.primary,
+                  ),
+                ),
+                Expanded(
+                  child: Slider(
+                    value: panning,
+                    min: -1.0,
+                    divisions: 20,
+                    label: panning == 0 ? '0' : panning.toStringAsFixed(1),
+                    onChanged: (value) {
+                      HapticFeedback.selectionClick();
+                      unawaited(
+                        liveProvider.setSessionPanning(liveSession.id, value),
+                      );
+                    },
+                    onChangeEnd: (value) {
+                      if (value.abs() < 0.1) {
+                        unawaited(
+                          liveProvider.setSessionPanning(liveSession.id, 0.0),
+                        );
+                      }
+                    },
+                  ),
+                ),
+                Text(
+                  'R',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: colorScheme.primary,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _EqualizerPage extends StatelessWidget {
+  const _EqualizerPage({required this.session, required this.provider});
+
+  final PlaybackSession session;
+  final AudioProvider provider;
+
+  @override
+  Widget build(BuildContext context) {
+    final i18n = context.read<AppLanguageProvider>();
+    final cs = Theme.of(context).colorScheme;
+    final liveProvider = context.watch<AudioProvider>();
+    final liveSession = liveProvider.sessionById(session.id) ?? session;
+    final effects = liveSession.audioEffects;
+    final capabilities = liveSession.eqCapabilities;
+    final presets = [
+      ...AudioProvider.builtInEqPresets,
+      ...liveProvider.customEqPresets,
+    ];
+    final selectedPreset =
+        presets.any((preset) => preset.id == effects.eqPresetId)
+        ? effects.eqPresetId
+        : 'flat';
+
+    return ListView(
+      padding: const EdgeInsets.only(top: 2),
+      children: [
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: Text(
+            i18n.tr('equalizer'),
+            style: const TextStyle(fontWeight: FontWeight.w900),
+          ),
+          subtitle: Text(
+            capabilities.supported
+                ? i18n.tr('equalizer_supported')
+                : i18n.tr('equalizer_enable_hint'),
+          ),
+          value: effects.eqEnabled,
+          onChanged: (value) {
+            HapticFeedback.selectionClick();
+            unawaited(liveProvider.setSessionEqEnabled(liveSession.id, value));
+          },
+        ),
+        DropdownButtonFormField<String>(
+          initialValue: selectedPreset,
+          decoration: InputDecoration(
+            labelText: i18n.tr('eq_preset'),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: 10,
+            ),
+          ),
+          items: presets
+              .map(
+                (preset) => DropdownMenuItem<String>(
+                  value: preset.id,
+                  child: Text(_presetLabel(i18n, preset)),
+                ),
+              )
+              .toList(growable: false),
+          onChanged: (value) {
+            final preset = presets
+                .where((item) => item.id == value)
+                .firstOrNull;
+            if (preset == null) return;
+            HapticFeedback.selectionClick();
+            unawaited(
+              liveProvider.applySessionEqPreset(liveSession.id, preset),
+            );
+          },
+        ),
+        const SizedBox(height: 12),
+        if (!capabilities.supported)
+          Text(
+            i18n.tr('equalizer_unavailable'),
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: cs.onSurfaceVariant,
+              fontWeight: FontWeight.w600,
+            ),
+          )
+        else
+          ...capabilities.bands.map((band) {
+            final value = effects.eqBandLevels[band.frequencyHz] ?? 0.0;
+            return _EqBandSlider(
+              label: _formatFrequency(band.frequencyHz),
+              value: value.clamp(
+                capabilities.minGainDb,
+                capabilities.maxGainDb,
+              ),
+              min: capabilities.minGainDb,
+              max: capabilities.maxGainDb,
+              onChanged: effects.eqEnabled
+                  ? (nextValue) {
+                      unawaited(
+                        liveProvider.setSessionEqBandLevel(
+                          liveSession.id,
+                          band.frequencyHz,
+                          nextValue,
+                        ),
+                      );
+                    }
+                  : null,
+            );
+          }),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: FilledButton.tonal(
+                onPressed: () {
+                  final flat = AudioProvider.builtInEqPresets.first;
+                  unawaited(
+                    liveProvider.applySessionEqPreset(liveSession.id, flat),
+                  );
+                },
+                child: Text(i18n.tr('eq_reset')),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: FilledButton.tonal(
+                onPressed: effects.eqBandLevels.isEmpty
+                    ? null
+                    : () => _showSavePresetDialog(
+                        context,
+                        provider: liveProvider,
+                        session: liveSession,
+                      ),
+                child: Text(i18n.tr('eq_save_preset')),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Future<void> _showSavePresetDialog(
+    BuildContext context, {
+    required AudioProvider provider,
+    required PlaybackSession session,
+  }) async {
+    final i18n = context.read<AppLanguageProvider>();
+    final controller = TextEditingController();
+    final name = await showDialog<String>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text(i18n.tr('eq_save_preset')),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            decoration: InputDecoration(labelText: i18n.tr('eq_preset_name')),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: Text(MaterialLocalizations.of(context).cancelButtonLabel),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(controller.text),
+              child: Text(MaterialLocalizations.of(context).okButtonLabel),
+            ),
+          ],
         );
-      }),
+      },
+    );
+    controller.dispose();
+    if (name == null || name.trim().isEmpty) return;
+    unawaited(provider.saveCustomEqPreset(name, session));
+  }
+}
+
+class _EqBandSlider extends StatelessWidget {
+  const _EqBandSlider({
+    required this.label,
+    required this.value,
+    required this.min,
+    required this.max,
+    required this.onChanged,
+  });
+
+  final String label;
+  final double value;
+  final double min;
+  final double max;
+  final ValueChanged<double>? onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final divisions = ((max - min) * 2).round().clamp(1, 80).toInt();
+    return Row(
+      children: [
+        SizedBox(
+          width: 56,
+          child: Text(
+            label,
+            style: Theme.of(
+              context,
+            ).textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w800),
+          ),
+        ),
+        Expanded(
+          child: Slider(
+            value: value,
+            min: min,
+            max: max,
+            divisions: divisions,
+            label: '${value.toStringAsFixed(1)} dB',
+            onChanged: onChanged,
+          ),
+        ),
+        SizedBox(
+          width: 54,
+          child: Text(
+            '${value.toStringAsFixed(1)} dB',
+            textAlign: TextAlign.end,
+            style: const TextStyle(
+              fontFeatures: [FontFeature.tabularFigures()],
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -589,9 +1057,23 @@ class _SpeedWheelPage extends StatefulWidget {
   State<_SpeedWheelPage> createState() => _SpeedWheelPageState();
 }
 
+@visibleForTesting
+int playbackSpeedWheelIndexAfterDesktopScroll({
+  required int currentIndex,
+  required double scrollDeltaY,
+  required int itemCount,
+}) {
+  if (itemCount <= 0 || scrollDeltaY.abs() < 0.01) return currentIndex;
+  final direction = scrollDeltaY > 0 ? 1 : -1;
+  return (currentIndex + direction).clamp(0, itemCount - 1).toInt();
+}
+
 class _SpeedWheelPageState extends State<_SpeedWheelPage> {
   late FixedExtentScrollController _controller;
   late int _selectedIndex;
+  int? _pendingDesktopWheelIndex;
+  DateTime? _desktopWheelLockUntil;
+  bool _desktopWheelAppliedManually = false;
 
   List<double> get _speeds => AudioProvider.playbackSpeedOptions;
 
@@ -649,6 +1131,39 @@ class _SpeedWheelPageState extends State<_SpeedWheelPage> {
     );
   }
 
+  void _handleDesktopPointerSignal(PointerSignalEvent event) {
+    if (!Platform.isWindows || event is! PointerScrollEvent) return;
+    final baseIndex = _pendingDesktopWheelIndex ?? _selectedIndex;
+    final nextIndex = playbackSpeedWheelIndexAfterDesktopScroll(
+      currentIndex: baseIndex,
+      scrollDeltaY: event.scrollDelta.dy,
+      itemCount: _speeds.length,
+    );
+    if (nextIndex == baseIndex) return;
+    _pendingDesktopWheelIndex = nextIndex;
+    _desktopWheelAppliedManually = false;
+    _desktopWheelLockUntil = DateTime.now().add(
+      const Duration(milliseconds: 220),
+    );
+    GestureBinding.instance.pointerSignalResolver.register(event, (_) {
+      _desktopWheelAppliedManually = true;
+      _controller.animateToItem(
+        nextIndex,
+        duration: const Duration(milliseconds: 120),
+        curve: Curves.easeOutCubic,
+      );
+      _setSpeedIndex(nextIndex, persist: true);
+    });
+  }
+
+  bool get _isDesktopWheelLocked {
+    final lockUntil = _desktopWheelLockUntil;
+    if (lockUntil == null) return false;
+    final locked = DateTime.now().isBefore(lockUntil);
+    if (!locked) _desktopWheelLockUntil = null;
+    return locked;
+  }
+
   void _resetSpeed() {
     final index = _nearestSpeedIndex(1.0);
     _controller.animateToItem(
@@ -682,40 +1197,68 @@ class _SpeedWheelPageState extends State<_SpeedWheelPage> {
         ),
         const SizedBox(height: 8),
         Expanded(
-          child: NotificationListener<ScrollEndNotification>(
-            onNotification: (_) {
-              _setSpeedIndex(_selectedIndex, persist: true);
-              return false;
-            },
-            child: ListWheelScrollView.useDelegate(
-              key: const ValueKey('playback_speed_wheel'),
-              controller: _controller,
-              itemExtent: 44,
-              diameterRatio: 1.35,
-              physics: const FixedExtentScrollPhysics(),
-              onSelectedItemChanged: (index) =>
-                  _setSpeedIndex(index, persist: false),
-              childDelegate: ListWheelChildBuilderDelegate(
-                childCount: _speeds.length,
-                builder: (context, index) {
-                  if (index < 0 || index >= _speeds.length) return null;
-                  final speed = _speeds[index];
-                  final selected = index == _selectedIndex;
-                  return Center(
-                    child: AnimatedDefaultTextStyle(
-                      duration: const Duration(milliseconds: 120),
-                      curve: Curves.easeOutCubic,
-                      style: Theme.of(context).textTheme.titleLarge!.copyWith(
-                        color: selected ? cs.primary : cs.onSurfaceVariant,
-                        fontWeight: selected
-                            ? FontWeight.w900
-                            : FontWeight.w700,
-                        fontFeatures: const [FontFeature.tabularFigures()],
-                      ),
-                      child: Text(_formatSpeedValue(speed)),
-                    ),
-                  );
+          child: Listener(
+            onPointerSignal: _handleDesktopPointerSignal,
+            child: NotificationListener<ScrollEndNotification>(
+              onNotification: (_) {
+                if (_isDesktopWheelLocked) return false;
+                _pendingDesktopWheelIndex = null;
+                _setSpeedIndex(_selectedIndex, persist: true);
+                return false;
+              },
+              child: ListWheelScrollView.useDelegate(
+                key: const ValueKey('playback_speed_wheel'),
+                controller: _controller,
+                itemExtent: 44,
+                diameterRatio: 1.35,
+                physics: const FixedExtentScrollPhysics(),
+                onSelectedItemChanged: (index) {
+                  final pendingIndex = _pendingDesktopWheelIndex;
+                  final wheelLocked = _isDesktopWheelLocked;
+                  if (pendingIndex != null) {
+                    if (index != pendingIndex) return;
+                    final appliedManually = _desktopWheelAppliedManually;
+                    _pendingDesktopWheelIndex = null;
+                    _desktopWheelAppliedManually = false;
+                    if (appliedManually) return;
+                    _setSpeedIndex(index, persist: true);
+                    return;
+                  }
+                  if (wheelLocked) return;
+                  _setSpeedIndex(index, persist: false);
                 },
+                childDelegate: ListWheelChildBuilderDelegate(
+                  childCount: _speeds.length,
+                  builder: (context, index) {
+                    if (index < 0 || index >= _speeds.length) return null;
+                    final speed = _speeds[index];
+                    final selected = index == _selectedIndex;
+                    return GestureDetector(
+                      onTap: () {
+                        HapticFeedback.selectionClick();
+                        _controller.animateToItem(
+                          index,
+                          duration: const Duration(milliseconds: 300),
+                          curve: Curves.easeOutCubic,
+                        );
+                      },
+                      child: Center(
+                        child: AnimatedDefaultTextStyle(
+                          duration: const Duration(milliseconds: 120),
+                          curve: Curves.easeOutCubic,
+                          style: Theme.of(context).textTheme.titleLarge!.copyWith(
+                            color: selected ? cs.primary : cs.onSurfaceVariant,
+                            fontWeight: selected
+                                ? FontWeight.w900
+                                : FontWeight.w700,
+                            fontFeatures: const [FontFeature.tabularFigures()],
+                          ),
+                          child: Text(_formatSpeedValue(speed)),
+                        ),
+                      ),
+                    );
+                  },
+                ),
               ),
             ),
           ),
@@ -838,31 +1381,7 @@ class _SegmentTimeRow extends StatelessWidget {
   }
 }
 
-BoxDecoration _controlPanelDecoration(ColorScheme cs) {
-  return BoxDecoration(
-    color: cs.surfaceContainerHighest.withValues(alpha: 0.35),
-    borderRadius: BorderRadius.circular(24),
-    border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.15)),
-    boxShadow: [
-      BoxShadow(
-        color: Colors.white.withValues(alpha: 0.12),
-        offset: const Offset(0, 1),
-      ),
-      BoxShadow(
-        color: Colors.black.withValues(alpha: 0.08),
-        offset: const Offset(0, 1),
-        blurRadius: 4,
-        spreadRadius: -2,
-      ),
-    ],
-    gradient: LinearGradient(
-      begin: Alignment.topCenter,
-      end: Alignment.bottomCenter,
-      colors: [Colors.black.withValues(alpha: 0.06), Colors.transparent],
-      stops: const [0.0, 0.15],
-    ),
-  );
-}
+
 
 Future<Duration?> _showSegmentTimeInputDialog(
   BuildContext context, {
@@ -935,4 +1454,16 @@ String _formatSpeedValue(double value) {
     return '${value.toStringAsFixed(1)}x';
   }
   return '${value.toStringAsFixed(2).replaceFirst(RegExp(r'0$'), '')}x';
+}
+
+String _formatFrequency(int frequencyHz) {
+  if (frequencyHz >= 1000) {
+    final khz = frequencyHz / 1000;
+    return '${khz.toStringAsFixed(khz >= 10 ? 0 : 1)}k';
+  }
+  return '${frequencyHz}Hz';
+}
+
+String _presetLabel(AppLanguageProvider i18n, EqPreset preset) {
+  return preset.isCustom ? preset.labelKey : i18n.tr(preset.labelKey);
 }

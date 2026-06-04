@@ -19,86 +19,88 @@ extension _MainScreenLayout on _MainScreenState {
 
     Widget pageShell(int actualIndex) {
       final bool isActive = actualIndex == _currentIndex;
-      final Widget page = AnimatedOpacity(
-        key: ValueKey<String>('main_page_fade_$actualIndex'),
-        opacity: isActive ? 1 : 0,
-        duration: const Duration(milliseconds: 120),
-        curve: Curves.easeOutCubic,
-        child: TickerMode(
-          enabled: isActive,
-          child: ExcludeFocus(
+      final Widget page = TickerMode(
+        enabled: isActive,
+        child: ExcludeFocus(
+          excluding: !isActive,
+          child: ExcludeSemantics(
             excluding: !isActive,
-            child: ExcludeSemantics(
-              excluding: !isActive,
-              child: _pages[actualIndex],
-            ),
+            child: _pages[actualIndex],
           ),
         ),
       );
 
-      return Align(
-        alignment: Alignment.topCenter,
-        child: isDesktop
-            ? ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 980),
-                child: Padding(
-                  padding: isWindows ? EdgeInsets.zero : padding,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: isWindows ? cs.surface : cs.surfaceContainerLow,
-                      borderRadius: isWindows
-                          ? const BorderRadius.only(
-                              topLeft: Radius.circular(12),
-                            )
-                          : radius,
-                      border: isWindows
-                          ? Border(
-                              left: BorderSide(
+      return AnimatedOpacity(
+        key: ValueKey<String>('main_page_fade_$actualIndex'),
+        opacity: isActive ? 1 : 0,
+        duration: const Duration(milliseconds: 120),
+        curve: Curves.easeOutCubic,
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: isDesktop
+              ? ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 980),
+                  child: Padding(
+                    padding: isWindows ? EdgeInsets.zero : padding,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: isWindows ? cs.surface : cs.surfaceContainerLow,
+                        borderRadius: isWindows
+                            ? const BorderRadius.only(
+                                topLeft: Radius.circular(12),
+                              )
+                            : radius,
+                        border: isWindows
+                            ? Border(
+                                left: BorderSide(
+                                  color: cs.outlineVariant.withValues(
+                                    alpha: 0.25,
+                                  ),
+                                ),
+                                top: BorderSide(
+                                  color: cs.outlineVariant.withValues(
+                                    alpha: 0.25,
+                                  ),
+                                ),
+                              )
+                            : Border.all(
                                 color: cs.outlineVariant.withValues(
-                                  alpha: 0.25,
+                                  alpha: 0.85,
                                 ),
                               ),
-                              top: BorderSide(
-                                color: cs.outlineVariant.withValues(
-                                  alpha: 0.25,
+                        boxShadow: isWindows
+                            ? [
+                                BoxShadow(
+                                  color: cs.shadow.withValues(alpha: 0.04),
+                                  blurRadius: 16,
+                                  offset: const Offset(-2, -2),
                                 ),
-                              ),
-                            )
-                          : Border.all(
-                              color: cs.outlineVariant.withValues(alpha: 0.85),
-                            ),
-                      boxShadow: isWindows
-                          ? [
-                              BoxShadow(
-                                color: cs.shadow.withValues(alpha: 0.04),
-                                blurRadius: 16,
-                                offset: const Offset(-2, -2),
-                              ),
-                            ]
-                          : [
-                              BoxShadow(
-                                color: cs.shadow.withValues(alpha: 0.1),
-                                blurRadius: 28,
-                                offset: const Offset(0, 12),
-                              ),
-                            ],
-                    ),
-                    child: ClipRRect(
-                      borderRadius: isWindows
-                          ? const BorderRadius.only(
-                              topLeft: Radius.circular(12),
-                            )
-                          : radius,
-                      clipBehavior: Clip.hardEdge,
-                      child: ColoredBox(
-                        color: cs.surface,
-                        child: RepaintBoundary(child: page),
+                              ]
+                            : [
+                                BoxShadow(
+                                  color: cs.shadow.withValues(alpha: 0.1),
+                                  blurRadius: 28,
+                                  offset: const Offset(0, 12),
+                                ),
+                              ],
+                      ),
+                      child: ClipRRect(
+                        borderRadius: isWindows
+                            ? const BorderRadius.only(
+                                topLeft: Radius.circular(12),
+                              )
+                            : radius,
+                        clipBehavior: Clip.hardEdge,
+                        child: ColoredBox(
+                          color: cs.surface,
+                          child: RepaintBoundary(child: page),
+                        ),
                       ),
                     ),
                   ),
-                ),
-              )
-            : RepaintBoundary(child: page),
+                )
+              : RepaintBoundary(child: page),
+        ),
       );
     }
 

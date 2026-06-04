@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:nameless_audio/models/audio_effects.dart';
 import 'package:nameless_audio/models/audio_detail.dart';
 import 'package:nameless_audio/models/library_entry.dart';
 import 'package:nameless_audio/models/music_track.dart';
@@ -218,6 +219,13 @@ void main() {
         durationMs: 3200,
         customQueueTracks: <MusicTrack>[queueTrack],
         channelSwapEnabled: false,
+        audioEffects: AudioEffectsState(
+          skipSilenceEnabled: true,
+          noiseReductionEnabled: true,
+          eqEnabled: true,
+          eqPresetId: 'voice_clear',
+          eqBandLevels: <int, double>{1000: 2.5},
+        ),
         sortOrder: 0,
       ),
     ]);
@@ -226,6 +234,10 @@ void main() {
     expect(loaded, hasLength(1));
     expect(loaded.single.trackPath, 'https://example.com/track.mp3');
     expect(loaded.single.speed, closeTo(1.5, 0.001));
+    expect(loaded.single.audioEffects.skipSilenceEnabled, isTrue);
+    expect(loaded.single.audioEffects.noiseReductionEnabled, isTrue);
+    expect(loaded.single.audioEffects.eqPresetId, 'voice_clear');
+    expect(loaded.single.audioEffects.eqBandLevels[1000], 2.5);
     expect(loaded.single.customQueueTracks, hasLength(1));
     expect(
       loaded.single.customQueueTracks!.single.toJson(),

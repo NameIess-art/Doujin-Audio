@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 
 import 'native_result.dart';
 import 'platform_channels.dart';
+import '../models/audio_effects.dart';
 
 class NativePlaybackSnapshot {
   const NativePlaybackSnapshot({
@@ -20,6 +21,8 @@ class NativePlaybackSnapshot {
     this.speed = 1.0,
     required this.boostGain,
     required this.channelSwapEnabled,
+    this.audioEffects = AudioEffectsState.flat,
+    this.eqCapabilities = EqCapabilities.unsupported,
     this.uri,
     this.path,
     this.title,
@@ -45,6 +48,8 @@ class NativePlaybackSnapshot {
   final double speed;
   final double boostGain;
   final bool channelSwapEnabled;
+  final AudioEffectsState audioEffects;
+  final EqCapabilities eqCapabilities;
   final String? error;
 
   NativePlaybackSnapshot copyWith({
@@ -70,6 +75,8 @@ class NativePlaybackSnapshot {
     double? speed,
     double? boostGain,
     bool? channelSwapEnabled,
+    AudioEffectsState? audioEffects,
+    EqCapabilities? eqCapabilities,
     String? error,
     bool clearError = false,
   }) {
@@ -90,6 +97,8 @@ class NativePlaybackSnapshot {
       speed: speed ?? this.speed,
       boostGain: boostGain ?? this.boostGain,
       channelSwapEnabled: channelSwapEnabled ?? this.channelSwapEnabled,
+      audioEffects: audioEffects ?? this.audioEffects,
+      eqCapabilities: eqCapabilities ?? this.eqCapabilities,
       error: clearError ? null : (error ?? this.error),
     );
   }
@@ -124,6 +133,8 @@ class NativePlaybackSnapshot {
       speed: (map['speed'] as num?)?.toDouble() ?? 1.0,
       boostGain: (map['boostGain'] as num?)?.toDouble() ?? 1.0,
       channelSwapEnabled: map['channelSwap'] as bool? ?? false,
+      audioEffects: AudioEffectsState.fromPlatformMap(map['audioEffects']),
+      eqCapabilities: EqCapabilities.fromJson(map['eqCapabilities']),
       error: map['error'] as String?,
     );
   }
@@ -210,9 +221,9 @@ abstract interface class NativePlaybackBridgeBase {
     bool shuffle = false,
   });
 
-  Future<NativeResult<NativePlaybackSnapshot>> setChannelSwap(
+  Future<NativeResult<NativePlaybackSnapshot>> setAudioEffects(
     String sessionId,
-    bool enabled,
+    NativeAudioEffects effects,
   );
 
   Future<NativeResult<void>> removeSession(String sessionId);
@@ -440,13 +451,13 @@ class NativePlaybackBridge implements NativePlaybackBridgeBase {
   }
 
   @override
-  Future<NativeResult<NativePlaybackSnapshot>> setChannelSwap(
+  Future<NativeResult<NativePlaybackSnapshot>> setAudioEffects(
     String sessionId,
-    bool enabled,
+    NativeAudioEffects effects,
   ) {
-    return _invokeSnapshot(NativePlaybackMethod.setChannelSwap, {
+    return _invokeSnapshot(NativePlaybackMethod.setAudioEffects, {
       'sessionId': sessionId,
-      'enabled': enabled,
+      'effects': effects.toPlatformMap(),
     });
   }
 

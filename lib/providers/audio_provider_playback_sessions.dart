@@ -291,6 +291,16 @@ extension AudioProviderPlaybackSessions on AudioProvider {
           );
         }
         if (!ok) return;
+        if (session.channelSwapEnabled ||
+            session.audioEffects.hasEnabledEffects) {
+          await _nativePlaybackRepository.setAudioEffects(
+            session.id,
+            NativeAudioEffects(
+              state: session.audioEffects,
+              channelSwapEnabled: session.channelSwapEnabled,
+            ),
+          );
+        }
         session.loadedPath = resolvedNextPath;
       } else {
         if (forceStartAtZero) {

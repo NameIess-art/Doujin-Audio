@@ -146,10 +146,7 @@ extension AudioProviderPlayback on AudioProvider {
     _markActiveSessionsDirty();
     _notifyPlaybackChanged(); // Optimistic update
 
-    final response = await _nativePlaybackRepository.setChannelSwap(
-      session.id,
-      enabled,
-    );
+    final response = await _syncSessionAudioEffects(session);
 
     if (response.isFailure) {
       session.channelSwapEnabled = previous;
@@ -160,7 +157,169 @@ extension AudioProviderPlayback on AudioProvider {
       _notifyPlaybackChanged();
       return;
     }
+    _applyAudioEffectsSnapshot(
+      session,
+      response,
+      fallbackAudioEffects: session.audioEffects,
+    );
     _scheduleSaveSessionState();
+  }
+
+  Future<void> setSessionSkipSilence(String sessionId, bool enabled) async {
+    await _updateSessionAudioEffects(
+      sessionId,
+      (state) => state.copyWith(skipSilenceEnabled: enabled),
+      errorLabel: 'setSessionSkipSilence',
+    );
+  }
+
+  Future<void> setSessionNoiseReduction(String sessionId, bool enabled) async {
+    await _updateSessionAudioEffects(
+      sessionId,
+      (state) => state.copyWith(noiseReductionEnabled: enabled),
+      errorLabel: 'setSessionNoiseReduction',
+    );
+  }
+
+  Future<void> setSessionVolumeNormalization(
+    String sessionId,
+    bool enabled,
+  ) async {
+    await _updateSessionAudioEffects(
+      sessionId,
+      (state) => state.copyWith(volumeNormalizationEnabled: enabled),
+      errorLabel: 'setSessionVolumeNormalization',
+    );
+  }
+
+  Future<void> setSessionPanning(String sessionId, double panning) async {
+    await _updateSessionAudioEffects(
+      sessionId,
+      (state) => state.copyWith(panning: panning),
+      errorLabel: 'setSessionPanning',
+    );
+  }
+
+  Future<void> setSessionEqEnabled(String sessionId, bool enabled) async {
+    await _updateSessionAudioEffects(
+      sessionId,
+      (state) => state.copyWith(eqEnabled: enabled),
+      errorLabel: 'setSessionEqEnabled',
+    );
+  }
+
+  Future<void> setSessionEqBandLevel(
+    String sessionId,
+    int frequencyHz,
+    double gainDb,
+  ) async {
+    await _updateSessionAudioEffects(sessionId, (state) {
+      final levels = Map<int, double>.of(state.eqBandLevels);
+      levels[frequencyHz] = _clampEqGainForSession(sessionId, gainDb);
+      return state.copyWith(
+        eqEnabled: true,
+        eqPresetId: null,
+        eqBandLevels: levels,
+      );
+    }, errorLabel: 'setSessionEqBandLevel');
+  }
+
+  Future<void> applySessionEqPreset(String sessionId, EqPreset preset) async {
+    await _updateSessionAudioEffects(sessionId, (state) {
+      final isFlatPreset = preset.bandLevels.isEmpty;
+      return state.copyWith(
+        eqEnabled: isFlatPreset ? state.eqEnabled : true,
+        eqPresetId: preset.id,
+        eqBandLevels: _mapPresetToSessionBands(sessionId, preset),
+      );
+    }, errorLabel: 'applySessionEqPreset');
+  }
+
+  Future<NativeResult<NativePlaybackSnapshot>> _syncSessionAudioEffects(
+    PlaybackSession session,
+  ) {
+    return _nativePlaybackRepository.setAudioEffects(
+      session.id,
+      NativeAudioEffects(
+        state: session.audioEffects,
+        channelSwapEnabled: session.channelSwapEnabled,
+      ),
+    );
+  }
+
+  Future<void> _updateSessionAudioEffects(
+    String sessionId,
+    AudioEffectsState Function(AudioEffectsState state) update, {
+    required String errorLabel,
+  }) async {
+    final session = _sessions[sessionId];
+    if (session == null) return;
+    final previous = session.audioEffects;
+    final next = update(previous);
+    session.audioEffects = next;
+    _markActiveSessionsDirty();
+    _notifyPlaybackChanged();
+
+    final response = await _syncSessionAudioEffects(session);
+    if (response.isFailure) {
+      session.audioEffects = previous;
+      _markActiveSessionsDirty();
+      debugPrint('AudioProvider.$errorLabel error: ${response.errorOrNull}');
+      _notifyPlaybackChanged();
+      return;
+    }
+    _applyAudioEffectsSnapshot(session, response, fallbackAudioEffects: next);
+    _scheduleSaveSessionState();
+  }
+
+  void _applyAudioEffectsSnapshot(
+    PlaybackSession session,
+    NativeResult<NativePlaybackSnapshot> response, {
+    AudioEffectsState? fallbackAudioEffects,
+  }) {
+    final snapshot = response.valueOrNull;
+    if (snapshot == null) return;
+    final shouldKeepFallback =
+        fallbackAudioEffects != null &&
+        fallbackAudioEffects != AudioEffectsState.flat &&
+        snapshot.audioEffects == AudioEffectsState.flat;
+    session.audioEffects = shouldKeepFallback
+        ? fallbackAudioEffects
+        : snapshot.audioEffects;
+    session.eqCapabilities = snapshot.eqCapabilities;
+    session.channelSwapEnabled = snapshot.channelSwapEnabled;
+    _markActiveSessionsDirty();
+    _notifyPlaybackChanged();
+  }
+
+  Map<int, double> _mapPresetToSessionBands(String sessionId, EqPreset preset) {
+    final session = _sessions[sessionId];
+    final bands = session?.eqCapabilities.bands ?? const <EqBandInfo>[];
+    if (bands.isEmpty) {
+      return Map<int, double>.unmodifiable(preset.bandLevels);
+    }
+    final mapped = <int, double>{};
+    for (final presetEntry in preset.bandLevels.entries) {
+      final targetBand = bands.reduce((best, candidate) {
+        final bestDistance = (best.frequencyHz - presetEntry.key).abs();
+        final candidateDistance = (candidate.frequencyHz - presetEntry.key)
+            .abs();
+        return candidateDistance < bestDistance ? candidate : best;
+      });
+      mapped[targetBand.frequencyHz] = _clampEqGainForSession(
+        sessionId,
+        (mapped[targetBand.frequencyHz] ?? 0) + presetEntry.value,
+      );
+    }
+    return Map<int, double>.unmodifiable(mapped);
+  }
+
+  double _clampEqGainForSession(String sessionId, double gainDb) {
+    final capabilities = _sessions[sessionId]?.eqCapabilities;
+    if (capabilities == null || !capabilities.supported) {
+      return gainDb.clamp(-12.0, 12.0);
+    }
+    return gainDb.clamp(capabilities.minGainDb, capabilities.maxGainDb);
   }
 
   bool _isShuffleMode(SessionLoopMode mode) {

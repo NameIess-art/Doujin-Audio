@@ -7,7 +7,7 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.audio.ChannelMappingAudioProcessor
+import androidx.media3.common.audio.AudioProcessor
 import androidx.media3.exoplayer.audio.DefaultAudioSink
 
 internal fun nativePlaybackWakeMode(): Int = C.WAKE_MODE_LOCAL
@@ -28,7 +28,7 @@ internal class NativePlayerFactory(
 ) {
     fun create(
         sessionId: String,
-        channelMappingAudioProcessor: ChannelMappingAudioProcessor
+        audioProcessors: Array<AudioProcessor>
     ): ExoPlayer {
         val renderersFactory = object : DefaultRenderersFactory(context) {
             override fun buildAudioSink(
@@ -36,7 +36,7 @@ internal class NativePlayerFactory(
                 enableFloatOutput: Boolean,
                 enableAudioTrackPlaybackParams: Boolean
             ) = DefaultAudioSink.Builder(context)
-                .setAudioProcessors(arrayOf(channelMappingAudioProcessor))
+                .setAudioProcessors(audioProcessors)
                 .setEnableFloatOutput(enableFloatOutput)
                 .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
                 .build()

@@ -47,6 +47,19 @@ void main() {
           speed: 1.5,
           boostGain: 1.0,
           channelSwapEnabled: false,
+          audioEffects: AudioEffectsState(
+            skipSilenceEnabled: true,
+            noiseReductionEnabled: true,
+            eqEnabled: true,
+            eqPresetId: 'voice_clear',
+            eqBandLevels: <int, double>{1000: 2.0},
+          ),
+          eqCapabilities: EqCapabilities(
+            supported: true,
+            minGainDb: -10,
+            maxGainDb: 10,
+            bands: <EqBandInfo>[EqBandInfo(frequencyHz: 1000)],
+          ),
         ),
       );
       await Future<void>.delayed(Duration.zero);
@@ -58,6 +71,11 @@ void main() {
       expect(first.bufferedPosition, const Duration(seconds: 20));
       expect(first.volume, closeTo(0.42, 0.001));
       expect(first.speed, closeTo(1.5, 0.001));
+      expect(first.audioEffects.skipSilenceEnabled, isTrue);
+      expect(first.audioEffects.noiseReductionEnabled, isTrue);
+      expect(first.audioEffects.eqBandLevels[1000], 2.0);
+      expect(first.eqCapabilities.supported, isTrue);
+      expect(first.eqCapabilities.bands.single.frequencyHz, 1000);
       expect(first.loadedPath, '/audio/one.mp3');
       expect(firstStates, hasLength(1));
 

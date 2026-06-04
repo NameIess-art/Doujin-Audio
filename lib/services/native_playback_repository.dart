@@ -1,6 +1,7 @@
 import 'dart_playback_bridge.dart';
 import 'native_playback_bridge.dart';
 import 'native_result.dart';
+import '../models/audio_effects.dart';
 import '../platform/app_platform.dart';
 
 class NativePlaybackRepository {
@@ -112,11 +113,11 @@ class NativePlaybackRepository {
     );
   }
 
-  Future<NativeResult<NativePlaybackSnapshot>> setChannelSwap(
+  Future<NativeResult<NativePlaybackSnapshot>> setAudioEffects(
     String sessionId,
-    bool enabled,
+    NativeAudioEffects effects,
   ) {
-    return _bridge.setChannelSwap(sessionId, enabled);
+    return _bridge.setAudioEffects(sessionId, effects);
   }
 
   Future<NativeResult<void>> removeSession(String sessionId) {

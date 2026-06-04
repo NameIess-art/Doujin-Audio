@@ -6,11 +6,68 @@ import 'package:media_kit/media_kit.dart' as media;
 import 'native_playback_bridge.dart';
 import 'native_result.dart';
 import 'path_matcher.dart';
+import '../models/audio_effects.dart';
 import '../platform/app_platform.dart';
 
-const String _channelSwapAudioFilter =
-    '@channel_swap:lavfi=[pan=stereo|c0=c1|c1=c0]';
-const String _channelSwapAudioFilterLabel = '@channel_swap';
+const String _legacyChannelSwapAudioFilterLabel = '@channel_swap';
+const String _channelSwapAudioFilterLabel = '@na_channel_swap';
+const String _panningAudioFilterLabel = '@na_panning';
+const String _skipSilenceAudioFilterLabel = '@na_skip_silence';
+const String _noiseReductionAudioFilterLabel = '@na_noise_reduction';
+const String _volumeNormalizationAudioFilterLabel = '@na_volume_norm';
+const String _equalizerAudioFilterLabel = '@na_eq';
+const List<String> _managedAudioFilterLabels = <String>[
+  _skipSilenceAudioFilterLabel,
+  _noiseReductionAudioFilterLabel,
+  _volumeNormalizationAudioFilterLabel,
+  _equalizerAudioFilterLabel,
+  _panningAudioFilterLabel,
+  _channelSwapAudioFilterLabel,
+  _legacyChannelSwapAudioFilterLabel,
+];
+const List<int> _windowsEqBandFrequencies = <int>[
+  31,
+  62,
+  125,
+  250,
+  500,
+  1000,
+  2000,
+  4000,
+  8000,
+  16000,
+];
+const String _windowsSkipSilenceFilter =
+    '$_skipSilenceAudioFilterLabel:lavfi=[silenceremove=stop_periods=-1:stop_duration=0.9:stop_threshold=-60dB]';
+const String _windowsNoiseReductionFilter =
+    '$_noiseReductionAudioFilterLabel:lavfi=[afftdn=nr=6:nf=-55]';
+const String _windowsVolumeNormalizationFilter =
+    '$_volumeNormalizationAudioFilterLabel:lavfi=[dynaudnorm=f=500:g=5:p=0.6:m=3,alimiter=limit=0.95]';
+
+@visibleForTesting
+const EqCapabilities dartPlaybackWindowsEqCapabilities = EqCapabilities(
+  supported: true,
+  bands: <EqBandInfo>[
+    EqBandInfo(frequencyHz: 31),
+    EqBandInfo(frequencyHz: 62),
+    EqBandInfo(frequencyHz: 125),
+    EqBandInfo(frequencyHz: 250),
+    EqBandInfo(frequencyHz: 500),
+    EqBandInfo(frequencyHz: 1000),
+    EqBandInfo(frequencyHz: 2000),
+    EqBandInfo(frequencyHz: 4000),
+    EqBandInfo(frequencyHz: 8000),
+    EqBandInfo(frequencyHz: 16000),
+  ],
+);
+
+@visibleForTesting
+List<String> buildDartPlaybackAudioFiltersForTest(NativeAudioEffects effects) {
+  return _buildDartPlaybackAudioFilters(
+    effects.state,
+    channelSwapEnabled: effects.channelSwapEnabled,
+  ).map((filter) => filter.value).toList(growable: false);
+}
 
 class DartPlaybackBridge implements NativePlaybackBridgeBase {
   DartPlaybackBridge() {
@@ -192,18 +249,18 @@ class DartPlaybackBridge implements NativePlaybackBridgeBase {
   }
 
   @override
-  Future<NativeResult<NativePlaybackSnapshot>> setChannelSwap(
+  Future<NativeResult<NativePlaybackSnapshot>> setAudioEffects(
     String sessionId,
-    bool enabled,
+    NativeAudioEffects effects,
   ) async {
     final session = _sessions[sessionId];
     if (session == null) return NativeFailure('Unknown session: $sessionId');
     try {
-      await session.setChannelSwapEnabled(enabled);
-      return NativeSuccess(_snapshotFor(sessionId));
+      await session.setAudioEffects(effects);
     } catch (error) {
       return NativeFailure(error.toString());
     }
+    return NativeSuccess(_snapshotFor(sessionId));
   }
 
   @override
@@ -352,6 +409,8 @@ class DartPlaybackBridge implements NativePlaybackBridgeBase {
       speed: session.speed,
       boostGain: _boostGainFor(session.volume),
       channelSwapEnabled: session.channelSwapEnabled,
+      audioEffects: session.audioEffects,
+      eqCapabilities: dartPlaybackWindowsEqCapabilities,
     );
   }
 }
@@ -416,6 +475,7 @@ class _DartPlaybackSession {
   int currentIndex = 0;
   double volume = 1.0;
   double speed = 1.0;
+  AudioEffectsState audioEffects = AudioEffectsState.flat;
   bool channelSwapEnabled = false;
   bool playing = false;
   bool playWhenReady = false;
@@ -480,7 +540,7 @@ class _DartPlaybackSession {
       );
       await player.setVolume(volume * 100);
       await player.setRate(speed);
-      await _applyChannelSwap();
+      await _applyManagedAudioFilters();
       if (initialPosition > Duration.zero) {
         _pendingSeekPosition = initialPosition;
         await player.seek(initialPosition);
@@ -494,7 +554,14 @@ class _DartPlaybackSession {
 
   Future<void> setChannelSwapEnabled(bool enabled) async {
     if (channelSwapEnabled == enabled) return;
+    await setAudioEffects(
+      NativeAudioEffects(state: audioEffects, channelSwapEnabled: enabled),
+    );
+  }
+
+  Future<void> setAudioEffects(NativeAudioEffects effects) async {
     final previous = channelSwapEnabled;
+    final previousEffects = audioEffects;
     final previousPlaying = playing;
     final previousPlayWhenReady = playWhenReady;
     final previousBuffering = buffering;
@@ -517,14 +584,16 @@ class _DartPlaybackSession {
       error = previousError;
     }
 
-    channelSwapEnabled = enabled;
+    audioEffects = effects.state;
+    channelSwapEnabled = effects.channelSwapEnabled;
     suppressPlaybackEvents = true;
     try {
-      await _applyChannelSwap();
+      await _applyManagedAudioFilters();
       restorePlaybackState();
     } catch (_) {
       channelSwapEnabled = previous;
-      await _applyChannelSwap();
+      audioEffects = previousEffects;
+      await _applyManagedAudioFilters();
       restorePlaybackState();
       rethrow;
     } finally {
@@ -610,21 +679,26 @@ class _DartPlaybackSession {
     return media.Media(itemPath);
   }
 
-  Future<void> _applyChannelSwap() async {
+  Future<void> _applyManagedAudioFilters() async {
     final platform = player.platform;
     if (platform is media.NativePlayer) {
-      await platform.command([
-        'af',
-        channelSwapEnabled ? 'add' : 'remove',
-        channelSwapEnabled
-            ? _channelSwapAudioFilter
-            : _channelSwapAudioFilterLabel,
-      ]);
-      final filters = (await platform.getProperty('af')).toString();
-      final applied = filters.contains(_channelSwapAudioFilterLabel);
-      if (channelSwapEnabled != applied) {
+      for (final label in _managedAudioFilterLabels) {
+        await platform.command(['af', 'remove', label]);
+      }
+      final filters = _buildDartPlaybackAudioFilters(
+        audioEffects,
+        channelSwapEnabled: channelSwapEnabled,
+      );
+      for (final filter in filters) {
+        await platform.command(['af', 'add', filter.value]);
+      }
+      final appliedFilters = (await platform.getProperty('af')).toString();
+      final missingLabels = filters.where(
+        (filter) => !appliedFilters.contains(filter.label),
+      );
+      if (missingLabels.isNotEmpty) {
         throw StateError(
-          'Failed to ${channelSwapEnabled ? 'apply' : 'remove'} channel swap filter.',
+          'Failed to apply Windows audio filters: ${missingLabels.map((filter) => filter.label).join(', ')}',
         );
       }
     }
@@ -649,6 +723,100 @@ double _normalizeSessionSpeed(double speed) {
 
 double _boostGainFor(double volume) {
   return _normalizeSessionVolume(volume).clamp(1.0, 2.0);
+}
+
+List<_DartPlaybackAudioFilter> _buildDartPlaybackAudioFilters(
+  AudioEffectsState effects, {
+  required bool channelSwapEnabled,
+}) {
+  final filters = <_DartPlaybackAudioFilter>[];
+  if (effects.skipSilenceEnabled) {
+    filters.add(
+      const _DartPlaybackAudioFilter(
+        label: _skipSilenceAudioFilterLabel,
+        value: _windowsSkipSilenceFilter,
+      ),
+    );
+  }
+  if (effects.noiseReductionEnabled) {
+    filters.add(
+      const _DartPlaybackAudioFilter(
+        label: _noiseReductionAudioFilterLabel,
+        value: _windowsNoiseReductionFilter,
+      ),
+    );
+  }
+  if (effects.volumeNormalizationEnabled) {
+    filters.add(
+      const _DartPlaybackAudioFilter(
+        label: _volumeNormalizationAudioFilterLabel,
+        value: _windowsVolumeNormalizationFilter,
+      ),
+    );
+  }
+  final eqFilter = _buildEqualizerFilter(effects);
+  if (eqFilter != null) filters.add(eqFilter);
+  final panningFilter = _buildPanningFilter(effects.panning);
+  if (panningFilter != null) filters.add(panningFilter);
+  if (channelSwapEnabled) {
+    filters.add(
+      const _DartPlaybackAudioFilter(
+        label: _channelSwapAudioFilterLabel,
+        value: '$_channelSwapAudioFilterLabel:lavfi=[pan=stereo|c0=c1|c1=c0]',
+      ),
+    );
+  }
+  return filters;
+}
+
+_DartPlaybackAudioFilter? _buildPanningFilter(double panning) {
+  final value = panning.clamp(-1.0, 1.0);
+  if (value.abs() < 0.001) return null;
+  final leftGain = value > 0 ? 1 - value : 1.0;
+  final rightGain = value < 0 ? 1 + value : 1.0;
+  return _DartPlaybackAudioFilter(
+    label: _panningAudioFilterLabel,
+    value:
+        '$_panningAudioFilterLabel:lavfi=[pan=stereo|c0=${_formatFilterNumber(leftGain)}*c0|c1=${_formatFilterNumber(rightGain)}*c1]',
+  );
+}
+
+_DartPlaybackAudioFilter? _buildEqualizerFilter(AudioEffectsState effects) {
+  if (!effects.eqEnabled || effects.eqBandLevels.isEmpty) return null;
+  final bands = <int, double>{};
+  for (final entry in effects.eqBandLevels.entries) {
+    if (!_windowsEqBandFrequencies.contains(entry.key)) continue;
+    final gain = entry.value.clamp(
+      dartPlaybackWindowsEqCapabilities.minGainDb,
+      dartPlaybackWindowsEqCapabilities.maxGainDb,
+    );
+    if (gain.abs() < 0.05) continue;
+    bands[entry.key] = gain;
+  }
+  if (bands.isEmpty) return null;
+  final graph = bands.entries
+      .map((entry) {
+        return 'equalizer=f=${entry.key}:t=q:w=1:g=${_formatFilterNumber(entry.value)}';
+      })
+      .join(',');
+  return _DartPlaybackAudioFilter(
+    label: _equalizerAudioFilterLabel,
+    value: '$_equalizerAudioFilterLabel:lavfi=[$graph]',
+  );
+}
+
+String _formatFilterNumber(double value) {
+  final fixed = value.toStringAsFixed(3);
+  return fixed
+      .replaceFirst(RegExp(r'0+$'), '')
+      .replaceFirst(RegExp(r'\.$'), '');
+}
+
+class _DartPlaybackAudioFilter {
+  const _DartPlaybackAudioFilter({required this.label, required this.value});
+
+  final String label;
+  final String value;
 }
 
 class _DartPlaybackItem {

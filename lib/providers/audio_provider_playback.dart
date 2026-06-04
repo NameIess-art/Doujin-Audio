@@ -237,7 +237,26 @@ extension AudioProviderPlayback on AudioProvider {
 
   Future<NativeResult<NativePlaybackSnapshot>> _syncSessionAudioEffects(
     PlaybackSession session,
-  ) {
+  ) async {
+    final loadedPath = session.loadedPath;
+    final needsPrepare =
+        loadedPath == null ||
+        !PathMatcher.equalsNormalized(loadedPath, session.currentTrackPath);
+    if (needsPrepare) {
+      await _prepareAndPlay(
+        session,
+        nextPath: session.currentTrackPath,
+        autoPlay: false,
+      );
+      if (!_sessions.containsKey(session.id)) {
+        return const NativeFailure('Session removed before audio effects sync.');
+      }
+      if (session.loadedPath == null) {
+        return const NativeFailure(
+          'Failed to prepare session before audio effects sync.',
+        );
+      }
+    }
     return _nativePlaybackRepository.setAudioEffects(
       session.id,
       NativeAudioEffects(

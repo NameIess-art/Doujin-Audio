@@ -14,6 +14,13 @@ data class StoredNativePlaybackSession(
     val positionMs: Long,
     val volume: Float,
     val speed: Float,
+    val skipSilenceEnabled: Boolean,
+    val noiseReductionEnabled: Boolean,
+    val eqEnabled: Boolean,
+    val eqPresetId: String?,
+    val eqBandLevels: Map<Int, Float>,
+    val volumeNormalizationEnabled: Boolean,
+    val panning: Float,
     val repeatOne: Boolean,
     val repeatAll: Boolean,
     val shuffleModeEnabled: Boolean,
@@ -82,6 +89,24 @@ object NativePlaybackStateStore {
                     .put("positionMs", session.positionMs)
                     .put("volume", session.volume.toDouble())
                     .put("speed", session.speed.toDouble())
+                    .put("skipSilenceEnabled", session.skipSilenceEnabled)
+                    .put("noiseReductionEnabled", session.noiseReductionEnabled)
+                    .put("eqEnabled", session.eqEnabled)
+                    .put("eqPresetId", session.eqPresetId)
+                    .put("volumeNormalizationEnabled", session.volumeNormalizationEnabled)
+                    .put("panning", session.panning.toDouble())
+                    .put(
+                        "eqBandLevels",
+                        JSONArray().apply {
+                            session.eqBandLevels.forEach { (frequencyHz, gainDb) ->
+                                put(
+                                    JSONObject()
+                                        .put("frequencyHz", frequencyHz)
+                                        .put("gainDb", gainDb.toDouble())
+                                )
+                            }
+                        }
+                    )
                     .put("repeatOne", session.repeatOne)
                     .put("repeatAll", session.repeatAll)
                     .put("shuffleModeEnabled", session.shuffleModeEnabled)
@@ -143,6 +168,14 @@ object NativePlaybackStateStore {
                             positionMs = item.optLong("positionMs", 0L).coerceAtLeast(0L),
                             volume = item.optDouble("volume", 1.0).toFloat(),
                             speed = item.optDouble("speed", 1.0).toFloat(),
+                            skipSilenceEnabled = item.optBoolean("skipSilenceEnabled", false),
+                            noiseReductionEnabled = item.optBoolean("noiseReductionEnabled", false),
+                            eqEnabled = item.optBoolean("eqEnabled", false),
+                            eqPresetId = item.optNullableString("eqPresetId"),
+                            eqBandLevels = item.optEqBandLevels(),
+                            volumeNormalizationEnabled =
+                                item.optBoolean("volumeNormalizationEnabled", false),
+                            panning = item.optDouble("panning", 0.0).toFloat(),
                             repeatOne = item.optBoolean("repeatOne", false),
                             repeatAll = item.optBoolean("repeatAll", false),
                             shuffleModeEnabled = item.optBoolean("shuffleModeEnabled", false),
@@ -287,6 +320,18 @@ private fun JSONObject.optNullableInt(key: String): Int? {
 private fun JSONObject.optNullableLong(key: String): Long? {
     if (!has(key) || isNull(key)) return null
     return optLong(key)
+}
+
+private fun JSONObject.optEqBandLevels(): Map<Int, Float> {
+    val array = optJSONArray("eqBandLevels") ?: return emptyMap()
+    return buildMap {
+        for (index in 0 until array.length()) {
+            val item = array.optJSONObject(index) ?: continue
+            val frequencyHz = item.optInt("frequencyHz", 0)
+            if (frequencyHz <= 0) continue
+            put(frequencyHz, item.optDouble("gainDb", 0.0).toFloat())
+        }
+    }
 }
 
 private fun JSONObject.optQueueItems(): List<StoredNativePlaybackQueueItem> {

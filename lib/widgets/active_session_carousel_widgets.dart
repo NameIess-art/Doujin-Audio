@@ -355,15 +355,14 @@ class _ActiveSessionTitleSubtitleState
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          widget.displayName,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
+        LibraryLikeTwoLineMarqueeText(
+          text: widget.displayName,
+          enableMarquee: true,
           style: Theme.of(context).textTheme.titleSmall?.copyWith(
             fontWeight: FontWeight.w900,
             fontSize: 14,
             height: 1.08,
-          ),
+          ) ?? const TextStyle(),
         ),
         if (_subtitleText != null) ...[
           const SizedBox(height: 2),

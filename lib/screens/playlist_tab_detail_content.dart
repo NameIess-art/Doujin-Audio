@@ -9,6 +9,9 @@ class _SessionDetailContent extends StatefulWidget {
     this.progressBarKey,
     this.subtitleFontSize = 16,
     this.segmentPanelExpandedNotifier,
+    this.isLandscape = false,
+    this.artworkWidget,
+    this.detailPadding = EdgeInsets.zero,
   });
 
   final PlaybackSession session;
@@ -17,6 +20,9 @@ class _SessionDetailContent extends StatefulWidget {
   final GlobalKey? progressBarKey;
   final double subtitleFontSize;
   final ValueNotifier<bool>? segmentPanelExpandedNotifier;
+  final bool isLandscape;
+  final Widget? artworkWidget;
+  final EdgeInsetsGeometry detailPadding;
 
   @override
   State<_SessionDetailContent> createState() => _SessionDetailContentState();
@@ -386,102 +392,206 @@ class _SessionDetailContentState extends State<_SessionDetailContent>
     final hasSiblings =
         provider.tracksInSameGroup(session.currentTrackPath).length > 1;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: MarqueeText(
-                text: folderName,
-                style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                  color: cs.onSurface.withValues(alpha: 0.8),
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Text(
-              _loopModeSummary(context, session.loopMode),
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: cs.onSurface.withValues(alpha: 0.7),
-                fontWeight: FontWeight.w600,
-                fontStyle: FontStyle.italic,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        SizedBox(
-          key: widget.filenameKey,
-          height: 36,
-          child: MarqueeText(
-            text: displayName,
-            pauseDuration: const Duration(seconds: 1),
-            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-              color: cs.onSurface,
-              fontWeight: FontWeight.w900,
-              letterSpacing: -0.5,
-              height: 1.1,
-            ),
-          ),
-        ),
-        const SizedBox(height: 8),
-        const SizedBox(height: 8),
-        SizedBox(height: widget.subtitleFontSize * 3), // scales with font size
-        Container(
-          key: widget.progressBarKey,
-          child: _ProgressBar(
-            key: ValueKey(session.id),
-            session: session,
-            provider: provider,
-            timeSegmentLabels: _segmentLabels,
-            selectedSegmentId: _segmentPanelExpanded
-                ? _selectedSegmentId
-                : null,
-            onManualSeek: _handleSegmentManualSeek,
-          ),
-        ),
-        AnimatedSwitcher(
-          duration: const Duration(milliseconds: 180),
-          switchInCurve: Curves.easeOutCubic,
-          switchOutCurve: Curves.easeInCubic,
-          child: _segmentPanelExpanded
-              ? _TimeSegmentPanel(
-                  key: const ValueKey('segments'),
-                  session: session,
-                  provider: provider,
-                  labels: _segmentLabels,
-                  selectedId: _selectedSegmentId,
-                  showEditor: _segmentEditorVisible,
-                  loading: _segmentLoading,
-                  nameController: _segmentNameController,
-                  draftStart: _draftStart,
-                  draftEnd: _draftEnd,
-                  draftColorValue: _draftColorValue,
-                  loopSegmentId: provider.timeSegmentLoopLabelIdForSession(
-                    session.id,
-                    trackKey: _segmentTrackKey,
+    final contentColumn = Padding(
+      padding: widget.detailPadding,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: MarqueeText(
+                  text: folderName,
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                    color: cs.onSurface.withValues(alpha: 0.8),
+                    fontWeight: FontWeight.w700,
                   ),
-                  onSelect: _selectSegment,
-                  onAdd: _startNewSegment,
-                  onSetStart: _setDraftStartToCurrent,
-                  onSetEnd: _setDraftEndToCurrent,
-                  onEditStart: () => _editDraftTime(isStart: true),
-                  onEditEnd: () => _editDraftTime(isStart: false),
-                  onDelete: _deleteSelectedSegment,
-                  onToggleLoop: _toggleSelectedSegmentLoop,
-                )
-              : _PlaybackControlPanel(
-                  key: const ValueKey('controls'),
-                  session: session,
-                  provider: provider,
-                  playPauseController: _playPauseController,
-                  isPlaying: isPlaying,
-                  hasSiblings: hasSiblings,
-                  onShowTrackSwitcher: () => _showTrackSwitcher(context),
                 ),
-        ),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                _loopModeSummary(context, session.loopMode),
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: cs.onSurface.withValues(alpha: 0.7),
+                  fontWeight: FontWeight.w600,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            key: widget.filenameKey,
+            height: 36,
+            child: MarqueeText(
+              text: displayName,
+              pauseDuration: const Duration(seconds: 1),
+              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                color: cs.onSurface,
+                fontWeight: FontWeight.w900,
+                letterSpacing: -0.5,
+                height: 1.1,
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: widget.subtitleFontSize * 3,
+          ), // scales with font size
+          Container(
+            key: widget.progressBarKey,
+            child: _ProgressBar(
+              key: ValueKey(session.id),
+              session: session,
+              provider: provider,
+              timeSegmentLabels: _segmentLabels,
+              selectedSegmentId: _segmentPanelExpanded
+                  ? _selectedSegmentId
+                  : null,
+              onManualSeek: _handleSegmentManualSeek,
+            ),
+          ),
+          if (!widget.isLandscape)
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 180),
+              switchInCurve: Curves.easeOutCubic,
+              switchOutCurve: Curves.easeInCubic,
+              child: _segmentPanelExpanded
+                  ? _TimeSegmentPanel(
+                      key: const ValueKey('segments'),
+                      session: session,
+                      provider: provider,
+                      labels: _segmentLabels,
+                      selectedId: _selectedSegmentId,
+                      showEditor: _segmentEditorVisible,
+                      loading: _segmentLoading,
+                      nameController: _segmentNameController,
+                      draftStart: _draftStart,
+                      draftEnd: _draftEnd,
+                      draftColorValue: _draftColorValue,
+                      loopSegmentId: provider.timeSegmentLoopLabelIdForSession(
+                        session.id,
+                        trackKey: _segmentTrackKey,
+                      ),
+                      onSelect: _selectSegment,
+                      onAdd: _startNewSegment,
+                      onSetStart: _setDraftStartToCurrent,
+                      onSetEnd: _setDraftEndToCurrent,
+                      onEditStart: () => _editDraftTime(isStart: true),
+                      onEditEnd: () => _editDraftTime(isStart: false),
+                      onDelete: _deleteSelectedSegment,
+                      onToggleLoop: _toggleSelectedSegmentLoop,
+                    )
+                  : _PlaybackControlPanel(
+                      key: const ValueKey('controls'),
+                      session: session,
+                      provider: provider,
+                      playPauseController: _playPauseController,
+                      isPlaying: isPlaying,
+                      hasSiblings: hasSiblings,
+                      onShowTrackSwitcher: () => _showTrackSwitcher(context),
+                    ),
+            )
+          else
+            _PlaybackControlPanel(
+              key: const ValueKey('controls_landscape'),
+              session: session,
+              provider: provider,
+              playPauseController: _playPauseController,
+              isPlaying: isPlaying,
+              hasSiblings: hasSiblings,
+              onShowTrackSwitcher: () => _showTrackSwitcher(context),
+            ),
+        ],
+      ),
+    );
+
+    if (widget.isLandscape) {
+      return Row(
+        children: [
+          Expanded(
+            child: Stack(
+              children: [
+                if (widget.artworkWidget != null) widget.artworkWidget!,
+                if (_segmentPanelExpanded)
+                  Positioned.fill(
+                    child: AnimatedOpacity(
+                      opacity: _segmentPanelExpanded ? 1.0 : 0.0,
+                      duration: const Duration(milliseconds: 180),
+                      child: ClipRect(
+                        child: BackdropFilter(
+                          filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+                          child: Container(
+                            color: cs.surface.withValues(alpha: 0.85),
+                            child: SafeArea(
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 16,
+                                ),
+                                child: _TimeSegmentPanel(
+                                  key: const ValueKey('segments_landscape'),
+                                  session: session,
+                                  provider: provider,
+                                  labels: _segmentLabels,
+                                  selectedId: _selectedSegmentId,
+                                  showEditor: _segmentEditorVisible,
+                                  loading: _segmentLoading,
+                                  nameController: _segmentNameController,
+                                  draftStart: _draftStart,
+                                  draftEnd: _draftEnd,
+                                  draftColorValue: _draftColorValue,
+                                  loopSegmentId: provider
+                                      .timeSegmentLoopLabelIdForSession(
+                                        session.id,
+                                        trackKey: _segmentTrackKey,
+                                      ),
+                                  onSelect: _selectSegment,
+                                  onAdd: _startNewSegment,
+                                  onSetStart: _setDraftStartToCurrent,
+                                  onSetEnd: _setDraftEndToCurrent,
+                                  onEditStart: () =>
+                                      _editDraftTime(isStart: true),
+                                  onEditEnd: () =>
+                                      _editDraftTime(isStart: false),
+                                  onDelete: _deleteSelectedSegment,
+                                  onToggleLoop: _toggleSelectedSegmentLoop,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: LayoutBuilder(
+              builder: (context, scrollConstraints) {
+                return SingleChildScrollView(
+                  padding: const EdgeInsets.symmetric(vertical: 24),
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      minHeight: max(0.0, scrollConstraints.maxHeight - 48),
+                    ),
+                    child: Center(child: contentColumn),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      );
+    }
+
+    return Column(
+      children: [
+        if (widget.artworkWidget != null)
+          Expanded(child: widget.artworkWidget!),
+        contentColumn,
       ],
     );
   }

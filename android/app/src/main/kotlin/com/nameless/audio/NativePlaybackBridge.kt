@@ -47,9 +47,9 @@ class NativePlaybackBridge(
                     call.argument<Boolean>("repeatOne") ?: false,
                     call.argumentsMap()
                 ) ?: mapOf("ok" to false, "error" to "Native playback service is not ready.")
-                NativePlaybackMethods.SET_CHANNEL_SWAP -> service?.setChannelSwap(
+                NativePlaybackMethods.SET_AUDIO_EFFECTS -> service?.setAudioEffects(
                     call.requiredString("sessionId"),
-                    call.argument<Boolean>("enabled") ?: false
+                    call.argument<Map<String, Any?>>("effects") ?: emptyMap()
                 ) ?: mapOf("ok" to false, "error" to "Native playback service is not ready.")
                 NativePlaybackMethods.REMOVE_SESSION -> service?.removeSession(call.requiredString("sessionId"))
                     ?: mapOf("ok" to false, "error" to "Native playback service is not ready.")

@@ -523,6 +523,19 @@ class NativePlaybackService : MediaSessionService() {
         return okResult(session.snapshot())
     }
 
+    fun setAudioEffects(sessionId: String, effectsMap: Map<String, Any?>): Map<String, Any?> {
+        val session = sessions[sessionId] ?: return errorResult("Unknown session.")
+        val previousChannelSwap = session.channelSwapEnabled
+        session.applyAudioEffects(parseAudioEffects(effectsMap))
+        if (previousChannelSwap != session.channelSwapEnabled) {
+            session.reprepareCurrentMediaItem()
+        }
+        publishSessionState(sessionId)
+        schedulePersistSessionState()
+        syncForegroundState()
+        return okResult(session.snapshot())
+    }
+
     fun setRepeatOne(
         sessionId: String,
         repeatOne: Boolean,
@@ -717,18 +730,6 @@ class NativePlaybackService : MediaSessionService() {
         return resumedSessionIds
     }
 
-    fun setChannelSwap(sessionId: String, enabled: Boolean): Map<String, Any?> {
-        val session = sessions[sessionId] ?: return errorResult("Unknown session.")
-        session.lastUsedMs = System.currentTimeMillis()
-        session.channelSwapEnabled = enabled
-        session.applyChannelMap()
-        session.reprepareCurrentMediaItem()
-        publishSessionState(sessionId)
-        schedulePersistSessionState()
-        syncForegroundState()
-        return okResult(session.snapshot())
-    }
-
     private fun evictPlayersIfNeeded() {
         val sessionsWithPlayers = sessions.values.filter { it.hasPlayer() }
         if (sessionsWithPlayers.size <= MAX_ACTIVE_PLAYERS) return
@@ -772,6 +773,31 @@ class NativePlaybackService : MediaSessionService() {
                 subtitle = item["subtitle"] as? String,
                 artUri = item["artUri"] as? String
             )
+        }
+    }
+
+    private fun parseAudioEffects(rawEffects: Map<String, Any?>): NativeAudioEffects {
+        return NativeAudioEffects(
+            skipSilenceEnabled = rawEffects["skipSilenceEnabled"] as? Boolean ?: false,
+            noiseReductionEnabled = rawEffects["noiseReductionEnabled"] as? Boolean ?: false,
+            eqEnabled = rawEffects["eqEnabled"] as? Boolean ?: false,
+            eqPresetId = (rawEffects["eqPresetId"] as? String)?.takeIf { it.isNotBlank() },
+            eqBandLevels = parseEqBandLevels(rawEffects["eqBandLevels"]),
+            channelSwapEnabled = rawEffects["channelSwapEnabled"] as? Boolean ?: false,
+            volumeNormalizationEnabled = rawEffects["volumeNormalizationEnabled"] as? Boolean ?: false,
+            panning = (rawEffects["panning"] as? Number)?.toFloat() ?: 0f
+        )
+    }
+
+    private fun parseEqBandLevels(rawLevels: Any?): Map<Int, Float> {
+        val levels = rawLevels as? List<*> ?: return emptyMap()
+        return buildMap {
+            levels.forEach { rawItem ->
+                val item = rawItem as? Map<*, *> ?: return@forEach
+                val frequencyHz = (item["frequencyHz"] as? Number)?.toInt() ?: return@forEach
+                val gainDb = (item["gainDb"] as? Number)?.toFloat() ?: return@forEach
+                if (frequencyHz > 0) put(frequencyHz, gainDb)
+            }
         }
     }
 
@@ -1169,7 +1195,7 @@ class NativePlaybackService : MediaSessionService() {
                 createNativePlaybackSession(stored.sessionId)
             }
             try {
-                nativeSession.channelSwapEnabled = stored.channelSwapEnabled
+                nativeSession.applyAudioEffects(stored.toNativeAudioEffects())
                 val queue = stored.queue.map { queueItem ->
                     NativeMediaItemDescriptor(
                         path = queueItem.path,
@@ -1240,7 +1266,7 @@ class NativePlaybackService : MediaSessionService() {
                     createNativePlaybackSession(stored.sessionId)
                 }
                 try {
-                    nativeSession.channelSwapEnabled = stored.channelSwapEnabled
+                    nativeSession.applyAudioEffects(stored.toNativeAudioEffects())
                     val descriptor = NativeMediaItemDescriptor(
                         path = stored.path,
                         uri = stored.uri,
@@ -1458,6 +1484,19 @@ class NativePlaybackService : MediaSessionService() {
         if (tickerScheduled || stateListeners.isEmpty()) return
         tickerScheduled = true
         mainHandler.post(positionTicker)
+    }
+
+    private fun StoredNativePlaybackSession.toNativeAudioEffects(): NativeAudioEffects {
+        return NativeAudioEffects(
+            skipSilenceEnabled = skipSilenceEnabled,
+            noiseReductionEnabled = noiseReductionEnabled,
+            eqEnabled = eqEnabled,
+            eqPresetId = eqPresetId,
+            eqBandLevels = eqBandLevels,
+            channelSwapEnabled = channelSwapEnabled,
+            volumeNormalizationEnabled = volumeNormalizationEnabled,
+            panning = panning
+        )
     }
 
     private fun okResult(value: Any?): Map<String, Any?> {

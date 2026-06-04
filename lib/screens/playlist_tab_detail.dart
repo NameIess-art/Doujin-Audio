@@ -22,7 +22,9 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
   int _lastCoverGeneration = -1;
   double? _subtitleDefaultTop;
   final Set<String> _primedAdjacentCoverKeys = <String>{};
-  final ValueNotifier<bool> _segmentPanelExpandedNotifier = ValueNotifier(false);
+  final ValueNotifier<bool> _segmentPanelExpandedNotifier = ValueNotifier(
+    false,
+  );
 
   @override
   void initState() {
@@ -403,6 +405,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
             child: Listener(
               onPointerSignal: Platform.isWindows
                   ? (event) {
+                      if (_segmentPanelExpandedNotifier.value) return;
                       if (event is PointerScrollEvent) {
                         if (event.scrollDelta.dy > 0) {
                           _changeSessionByOffset(provider, 1);
@@ -686,6 +689,11 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
 
     final cs = Theme.of(context).colorScheme;
     final track = provider.trackByPath(session.currentTrackPath);
+    final blurEnabled = ref.watch(
+      settingsStateProvider.select(
+        (s) => s.valueOrNull?.blurPlayerBackgroundEnabled ?? true,
+      ),
+    );
 
     return Material(
       color: cs.surface,
@@ -735,69 +743,73 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
           fit: StackFit.expand,
           children: [
             // Dynamic Blurred Background
-            Positioned.fill(
-              child: track?.remoteCoverUrl?.trim().isNotEmpty == true
-                  ? RetryingNetworkImage(
-                      url: track!.remoteCoverUrl!.trim(),
-                      fit: BoxFit.cover,
-                      cacheWidth:
-                          (MediaQuery.sizeOf(context).width *
-                                  MediaQuery.devicePixelRatioOf(context))
-                              .round(),
-                      color: cs.surface.withValues(alpha: 0.45),
-                      colorBlendMode: BlendMode.darken,
-                      loadingBuilder: (context, child, loadingProgress) =>
-                          loadingProgress == null
-                          ? child
-                          : ColoredBox(
-                              color: cs.surfaceDim,
-                              child: CoverLoadingIndicator(
-                                size: 36,
-                                strokeWidth: 3,
-                                color: cs.primary,
+            if (blurEnabled) ...[
+              Positioned.fill(
+                child: track?.remoteCoverUrl?.trim().isNotEmpty == true
+                    ? RetryingNetworkImage(
+                        url: track!.remoteCoverUrl!.trim(),
+                        fit: BoxFit.cover,
+                        cacheWidth:
+                            (MediaQuery.sizeOf(context).width *
+                                    MediaQuery.devicePixelRatioOf(context))
+                                .round(),
+                        color: cs.surface.withValues(alpha: 0.45),
+                        colorBlendMode: BlendMode.darken,
+                        loadingBuilder: (context, child, loadingProgress) =>
+                            loadingProgress == null
+                            ? child
+                            : ColoredBox(
+                                color: cs.surfaceDim,
+                                child: CoverLoadingIndicator(
+                                  size: 36,
+                                  strokeWidth: 3,
+                                  color: cs.primary,
+                                ),
                               ),
-                            ),
-                      fallbackBuilder: (_) => ColoredBox(color: cs.surfaceDim),
-                    )
-                  : AsyncCoverImage(
-                      duration: Duration.zero,
-                      future: coverPathFuture,
-                      initialPath: provider.resolvedCoverPathForTrack(track),
-                      retryFutureBuilder: () =>
-                          _coverFutureForTrack(provider, track),
-                      fallbackBuilder: (_) => ColoredBox(color: cs.surfaceDim),
-                      imageBuilder: (context, coverPath) {
-                        final mediaSize = MediaQuery.sizeOf(context);
-                        final dpr = MediaQuery.devicePixelRatioOf(context);
-                        return RetryingFileImage(
-                          path: coverPath,
-                          cacheWidth: (mediaSize.width * dpr).round(),
-                          fit: BoxFit.cover,
-                          color: cs.surface.withValues(alpha: 0.45),
-                          colorBlendMode: BlendMode.darken,
-                          fallbackBuilder: (_) =>
-                              ColoredBox(color: cs.surfaceDim),
-                        );
-                      },
+                        fallbackBuilder: (_) =>
+                            ColoredBox(color: cs.surfaceDim),
+                      )
+                    : AsyncCoverImage(
+                        duration: Duration.zero,
+                        future: coverPathFuture,
+                        initialPath: provider.resolvedCoverPathForTrack(track),
+                        retryFutureBuilder: () =>
+                            _coverFutureForTrack(provider, track),
+                        fallbackBuilder: (_) =>
+                            ColoredBox(color: cs.surfaceDim),
+                        imageBuilder: (context, coverPath) {
+                          final mediaSize = MediaQuery.sizeOf(context);
+                          final dpr = MediaQuery.devicePixelRatioOf(context);
+                          return RetryingFileImage(
+                            path: coverPath,
+                            cacheWidth: (mediaSize.width * dpr).round(),
+                            fit: BoxFit.cover,
+                            color: cs.surface.withValues(alpha: 0.45),
+                            colorBlendMode: BlendMode.darken,
+                            fallbackBuilder: (_) =>
+                                ColoredBox(color: cs.surfaceDim),
+                          );
+                        },
+                      ),
+              ),
+              AnimatedBuilder(
+                animation: widget.dismissAnimation,
+                builder: (context, _) {
+                  final dismissProgress = Curves.easeOutCubic.transform(
+                    widget.dismissAnimation.value.clamp(0.0, 1.0),
+                  );
+                  return Positioned.fill(
+                    child: Opacity(
+                      opacity: 1 - dismissProgress,
+                      child: BackdropFilter(
+                        filter: ImageFilter.blur(sigmaX: 32, sigmaY: 32),
+                        child: const SizedBox.expand(),
+                      ),
                     ),
-            ),
-            AnimatedBuilder(
-              animation: widget.dismissAnimation,
-              builder: (context, _) {
-                final dismissProgress = Curves.easeOutCubic.transform(
-                  widget.dismissAnimation.value.clamp(0.0, 1.0),
-                );
-                return Positioned.fill(
-                  child: Opacity(
-                    opacity: 1 - dismissProgress,
-                    child: BackdropFilter(
-                      filter: ImageFilter.blur(sigmaX: 32, sigmaY: 32),
-                      child: const SizedBox.expand(),
-                    ),
-                  ),
-                );
-              },
-            ),
+                  );
+                },
+              ),
+            ],
             // Content
             SafeArea(
               child: LayoutBuilder(
@@ -873,6 +885,38 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                                     ),
                                     const SizedBox(width: 8),
                                   ],
+                                  if (widget.segmentPanelExpandedNotifier !=
+                                      null)
+                                    ValueListenableBuilder<bool>(
+                                      valueListenable:
+                                          widget.segmentPanelExpandedNotifier!,
+                                      builder: (context, expanded, _) {
+                                        return IconButton(
+                                          onPressed: () {
+                                            final state =
+                                                _detailContentKey.currentState;
+                                            if (state != null) {
+                                              if (state
+                                                  .isSegmentPanelExpanded) {
+                                                state.collapseSegmentPanel();
+                                              } else {
+                                                state.expandSegmentPanel();
+                                              }
+                                            }
+                                          },
+                                          icon: Icon(
+                                            Icons.tune_rounded,
+                                            color: expanded
+                                                ? cs.primary
+                                                : cs.onSurface,
+                                            size: 24,
+                                          ),
+                                          tooltip: context
+                                              .read<AppLanguageProvider>()
+                                              .tr('audio_features'),
+                                        );
+                                      },
+                                    ),
                                   UnifiedPopupMenuButton<String>(
                                     icon: Icons.more_horiz_rounded,
                                     tooltip: MaterialLocalizations.of(
@@ -909,15 +953,6 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                                                 .tr('subtitle_global_display'),
                                           ),
                                       ],
-                                      UnifiedMenuEntry<String>.action(
-                                        value: 'channel_swap',
-                                        icon: session.channelSwapEnabled
-                                            ? Icons.check_rounded
-                                            : Icons.swap_horiz_rounded,
-                                        label: context
-                                            .read<AppLanguageProvider>()
-                                            .tr('channel_swap'),
-                                      ),
                                       const UnifiedMenuEntry<String>.divider(),
                                       UnifiedMenuEntry<String>.action(
                                         value: 'audio_detail',
@@ -979,14 +1014,6 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                                         );
                                         return;
                                       }
-                                      if (value != 'channel_swap') return;
-                                      Feedback.forTap(context);
-                                      unawaited(
-                                        provider.setSessionChannelSwap(
-                                          session.id,
-                                          !session.channelSwapEnabled,
-                                        ),
-                                      );
                                     },
                                   ),
                                 ],
@@ -1026,61 +1053,27 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                                 child: artworkWidget,
                               );
 
-                              final detailContent = Padding(
-                                padding: EdgeInsets.fromLTRB(
-                                  isLandscape ? 12 : 28,
-                                  isLandscape ? 0 : 12,
-                                  isLandscape ? 64 : 28,
-                                  isLandscape ? 32 : 8,
-                                ),
-                                child: _SessionDetailContent(
-                                  key: _detailContentKey,
-                                  session: session,
-                                  provider: provider,
-                                  filenameKey: _filenameKey,
-                                  progressBarKey: _progressBarKey,
-                                  subtitleFontSize: ref
-                                      .watch(subtitleSettingsProvider)
-                                      .fontSize,
-                                  segmentPanelExpandedNotifier: widget.segmentPanelExpandedNotifier,
-                                ),
+                              final detailPadding = EdgeInsets.fromLTRB(
+                                isLandscape ? 12 : 28,
+                                isLandscape ? 0 : 12,
+                                isLandscape ? 64 : 28,
+                                isLandscape ? 32 : 8,
                               );
 
-                              if (isLandscape) {
-                                return Row(
-                                  children: [
-                                    Expanded(child: artwork),
-                                    Expanded(
-                                      child: LayoutBuilder(
-                                        builder: (context, scrollConstraints) {
-                                          return SingleChildScrollView(
-                                            padding: const EdgeInsets.symmetric(
-                                              vertical: 24,
-                                            ),
-                                            child: ConstrainedBox(
-                                              constraints: BoxConstraints(
-                                                minHeight:
-                                                    scrollConstraints
-                                                        .maxHeight -
-                                                    48,
-                                              ),
-                                              child: Center(
-                                                child: detailContent,
-                                              ),
-                                            ),
-                                          );
-                                        },
-                                      ),
-                                    ),
-                                  ],
-                                );
-                              }
-
-                              return Column(
-                                children: [
-                                  Expanded(child: artwork),
-                                  detailContent,
-                                ],
+                              return _SessionDetailContent(
+                                key: _detailContentKey,
+                                session: session,
+                                provider: provider,
+                                filenameKey: _filenameKey,
+                                progressBarKey: _progressBarKey,
+                                subtitleFontSize: ref
+                                    .watch(subtitleSettingsProvider)
+                                    .fontSize,
+                                segmentPanelExpandedNotifier:
+                                    widget.segmentPanelExpandedNotifier,
+                                isLandscape: isLandscape,
+                                artworkWidget: artwork,
+                                detailPadding: detailPadding,
                               );
                             },
                           ),

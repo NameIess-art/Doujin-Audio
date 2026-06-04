@@ -83,7 +83,7 @@ void main() {
     test(
       'channel swap keeps current playback state when native reports transient completion',
       () async {
-        var setChannelSwapCalls = 0;
+        var setAudioEffectsCalls = 0;
         bool? lastChannelSwapEnabled;
 
         final tempDir = await Directory.systemTemp.createTemp(
@@ -111,10 +111,12 @@ void main() {
               switch (call.method) {
                 case NativePlaybackMethod.prepareSession:
                   return <String, Object?>{'ok': true, 'value': null};
-                case NativePlaybackMethod.setChannelSwap:
-                  setChannelSwapCalls++;
+                case NativePlaybackMethod.setAudioEffects:
+                  setAudioEffectsCalls++;
                   final args = call.arguments as Map<Object?, Object?>;
-                  lastChannelSwapEnabled = args['enabled'] as bool?;
+                  final effects = args['effects'] as Map<Object?, Object?>;
+                  lastChannelSwapEnabled =
+                      effects['channelSwapEnabled'] as bool?;
                   return <String, Object?>{
                     'ok': true,
                     'value': <String, Object?>{
@@ -131,6 +133,12 @@ void main() {
                       'volume': 1.0,
                       'boostGain': 1.0,
                       'channelSwap': true,
+                      'audioEffects': <String, Object?>{
+                        'skipSilenceEnabled': false,
+                        'noiseReductionEnabled': false,
+                        'eqEnabled': false,
+                        'eqBandLevels': <Object?>[],
+                      },
                     },
                   };
                 default:
@@ -164,7 +172,7 @@ void main() {
         );
         await provider.setSessionChannelSwap(session.id, true);
 
-        expect(setChannelSwapCalls, 1);
+        expect(setAudioEffectsCalls, 1);
         expect(lastChannelSwapEnabled, isTrue);
         expect(session.channelSwapEnabled, isTrue);
         expect(session.state.playing, isTrue);
@@ -229,6 +237,182 @@ void main() {
       expect(lastNativeSpeed, closeTo(1.5, 0.001));
       expect(session.speed, closeTo(1.5, 0.001));
     });
+
+    test('session audio effects sync through unified native payload', () async {
+      var setAudioEffectsCalls = 0;
+      Map<Object?, Object?>? lastEffects;
+
+      const track = MusicTrack(
+        path: 'https://example.com/effects.mp3',
+        displayName: 'track',
+        groupKey: 'effects',
+        groupTitle: 'Effects',
+        groupSubtitle: 'Effects',
+        isSingle: false,
+      );
+
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+            switch (call.method) {
+              case NativePlaybackMethod.prepareSession:
+                return <String, Object?>{'ok': true, 'value': null};
+              case NativePlaybackMethod.setAudioEffects:
+                setAudioEffectsCalls++;
+                final args = call.arguments as Map<Object?, Object?>;
+                lastEffects = args['effects'] as Map<Object?, Object?>;
+                return <String, Object?>{
+                  'ok': true,
+                  'value': <String, Object?>{
+                    'sessionId': args['sessionId'] as String,
+                    'uri': track.path,
+                    'path': track.path,
+                    'title': 'track',
+                    'playing': false,
+                    'playWhenReady': false,
+                    'processingState': 'ready',
+                    'positionMs': 0,
+                    'bufferedPositionMs': 0,
+                    'durationMs': const Duration(minutes: 3).inMilliseconds,
+                    'volume': 1.0,
+                    'speed': 1.0,
+                    'boostGain': 1.0,
+                    'channelSwap': lastEffects?['channelSwapEnabled'] as bool?,
+                    'audioEffects': lastEffects,
+                    'eqCapabilities': <String, Object?>{
+                      'supported': true,
+                      'minGainDb': -6.0,
+                      'maxGainDb': 6.0,
+                      'bands': <Object?>[
+                        <String, Object?>{'frequencyHz': 60},
+                        <String, Object?>{'frequencyHz': 170},
+                        <String, Object?>{'frequencyHz': 1000},
+                        <String, Object?>{'frequencyHz': 3000},
+                        <String, Object?>{'frequencyHz': 6000},
+                      ],
+                    },
+                  },
+                };
+              default:
+                return <String, Object?>{'ok': true, 'value': null};
+            }
+          });
+
+      provider.addTracks(<MusicTrack>[track], notify: false, persist: false);
+      await provider.spawnSession(track, autoPlay: false);
+      final session = provider.activeSessions.single;
+      session.applyNativeSnapshot(
+        NativePlaybackSnapshot(
+          sessionId: session.id,
+          playing: false,
+          playWhenReady: false,
+          processingState: 'ready',
+          position: Duration.zero,
+          bufferedPosition: Duration.zero,
+          volume: 1,
+          boostGain: 1,
+          channelSwapEnabled: false,
+          eqCapabilities: const EqCapabilities(
+            supported: true,
+            minGainDb: -6,
+            maxGainDb: 6,
+            bands: <EqBandInfo>[
+              EqBandInfo(frequencyHz: 60),
+              EqBandInfo(frequencyHz: 170),
+              EqBandInfo(frequencyHz: 1000),
+              EqBandInfo(frequencyHz: 3000),
+              EqBandInfo(frequencyHz: 6000),
+            ],
+          ),
+        ),
+      );
+
+      await provider.setSessionSkipSilence(session.id, true);
+      expect(lastEffects?['skipSilenceEnabled'], isTrue);
+
+      await provider.setSessionNoiseReduction(session.id, true);
+      expect(lastEffects?['noiseReductionEnabled'], isTrue);
+
+      await provider.setSessionEqBandLevel(session.id, 1000, 7);
+      final manualLevels = lastEffects?['eqBandLevels'] as List<Object?>;
+      final manualBand = manualLevels.cast<Map<Object?, Object?>>().firstWhere(
+        (entry) => entry['frequencyHz'] == 1000,
+      );
+      expect(manualBand['gainDb'], 6.0);
+
+      final voicePreset = AudioProvider.builtInEqPresets.firstWhere(
+        (preset) => preset.id == 'voice_clear',
+      );
+      await provider.applySessionEqPreset(session.id, voicePreset);
+      expect(lastEffects?['eqPresetId'], 'voice_clear');
+      expect(lastEffects?['eqEnabled'], isTrue);
+      expect(setAudioEffectsCalls, greaterThanOrEqualTo(4));
+      expect(session.audioEffects.eqPresetId, 'voice_clear');
+
+      await provider.applySessionEqPreset(
+        session.id,
+        AudioProvider.builtInEqPresets.first,
+      );
+      expect(session.audioEffects.eqPresetId, 'flat');
+      expect(session.audioEffects.eqEnabled, isTrue);
+      expect(session.audioEffects.eqBandLevels, isEmpty);
+    });
+
+    test(
+      'audio effect toggles keep optimistic state when native omits effects',
+      () async {
+        const track = MusicTrack(
+          path: 'https://example.com/effects-missing-payload.mp3',
+          displayName: 'track',
+          groupKey: 'effects-missing-payload',
+          groupTitle: 'Effects',
+          groupSubtitle: 'Effects',
+          isSingle: false,
+        );
+
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+              switch (call.method) {
+                case NativePlaybackMethod.prepareSession:
+                  return <String, Object?>{'ok': true, 'value': null};
+                case NativePlaybackMethod.setAudioEffects:
+                  final args = call.arguments as Map<Object?, Object?>;
+                  return <String, Object?>{
+                    'ok': true,
+                    'value': <String, Object?>{
+                      'sessionId': args['sessionId'] as String,
+                      'uri': track.path,
+                      'path': track.path,
+                      'title': 'track',
+                      'playing': false,
+                      'playWhenReady': false,
+                      'processingState': 'ready',
+                      'positionMs': 0,
+                      'bufferedPositionMs': 0,
+                      'durationMs': const Duration(minutes: 3).inMilliseconds,
+                      'volume': 1.0,
+                      'speed': 1.0,
+                      'boostGain': 1.0,
+                      'channelSwap': false,
+                    },
+                  };
+                default:
+                  return <String, Object?>{'ok': true, 'value': null};
+              }
+            });
+
+        provider.addTracks(<MusicTrack>[track], notify: false, persist: false);
+        await provider.spawnSession(track, autoPlay: false);
+        final session = provider.activeSessions.single;
+
+        await provider.setSessionSkipSilence(session.id, true);
+        await provider.setSessionNoiseReduction(session.id, true);
+        await provider.setSessionEqEnabled(session.id, true);
+
+        expect(session.audioEffects.skipSilenceEnabled, isTrue);
+        expect(session.audioEffects.noiseReductionEnabled, isTrue);
+        expect(session.audioEffects.eqEnabled, isTrue);
+      },
+    );
   });
 
   group('time segment loop session isolation', () {
@@ -1143,7 +1327,7 @@ void main() {
             .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
               switch (call.method) {
                 case NativePlaybackMethod.prepareSession:
-                case NativePlaybackMethod.setChannelSwap:
+                case NativePlaybackMethod.setAudioEffects:
                   return <String, Object?>{
                     'ok': true,
                     'value': <String, Object?>{
@@ -1163,7 +1347,7 @@ void main() {
                       'volume': 1.0,
                       'boostGain': 1.0,
                       'channelSwap':
-                          call.method == NativePlaybackMethod.setChannelSwap,
+                          call.method == NativePlaybackMethod.setAudioEffects,
                     },
                   };
                 default:

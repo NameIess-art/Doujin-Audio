@@ -5,6 +5,7 @@ import 'package:path/path.dart' as p;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import '../models/audio_detail.dart';
+import '../models/audio_effects.dart';
 import '../models/library_entry.dart';
 import '../models/music_track.dart';
 import '../models/time_segment_label.dart';
@@ -38,7 +39,7 @@ class AppDatabase {
     final dbPath = await getDatabasesPath();
     final db = await openDatabase(
       p.join(dbPath, 'audio_player.db'),
-      version: 14,
+      version: 15,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -81,6 +82,7 @@ class AppDatabase {
         duration_ms INTEGER NOT NULL DEFAULT 0,
         custom_queue_tracks_json TEXT,
         channel_swap INTEGER NOT NULL DEFAULT 0,
+        audio_effects_json TEXT,
         created_at_ms INTEGER,
         updated_at_ms INTEGER,
         last_played_at_ms INTEGER,
@@ -211,6 +213,9 @@ class AppDatabase {
         'speed',
         'REAL NOT NULL DEFAULT 1.0',
       );
+    }
+    if (oldVersion < 15) {
+      await _addColumnIfMissing(db, 'sessions', 'audio_effects_json', 'TEXT');
     }
     await _createTrackIndexes(db);
   }
@@ -666,6 +671,7 @@ class AppDatabase {
             durationMs: (item['durationMs'] as num?)?.toInt() ?? 0,
             customQueueTracks: null,
             channelSwapEnabled: item['channelSwap'] as bool? ?? false,
+            audioEffects: AudioEffectsState.fromJson(item['audioEffects']),
             createdAtMs: (item['createdAtMs'] as num?)?.toInt(),
             updatedAtMs: (item['updatedAtMs'] as num?)?.toInt(),
             lastPlayedAtMs: (item['lastPlayedAtMs'] as num?)?.toInt(),
@@ -786,6 +792,7 @@ class AppDatabase {
     'duration_ms': session.durationMs,
     'custom_queue_tracks_json': _encodeTracks(session.customQueueTracks),
     'channel_swap': session.channelSwapEnabled ? 1 : 0,
+    'audio_effects_json': session.audioEffects.toDatabaseJson(),
     'created_at_ms': session.createdAtMs,
     'updated_at_ms': session.updatedAtMs,
     'last_played_at_ms': session.lastPlayedAtMs,
@@ -803,6 +810,7 @@ class AppDatabase {
         durationMs: row['duration_ms'] as int? ?? 0,
         customQueueTracks: _decodeTracks(row['custom_queue_tracks_json']),
         channelSwapEnabled: (row['channel_swap'] as int? ?? 0) == 1,
+        audioEffects: AudioEffectsState.fromJson(row['audio_effects_json']),
         createdAtMs: (row['created_at_ms'] as num?)?.toInt(),
         updatedAtMs: (row['updated_at_ms'] as num?)?.toInt(),
         lastPlayedAtMs: (row['last_played_at_ms'] as num?)?.toInt(),
@@ -861,6 +869,7 @@ class PersistedSession {
     required this.durationMs,
     required this.customQueueTracks,
     required this.channelSwapEnabled,
+    this.audioEffects = AudioEffectsState.flat,
     required this.sortOrder,
     this.createdAtMs,
     this.updatedAtMs,
@@ -876,6 +885,7 @@ class PersistedSession {
   final int durationMs;
   final List<MusicTrack>? customQueueTracks;
   final bool channelSwapEnabled;
+  final AudioEffectsState audioEffects;
   final int sortOrder;
   final int? createdAtMs;
   final int? updatedAtMs;

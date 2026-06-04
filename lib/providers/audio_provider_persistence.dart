@@ -181,6 +181,8 @@ extension AudioProviderPersistence on AudioProvider {
       _autoCheckUpdates = map['autoCheckUpdates'] as bool? ?? false;
       _settingsRepository.recordPlaybackProgress =
           map['recordPlaybackProgress'] as bool? ?? true;
+      _settingsRepository.blurPlayerBackgroundEnabled =
+          map['blurPlayerBackgroundEnabled'] as bool? ?? true;
       _dlsiteMetadataLanguage = _decodeDlsiteMetadataLanguage(
         map['dlsiteMetadataLanguage'],
       );
@@ -189,6 +191,9 @@ extension AudioProviderPersistence on AudioProvider {
       );
       _settingsRepository.cardPositionsLocked =
           map['cardPositionsLocked'] as bool? ?? false;
+      _settingsRepository.customEqPresets = _decodeCustomEqPresets(
+        map['customEqPresets'],
+      );
       _maxCacheBytes =
           (map['maxCacheBytes'] as num?)?.toInt() ??
           AppCacheService.defaultMaxCacheBytes;
@@ -208,11 +213,15 @@ extension AudioProviderPersistence on AudioProvider {
         'autoPlayAddedSessions': _autoPlayAddedSessions,
         'autoCheckUpdates': _autoCheckUpdates,
         'recordPlaybackProgress': _settingsRepository.recordPlaybackProgress,
+        'blurPlayerBackgroundEnabled': _settingsRepository.blurPlayerBackgroundEnabled,
         'dlsiteMetadataLanguage': _dlsiteMetadataLanguage.name,
         'cardInfoFields': _settingsRepository.cardInfoFields
             .map((field) => field.name)
             .toList(growable: false),
         'cardPositionsLocked': _settingsRepository.cardPositionsLocked,
+        'customEqPresets': _settingsRepository.customEqPresets
+            .map((preset) => preset.toJson())
+            .toList(growable: false),
         'maxCacheBytes': _maxCacheBytes,
       });
       await prefs.setString(_kPlaybackSettingsKey, encoded);
@@ -227,6 +236,14 @@ extension AudioProviderPersistence on AudioProvider {
       if (language.name == value) return language;
     }
     return AppLanguage.ja;
+  }
+
+  List<EqPreset> _decodeCustomEqPresets(Object? value) {
+    if (value is! List) return const <EqPreset>[];
+    return value
+        .map(EqPreset.fromJson)
+        .where((preset) => preset.id.isNotEmpty && preset.labelKey.isNotEmpty)
+        .toList(growable: false);
   }
 
   Future<void> _loadWatchedFolders() async {
@@ -467,6 +484,13 @@ extension AudioProviderPersistence on AudioProvider {
     unawaited(_savePlaybackSettings());
   }
 
+  Future<void> setBlurPlayerBackgroundEnabled(bool enabled) async {
+    if (_settingsRepository.blurPlayerBackgroundEnabled == enabled) return;
+    _settingsRepository.blurPlayerBackgroundEnabled = enabled;
+    _notifySettingsChanged();
+    unawaited(_savePlaybackSettings());
+  }
+
   Future<void> setAutoPlayAddedSessions(bool enabled) async {
     if (_autoPlayAddedSessions == enabled) return;
     _autoPlayAddedSessions = enabled;
@@ -506,6 +530,24 @@ extension AudioProviderPersistence on AudioProvider {
   Future<void> setCardPositionsLocked(bool locked) async {
     if (_settingsRepository.cardPositionsLocked == locked) return;
     _settingsRepository.cardPositionsLocked = locked;
+    _notifySettingsChanged();
+    unawaited(_savePlaybackSettings());
+  }
+
+  Future<void> saveCustomEqPreset(String name, PlaybackSession session) async {
+    final trimmedName = name.trim();
+    if (trimmedName.isEmpty) return;
+    final preset = EqPreset(
+      id: 'custom_${DateTime.now().microsecondsSinceEpoch}',
+      labelKey: trimmedName,
+      bandLevels: Map<int, double>.unmodifiable(
+        session.audioEffects.eqBandLevels,
+      ),
+    );
+    _settingsRepository.customEqPresets = List<EqPreset>.unmodifiable([
+      ..._settingsRepository.customEqPresets,
+      preset,
+    ]);
     _notifySettingsChanged();
     unawaited(_savePlaybackSettings());
   }

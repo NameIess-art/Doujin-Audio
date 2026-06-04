@@ -227,6 +227,37 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                       },
                     ),
                     const SizedBox(height: 2),
+                    Consumer(
+                      builder: (context, ref, _) {
+                        final blurEnabled = ref.watch(settingsStateProvider.select((s) => s.valueOrNull?.blurPlayerBackgroundEnabled ?? true));
+                        return SwitchListTile(
+                          value: blurEnabled,
+                          onChanged: audioProvider.setBlurPlayerBackgroundEnabled,
+                          title: Text(i18n.tr('blur_player_background')),
+                          subtitle: Text(
+                            i18n.tr('blur_player_background_subtitle'),
+                            style: descStyle,
+                          ),
+                          secondary: Container(
+                            width: 38,
+                            height: 38,
+                            decoration: BoxDecoration(
+                              color: cs.primaryContainer,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Icon(
+                              Icons.blur_on_rounded,
+                              color: cs.onPrimaryContainer,
+                            ),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 2),
                     ListTile(
                       title: Text(i18n.tr('language')),
                       subtitle: Text(

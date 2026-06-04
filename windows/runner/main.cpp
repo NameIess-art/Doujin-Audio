@@ -17,7 +17,12 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   // plugins.
   ::CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
 
-  flutter::DartProject project(L"data");
+  flutter::DartProject project =
+#ifdef _DEBUG
+      flutter::DartProject(L"data\\flutter_assets", L"data\\icudtl.dat", L"");
+#else
+      flutter::DartProject(L"data");
+#endif
 
   std::vector<std::string> command_line_arguments =
       GetCommandLineArguments();

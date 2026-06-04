@@ -1,7 +1,11 @@
 package com.nameless.audio
 
+import android.media.audiofx.Equalizer
 import android.media.audiofx.LoudnessEnhancer
 import android.net.Uri
+import android.media.audiofx.DynamicsProcessing
+import android.os.Build
+import androidx.media3.common.audio.AudioProcessor
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
@@ -9,6 +13,8 @@ import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.audio.ChannelMappingAudioProcessor
+import kotlin.math.abs
+import kotlin.math.roundToInt
 
 internal data class NativeMediaItemDescriptor(
     val path: String,
@@ -18,15 +24,41 @@ internal data class NativeMediaItemDescriptor(
     val artUri: String?
 )
 
+internal data class NativeAudioEffects(
+    val skipSilenceEnabled: Boolean = false,
+    val noiseReductionEnabled: Boolean = false,
+    val eqEnabled: Boolean = false,
+    val eqPresetId: String? = null,
+    val eqBandLevels: Map<Int, Float> = emptyMap(),
+    val channelSwapEnabled: Boolean = false,
+    val volumeNormalizationEnabled: Boolean = false,
+    val panning: Float = 0f
+)
+
+internal const val NOISE_REDUCTION_LOW_RUMBLE_CUTOFF_HZ = 90
+internal const val NOISE_REDUCTION_HIGH_HISS_CUTOFF_HZ = 10000
+internal const val NOISE_REDUCTION_LOW_GAIN_DB = -1.5f
+internal const val NOISE_REDUCTION_HIGH_GAIN_DB = -1.25f
+internal const val VOLUME_NORMALIZATION_MBC_RATIO = 2.0f
+internal const val VOLUME_NORMALIZATION_MBC_THRESHOLD_DB = -12f
+internal const val VOLUME_NORMALIZATION_LIMITER_THRESHOLD_DB = -2f
+internal const val VOLUME_NORMALIZATION_OUTPUT_GAIN_DB = 0f
+
 internal class NativePlaybackSession(
     val sessionId: String,
-    private val createPlayer: (String, ChannelMappingAudioProcessor) -> ExoPlayer,
+    private val createPlayer: (String, Array<AudioProcessor>) -> ExoPlayer,
     private val evictPlayersIfNeeded: () -> Unit,
     private val logWarn: (String, NativePlaybackSession, RuntimeException) -> Unit
 ) {
     private val channelMappingAudioProcessor = ChannelMappingAudioProcessor()
+    private val volumeBalanceAudioProcessor = VolumeBalanceAudioProcessor()
     private var loudnessEnhancer: LoudnessEnhancer? = null
     private var loudnessEnhancerSessionId: Int = C.AUDIO_SESSION_ID_UNSET
+    private var equalizer: Equalizer? = null
+    private var equalizerSessionId: Int = C.AUDIO_SESSION_ID_UNSET
+    private var equalizerCreateFailed = false
+    private var dynamicsProcessing: android.media.audiofx.DynamicsProcessing? = null
+    private var dynamicsProcessingSessionId: Int = C.AUDIO_SESSION_ID_UNSET
     private var _player: ExoPlayer? = null
     var lastUsedMs: Long = System.currentTimeMillis()
     var path: String? = null
@@ -41,6 +73,13 @@ internal class NativePlaybackSession(
     var shuffleModeEnabled: Boolean = false
     private var queue: List<NativeMediaItemDescriptor> = emptyList()
     var channelSwapEnabled: Boolean = false
+    var skipSilenceEnabled: Boolean = false
+    var noiseReductionEnabled: Boolean = false
+    var eqEnabled: Boolean = false
+    var eqPresetId: String? = null
+    var eqBandLevels: Map<Int, Float> = emptyMap()
+    var volumeNormalizationEnabled: Boolean = false
+    var panning: Float = 0f
     var lastPositionMs: Long = 0L
     var lastDurationMs: Long? = null
     var lastBufferedPositionMs: Long = 0L
@@ -56,7 +95,7 @@ internal class NativePlaybackSession(
         _player?.let { return it }
         val p = createPlayer(
             sessionId,
-            channelMappingAudioProcessor
+            audioProcessors()
         )
         _player = p
 
@@ -80,6 +119,7 @@ internal class NativePlaybackSession(
             )
             applyVolumeToPlayer(p)
             applySpeedToPlayer(p)
+            applyAudioEffectsToPlayer(p)
             p.repeatMode = repeatModeFor(descriptors.size)
             p.shuffleModeEnabled = shuffleModeEnabled && descriptors.size > 1
             p.playWhenReady = lastPlayWhenReady
@@ -103,6 +143,8 @@ internal class NativePlaybackSession(
             p.release()
         }
         releaseLoudnessEnhancer()
+        releaseEqualizer()
+        releaseDynamicsProcessing()
         _player = null
     }
 
@@ -135,7 +177,7 @@ internal class NativePlaybackSession(
 
         val p = playerOrNull() ?: createPlayer(
             sessionId,
-            channelMappingAudioProcessor
+            audioProcessors()
         ).also { _player = it }
         p.setMediaItems(
             this.queue.map(::buildMediaItem),
@@ -144,6 +186,7 @@ internal class NativePlaybackSession(
         )
         applyVolumeToPlayer(p)
         applySpeedToPlayer(p)
+        applyAudioEffectsToPlayer(p)
         p.repeatMode = repeatModeFor(this.queue.size)
         p.shuffleModeEnabled = shuffleModeEnabled && this.queue.size > 1
         p.playWhenReady = autoPlay
@@ -173,6 +216,26 @@ internal class NativePlaybackSession(
         playerOrNull()?.let(::applySpeedToPlayer)
     }
 
+    fun applyAudioEffects(effects: NativeAudioEffects) {
+        val previousPanningActive = isPanningActive()
+        channelSwapEnabled = effects.channelSwapEnabled
+        skipSilenceEnabled = effects.skipSilenceEnabled
+        noiseReductionEnabled = effects.noiseReductionEnabled
+        eqEnabled = effects.eqEnabled
+        eqPresetId = effects.eqPresetId
+        eqBandLevels = effects.eqBandLevels
+        volumeNormalizationEnabled = effects.volumeNormalizationEnabled
+        panning = effects.panning
+        volumeBalanceAudioProcessor.panning = panning
+        applyChannelMap()
+        playerOrNull()?.let { player ->
+            applyAudioEffectsToPlayer(player)
+            if (previousPanningActive != isPanningActive()) {
+                reprepareCurrentMediaItem()
+            }
+        }
+    }
+
     private fun applyVolumeToPlayer(player: ExoPlayer) {
         val normalizedVolume = PlaybackVolumeMapper.normalize(volume)
         this.volume = normalizedVolume
@@ -184,8 +247,23 @@ internal class NativePlaybackSession(
         player.playbackParameters = PlaybackParameters(normalizeSpeed(speed))
     }
 
+    private fun applyAudioEffectsToPlayer(player: ExoPlayer) {
+        player.setSkipSilenceEnabled(skipSilenceEnabled)
+        syncEqualizer(player.audioSessionId)
+        syncDynamicsProcessing(player.audioSessionId)
+    }
+
+    private fun audioProcessors(): Array<AudioProcessor> {
+        volumeBalanceAudioProcessor.panning = panning
+        return arrayOf(channelMappingAudioProcessor, volumeBalanceAudioProcessor)
+    }
+
+    private fun isPanningActive(): Boolean = kotlin.math.abs(panning) >= 0.001f
+
     fun onAudioSessionIdChanged(audioSessionId: Int) {
         syncLoudnessEnhancer(audioSessionId)
+        syncEqualizer(audioSessionId)
+        syncDynamicsProcessing(audioSessionId)
     }
 
     private fun syncLoudnessEnhancer(audioSessionId: Int) {
@@ -233,6 +311,97 @@ internal class NativePlaybackSession(
         }
         try {
             enhancer.release()
+        } catch (_: RuntimeException) {
+        }
+    }
+
+    private fun syncEqualizer(audioSessionId: Int) {
+        val needsEqualizer = eqEnabled || noiseReductionEnabled
+        if (!needsEqualizer || audioSessionId == C.AUDIO_SESSION_ID_UNSET) {
+            releaseEqualizer()
+            return
+        }
+        val nextEqualizer = if (equalizerSessionId == audioSessionId) {
+            equalizer
+        } else {
+            releaseEqualizer()
+            equalizerCreateFailed = false
+            try {
+                Equalizer(0, audioSessionId).also {
+                    equalizer = it
+                    equalizerSessionId = audioSessionId
+                }
+            } catch (e: RuntimeException) {
+                equalizerCreateFailed = true
+                logWarn("equalizer_create_failed audioSessionId=$audioSessionId", this, e)
+                null
+            }
+        } ?: return
+
+        try {
+            applyEqualizerBandLevels(nextEqualizer)
+            nextEqualizer.enabled = true
+        } catch (e: RuntimeException) {
+            logWarn("equalizer_apply_failed", this, e)
+            releaseEqualizer()
+            equalizerCreateFailed = true
+        }
+    }
+
+    private fun applyEqualizerBandLevels(eq: Equalizer) {
+        val bandCount = eq.numberOfBands.toInt()
+        if (bandCount <= 0) return
+        val range = eq.bandLevelRange
+        val minDb = range[0] / 100f
+        val maxDb = range[1] / 100f
+        val levelsByBand = FloatArray(bandCount)
+        if (eqEnabled) {
+            eqBandLevels.forEach { (frequencyHz, gainDb) ->
+                val band = nearestEqualizerBand(eq, frequencyHz)
+                levelsByBand[band] = (levelsByBand[band] + gainDb).coerceIn(minDb, maxDb)
+            }
+        }
+        if (noiseReductionEnabled) {
+            for (band in 0 until bandCount) {
+                val frequencyHz = eq.getCenterFreq(band.toShort()) / 1000
+                val overlay = noiseReductionGainFor(frequencyHz)
+                if (overlay != 0f) {
+                    levelsByBand[band] = (levelsByBand[band] + overlay).coerceIn(minDb, maxDb)
+                }
+            }
+        }
+        for (band in 0 until bandCount) {
+            eq.setBandLevel(
+                band.toShort(),
+                (levelsByBand[band].coerceIn(minDb, maxDb) * 100).roundToInt().toShort()
+            )
+        }
+    }
+
+    private fun nearestEqualizerBand(eq: Equalizer, frequencyHz: Int): Int {
+        var bestBand = 0
+        var bestDistance = Int.MAX_VALUE
+        for (band in 0 until eq.numberOfBands.toInt()) {
+            val centerHz = eq.getCenterFreq(band.toShort()) / 1000
+            val distance = abs(centerHz - frequencyHz)
+            if (distance < bestDistance) {
+                bestDistance = distance
+                bestBand = band
+            }
+        }
+        return bestBand
+    }
+
+    private fun releaseEqualizer() {
+        val eq = equalizer ?: return
+        equalizer = null
+        equalizerSessionId = C.AUDIO_SESSION_ID_UNSET
+        try {
+            eq.enabled = false
+        } catch (_: RuntimeException) {
+        }
+        try {
+            eq.release()
         } catch (_: RuntimeException) {
         }
     }
@@ -322,6 +491,8 @@ internal class NativePlaybackSession(
             "speed" to speed.toDouble(),
             "boostGain" to PlaybackVolumeMapper.boostGain(volume).toDouble(),
             "channelSwap" to channelSwapEnabled,
+            "audioEffects" to audioEffectsSnapshot(),
+            "eqCapabilities" to eqCapabilitiesSnapshot(),
             "error" to p?.playerError?.message
         )
     }
@@ -345,6 +516,13 @@ internal class NativePlaybackSession(
             positionMs = currentPos,
             volume = volume,
             speed = speed,
+            skipSilenceEnabled = skipSilenceEnabled,
+            noiseReductionEnabled = noiseReductionEnabled,
+            eqEnabled = eqEnabled,
+            eqPresetId = eqPresetId,
+            eqBandLevels = eqBandLevels,
+            volumeNormalizationEnabled = volumeNormalizationEnabled,
+            panning = panning,
             repeatOne = repeatOne,
             repeatAll = repeatAll,
             shuffleModeEnabled = shuffleModeEnabled,
@@ -425,10 +603,138 @@ internal class NativePlaybackSession(
         _player?.release()
         _player = null
         releaseLoudnessEnhancer()
+        releaseEqualizer()
+        releaseDynamicsProcessing()
+    }
+
+    private fun audioEffectsSnapshot(): Map<String, Any?> {
+        return mapOf(
+            "skipSilenceEnabled" to skipSilenceEnabled,
+            "noiseReductionEnabled" to noiseReductionEnabled,
+            "eqEnabled" to eqEnabled,
+            "eqPresetId" to eqPresetId,
+            "eqBandLevels" to eqBandLevels.map { (frequencyHz, gainDb) ->
+                mapOf("frequencyHz" to frequencyHz, "gainDb" to gainDb.toDouble())
+            },
+            "volumeNormalizationEnabled" to volumeNormalizationEnabled,
+            "panning" to panning.toDouble()
+        )
+    }
+
+    private fun syncDynamicsProcessing(audioSessionId: Int) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return
+
+        if (!volumeNormalizationEnabled || audioSessionId == C.AUDIO_SESSION_ID_UNSET) {
+            releaseDynamicsProcessing()
+            return
+        }
+
+        val dp = if (dynamicsProcessingSessionId == audioSessionId) {
+            dynamicsProcessing
+        } else {
+            releaseDynamicsProcessing()
+            try {
+                // Conservative volume balance: light compression plus limiter, no fixed pre-gain.
+                val config = DynamicsProcessing.Config.Builder(
+                    DynamicsProcessing.VARIANT_FAVOR_FREQUENCY_RESOLUTION,
+                    2, // channel count
+                    false, // preEqInUse
+                    0, // preEqBandCount
+                    true, // mbcInUse
+                    1, // mbcBandCount
+                    false, // postEqInUse
+                    0, // postEqBandCount
+                    true // limiterInUse
+                ).build()
+
+                DynamicsProcessing(0, audioSessionId, config).also {
+                    it.setMbcAllChannelsTo(DynamicsProcessing.Mbc(true, true, 1))
+                    it.setMbcBandAllChannelsTo(0, DynamicsProcessing.MbcBand(
+                        true,
+                        20000f,
+                        8f,
+                        160f,
+                        VOLUME_NORMALIZATION_MBC_RATIO,
+                        VOLUME_NORMALIZATION_MBC_THRESHOLD_DB,
+                        2f,
+                        -90f,
+                        1f,
+                        0f,
+                        VOLUME_NORMALIZATION_OUTPUT_GAIN_DB
+                    ))
+
+                    it.setLimiterAllChannelsTo(DynamicsProcessing.Limiter(
+                        true,
+                        true,
+                        0,
+                        8f,
+                        120f,
+                        6f,
+                        VOLUME_NORMALIZATION_LIMITER_THRESHOLD_DB,
+                        VOLUME_NORMALIZATION_OUTPUT_GAIN_DB
+                    ))
+
+                    dynamicsProcessing = it
+                    dynamicsProcessingSessionId = audioSessionId
+                }
+            } catch (e: RuntimeException) {
+                logWarn("dynamics_processing_create_failed audioSessionId=$audioSessionId", this, e)
+                null
+            }
+        } ?: return
+
+        try {
+            dp.enabled = true
+        } catch (e: RuntimeException) {
+            logWarn("dynamics_processing_apply_failed", this, e)
+            releaseDynamicsProcessing()
+        }
+    }
+
+    private fun releaseDynamicsProcessing() {
+        val dp = dynamicsProcessing ?: return
+        dynamicsProcessing = null
+        dynamicsProcessingSessionId = C.AUDIO_SESSION_ID_UNSET
+        try {
+            dp.enabled = false
+        } catch (_: RuntimeException) {
+        }
+        try {
+            dp.release()
+        } catch (_: RuntimeException) {
+        }
+    }
+
+    private fun eqCapabilitiesSnapshot(): Map<String, Any?> {
+        val eq = equalizer
+        if (eq == null || equalizerCreateFailed) {
+            return mapOf("supported" to false)
+        }
+        return try {
+            val range = eq.bandLevelRange
+            mapOf(
+                "supported" to true,
+                "minGainDb" to range[0] / 100.0,
+                "maxGainDb" to range[1] / 100.0,
+                "bands" to (0 until eq.numberOfBands.toInt()).map { band ->
+                    mapOf("frequencyHz" to eq.getCenterFreq(band.toShort()) / 1000)
+                }
+            )
+        } catch (_: RuntimeException) {
+            mapOf("supported" to false)
+        }
     }
 }
 
 private fun normalizeSpeed(speed: Float): Float = speed.coerceIn(0.5f, 2.0f)
+
+internal fun noiseReductionGainFor(frequencyHz: Int): Float {
+    return when {
+        frequencyHz <= NOISE_REDUCTION_LOW_RUMBLE_CUTOFF_HZ -> NOISE_REDUCTION_LOW_GAIN_DB
+        frequencyHz >= NOISE_REDUCTION_HIGH_HISS_CUTOFF_HZ -> NOISE_REDUCTION_HIGH_GAIN_DB
+        else -> 0f
+    }
+}
 
 internal fun ExoPlayer.playbackStateName(): String {
     return playbackStateName(playbackState)

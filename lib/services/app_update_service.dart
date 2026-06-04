@@ -210,7 +210,7 @@ class AppUpdateService {
       final buildNumber = (raw?['buildNumber'] as num?)?.toInt() ?? 0;
       return AppVersionInfo(versionName: versionName, buildNumber: buildNumber);
     } catch (_) {
-      return const AppVersionInfo(versionName: '0.9.8', buildNumber: 980);
+      return const AppVersionInfo(versionName: '0.9.9', buildNumber: 990);
     }
   }
 
@@ -644,4 +644,3 @@ try {
   Show-Failure $_.Exception.Message
 }
 ''';
-

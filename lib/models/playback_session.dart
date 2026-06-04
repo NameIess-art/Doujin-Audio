@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:just_audio/just_audio.dart';
 
 import 'music_track.dart';
+import 'audio_effects.dart';
 import '../services/native_playback_bridge.dart';
 import 'playback_mode.dart';
 
@@ -47,6 +48,8 @@ class PlaybackSession {
   Duration? duration;
   Duration bufferedPosition = Duration.zero;
   double speed = 1.0;
+  AudioEffectsState audioEffects = AudioEffectsState.flat;
+  EqCapabilities eqCapabilities = EqCapabilities.unsupported;
   double nativeBoostGain = 1.0;
   int lastPersistedPositionBucket = 0;
   PlayerState state;
@@ -112,6 +115,8 @@ class PlaybackSession {
     if ((speed - snapshot.speed).abs() >= 0.001) {
       speed = snapshot.speed;
     }
+    audioEffects = snapshot.audioEffects;
+    eqCapabilities = snapshot.eqCapabilities;
     nativeBoostGain = snapshot.boostGain;
     channelSwapEnabled = snapshot.channelSwapEnabled;
     if (snapshot.uri != null && loadedPath == null) {

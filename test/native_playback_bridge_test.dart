@@ -1,5 +1,6 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:nameless_audio/models/audio_effects.dart';
 import 'package:nameless_audio/services/native_playback_bridge.dart';
 import 'package:nameless_audio/services/platform_channels.dart';
 
@@ -76,6 +77,80 @@ void main() {
 
     expect(result.isOk, isTrue);
     expect(result.valueOrNull?.speed, closeTo(1.25, 0.001));
+  });
+
+  test('setAudioEffects forwards the complete effects payload', () async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          expect(call.method, NativePlaybackMethod.setAudioEffects);
+          expect(call.arguments, <String, Object?>{
+            'sessionId': 'session-1',
+            'effects': <String, Object?>{
+              'skipSilenceEnabled': true,
+              'noiseReductionEnabled': true,
+              'volumeNormalizationEnabled': false,
+              'eqEnabled': true,
+              'eqPresetId': 'voice_clear',
+              'eqBandLevels': <Object?>[
+                <String, Object?>{'frequencyHz': 1000, 'gainDb': 2.5},
+              ],
+              'panning': 0.0,
+              'channelSwapEnabled': true,
+            },
+          });
+          return <String, Object?>{
+            'ok': true,
+            'value': <String, Object?>{
+              'sessionId': 'session-1',
+              'playing': false,
+              'playWhenReady': false,
+              'processingState': 'ready',
+              'positionMs': 0,
+              'bufferedPositionMs': 0,
+              'durationMs': 5000,
+              'speed': 1.0,
+              'volume': 1.0,
+              'channelSwap': true,
+              'audioEffects': <String, Object?>{
+                'skipSilenceEnabled': true,
+                'noiseReductionEnabled': true,
+                'eqEnabled': true,
+                'eqPresetId': 'voice_clear',
+                'eqBandLevels': <Object?>[
+                  <String, Object?>{'frequencyHz': 1000, 'gainDb': 2.5},
+                ],
+              },
+              'eqCapabilities': <String, Object?>{
+                'supported': true,
+                'minGainDb': -12.0,
+                'maxGainDb': 12.0,
+                'bands': <Object?>[
+                  <String, Object?>{'frequencyHz': 1000},
+                ],
+              },
+            },
+          };
+        });
+
+    final result = await NativePlaybackBridge.instance.setAudioEffects(
+      'session-1',
+      const NativeAudioEffects(
+        state: AudioEffectsState(
+          skipSilenceEnabled: true,
+          noiseReductionEnabled: true,
+          eqEnabled: true,
+          eqPresetId: 'voice_clear',
+          eqBandLevels: <int, double>{1000: 2.5},
+        ),
+        channelSwapEnabled: true,
+      ),
+    );
+
+    expect(result.isOk, isTrue);
+    expect(result.valueOrNull?.channelSwapEnabled, isTrue);
+    expect(result.valueOrNull?.audioEffects.skipSilenceEnabled, isTrue);
+    expect(result.valueOrNull?.audioEffects.eqBandLevels[1000], 2.5);
+    expect(result.valueOrNull?.eqCapabilities.supported, isTrue);
   });
 
   test(

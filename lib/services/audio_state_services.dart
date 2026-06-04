@@ -6,6 +6,7 @@ import 'package:just_audio/just_audio.dart';
 import 'package:path/path.dart' as path;
 import '../i18n/app_language_provider.dart';
 import '../models/card_info_field.dart';
+import '../models/audio_effects.dart';
 import '../models/library_node.dart';
 import '../models/library_entry.dart';
 import '../models/music_track.dart';
@@ -365,8 +366,10 @@ class SettingsState {
     this.dlsiteMetadataLanguage = AppLanguage.ja,
     this.cardInfoFields = CardInfoField.defaults,
     this.cardPositionsLocked = false,
+    this.customEqPresets = const <EqPreset>[],
     this.maxCacheBytes = 300 * 1024 * 1024,
     this.recordPlaybackProgress = true,
+    this.blurPlayerBackgroundEnabled = true,
   });
 
   final String converterFormat;
@@ -379,8 +382,10 @@ class SettingsState {
   final AppLanguage dlsiteMetadataLanguage;
   final List<CardInfoField> cardInfoFields;
   final bool cardPositionsLocked;
+  final List<EqPreset> customEqPresets;
   final int maxCacheBytes;
   final bool recordPlaybackProgress;
+  final bool blurPlayerBackgroundEnabled;
 
   @override
   bool operator ==(Object other) {
@@ -395,8 +400,10 @@ class SettingsState {
         other.dlsiteMetadataLanguage == dlsiteMetadataLanguage &&
         listEquals(other.cardInfoFields, cardInfoFields) &&
         other.cardPositionsLocked == cardPositionsLocked &&
+        listEquals(other.customEqPresets, customEqPresets) &&
         other.maxCacheBytes == maxCacheBytes &&
-        other.recordPlaybackProgress == recordPlaybackProgress;
+        other.recordPlaybackProgress == recordPlaybackProgress &&
+        other.blurPlayerBackgroundEnabled == blurPlayerBackgroundEnabled;
   }
 
   @override
@@ -411,8 +418,10 @@ class SettingsState {
     dlsiteMetadataLanguage,
     Object.hashAll(cardInfoFields),
     cardPositionsLocked,
+    Object.hashAll(customEqPresets),
     maxCacheBytes,
     recordPlaybackProgress,
+    blurPlayerBackgroundEnabled,
   );
 }
 
@@ -1443,6 +1452,7 @@ class SettingsRepository {
   AppLanguage dlsiteMetadataLanguage = AppLanguage.ja;
   List<CardInfoField> cardInfoFields = CardInfoField.defaults;
   bool cardPositionsLocked = false;
+  List<EqPreset> customEqPresets = const <EqPreset>[];
   int maxCacheBytes = 300 * 1024 * 1024;
   bool keepCpuAwake = false;
   bool keepAliveHasPlayback = false;
@@ -1450,6 +1460,7 @@ class SettingsRepository {
   bool keepAliveUsesUnifiedNotifications = false;
   bool keepAliveKeepsForegroundService = false;
   bool recordPlaybackProgress = true;
+  bool blurPlayerBackgroundEnabled = true;
   final AudioStateSlice<SettingsState> slice = AudioStateSlice<SettingsState>(
     const SettingsState(),
   );
@@ -1467,8 +1478,10 @@ class SettingsRepository {
         dlsiteMetadataLanguage: dlsiteMetadataLanguage,
         cardInfoFields: List<CardInfoField>.unmodifiable(cardInfoFields),
         cardPositionsLocked: cardPositionsLocked,
+        customEqPresets: List<EqPreset>.unmodifiable(customEqPresets),
         maxCacheBytes: maxCacheBytes,
         recordPlaybackProgress: recordPlaybackProgress,
+        blurPlayerBackgroundEnabled: blurPlayerBackgroundEnabled,
       ),
     );
   }

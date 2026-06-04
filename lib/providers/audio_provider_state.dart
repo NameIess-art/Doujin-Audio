@@ -37,6 +37,8 @@ extension AudioProviderState on AudioProvider {
   List<CardInfoField> get cardInfoFields =>
       List<CardInfoField>.unmodifiable(_settingsRepository.cardInfoFields);
   bool get cardPositionsLocked => _settingsRepository.cardPositionsLocked;
+  List<EqPreset> get customEqPresets =>
+      List<EqPreset>.unmodifiable(_settingsRepository.customEqPresets);
   int get maxCacheBytes => _maxCacheBytes;
   int get audioDetailRevision => _audioDetailRevision;
 

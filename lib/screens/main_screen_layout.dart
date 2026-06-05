@@ -190,10 +190,10 @@ extension _MainScreenLayout on _MainScreenState {
                       duration: const Duration(milliseconds: 300),
                       curve: Curves.easeOutQuint,
                       width: selected ? 56 : 0,
-                      height: 28,
+                      height: 26,
                       decoration: BoxDecoration(
                         color: selected
-                            ? activeColor.withValues(alpha: 0.14)
+                            ? activeColor.withValues(alpha: 0.11)
                             : Colors.transparent,
                         borderRadius: BorderRadius.circular(16),
                       ),
@@ -212,9 +212,9 @@ extension _MainScreenLayout on _MainScreenState {
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.labelSmall?.copyWith(
                     fontSize: 10,
-                    fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                    fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
                     color: selected ? activeColor : inactive,
-                    letterSpacing: 0.1,
+                    letterSpacing: 0,
                   ),
                 ),
               ],
@@ -262,10 +262,10 @@ extension _MainScreenLayout on _MainScreenState {
               if (overlaySessions.isNotEmpty) const SizedBox(height: 6),
               if (!tinyMode)
                 FractionallySizedBox(
-                  widthFactor: 0.9,
+                  widthFactor: 0.88,
                   child: _FloatingGlassPanel(
-                    padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
-                    shadowOpacity: 0.18,
+                    padding: const EdgeInsets.fromLTRB(10, 5, 10, 5),
+                    shadowOpacity: 0.12,
                     showTopHighlight: false,
                     tinyMode: tinyMode,
                     child: _buildBottomBar(context),
@@ -444,8 +444,8 @@ extension _MainScreenLayout on _MainScreenState {
     // Use predicted values for one frame until post-frame measurement completes.
     if (_needsMeasurement) {
       final systemBottom = MediaQuery.of(context).padding.bottom;
-      if (hasNowPlaying) return systemBottom + 158;
-      return systemBottom + 64;
+      if (hasNowPlaying) return systemBottom + 150;
+      return systemBottom + 60;
     }
 
     // Read the content column render box live so it stays accurate when the
@@ -460,7 +460,7 @@ extension _MainScreenLayout on _MainScreenState {
       );
     }
     final systemBottom = MediaQuery.of(context).padding.bottom;
-    if (hasNowPlaying) return systemBottom + 158;
-    return systemBottom + 64;
+    if (hasNowPlaying) return systemBottom + 150;
+    return systemBottom + 60;
   }
 }

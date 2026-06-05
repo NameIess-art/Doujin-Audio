@@ -19,7 +19,12 @@ class _AsmrWorkCover extends StatelessWidget {
         width: width,
         height: height,
         child: url.isEmpty
-            ? _AsmrCoverFallback(colorScheme: cs)
+            ? CoverFallbackArtwork(
+                seed: url,
+                compact: true,
+                icon: Icons.graphic_eq_rounded,
+                iconSize: 28,
+              )
             : RetryingNetworkImage(
                 url: url,
                 fit: BoxFit.cover,
@@ -34,9 +39,14 @@ class _AsmrWorkCover extends StatelessWidget {
                   if (loadingProgress == null) {
                     return child;
                   }
-                  return _AsmrCoverLoading(colorScheme: cs);
+                  return _AsmrCoverLoading(seed: url, colorScheme: cs);
                 },
-                fallbackBuilder: (_) => _AsmrCoverFallback(colorScheme: cs),
+                fallbackBuilder: (_) => CoverFallbackArtwork(
+                  seed: url,
+                  compact: true,
+                  icon: Icons.graphic_eq_rounded,
+                  iconSize: 28,
+                ),
               ),
       ),
     );
@@ -58,59 +68,32 @@ String _asmrWorkListCoverUrl(AsmrWork work) {
 }
 
 class _AsmrCoverLoading extends StatelessWidget {
-  const _AsmrCoverLoading({required this.colorScheme});
+  const _AsmrCoverLoading({required this.seed, required this.colorScheme});
 
+  final String seed;
   final ColorScheme colorScheme;
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            colorScheme.primaryContainer,
-            colorScheme.secondaryContainer.withValues(alpha: 0.92),
-          ],
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        CoverFallbackArtwork(
+          seed: seed,
+          showIcon: false,
+          compact: true,
+          icon: Icons.graphic_eq_rounded,
         ),
-      ),
-      child: Center(
-        child: SizedBox.square(
-          dimension: 36,
-          child: CircularProgressIndicator(
-            strokeWidth: 3,
-            color: colorScheme.primary,
+        Center(
+          child: SizedBox.square(
+            dimension: 36,
+            child: CircularProgressIndicator(
+              strokeWidth: 3,
+              color: colorScheme.primary,
+            ),
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _AsmrCoverFallback extends StatelessWidget {
-  const _AsmrCoverFallback({required this.colorScheme});
-
-  final ColorScheme colorScheme;
-
-  @override
-  Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            colorScheme.primaryContainer,
-            colorScheme.secondaryContainer.withValues(alpha: 0.92),
-          ],
-        ),
-      ),
-      child: Icon(
-        Icons.photo_album_rounded,
-        color: colorScheme.onPrimaryContainer,
-        size: 28,
-      ),
+      ],
     );
   }
 }

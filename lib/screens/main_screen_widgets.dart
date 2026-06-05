@@ -18,54 +18,18 @@ class _AmbientBackground extends StatelessWidget {
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: [
+              cs.surfaceDim,
               cs.surface,
-              cs.surfaceContainer.withValues(alpha: 0.94),
-              cs.surfaceContainerLow,
+              cs.surfaceContainerLow.withValues(alpha: 0.96),
             ],
-            stops: const [0, 0.5, 1],
+            stops: const [0, 0.48, 1],
           ),
         ),
-        child: Stack(
-          children: [
-            Positioned(
-              left: -96,
-              top: -64,
-              child: _GlowOrb(
-                color: cs.primary.withValues(alpha: 0.08),
-                size: 220,
-              ),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            border: Border(
+              top: BorderSide(color: cs.primary.withValues(alpha: 0.045)),
             ),
-            Positioned(
-              right: -72,
-              bottom: -86,
-              child: _GlowOrb(
-                color: cs.tertiary.withValues(alpha: 0.07),
-                size: 196,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _GlowOrb extends StatelessWidget {
-  const _GlowOrb({required this.color, required this.size});
-
-  final Color color;
-  final double size;
-
-  @override
-  Widget build(BuildContext context) {
-    return IgnorePointer(
-      child: Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          gradient: RadialGradient(
-            colors: [color, color.withValues(alpha: 0.0)],
           ),
         ),
       ),
@@ -132,27 +96,27 @@ class _FloatingGlassPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final bgColor = isDark ? cs.surfaceBright : cs.surfaceContainerHighest;
+    final bgColor = isDark ? cs.surfaceBright : cs.surfaceContainerHigh;
 
     Widget buildPanel() => DecoratedBox(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(radius),
-        color: bgColor.withValues(alpha: 0.98),
+        color: bgColor.withValues(alpha: isDark ? 0.94 : 0.96),
         border: Border.all(
-          color: cs.outlineVariant.withValues(alpha: isDark ? 0.3 : 0.5),
+          color: cs.outlineVariant.withValues(alpha: isDark ? 0.24 : 0.42),
         ),
         boxShadow: tinyMode
             ? null
             : [
                 BoxShadow(
-                  color: cs.shadow.withValues(alpha: shadowOpacity * 0.8),
-                  blurRadius: 34,
+                  color: cs.shadow.withValues(alpha: shadowOpacity * 0.68),
+                  blurRadius: 28,
                   spreadRadius: -6,
-                  offset: const Offset(0, 18),
+                  offset: const Offset(0, 14),
                 ),
                 BoxShadow(
-                  color: cs.primary.withValues(alpha: isDark ? 0.08 : 0.05),
-                  blurRadius: 18,
+                  color: cs.primary.withValues(alpha: isDark ? 0.05 : 0.035),
+                  blurRadius: 14,
                   spreadRadius: -10,
                   offset: const Offset(0, 8),
                 ),

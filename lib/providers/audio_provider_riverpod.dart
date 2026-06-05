@@ -156,18 +156,14 @@ final mainOverlayUiProvider = Provider<MainOverlayUiState>((ref) {
       const PlaybackStateSliceData();
   final settingsState =
       ref.watch(settingsStateProvider).valueOrNull ?? const SettingsState();
-  final subtitleSettings = ref.watch(subtitleSettingsProvider);
+  ref.watch(subtitleSettingsProvider);
   final overlaySessions = overlaySessionsFromPlaybackState(playbackState);
   final visibleSessions = settingsState.showPlaybackCard
       ? overlaySessions
       : const <PlaybackSession>[];
-  final subtitleSessions = overlaySessions
-      .where((session) => subtitleSettings.isGlobalEnabled(session.id))
-      .toList(growable: false);
   return MainOverlayUiState(
     overlaySessions: overlaySessions,
     visibleSessions: visibleSessions,
-    subtitleSessions: subtitleSessions,
     playingSessionCount: playbackState.playingSessionCount,
     activeSessionCount: playbackState.activeSessions.length,
     showPlaybackCard: settingsState.showPlaybackCard,

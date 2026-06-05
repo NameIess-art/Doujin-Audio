@@ -239,7 +239,6 @@ class MainOverlayUiState {
   const MainOverlayUiState({
     required this.overlaySessions,
     required this.visibleSessions,
-    required this.subtitleSessions,
     required this.playingSessionCount,
     required this.activeSessionCount,
     required this.showPlaybackCard,
@@ -248,7 +247,6 @@ class MainOverlayUiState {
 
   final List<PlaybackSession> overlaySessions;
   final List<PlaybackSession> visibleSessions;
-  final List<PlaybackSession> subtitleSessions;
   final int playingSessionCount;
   final int activeSessionCount;
   final bool showPlaybackCard;
@@ -262,7 +260,6 @@ class MainOverlayUiState {
     return other is MainOverlayUiState &&
         listEquals(other.overlaySessions, overlaySessions) &&
         listEquals(other.visibleSessions, visibleSessions) &&
-        listEquals(other.subtitleSessions, subtitleSessions) &&
         other.playingSessionCount == playingSessionCount &&
         other.activeSessionCount == activeSessionCount &&
         other.showPlaybackCard == showPlaybackCard &&
@@ -273,7 +270,6 @@ class MainOverlayUiState {
   int get hashCode => Object.hash(
     Object.hashAll(overlaySessions),
     Object.hashAll(visibleSessions),
-    Object.hashAll(subtitleSessions),
     playingSessionCount,
     activeSessionCount,
     showPlaybackCard,

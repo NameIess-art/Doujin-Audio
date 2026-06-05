@@ -12,11 +12,13 @@ import 'package:provider/provider.dart' hide Consumer;
 import '../i18n/app_language_provider.dart';
 import '../providers/audio_provider.dart';
 import '../providers/audio_provider_riverpod.dart';
+import '../providers/subtitle_settings_provider.dart';
 import '../services/app_preferences.dart';
 import '../services/app_update_service.dart';
 import '../services/notifications_platform_service.dart';
 import '../services/permission_action_controller.dart';
 import '../services/power_platform_service.dart';
+import '../services/subtitle_overlay_controller.dart';
 import 'asmr_tab.dart';
 import 'library_tab.dart';
 import 'playlist_tab.dart';
@@ -28,8 +30,6 @@ import '../widgets/app_transitions.dart';
 import '../widgets/confirm_action_dialog.dart';
 import '../widgets/mobile_overlay_inset.dart';
 import '../widgets/windows_title_bar.dart';
-
-import '../widgets/floating_subtitle_window.dart';
 
 part 'main_screen_notifications.dart';
 part 'main_screen_storage_permission.dart';
@@ -82,6 +82,13 @@ class _MainScreenState extends ConsumerState<MainScreen>
   Timer? _metricsRecoveryTimer;
   Size? _lastRecoveredViewSize;
   Orientation? _lastRecoveredOrientation;
+  bool _appInForeground = true;
+  bool _globalSubtitleOverlayRunning = false;
+  bool _globalSubtitleOverlaySyncing = false;
+  Timer? _globalSubtitleOverlayTimer;
+  String? _globalSubtitleOverlaySessionId;
+  String? _globalSubtitleOverlayTrackPath;
+  String? _lastGlobalSubtitleOverlayText;
 
   void _setLocalState(VoidCallback fn) => setState(fn);
 
@@ -325,6 +332,8 @@ class _MainScreenState extends ConsumerState<MainScreen>
   void dispose() {
     _metricsRecoveryTimer?.cancel();
     _notificationSessionNavigationTimer?.cancel();
+    _globalSubtitleOverlayTimer?.cancel();
+    unawaited(_stopGlobalSubtitleOverlay(immediate: true));
     _permissionActionController.dispose();
     _notificationsPlatformService.setOpenSessionHandler(null);
     WidgetsBinding.instance.removeObserver(this);
@@ -409,16 +418,157 @@ class _MainScreenState extends ConsumerState<MainScreen>
     });
   }
 
+  PlaybackSession? _globalSubtitleOverlaySession(
+    AudioProvider provider,
+    SubtitleSettingsState settings,
+  ) {
+    final candidates = provider.activeSessions
+        .where((session) {
+          return settings.isShowEnabled(session.id) &&
+              settings.isGlobalEnabled(session.id);
+        })
+        .toList(growable: false);
+    if (candidates.isEmpty) return null;
+    return candidates.firstWhere(
+      (session) => session.state.playing || session.isLoading,
+      orElse: () => candidates.first,
+    );
+  }
+
+  Future<void> _syncGlobalSubtitleOverlay() async {
+    if (!mounted || _appInForeground || _globalSubtitleOverlaySyncing) return;
+    _globalSubtitleOverlaySyncing = true;
+    try {
+      final provider = ref.read(audioProviderFacadeProvider);
+      final settings = ref.read(subtitleSettingsProvider);
+      final session = _globalSubtitleOverlaySession(provider, settings);
+      if (session == null) {
+        await _stopGlobalSubtitleOverlay(immediate: true);
+        return;
+      }
+      final canDraw = await SubtitleOverlayController.canDrawOverlays();
+      if (!canDraw) {
+        await _stopGlobalSubtitleOverlay(immediate: true);
+        return;
+      }
+      await _applyGlobalSubtitleOverlayStyle(settings);
+      await SubtitleOverlayController.startOverlay();
+      _globalSubtitleOverlayRunning = true;
+      _ensureGlobalSubtitleOverlayTimer();
+      _updateGlobalSubtitleOverlayForSession(session);
+    } finally {
+      _globalSubtitleOverlaySyncing = false;
+    }
+  }
+
+  Future<void> _stopGlobalSubtitleOverlay({bool immediate = false}) async {
+    _globalSubtitleOverlayTimer?.cancel();
+    _globalSubtitleOverlayTimer = null;
+    _globalSubtitleOverlaySessionId = null;
+    _globalSubtitleOverlayTrackPath = null;
+    _lastGlobalSubtitleOverlayText = null;
+    if (!_globalSubtitleOverlayRunning && !immediate) return;
+    _globalSubtitleOverlayRunning = false;
+    await SubtitleOverlayController.updateSubtitle('');
+    await SubtitleOverlayController.stopOverlay(immediate: immediate);
+  }
+
+  Future<void> _applyGlobalSubtitleOverlayStyle(
+    SubtitleSettingsState settings,
+  ) {
+    final backgroundColor = (settings.backgroundColor ?? Colors.black)
+        .withValues(alpha: settings.backgroundOpacity);
+    final textColor = settings.fontColor ?? Colors.white;
+    return SubtitleOverlayController.updateStyle(
+      fontSize: settings.fontSize,
+      backgroundColor: _overlayColorValue(backgroundColor),
+      textColor: _overlayColorValue(textColor),
+      backgroundOpacity: settings.backgroundOpacity,
+      fontFamily: settings.fontFamily,
+      borderDepth: settings.borderDepth,
+      backgroundBlur: settings.backgroundBlur,
+    );
+  }
+
+  String _overlayColorValue(Color color) {
+    return '#${color.toARGB32().toRadixString(16).padLeft(8, '0')}';
+  }
+
+  void _ensureGlobalSubtitleOverlayTimer() {
+    _globalSubtitleOverlayTimer ??= Timer.periodic(
+      const Duration(milliseconds: 500),
+      (_) => _updateGlobalSubtitleOverlay(),
+    );
+  }
+
+  void _updateGlobalSubtitleOverlay() {
+    if (!mounted) return;
+    if (_appInForeground) {
+      unawaited(_stopGlobalSubtitleOverlay(immediate: true));
+      return;
+    }
+    final provider = ref.read(audioProviderFacadeProvider);
+    final settings = ref.read(subtitleSettingsProvider);
+    final session = _globalSubtitleOverlaySession(provider, settings);
+    if (session == null) {
+      unawaited(_stopGlobalSubtitleOverlay(immediate: true));
+      return;
+    }
+    _updateGlobalSubtitleOverlayForSession(session);
+  }
+
+  void _updateGlobalSubtitleOverlayForSession(PlaybackSession session) {
+    final provider = ref.read(audioProviderFacadeProvider);
+    if (_globalSubtitleOverlaySessionId != session.id) {
+      _globalSubtitleOverlaySessionId = session.id;
+      _lastGlobalSubtitleOverlayText = null;
+    }
+    if (_globalSubtitleOverlayTrackPath != session.currentTrackPath) {
+      _globalSubtitleOverlayTrackPath = session.currentTrackPath;
+      _lastGlobalSubtitleOverlayText = null;
+      unawaited(
+        provider.subtitleTrackForPath(session.currentTrackPath).then((_) {
+          if (mounted && !_appInForeground) {
+            _updateGlobalSubtitleOverlay();
+          }
+        }),
+      );
+    }
+
+    final subtitleTrack = provider.getSubtitleTrackSync(
+      session.currentTrackPath,
+    );
+    final text =
+        provider.subtitleTextForTrackAt(
+          session.currentTrackPath,
+          session.position,
+          subtitleTrack: subtitleTrack,
+        ) ??
+        '';
+    if (_lastGlobalSubtitleOverlayText != text) {
+      _lastGlobalSubtitleOverlayText = text;
+      unawaited(SubtitleOverlayController.updateSubtitle(text));
+    }
+    unawaited(
+      SubtitleOverlayController.updatePlaybackState(session.state.playing),
+    );
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.paused) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden) {
+      _appInForeground = false;
       final provider = ref.read(audioProviderFacadeProvider);
       provider.syncKeepAliveBeforeBackground();
+      unawaited(_syncGlobalSubtitleOverlay());
       return;
     }
     if (state != AppLifecycleState.resumed) {
       return;
     }
+    _appInForeground = true;
+    unawaited(_stopGlobalSubtitleOverlay(immediate: true));
     unawaited(_consumePendingNotificationSession());
     final provider = ref.read(audioProviderFacadeProvider);
     unawaited(_permissionActionController.handleAppResumed());
@@ -506,7 +656,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
       _lastShowCard = showCard;
       _needsMeasurement = true;
     }
-    final subtitleSessions = overlayUi.subtitleSessions;
     final hasNowPlaying = overlayUi.hasNowPlaying;
     if (activeSessionCount > 0 &&
         !_notificationPermissionCheckDone &&
@@ -589,12 +738,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
                           ],
                         ),
                       if (_timerOverlayPrimed) const _ImmediateTimerScrim(),
-                      for (final session in subtitleSessions)
-                        FloatingSubtitleWindow(
-                          key: ValueKey('subtitle_${session.id}'),
-                          sessionId: session.id,
-                          isCrossPage: true,
-                        ),
+
                       if (!_bootstrapDone)
                         _BootstrapOverlay(
                           visible: !_isDataReady,

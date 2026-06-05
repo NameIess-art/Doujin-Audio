@@ -6,8 +6,8 @@ import org.junit.Test
 
 class PlaybackKeepAlivePolicyTest {
     @Test
-    fun `active playback alone does not require keep alive service`() {
-        assertFalse(
+    fun `active playback alone keeps keep alive service active`() {
+        assertTrue(
             PlaybackKeepAlivePolicy.shouldRunKeepAliveService(
                 keepForegroundServiceAlive = true,
                 hasActiveTimer = false,
@@ -35,8 +35,8 @@ class PlaybackKeepAlivePolicyTest {
     }
 
     @Test
-    fun `active playback owns foreground service even when timer is active`() {
-        assertFalse(
+    fun `active playback and timer both keep keep alive service active`() {
+        assertTrue(
             PlaybackKeepAlivePolicy.shouldRunKeepAliveService(
                 keepForegroundServiceAlive = true,
                 hasActiveTimer = true,

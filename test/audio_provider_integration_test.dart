@@ -413,6 +413,163 @@ void main() {
         expect(session.audioEffects.eqEnabled, isTrue);
       },
     );
+
+    test(
+      'audio effects lazily prepare a restored session before native sync',
+      () async {
+        const firstSessionId = 'restored_first';
+        const secondSessionId = 'restored_second';
+        const firstTrack = MusicTrack(
+          path: 'https://example.com/restored/first.mp3',
+          displayName: 'first',
+          groupKey: 'restored',
+          groupTitle: 'Restored',
+          groupSubtitle: 'Restored',
+          isSingle: false,
+        );
+        const secondTrack = MusicTrack(
+          path: 'https://example.com/restored/second.mp3',
+          displayName: 'second',
+          groupKey: 'restored',
+          groupTitle: 'Restored',
+          groupSubtitle: 'Restored',
+          isSingle: false,
+        );
+
+        final restoredRepository = AudioDatabaseRepository(
+          database: AppDatabase.test(db),
+        );
+        await restoredRepository.saveAllTracks(<MusicTrack>[
+          firstTrack,
+          secondTrack,
+        ]);
+        await restoredRepository.saveAllSessions(<PersistedSession>[
+          const PersistedSession(
+            id: firstSessionId,
+            trackPath: 'https://example.com/restored/first.mp3',
+            loopModeIndex: 1,
+            volume: 1.0,
+            positionMs: 0,
+            durationMs: 0,
+            customQueueTracks: null,
+            channelSwapEnabled: false,
+            sortOrder: 0,
+            createdAtMs: 1,
+          ),
+          const PersistedSession(
+            id: secondSessionId,
+            trackPath: 'https://example.com/restored/second.mp3',
+            loopModeIndex: 1,
+            volume: 1.0,
+            positionMs: 0,
+            durationMs: 0,
+            customQueueTracks: null,
+            channelSwapEnabled: false,
+            sortOrder: 1,
+            createdAtMs: 2,
+          ),
+        ]);
+        SharedPreferences.setMockInitialValues(<String, Object>{
+          'session_order_v1': json.encode(<String>[
+            firstSessionId,
+            secondSessionId,
+          ]),
+        });
+
+        final preparedSessionIds = <String>{};
+        var secondPrepareCalls = 0;
+        var setAudioEffectsCalls = 0;
+        Map<Object?, Object?>? lastEffects;
+
+        Map<String, Object?> snapshotFor(
+          String sessionId, {
+          Object? audioEffects,
+        }) {
+          final track = sessionId == firstSessionId ? firstTrack : secondTrack;
+          return <String, Object?>{
+            'sessionId': sessionId,
+            'uri': track.path,
+            'path': track.path,
+            'title': track.displayName,
+            'playing': false,
+            'playWhenReady': false,
+            'processingState': 'ready',
+            'positionMs': 0,
+            'bufferedPositionMs': 0,
+            'durationMs': const Duration(minutes: 3).inMilliseconds,
+            'volume': 1.0,
+            'speed': 1.0,
+            'boostGain': 1.0,
+            'channelSwap': false,
+            'audioEffects': audioEffects,
+          };
+        }
+
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+              switch (call.method) {
+                case NativePlaybackMethod.prepareSession:
+                  final args = call.arguments as Map<Object?, Object?>;
+                  final sessionId = args['sessionId'] as String;
+                  preparedSessionIds.add(sessionId);
+                  if (sessionId == secondSessionId) {
+                    secondPrepareCalls++;
+                  }
+                  return <String, Object?>{
+                    'ok': true,
+                    'value': snapshotFor(sessionId),
+                  };
+                case NativePlaybackMethod.setAudioEffects:
+                  final args = call.arguments as Map<Object?, Object?>;
+                  final sessionId = args['sessionId'] as String;
+                  if (!preparedSessionIds.contains(sessionId)) {
+                    return <String, Object?>{
+                      'ok': false,
+                      'error': 'Unknown session.',
+                    };
+                  }
+                  setAudioEffectsCalls++;
+                  lastEffects = args['effects'] as Map<Object?, Object?>;
+                  return <String, Object?>{
+                    'ok': true,
+                    'value': snapshotFor(sessionId, audioEffects: lastEffects),
+                  };
+                case NativePlaybackMethod.setForegroundEnabled:
+                  return <String, Object?>{'ok': true, 'value': null};
+                case NativePlaybackMethod.snapshot:
+                  return <String, Object?>{
+                    'ok': true,
+                    'value': <String, Object?>{'sessions': <Object?>[]},
+                  };
+                default:
+                  return <String, Object?>{'ok': true, 'value': null};
+              }
+            });
+
+        final restoredProvider = AudioProvider(
+          notificationService: notificationService,
+          audioDatabaseRepository: restoredRepository,
+        );
+        addTearDown(restoredProvider.dispose);
+
+        for (var i = 0; i < 100; i++) {
+          if (restoredProvider.activeSessions.length == 2) break;
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+        }
+
+        final secondSession = restoredProvider.sessionById(secondSessionId);
+        expect(secondSession, isNotNull);
+        expect(secondSession!.loadedPath, isNull);
+
+        await restoredProvider.setSessionSkipSilence(secondSessionId, true);
+
+        expect(secondPrepareCalls, 1);
+        expect(setAudioEffectsCalls, greaterThanOrEqualTo(1));
+        expect(lastEffects?['skipSilenceEnabled'], isTrue);
+        expect(secondSession.loadedPath, secondTrack.path);
+        expect(secondSession.audioEffects.skipSilenceEnabled, isTrue);
+      },
+    );
   });
 
   group('time segment loop session isolation', () {

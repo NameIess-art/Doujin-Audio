@@ -642,6 +642,100 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
     );
   }
 
+  Future<void> _openTimerSettingsPage() {
+    final i18n = context.read<AppLanguageProvider>();
+    final mediaSize = MediaQuery.sizeOf(context);
+    final isLandscape =
+        MediaQuery.orientationOf(context) == Orientation.landscape;
+    final isDesktop =
+        Platform.isWindows || mediaSize.width >= 760 || isLandscape;
+    final maxWidth = isDesktop ? 520.0 : double.infinity;
+    final outerPadding = EdgeInsets.symmetric(
+      horizontal: isDesktop ? 24 : 12,
+      vertical: isDesktop ? 24 : 12,
+    );
+
+    return showGeneralDialog<void>(
+      context: context,
+      barrierLabel: i18n.tr('close'),
+      barrierDismissible: true,
+      barrierColor: Colors.transparent,
+      transitionDuration: kSecondaryOverlayConfig.transitionDuration,
+      pageBuilder: (dialogContext, animation, secondaryAnimation) {
+        final curved = CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeOutCubic,
+          reverseCurve: Curves.easeInCubic,
+        );
+        return Material(
+          color: Colors.transparent,
+          child: AnimatedBuilder(
+            animation: curved,
+            builder: (context, child) {
+              return Stack(
+                fit: StackFit.expand,
+                children: [
+                  Positioned.fill(
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => Navigator.of(context).maybePop(),
+                      child: const SizedBox.expand(),
+                    ),
+                  ),
+                  SafeArea(
+                    child: FadeTransition(
+                      opacity: curved,
+                      child: Padding(
+                        padding: outerPadding,
+                        child: Align(
+                          alignment: isDesktop
+                              ? Alignment.center
+                              : Alignment.topCenter,
+                          child: ConstrainedBox(
+                            constraints: BoxConstraints(maxWidth: maxWidth),
+                            child: const TimerTab(
+                              showHeader: false,
+                              useSafeArea: false,
+                              compactOnly: true,
+                              initialCompactDetail: true,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
+  void _showAudioDetailForSession(
+    BuildContext context,
+    AudioProvider provider,
+    PlaybackSession session,
+    MusicTrack? track,
+  ) {
+    if (track?.remoteMetadataKind == 'asmr.one' &&
+        track?.remoteMetadata != null) {
+      unawaited(
+        showAsmrWorkDetailSheet(
+          context,
+          AsmrWork.fromJson(Map<String, dynamic>.from(track!.remoteMetadata!)),
+        ),
+      );
+      return;
+    }
+
+    final target = provider.audioDetailTargetForSession(session.id);
+    if (target != null) {
+      unawaited(showAudioDetailSheet(context, target));
+    }
+  }
+
   void _computeSubtitleDefaultTop() {
     final filenameCtx = _filenameKey.currentContext;
     final progressBarCtx = _progressBarKey.currentContext;
@@ -851,7 +945,6 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                               final cachedTrack = provider.getSubtitleTrackSync(
                                 session.currentTrackPath,
                               );
-                              // Trigger background load if not cached
                               if (cachedTrack == null) {
                                 unawaited(
                                   provider.subtitleTrackForPath(
@@ -893,137 +986,6 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                                     ),
                                     const SizedBox(width: 8),
                                   ],
-                                  if (widget.segmentPanelExpandedNotifier !=
-                                      null)
-                                    ValueListenableBuilder<bool>(
-                                      valueListenable:
-                                          widget.segmentPanelExpandedNotifier!,
-                                      builder: (context, expanded, _) {
-                                        return IconButton(
-                                          onPressed: () {
-                                            final state =
-                                                _detailContentKey.currentState;
-                                            if (state != null) {
-                                              if (state
-                                                  .isSegmentPanelExpanded) {
-                                                state.collapseSegmentPanel();
-                                              } else {
-                                                state.expandSegmentPanel();
-                                              }
-                                            }
-                                          },
-                                          icon: Icon(
-                                            Icons.tune_rounded,
-                                            color: expanded
-                                                ? cs.primary
-                                                : cs.onSurface,
-                                            size: 24,
-                                          ),
-                                          tooltip: context
-                                              .read<AppLanguageProvider>()
-                                              .tr('audio_features'),
-                                        );
-                                      },
-                                    ),
-                                  UnifiedPopupMenuButton<String>(
-                                    icon: Icons.more_horiz_rounded,
-                                    tooltip: MaterialLocalizations.of(
-                                      context,
-                                    ).moreButtonTooltip,
-                                    entries: [
-                                      if (hasSubtitle) ...[
-                                        UnifiedMenuEntry<String>.action(
-                                          value: 'toggle_subtitle',
-                                          icon:
-                                              settings.isShowEnabled(session.id)
-                                              ? Icons.subtitles_off_rounded
-                                              : Icons.subtitles_rounded,
-                                          label:
-                                              settings.isShowEnabled(session.id)
-                                              ? context
-                                                    .read<AppLanguageProvider>()
-                                                    .tr('turn_off_subtitle')
-                                              : context
-                                                    .read<AppLanguageProvider>()
-                                                    .tr('turn_on_subtitle'),
-                                        ),
-                                        if (settings.isShowEnabled(session.id))
-                                          UnifiedMenuEntry<String>.action(
-                                            value: 'toggle_cross_page',
-                                            icon:
-                                                settings.isGlobalEnabled(
-                                                  session.id,
-                                                )
-                                                ? Icons.check_rounded
-                                                : Icons.layers_rounded,
-                                            label: context
-                                                .read<AppLanguageProvider>()
-                                                .tr('subtitle_global_display'),
-                                          ),
-                                      ],
-                                      const UnifiedMenuEntry<String>.divider(),
-                                      UnifiedMenuEntry<String>.action(
-                                        value: 'audio_detail',
-                                        icon: Icons.info_outline_rounded,
-                                        label: context
-                                            .read<AppLanguageProvider>()
-                                            .tr('audio_detail'),
-                                      ),
-                                    ],
-                                    onSelected: (value) {
-                                      if (value == 'audio_detail') {
-                                        if (track?.remoteMetadataKind ==
-                                                'asmr.one' &&
-                                            track?.remoteMetadata != null) {
-                                          unawaited(
-                                            showAsmrWorkDetailSheet(
-                                              context,
-                                              AsmrWork.fromJson(
-                                                Map<String, dynamic>.from(
-                                                  track!.remoteMetadata!,
-                                                ),
-                                              ),
-                                            ),
-                                          );
-                                        } else {
-                                          final target = provider
-                                              .audioDetailTargetForSession(
-                                                session.id,
-                                              );
-                                          if (target != null) {
-                                            unawaited(
-                                              showAudioDetailSheet(
-                                                context,
-                                                target,
-                                              ),
-                                            );
-                                          }
-                                        }
-                                        return;
-                                      }
-                                      if (value == 'toggle_subtitle') {
-                                        ref
-                                            .read(
-                                              subtitleSettingsProvider.notifier,
-                                            )
-                                            .toggleShowSubtitles(session.id);
-                                        return;
-                                      }
-                                      if (value == 'toggle_cross_page') {
-                                        final notifier = ref.read(
-                                          subtitleSettingsProvider.notifier,
-                                        );
-                                        unawaited(
-                                          _toggleGlobalSubtitleDisplay(
-                                            notifier,
-                                            settings,
-                                            session.id,
-                                          ),
-                                        );
-                                        return;
-                                      }
-                                    },
-                                  ),
                                 ],
                               );
                             },
@@ -1067,6 +1029,20 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                                 isLandscape ? 64 : 28,
                                 isLandscape ? 32 : 8,
                               );
+                              final cachedTrack = provider.getSubtitleTrackSync(
+                                session.currentTrackPath,
+                              );
+                              if (cachedTrack == null) {
+                                unawaited(
+                                  provider.subtitleTrackForPath(
+                                    session.currentTrackPath,
+                                  ),
+                                );
+                              }
+                              final hasSubtitle = cachedTrack != null;
+                              final subtitleSettings = ref.watch(
+                                subtitleSettingsProvider,
+                              );
 
                               return _SessionDetailContent(
                                 key: _detailContentKey,
@@ -1074,14 +1050,50 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                                 provider: provider,
                                 filenameKey: _filenameKey,
                                 progressBarKey: _progressBarKey,
-                                subtitleFontSize: ref
-                                    .watch(subtitleSettingsProvider)
-                                    .fontSize,
                                 segmentPanelExpandedNotifier:
                                     widget.segmentPanelExpandedNotifier,
                                 isLandscape: isLandscape,
                                 artworkWidget: artwork,
                                 detailPadding: detailPadding,
+                                hasSubtitle: hasSubtitle,
+                                subtitleEnabled: subtitleSettings.isShowEnabled(
+                                  session.id,
+                                ),
+                                subtitleGlobalEnabled: subtitleSettings
+                                    .isGlobalEnabled(session.id),
+                                onToggleSubtitle: hasSubtitle
+                                    ? () {
+                                        ref
+                                            .read(
+                                              subtitleSettingsProvider.notifier,
+                                            )
+                                            .toggleShowSubtitles(session.id);
+                                      }
+                                    : null,
+                                onToggleGlobalSubtitle: hasSubtitle
+                                    ? () {
+                                        final notifier = ref.read(
+                                          subtitleSettingsProvider.notifier,
+                                        );
+                                        unawaited(
+                                          _toggleGlobalSubtitleDisplay(
+                                            notifier,
+                                            subtitleSettings,
+                                            session.id,
+                                          ),
+                                        );
+                                      }
+                                    : null,
+                                onOpenTimer: () {
+                                  unawaited(_openTimerSettingsPage());
+                                },
+                                onShowAudioDetail: () =>
+                                    _showAudioDetailForSession(
+                                      context,
+                                      provider,
+                                      session,
+                                      track,
+                                    ),
                               );
                             },
                           ),

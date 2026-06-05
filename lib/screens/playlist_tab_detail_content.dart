@@ -7,22 +7,34 @@ class _SessionDetailContent extends StatefulWidget {
     required this.provider,
     this.filenameKey,
     this.progressBarKey,
-    this.subtitleFontSize = 16,
     this.segmentPanelExpandedNotifier,
     this.isLandscape = false,
     this.artworkWidget,
     this.detailPadding = EdgeInsets.zero,
+    this.hasSubtitle = false,
+    this.subtitleEnabled = true,
+    this.subtitleGlobalEnabled = false,
+    this.onToggleSubtitle,
+    this.onToggleGlobalSubtitle,
+    this.onOpenTimer,
+    this.onShowAudioDetail,
   });
 
   final PlaybackSession session;
   final AudioProvider provider;
   final GlobalKey? filenameKey;
   final GlobalKey? progressBarKey;
-  final double subtitleFontSize;
   final ValueNotifier<bool>? segmentPanelExpandedNotifier;
   final bool isLandscape;
   final Widget? artworkWidget;
   final EdgeInsetsGeometry detailPadding;
+  final bool hasSubtitle;
+  final bool subtitleEnabled;
+  final bool subtitleGlobalEnabled;
+  final VoidCallback? onToggleSubtitle;
+  final VoidCallback? onToggleGlobalSubtitle;
+  final VoidCallback? onOpenTimer;
+  final VoidCallback? onShowAudioDetail;
 
   @override
   State<_SessionDetailContent> createState() => _SessionDetailContentState();
@@ -435,10 +447,20 @@ class _SessionDetailContentState extends State<_SessionDetailContent>
             ),
           ),
           const SizedBox(height: 8),
-          const SizedBox(height: 8),
-          SizedBox(
-            height: widget.subtitleFontSize * 3,
-          ), // scales with font size
+          AnimatedSize(
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOutCubic,
+            alignment: Alignment.topCenter,
+            child: widget.subtitleEnabled
+                ? Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: _SessionSubtitlePanel(
+                      session: session,
+                      provider: provider,
+                    ),
+                  )
+                : const SizedBox.shrink(),
+          ),
           Container(
             key: widget.progressBarKey,
             child: _ProgressBar(
@@ -452,56 +474,40 @@ class _SessionDetailContentState extends State<_SessionDetailContent>
               onManualSeek: _handleSegmentManualSeek,
             ),
           ),
+          _PlaybackControlPanel(
+            key: ValueKey(
+              widget.isLandscape ? 'controls_landscape' : 'controls',
+            ),
+            session: session,
+            provider: provider,
+            playPauseController: _playPauseController,
+            isPlaying: isPlaying,
+            hasSiblings: hasSiblings,
+            segmentPanelExpanded: _segmentPanelExpanded,
+            hasSubtitle: widget.hasSubtitle,
+            subtitleEnabled: widget.subtitleEnabled,
+            subtitleGlobalEnabled: widget.subtitleGlobalEnabled,
+            onShowTrackSwitcher: () => _showTrackSwitcher(context),
+            onToggleSegments: _segmentPanelExpanded
+                ? collapseSegmentPanel
+                : expandSegmentPanel,
+            onToggleSubtitle: widget.onToggleSubtitle,
+            onToggleGlobalSubtitle: widget.onToggleGlobalSubtitle,
+            onOpenTimer: widget.onOpenTimer,
+            onShowAudioDetail: widget.onShowAudioDetail,
+          ),
           if (!widget.isLandscape)
             AnimatedSwitcher(
               duration: const Duration(milliseconds: 180),
               switchInCurve: Curves.easeOutCubic,
               switchOutCurve: Curves.easeInCubic,
               child: _segmentPanelExpanded
-                  ? _TimeSegmentPanel(
+                  ? _buildSegmentPanel(
+                      provider: provider,
+                      session: session,
                       key: const ValueKey('segments'),
-                      session: session,
-                      provider: provider,
-                      labels: _segmentLabels,
-                      selectedId: _selectedSegmentId,
-                      showEditor: _segmentEditorVisible,
-                      loading: _segmentLoading,
-                      nameController: _segmentNameController,
-                      draftStart: _draftStart,
-                      draftEnd: _draftEnd,
-                      draftColorValue: _draftColorValue,
-                      loopSegmentId: provider.timeSegmentLoopLabelIdForSession(
-                        session.id,
-                        trackKey: _segmentTrackKey,
-                      ),
-                      onSelect: _selectSegment,
-                      onAdd: _startNewSegment,
-                      onSetStart: _setDraftStartToCurrent,
-                      onSetEnd: _setDraftEndToCurrent,
-                      onEditStart: () => _editDraftTime(isStart: true),
-                      onEditEnd: () => _editDraftTime(isStart: false),
-                      onDelete: _deleteSelectedSegment,
-                      onToggleLoop: _toggleSelectedSegmentLoop,
                     )
-                  : _PlaybackControlPanel(
-                      key: const ValueKey('controls'),
-                      session: session,
-                      provider: provider,
-                      playPauseController: _playPauseController,
-                      isPlaying: isPlaying,
-                      hasSiblings: hasSiblings,
-                      onShowTrackSwitcher: () => _showTrackSwitcher(context),
-                    ),
-            )
-          else
-            _PlaybackControlPanel(
-              key: const ValueKey('controls_landscape'),
-              session: session,
-              provider: provider,
-              playPauseController: _playPauseController,
-              isPlaying: isPlaying,
-              hasSiblings: hasSiblings,
-              onShowTrackSwitcher: () => _showTrackSwitcher(context),
+                  : const SizedBox.shrink(key: ValueKey('segments_closed')),
             ),
         ],
       ),
@@ -593,6 +599,38 @@ class _SessionDetailContentState extends State<_SessionDetailContent>
           Expanded(child: widget.artworkWidget!),
         contentColumn,
       ],
+    );
+  }
+
+  Widget _buildSegmentPanel({
+    required AudioProvider provider,
+    required PlaybackSession session,
+    required Key key,
+  }) {
+    return _TimeSegmentPanel(
+      key: key,
+      session: session,
+      provider: provider,
+      labels: _segmentLabels,
+      selectedId: _selectedSegmentId,
+      showEditor: _segmentEditorVisible,
+      loading: _segmentLoading,
+      nameController: _segmentNameController,
+      draftStart: _draftStart,
+      draftEnd: _draftEnd,
+      draftColorValue: _draftColorValue,
+      loopSegmentId: provider.timeSegmentLoopLabelIdForSession(
+        session.id,
+        trackKey: _segmentTrackKey,
+      ),
+      onSelect: _selectSegment,
+      onAdd: _startNewSegment,
+      onSetStart: _setDraftStartToCurrent,
+      onSetEnd: _setDraftEndToCurrent,
+      onEditStart: () => _editDraftTime(isStart: true),
+      onEditEnd: () => _editDraftTime(isStart: false),
+      onDelete: _deleteSelectedSegment,
+      onToggleLoop: _toggleSelectedSegmentLoop,
     );
   }
 

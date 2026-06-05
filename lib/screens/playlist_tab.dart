@@ -39,6 +39,7 @@ import '../models/asmr_models.dart';
 import 'audio_detail_sheet.dart';
 import 'asmr_work_detail_sheet.dart';
 import 'screen_view_models.dart';
+import 'timer_tab.dart';
 
 part 'playlist_tab_list.dart';
 part 'playlist_tab_detail.dart';
@@ -313,8 +314,6 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
               key: _headerKey,
               icon: Icons.graphic_eq_rounded,
               title: i18n.tr('playback_sessions'),
-              marqueeTitle: false,
-              forceMarqueeTitle: false,
               isLoading: !listState.isInitialized,
               subtitle: sessionSummary,
               subtitleFontSize: 11,

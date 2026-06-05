@@ -8,7 +8,16 @@ class _PlaybackControlPanel extends StatelessWidget {
     required this.playPauseController,
     required this.isPlaying,
     required this.hasSiblings,
+    required this.segmentPanelExpanded,
+    required this.hasSubtitle,
+    required this.subtitleEnabled,
+    required this.subtitleGlobalEnabled,
     required this.onShowTrackSwitcher,
+    required this.onToggleSegments,
+    this.onToggleSubtitle,
+    this.onToggleGlobalSubtitle,
+    this.onOpenTimer,
+    this.onShowAudioDetail,
   });
 
   final PlaybackSession session;
@@ -16,201 +25,367 @@ class _PlaybackControlPanel extends StatelessWidget {
   final AnimationController playPauseController;
   final bool isPlaying;
   final bool hasSiblings;
+  final bool segmentPanelExpanded;
+  final bool hasSubtitle;
+  final bool subtitleEnabled;
+  final bool subtitleGlobalEnabled;
   final VoidCallback onShowTrackSwitcher;
+  final VoidCallback onToggleSegments;
+  final VoidCallback? onToggleSubtitle;
+  final VoidCallback? onToggleGlobalSubtitle;
+  final VoidCallback? onOpenTimer;
+  final VoidCallback? onShowAudioDetail;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        _PlaybackPrimaryControls(
+          session: session,
+          provider: provider,
+          playPauseController: playPauseController,
+          isPlaying: isPlaying,
+        ),
+        _PlaybackSecondaryControls(
+          session: session,
+          provider: provider,
+          hasSiblings: hasSiblings,
+          segmentPanelExpanded: segmentPanelExpanded,
+          hasSubtitle: hasSubtitle,
+          subtitleEnabled: subtitleEnabled,
+          subtitleGlobalEnabled: subtitleGlobalEnabled,
+          onShowTrackSwitcher: onShowTrackSwitcher,
+          onToggleSegments: onToggleSegments,
+          onToggleSubtitle: onToggleSubtitle,
+          onToggleGlobalSubtitle: onToggleGlobalSubtitle,
+          onOpenTimer: onOpenTimer,
+          onShowAudioDetail: onShowAudioDetail,
+        ),
+      ],
+    );
+  }
+}
+
+class _PlaybackPrimaryControls extends StatelessWidget {
+  const _PlaybackPrimaryControls({
+    required this.session,
+    required this.provider,
+    required this.playPauseController,
+    required this.isPlaying,
+  });
+
+  final PlaybackSession session;
+  final AudioProvider provider;
+  final AnimationController playPauseController;
+  final bool isPlaying;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final i18n = context.read<AppLanguageProvider>();
-    return Column(
-      children: [
-        SizedBox(
-          height: 92,
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final compact = constraints.maxWidth < 400;
-              final skipIconSize = compact ? 48.0 : 54.0;
-              final playIconSize = compact ? 76.0 : 86.0;
-              final loadingSize = compact ? 38.0 : 44.0;
+    final enabled = !session.isLoading;
 
-              return Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  IconButton(
-                    tooltip: i18n.tr('previous_track'),
-                    constraints: BoxConstraints.tightFor(
-                      width: compact ? 56 : 64,
-                      height: compact ? 56 : 64,
-                    ),
-                    padding: EdgeInsets.zero,
-                    onPressed: session.isLoading
-                        ? null
-                        : () {
-                            HapticFeedback.selectionClick();
-                            provider.seekSessionToPrev(session.id);
-                          },
-                    icon: Icon(
-                      Icons.skip_previous_rounded,
-                      size: skipIconSize,
-                      color: cs.onSurface,
-                    ),
-                  ),
-                  IconButton(
-                    constraints: BoxConstraints.tightFor(
-                      width: compact ? 56 : 64,
-                      height: compact ? 56 : 64,
-                    ),
-                    padding: EdgeInsets.zero,
-                    onPressed: session.isLoading
-                        ? null
-                        : () {
-                            HapticFeedback.selectionClick();
-                            final newPos =
-                                session.position - const Duration(seconds: 5);
-                            provider.seekSession(
-                              session.id,
-                              newPos < Duration.zero ? Duration.zero : newPos,
-                            );
-                          },
-                    icon: Icon(
-                      Icons.replay_5_rounded,
-                      size: skipIconSize * 0.8,
-                      color: cs.onSurface,
-                    ),
-                  ),
-                  IconButton(
-                    tooltip: isPlaying ? i18n.tr('pause') : i18n.tr('play'),
-                    constraints: BoxConstraints.tightFor(
-                      width: compact ? 80 : 92,
-                      height: compact ? 80 : 92,
-                    ),
-                    padding: EdgeInsets.zero,
-                    onPressed: session.isLoading
-                        ? null
-                        : () {
-                            HapticFeedback.mediumImpact();
-                            provider.toggleSessionPlayPause(session.id);
-                          },
-                    iconSize: playIconSize,
-                    icon: AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 150),
-                      switchInCurve: Curves.easeOutCubic,
-                      switchOutCurve: Curves.easeInCubic,
-                      transitionBuilder: (child, animation) {
-                        return FadeTransition(
-                          opacity: animation,
-                          child: ScaleTransition(
-                            scale: Tween<double>(
-                              begin: 0.92,
-                              end: 1,
-                            ).animate(animation),
-                            child: child,
+    return SizedBox(
+      height: 92,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final compact = constraints.maxWidth < 400;
+          final skipIconSize = compact ? 48.0 : 54.0;
+          final playIconSize = compact ? 76.0 : 86.0;
+          final loadingSize = compact ? 38.0 : 44.0;
+          final sideBox = BoxConstraints.tightFor(
+            width: compact ? 56 : 64,
+            height: compact ? 56 : 64,
+          );
+
+          return Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              _PrimaryTransportButton(
+                tooltip: i18n.tr('previous_track'),
+                constraints: sideBox,
+                enabled: enabled,
+                icon: Icons.skip_previous_rounded,
+                iconSize: skipIconSize,
+                onPressed: () {
+                  HapticFeedback.selectionClick();
+                  provider.seekSessionToPrev(session.id);
+                },
+              ),
+              _PrimaryTransportButton(
+                constraints: sideBox,
+                enabled: enabled,
+                icon: Icons.replay_5_rounded,
+                iconSize: skipIconSize * 0.8,
+                onPressed: () {
+                  HapticFeedback.selectionClick();
+                  final newPos = session.position - const Duration(seconds: 5);
+                  provider.seekSession(
+                    session.id,
+                    newPos < Duration.zero ? Duration.zero : newPos,
+                  );
+                },
+              ),
+              IconButton(
+                tooltip: isPlaying ? i18n.tr('pause') : i18n.tr('play'),
+                constraints: BoxConstraints.tightFor(
+                  width: compact ? 80 : 92,
+                  height: compact ? 80 : 92,
+                ),
+                padding: EdgeInsets.zero,
+                onPressed: enabled
+                    ? () {
+                        HapticFeedback.mediumImpact();
+                        provider.toggleSessionPlayPause(session.id);
+                      }
+                    : null,
+                iconSize: playIconSize,
+                icon: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 150),
+                  switchInCurve: Curves.easeOutCubic,
+                  switchOutCurve: Curves.easeInCubic,
+                  transitionBuilder: (child, animation) {
+                    return FadeTransition(
+                      opacity: animation,
+                      child: ScaleTransition(
+                        scale: Tween<double>(
+                          begin: 0.92,
+                          end: 1,
+                        ).animate(animation),
+                        child: child,
+                      ),
+                    );
+                  },
+                  child: session.isLoading
+                      ? SizedBox(
+                          key: const ValueKey('loading'),
+                          width: loadingSize,
+                          height: loadingSize,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 3,
+                            color: cs.onSurface.withValues(alpha: 0.8),
                           ),
-                        );
-                      },
-                      child: session.isLoading
-                          ? SizedBox(
-                              key: const ValueKey('loading'),
-                              width: loadingSize,
-                              height: loadingSize,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 3,
-                                color: cs.onSurface,
-                              ),
-                            )
-                          : AnimatedIcon(
-                              icon: AnimatedIcons.play_pause,
-                              progress: playPauseController,
-                              key: const ValueKey('play_pause_anim'),
-                              size: playIconSize,
-                              color: cs.onSurface,
-                            ),
-                    ),
-                  ),
-                  IconButton(
-                    constraints: BoxConstraints.tightFor(
-                      width: compact ? 56 : 64,
-                      height: compact ? 56 : 64,
-                    ),
-                    padding: EdgeInsets.zero,
-                    onPressed: session.isLoading
-                        ? null
-                        : () {
-                            HapticFeedback.selectionClick();
-                            provider.seekSession(
-                              session.id,
-                              session.position + const Duration(seconds: 5),
-                            );
-                          },
-                    icon: Icon(
-                      Icons.forward_5_rounded,
-                      size: skipIconSize * 0.8,
-                      color: cs.onSurface,
-                    ),
-                  ),
-                  IconButton(
-                    tooltip: i18n.tr('next_track'),
-                    constraints: BoxConstraints.tightFor(
-                      width: compact ? 56 : 64,
-                      height: compact ? 56 : 64,
-                    ),
-                    padding: EdgeInsets.zero,
-                    onPressed: session.isLoading
-                        ? null
-                        : () {
-                            HapticFeedback.selectionClick();
-                            provider.seekSessionToNext(session.id);
-                          },
-                    icon: Icon(
-                      Icons.skip_next_rounded,
-                      size: skipIconSize,
-                      color: cs.onSurface,
-                    ),
-                  ),
-                ],
-              );
-            },
+                        )
+                      : AnimatedIcon(
+                          icon: AnimatedIcons.play_pause,
+                          progress: playPauseController,
+                          key: const ValueKey('play_pause_anim'),
+                          size: playIconSize,
+                          color: enabled
+                              ? cs.onSurface
+                              : cs.onSurface.withValues(alpha: 0.35),
+                        ),
+                ),
+              ),
+              _PrimaryTransportButton(
+                constraints: sideBox,
+                enabled: enabled,
+                icon: Icons.forward_5_rounded,
+                iconSize: skipIconSize * 0.8,
+                onPressed: () {
+                  HapticFeedback.selectionClick();
+                  provider.seekSession(
+                    session.id,
+                    session.position + const Duration(seconds: 5),
+                  );
+                },
+              ),
+              _PrimaryTransportButton(
+                tooltip: i18n.tr('next_track'),
+                constraints: sideBox,
+                enabled: enabled,
+                icon: Icons.skip_next_rounded,
+                iconSize: skipIconSize,
+                onPressed: () {
+                  HapticFeedback.selectionClick();
+                  provider.seekSessionToNext(session.id);
+                },
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _PlaybackSecondaryControls extends StatelessWidget {
+  const _PlaybackSecondaryControls({
+    required this.session,
+    required this.provider,
+    required this.hasSiblings,
+    required this.segmentPanelExpanded,
+    required this.hasSubtitle,
+    required this.subtitleEnabled,
+    required this.subtitleGlobalEnabled,
+    required this.onShowTrackSwitcher,
+    required this.onToggleSegments,
+    this.onToggleSubtitle,
+    this.onToggleGlobalSubtitle,
+    this.onOpenTimer,
+    this.onShowAudioDetail,
+  });
+
+  final PlaybackSession session;
+  final AudioProvider provider;
+  final bool hasSiblings;
+  final bool segmentPanelExpanded;
+  final bool hasSubtitle;
+  final bool subtitleEnabled;
+  final bool subtitleGlobalEnabled;
+  final VoidCallback onShowTrackSwitcher;
+  final VoidCallback onToggleSegments;
+  final VoidCallback? onToggleSubtitle;
+  final VoidCallback? onToggleGlobalSubtitle;
+  final VoidCallback? onOpenTimer;
+  final VoidCallback? onShowAudioDetail;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final i18n = context.read<AppLanguageProvider>();
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 6, left: 4, right: 4, bottom: 2),
+      child: SizedBox(
+        height: 82,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: cs.surfaceContainerHighest.withValues(alpha: 0.18),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: cs.outlineVariant.withValues(alpha: 0.42),
+            ),
           ),
-        ),
-        Padding(
-          padding: const EdgeInsets.only(top: 8, left: 4, right: 4, bottom: 2),
-          child: SizedBox(
-            height: 52,
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
             child: Row(
               children: [
                 _ExpandableLoopOptions(session: session, provider: provider),
-                const SizedBox(width: 8),
-                IconButton(
-                  constraints: const BoxConstraints.tightFor(
-                    width: 48,
-                    height: 48,
+                _SessionVolumeButton(session: session, provider: provider),
+                _SecondaryControlButton(
+                  icon: Icons.alarm_rounded,
+                  tooltip: i18n.tr('timer'),
+                  onPressed: onOpenTimer,
+                ),
+                if (hasSubtitle)
+                  _SecondaryControlButton(
+                    icon: subtitleEnabled
+                        ? Icons.subtitles_rounded
+                        : Icons.subtitles_off_rounded,
+                    tooltip: subtitleEnabled
+                        ? i18n.tr('turn_off_subtitle')
+                        : i18n.tr('turn_on_subtitle'),
+                    active: subtitleEnabled,
+                    onPressed: onToggleSubtitle,
                   ),
-                  padding: EdgeInsets.zero,
+                if (hasSubtitle && subtitleEnabled)
+                  _SecondaryControlButton(
+                    icon: subtitleGlobalEnabled
+                        ? Icons.check_rounded
+                        : Icons.layers_rounded,
+                    tooltip: i18n.tr('subtitle_global_display'),
+                    active: subtitleGlobalEnabled,
+                    onPressed: onToggleGlobalSubtitle,
+                  ),
+                _SecondaryControlButton(
+                  icon: Icons.tune_rounded,
+                  tooltip: i18n.tr('audio_features'),
+                  active: segmentPanelExpanded,
+                  onPressed: onToggleSegments,
+                ),
+                _SecondaryControlButton(
+                  icon: Icons.queue_music_rounded,
+                  tooltip: i18n.tr('switch_audio'),
                   onPressed: hasSiblings
                       ? () {
                           HapticFeedback.selectionClick();
                           onShowTrackSwitcher();
                         }
                       : null,
-                  tooltip: i18n.tr('switch_audio'),
-                  icon: Icon(
-                    Icons.queue_music_rounded,
-                    size: 24,
-                    color: cs.onSurface,
-                  ),
                 ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: _SessionVolumeSlider(
-                    session: session,
-                    provider: provider,
-                  ),
+                _SecondaryControlButton(
+                  icon: Icons.info_outline_rounded,
+                  tooltip: i18n.tr('audio_detail'),
+                  onPressed: onShowAudioDetail,
                 ),
               ],
             ),
           ),
         ),
-      ],
+      ),
+    );
+  }
+}
+
+class _PrimaryTransportButton extends StatelessWidget {
+  const _PrimaryTransportButton({
+    required this.constraints,
+    required this.enabled,
+    required this.icon,
+    required this.iconSize,
+    required this.onPressed,
+    this.tooltip,
+  });
+
+  final BoxConstraints constraints;
+  final bool enabled;
+  final IconData icon;
+  final double iconSize;
+  final VoidCallback onPressed;
+  final String? tooltip;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = Theme.of(context).colorScheme.onSurface;
+    return IconButton(
+      tooltip: tooltip,
+      constraints: constraints,
+      padding: EdgeInsets.zero,
+      onPressed: enabled ? onPressed : null,
+      icon: Icon(
+        icon,
+        size: iconSize,
+        color: enabled ? color : color.withValues(alpha: 0.35),
+      ),
+    );
+  }
+}
+
+class _SecondaryControlButton extends StatelessWidget {
+  const _SecondaryControlButton({
+    required this.icon,
+    required this.tooltip,
+    this.active = false,
+    this.onPressed,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final bool active;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final enabled = onPressed != null;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 2),
+      child: IconButton(
+        constraints: const BoxConstraints.tightFor(width: 48, height: 48),
+        padding: EdgeInsets.zero,
+        tooltip: tooltip,
+        style: IconButton.styleFrom(
+          backgroundColor: active
+              ? cs.primaryContainer.withValues(alpha: 0.65)
+              : Colors.transparent,
+          foregroundColor: active ? cs.onPrimaryContainer : cs.onSurface,
+          disabledForegroundColor: cs.onSurface.withValues(alpha: 0.35),
+        ),
+        onPressed: onPressed,
+        icon: Icon(icon, size: 22, color: enabled ? null : null),
+      ),
     );
   }
 }
@@ -1246,13 +1421,18 @@ class _SpeedWheelPageState extends State<_SpeedWheelPage> {
                         child: AnimatedDefaultTextStyle(
                           duration: const Duration(milliseconds: 120),
                           curve: Curves.easeOutCubic,
-                          style: Theme.of(context).textTheme.titleLarge!.copyWith(
-                            color: selected ? cs.primary : cs.onSurfaceVariant,
-                            fontWeight: selected
-                                ? FontWeight.w900
-                                : FontWeight.w700,
-                            fontFeatures: const [FontFeature.tabularFigures()],
-                          ),
+                          style: Theme.of(context).textTheme.titleLarge!
+                              .copyWith(
+                                color: selected
+                                    ? cs.primary
+                                    : cs.onSurfaceVariant,
+                                fontWeight: selected
+                                    ? FontWeight.w900
+                                    : FontWeight.w700,
+                                fontFeatures: const [
+                                  FontFeature.tabularFigures(),
+                                ],
+                              ),
                           child: Text(_formatSpeedValue(speed)),
                         ),
                       ),
@@ -1380,8 +1560,6 @@ class _SegmentTimeRow extends StatelessWidget {
     );
   }
 }
-
-
 
 Future<Duration?> _showSegmentTimeInputDialog(
   BuildContext context, {

@@ -126,55 +126,70 @@ class _PlaybackPrimaryControls extends StatelessWidget {
                   );
                 },
               ),
-              IconButton(
-                tooltip: isPlaying ? i18n.tr('pause') : i18n.tr('play'),
-                constraints: BoxConstraints.tightFor(
-                  width: compact ? 80 : 92,
-                  height: compact ? 80 : 92,
-                ),
-                padding: EdgeInsets.zero,
-                onPressed: enabled
-                    ? () {
-                        HapticFeedback.mediumImpact();
-                        provider.toggleSessionPlayPause(session.id);
-                      }
-                    : null,
-                iconSize: playIconSize,
-                icon: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 150),
-                  switchInCurve: Curves.easeOutCubic,
-                  switchOutCurve: Curves.easeInCubic,
-                  transitionBuilder: (child, animation) {
-                    return FadeTransition(
-                      opacity: animation,
-                      child: ScaleTransition(
-                        scale: Tween<double>(
-                          begin: 0.92,
-                          end: 1,
-                        ).animate(animation),
-                        child: child,
-                      ),
-                    );
-                  },
-                  child: session.isLoading
-                      ? SizedBox(
-                          key: const ValueKey('loading'),
-                          width: loadingSize,
-                          height: loadingSize,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 3,
-                            color: cs.onSurface.withValues(alpha: 0.8),
+              Container(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: cs.onSurface.withValues(alpha: enabled ? 1.0 : 0.12),
+                  boxShadow: enabled
+                      ? [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.2),
+                            blurRadius: 20,
+                            offset: const Offset(0, 8),
                           ),
-                        )
-                      : AnimatedIcon(
-                          icon: AnimatedIcons.play_pause,
-                          progress: playPauseController,
-                          key: const ValueKey('play_pause_anim'),
-                          size: playIconSize,
-                          color: enabled
-                              ? cs.onSurface
-                              : cs.onSurface.withValues(alpha: 0.35),
+                        ]
+                      : null,
+                ),
+                child: IconButton(
+                  tooltip: isPlaying ? i18n.tr('pause') : i18n.tr('play'),
+                  constraints: BoxConstraints.tightFor(
+                    width: compact ? 80 : 92,
+                    height: compact ? 80 : 92,
+                  ),
+                  padding: EdgeInsets.zero,
+                  onPressed: enabled
+                      ? () {
+                          HapticFeedback.mediumImpact();
+                          provider.toggleSessionPlayPause(session.id);
+                        }
+                      : null,
+                  iconSize: playIconSize,
+                  icon: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 150),
+                    switchInCurve: Curves.easeOutCubic,
+                    switchOutCurve: Curves.easeInCubic,
+                    transitionBuilder: (child, animation) {
+                      return FadeTransition(
+                        opacity: animation,
+                        child: ScaleTransition(
+                          scale: Tween<double>(
+                            begin: 0.92,
+                            end: 1,
+                          ).animate(animation),
+                          child: child,
                         ),
+                      );
+                    },
+                    child: session.isLoading
+                        ? SizedBox(
+                            key: const ValueKey('loading'),
+                            width: loadingSize,
+                            height: loadingSize,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 3,
+                              color: cs.surface.withValues(alpha: 0.8),
+                            ),
+                          )
+                        : AnimatedIcon(
+                            icon: AnimatedIcons.play_pause,
+                            progress: playPauseController,
+                            key: const ValueKey('play_pause_anim'),
+                            size: playIconSize * 0.6,
+                            color: enabled
+                                ? cs.surface
+                                : cs.onSurface.withValues(alpha: 0.35),
+                          ),
+                  ),
                 ),
               ),
               _PrimaryTransportButton(
@@ -246,20 +261,20 @@ class _PlaybackSecondaryControls extends StatelessWidget {
     final i18n = context.read<AppLanguageProvider>();
 
     return Padding(
-      padding: const EdgeInsets.only(top: 6, left: 4, right: 4, bottom: 2),
+      padding: const EdgeInsets.only(top: 4, left: 4, right: 4),
       child: SizedBox(
-        height: 82,
+        height: 52,
         child: DecoratedBox(
           decoration: BoxDecoration(
             color: cs.surfaceContainerHighest.withValues(alpha: 0.18),
-            borderRadius: BorderRadius.circular(18),
+            borderRadius: BorderRadius.circular(16),
             border: Border.all(
               color: cs.outlineVariant.withValues(alpha: 0.42),
             ),
           ),
           child: SingleChildScrollView(
             scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 6),
             child: Row(
               children: [
                 _ExpandableLoopOptions(session: session, provider: provider),
@@ -371,9 +386,9 @@ class _SecondaryControlButton extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     final enabled = onPressed != null;
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 1),
       child: IconButton(
-        constraints: const BoxConstraints.tightFor(width: 48, height: 48),
+        constraints: const BoxConstraints.tightFor(width: 40, height: 40),
         padding: EdgeInsets.zero,
         tooltip: tooltip,
         style: IconButton.styleFrom(
@@ -384,7 +399,7 @@ class _SecondaryControlButton extends StatelessWidget {
           disabledForegroundColor: cs.onSurface.withValues(alpha: 0.35),
         ),
         onPressed: onPressed,
-        icon: Icon(icon, size: 22, color: enabled ? null : null),
+        icon: Icon(icon, size: 20, color: enabled ? null : null),
       ),
     );
   }

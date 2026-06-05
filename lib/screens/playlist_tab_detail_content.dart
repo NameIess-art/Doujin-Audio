@@ -5,8 +5,6 @@ class _SessionDetailContent extends StatefulWidget {
     super.key,
     required this.session,
     required this.provider,
-    this.filenameKey,
-    this.progressBarKey,
     this.segmentPanelExpandedNotifier,
     this.isLandscape = false,
     this.artworkWidget,
@@ -22,8 +20,6 @@ class _SessionDetailContent extends StatefulWidget {
 
   final PlaybackSession session;
   final AudioProvider provider;
-  final GlobalKey? filenameKey;
-  final GlobalKey? progressBarKey;
   final ValueNotifier<bool>? segmentPanelExpandedNotifier;
   final bool isLandscape;
   final Widget? artworkWidget;
@@ -433,12 +429,11 @@ class _SessionDetailContentState extends State<_SessionDetailContent>
           ),
           const SizedBox(height: 12),
           SizedBox(
-            key: widget.filenameKey,
-            height: 36,
+            height: 42,
             child: MarqueeText(
               text: displayName,
               pauseDuration: const Duration(seconds: 1),
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+              style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                 color: cs.onSurface,
                 fontWeight: FontWeight.w900,
                 letterSpacing: -0.5,
@@ -451,7 +446,7 @@ class _SessionDetailContentState extends State<_SessionDetailContent>
             duration: const Duration(milliseconds: 180),
             curve: Curves.easeOutCubic,
             alignment: Alignment.topCenter,
-            child: widget.subtitleEnabled
+            child: widget.subtitleEnabled && !_segmentPanelExpanded
                 ? Padding(
                     padding: const EdgeInsets.only(bottom: 8),
                     child: _SessionSubtitlePanel(
@@ -461,18 +456,15 @@ class _SessionDetailContentState extends State<_SessionDetailContent>
                   )
                 : const SizedBox.shrink(),
           ),
-          Container(
-            key: widget.progressBarKey,
-            child: _ProgressBar(
-              key: ValueKey(session.id),
-              session: session,
-              provider: provider,
-              timeSegmentLabels: _segmentLabels,
-              selectedSegmentId: _segmentPanelExpanded
-                  ? _selectedSegmentId
-                  : null,
-              onManualSeek: _handleSegmentManualSeek,
-            ),
+          _ProgressBar(
+            key: ValueKey(session.id),
+            session: session,
+            provider: provider,
+            timeSegmentLabels: _segmentLabels,
+            selectedSegmentId: _segmentPanelExpanded
+                ? _selectedSegmentId
+                : null,
+            onManualSeek: _handleSegmentManualSeek,
           ),
           _PlaybackControlPanel(
             key: ValueKey(

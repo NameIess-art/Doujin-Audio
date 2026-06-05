@@ -397,8 +397,10 @@ class _TimecodeLabel extends StatelessWidget {
       text,
       textAlign: alignEnd ? TextAlign.end : TextAlign.start,
       style: Theme.of(context).textTheme.labelMedium?.copyWith(
-        color: cs.onSurface.withValues(alpha: 0.7),
-        fontWeight: FontWeight.w700,
+        color: cs.onSurface.withValues(alpha: 0.8),
+        fontWeight: FontWeight.w800,
+        letterSpacing: 0.5,
+        fontSize: 13,
         fontFeatures: const [FontFeature.tabularFigures()],
       ),
     );

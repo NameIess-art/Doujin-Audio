@@ -20,7 +20,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
   Future<String?>? _coverPathFuture;
   String? _lastTrackPath;
   int _lastCoverGeneration = -1;
-  double? _subtitleDefaultTop;
+
   final Set<String> _primedAdjacentCoverKeys = <String>{};
   final ValueNotifier<bool> _segmentPanelExpandedNotifier = ValueNotifier(
     false,
@@ -196,7 +196,6 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
     final velocity = details.primaryVelocity ?? 0;
     final shouldDismiss = _dismissController.value > 0.25 || velocity > 800;
     if (shouldDismiss) {
-      _saveSubtitlePositionBeforeDismiss();
       ref
           .read(audioProviderFacadeProvider)
           .requestCarouselSnapTo(_currentSessionId);
@@ -228,17 +227,6 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
       duration: Duration(milliseconds: durationMs.round().clamp(120, 240)),
       curve: Curves.easeOutQuart,
     );
-  }
-
-  void _saveSubtitlePositionBeforeDismiss() {
-    if (_subtitleDefaultTop == null) return;
-    final settings = ref.read(subtitleSettingsProvider);
-    final pos = settings.positions[_currentSessionId];
-    if (pos == null || pos < 0) {
-      ref
-          .read(subtitleSettingsProvider.notifier)
-          .updatePosition(_currentSessionId, _subtitleDefaultTop!);
-    }
   }
 
   void _changeSessionByOffset(AudioProvider provider, int offset) {
@@ -378,21 +366,6 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
                   ),
                 ),
               ),
-              if (dismissProgress > 0.03)
-                const SizedBox.shrink()
-              else
-                ValueListenableBuilder<bool>(
-                  valueListenable: _segmentPanelExpandedNotifier,
-                  builder: (context, expanded, child) {
-                    if (expanded) return const SizedBox.shrink();
-                    return child!;
-                  },
-                  child: FloatingSubtitleWindow(
-                    key: ValueKey('subtitle_$_currentSessionId'),
-                    sessionId: _currentSessionId,
-                    defaultTop: _subtitleDefaultTop,
-                  ),
-                ),
             ],
           );
         },
@@ -423,7 +396,6 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
                 dismissAnimation: _dismissController,
                 segmentPanelExpandedNotifier: _segmentPanelExpandedNotifier,
                 onClose: () async {
-                  _saveSubtitlePositionBeforeDismiss();
                   ref
                       .read(audioProviderFacadeProvider)
                       .requestCarouselSnapTo(_currentSessionId);
@@ -470,13 +442,6 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
                         _animateDismissBack();
                       }
                     : null,
-                onSubtitleAnchorComputed: (top) {
-                  if (mounted) {
-                    setState(() {
-                      _subtitleDefaultTop = top;
-                    });
-                  }
-                },
               ),
             ),
           ),
@@ -507,10 +472,11 @@ class _SessionDetailBackdrop extends StatelessWidget {
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
                 colors: [
-                  cs.surface.withValues(alpha: 0.08),
-                  cs.scrim.withValues(alpha: 0.08),
-                  cs.scrim.withValues(alpha: 0.14),
+                  cs.surface.withValues(alpha: 0.2),
+                  cs.surface.withValues(alpha: 0.5),
+                  cs.surface.withValues(alpha: 0.85),
                 ],
+                stops: const [0.0, 0.4, 1.0],
               ),
             ),
           ),
@@ -519,7 +485,7 @@ class _SessionDetailBackdrop extends StatelessWidget {
           child: Opacity(
             opacity: progress,
             child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 32, sigmaY: 32),
+              filter: ImageFilter.blur(sigmaX: 64, sigmaY: 64),
               child: const SizedBox.expand(),
             ),
           ),
@@ -542,7 +508,6 @@ class _SessionDetailScaffold extends ConsumerStatefulWidget {
   final void Function(DragUpdateDetails)? onVerticalDragUpdate;
   final void Function(DragEndDetails)? onVerticalDragEnd;
   final VoidCallback? onVerticalDragCancel;
-  final void Function(double)? onSubtitleAnchorComputed;
   final Animation<double> switchAnimation;
   final ValueNotifier<bool>? segmentPanelExpandedNotifier;
 
@@ -559,7 +524,6 @@ class _SessionDetailScaffold extends ConsumerStatefulWidget {
     this.onVerticalDragUpdate,
     this.onVerticalDragEnd,
     this.onVerticalDragCancel,
-    this.onSubtitleAnchorComputed,
     required this.dismissAnimation,
     this.segmentPanelExpandedNotifier,
   });
@@ -571,21 +535,16 @@ class _SessionDetailScaffold extends ConsumerStatefulWidget {
 
 class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
     with WidgetsBindingObserver {
-  final _filenameKey = GlobalKey();
-  final _progressBarKey = GlobalKey();
   final _detailContentKey = GlobalKey<_SessionDetailContentState>();
   final PermissionActionController _permissionActionController =
       PermissionActionController();
-  Size? _lastSize;
   double _segmentPanelDragDelta = 0;
+  bool _isDismissGesture = false;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _computeSubtitleDefaultTop();
-    });
   }
 
   @override
@@ -593,20 +552,6 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
     WidgetsBinding.instance.removeObserver(this);
     _permissionActionController.dispose();
     super.dispose();
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final size = MediaQuery.sizeOf(context);
-    if (_lastSize != null && _lastSize != size) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          _computeSubtitleDefaultTop();
-        }
-      });
-    }
-    _lastSize = size;
   }
 
   @override
@@ -736,39 +681,8 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
     }
   }
 
-  void _computeSubtitleDefaultTop() {
-    final filenameCtx = _filenameKey.currentContext;
-    final progressBarCtx = _progressBarKey.currentContext;
-    if (filenameCtx == null || progressBarCtx == null) return;
-    final scaffoldBox = context.findRenderObject() as RenderBox?;
-    if (scaffoldBox == null) return;
-    final filenameBox = filenameCtx.findRenderObject() as RenderBox?;
-    final progressBarBox = progressBarCtx.findRenderObject() as RenderBox?;
-    if (filenameBox == null || progressBarBox == null) return;
-
-    final filenameBottom =
-        filenameBox.localToGlobal(Offset.zero, ancestor: scaffoldBox).dy +
-        filenameBox.size.height;
-    final progressBarTop = progressBarBox
-        .localToGlobal(Offset.zero, ancestor: scaffoldBox)
-        .dy;
-    final midpoint =
-        (filenameBottom + progressBarTop) / 2 - 3; // optical center
-
-    if (mounted) {
-      widget.onSubtitleAnchorComputed?.call(midpoint);
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
-    ref.listen(subtitleSettingsProvider, (prev, next) {
-      if (prev?.fontSize != next.fontSize) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          _computeSubtitleDefaultTop();
-        });
-      }
-    });
     final session = widget.session;
     final provider = widget.provider;
     final coverPathFuture = widget.coverPathFuture;
@@ -796,25 +710,46 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
         onHorizontalDragUpdate: onHorizontalDragUpdate,
         onHorizontalDragEnd: onHorizontalDragEnd,
         onHorizontalDragCancel: onHorizontalDragCancel,
+        onVerticalDragStart: (details) {
+          _isDismissGesture = widget.dismissAnimation.value > 0.01;
+          _segmentPanelDragDelta = 0;
+        },
         onVerticalDragUpdate: (details) {
           final delta = details.primaryDelta ?? 0;
           final detailState = _detailContentKey.currentState;
           final panelExpanded = detailState?.isSegmentPanelExpanded ?? false;
+          final detailFullyOpen = widget.dismissAnimation.value <= 0.01;
+
+          if (!_isDismissGesture && delta > 0 && !panelExpanded) {
+            _isDismissGesture = true;
+          }
+
+          if (_isDismissGesture) {
+            onVerticalDragUpdate?.call(details);
+            return;
+          }
+
           if ((panelExpanded && delta > 0) ||
-              (!panelExpanded &&
-                  delta < 0 &&
-                  widget.dismissAnimation.value <= 0.01)) {
+              (!panelExpanded && delta < 0 && detailFullyOpen)) {
             _segmentPanelDragDelta += delta;
             return;
           }
+
           onVerticalDragUpdate?.call(details);
         },
         onVerticalDragEnd: (details) {
           final velocity = details.primaryVelocity ?? 0;
           final detailState = _detailContentKey.currentState;
           final panelExpanded = detailState?.isSegmentPanelExpanded ?? false;
+          if (_isDismissGesture) {
+            _isDismissGesture = false;
+            _segmentPanelDragDelta = 0;
+            onVerticalDragEnd?.call(details);
+            return;
+          }
           final shouldExpand =
               !panelExpanded &&
+              widget.dismissAnimation.value <= 0.01 &&
               (_segmentPanelDragDelta < -42 || velocity < -400);
           final shouldCollapse =
               panelExpanded && (_segmentPanelDragDelta > 42 || velocity > 400);
@@ -830,6 +765,7 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
           onVerticalDragEnd?.call(details);
         },
         onVerticalDragCancel: () {
+          _isDismissGesture = false;
           _segmentPanelDragDelta = 0;
           onVerticalDragCancel?.call();
         },
@@ -904,7 +840,7 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                     child: Opacity(
                       opacity: 1 - dismissProgress,
                       child: BackdropFilter(
-                        filter: ImageFilter.blur(sigmaX: 32, sigmaY: 32),
+                        filter: ImageFilter.blur(sigmaX: 64, sigmaY: 64),
                         child: const SizedBox.expand(),
                       ),
                     ),
@@ -1048,8 +984,6 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                                 key: _detailContentKey,
                                 session: session,
                                 provider: provider,
-                                filenameKey: _filenameKey,
-                                progressBarKey: _progressBarKey,
                                 segmentPanelExpandedNotifier:
                                     widget.segmentPanelExpandedNotifier,
                                 isLandscape: isLandscape,

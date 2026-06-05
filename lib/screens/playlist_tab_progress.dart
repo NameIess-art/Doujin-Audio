@@ -246,19 +246,21 @@ class _ProgressBarState extends State<_ProgressBar> {
                     ),
                     SliderTheme(
                       data: SliderTheme.of(context).copyWith(
-                        trackHeight: 2.2,
+                        trackHeight: 4.0,
                         thumbShape: const RoundSliderThumbShape(
-                          enabledThumbRadius: 6,
+                          enabledThumbRadius: 7,
+                          elevation: 4,
+                          pressedElevation: 8,
                         ),
                         overlayShape: const RoundSliderOverlayShape(
-                          overlayRadius: 12,
+                          overlayRadius: 16,
                         ),
                         activeTrackColor: cs.onSurface,
                         inactiveTrackColor: cs.onSurface.withValues(
-                          alpha: 0.25,
+                          alpha: 0.2,
                         ),
                         thumbColor: cs.onSurface,
-                        overlayColor: cs.onSurface.withValues(alpha: 0.12),
+                        overlayColor: cs.onSurface.withValues(alpha: 0.15),
                       ),
                       child: Slider(
                         max: maxMillis,

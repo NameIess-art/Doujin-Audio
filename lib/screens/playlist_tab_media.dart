@@ -38,11 +38,21 @@ class _SessionHeroArtwork extends ConsumerWidget {
             width: displayWidth,
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(24),
+              border: Border.all(
+                color: cs.onSurface.withValues(alpha: 0.08),
+                width: 0.5,
+              ),
               boxShadow: [
                 BoxShadow(
                   color: Colors.black.withValues(alpha: 0.35),
-                  blurRadius: 40,
-                  offset: const Offset(0, 16),
+                  blurRadius: 48,
+                  spreadRadius: 8,
+                  offset: const Offset(0, 24),
+                ),
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.15),
+                  blurRadius: 16,
+                  offset: const Offset(0, 8),
                 ),
               ],
             ),

@@ -81,7 +81,7 @@ internal object PlaybackKeepAlivePolicy {
         hasActiveTimer: Boolean,
         hasActivePlayback: Boolean
     ): Boolean {
-        return keepForegroundServiceAlive && hasActiveTimer && !hasActivePlayback
+        return keepForegroundServiceAlive && (hasActiveTimer || hasActivePlayback)
     }
 
     fun shouldHoldKeepAliveWakeLock(

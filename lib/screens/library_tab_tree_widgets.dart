@@ -526,29 +526,12 @@ class _LibraryCoverThumbnail extends ConsumerWidget {
             provider.resolvedCoverPathForFolder(folderPath),
           )
         : provider.coverPathFutureForFolder(folderPath);
-    final cs = Theme.of(context).colorScheme;
-
     Widget fallback({bool hideIcon = false}) {
-      return DecoratedBox(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              cs.primaryContainer,
-              cs.secondaryContainer.withValues(alpha: 0.92),
-            ],
-          ),
-        ),
-        child: hideIcon
-            ? const SizedBox.shrink()
-            : Center(
-                child: Icon(
-                  Icons.photo_album_rounded,
-                  size: 28,
-                  color: cs.onPrimaryContainer,
-                ),
-              ),
+      return CoverFallbackArtwork(
+        seed: folderPath,
+        showIcon: !hideIcon,
+        compact: true,
+        iconSize: 28,
       );
     }
 
@@ -574,7 +557,7 @@ class _LibraryCoverThumbnail extends ConsumerWidget {
                 CoverLoadingIndicator(
                   size: 34,
                   strokeWidth: 3,
-                  color: cs.primary,
+                  color: Theme.of(context).colorScheme.primary,
                 ),
               ],
             ),
@@ -612,27 +595,12 @@ class _LibraryTrackCoverThumbnail extends ConsumerWidget {
     final coverPathFuture = isScrolling
         ? SynchronousFuture<String?>(provider.resolvedCoverPathForTrack(track))
         : provider.coverPathFutureForTrack(track);
-    final cs = Theme.of(context).colorScheme;
 
     Widget fallback() {
-      return DecoratedBox(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              cs.primaryContainer,
-              cs.secondaryContainer.withValues(alpha: 0.92),
-            ],
-          ),
-        ),
-        child: Center(
-          child: Icon(
-            Icons.photo_album_rounded,
-            size: 28,
-            color: cs.onPrimaryContainer,
-          ),
-        ),
+      return CoverFallbackArtwork(
+        seed: track.displayName,
+        compact: true,
+        iconSize: 28,
       );
     }
 
@@ -651,7 +619,7 @@ class _LibraryTrackCoverThumbnail extends ConsumerWidget {
           loadingBuilder: (_) => CoverLoadingIndicator(
             size: 34,
             strokeWidth: 3,
-            color: cs.primary,
+            color: Theme.of(context).colorScheme.primary,
           ),
           imageBuilder: (context, coverPath) {
             final dpr = MediaQuery.devicePixelRatioOf(context);

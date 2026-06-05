@@ -766,8 +766,10 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                                   color: cs.primary,
                                 ),
                               ),
-                        fallbackBuilder: (_) =>
-                            ColoredBox(color: cs.surfaceDim),
+                        fallbackBuilder: (_) => CoverFallbackArtwork(
+                          seed: track.displayName,
+                          showIcon: false,
+                        ),
                       )
                     : AsyncCoverImage(
                         duration: Duration.zero,
@@ -775,8 +777,10 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                         initialPath: provider.resolvedCoverPathForTrack(track),
                         retryFutureBuilder: () =>
                             _coverFutureForTrack(provider, track),
-                        fallbackBuilder: (_) =>
-                            ColoredBox(color: cs.surfaceDim),
+                        fallbackBuilder: (_) => CoverFallbackArtwork(
+                          seed: track?.displayName ?? session.currentTrackPath,
+                          showIcon: false,
+                        ),
                         imageBuilder: (context, coverPath) {
                           final mediaSize = MediaQuery.sizeOf(context);
                           final dpr = MediaQuery.devicePixelRatioOf(context);
@@ -786,8 +790,12 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                             fit: BoxFit.cover,
                             color: cs.surface.withValues(alpha: 0.45),
                             colorBlendMode: BlendMode.darken,
-                            fallbackBuilder: (_) =>
-                                ColoredBox(color: cs.surfaceDim),
+                            fallbackBuilder: (_) => CoverFallbackArtwork(
+                              seed:
+                                  track?.displayName ??
+                                  session.currentTrackPath,
+                              showIcon: false,
+                            ),
                           );
                         },
                       ),

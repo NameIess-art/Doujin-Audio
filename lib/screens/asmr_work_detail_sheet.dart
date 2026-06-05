@@ -272,27 +272,10 @@ class _AsmrDetailHero extends StatelessWidget {
                       strokeWidth: 3,
                       color: asmrBlue,
                     ),
-              fallbackBuilder: (_) => DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      isDark
-                          ? const Color(0xFF16253D)
-                          : const Color(0xFFE8F1FC),
-                      (isDark
-                              ? const Color(0xFF1A365D)
-                              : const Color(0xFFD0E1FD))
-                          .withValues(alpha: 0.92),
-                    ],
-                  ),
-                ),
-                child: Icon(
-                  Icons.graphic_eq_rounded,
-                  color: asmrBlue,
-                  size: 36,
-                ),
+              fallbackBuilder: (_) => CoverFallbackArtwork(
+                seed: work.title,
+                icon: Icons.graphic_eq_rounded,
+                iconSize: 36,
               ),
             ),
           ),

@@ -56,12 +56,12 @@ class _ActiveSessionCard extends ConsumerWidget {
             child: Ink(
               height: 74,
               decoration: BoxDecoration(
-                color: (isDark ? cs.surfaceBright : cs.surfaceContainerHighest)
-                    .withValues(alpha: 0.98),
+                color: (isDark ? cs.surfaceBright : cs.surfaceContainerHigh)
+                    .withValues(alpha: isDark ? 0.94 : 0.96),
                 borderRadius: BorderRadius.circular(cardRadius),
                 border: Border.all(
                   color: cs.outlineVariant.withValues(
-                    alpha: isDark ? 0.3 : 0.5,
+                    alpha: isDark ? 0.24 : 0.42,
                   ),
                 ),
                 boxShadow: isTinyWindow
@@ -69,17 +69,17 @@ class _ActiveSessionCard extends ConsumerWidget {
                     : [
                         BoxShadow(
                           color: cs.shadow.withValues(
-                            alpha: isPlaying ? 0.26 : 0.18,
+                            alpha: isPlaying ? 0.18 : 0.12,
                           ),
-                          blurRadius: isPlaying ? 34 : 26,
+                          blurRadius: isPlaying ? 28 : 22,
                           spreadRadius: -7,
-                          offset: const Offset(0, 18),
+                          offset: const Offset(0, 14),
                         ),
                         BoxShadow(
                           color: cs.primary.withValues(
-                            alpha: isPlaying ? 0.08 : 0.04,
+                            alpha: isPlaying ? 0.06 : 0.03,
                           ),
-                          blurRadius: 18,
+                          blurRadius: 14,
                           spreadRadius: -10,
                           offset: const Offset(0, 8),
                         ),
@@ -357,12 +357,13 @@ class _ActiveSessionTitleSubtitleState
       children: [
         LibraryLikeTwoLineMarqueeText(
           text: widget.displayName,
-          enableMarquee: true,
-          style: Theme.of(context).textTheme.titleSmall?.copyWith(
-            fontWeight: FontWeight.w900,
-            fontSize: 14,
-            height: 1.08,
-          ) ?? const TextStyle(),
+          style:
+              Theme.of(context).textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w800,
+                fontSize: 14,
+                height: 1.08,
+              ) ??
+              const TextStyle(),
         ),
         if (_subtitleText != null) ...[
           const SizedBox(height: 2),
@@ -518,25 +519,12 @@ class _ActiveSessionCover extends ConsumerWidget {
     final provider = ref.read(audioProviderFacadeProvider);
     final cs = Theme.of(context).colorScheme;
 
-    Widget fallback() {
-      return DecoratedBox(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              cs.primaryContainer,
-              cs.secondaryContainer.withValues(alpha: 0.92),
-            ],
-          ),
-        ),
-        child: Center(
-          child: Icon(
-            Icons.photo_album_rounded,
-            size: 24,
-            color: cs.onPrimaryContainer,
-          ),
-        ),
+    Widget fallback({bool hideIcon = false}) {
+      return CoverFallbackArtwork(
+        seed: track?.displayName ?? track?.path ?? sessionId,
+        showIcon: !hideIcon,
+        compact: true,
+        iconSize: 24,
       );
     }
 

@@ -20,26 +20,10 @@ class _SessionHeroArtwork extends ConsumerWidget {
     final dpr = MediaQuery.devicePixelRatioOf(context);
 
     Widget fallback({bool hideIcon = false}) {
-      return DecoratedBox(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              cs.primaryContainer,
-              cs.tertiaryContainer.withValues(alpha: 0.9),
-            ],
-          ),
-        ),
-        child: hideIcon
-            ? const SizedBox.shrink()
-            : Center(
-                child: Icon(
-                  Icons.photo_album_rounded,
-                  size: 56,
-                  color: cs.onPrimaryContainer,
-                ),
-              ),
+      return CoverFallbackArtwork(
+        seed: track?.displayName ?? track?.path ?? sessionId,
+        showIcon: !hideIcon,
+        iconSize: 56,
       );
     }
 
@@ -170,26 +154,11 @@ class _SessionCoverThumbnail extends ConsumerWidget {
     final cs = Theme.of(context).colorScheme;
 
     Widget fallback({bool hideIcon = false}) {
-      return DecoratedBox(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              cs.primaryContainer,
-              cs.secondaryContainer.withValues(alpha: 0.92),
-            ],
-          ),
-        ),
-        child: hideIcon
-            ? const SizedBox.shrink()
-            : Center(
-                child: Icon(
-                  Icons.photo_album_rounded,
-                  size: 26,
-                  color: cs.onPrimaryContainer,
-                ),
-              ),
+      return CoverFallbackArtwork(
+        seed: track?.displayName ?? track?.path ?? sessionId,
+        showIcon: !hideIcon,
+        compact: true,
+        iconSize: 26,
       );
     }
 

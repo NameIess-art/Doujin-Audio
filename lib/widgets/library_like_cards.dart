@@ -42,7 +42,7 @@ class LibraryLikeFeaturedCardContent extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     final titleStyle =
         Theme.of(context).textTheme.titleMedium?.copyWith(
-          fontWeight: FontWeight.w900,
+          fontWeight: FontWeight.w800,
           fontSize: 14,
           height: 1.06,
           color: cs.onSurface,
@@ -178,7 +178,7 @@ class LibraryLikeSingleAudioCardContent extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     final titleStyle =
         Theme.of(context).textTheme.titleMedium?.copyWith(
-          fontWeight: FontWeight.w900,
+          fontWeight: FontWeight.w800,
           fontSize: 14,
           height: 1.06,
           color: cs.onSurface,
@@ -259,7 +259,7 @@ class LibraryLikeDetailInfoLine extends StatelessWidget {
     final lineCount = lines.clamp(1, 2);
     final labelStyle = style.copyWith(
       color: accentColor ?? cs.primary,
-      fontWeight: FontWeight.w900,
+      fontWeight: FontWeight.w800,
     );
     final labelWidget = enableMarquee && label.characters.length > 3
         ? MarqueeText(

@@ -247,24 +247,24 @@ class _SessionListCardState extends ConsumerState<_SessionListCard>
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final isAsmrOne = track?.remoteMetadataKind == 'asmr.one';
     final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
-    final localPlayRose = isDark
-        ? const Color(0xFFF472B6)
-        : const Color(0xFFDB2777);
+    final localPlayRose = cs.primary;
 
     final baseBgColor = isAsmrOne
-        ? (isDark ? const Color(0xFF1A2035) : const Color(0xFFF2F6FA))
-        : (isDark ? const Color(0xFF2C1A22) : const Color(0xFFFAF2F5));
+        ? (isDark ? const Color(0xFF181D2B) : const Color(0xFFF4F7FA))
+        : cs.surfaceContainerLow;
 
     final highlightColor = isAsmrOne
-        ? (isDark
-              ? asmrBlue.withValues(alpha: 0.48)
-              : const Color(0xFF93C5FD).withValues(alpha: 0.45))
-        : (isDark
-              ? localPlayRose.withValues(alpha: 0.48)
-              : const Color(0xFFE898BA).withValues(alpha: 0.5));
+        ? asmrBlue.withValues(alpha: isDark ? 0.18 : 0.14)
+        : localPlayRose.withValues(alpha: isDark ? 0.16 : 0.12);
+    final activeColor = isAsmrOne ? asmrBlue : localPlayRose;
 
     final cardShape = RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(14),
+      side: BorderSide(
+        color: isPlaying
+            ? activeColor.withValues(alpha: isDark ? 0.34 : 0.28)
+            : cs.outlineVariant.withValues(alpha: isDark ? 0.26 : 0.42),
+      ),
     );
 
     return SwipeRevealCard(
@@ -294,7 +294,12 @@ class _SessionListCardState extends ConsumerState<_SessionListCard>
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                   colors: isPlaying
-                      ? [highlightColor, baseBgColor, baseBgColor, baseBgColor]
+                      ? [
+                          highlightColor,
+                          Colors.transparent,
+                          Colors.transparent,
+                          Colors.transparent,
+                        ]
                       : [
                           Colors.transparent,
                           Colors.transparent,
@@ -339,7 +344,7 @@ class _SessionListCardState extends ConsumerState<_SessionListCard>
                                 text: displayName,
                                 style: Theme.of(context).textTheme.titleMedium
                                     ?.copyWith(
-                                      fontWeight: FontWeight.w900,
+                                      fontWeight: FontWeight.w800,
                                       fontSize: 14,
                                       height: 1.12,
                                     ),
@@ -376,7 +381,7 @@ class _SessionListCardState extends ConsumerState<_SessionListCard>
                                     },
                               style: IconButton.styleFrom(
                                 foregroundColor: isPlaying
-                                    ? (isAsmrOne ? asmrBlue : localPlayRose)
+                                    ? activeColor
                                     : cs.onSurface,
                                 minimumSize: const Size(44, 44),
                                 maximumSize: const Size(44, 44),
@@ -406,9 +411,7 @@ class _SessionListCardState extends ConsumerState<_SessionListCard>
                                         child: CircularProgressIndicator(
                                           strokeWidth: 2.5,
                                           color: isPlaying
-                                              ? (isAsmrOne
-                                                    ? asmrBlue
-                                                    : localPlayRose)
+                                              ? activeColor
                                               : cs.onSurface,
                                         ),
                                       )

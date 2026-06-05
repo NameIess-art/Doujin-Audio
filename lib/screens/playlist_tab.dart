@@ -313,20 +313,16 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
               key: _headerKey,
               icon: Icons.graphic_eq_rounded,
               title: i18n.tr('playback_sessions'),
-              marqueeTitle:
-                  i18n.language == AppLanguage.ja && Platform.isAndroid,
-              forceMarqueeTitle:
-                  i18n.language == AppLanguage.ja &&
-                  Platform.isAndroid &&
-                  MediaQuery.orientationOf(context) == Orientation.portrait,
+              marqueeTitle: false,
+              forceMarqueeTitle: false,
               isLoading: !listState.isInitialized,
               subtitle: sessionSummary,
               subtitleFontSize: 11,
               fitSubtitleToWidth: true,
               trailing: SizedBox(
-                width: 168,
                 height: 44,
                 child: Row(
+                  mainAxisSize: MainAxisSize.min,
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
                     if (headerState.hasTimer)

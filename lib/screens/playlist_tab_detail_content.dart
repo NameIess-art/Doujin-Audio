@@ -727,7 +727,10 @@ class _SessionDetailContentState extends State<_SessionDetailContent>
         .split('/')
         .map((segment) => segment.trim())
         .where((segment) => segment.isNotEmpty)
-        .toList(growable: false);
+        .toList();
+    if (track.remoteMetadataKind == 'asmr.one' && segments.length > 1) {
+      segments.removeAt(0);
+    }
     if (segments.length <= 1) return const <String>[];
     return segments.take(segments.length - 1).toList(growable: false);
   }

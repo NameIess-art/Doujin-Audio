@@ -384,9 +384,10 @@ extension AudioProviderPlaybackSessions on AudioProvider {
         return <String>[resolvedCurrentPath];
       case SessionLoopMode.crossSequential:
       case SessionLoopMode.crossRandom:
-        return _sortedLibraryTrackPaths.isEmpty
+        final workTrackPaths = _crossFolderTrackPathsFor(currentTrack);
+        return workTrackPaths.isEmpty
             ? <String>[resolvedCurrentPath]
-            : _sortedLibraryTrackPaths;
+            : workTrackPaths;
       case SessionLoopMode.folderSequential:
       case SessionLoopMode.folderRandom:
         final groupTracks = currentTrack == null

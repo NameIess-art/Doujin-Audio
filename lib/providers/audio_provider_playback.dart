@@ -249,7 +249,9 @@ extension AudioProviderPlayback on AudioProvider {
         autoPlay: false,
       );
       if (!_sessions.containsKey(session.id)) {
-        return const NativeFailure('Session removed before audio effects sync.');
+        return const NativeFailure(
+          'Session removed before audio effects sync.',
+        );
       }
       if (session.loadedPath == null) {
         return const NativeFailure(
@@ -349,6 +351,13 @@ extension AudioProviderPlayback on AudioProvider {
   bool _isCrossFolderMode(SessionLoopMode mode) {
     return mode == SessionLoopMode.crossRandom ||
         mode == SessionLoopMode.crossSequential;
+  }
+
+  List<String> _crossFolderTrackPathsFor(MusicTrack? currentTrack) {
+    if (currentTrack == null) return const <String>[];
+    return tracksInSameWork(currentTrack.path)
+        .map((track) => _resolveRetargetedPath(track.path))
+        .toList(growable: false);
   }
 
   Future<void> toggleSessionSingleLoop(String sessionId) async {

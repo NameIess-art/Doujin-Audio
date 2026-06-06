@@ -274,23 +274,29 @@ extension AudioProviderPlaybackEngine on AudioProvider {
         return null;
       }
       if (paths.length == 1) {
+        session.currentQueueIndex = 0;
         return paths.first;
       }
-      final currentIndex = paths.indexWhere(
-        (item) => PathMatcher.equalsNormalized(item, session.currentTrackPath),
-      );
+      final currentIndex = session.isPlaybackQueue
+          ? session.currentQueueIndex.clamp(0, paths.length - 1)
+          : paths.indexWhere(
+              (item) =>
+                  PathMatcher.equalsNormalized(item, session.currentTrackPath),
+            );
       if (_isShuffleMode(session.loopMode)) {
         final fallbackIndex = currentIndex < 0 ? 0 : currentIndex;
         var nextIndex = fallbackIndex;
         while (nextIndex == fallbackIndex) {
           nextIndex = _random.nextInt(paths.length);
         }
+        session.currentQueueIndex = nextIndex;
         return paths[nextIndex];
       }
       final baseIndex = currentIndex < 0 ? 0 : currentIndex;
       final nextIndex = forward
           ? (baseIndex + 1) % paths.length
           : (baseIndex - 1 + paths.length) % paths.length;
+      session.currentQueueIndex = nextIndex;
       return paths[nextIndex];
     }
     final currentTrack = trackByPath(session.currentTrackPath);

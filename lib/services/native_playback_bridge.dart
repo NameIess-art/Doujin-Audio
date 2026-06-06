@@ -30,6 +30,7 @@ class NativePlaybackSnapshot {
     this.artUri,
     this.duration,
     this.error,
+    this.queueIndex = 0,
   });
 
   final String sessionId;
@@ -51,6 +52,7 @@ class NativePlaybackSnapshot {
   final AudioEffectsState audioEffects;
   final EqCapabilities eqCapabilities;
   final String? error;
+  final int queueIndex;
 
   NativePlaybackSnapshot copyWith({
     String? sessionId,
@@ -79,6 +81,7 @@ class NativePlaybackSnapshot {
     EqCapabilities? eqCapabilities,
     String? error,
     bool clearError = false,
+    int? queueIndex,
   }) {
     return NativePlaybackSnapshot(
       sessionId: sessionId ?? this.sessionId,
@@ -100,6 +103,7 @@ class NativePlaybackSnapshot {
       audioEffects: audioEffects ?? this.audioEffects,
       eqCapabilities: eqCapabilities ?? this.eqCapabilities,
       error: clearError ? null : (error ?? this.error),
+      queueIndex: queueIndex ?? this.queueIndex,
     );
   }
 
@@ -136,6 +140,7 @@ class NativePlaybackSnapshot {
       audioEffects: AudioEffectsState.fromPlatformMap(map['audioEffects']),
       eqCapabilities: EqCapabilities.fromJson(map['eqCapabilities']),
       error: map['error'] as String?,
+      queueIndex: (map['queueIndex'] as num?)?.toInt() ?? 0,
     );
   }
 }

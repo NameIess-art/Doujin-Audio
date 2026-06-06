@@ -7,6 +7,7 @@ import 'music_track.dart';
 import 'audio_effects.dart';
 import '../services/native_playback_bridge.dart';
 import 'playback_mode.dart';
+import 'playback_queue.dart';
 
 class PlaybackSession {
   PlaybackSession({
@@ -18,6 +19,8 @@ class PlaybackSession {
     required this.createdAt,
     required this.state,
     this.customQueueTracks,
+    this.playbackQueue,
+    this.currentQueueIndex = 0,
   });
 
   final String id;
@@ -31,7 +34,10 @@ class PlaybackSession {
       StreamController<Duration?>.broadcast();
   final StreamController<Duration> _bufferedPositionController =
       StreamController<Duration>.broadcast();
-  final List<MusicTrack>? customQueueTracks;
+  List<MusicTrack>? customQueueTracks;
+  PlaybackQueueDefinition? playbackQueue;
+  int currentQueueIndex;
+  bool get isPlaybackQueue => playbackQueue != null;
   String currentTrackPath;
   String? loadedPath;
   SessionLoopMode loopMode;
@@ -109,6 +115,7 @@ class PlaybackSession {
       currentTrackPath = nativePath;
       loadedPath = nativePath;
     }
+    currentQueueIndex = snapshot.queueIndex;
     if ((volume - snapshot.volume).abs() >= 0.001) {
       volume = snapshot.volume;
     }

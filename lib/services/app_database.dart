@@ -8,6 +8,7 @@ import '../models/audio_detail.dart';
 import '../models/audio_effects.dart';
 import '../models/library_entry.dart';
 import '../models/music_track.dart';
+import '../models/playback_queue.dart';
 import '../models/time_segment_label.dart';
 import '../platform/app_platform.dart';
 import 'path_matcher.dart';
@@ -39,9 +40,10 @@ class AppDatabase {
     final dbPath = await getDatabasesPath();
     final db = await openDatabase(
       p.join(dbPath, 'audio_player.db'),
-      version: 15,
+      version: 16,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
+      onOpen: _ensurePlaybackQueueColumns,
     );
     return db;
   }
@@ -81,6 +83,8 @@ class AppDatabase {
         position_ms INTEGER NOT NULL DEFAULT 0,
         duration_ms INTEGER NOT NULL DEFAULT 0,
         custom_queue_tracks_json TEXT,
+        playback_queue_json TEXT,
+        current_queue_index INTEGER NOT NULL DEFAULT 0,
         channel_swap INTEGER NOT NULL DEFAULT 0,
         audio_effects_json TEXT,
         created_at_ms INTEGER,
@@ -217,7 +221,26 @@ class AppDatabase {
     if (oldVersion < 15) {
       await _addColumnIfMissing(db, 'sessions', 'audio_effects_json', 'TEXT');
     }
+    if (oldVersion < 16) {
+      await _addColumnIfMissing(db, 'sessions', 'playback_queue_json', 'TEXT');
+      await _addColumnIfMissing(
+        db,
+        'sessions',
+        'current_queue_index',
+        'INTEGER NOT NULL DEFAULT 0',
+      );
+    }
     await _createTrackIndexes(db);
+  }
+
+  static Future<void> _ensurePlaybackQueueColumns(Database db) async {
+    await _addColumnIfMissing(db, 'sessions', 'playback_queue_json', 'TEXT');
+    await _addColumnIfMissing(
+      db,
+      'sessions',
+      'current_queue_index',
+      'INTEGER NOT NULL DEFAULT 0',
+    );
   }
 
   @visibleForTesting
@@ -791,6 +814,8 @@ class AppDatabase {
     'position_ms': session.positionMs,
     'duration_ms': session.durationMs,
     'custom_queue_tracks_json': _encodeTracks(session.customQueueTracks),
+    'playback_queue_json': _encodePlaybackQueue(session.playbackQueue),
+    'current_queue_index': session.currentQueueIndex,
     'channel_swap': session.channelSwapEnabled ? 1 : 0,
     'audio_effects_json': session.audioEffects.toDatabaseJson(),
     'created_at_ms': session.createdAtMs,
@@ -809,6 +834,8 @@ class AppDatabase {
         positionMs: row['position_ms'] as int,
         durationMs: row['duration_ms'] as int? ?? 0,
         customQueueTracks: _decodeTracks(row['custom_queue_tracks_json']),
+        playbackQueue: _decodePlaybackQueue(row['playback_queue_json']),
+        currentQueueIndex: (row['current_queue_index'] as num?)?.toInt() ?? 0,
         channelSwapEnabled: (row['channel_swap'] as int? ?? 0) == 1,
         audioEffects: AudioEffectsState.fromJson(row['audio_effects_json']),
         createdAtMs: (row['created_at_ms'] as num?)?.toInt(),
@@ -858,6 +885,22 @@ List<MusicTrack>? _decodeTracks(Object? value) {
   }
 }
 
+String? _encodePlaybackQueue(PlaybackQueueDefinition? queue) {
+  if (queue == null) return null;
+  return json.encode(queue.toJson());
+}
+
+PlaybackQueueDefinition? _decodePlaybackQueue(Object? value) {
+  if (value is! String || value.isEmpty) return null;
+  try {
+    final raw = json.decode(value);
+    if (raw is! Map<String, dynamic>) return null;
+    return PlaybackQueueDefinition.fromJson(raw);
+  } catch (_) {
+    return null;
+  }
+}
+
 class PersistedSession {
   const PersistedSession({
     required this.id,
@@ -868,6 +911,8 @@ class PersistedSession {
     required this.positionMs,
     required this.durationMs,
     required this.customQueueTracks,
+    this.playbackQueue,
+    this.currentQueueIndex = 0,
     required this.channelSwapEnabled,
     this.audioEffects = AudioEffectsState.flat,
     required this.sortOrder,
@@ -884,6 +929,8 @@ class PersistedSession {
   final int positionMs;
   final int durationMs;
   final List<MusicTrack>? customQueueTracks;
+  final PlaybackQueueDefinition? playbackQueue;
+  final int currentQueueIndex;
   final bool channelSwapEnabled;
   final AudioEffectsState audioEffects;
   final int sortOrder;

@@ -202,7 +202,7 @@ void main() {
         child: const LibraryTab(),
       ),
     );
-    await tester.pump();
+    await tester.pumpAndSettle();
     await tester.pump(const Duration(milliseconds: 500));
 
     expect(find.byType(TextField), findsOneWidget);
@@ -508,6 +508,26 @@ void main() {
       find.text(languageProvider.tr('fixed_card_positions')),
       findsOneWidget,
     );
+    expect(
+      find.text(languageProvider.tr('add_playback_queue')),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.text(languageProvider.tr('add_playback_queue')));
+    await tester.pumpAndSettle();
+
+    expect(
+      audioProvider.activeSessions.where((session) => session.isPlaybackQueue),
+      hasLength(1),
+    );
+    expect(
+      audioProvider.activeSessions
+          .singleWhere((session) => session.isPlaybackQueue)
+          .playbackQueue
+          ?.name,
+      languageProvider.tr('default_playback_queue_name', {'number': 1}),
+    );
+    await tester.pump(const Duration(milliseconds: 300));
   });
 
   testWidgets('settings detail section configures card info fields', (

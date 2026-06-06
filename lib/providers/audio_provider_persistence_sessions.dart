@@ -25,6 +25,7 @@ extension AudioProviderPersistenceSessions on AudioProvider {
         final customQueueTracks = item.customQueueTracks == null
             ? null
             : List<MusicTrack>.unmodifiable(item.customQueueTracks!);
+        final playbackQueue = item.playbackQueue;
         final track =
             customQueueTracks?.firstWhere(
               (candidate) =>
@@ -32,7 +33,7 @@ extension AudioProviderPersistenceSessions on AudioProvider {
               orElse: () => customQueueTracks.first,
             ) ??
             trackByPath(trackPath);
-        if (track == null) continue;
+        if (track == null && playbackQueue == null) continue;
 
         final loopModeIndex = item.loopModeIndex;
         final loopMode = SessionLoopMode
@@ -52,7 +53,7 @@ extension AudioProviderPersistenceSessions on AudioProvider {
             : DateTime.fromMillisecondsSinceEpoch(item.createdAtMs!);
         final session = PlaybackSession(
           id: restoredSessionId,
-          currentTrackPath: track.path,
+          currentTrackPath: track?.path ?? '',
           loopMode: loopMode,
           nonSingleLoopMode: loopMode == SessionLoopMode.single
               ? SessionLoopMode.folderSequential
@@ -61,6 +62,8 @@ extension AudioProviderPersistenceSessions on AudioProvider {
           createdAt: createdAt,
           state: PlayerState(false, ProcessingState.idle),
           customQueueTracks: customQueueTracks,
+          playbackQueue: playbackQueue,
+          currentQueueIndex: recordProgress ? item.currentQueueIndex : 0,
         );
         session.lastKnownPosition = restoredPosition;
         session.setOptimisticDuration(Duration(milliseconds: item.durationMs));
@@ -98,7 +101,7 @@ extension AudioProviderPersistenceSessions on AudioProvider {
         if (!shouldPrepareNow) continue;
 
         try {
-          final track = trackByPath(session.currentTrackPath);
+          final track = _sessionTrackForPath(session, session.currentTrackPath);
           if (track == null) continue;
 
           final uri =
@@ -220,6 +223,8 @@ extension AudioProviderPersistenceSessions on AudioProvider {
               positionMs: positionMs,
               durationMs: session.duration?.inMilliseconds ?? 0,
               customQueueTracks: session.customQueueTracks,
+              playbackQueue: session.playbackQueue,
+              currentQueueIndex: session.currentQueueIndex,
               channelSwapEnabled: session.channelSwapEnabled,
               audioEffects: session.audioEffects,
               createdAtMs: session.createdAt.millisecondsSinceEpoch,

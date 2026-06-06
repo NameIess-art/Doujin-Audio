@@ -48,6 +48,7 @@ extension AudioProviderPlayback on AudioProvider {
   Future<void> toggleSessionPlayPause(String sessionId) async {
     final session = _playbackService.sessionById(sessionId);
     if (session == null || session.isLoading) return;
+    if (session.currentTrackPath.isEmpty) return;
 
     if (session.state.playing) {
       session.isPlaybackStarting = false;
@@ -506,6 +507,25 @@ extension AudioProviderPlayback on AudioProvider {
     final session = _sessions[sessionId];
     if (session == null || session.isLoading) return;
     await _prepareAndPlay(session, nextPath: newPath, forceStartAtZero: true);
+    _scheduleSaveSessionState();
+  }
+
+  Future<void> switchSessionQueueTrack(String sessionId, int queueIndex) async {
+    final session = _sessions[sessionId];
+    final tracks = session?.customQueueTracks;
+    if (session == null ||
+        tracks == null ||
+        tracks.isEmpty ||
+        session.isLoading) {
+      return;
+    }
+    final index = queueIndex.clamp(0, tracks.length - 1);
+    session.currentQueueIndex = index;
+    await _prepareAndPlay(
+      session,
+      nextPath: tracks[index].path,
+      forceStartAtZero: true,
+    );
     _scheduleSaveSessionState();
   }
 

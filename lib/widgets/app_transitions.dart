@@ -28,8 +28,8 @@ PageRouteBuilder<T> buildAppPageRoute<T>({
   required Widget child,
   RouteSettings? settings,
   Offset beginOffset = const Offset(0, 0.032),
-  Duration duration = const Duration(milliseconds: 180),
-  Duration reverseDuration = const Duration(milliseconds: 140),
+  Duration duration = const Duration(milliseconds: 240),
+  Duration reverseDuration = const Duration(milliseconds: 200),
 }) {
   return PageRouteBuilder<T>(
     settings: settings,
@@ -37,19 +37,24 @@ PageRouteBuilder<T> buildAppPageRoute<T>({
     reverseTransitionDuration: reverseDuration,
     pageBuilder: (context, animation, secondaryAnimation) => child,
     transitionsBuilder: (context, animation, secondaryAnimation, routedChild) {
-      final curved = CurvedAnimation(
+      final opacityAnimation = CurvedAnimation(
+        parent: animation,
+        curve: Curves.easeOut,
+        reverseCurve: Curves.easeIn,
+      );
+      final slideAnimation = CurvedAnimation(
         parent: animation,
         curve: Curves.easeOutCubic,
         reverseCurve: Curves.easeInCubic,
       );
 
       return FadeTransition(
-        opacity: curved,
+        opacity: opacityAnimation,
         child: SlideTransition(
           position: Tween<Offset>(
             begin: beginOffset,
             end: Offset.zero,
-          ).animate(curved),
+          ).animate(slideAnimation),
           child: routedChild,
         ),
       );
@@ -61,8 +66,8 @@ PageRouteBuilder<T> buildAppOverlayRoute<T>({
   required Widget child,
   RouteSettings? settings,
   Offset beginOffset = const Offset(0, 0.024),
-  Duration duration = const Duration(milliseconds: 160),
-  Duration reverseDuration = const Duration(milliseconds: 120),
+  Duration duration = const Duration(milliseconds: 220),
+  Duration reverseDuration = const Duration(milliseconds: 180),
 }) {
   return PageRouteBuilder<T>(
     settings: settings,
@@ -72,19 +77,24 @@ PageRouteBuilder<T> buildAppOverlayRoute<T>({
     reverseTransitionDuration: reverseDuration,
     pageBuilder: (context, animation, secondaryAnimation) => child,
     transitionsBuilder: (context, animation, secondaryAnimation, routedChild) {
-      final curved = CurvedAnimation(
+      final opacityAnimation = CurvedAnimation(
+        parent: animation,
+        curve: Curves.easeOut,
+        reverseCurve: Curves.easeIn,
+      );
+      final slideAnimation = CurvedAnimation(
         parent: animation,
         curve: Curves.easeOutCubic,
         reverseCurve: Curves.easeInCubic,
       );
 
       return FadeTransition(
-        opacity: curved,
+        opacity: opacityAnimation,
         child: SlideTransition(
           position: Tween<Offset>(
             begin: beginOffset,
             end: Offset.zero,
-          ).animate(curved),
+          ).animate(slideAnimation),
           child: routedChild,
         ),
       );

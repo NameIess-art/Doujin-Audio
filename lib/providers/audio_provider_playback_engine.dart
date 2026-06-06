@@ -294,11 +294,14 @@ extension AudioProviderPlaybackEngine on AudioProvider {
       return paths[nextIndex];
     }
     final currentTrack = trackByPath(session.currentTrackPath);
+    final crossFolderTrackPaths = _isCrossFolderMode(session.loopMode)
+        ? _crossFolderTrackPathsFor(currentTrack)
+        : _sortedLibraryTrackPaths;
     return _playbackQueueResolver.resolveNextPath(
       currentTrack: currentTrack,
       forward: forward,
       loopMode: session.loopMode,
-      sortedLibraryTrackPaths: _sortedLibraryTrackPaths,
+      sortedLibraryTrackPaths: crossFolderTrackPaths,
       tracksByGroup: _tracksByGroup,
       nextInt: _random.nextInt,
     );
@@ -310,11 +313,14 @@ extension AudioProviderPlaybackEngine on AudioProvider {
       return customQueueTracks.length > 1;
     }
     final currentTrack = trackByPath(session.currentTrackPath);
+    final crossFolderTrackPaths = _isCrossFolderMode(session.loopMode)
+        ? _crossFolderTrackPathsFor(currentTrack)
+        : _sortedLibraryTrackPaths;
     return _playbackQueueResolver.hasAdjacentPath(
       currentTrack: currentTrack,
       forward: forward,
       loopMode: session.loopMode,
-      sortedLibraryTrackPaths: _sortedLibraryTrackPaths,
+      sortedLibraryTrackPaths: crossFolderTrackPaths,
       tracksByGroup: _tracksByGroup,
     );
   }

@@ -2304,6 +2304,76 @@ void main() {
       expect(provider.workRootForTrack(firstPath), workRoot);
     });
 
+    test('cross-folder loop stays inside the current work root', () async {
+      const libraryRoot = 'C:\\Audio\\Library';
+      const workRoot = '$libraryRoot\\Work A';
+      const firstPath = '$workRoot\\Disc 1\\01.mp3';
+      const secondPath = '$workRoot\\Disc 2\\02.mp3';
+      const outsidePath = '$libraryRoot\\Work B\\03.mp3';
+      final preparedQueues = <List<String>>[];
+
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+            if (call.method == NativePlaybackMethod.prepareSession) {
+              final arguments = Map<String, Object?>.from(
+                call.arguments as Map,
+              );
+              final queue = (arguments['queue'] as List<dynamic>? ?? const [])
+                  .whereType<Map>()
+                  .map((item) => item['path'] as String)
+                  .toList(growable: false);
+              preparedQueues.add(queue);
+            }
+            return <String, Object?>{'ok': true, 'value': null};
+          });
+
+      provider.addWatchedLibrary(libraryRoot, notify: false);
+      provider.addTracks(<MusicTrack>[
+        const MusicTrack(
+          path: firstPath,
+          displayName: '01',
+          groupKey: '$workRoot\\Disc 1',
+          groupTitle: 'Disc 1',
+          groupSubtitle: '$workRoot\\Disc 1',
+          isSingle: false,
+        ),
+        const MusicTrack(
+          path: secondPath,
+          displayName: '02',
+          groupKey: '$workRoot\\Disc 2',
+          groupTitle: 'Disc 2',
+          groupSubtitle: '$workRoot\\Disc 2',
+          isSingle: false,
+        ),
+        const MusicTrack(
+          path: outsidePath,
+          displayName: '03',
+          groupKey: '$libraryRoot\\Work B',
+          groupTitle: 'Work B',
+          groupSubtitle: '$libraryRoot\\Work B',
+          isSingle: false,
+        ),
+      ], notify: false);
+
+      await provider.spawnSession(
+        provider.trackByPath(secondPath)!,
+        autoPlay: false,
+      );
+      final session = provider.activeSessions.single;
+      for (var i = 0; i < 50 && session.isLoading; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      await provider.setSessionLoopMode(
+        session.id,
+        SessionLoopMode.crossSequential,
+      );
+      await provider.seekSessionToNext(session.id);
+
+      expect(session.currentTrackPath, firstPath);
+      expect(preparedQueues, isNotEmpty);
+      expect(preparedQueues.last.toSet(), <String>{firstPath, secondPath});
+    });
+
     test(
       'folder exclusion keeps entry tree and restores tracks from it',
       () async {

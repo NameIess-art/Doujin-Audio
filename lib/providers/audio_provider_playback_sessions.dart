@@ -360,6 +360,10 @@ extension AudioProviderPlaybackSessions on AudioProvider {
       session,
       currentPath: resolvedCurrentPath,
     );
+    if (session.isPlaybackQueue &&
+        session.customQueueTracks?.isNotEmpty == true) {
+      return session.currentQueueIndex.clamp(0, paths.length - 1);
+    }
     final index = paths.indexOf(resolvedCurrentPath);
     return index < 0 ? 0 : index;
   }

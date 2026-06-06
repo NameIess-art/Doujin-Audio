@@ -11,6 +11,7 @@ import 'package:nameless_audio/services/app_database.dart';
 import 'package:nameless_audio/services/audio_database_repository.dart';
 import 'package:nameless_audio/services/library_scanner_service.dart';
 import 'package:nameless_audio/services/native_playback_bridge.dart';
+import 'package:nameless_audio/services/path_matcher.dart';
 import 'package:nameless_audio/services/playback_notification_handler.dart';
 import 'package:nameless_audio/services/playback_notification_service.dart';
 import 'package:nameless_audio/services/platform_channels.dart';
@@ -571,6 +572,86 @@ void main() {
         expect(secondSession.audioEffects.skipSilenceEnabled, isTrue);
       },
     );
+  });
+
+  group('playback queues', () {
+    test('queue supports duplicate track entries and removal', () async {
+      const track = MusicTrack(
+        path: '/library/work/01.mp3',
+        displayName: '01',
+        groupKey: '/library/work',
+        groupTitle: 'Work',
+        groupSubtitle: 'Work',
+        isSingle: false,
+      );
+      provider.addTracks(<MusicTrack>[track], notify: false, persist: false);
+
+      final queueSession = provider.createPlaybackQueue('Queue 1');
+      expect(queueSession.isPlaybackQueue, isTrue);
+      expect(queueSession.currentTrackPath, isEmpty);
+
+      await provider.addTrackToPlaybackQueue(queueSession.id, track);
+      await provider.addTrackToPlaybackQueue(queueSession.id, track);
+
+      final updated = provider.sessionById(queueSession.id)!;
+      expect(updated.playbackQueue?.entries, hasLength(2));
+      expect(updated.customQueueTracks, hasLength(2));
+      expect(
+        PathMatcher.equalsNormalized(
+          updated.currentTrackPath,
+          provider.trackByPath(track.path)!.path,
+        ),
+        isTrue,
+      );
+
+      await provider.removePlaybackQueueEntry(
+        queueSession.id,
+        updated.playbackQueue!.entries.first.id,
+      );
+      expect(
+        provider.sessionById(queueSession.id)?.customQueueTracks,
+        hasLength(1),
+      );
+    });
+
+    test('work entry stores all tracks as one queue entry', () async {
+      const first = MusicTrack(
+        path: '/library/work/01.mp3',
+        displayName: '01',
+        groupKey: '/library/work',
+        groupTitle: 'Work',
+        groupSubtitle: 'Work',
+        isSingle: false,
+      );
+      const second = MusicTrack(
+        path: '/library/work/02.mp3',
+        displayName: '02',
+        groupKey: '/library/work',
+        groupTitle: 'Work',
+        groupSubtitle: 'Work',
+        isSingle: false,
+      );
+      provider.addTracks(
+        const <MusicTrack>[first, second],
+        notify: false,
+        persist: false,
+      );
+      final queueSession = provider.createPlaybackQueue('Queue 1');
+      final sourceTrack = provider.library.firstWhere(
+        (track) => track.displayName == first.displayName,
+      );
+
+      await provider.addWorkToPlaybackQueue(queueSession.id, sourceTrack);
+
+      final entry = provider
+          .sessionById(queueSession.id)!
+          .playbackQueue!
+          .entries
+          .single;
+      expect(entry.kind, PlaybackQueueEntryKind.work);
+      expect(entry.title, 'Work');
+      expect(entry.tracks, hasLength(2));
+    });
   });
 
   group('time segment loop session isolation', () {

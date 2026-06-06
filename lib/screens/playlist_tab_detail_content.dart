@@ -628,9 +628,9 @@ class _SessionDetailContentState extends State<_SessionDetailContent>
 
   void _showTrackSwitcher(BuildContext context) {
     final i18n = context.read<AppLanguageProvider>();
-    final tracks = widget.provider.tracksInSameWork(
-      widget.session.currentTrackPath,
-    );
+    final tracks = widget.session.isPlaybackQueue
+        ? widget.session.customQueueTracks ?? const <MusicTrack>[]
+        : widget.provider.tracksInSameWork(widget.session.currentTrackPath);
     if (tracks.isEmpty) return;
     final workRoot = widget.provider.workRootForTrack(
       widget.session.currentTrackPath,
@@ -663,13 +663,20 @@ class _SessionDetailContentState extends State<_SessionDetailContent>
               for (final node in tree)
                 _QueueTreeNodeTile(
                   node: node,
-                  onTrackTap: (track) {
+                  onTrackTap: (node) {
                     Feedback.forTap(ctx);
                     Navigator.of(ctx).pop();
-                    widget.provider.switchSessionTrack(
-                      widget.session.id,
-                      track.path,
-                    );
+                    if (widget.session.isPlaybackQueue) {
+                      widget.provider.switchSessionQueueTrack(
+                        widget.session.id,
+                        node.queueIndex,
+                      );
+                    } else {
+                      widget.provider.switchSessionTrack(
+                        widget.session.id,
+                        node.track!.path,
+                      );
+                    }
                     showAppSnackBar(
                       context,
                       i18n.tr('switch_audio'),
@@ -691,7 +698,30 @@ class _SessionDetailContentState extends State<_SessionDetailContent>
     required String currentPath,
   }) {
     final root = _QueueTreeNode.folder('');
-    for (final track in tracks) {
+    if (widget.session.isPlaybackQueue) {
+      var queueIndex = 0;
+      for (final entry in widget.session.playbackQueue!.entries) {
+        final parent = entry.kind == PlaybackQueueEntryKind.work
+            ? _QueueTreeNode.folder(entry.title)
+            : root;
+        if (!identical(parent, root)) {
+          root.children.add(parent);
+        }
+        for (final track in entry.tracks) {
+          parent.children.add(
+            _QueueTreeNode.track(
+              track,
+              selected: queueIndex == widget.session.currentQueueIndex,
+              queueIndex: queueIndex,
+            ),
+          );
+          queueIndex++;
+        }
+      }
+      return root.children;
+    }
+    for (var index = 0; index < tracks.length; index++) {
+      final track = tracks[index];
       var parent = root;
       for (final folder in _queueFolderSegments(track, workRoot: workRoot)) {
         parent = parent.folderChild(folder);
@@ -700,6 +730,7 @@ class _SessionDetailContentState extends State<_SessionDetailContent>
         _QueueTreeNode.track(
           track,
           selected: PathMatcher.equalsNormalized(track.path, currentPath),
+          queueIndex: index,
         ),
       );
     }
@@ -775,14 +806,21 @@ class _QueueSheetHeader extends StatelessWidget {
 }
 
 class _QueueTreeNode {
-  _QueueTreeNode.folder(this.title) : track = null, selected = false;
+  _QueueTreeNode.folder(this.title)
+    : track = null,
+      selected = false,
+      queueIndex = -1;
 
-  _QueueTreeNode.track(this.track, {required this.selected})
-    : title = track!.displayName;
+  _QueueTreeNode.track(
+    this.track, {
+    required this.selected,
+    required this.queueIndex,
+  }) : title = track!.displayName;
 
   final String title;
   final MusicTrack? track;
   final bool selected;
+  final int queueIndex;
   final List<_QueueTreeNode> children = <_QueueTreeNode>[];
 
   bool get isFolder => track == null;
@@ -803,7 +841,7 @@ class _QueueTreeNodeTile extends StatefulWidget {
   const _QueueTreeNodeTile({required this.node, required this.onTrackTap});
 
   final _QueueTreeNode node;
-  final ValueChanged<MusicTrack> onTrackTap;
+  final ValueChanged<_QueueTreeNode> onTrackTap;
 
   @override
   State<_QueueTreeNodeTile> createState() => _QueueTreeNodeTileState();
@@ -819,7 +857,7 @@ class _QueueTreeNodeTileState extends State<_QueueTreeNodeTile> {
       return _QueueTrackLeaf(
         track: node.track!,
         selected: node.selected,
-        onTap: node.selected ? null : () => widget.onTrackTap(node.track!),
+        onTap: node.selected ? null : () => widget.onTrackTap(node),
       );
     }
 

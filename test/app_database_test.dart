@@ -5,6 +5,7 @@ import 'package:nameless_audio/models/audio_effects.dart';
 import 'package:nameless_audio/models/audio_detail.dart';
 import 'package:nameless_audio/models/library_entry.dart';
 import 'package:nameless_audio/models/music_track.dart';
+import 'package:nameless_audio/models/playback_queue.dart';
 import 'package:nameless_audio/models/time_segment_label.dart';
 import 'package:nameless_audio/services/app_database.dart';
 import 'package:nameless_audio/services/path_matcher.dart';
@@ -244,6 +245,61 @@ void main() {
       queueTrack.toJson(),
     );
   });
+
+  test(
+    'sessions persist playback queue definition and duplicate index',
+    () async {
+      const track = MusicTrack(
+        path: '/library/work/01.mp3',
+        displayName: '01',
+        groupKey: '/library/work',
+        groupTitle: 'Work',
+        groupSubtitle: 'Work',
+        isSingle: false,
+      );
+      const queue = PlaybackQueueDefinition(
+        name: 'Night queue',
+        colorValue: 0xFF336699,
+        entries: <PlaybackQueueEntry>[
+          PlaybackQueueEntry(
+            id: 'entry_1',
+            kind: PlaybackQueueEntryKind.track,
+            title: '01',
+            tracks: <MusicTrack>[track],
+          ),
+          PlaybackQueueEntry(
+            id: 'entry_2',
+            kind: PlaybackQueueEntryKind.work,
+            title: 'Work',
+            tracks: <MusicTrack>[track],
+          ),
+        ],
+      );
+
+      await appDatabase.saveAllSessions(<PersistedSession>[
+        PersistedSession(
+          id: 'queue_1',
+          trackPath: track.path,
+          loopModeIndex: 1,
+          volume: 1,
+          positionMs: 1500,
+          durationMs: 3000,
+          customQueueTracks: <MusicTrack>[track, track],
+          playbackQueue: queue,
+          currentQueueIndex: 1,
+          channelSwapEnabled: false,
+          sortOrder: 0,
+        ),
+      ]);
+
+      final loaded = (await appDatabase.loadAllSessions()).single;
+      expect(loaded.playbackQueue?.name, 'Night queue');
+      expect(loaded.playbackQueue?.colorValue, 0xFF336699);
+      expect(loaded.playbackQueue?.entries, hasLength(2));
+      expect(loaded.playbackQueue?.expandedTracks, hasLength(2));
+      expect(loaded.currentQueueIndex, 1);
+    },
+  );
 
   test('audio details round-trip and delete by target', () async {
     final target = AudioDetailTarget.libraryRootFolder('/library/root');

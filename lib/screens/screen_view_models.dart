@@ -592,7 +592,9 @@ PlaylistHeaderState playlistHeaderStateFromSlices(
 List<PlaybackSession> overlaySessionsFromPlaybackState(
   PlaybackStateSliceData playbackState,
 ) {
-  final sessions = playbackState.activeSessions;
+  final sessions = playbackState.activeSessions
+      .where((session) => session.currentTrackPath.isNotEmpty)
+      .toList(growable: false);
   if (playbackState.multiThreadPlaybackEnabled || sessions.isEmpty) {
     return sessions;
   }

@@ -411,6 +411,7 @@ class DartPlaybackBridge implements NativePlaybackBridgeBase {
       channelSwapEnabled: session.channelSwapEnabled,
       audioEffects: session.audioEffects,
       eqCapabilities: dartPlaybackWindowsEqCapabilities,
+      queueIndex: session.currentIndex,
     );
   }
 }

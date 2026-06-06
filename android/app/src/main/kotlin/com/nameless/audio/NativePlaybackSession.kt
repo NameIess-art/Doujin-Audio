@@ -493,6 +493,7 @@ internal class NativePlaybackSession(
             "channelSwap" to channelSwapEnabled,
             "audioEffects" to audioEffectsSnapshot(),
             "eqCapabilities" to eqCapabilitiesSnapshot(),
+            "queueIndex" to (p?.currentMediaItemIndex ?: currentQueueIndexFor(queue)).coerceAtLeast(0),
             "error" to p?.playerError?.message
         )
     }

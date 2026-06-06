@@ -49,6 +49,7 @@ part 'playlist_tab_loop.dart';
 part 'playlist_tab_progress.dart';
 part 'playlist_tab_segments.dart';
 part 'playlist_tab_volume_timer.dart';
+part 'playlist_tab_queue.dart';
 
 Future<String?> _coverFutureForTrack(
   AudioProvider provider,
@@ -161,6 +162,15 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     Navigator.of(context).push(buildSessionDetailRoute(sessionId: sessionId));
   }
 
+  void _openQueueEditor(BuildContext context, String sessionId) {
+    Feedback.forTap(context);
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => PlaybackQueueEditPage(sessionId: sessionId),
+      ),
+    );
+  }
+
   @override
   void dispose() {
     _scrollToTopListenable?.removeListener(_handleScrollToTopSignal);
@@ -199,11 +209,25 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
       }
       final session = listState.sessions[index];
       final child = RepaintBoundary(
-        child: _SessionListCard(
-          session: session,
-          provider: provider,
-          onOpen: () => _openSessionDetail(context, session.id),
-        ),
+        child: session.isPlaybackQueue
+            ? _PlaybackQueueCard(
+                session: session,
+                provider: provider,
+                onOpen: () => session.currentTrackPath.isEmpty
+                    ? showAppSnackBar(
+                        context,
+                        i18n.tr('queue_add_audio_first'),
+                        tone: AppFeedbackTone.warning,
+                        icon: Icons.queue_music_rounded,
+                      )
+                    : _openSessionDetail(context, session.id),
+                onEdit: () => _openQueueEditor(context, session.id),
+              )
+            : _SessionListCard(
+                session: session,
+                provider: provider,
+                onOpen: () => _openSessionDetail(context, session.id),
+              ),
       );
       if (cardPositionsLocked) {
         return KeyedSubtree(key: ValueKey(session.id), child: child);
@@ -361,6 +385,12 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                       tooltip: i18n.tr('more_actions'),
                       entries: [
                         UnifiedMenuEntry<String>.action(
+                          value: 'add_playback_queue',
+                          icon: Icons.playlist_add_rounded,
+                          label: i18n.tr('add_playback_queue'),
+                        ),
+                        const UnifiedMenuEntry<String>.divider(),
+                        UnifiedMenuEntry<String>.action(
                           value: 'pause_all',
                           icon: Icons.pause_circle_outline_rounded,
                           label: i18n.tr('pause_all_sessions'),
@@ -384,7 +414,16 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                         ),
                       ],
                       onSelected: (value) {
-                        if (value == 'pause_all') {
+                        if (value == 'add_playback_queue') {
+                          final queueCount = listState.sessions
+                              .where((session) => session.isPlaybackQueue)
+                              .length;
+                          provider.createPlaybackQueue(
+                            i18n.tr('default_playback_queue_name', {
+                              'number': queueCount + 1,
+                            }),
+                          );
+                        } else if (value == 'pause_all') {
                           provider.pauseAllSessions();
                           showAppSnackBar(
                             context,

@@ -47,6 +47,7 @@ void main() {
           speed: 1.5,
           boostGain: 1.0,
           channelSwapEnabled: false,
+          queueIndex: 3,
           audioEffects: AudioEffectsState(
             skipSilenceEnabled: true,
             noiseReductionEnabled: true,
@@ -77,6 +78,7 @@ void main() {
       expect(first.eqCapabilities.supported, isTrue);
       expect(first.eqCapabilities.bands.single.frequencyHz, 1000);
       expect(first.loadedPath, '/audio/one.mp3');
+      expect(first.currentQueueIndex, 3);
       expect(firstStates, hasLength(1));
 
       expect(second.state.playing, isFalse);

@@ -84,6 +84,14 @@ class _PlaybackPrimaryControls extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     final i18n = context.read<AppLanguageProvider>();
     final enabled = !session.isLoading;
+    final hasPrevious = provider.hasSessionAdjacentTrack(
+      session.id,
+      forward: false,
+    );
+    final hasNext = provider.hasSessionAdjacentTrack(session.id, forward: true);
+    final canPrevious =
+        enabled && (session.position.inSeconds > 3 || hasPrevious);
+    final canNext = enabled && hasNext;
 
     return SizedBox(
       height: 92,
@@ -104,7 +112,7 @@ class _PlaybackPrimaryControls extends StatelessWidget {
               _PrimaryTransportButton(
                 tooltip: i18n.tr('previous_track'),
                 constraints: sideBox,
-                enabled: enabled,
+                enabled: canPrevious,
                 icon: Icons.skip_previous_rounded,
                 iconSize: skipIconSize,
                 onPressed: () {
@@ -208,7 +216,7 @@ class _PlaybackPrimaryControls extends StatelessWidget {
               _PrimaryTransportButton(
                 tooltip: i18n.tr('next_track'),
                 constraints: sideBox,
-                enabled: enabled,
+                enabled: canNext,
                 icon: Icons.skip_next_rounded,
                 iconSize: skipIconSize,
                 onPressed: () {

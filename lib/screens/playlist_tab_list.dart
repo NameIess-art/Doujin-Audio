@@ -233,6 +233,9 @@ class _SessionListCardState extends ConsumerState<_SessionListCard>
         : (track != null && !track.isSingle)
         ? track.groupTitle
         : i18n.tr('imported_files');
+    final siblingCount = provider
+        .tracksInSameWork(sessionView.trackPath)
+        .length;
 
     final isPlaying = sessionView.isPlaying;
     if (_wasPlaying != isPlaying) {
@@ -350,16 +353,38 @@ class _SessionListCardState extends ConsumerState<_SessionListCard>
                                     ),
                               ),
                               const SizedBox(height: 4),
-                              SizedBox(
-                                width: double.infinity,
-                                child: _SessionMetaChip(
+                              Wrap(
+                                spacing: 10,
+                                runSpacing: 2,
+                                children: [
+                                  _SessionMetaChip(
+                                    icon: sessionView.isLoading
+                                        ? Icons.sync_rounded
+                                        : Icons.repeat_rounded,
+                                    text: sessionView.isLoading
+                                        ? i18n.tr('loading_dot')
+                                        : _loopModeSummary(
+                                            context,
+                                            sessionView.loopMode,
+                                          ),
+                                  ),
+                                  if (siblingCount > 1)
+                                    _SessionMetaChip(
+                                      icon: Icons.queue_music_rounded,
+                                      text: siblingCount.toString(),
+                                    ),
+                                ],
+                              ),
+                              if (sessionView.isLoading) ...[
+                                const SizedBox(height: 2),
+                                _SessionMetaChip(
                                   icon: Icons.repeat_rounded,
                                   text: _loopModeSummary(
                                     context,
                                     sessionView.loopMode,
                                   ),
                                 ),
-                              ),
+                              ],
                             ],
                           ),
                         ),

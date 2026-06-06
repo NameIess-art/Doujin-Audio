@@ -398,7 +398,7 @@ class _SessionDetailContentState extends State<_SessionDetailContent>
         ? i18n.tr('asmr_online_playback')
         : i18n.tr('imported_files');
     final hasSiblings =
-        provider.tracksInSameGroup(session.currentTrackPath).length > 1;
+        provider.tracksInSameWork(session.currentTrackPath).length > 1;
 
     final contentColumn = Padding(
       padding: widget.detailPadding,
@@ -628,10 +628,13 @@ class _SessionDetailContentState extends State<_SessionDetailContent>
 
   void _showTrackSwitcher(BuildContext context) {
     final i18n = context.read<AppLanguageProvider>();
-    final siblings = widget.provider.tracksInSameGroup(
+    final tracks = widget.provider.tracksInSameWork(
       widget.session.currentTrackPath,
     );
-    if (siblings.isEmpty) return;
+    if (tracks.isEmpty) return;
+    final workRoot = widget.provider.workRootForTrack(
+      widget.session.currentTrackPath,
+    );
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -639,43 +642,305 @@ class _SessionDetailContentState extends State<_SessionDetailContent>
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      builder: (ctx) => ConstrainedBox(
-        constraints: BoxConstraints(
-          maxHeight: MediaQuery.sizeOf(ctx).height * 0.5,
+      builder: (ctx) {
+        final tree = _buildQueueTree(
+          tracks,
+          workRoot: workRoot,
+          currentPath: widget.session.currentTrackPath,
+        );
+        return ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(ctx).height * 0.58,
+          ),
+          child: ListView(
+            shrinkWrap: true,
+            padding: const EdgeInsets.fromLTRB(16, 4, 12, 24),
+            cacheExtent: 480,
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+            children: [
+              _QueueSheetHeader(count: tracks.length),
+              const SizedBox(height: 6),
+              for (final node in tree)
+                _QueueTreeNodeTile(
+                  node: node,
+                  onTrackTap: (track) {
+                    Feedback.forTap(ctx);
+                    Navigator.of(ctx).pop();
+                    widget.provider.switchSessionTrack(
+                      widget.session.id,
+                      track.path,
+                    );
+                    showAppSnackBar(
+                      context,
+                      i18n.tr('switch_audio'),
+                      tone: AppFeedbackTone.success,
+                      icon: Icons.queue_music_rounded,
+                    );
+                  },
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  List<_QueueTreeNode> _buildQueueTree(
+    List<MusicTrack> tracks, {
+    required String? workRoot,
+    required String currentPath,
+  }) {
+    final root = _QueueTreeNode.folder('');
+    for (final track in tracks) {
+      var parent = root;
+      for (final folder in _queueFolderSegments(track, workRoot: workRoot)) {
+        parent = parent.folderChild(folder);
+      }
+      parent.children.add(
+        _QueueTreeNode.track(
+          track,
+          selected: PathMatcher.equalsNormalized(track.path, currentPath),
         ),
-        child: ListView.builder(
-          shrinkWrap: true,
-          padding: const EdgeInsets.only(top: 8, bottom: 24),
-          cacheExtent: 480,
-          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-          itemCount: siblings.length,
-          itemBuilder: (_, i) {
-            final track = siblings[i];
-            final isCurrent = track.path == widget.session.currentTrackPath;
-            return ListTile(
-              leading: Icon(
-                isCurrent ? Icons.volume_up_rounded : Icons.music_note_rounded,
+      );
+    }
+    return root.children;
+  }
+
+  List<String> _queueFolderSegments(
+    MusicTrack track, {
+    required String? workRoot,
+  }) {
+    final remoteRelativePath = track.remoteMetadata?['trackRelativePath']
+        ?.toString()
+        .trim();
+    final relativePath = remoteRelativePath?.isNotEmpty == true
+        ? remoteRelativePath!
+        : workRoot == null
+        ? PathMatcher.relativeWithin(track.path, track.groupKey)
+        : PathMatcher.relativeWithin(track.path, workRoot);
+    if (relativePath == null || relativePath.isEmpty) {
+      return const <String>[];
+    }
+    final displayPath = PathDisplay.displayPathFor(relativePath);
+    final segments = displayPath
+        .replaceAll('\\', '/')
+        .split('/')
+        .map((segment) => segment.trim())
+        .where((segment) => segment.isNotEmpty)
+        .toList(growable: false);
+    if (segments.length <= 1) return const <String>[];
+    return segments.take(segments.length - 1).toList(growable: false);
+  }
+}
+
+class _QueueSheetHeader extends StatelessWidget {
+  const _QueueSheetHeader({required this.count});
+
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final i18n = context.read<AppLanguageProvider>();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(2, 0, 2, 6),
+      child: Row(
+        children: [
+          Icon(Icons.queue_music_rounded, size: 20, color: cs.primary),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              i18n.tr('switch_audio'),
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w800,
+                color: cs.onSurface,
               ),
-              title: Text(track.displayName, maxLines: 2),
-              trailing: isCurrent ? const Icon(Icons.check_rounded) : null,
-              onTap: () {
-                Feedback.forTap(ctx);
-                Navigator.of(ctx).pop();
-                if (!isCurrent) {
-                  widget.provider.switchSessionTrack(
-                    widget.session.id,
-                    track.path,
-                  );
-                  showAppSnackBar(
-                    context,
-                    i18n.tr('switch_audio'),
-                    tone: AppFeedbackTone.success,
-                    icon: Icons.queue_music_rounded,
-                  );
-                }
-              },
-            );
-          },
+            ),
+          ),
+          Text(
+            count.toString(),
+            style: Theme.of(context).textTheme.labelMedium?.copyWith(
+              color: cs.onSurfaceVariant,
+              fontWeight: FontWeight.w800,
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _QueueTreeNode {
+  _QueueTreeNode.folder(this.title) : track = null, selected = false;
+
+  _QueueTreeNode.track(this.track, {required this.selected})
+    : title = track!.displayName;
+
+  final String title;
+  final MusicTrack? track;
+  final bool selected;
+  final List<_QueueTreeNode> children = <_QueueTreeNode>[];
+
+  bool get isFolder => track == null;
+  bool get containsSelected =>
+      selected || children.any((child) => child.containsSelected);
+
+  _QueueTreeNode folderChild(String name) {
+    for (final child in children) {
+      if (child.isFolder && child.title == name) return child;
+    }
+    final folder = _QueueTreeNode.folder(name);
+    children.add(folder);
+    return folder;
+  }
+}
+
+class _QueueTreeNodeTile extends StatefulWidget {
+  const _QueueTreeNodeTile({required this.node, required this.onTrackTap});
+
+  final _QueueTreeNode node;
+  final ValueChanged<MusicTrack> onTrackTap;
+
+  @override
+  State<_QueueTreeNodeTile> createState() => _QueueTreeNodeTileState();
+}
+
+class _QueueTreeNodeTileState extends State<_QueueTreeNodeTile> {
+  late bool _expanded = widget.node.containsSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final node = widget.node;
+    if (!node.isFolder) {
+      return _QueueTrackLeaf(
+        track: node.track!,
+        selected: node.selected,
+        onTap: node.selected ? null : () => widget.onTrackTap(node.track!),
+      );
+    }
+
+    final cs = Theme.of(context).colorScheme;
+    return Theme(
+      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+      child: ExpansionTile(
+        initiallyExpanded: _expanded,
+        minTileHeight: 52,
+        onExpansionChanged: (expanded) => setState(() => _expanded = expanded),
+        shape: const RoundedRectangleBorder(),
+        collapsedShape: const RoundedRectangleBorder(),
+        showTrailingIcon: false,
+        tilePadding: const EdgeInsets.fromLTRB(6, 0, 6, 0),
+        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 0, 0),
+        title: Row(
+          children: [
+            Icon(
+              _expanded ? Icons.folder_open_rounded : Icons.folder_rounded,
+              size: 19,
+              color: cs.primary.withValues(alpha: 0.78),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                node.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: cs.onSurface.withValues(alpha: 0.9),
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        ),
+        trailing: AnimatedRotation(
+          turns: _expanded ? 0.5 : 0,
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOutCubic,
+          child: Icon(
+            Icons.expand_more_rounded,
+            size: 20,
+            color: cs.onSurfaceVariant,
+          ),
+        ),
+        children: [
+          for (final child in node.children)
+            _QueueTreeNodeTile(node: child, onTrackTap: widget.onTrackTap),
+        ],
+      ),
+    );
+  }
+}
+
+class _QueueTrackLeaf extends StatelessWidget {
+  const _QueueTrackLeaf({
+    required this.track,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final MusicTrack track;
+  final bool selected;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Material(
+      color: selected
+          ? cs.primaryContainer.withValues(alpha: 0.24)
+          : Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        child: SizedBox(
+          height: 48,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(6, 4, 6, 4),
+            child: Row(
+              children: [
+                Icon(
+                  selected ? Icons.volume_up_rounded : Icons.audio_file_rounded,
+                  size: 16,
+                  color: selected
+                      ? cs.primary
+                      : cs.onSurfaceVariant.withValues(alpha: 0.6),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    track.displayName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: cs.onSurface,
+                      fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+                Text(
+                  track.duration <= Duration.zero
+                      ? '--:--'
+                      : _formatSegmentTime(track.duration),
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: cs.onSurfaceVariant,
+                    fontWeight: FontWeight.w700,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Icon(
+                  selected
+                      ? Icons.check_circle_rounded
+                      : Icons.chevron_right_rounded,
+                  size: 20,
+                  color: selected
+                      ? cs.primary
+                      : cs.onSurfaceVariant.withValues(alpha: 0.55),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );

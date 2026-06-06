@@ -1373,6 +1373,37 @@ extension AudioProviderLibrary on AudioProvider {
     return const <MusicTrack>[];
   }
 
+  List<MusicTrack> tracksInSameWork(String trackPath) {
+    final track = trackByPath(trackPath);
+    if (track == null) return const <MusicTrack>[];
+    if (track.remoteMetadataKind == 'asmr.one' ||
+        PathMatcher.isRemoteUri(track.path)) {
+      return tracksInSameGroup(trackPath);
+    }
+
+    final workRoot = workRootForTrack(trackPath);
+    if (workRoot == null) {
+      return tracksInSameGroup(trackPath);
+    }
+
+    final tracks =
+        _library
+            .where(
+              (candidate) =>
+                  PathMatcher.isWithinOrEqual(candidate.path, workRoot) ||
+                  PathMatcher.isWithinOrEqual(candidate.groupKey, workRoot),
+            )
+            .toList(growable: false)
+          ..sort(getTrackComparator);
+    return tracks;
+  }
+
+  String? workRootForTrack(String trackPath) {
+    final track = trackByPath(trackPath);
+    if (track == null || PathMatcher.isRemoteUri(track.path)) return null;
+    return _resolveCoverScopeFolderPath(this, track, trackPath: trackPath);
+  }
+
   String getRootFolderPath(String trackPath) {
     final resolvedPath = _resolveRetargetedPath(trackPath);
     for (final folder in _watchedFolders) {

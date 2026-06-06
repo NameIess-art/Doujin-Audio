@@ -2162,6 +2162,51 @@ void main() {
       );
     });
 
+    test('same work uses a first-level folder inside the audio library', () {
+      const libraryRoot = 'C:\\Audio\\Library';
+      const workRoot = '$libraryRoot\\Work A';
+      const firstFolder = '$workRoot\\Disc 1';
+      const secondFolder = '$workRoot\\Disc 2';
+      const outsideFolder = '$libraryRoot\\Work B';
+      const firstPath = '$firstFolder\\01.mp3';
+      const secondPath = '$secondFolder\\02.mp3';
+      const outsidePath = '$outsideFolder\\03.mp3';
+
+      provider.addWatchedLibrary(libraryRoot, notify: false);
+      provider.addTracks(<MusicTrack>[
+        const MusicTrack(
+          path: firstPath,
+          displayName: '01',
+          groupKey: firstFolder,
+          groupTitle: 'Disc 1',
+          groupSubtitle: firstFolder,
+          isSingle: false,
+        ),
+        const MusicTrack(
+          path: secondPath,
+          displayName: '02',
+          groupKey: secondFolder,
+          groupTitle: 'Disc 2',
+          groupSubtitle: secondFolder,
+          isSingle: false,
+        ),
+        const MusicTrack(
+          path: outsidePath,
+          displayName: '03',
+          groupKey: outsideFolder,
+          groupTitle: 'Other',
+          groupSubtitle: outsideFolder,
+          isSingle: false,
+        ),
+      ], notify: false);
+
+      expect(
+        provider.tracksInSameWork(firstPath).map((track) => track.path).toSet(),
+        <String>{firstPath, secondPath},
+      );
+      expect(provider.workRootForTrack(firstPath), workRoot);
+    });
+
     test(
       'folder exclusion keeps entry tree and restores tracks from it',
       () async {

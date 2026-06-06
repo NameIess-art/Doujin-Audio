@@ -36,9 +36,11 @@ void main() {
     );
 
     await tester.pump();
+    await tester.pump();
     expect(find.text('fallback'), findsOneWidget);
 
     await tester.pump(const Duration(milliseconds: 10));
+    await tester.pump();
     await tester.pump();
 
     expect(find.text('loaded:cover.png'), findsOneWidget);

@@ -19,6 +19,7 @@ import '../services/natural_sort.dart';
 import '../services/path_display.dart';
 import '../services/path_matcher.dart';
 import '../services/platform_channels.dart';
+import '../services/ui_interaction_coordinator.dart';
 import '../services/library_scanner_service.dart';
 import '../widgets/app_feedback.dart';
 import '../widgets/async_cover_image.dart';
@@ -75,7 +76,10 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
   Timer? _searchDebounceTimer;
-  final LibrarySearchIndex _searchIndex = LibrarySearchIndex();
+  FilteredLibraryTreeResult? _visibleSearchResult;
+  String _visibleSearchQuery = '';
+  int? _visibleSearchRevision;
+  String? _pendingSearchKey;
   AudioLibraryCategoryType _categoryType = AudioLibraryCategoryType.all;
   final Set<String> _selectedTagTerms = <String>{};
   final Set<String> _selectedVoiceActorTerms = <String>{};
@@ -100,6 +104,49 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
       _categoryType == AudioLibraryCategoryType.all ? _searchQuery : '';
 
   void _setLocalState(VoidCallback fn) => setState(fn);
+
+  void _ensureFilteredSearchSnapshot({
+    required List<LibraryNode> tree,
+    required String query,
+    required int structureRevision,
+  }) {
+    if (query.isEmpty ||
+        (_visibleSearchQuery == query &&
+            _visibleSearchRevision == structureRevision) ||
+        _pendingSearchKey == '$structureRevision|$query') {
+      return;
+    }
+    final requestKey = '$structureRevision|$query';
+    _pendingSearchKey = requestKey;
+    final request = LibrarySearchSnapshotRequest(
+      tree: tree,
+      query: query,
+      structureRevision: structureRevision,
+    );
+    final searchFuture = libraryTreeTrackCount(tree) > 200
+        ? compute(buildFilteredLibraryTreeSnapshot, request)
+        : Future<FilteredLibraryTreeResult>.microtask(
+            () => buildFilteredLibraryTreeSnapshot(request),
+          );
+    unawaited(
+      searchFuture.then((result) {
+        if (!mounted || _pendingSearchKey != requestKey) return;
+        UiInteractionCoordinator.instance.scheduleCommit(
+          key: 'library_search',
+          priority: 5,
+          commit: () {
+            if (!mounted || _pendingSearchKey != requestKey) return;
+            setState(() {
+              _visibleSearchResult = result;
+              _visibleSearchQuery = query;
+              _visibleSearchRevision = structureRevision;
+              _pendingSearchKey = null;
+            });
+          },
+        );
+      }),
+    );
+  }
 
   Future<void> _openVideoConverterPage() async {
     if (!mounted) return;
@@ -247,7 +294,19 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       unawaited(
-        ref.read(audioProviderFacadeProvider).audioLibraryCategorySnapshot(),
+        ref
+            .read(audioProviderFacadeProvider)
+            .audioLibraryCategorySnapshot()
+            .whenComplete(() {
+              if (!mounted ||
+                  _categorySnapshotRequestStructureRevision !=
+                      structureRevision ||
+                  _categorySnapshotRequestDetailRevision != detailRevision) {
+                return;
+              }
+              _categorySnapshotRequestStructureRevision = null;
+              _categorySnapshotRequestDetailRevision = null;
+            }),
       );
     });
   }
@@ -278,13 +337,25 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
       structureRevision: listState.structureRevision,
       detailRevision: detailRevision,
     );
-    final filteredResult = _searchIndex.resolve(
+    final searchQuery = _effectiveSearchQuery;
+    _ensureFilteredSearchSnapshot(
       tree: listState.rawTree,
-      query: _effectiveSearchQuery,
+      query: searchQuery,
       structureRevision: listState.structureRevision,
     );
-    final tree = filteredResult.tree;
-    final matchCount = filteredResult.matchCount;
+    final visibleSearchResult =
+        _visibleSearchQuery == searchQuery &&
+            _visibleSearchRevision == listState.structureRevision
+        ? _visibleSearchResult
+        : null;
+    final tree = searchQuery.isEmpty
+        ? listState.rawTree
+        : visibleSearchResult?.tree ?? const <LibraryNode>[];
+    final matchCount = searchQuery.isEmpty
+        ? libraryHeaderState.audioCount
+        : visibleSearchResult?.matchCount ?? 0;
+    final showSearchSkeleton =
+        searchQuery.isNotEmpty && visibleSearchResult == null;
     final bottomInset = MobileOverlayInset.of(context);
 
     final headerControlsFullHeight = _headerControlsFullHeight;
@@ -350,6 +421,12 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
       final relativeTop = listTopPadding;
       const relativeBottom = listBottomPadding;
 
+      if (showSearchSkeleton) {
+        return _LibraryLoadingSkeleton(
+          bottomInset: relativeBottom,
+          topInset: relativeTop,
+        );
+      }
       if (_effectiveSearchQuery.isNotEmpty) {
         return ListView(
           physics: const AlwaysScrollableScrollPhysics(

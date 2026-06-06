@@ -14,6 +14,7 @@ import 'package:nameless_audio/services/native_playback_bridge.dart';
 import 'package:nameless_audio/services/playback_notification_handler.dart';
 import 'package:nameless_audio/services/playback_notification_service.dart';
 import 'package:nameless_audio/services/platform_channels.dart';
+import 'package:nameless_audio/services/ui_interaction_coordinator.dart';
 import 'package:path/path.dart' as path;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -1673,6 +1674,102 @@ void main() {
   });
 
   group('library card detail loading', () {
+    test(
+      'category details wait for the current background tree snapshot',
+      () async {
+        MusicTrack track(String path, String name) => MusicTrack(
+          path: path,
+          displayName: name,
+          groupKey: path,
+          groupTitle: name,
+          groupSubtitle: path,
+          isSingle: true,
+        );
+
+        const firstPath = '/library/first.mp3';
+        const secondPath = '/library/second.mp3';
+        provider.addTracks(
+          <MusicTrack>[track(firstPath, 'first')],
+          notify: false,
+          persist: false,
+        );
+        await provider.saveAudioDetail(
+          AudioDetail.empty(
+            AudioDetailTarget.singleAudioFile(firstPath),
+          ).copyWith(rjCode: 'RJ111111'),
+        );
+        final firstSnapshot = await provider.audioLibraryCategorySnapshot();
+        expect(firstSnapshot.entries, hasLength(1));
+
+        provider.addTracks(
+          <MusicTrack>[track(secondPath, 'second')],
+          notify: false,
+          persist: false,
+        );
+        await provider.saveAudioDetail(
+          AudioDetail.empty(
+            AudioDetailTarget.singleAudioFile(secondPath),
+          ).copyWith(rjCode: 'RJ222222'),
+        );
+
+        final refreshedSnapshot = await provider.audioLibraryCategorySnapshot();
+
+        expect(refreshedSnapshot.entries, hasLength(2));
+        expect(
+          refreshedSnapshot
+              .detailFor(AudioDetailTarget.singleAudioFile(secondPath))
+              ?.rjCode,
+          'RJ222222',
+        );
+      },
+    );
+
+    test(
+      'initial card detail snapshot commits during app interaction',
+      () async {
+        final interactionSource = Object();
+        final coordinator = UiInteractionCoordinator.instance;
+        coordinator.beginInteraction(interactionSource);
+        addTearDown(() => coordinator.cancelInteraction(interactionSource));
+        final tempDir = await Directory.systemTemp.createTemp(
+          'initial_library_card_detail_',
+        );
+        addTearDown(() async {
+          if (await tempDir.exists()) {
+            await tempDir.delete(recursive: true);
+          }
+        });
+        final source = File('${tempDir.path}${Platform.pathSeparator}work.mp3');
+        await source.writeAsBytes(const <int>[1, 2, 3]);
+        final target = AudioDetailTarget.singleAudioFile(source.path);
+        provider.addTracks(
+          <MusicTrack>[
+            MusicTrack(
+              path: source.path,
+              displayName: 'work',
+              groupKey: source.path,
+              groupTitle: 'work',
+              groupSubtitle: source.path,
+              isSingle: true,
+            ),
+          ],
+          notify: false,
+          persist: false,
+        );
+        await provider.saveAudioDetail(
+          AudioDetail.empty(target).copyWith(rjCode: 'RJ333333'),
+        );
+
+        await provider.audioLibraryCategorySnapshot();
+
+        expect(provider.audioLibraryCategorySnapshotSync, isNotNull);
+        expect(
+          provider.audioLibraryCategorySnapshotSync?.detailFor(target)?.rjCode,
+          'RJ333333',
+        );
+      },
+    );
+
     test(
       'keeps the previous detail snapshot while a refresh is pending',
       () async {

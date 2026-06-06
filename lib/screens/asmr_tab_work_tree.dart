@@ -215,6 +215,7 @@ class _AsmrRootCardContent extends StatelessWidget {
       showExpandIndicator: true,
       playTooltip: i18n.tr('asmr_add_to_playlist'),
       accentColor: asmrBlue,
+      enableTitleMarquee: false,
     );
   }
 }

@@ -25,6 +25,7 @@ class LibraryLikeFeaturedCardContent extends StatelessWidget {
     this.showExpandIndicator = false,
     this.accentColor,
     this.enableMarquee = true,
+    this.enableTitleMarquee = true,
   });
 
   final String title;
@@ -36,6 +37,7 @@ class LibraryLikeFeaturedCardContent extends StatelessWidget {
   final String playTooltip;
   final Color? accentColor;
   final bool enableMarquee;
+  final bool enableTitleMarquee;
 
   @override
   Widget build(BuildContext context) {
@@ -112,7 +114,7 @@ class LibraryLikeFeaturedCardContent extends StatelessWidget {
                       child: LibraryLikeTwoLineMarqueeText(
                         text: title,
                         style: titleStyle,
-                        enableMarquee: enableMarquee,
+                        enableMarquee: enableTitleMarquee,
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -166,12 +168,14 @@ class LibraryLikeSingleAudioCardContent extends StatelessWidget {
     required this.lines,
     this.accentColor,
     this.enableMarquee = true,
+    this.enableTitleMarquee = true,
   });
 
   final String title;
   final List<LibraryLikeInfoLineData> lines;
   final Color? accentColor;
   final bool enableMarquee;
+  final bool enableTitleMarquee;
 
   @override
   Widget build(BuildContext context) {
@@ -205,7 +209,7 @@ class LibraryLikeSingleAudioCardContent extends StatelessWidget {
         LibraryLikeTwoLineMarqueeText(
           text: title,
           style: titleStyle,
-          enableMarquee: enableMarquee,
+          enableMarquee: enableTitleMarquee,
         ),
         if (lines.isNotEmpty) ...[
           const SizedBox(height: 8),
@@ -354,6 +358,19 @@ class LibraryLikeTwoLineMarqueeText extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (!enableMarquee) {
+      return SizedBox(
+        width: double.infinity,
+        height: 34,
+        child: Text(
+          text,
+          maxLines: 2,
+          softWrap: true,
+          overflow: TextOverflow.ellipsis,
+          style: style,
+        ),
+      );
+    }
     final lines = _splitLibraryLikeName(text);
     return SizedBox(
       width: double.infinity,

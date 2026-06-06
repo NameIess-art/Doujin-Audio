@@ -19,6 +19,7 @@ import '../services/notifications_platform_service.dart';
 import '../services/permission_action_controller.dart';
 import '../services/power_platform_service.dart';
 import '../services/subtitle_overlay_controller.dart';
+import '../services/ui_interaction_coordinator.dart';
 import 'asmr_tab.dart';
 import 'library_tab.dart';
 import 'playlist_tab.dart';
@@ -55,6 +56,8 @@ class _MainScreenState extends ConsumerState<MainScreen>
 
   int _currentIndex = 1;
   late final List<Widget> _pages;
+  final Set<int> _visitedPageIndices = <int>{1};
+  final Object _pageSwitchInteraction = Object();
   final GlobalKey _bottomDockKey = GlobalKey();
   final GlobalKey _dockContentKey = GlobalKey();
   double _measuredBottomInset = 0;
@@ -330,6 +333,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
 
   @override
   void dispose() {
+    UiInteractionCoordinator.instance.cancelInteraction(_pageSwitchInteraction);
     _metricsRecoveryTimer?.cancel();
     _notificationSessionNavigationTimer?.cancel();
     _globalSubtitleOverlayTimer?.cancel();
@@ -599,13 +603,32 @@ class _MainScreenState extends ConsumerState<MainScreen>
       Feedback.forTap(context);
     }
 
+    final coordinator = UiInteractionCoordinator.instance;
+    coordinator.beginInteraction(_pageSwitchInteraction);
+    final generation = coordinator.beginGeneration();
     setState(() {
       _currentIndex = index;
     });
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || _currentIndex != index) return;
-      provider.scheduleUiWarmup(currentPageIndex: index);
+    Timer(const Duration(milliseconds: 140), () {
+      coordinator.endInteraction(_pageSwitchInteraction);
+      coordinator.scheduleCommit(
+        key: 'main_page_$index',
+        priority: 0,
+        commit: () {
+          if (!mounted || _currentIndex != index) return;
+          setState(() => _visitedPageIndices.add(index));
+        },
+      );
+      coordinator.scheduleAfterIdle(
+        key: 'main_page_warmup_$index',
+        generation: generation,
+        priority: 0,
+        task: () async {
+          if (!mounted || _currentIndex != index) return;
+          provider.scheduleUiWarmup(currentPageIndex: index, immediate: true);
+        },
+      );
     });
   }
 

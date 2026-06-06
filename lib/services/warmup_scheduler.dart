@@ -13,10 +13,18 @@ class WarmupScheduler {
 
   int _currentGeneration = 0;
   bool _isCoolingDown = false;
+  bool _isPaused = false;
 
   int get currentGeneration => _currentGeneration;
   int get pendingCount => _pending.length;
   int get activeCount => _activeKeys.length;
+  bool get isPaused => _isPaused;
+
+  void setPaused(bool value) {
+    if (_isPaused == value) return;
+    _isPaused = value;
+    if (!value) _pump();
+  }
 
   void beginGeneration(int generation, {Duration cooldown = Duration.zero}) {
     _currentGeneration = generation;
@@ -98,7 +106,7 @@ class WarmupScheduler {
   }
 
   void _pump() {
-    if (_isCoolingDown) return;
+    if (_isCoolingDown || _isPaused) return;
     while (_activeKeys.length < maxConcurrent && _pending.isNotEmpty) {
       final nextTask = _pending.removeAt(0);
       _queuedKeys.remove(nextTask.key);

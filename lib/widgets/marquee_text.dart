@@ -81,11 +81,17 @@ class _MarqueeTextState extends State<MarqueeText> {
         curve: Curves.linear,
       );
 
-      if (!_isMounted || !_scrollController.hasClients) break;
+      if (!_isMounted) break;
+      if (_isScrolling || !_tickerEnabled || !_scrollController.hasClients) {
+        continue;
+      }
 
       // Pause at the end (as requested: 1.5s)
       await _delay(widget.pauseDuration);
-      if (!_isMounted || !_scrollController.hasClients) break;
+      if (!_isMounted) break;
+      if (_isScrolling || !_tickerEnabled || !_scrollController.hasClients) {
+        continue;
+      }
 
       // Jump back to start
       _scrollController.jumpTo(0);

@@ -520,12 +520,7 @@ class _LibraryCoverThumbnail extends ConsumerWidget {
       ),
     );
     final provider = ref.read(audioProviderFacadeProvider);
-    final isScrolling = ScrollActivityGate.isScrollingOf(context);
-    final coverPathFuture = isScrolling
-        ? SynchronousFuture<String?>(
-            provider.resolvedCoverPathForFolder(folderPath),
-          )
-        : provider.coverPathFutureForFolder(folderPath);
+    final coverPathFuture = provider.coverPathFutureForFolder(folderPath);
     Widget fallback({bool hideIcon = false}) {
       return CoverFallbackArtwork(
         seed: folderPath,
@@ -591,10 +586,7 @@ class _LibraryTrackCoverThumbnail extends ConsumerWidget {
       ),
     );
     final provider = ref.read(audioProviderFacadeProvider);
-    final isScrolling = ScrollActivityGate.isScrollingOf(context);
-    final coverPathFuture = isScrolling
-        ? SynchronousFuture<String?>(provider.resolvedCoverPathForTrack(track))
-        : provider.coverPathFutureForTrack(track);
+    final coverPathFuture = provider.coverPathFutureForTrack(track);
 
     Widget fallback() {
       return CoverFallbackArtwork(
@@ -703,6 +695,7 @@ class _LibraryFeaturedCardContent extends StatelessWidget {
       expanded: expanded,
       showExpandIndicator: showExpandIndicator,
       playTooltip: i18n.tr('play'),
+      enableTitleMarquee: false,
     );
   }
 }
@@ -727,6 +720,7 @@ class _SingleAudioFileCardContent extends StatelessWidget {
     return LibraryLikeSingleAudioCardContent(
       title: title,
       lines: _audioDetailInfoLines(i18n, detail, detailLoading, fields),
+      enableTitleMarquee: false,
     );
   }
 }

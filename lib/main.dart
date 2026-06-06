@@ -23,6 +23,7 @@ import 'services/native_playback_repository.dart';
 import 'services/playback_command_runner.dart';
 import 'services/playback_notification_service.dart';
 import 'services/app_log_service.dart';
+import 'services/ui_interaction_coordinator.dart';
 import 'theme/theme_provider.dart';
 import 'services/app_preferences.dart';
 import 'services/app_database.dart';
@@ -168,6 +169,7 @@ class MusicPlayerApp extends StatelessWidget {
         return MaterialApp(
           title: languageProvider.tr('app_title'),
           debugShowCheckedModeBanner: false,
+          navigatorObservers: [UiInteractionNavigatorObserver.instance],
           color: themeProvider.isDarkMode
               ? const Color(0xFF121017)
               : const Color(0xFFF7F4EE),

@@ -512,6 +512,40 @@ class LibrarySearchIndex {
   }
 }
 
+class LibrarySearchSnapshotRequest {
+  const LibrarySearchSnapshotRequest({
+    required this.tree,
+    required this.query,
+    required this.structureRevision,
+  });
+
+  final List<LibraryNode> tree;
+  final String query;
+  final int structureRevision;
+}
+
+FilteredLibraryTreeResult buildFilteredLibraryTreeSnapshot(
+  LibrarySearchSnapshotRequest request,
+) {
+  return LibrarySearchIndex().resolve(
+    tree: request.tree,
+    query: request.query,
+    structureRevision: request.structureRevision,
+  );
+}
+
+int libraryTreeTrackCount(List<LibraryNode> tree) {
+  var count = 0;
+  for (final node in tree) {
+    count += switch (node) {
+      TrackNode() => 1,
+      FolderNode() => node.totalTrackCount,
+      _ => 0,
+    };
+  }
+  return count;
+}
+
 class _FilteredFolderNodeResult {
   const _FilteredFolderNodeResult({
     required this.node,

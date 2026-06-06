@@ -41,6 +41,7 @@ import '../services/platform_channels.dart';
 import '../services/power_platform_service.dart';
 import '../services/timer_runtime_calculator.dart';
 import '../services/warmup_scheduler.dart';
+import '../services/ui_interaction_coordinator.dart';
 
 export '../models/library_node.dart';
 export '../models/library_entry.dart';
@@ -272,6 +273,17 @@ class AudioProvider with ChangeNotifier {
   List<LibraryNode> get _cachedLibraryTree => _libraryService.cachedLibraryTree;
   set _cachedLibraryTree(List<LibraryNode> value) {
     _libraryService.cachedLibraryTree = value;
+  }
+
+  Future<LibraryTreeSnapshot>? get _libraryTreeBuildFuture =>
+      _libraryService.libraryTreeBuildFuture;
+  set _libraryTreeBuildFuture(Future<LibraryTreeSnapshot>? value) {
+    _libraryService.libraryTreeBuildFuture = value;
+  }
+
+  int get _libraryTreeBuildRevision => _libraryService.libraryTreeBuildRevision;
+  set _libraryTreeBuildRevision(int value) {
+    _libraryService.libraryTreeBuildRevision = value;
   }
 
   int get _cachedLibraryLeafFolderCount =>

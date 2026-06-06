@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/widgets.dart';
 
+import '../services/ui_interaction_coordinator.dart';
+
 class ScrollActivityGate extends StatefulWidget {
   const ScrollActivityGate({
     super.key,
@@ -24,11 +26,13 @@ class ScrollActivityGate extends StatefulWidget {
 
 class _ScrollActivityGateState extends State<ScrollActivityGate> {
   late final ValueNotifier<bool> _isScrolling = ValueNotifier<bool>(false);
+  final Object _interactionSource = Object();
   Timer? _idleTimer;
 
   @override
   void dispose() {
     _idleTimer?.cancel();
+    UiInteractionCoordinator.instance.cancelInteraction(_interactionSource);
     _isScrolling.dispose();
     super.dispose();
   }
@@ -50,6 +54,11 @@ class _ScrollActivityGateState extends State<ScrollActivityGate> {
   void _setScrolling(bool value) {
     if (_isScrolling.value == value) return;
     _isScrolling.value = value;
+    if (value) {
+      UiInteractionCoordinator.instance.beginInteraction(_interactionSource);
+    } else {
+      UiInteractionCoordinator.instance.endInteraction(_interactionSource);
+    }
   }
 
   void _scheduleIdle() {

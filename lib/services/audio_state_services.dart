@@ -492,6 +492,8 @@ class LibraryService {
   int scanFailureCount = 0;
   bool libraryTreeDirty = true;
   List<LibraryNode> cachedLibraryTree = const <LibraryNode>[];
+  Future<LibraryTreeSnapshot>? libraryTreeBuildFuture;
+  int libraryTreeBuildRevision = -1;
   int contentRevision = 0;
   int cachedLibraryLeafFolderCount = 0;
   int libraryBatchDepth = 0;

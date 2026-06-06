@@ -204,4 +204,31 @@ void main() {
     expect(staleRan, isFalse);
     expect(freshRan, isTrue);
   });
+
+  test('paused scheduler keeps queued work until resumed', () async {
+    final scheduler = WarmupScheduler(maxQueueSize: 4);
+    scheduler.setPaused(true);
+    scheduler.beginGeneration(9);
+    var ran = false;
+
+    scheduler.schedule(
+      key: 'paused',
+      priority: 0,
+      generation: 9,
+      task: () async {
+        ran = true;
+      },
+    );
+
+    await Future<void>.delayed(Duration.zero);
+    expect(ran, isFalse);
+    expect(scheduler.pendingCount, 1);
+
+    scheduler.setPaused(false);
+    await Future<void>.delayed(Duration.zero);
+    await Future<void>.delayed(Duration.zero);
+
+    expect(ran, isTrue);
+    expect(scheduler.pendingCount, 0);
+  });
 }

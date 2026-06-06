@@ -19,13 +19,16 @@ extension _MainScreenLayout on _MainScreenState {
 
     Widget pageShell(int actualIndex) {
       final bool isActive = actualIndex == _currentIndex;
+      final bool isReady = _visitedPageIndices.contains(actualIndex);
       final Widget page = TickerMode(
         enabled: isActive,
         child: ExcludeFocus(
           excluding: !isActive,
           child: ExcludeSemantics(
             excluding: !isActive,
-            child: _pages[actualIndex],
+            child: isReady
+                ? _pages[actualIndex]
+                : const _MainPageLoadingPlaceholder(),
           ),
         ),
       );
@@ -107,14 +110,16 @@ extension _MainScreenLayout on _MainScreenState {
     return Stack(
       key: ValueKey<int>(_metricsEpoch),
       clipBehavior: Clip.none,
-      children: List.generate(_pages.length, (i) {
-        final bool isActive = i == _currentIndex;
-        return IgnorePointer(
-          key: ValueKey<int>(i),
-          ignoring: !isActive,
-          child: pageShell(i),
-        );
-      }),
+      children: <int>{..._visitedPageIndices, _currentIndex}
+          .map((i) {
+            final bool isActive = i == _currentIndex;
+            return IgnorePointer(
+              key: ValueKey<int>(i),
+              ignoring: !isActive,
+              child: pageShell(i),
+            );
+          })
+          .toList(growable: false),
     );
   }
 
@@ -462,5 +467,32 @@ extension _MainScreenLayout on _MainScreenState {
     final systemBottom = MediaQuery.of(context).padding.bottom;
     if (hasNowPlaying) return systemBottom + 150;
     return systemBottom + 60;
+  }
+}
+
+class _MainPageLoadingPlaceholder extends StatelessWidget {
+  const _MainPageLoadingPlaceholder();
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return ColoredBox(
+      color: cs.surface,
+      child: ListView(
+        physics: const NeverScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(16, 96, 16, 24),
+        children: [
+          for (var i = 0; i < 5; i++)
+            Container(
+              height: 92,
+              margin: const EdgeInsets.only(bottom: 8),
+              decoration: BoxDecoration(
+                color: cs.surfaceContainerHigh,
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 }

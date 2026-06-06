@@ -34,10 +34,29 @@ extension AudioProviderLibraryCategories on AudioProvider {
             if (snapshot.structureRevision ==
                     _libraryService.structureRevision &&
                 snapshot.detailRevision == _audioDetailRevision) {
-              _audioLibraryCategorySnapshot = snapshot;
-              _audioLibraryCategorySnapshotRevision++;
-              _syncLibraryStateSlice();
-              _notifyPresentationListeners();
+              void commit() {
+                if (snapshot.structureRevision !=
+                        _libraryService.structureRevision ||
+                    snapshot.detailRevision != _audioDetailRevision) {
+                  return;
+                }
+                _audioLibraryCategorySnapshot = snapshot;
+                _audioLibraryCategorySnapshotRevision++;
+                _syncLibraryStateSlice();
+                _notifyPresentationListeners();
+              }
+
+              final coordinator = UiInteractionCoordinator.instance;
+              if (coordinator.isInteracting &&
+                  _audioLibraryCategorySnapshot != null) {
+                coordinator.scheduleCommit(
+                  key: 'library_category_snapshot',
+                  priority: 10,
+                  commit: commit,
+                );
+              } else {
+                commit();
+              }
             }
           })
           .whenComplete(() {
@@ -111,8 +130,18 @@ extension AudioProviderLibraryCategories on AudioProvider {
     required int structureRevision,
     required int detailRevision,
   }) async {
+    var tree = libraryTree;
+    final pendingTreeBuild = _libraryTreeBuildFuture;
+    if (pendingTreeBuild != null &&
+        _libraryTreeBuildRevision == structureRevision) {
+      final treeSnapshot = await pendingTreeBuild;
+      if (_libraryService.structureRevision == structureRevision) {
+        tree = treeSnapshot.tree;
+      }
+    }
+
     final entryFutures = <Future<AudioLibraryCategoryEntry>>[];
-    for (final node in libraryTree) {
+    for (final node in tree) {
       if (node is FolderNode) {
         final target = AudioDetailTarget.libraryRootFolder(node.path);
         entryFutures.add(

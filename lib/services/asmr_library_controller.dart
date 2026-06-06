@@ -11,6 +11,7 @@ import 'asmr_auth_service.dart';
 import 'asmr_preferences.dart';
 import 'asmr_recommendation_engine.dart';
 import 'search_query_utils.dart';
+import 'ui_interaction_coordinator.dart';
 
 class AsmrLibraryGlobalViewState {
   const AsmrLibraryGlobalViewState({
@@ -269,6 +270,15 @@ class AsmrLibraryController extends ChangeNotifier {
   bool _initialized = false;
   Object? _lastError;
   int _globalRevision = 0;
+
+  void _commitPresentation(String key, VoidCallback commit) {
+    final coordinator = UiInteractionCoordinator.instance;
+    if (coordinator.isInteracting) {
+      coordinator.scheduleCommit(key: key, priority: 10, commit: commit);
+    } else {
+      commit();
+    }
+  }
 
   bool get initialized => _initialized;
   Object? get lastError => _lastError;
@@ -593,23 +603,27 @@ class AsmrLibraryController extends ChangeNotifier {
         ...?_worksByCategory[category],
         ...pageResult.works.where((work) => existingIds.add(work.id)),
       ];
-      _worksByCategory[category] = merged
-          .map(_decorateWork)
-          .toList(growable: false);
-      _bumpCategoryRevision(category);
-      _applyPageResult(
-        category,
-        query: normalizedQuery,
-        pageResult: pageResult,
-      );
-      for (final work in _worksByCategory[category]!) {
-        _workCache[work.id] = work;
-      }
+      final decorated = merged.map(_decorateWork).toList(growable: false);
+      _commitPresentation('asmr_page_${category.name}', () {
+        _worksByCategory[category] = decorated;
+        _bumpCategoryRevision(category);
+        _applyPageResult(
+          category,
+          query: normalizedQuery,
+          pageResult: pageResult,
+        );
+        for (final work in decorated) {
+          _workCache[work.id] = work;
+        }
+        notifyListeners();
+      });
     } catch (error) {
       _lastError = error;
     } finally {
-      _loadingMoreByCategory[category] = false;
-      notifyListeners();
+      _commitPresentation('asmr_loading_more_${category.name}', () {
+        _loadingMoreByCategory[category] = false;
+        notifyListeners();
+      });
     }
   }
 
@@ -706,14 +720,19 @@ class AsmrLibraryController extends ChangeNotifier {
     if (_refreshRequestSerial[category] != requestId) {
       return;
     }
-    _worksByCategory[category] = pageResult.works
+    final decorated = pageResult.works
         .map(_decorateWork)
         .toList(growable: false);
-    _bumpCategoryRevision(category);
-    _applyPageResult(category, query: searchQuery, pageResult: pageResult);
-    for (final work in _worksByCategory[category]!) {
-      _workCache[work.id] = work;
-    }
+    _commitPresentation('asmr_refresh_${category.name}', () {
+      if (_refreshRequestSerial[category] != requestId) return;
+      _worksByCategory[category] = decorated;
+      _bumpCategoryRevision(category);
+      _applyPageResult(category, query: searchQuery, pageResult: pageResult);
+      for (final work in decorated) {
+        _workCache[work.id] = work;
+      }
+      notifyListeners();
+    });
   }
 
   Future<void> _loadRecommendedWorks(
@@ -1407,15 +1426,15 @@ class AsmrLibraryController extends ChangeNotifier {
       final right = b.updatedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
       return right.compareTo(left);
     });
-    
+
     final merged = <AsmrWork>[];
     final seenIds = <int>{};
-    
+
     final pendingHistoryIds = _syncOperations
         .where((op) => op.type == AsmrSyncOperationType.historyListening)
         .map((op) => op.workId)
         .toSet();
-        
+
     for (final work in _historyWorks) {
       if (pendingHistoryIds.contains(work.id)) {
         if (seenIds.add(work.id)) {
@@ -1423,19 +1442,19 @@ class AsmrLibraryController extends ChangeNotifier {
         }
       }
     }
-    
+
     for (final record in historyRecords) {
       if (seenIds.add(record.work.id)) {
         merged.add(_decorateWork(record.work));
       }
     }
-    
+
     for (final work in _historyWorks) {
       if (seenIds.add(work.id)) {
         merged.add(_decorateWork(work));
       }
     }
-    
+
     _historyWorks = merged.take(_historyLimit).toList(growable: false);
     for (final work in _historyWorks) {
       _workCache[work.id] = work;

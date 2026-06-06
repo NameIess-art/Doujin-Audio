@@ -12,6 +12,7 @@ import '../providers/audio_provider.dart';
 import '../services/asmr_download_manager.dart';
 import '../services/asmr_library_controller.dart';
 import '../services/search_query_utils.dart';
+import '../services/ui_interaction_coordinator.dart';
 import '../widgets/app_feedback.dart';
 import '../widgets/app_transitions.dart';
 import '../widgets/async_cover_image.dart';
@@ -60,6 +61,8 @@ class _AsmrTabState extends State<AsmrTab>
   Timer? _searchDebounceTimer;
   final Map<AsmrCategoryType, Timer> _loadMoreDebounceTimers =
       <AsmrCategoryType, Timer>{};
+  final Object _tabSwitchInteraction = Object();
+  int _lastHandledTabIndex = 0;
   ValueListenable<int?>? _scrollToTopTabListenable;
   String _searchQuery = '';
   final GlobalKey _headerKey = GlobalKey();
@@ -168,8 +171,13 @@ class _AsmrTabState extends State<AsmrTab>
         if (!mounted) {
           return;
         }
-        unawaited(
-          context.read<AsmrLibraryController>().loadMoreCategory(
+        final coordinator = UiInteractionCoordinator.instance;
+        final generation = coordinator.generation;
+        coordinator.scheduleAfterIdle(
+          key: 'asmr_load_more_${category.name}_$_normalizedSearchQuery',
+          generation: generation,
+          priority: 20,
+          task: () => context.read<AsmrLibraryController>().loadMoreCategory(
             category,
             searchQuery: _searchQuery,
           ),
@@ -179,11 +187,24 @@ class _AsmrTabState extends State<AsmrTab>
   }
 
   void _handleTabChanged() {
-    if (!mounted) {
+    if (!mounted) return;
+    final coordinator = UiInteractionCoordinator.instance;
+    if (_tabController.indexIsChanging) {
+      coordinator.beginInteraction(_tabSwitchInteraction);
       return;
     }
+    if (_lastHandledTabIndex == _tabController.index) return;
+    _lastHandledTabIndex = _tabController.index;
     setState(() {});
-    unawaited(_ensureCategoryLoaded(_currentCategory));
+    final category = _currentCategory;
+    final generation = coordinator.beginGeneration();
+    coordinator.endInteraction(_tabSwitchInteraction);
+    coordinator.scheduleAfterIdle(
+      key: 'asmr_category_${category.name}_$_normalizedSearchQuery',
+      generation: generation,
+      priority: 0,
+      task: () => _ensureCategoryLoaded(category),
+    );
   }
 
   void _measureHeader() {
@@ -438,6 +459,7 @@ class _AsmrTabState extends State<AsmrTab>
 
   @override
   void dispose() {
+    UiInteractionCoordinator.instance.cancelInteraction(_tabSwitchInteraction);
     _scrollToTopTabListenable?.removeListener(_handleScrollToTopSignal);
     _searchDebounceTimer?.cancel();
     for (final timer in _loadMoreDebounceTimers.values) {

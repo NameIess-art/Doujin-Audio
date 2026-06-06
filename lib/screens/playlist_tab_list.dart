@@ -1,5 +1,32 @@
 part of 'playlist_tab.dart';
 
+class _PlaylistLoadingSkeleton extends StatelessWidget {
+  const _PlaylistLoadingSkeleton({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return ListView(
+      physics: const NeverScrollableScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(16, 324, 16, 24),
+      children: [
+        for (var index = 0; index < 5; index++)
+          Container(
+            height: 94,
+            margin: const EdgeInsets.only(bottom: 8),
+            decoration: BoxDecoration(
+              color: cs.surfaceContainerHigh,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: cs.outlineVariant.withValues(alpha: 0.28),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
 class _SessionsEmptyState extends StatelessWidget {
   const _SessionsEmptyState({
     super.key,
@@ -233,10 +260,6 @@ class _SessionListCardState extends ConsumerState<_SessionListCard>
         : (track != null && !track.isSingle)
         ? track.groupTitle
         : i18n.tr('imported_files');
-    final siblingCount = provider
-        .tracksInSameWork(sessionView.trackPath)
-        .length;
-
     final isPlaying = sessionView.isPlaying;
     if (_wasPlaying != isPlaying) {
       _wasPlaying = isPlaying;
@@ -289,7 +312,9 @@ class _SessionListCardState extends ConsumerState<_SessionListCard>
             elevation: 0,
             shadowColor: Colors.transparent,
             child: AnimatedContainer(
-              duration: const Duration(seconds: 1),
+              duration: isScrolling
+                  ? Duration.zero
+                  : const Duration(seconds: 1),
               curve: Curves.easeOutCubic,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(14),
@@ -333,8 +358,10 @@ class _SessionListCardState extends ConsumerState<_SessionListCard>
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              MarqueeText(
-                                text: folderName,
+                              Text(
+                                folderName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                                 style: Theme.of(context).textTheme.bodySmall
                                     ?.copyWith(
                                       color: cs.onSurfaceVariant,
@@ -343,8 +370,10 @@ class _SessionListCardState extends ConsumerState<_SessionListCard>
                                     ),
                               ),
                               const SizedBox(height: 3),
-                              MarqueeText(
-                                text: displayName,
+                              Text(
+                                displayName,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
                                 style: Theme.of(context).textTheme.titleMedium
                                     ?.copyWith(
                                       fontWeight: FontWeight.w800,
@@ -368,11 +397,6 @@ class _SessionListCardState extends ConsumerState<_SessionListCard>
                                             sessionView.loopMode,
                                           ),
                                   ),
-                                  if (siblingCount > 1)
-                                    _SessionMetaChip(
-                                      icon: Icons.queue_music_rounded,
-                                      text: siblingCount.toString(),
-                                    ),
                                 ],
                               ),
                               if (sessionView.isLoading) ...[

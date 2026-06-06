@@ -4,6 +4,7 @@ import 'package:nameless_audio/i18n/app_language_provider.dart';
 import 'package:nameless_audio/i18n/app_language_ja.dart';
 import 'package:nameless_audio/widgets/library_like_cards.dart';
 import 'package:nameless_audio/widgets/marquee_text.dart';
+import 'package:nameless_audio/widgets/scroll_activity_gate.dart';
 import 'package:nameless_audio/widgets/top_page_header.dart';
 import 'package:provider/provider.dart';
 
@@ -93,5 +94,101 @@ void main() {
       ),
     );
     expect(size.width, 220);
+  });
+
+  testWidgets('library-like card can keep title static and info marquee', (
+    tester,
+  ) async {
+    const title = 'A very long work title that should stay static';
+    const info = 'A very long information value that should keep scrolling';
+    await tester.pumpWidget(
+      _buildApp(
+        SizedBox(
+          width: 260,
+          child: LibraryLikeFeaturedCardContent(
+            title: title,
+            lines: const [LibraryLikeInfoLineData('Info', info)],
+            coverBuilder: (_) => const SizedBox(width: 120),
+            onPlay: () {},
+            playTooltip: 'Play',
+            enableTitleMarquee: false,
+          ),
+        ),
+      ),
+    );
+
+    expect(
+      find.byWidgetPredicate(
+        (widget) => widget is MarqueeText && widget.text == title,
+      ),
+      findsNothing,
+    );
+    final staticTitle = tester.widget<Text>(
+      find.byWidgetPredicate(
+        (widget) => widget is Text && widget.data == title,
+      ),
+    );
+    expect(staticTitle.maxLines, 2);
+    expect(staticTitle.softWrap, isTrue);
+    expect(
+      find.byWidgetPredicate(
+        (widget) => widget is MarqueeText && widget.text == info,
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('marquee resumes after vertical scrolling becomes idle', (
+    tester,
+  ) async {
+    const marqueeKey = ValueKey('resuming_marquee');
+    await tester.pumpWidget(
+      _buildApp(
+        const ScrollActivityGate(
+          idleDelay: Duration(milliseconds: 10),
+          child: SizedBox(
+            width: 80,
+            height: 20,
+            child: MarqueeText(
+              key: marqueeKey,
+              text: 'A very long information value that must scroll',
+              pauseDuration: Duration(milliseconds: 1),
+              scrollSpeed: 100,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 2));
+
+    final element = tester.element(find.byKey(marqueeKey));
+    final metrics = FixedScrollMetrics(
+      minScrollExtent: 0,
+      maxScrollExtent: 100,
+      pixels: 0,
+      viewportDimension: 100,
+      axisDirection: AxisDirection.down,
+      devicePixelRatio: 1,
+    );
+    ScrollStartNotification(
+      metrics: metrics,
+      context: element,
+    ).dispatch(element);
+    await tester.pump();
+    expect(find.byType(SingleChildScrollView), findsOneWidget);
+
+    ScrollEndNotification(metrics: metrics, context: element).dispatch(element);
+    await tester.pump(const Duration(milliseconds: 12));
+    await tester.pump();
+    expect(find.byType(SingleChildScrollView), findsOneWidget);
+
+    for (var i = 0; i < 8; i++) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    final scrollView = tester.widget<SingleChildScrollView>(
+      find.byType(SingleChildScrollView),
+    );
+    expect(scrollView.controller!.offset, greaterThan(0));
   });
 }

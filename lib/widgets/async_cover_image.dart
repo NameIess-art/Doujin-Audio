@@ -3,6 +3,9 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import '../services/ui_interaction_coordinator.dart';
+import 'scroll_activity_gate.dart';
+
 class PulsingPlaceholder extends StatelessWidget {
   const PulsingPlaceholder({super.key, required this.child, this.borderRadius});
 
@@ -55,6 +58,8 @@ class _AsyncCoverImageState extends State<AsyncCoverImage> {
   int _retryAttempt = 0;
   Timer? _retryTimer;
 
+  String get _commitKey => 'async_cover_${identityHashCode(this)}';
+
   @override
   void initState() {
     super.initState();
@@ -79,6 +84,7 @@ class _AsyncCoverImageState extends State<AsyncCoverImage> {
   @override
   void dispose() {
     _retryTimer?.cancel();
+    UiInteractionCoordinator.instance.cancelCommit(_commitKey);
     super.dispose();
   }
 
@@ -106,23 +112,39 @@ class _AsyncCoverImageState extends State<AsyncCoverImage> {
     future
         .then((path) {
           if (!mounted || token != _token) return;
-          setState(() {
-            _resolvedPath = path;
-            _isResolved = true;
-          });
-          if (path == null || path.isEmpty) {
-            _scheduleRetry(token);
-          } else {
-            _retryAttempt = 0;
-          }
+          UiInteractionCoordinator.instance.scheduleCommit(
+            key: _commitKey,
+            priority: 20,
+            allowDuringInteraction: true,
+            commit: () {
+              if (!mounted || token != _token) return;
+              setState(() {
+                _resolvedPath = path;
+                _isResolved = true;
+              });
+              if (path == null || path.isEmpty) {
+                _scheduleRetry(token);
+              } else {
+                _retryAttempt = 0;
+              }
+            },
+          );
         })
         .catchError((_) {
           if (!mounted || token != _token) return;
-          setState(() {
-            _resolvedPath = null;
-            _isResolved = true;
-          });
-          _scheduleRetry(token);
+          UiInteractionCoordinator.instance.scheduleCommit(
+            key: _commitKey,
+            priority: 20,
+            allowDuringInteraction: true,
+            commit: () {
+              if (!mounted || token != _token) return;
+              setState(() {
+                _resolvedPath = null;
+                _isResolved = true;
+              });
+              _scheduleRetry(token);
+            },
+          );
         });
   }
 
@@ -155,7 +177,10 @@ class _AsyncCoverImageState extends State<AsyncCoverImage> {
       content = widget.fallbackBuilder(context);
     }
 
-    if (widget.duration == Duration.zero) {
+    final duration = ScrollActivityGate.isScrollingOf(context)
+        ? Duration.zero
+        : widget.duration;
+    if (duration == Duration.zero) {
       return SizedBox.expand(
         key: ValueKey('$_resolvedPath$_isResolved'),
         child: content,
@@ -163,7 +188,7 @@ class _AsyncCoverImageState extends State<AsyncCoverImage> {
     }
 
     return AnimatedSwitcher(
-      duration: widget.duration,
+      duration: duration,
       switchInCurve: Curves.easeInOutSine,
       switchOutCurve: Curves.easeInOutSine,
       transitionBuilder: (child, animation) {

@@ -50,10 +50,14 @@ extension AudioProviderState on AudioProvider {
   int get watchedLibraryCount => _watchedLibraries.length;
   List<LibraryNode> get libraryTree {
     if (_libraryTreeDirty) {
-      final snapshot = _buildLibraryTreeSnapshot();
-      _cachedLibraryTree = snapshot.tree;
-      _cachedLibraryLeafFolderCount = snapshot.leafFolderCount;
-      _libraryTreeDirty = false;
+      if (_cachedLibraryTree.isEmpty && _library.isNotEmpty) {
+        final snapshot = _buildLibraryTreeSnapshot();
+        _cachedLibraryTree = snapshot.tree;
+        _cachedLibraryLeafFolderCount = snapshot.leafFolderCount;
+        _libraryTreeDirty = false;
+      } else {
+        _scheduleLibraryTreeSnapshot();
+      }
     }
     return _cachedLibraryTree;
   }

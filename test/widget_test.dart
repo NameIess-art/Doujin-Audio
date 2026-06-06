@@ -77,14 +77,33 @@ void main() {
     expect(find.text(languageProvider.tr('nav_library')), findsWidgets);
     expect(find.text(languageProvider.tr('nav_sessions')), findsWidgets);
     expect(find.text(languageProvider.tr('nav_settings')), findsWidgets);
-    final pageFades = List<AnimatedOpacity>.generate(
-      4,
-      (index) => tester.widget<AnimatedOpacity>(
-        find.byKey(ValueKey<String>('main_page_fade_$index')),
-      ),
+    expect(find.byKey(const ValueKey<String>('main_page_fade_1')), findsOne);
+    expect(
+      find.byKey(const ValueKey<String>('main_page_fade_0')),
+      findsNothing,
     );
+    expect(
+      find.byKey(const ValueKey<String>('main_page_fade_2')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('main_page_fade_3')),
+      findsNothing,
+    );
+
+    await tester.tap(find.text(languageProvider.tr('nav_settings')).last);
+    await tester.pumpAndSettle();
+
+    final pageFades = <AnimatedOpacity>[
+      tester.widget<AnimatedOpacity>(
+        find.byKey(const ValueKey<String>('main_page_fade_1')),
+      ),
+      tester.widget<AnimatedOpacity>(
+        find.byKey(const ValueKey<String>('main_page_fade_3')),
+      ),
+    ];
     expect(pageFades.where((widget) => widget.opacity == 1).length, 1);
-    expect(pageFades.where((widget) => widget.opacity == 0).length, 3);
+    expect(pageFades.where((widget) => widget.opacity == 0).length, 1);
     expect(pageFades.every((widget) => widget.child is Align), isTrue);
     expect(languageProvider.tr('app_version'), 'NL Audio v0.9.9');
   });

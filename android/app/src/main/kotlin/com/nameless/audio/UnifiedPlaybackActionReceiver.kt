@@ -6,7 +6,6 @@ import android.content.Intent
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import com.ryanheise.audioservice.AudioService
 
 class UnifiedPlaybackActionReceiver : BroadcastReceiver() {
     companion object {
@@ -43,9 +42,10 @@ class UnifiedPlaybackActionReceiver : BroadcastReceiver() {
             pendingDismissIds.clear()
             pendingDismissCount = 0
             pendingDismissExtras = null
-            // Treat all swipe/system-removal callbacks as dismiss. We only
-            // restore after the app is resumed on Flutter side.
-            AudioService.dispatchCustomAction(dismissAction, extras)
+            // Forward dismiss to Dart if needed, or handle natively
+            // Since we removed audio_service, we can just let NativePlaybackService know,
+            // but dismiss usually just stops the service or is handled natively.
+            NativePlaybackService.controller()?.dismissNotifications()
         }
     }
 
@@ -55,6 +55,18 @@ class UnifiedPlaybackActionReceiver : BroadcastReceiver() {
             queueDismiss(intent)
             return
         }
-        AudioService.dispatchCustomAction(action, intent.extras)
+        
+        val intentSessionId = intent.getStringExtra("sessionId") ?: return
+        val sessionId = if (intentSessionId.isEmpty()) {
+            NativePlaybackService.controller()?.focusedSessionId ?: return
+        } else {
+            intentSessionId
+        }
+        
+        when (action) {
+            "toggle_session_playback" -> NativePlaybackService.controller()?.togglePlayPause(sessionId)
+            "session_skip_previous" -> NativePlaybackService.controller()?.skipToPrevious(sessionId)
+            "session_skip_next" -> NativePlaybackService.controller()?.skipToNext(sessionId)
+        }
     }
 }

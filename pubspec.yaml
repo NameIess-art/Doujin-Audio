@@ -27,7 +27,6 @@ dependencies:
   provider: ^6.1.2
   flutter_riverpod: ^2.6.1
   audio_session: ^0.2.1
-  audio_service: ^0.18.18
   marquee: ^2.3.0
   window_manager: ^0.4.3
   text_scroll: ^0.2.1
@@ -45,9 +44,7 @@ dev_dependencies:
   flutter_lints: ^6.0.0
 
 
-dependency_overrides:
-  audio_service:
-    path: third_party/audio_service
+
 
 flutter:
   uses-material-design: true

@@ -201,27 +201,7 @@ object PlaybackTimerAlarmScheduler {
     }
 
     fun promoteKeepAliveService(context: Context, action: String) {
-        val serviceIntent = Intent(context, PlaybackKeepAliveService::class.java).apply {
-            this.action = PlaybackKeepAliveService.ACTION_START
-            putExtra(
-                PlaybackKeepAliveService.EXTRA_HAS_ACTIVE_PLAYBACK,
-                false
-            )
-            putExtra(PlaybackKeepAliveService.EXTRA_HAS_ACTIVE_TIMER, true)
-            putExtra(
-                PlaybackKeepAliveService.EXTRA_USES_UNIFIED_PLAYBACK_NOTIFICATION,
-                UnifiedPlaybackNotificationController.hasUnifiedNotifications()
-            )
-            putExtra(
-                PlaybackKeepAliveService.EXTRA_KEEP_FOREGROUND_SERVICE_ALIVE,
-                true
-            )
-        }
-        try {
-            ContextCompat.startForegroundService(context, serviceIntent)
-        } catch (_: Exception) {
-            // Best effort only. Native playback still attempts to continue.
-        }
+        // No-op: Keep alive service has been removed. NativePlaybackService maintains partial wake lock.
     }
 
     private fun deliverToService(
@@ -511,38 +491,7 @@ object PlaybackTimerAlarmScheduler {
         context: Context,
         runtimeState: StoredPlaybackTimerRuntimeState?
     ) {
-        val shouldKeepAlive = runtimeState?.shouldKeepForegroundServiceAlive == true
-        val serviceIntent = Intent(context, PlaybackKeepAliveService::class.java).apply {
-            action = if (shouldKeepAlive) {
-                PlaybackKeepAliveService.ACTION_START
-            } else {
-                PlaybackKeepAliveService.ACTION_STOP
-            }
-            putExtra(PlaybackKeepAliveService.EXTRA_HAS_ACTIVE_PLAYBACK, false)
-            putExtra(
-                PlaybackKeepAliveService.EXTRA_HAS_ACTIVE_TIMER,
-                runtimeState?.shouldKeepForegroundServiceAlive == true
-            )
-            putExtra(
-                PlaybackKeepAliveService.EXTRA_USES_UNIFIED_PLAYBACK_NOTIFICATION,
-                UnifiedPlaybackNotificationController.hasUnifiedNotifications()
-            )
-            putExtra(
-                PlaybackKeepAliveService.EXTRA_KEEP_FOREGROUND_SERVICE_ALIVE,
-                shouldKeepAlive
-            )
-        }
-        try {
-            if (shouldKeepAlive) {
-                ContextCompat.startForegroundService(context, serviceIntent)
-            } else {
-                context.startService(serviceIntent)
-            }
-        } catch (_: Exception) {
-            if (!shouldKeepAlive) {
-                context.stopService(Intent(context, PlaybackKeepAliveService::class.java))
-            }
-        }
+        // No-op: Keep alive service has been removed. NativePlaybackService maintains partial wake lock.
     }
 
     private fun elapsedTriggerFromWallClock(triggerAtWallClockMs: Long): Long {

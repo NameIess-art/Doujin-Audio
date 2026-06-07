@@ -434,7 +434,7 @@ class _SessionListCardState extends ConsumerState<_SessionListCard> {
                               onPressed: sessionView.isLoading
                                   ? null
                                   : () {
-                                      Feedback.forTap(context);
+                                      HapticFeedback.selectionClick();
                                       provider.toggleSessionPlayPause(
                                         session.id,
                                       );
@@ -448,17 +448,17 @@ class _SessionListCardState extends ConsumerState<_SessionListCard> {
                                 padding: EdgeInsets.zero,
                               ),
                               icon: AnimatedSwitcher(
-                                duration: const Duration(milliseconds: 150),
-                                switchInCurve: Curves.easeOutCubic,
-                                switchOutCurve: Curves.easeInCubic,
+                                duration: const Duration(milliseconds: 250),
                                 transitionBuilder: (child, animation) {
-                                  return FadeTransition(
-                                    opacity: animation,
-                                    child: ScaleTransition(
-                                      scale: Tween<double>(
-                                        begin: 0.92,
-                                        end: 1,
-                                      ).animate(animation),
+                                  return ScaleTransition(
+                                    scale: Tween<double>(begin: 0.4, end: 1.0).animate(
+                                      CurvedAnimation(
+                                        parent: animation,
+                                        curve: Curves.easeOutBack,
+                                      ),
+                                    ),
+                                    child: FadeTransition(
+                                      opacity: animation,
                                       child: child,
                                     ),
                                   );

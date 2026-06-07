@@ -308,14 +308,12 @@ class _SwitcherSlot extends StatelessWidget {
         );
       },
       transitionBuilder: (child, animation) {
-        final opacity = CurvedAnimation(
-          parent: animation,
-          curve: Curves.easeOutCubic,
-        );
-        return FadeTransition(
-          opacity: opacity,
-          child: ScaleTransition(
-            scale: Tween<double>(begin: 0.92, end: 1).animate(opacity),
+        return ScaleTransition(
+          scale: Tween<double>(begin: 0.4, end: 1.0).animate(
+            CurvedAnimation(parent: animation, curve: Curves.easeOutBack),
+          ),
+          child: FadeTransition(
+            opacity: animation,
             child: child,
           ),
         );
@@ -350,7 +348,10 @@ class _LoopModeButton extends StatelessWidget {
           color: active ? cs.primary : cs.onSurfaceVariant,
         );
     return IconButton(
-      onPressed: onPressed,
+      onPressed: () {
+        HapticFeedback.selectionClick();
+        onPressed();
+      },
       style: IconButton.styleFrom(
         minimumSize: const Size(40, 40),
         maximumSize: const Size(40, 40),

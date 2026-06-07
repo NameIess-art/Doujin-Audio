@@ -33,8 +33,36 @@ internal class NativeForegroundNotificationFactory(
             )
             .setCategory(NotificationCompat.CATEGORY_TRANSPORT)
 
-        if (mediaSession != null) {
-            builder.setStyle(MediaStyleNotificationHelper.MediaStyle(mediaSession))
+        val mediaStyle = if (mediaSession != null) {
+            MediaStyleNotificationHelper.MediaStyle(mediaSession)
+        } else null
+        
+        // Add default actions for fallback notification
+        builder.addAction(
+            NotificationCompat.Action(
+                android.R.drawable.ic_media_previous,
+                "Previous",
+                buildControlIntent("session_skip_previous")
+            )
+        )
+        builder.addAction(
+            NotificationCompat.Action(
+                android.R.drawable.ic_media_play,
+                "Play/Pause",
+                buildControlIntent("toggle_session_playback")
+            )
+        )
+        builder.addAction(
+            NotificationCompat.Action(
+                android.R.drawable.ic_media_next,
+                "Next",
+                buildControlIntent("session_skip_next")
+            )
+        )
+        mediaStyle?.setShowActionsInCompactView(0, 1, 2)
+
+        if (mediaStyle != null) {
+            builder.setStyle(mediaStyle)
         }
 
         return builder.build()
@@ -46,8 +74,35 @@ internal class NativeForegroundNotificationFactory(
             .setContentText(context.getString(R.string.keep_alive_timer_active))
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
 
-        if (mediaSession != null) {
-            builder.setStyle(MediaStyleNotificationHelper.MediaStyle(mediaSession))
+        val mediaStyle = if (mediaSession != null) {
+            MediaStyleNotificationHelper.MediaStyle(mediaSession)
+        } else null
+        
+        builder.addAction(
+            NotificationCompat.Action(
+                android.R.drawable.ic_media_previous,
+                "Previous",
+                buildControlIntent("session_skip_previous")
+            )
+        )
+        builder.addAction(
+            NotificationCompat.Action(
+                android.R.drawable.ic_media_play,
+                "Play/Pause",
+                buildControlIntent("toggle_session_playback")
+            )
+        )
+        builder.addAction(
+            NotificationCompat.Action(
+                android.R.drawable.ic_media_next,
+                "Next",
+                buildControlIntent("session_skip_next")
+            )
+        )
+        mediaStyle?.setShowActionsInCompactView(0, 1, 2)
+
+        if (mediaStyle != null) {
+            builder.setStyle(mediaStyle)
         }
 
         return builder.build()
@@ -80,6 +135,16 @@ internal class NativeForegroundNotificationFactory(
                 PendingIntent.FLAG_UPDATE_CURRENT or immutablePendingIntentFlag()
             )
         }
+    }
+
+    private fun buildControlIntent(action: String): PendingIntent {
+        val intent = Intent().apply {
+            setClassName(context, "${context.packageName}.UnifiedPlaybackActionReceiver")
+            this.action = action
+            putExtra("sessionId", "") // Fallback for focused session
+        }
+        val flags = PendingIntent.FLAG_UPDATE_CURRENT or immutablePendingIntentFlag()
+        return PendingIntent.getBroadcast(context, action.hashCode(), intent, flags)
     }
 
     private fun immutablePendingIntentFlag(): Int {

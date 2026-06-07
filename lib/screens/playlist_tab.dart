@@ -164,11 +164,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
 
   void _openQueueEditor(BuildContext context, String sessionId) {
     Feedback.forTap(context);
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => PlaybackQueueEditPage(sessionId: sessionId),
-      ),
-    );
+    showPlaybackQueueEditPanel(context, sessionId);
   }
 
   @override
@@ -286,6 +282,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                               child: cardPositionsLocked
                                   ? ListView.builder(
                                       controller: _scrollController,
+                                      physics: const BouncingScrollPhysics(),
                                       padding: const EdgeInsets.fromLTRB(
                                         16,
                                         topPadding,
@@ -302,6 +299,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                                     )
                                   : ReorderableListView.builder(
                                       scrollController: _scrollController,
+                                      physics: const BouncingScrollPhysics(),
                                       padding: const EdgeInsets.fromLTRB(
                                         16,
                                         topPadding,

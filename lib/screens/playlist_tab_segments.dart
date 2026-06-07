@@ -5,7 +5,6 @@ class _PlaybackControlPanel extends StatelessWidget {
     super.key,
     required this.session,
     required this.provider,
-    required this.playPauseController,
     required this.isPlaying,
     required this.hasSiblings,
     required this.segmentPanelExpanded,
@@ -22,7 +21,6 @@ class _PlaybackControlPanel extends StatelessWidget {
 
   final PlaybackSession session;
   final AudioProvider provider;
-  final AnimationController playPauseController;
   final bool isPlaying;
   final bool hasSiblings;
   final bool segmentPanelExpanded;
@@ -43,7 +41,6 @@ class _PlaybackControlPanel extends StatelessWidget {
         _PlaybackPrimaryControls(
           session: session,
           provider: provider,
-          playPauseController: playPauseController,
           isPlaying: isPlaying,
         ),
         _PlaybackSecondaryControls(
@@ -70,13 +67,11 @@ class _PlaybackPrimaryControls extends StatelessWidget {
   const _PlaybackPrimaryControls({
     required this.session,
     required this.provider,
-    required this.playPauseController,
     required this.isPlaying,
   });
 
   final PlaybackSession session;
   final AudioProvider provider;
-  final AnimationController playPauseController;
   final bool isPlaying;
 
   @override
@@ -100,7 +95,6 @@ class _PlaybackPrimaryControls extends StatelessWidget {
           final compact = constraints.maxWidth < 400;
           final skipIconSize = compact ? 48.0 : 54.0;
           final playIconSize = compact ? 76.0 : 86.0;
-          final loadingSize = compact ? 38.0 : 44.0;
           final sideBox = BoxConstraints.tightFor(
             width: compact ? 56 : 64,
             height: compact ? 56 : 64,
@@ -163,40 +157,31 @@ class _PlaybackPrimaryControls extends StatelessWidget {
                       : null,
                   iconSize: playIconSize,
                   icon: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 150),
-                    switchInCurve: Curves.easeOutCubic,
-                    switchOutCurve: Curves.easeInCubic,
+                    duration: const Duration(milliseconds: 250),
                     transitionBuilder: (child, animation) {
-                      return FadeTransition(
-                        opacity: animation,
-                        child: ScaleTransition(
-                          scale: Tween<double>(
-                            begin: 0.92,
-                            end: 1,
-                          ).animate(animation),
+                      return ScaleTransition(
+                        scale: Tween<double>(begin: 0.4, end: 1.0).animate(
+                          CurvedAnimation(
+                            parent: animation,
+                            curve: Curves.easeOutBack,
+                          ),
+                        ),
+                        child: FadeTransition(
+                          opacity: animation,
                           child: child,
                         ),
                       );
                     },
-                    child: session.isLoading
-                        ? SizedBox(
-                            key: const ValueKey('loading'),
-                            width: loadingSize,
-                            height: loadingSize,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 3,
-                              color: cs.surface.withValues(alpha: 0.8),
-                            ),
-                          )
-                        : AnimatedIcon(
-                            icon: AnimatedIcons.play_pause,
-                            progress: playPauseController,
-                            key: const ValueKey('play_pause_anim'),
-                            size: playIconSize * 0.6,
-                            color: enabled
-                                ? cs.surface
-                                : cs.onSurface.withValues(alpha: 0.35),
-                          ),
+                    child: Icon(
+                      isPlaying
+                          ? Icons.pause_rounded
+                          : Icons.play_arrow_rounded,
+                      key: ValueKey(isPlaying),
+                      size: playIconSize * 0.75,
+                      color: enabled
+                          ? cs.surface
+                          : cs.onSurface.withValues(alpha: 0.35),
+                    ),
                   ),
                 ),
               ),

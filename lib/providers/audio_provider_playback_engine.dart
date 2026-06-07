@@ -25,6 +25,17 @@ extension AudioProviderPlaybackEngine on AudioProvider {
     );
     _notificationsDismissedWhilePaused = false;
     unawaited(_nativePlaybackRepository.undismissNotifications());
+    _notificationFocusSessionId = session.id;
+    session.isPlaybackStarting = true;
+    session.setOptimisticState(
+      playing: true,
+      processingState: session.state.processingState == ProcessingState.idle
+          ? ProcessingState.loading
+          : null,
+    );
+    _syncKeepCpuAwake();
+    _notifyPlaybackChanged();
+
     if (!_multiThreadPlaybackEnabled) {
       await _enforceSingleThreadPlayback(preferredSessionId: session.id);
     }
@@ -41,17 +52,6 @@ extension AudioProviderPlaybackEngine on AudioProvider {
         'returned false; continuing playback attempt.',
       );
     }
-
-    _notificationFocusSessionId = session.id;
-    session.isPlaybackStarting = true;
-    _syncKeepCpuAwake();
-    session.setOptimisticState(
-      playing: true,
-      processingState: session.state.processingState == ProcessingState.idle
-          ? ProcessingState.loading
-          : null,
-    );
-    _notifyPlaybackChanged();
 
     try {
       final playResult = await _nativePlaybackRepository.play(session.id);
@@ -167,11 +167,16 @@ extension AudioProviderPlaybackEngine on AudioProvider {
       return;
     }
 
+    for (final session in sessionsToPause) {
+      session.setOptimisticState(playing: false);
+    }
+    _syncKeepCpuAwake();
+    _syncNotificationState();
+    _notifyPlaybackChanged();
     await Future.wait(
-      sessionsToPause.map((session) {
-        session.setOptimisticState(playing: false);
-        return _nativePlaybackRepository.pause(session.id);
-      }),
+      sessionsToPause.map(
+        (session) => _nativePlaybackRepository.pause(session.id),
+      ),
     );
     _notificationFocusSessionId = keepSessionId;
     _syncKeepCpuAwake();

@@ -364,6 +364,23 @@ class _MainScreenState extends ConsumerState<MainScreen>
     return MediaQuery.sizeOf(context);
   }
 
+  double _currentLogicalKeyboardInset() {
+    final view = View.maybeOf(context);
+    if (view != null && view.devicePixelRatio > 0) {
+      return view.viewInsets.bottom / view.devicePixelRatio;
+    }
+    return MediaQuery.viewInsetsOf(context).bottom;
+  }
+
+  bool get _isKeyboardVisible => _currentLogicalKeyboardInset() > 0.5;
+
+  Size _layoutViewSize() {
+    if (_isKeyboardVisible && _lastRecoveredViewSize != null) {
+      return _lastRecoveredViewSize!;
+    }
+    return _currentLogicalViewSize();
+  }
+
   Orientation _orientationForSize(Size size) {
     return size.width > size.height
         ? Orientation.landscape
@@ -377,6 +394,8 @@ class _MainScreenState extends ConsumerState<MainScreen>
   }
 
   bool _hasRecoverableViewMetricChange() {
+    if (_isKeyboardVisible) return false;
+
     final size = _currentLogicalViewSize();
     final orientation = _orientationForSize(size);
     final previousSize = _lastRecoveredViewSize;
@@ -400,6 +419,8 @@ class _MainScreenState extends ConsumerState<MainScreen>
 
   void _recoverAfterMetricsChange() {
     if (!mounted) return;
+    if (_isKeyboardVisible) return;
+
     if (!_hasRecoverableViewMetricChange()) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _measureBottomDock();
@@ -699,12 +720,13 @@ class _MainScreenState extends ConsumerState<MainScreen>
     if (!_isDataReady && overlayUi.isInitialized) {
       _isDataReady = true;
     }
-    final width = MediaQuery.sizeOf(context).width;
+    final layoutSize = _layoutViewSize();
+    final width = layoutSize.width;
     final isLandscape =
-        MediaQuery.orientationOf(context) == Orientation.landscape;
+        _orientationForSize(layoutSize) == Orientation.landscape;
     final isDesktop =
         Platform.isWindows || width >= _desktopBreakpoint || isLandscape;
-    final isTinyWindow = width < 300 || MediaQuery.sizeOf(context).height < 300;
+    final isTinyWindow = width < 300 || layoutSize.height < 300;
     final mobileContentInset = isDesktop
         ? 0.0
         : _mobileContentInset(hasNowPlaying: hasNowPlaying);

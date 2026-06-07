@@ -6,7 +6,7 @@ class ReorderableHoldDragStartListener extends ReorderableDragStartListener {
     super.key,
     required super.index,
     required super.child,
-    this.delay = const Duration(milliseconds: 360),
+    this.delay = const Duration(milliseconds: 650),
   });
 
   final Duration delay;

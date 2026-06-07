@@ -36,9 +36,7 @@ class _SessionDetailContent extends StatefulWidget {
   State<_SessionDetailContent> createState() => _SessionDetailContentState();
 }
 
-class _SessionDetailContentState extends State<_SessionDetailContent>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _playPauseController;
+class _SessionDetailContentState extends State<_SessionDetailContent> {
   late final TextEditingController _segmentNameController;
   bool _wasPlaying = false;
   bool _segmentPanelExpanded = false;
@@ -78,13 +76,7 @@ class _SessionDetailContentState extends State<_SessionDetailContent>
   @override
   void initState() {
     super.initState();
-    _wasPlaying = widget.session.state.playing;
     _segmentNameController = TextEditingController();
-    _playPauseController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 300),
-      value: _wasPlaying ? 1.0 : 0.0,
-    );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _syncSegmentTrack();
     });
@@ -102,7 +94,6 @@ class _SessionDetailContentState extends State<_SessionDetailContent>
     _segmentNameDebounce?.cancel();
     _segmentNameController.removeListener(_handleSegmentNameChanged);
     _segmentNameController.dispose();
-    _playPauseController.dispose();
     super.dispose();
   }
 
@@ -377,11 +368,6 @@ class _SessionDetailContentState extends State<_SessionDetailContent>
     final isPlaying = session.state.playing;
     if (_wasPlaying != isPlaying) {
       _wasPlaying = isPlaying;
-      if (isPlaying) {
-        _playPauseController.forward();
-      } else {
-        _playPauseController.reverse();
-      }
     }
 
     final track = provider.trackByPath(session.currentTrackPath);
@@ -472,7 +458,6 @@ class _SessionDetailContentState extends State<_SessionDetailContent>
             ),
             session: session,
             provider: provider,
-            playPauseController: _playPauseController,
             isPlaying: isPlaying,
             hasSiblings: hasSiblings,
             segmentPanelExpanded: _segmentPanelExpanded,
@@ -701,16 +686,47 @@ class _SessionDetailContentState extends State<_SessionDetailContent>
     if (widget.session.isPlaybackQueue) {
       var queueIndex = 0;
       for (final entry in widget.session.playbackQueue!.entries) {
+        final firstTrack = entry.tracks.firstOrNull;
+        final fallbackRoot = firstTrack == null
+            ? null
+            : widget.provider.workRootForTrack(firstTrack.path);
+        final groupRoot = firstTrack?.groupKey.trim();
+        final entryWorkRoot =
+            entry.workRootPath ??
+            fallbackRoot ??
+            ((groupRoot == null ||
+                    groupRoot.isEmpty ||
+                    groupRoot == '__single_files__')
+                ? null
+                : PathMatcher.normalize(groupRoot));
         final parent = entry.kind == PlaybackQueueEntryKind.work
-            ? _QueueTreeNode.folder(entry.title)
+            ? _QueueTreeNode.folder(
+                entryWorkRoot == null
+                    ? entry.title
+                    : PathDisplay.folderName(entryWorkRoot),
+              )
             : root;
         if (!identical(parent, root)) {
           root.children.add(parent);
         }
         for (final track in entry.tracks) {
-          parent.children.add(
-            _QueueTreeNode.track(
+          final latestTrack = widget.provider.trackByPath(track.path);
+          final displayTrack =
+              latestTrack != null && latestTrack.duration > Duration.zero
+              ? latestTrack
+              : track;
+          var trackParent = parent;
+          if (entry.kind == PlaybackQueueEntryKind.work) {
+            for (final folder in _queueFolderSegments(
               track,
+              workRoot: entryWorkRoot,
+            )) {
+              trackParent = trackParent.folderChild(folder);
+            }
+          }
+          trackParent.children.add(
+            _QueueTreeNode.track(
+              displayTrack,
               selected: queueIndex == widget.session.currentQueueIndex,
               queueIndex: queueIndex,
             ),

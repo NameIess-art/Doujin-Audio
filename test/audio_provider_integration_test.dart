@@ -648,6 +648,10 @@ void main() {
           .playbackQueue!
           .entries
           .single;
+      expect(
+        PathMatcher.equalsNormalized(entry.workRootPath!, '/library/work'),
+        isTrue,
+      );
       expect(entry.kind, PlaybackQueueEntryKind.work);
       expect(entry.title, 'Work');
       expect(entry.tracks, hasLength(2));

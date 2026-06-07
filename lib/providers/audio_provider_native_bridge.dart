@@ -83,16 +83,23 @@ extension AudioProviderNativeBridge on AudioProvider {
     }
     final trackPath = session?.currentTrackPath;
     if (trackPath != null && normalizedSnapshot.duration != null) {
-      final track = _libraryByPath[trackPath];
+      final track = trackByPath(trackPath);
       if (track != null && track.duration == Duration.zero) {
         final updatedTrack = track.copyWith(
           duration: normalizedSnapshot.duration!,
         );
-        _libraryByPath[trackPath] = updatedTrack;
-        final index = _library.indexOf(track);
-        if (index != -1) {
-          _library[index] = updatedTrack;
+        final libraryTrack = _libraryByPath[trackPath];
+        if (libraryTrack != null) {
+          _libraryByPath[trackPath] = updatedTrack;
+          final index = _library.indexOf(libraryTrack);
+          if (index != -1) {
+            _library[index] = updatedTrack;
+          }
           unawaited(_audioDatabaseRepository.upsertTracks([updatedTrack]));
+        }
+        if (_replaceSessionTrackSnapshots(updatedTrack)) {
+          _markActiveSessionsDirty();
+          _scheduleSaveSessionState(delay: const Duration(milliseconds: 800));
         }
       }
     }

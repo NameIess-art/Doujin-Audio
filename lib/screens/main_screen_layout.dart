@@ -3,7 +3,8 @@ part of 'main_screen.dart';
 extension _MainScreenLayout on _MainScreenState {
   Widget _buildAnimatedBody({required bool isDesktop}) {
     final cs = Theme.of(context).colorScheme;
-    final width = MediaQuery.sizeOf(context).width;
+    final layoutSize = _layoutViewSize();
+    final width = layoutSize.width;
     final isLargeScreen = width >= 980;
     final radius = BorderRadius.circular(
       isDesktop ? (isLargeScreen ? 16 : 12) : 24,
@@ -15,7 +16,7 @@ extension _MainScreenLayout on _MainScreenState {
         : EdgeInsets.zero;
     final isWindows =
         Platform.isWindows ||
-        MediaQuery.orientationOf(context) == Orientation.landscape;
+        _orientationForSize(layoutSize) == Orientation.landscape;
 
     Widget pageShell(int actualIndex) {
       final bool isActive = actualIndex == _currentIndex;
@@ -478,20 +479,24 @@ class _MainPageLoadingPlaceholder extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     return ColoredBox(
       color: cs.surface,
-      child: ListView(
-        physics: const NeverScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(16, 96, 16, 24),
-        children: [
-          for (var i = 0; i < 5; i++)
-            Container(
-              height: 92,
-              margin: const EdgeInsets.only(bottom: 8),
-              decoration: BoxDecoration(
-                color: cs.surfaceContainerHigh,
-                borderRadius: BorderRadius.circular(12),
-              ),
+      child: Center(
+        child: Container(
+          width: 44,
+          height: 44,
+          decoration: BoxDecoration(
+            color: cs.surfaceContainerLow,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: cs.outlineVariant.withValues(alpha: 0.36),
             ),
-        ],
+          ),
+          padding: const EdgeInsets.all(12),
+          child: Icon(
+            Icons.graphic_eq_rounded,
+            size: 20,
+            color: cs.primary.withValues(alpha: 0.72),
+          ),
+        ),
       ),
     );
   }

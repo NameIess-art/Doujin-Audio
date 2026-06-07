@@ -271,6 +271,7 @@ void main() {
             id: 'entry_2',
             kind: PlaybackQueueEntryKind.work,
             title: 'Work',
+            workRootPath: '/library/work',
             tracks: <MusicTrack>[track],
           ),
         ],
@@ -296,6 +297,7 @@ void main() {
       expect(loaded.playbackQueue?.name, 'Night queue');
       expect(loaded.playbackQueue?.colorValue, 0xFF336699);
       expect(loaded.playbackQueue?.entries, hasLength(2));
+      expect(loaded.playbackQueue?.entries.last.workRootPath, '/library/work');
       expect(loaded.playbackQueue?.expandedTracks, hasLength(2));
       expect(loaded.currentQueueIndex, 1);
     },

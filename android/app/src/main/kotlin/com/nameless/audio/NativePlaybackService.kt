@@ -157,7 +157,8 @@ class NativePlaybackService : MediaSessionService() {
         }
     }
 
-    private var focusedSessionId: String? = null
+    var focusedSessionId: String? = null
+        private set
     private var tickerScheduled = false
     private var foregroundWatchdogScheduled = false
     private var statePersistenceScheduled = false
@@ -496,6 +497,29 @@ class NativePlaybackService : MediaSessionService() {
         publishSessionState(sessionId)
         persistSessionStateNow()
         syncForegroundState()
+        return okResult(session.snapshot())
+    }
+
+    fun skipToNext(sessionId: String): Map<String, Any?> {
+        val session = sessions[sessionId] ?: return errorResult("Session not found")
+        session.playerOrNull()?.seekToNextMediaItem()
+        return okResult(session.snapshot())
+    }
+
+    fun skipToPrevious(sessionId: String): Map<String, Any?> {
+        val session = sessions[sessionId] ?: return errorResult("Session not found")
+        session.playerOrNull()?.seekToPreviousMediaItem()
+        return okResult(session.snapshot())
+    }
+
+    fun togglePlayPause(sessionId: String): Map<String, Any?> {
+        val session = sessions[sessionId] ?: return errorResult("Session not found")
+        val player = session.playerOrNull() ?: return errorResult("Player not found")
+        if (player.playWhenReady) {
+            player.pause()
+        } else {
+            player.play()
+        }
         return okResult(session.snapshot())
     }
 

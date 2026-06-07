@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:audio_session/audio_session.dart';
-import 'package:audio_service/audio_service.dart';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -18,7 +18,6 @@ import 'services/asmr_library_controller.dart';
 import 'services/asmr_download_manager.dart';
 import 'services/audio_database_repository.dart';
 import 'services/audio_state_services.dart';
-import 'services/playback_notification_handler.dart';
 import 'services/native_playback_repository.dart';
 import 'services/playback_command_runner.dart';
 import 'services/playback_notification_service.dart';
@@ -53,16 +52,6 @@ Future<void> _runAudioPlayerApp(List<String> args) async {
   PaintingBinding.instance.imageCache.maximumSize = 200; // 200 images
 
   // Start essential services in parallel to minimize blocking before runApp
-  final audioHandlerFuture = AppPlatform.isWindows
-      ? Future<PlaybackNotificationHandler>.value(PlaybackNotificationHandler())
-      : AudioService.init(
-          builder: PlaybackNotificationHandler.new,
-          config: const AudioServiceConfig(
-            androidNotificationChannelId: 'com.nameless.audio.channel.playback',
-            androidNotificationChannelName: 'Playback',
-            androidNotificationOngoing: true,
-          ),
-        );
   final initFutures = Future.wait([
     SystemChrome.setPreferredOrientations(
       AppOrientationPolicy.current.allowedOrientations,
@@ -71,7 +60,6 @@ Future<void> _runAudioPlayerApp(List<String> args) async {
     AudioSession.instance.then(
       (session) => session.configure(const AudioSessionConfiguration.music()),
     ),
-    audioHandlerFuture,
     AppPreferences.init(),
   ]);
 
@@ -86,9 +74,8 @@ Future<void> _runAudioPlayerApp(List<String> args) async {
   );
 
   final results = await initFutures;
-  final audioHandler = results[3] as PlaybackNotificationHandler;
 
-  final notificationService = PlaybackNotificationService(audioHandler);
+  final notificationService = PlaybackNotificationService();
   final audioDatabaseRepository = AudioDatabaseRepository();
   final nativePlaybackRepository = NativePlaybackRepository();
   const playbackCommandRunner = PlaybackCommandRunner();
@@ -183,6 +170,9 @@ class MusicPlayerApp extends StatelessWidget {
           theme: themeProvider.currentTheme,
           scrollBehavior: const MaterialScrollBehavior().copyWith(
             scrollbars: AppPlatform.showsDesktopScrollbars,
+            physics: const BouncingScrollPhysics(
+              parent: AlwaysScrollableScrollPhysics(),
+            ),
           ),
           home: const GlobalShortcuts(child: MainScreen()),
         );

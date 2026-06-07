@@ -1394,40 +1394,7 @@ class NotificationCoordinatorService {
     notify();
   }
 
-  void bindHandler({
-    required PlaybackNotificationService notificationService,
-    required Future<void> Function() onPlay,
-    required Future<void> Function(String mediaId) onPlayFromMediaId,
-    required Future<void> Function() onPause,
-    required Future<void> Function() onStop,
-    required Future<void> Function() onSkipToNext,
-    required Future<void> Function() onSkipToPrevious,
-    required Future<void> Function(Duration position) onSeek,
-    required Future<void> Function() onTogglePlayPause,
-    required Future<void> Function(String sessionId) onToggleSessionPlayback,
-    required Future<void> Function(String sessionId) onSkipToPreviousSession,
-    required Future<void> Function(String sessionId) onSkipToNextSession,
-    required Future<void> Function() onNotificationDeleted,
-    required Future<void> Function() onRestoreNotifications,
-    required VoidCallback syncNotificationState,
-  }) {
-    notificationService.bindCallbacks(
-      onPlay: onPlay,
-      onPlayFromMediaId: onPlayFromMediaId,
-      onPause: onPause,
-      onStop: onStop,
-      onSkipToNext: onSkipToNext,
-      onSkipToPrevious: onSkipToPrevious,
-      onSeek: onSeek,
-      onTogglePlayPause: onTogglePlayPause,
-      onToggleSessionPlayback: onToggleSessionPlayback,
-      onSkipToPreviousSession: onSkipToPreviousSession,
-      onSkipToNextSession: onSkipToNextSession,
-      onNotificationDeleted: onNotificationDeleted,
-      onRestoreNotifications: onRestoreNotifications,
-    );
-    syncNotificationState();
-  }
+
 
   void syncSlice({required int activeQueueLength}) {
     slice.update(

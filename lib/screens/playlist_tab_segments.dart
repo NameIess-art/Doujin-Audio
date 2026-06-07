@@ -391,8 +391,25 @@ class _SecondaryControlButton extends StatelessWidget {
           foregroundColor: active ? cs.onPrimaryContainer : cs.onSurface,
           disabledForegroundColor: cs.onSurface.withValues(alpha: 0.35),
         ),
-        onPressed: onPressed,
-        icon: Icon(icon, size: 20, color: enabled ? null : null),
+        onPressed: onPressed != null ? () {
+          HapticFeedback.selectionClick();
+          onPressed!();
+        } : null,
+        icon: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 250),
+          transitionBuilder: (child, animation) {
+            return ScaleTransition(
+              scale: Tween<double>(begin: 0.4, end: 1.0).animate(
+                CurvedAnimation(parent: animation, curve: Curves.easeOutBack),
+              ),
+              child: FadeTransition(
+                opacity: animation,
+                child: child,
+              ),
+            );
+          },
+          child: Icon(icon, key: ValueKey(icon), size: 20, color: enabled ? null : null),
+        ),
       ),
     );
   }

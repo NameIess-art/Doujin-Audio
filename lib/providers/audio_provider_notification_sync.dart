@@ -21,7 +21,6 @@ extension AudioProviderNotificationSync on AudioProvider {
       _notificationProgressRefreshTimer?.cancel();
       _notificationProgressRefreshTimer = null;
       _queuedNotificationRefreshSessionId = null;
-      _notificationService.updateSnapshot(null);
       _clearUnifiedPlaybackNotificationsOnPlatform();
       return;
     }
@@ -32,7 +31,6 @@ extension AudioProviderNotificationSync on AudioProvider {
       _notificationProgressRefreshTimer?.cancel();
       _notificationProgressRefreshTimer = null;
       _queuedNotificationRefreshSessionId = null;
-      _notificationService.updateSnapshot(null);
       _requestUnifiedPlaybackNotificationFlush();
       return;
     }

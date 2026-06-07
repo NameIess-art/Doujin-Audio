@@ -1,25 +1,7 @@
-﻿part of 'audio_provider.dart';
+part of 'audio_provider.dart';
 
 extension AudioProviderNotifications on AudioProvider {
-  void _bindNotificationHandler() {
-    _notificationStateService.bindHandler(
-      notificationService: _notificationService,
-      onPlay: playPrimarySessionFromNotification,
-      onPlayFromMediaId: playNotificationSessionById,
-      onPause: pausePrimarySessionFromNotification,
-      onStop: stopPrimarySessionFromNotification,
-      onSkipToNext: skipPrimarySessionToNextFromNotification,
-      onSkipToPrevious: skipPrimarySessionToPreviousFromNotification,
-      onSeek: seekPrimarySessionFromNotification,
-      onTogglePlayPause: togglePrimarySessionPlayPauseFromNotification,
-      onToggleSessionPlayback: toggleSessionPlaybackFromNotification,
-      onSkipToPreviousSession: skipNotificationSessionToPreviousById,
-      onSkipToNextSession: skipNotificationSessionToNextById,
-      onNotificationDeleted: dismissNotificationsAfterPauseAll,
-      onRestoreNotifications: restoreNotificationsAfterSystemClear,
-      syncNotificationState: _syncNotificationState,
-    );
-  }
+
 
   Future<void> playPrimarySessionFromNotification() {
     return _notificationStateService.guardNotificationAction(
@@ -211,11 +193,8 @@ extension AudioProviderNotifications on AudioProvider {
     await _clearUnifiedPlaybackNotificationsOnPlatform();
     await _stopPlaybackKeepAliveOnPlatform();
     await pauseAllSessions();
-    // Clear the handler snapshot so audio_service shows no notification,
-    // but keep the handler registered so that unified notification button
-    // actions (via UnifiedPlaybackActionReceiver -> AudioService.dispatchCustomAction)
-    // continue to work.
-    _notificationService.updateSnapshot(null);
+    // We no longer use audio_service or its snapshot.
+    // Unified notification buttons are handled natively.
     _notificationFocusSessionId = _preferredSingleSessionId;
     _syncKeepCpuAwake();
     _notifyNotificationChanged();

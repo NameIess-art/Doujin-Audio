@@ -9,14 +9,14 @@ import android.os.Environment
 import android.os.PowerManager
 import android.provider.Settings
 import androidx.core.content.FileProvider
-import com.ryanheise.audioservice.AudioServiceActivity
+import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.android.RenderMode
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
 import java.io.File
 
-class MainActivity : AudioServiceActivity() {
+class MainActivity : FlutterFragmentActivity() {
     companion object {
         const val notificationSessionIdExtra = "notificationSessionId"
         const val openSessionFromNotificationAction =
@@ -25,9 +25,6 @@ class MainActivity : AudioServiceActivity() {
 
     private var notificationsMethodChannel: MethodChannel? = null
     private var pendingNotificationSessionId: String? = null
-    private val playbackKeepAliveCoordinator by lazy {
-        PlaybackKeepAliveCoordinator(applicationContext)
-    }
     private val subtitleOverlayCoordinator by lazy {
         SubtitleOverlayCoordinator(this)
     }
@@ -54,22 +51,7 @@ class MainActivity : AudioServiceActivity() {
             .setMethodCallHandler { call, result ->
                 when (call.method) {
                     PowerMethods.SET_KEEP_CPU_AWAKE -> {
-                        val enabled = call.argument<Boolean>("enabled") ?: false
-                        val hasActivePlayback =
-                            call.argument<Boolean>("hasActivePlayback") ?: false
-                        val hasActiveTimer =
-                            call.argument<Boolean>("hasActiveTimer") ?: false
-                        val usesUnifiedPlaybackNotifications =
-                            call.argument<Boolean>("usesUnifiedPlaybackNotifications") ?: false
-                        val keepForegroundServiceAlive =
-                            call.argument<Boolean>("keepForegroundServiceAlive") ?: false
-                        syncPlaybackKeepAlive(
-                            enabled = enabled,
-                            hasActivePlayback = hasActivePlayback,
-                            hasActiveTimer = hasActiveTimer,
-                            usesUnifiedPlaybackNotifications = usesUnifiedPlaybackNotifications,
-                            keepForegroundServiceAlive = keepForegroundServiceAlive
-                        )
+                        // Keep CPU awake logic is now fully managed by NativePlaybackWakeLock natively.
                         result.success(null)
                     }
                     PowerMethods.CAN_MANAGE_ALL_FILES_ACCESS -> {
@@ -79,7 +61,7 @@ class MainActivity : AudioServiceActivity() {
                         result.success(openManageAllFilesAccessSettings())
                     }
                     PowerMethods.STOP_PLAYBACK_KEEP_ALIVE -> {
-                        stopPlaybackKeepAliveService()
+                        // No-op. Kept for backwards compatibility with Dart side.
                         result.success(null)
                     }
                     PowerMethods.IS_IGNORING_BATTERY_OPTIMIZATIONS -> {
@@ -250,25 +232,7 @@ class MainActivity : AudioServiceActivity() {
         super.onActivityResult(requestCode, resultCode, data)
     }
 
-    private fun syncPlaybackKeepAlive(
-        enabled: Boolean,
-        hasActivePlayback: Boolean,
-        hasActiveTimer: Boolean,
-        usesUnifiedPlaybackNotifications: Boolean,
-        keepForegroundServiceAlive: Boolean
-    ) {
-        playbackKeepAliveCoordinator.sync(
-            enabled = enabled,
-            hasActivePlayback = hasActivePlayback,
-            hasActiveTimer = hasActiveTimer,
-            usesUnifiedPlaybackNotifications = usesUnifiedPlaybackNotifications,
-            keepForegroundServiceAlive = keepForegroundServiceAlive
-        )
-    }
 
-    private fun stopPlaybackKeepAliveService() {
-        playbackKeepAliveCoordinator.stopService()
-    }
 
     private fun isIgnoringBatteryOptimizations(): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {

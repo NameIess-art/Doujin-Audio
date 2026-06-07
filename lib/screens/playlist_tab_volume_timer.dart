@@ -13,58 +13,149 @@ class _SessionVolumeButton extends StatefulWidget {
   State<_SessionVolumeButton> createState() => _SessionVolumeButtonState();
 }
 
-class _SessionVolumeButtonState extends State<_SessionVolumeButton> {
-  final LayerLink _link = LayerLink();
-  OverlayEntry? _overlay;
+class _SessionVolumeButtonState extends State<_SessionVolumeButton>
+    with SingleTickerProviderStateMixin {
+  final LayerLink _anchorLink = LayerLink();
+  OverlayEntry? _overlayEntry;
+  late final AnimationController _expandController;
 
-  void _toggleVolume() {
-    if (_overlay != null) {
-      _overlay?.remove();
-      _overlay = null;
+  bool get _expanded => _overlayEntry != null;
+
+  @override
+  void initState() {
+    super.initState();
+    _expandController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 320),
+      reverseDuration: const Duration(milliseconds: 240),
+    );
+  }
+
+  Future<void> _toggleVolume() async {
+    if (_expanded) {
+      await _hideOverlay();
     } else {
-      final overlay = Overlay.of(context);
-      _overlay = OverlayEntry(
-        builder: (context) => _VerticalVolumeSlider(
-          link: _link,
-          session: widget.session,
-          provider: widget.provider,
-          onClose: () {
-            _overlay?.remove();
-            _overlay = null;
-            if (mounted) setState(() {});
-          },
-        ),
-      );
-      overlay.insert(_overlay!);
+      _showOverlay();
     }
+  }
+
+  void _showOverlay() {
+    if (_overlayEntry != null) return;
+    final overlay = Overlay.of(context);
+    _overlayEntry = OverlayEntry(builder: _buildOverlay);
+    overlay.insert(_overlayEntry!);
+    _expandController.forward(from: 0);
     setState(() {});
+  }
+
+  Future<void> _hideOverlay() async {
+    if (_overlayEntry == null) return;
+    await _expandController.reverse();
+    _overlayEntry?.remove();
+    _overlayEntry = null;
+    if (mounted) setState(() {});
+  }
+
+  IconData _getIconForVolume(double volume) {
+    return volume == 0
+        ? Icons.volume_off_rounded
+        : volume < 0.45
+            ? Icons.volume_down_rounded
+            : Icons.volume_up_rounded;
+  }
+
+  Widget _buildOverlay(BuildContext context) {
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onTap: _hideOverlay,
+          ),
+        ),
+        CompositedTransformFollower(
+          link: _anchorLink,
+          showWhenUnlinked: false,
+          targetAnchor: Alignment.center,
+          followerAnchor: Alignment.bottomCenter,
+          offset: const Offset(0, 24),
+          child: Material(
+            color: Colors.transparent,
+            child: AnimatedBuilder(
+              animation: _expandController,
+              builder: (context, _) {
+                final progress = Curves.easeOutCubic.transform(_expandController.value).clamp(0.0, 1.0);
+                
+                return Transform.scale(
+                  alignment: Alignment.bottomCenter,
+                  scale: 0.85 + (progress * 0.15),
+                  child: Opacity(
+                    opacity: progress,
+                    child: _VerticalVolumeSlider(
+                      session: widget.session,
+                      provider: widget.provider,
+                      onClose: _hideOverlay,
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   @override
   void dispose() {
-    _overlay?.remove();
-    _overlay = null;
+    _overlayEntry?.remove();
+    _overlayEntry = null;
+    _expandController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final volume = widget.session.volume;
-    final icon = volume == 0
-        ? Icons.volume_off_rounded
-        : volume < 0.45
-        ? Icons.volume_down_rounded
-        : Icons.volume_up_rounded;
-
+    final icon = _getIconForVolume(volume);
     final cs = Theme.of(context).colorScheme;
+
     return CompositedTransformTarget(
-      link: _link,
-      child: IconButton(
-        constraints: const BoxConstraints.tightFor(width: 48, height: 48),
-        padding: EdgeInsets.zero,
-        tooltip: context.read<AppLanguageProvider>().tr('volume'),
-        onPressed: _toggleVolume,
-        icon: Icon(icon, size: 20, color: cs.onSurface),
+      link: _anchorLink,
+      child: SizedBox(
+        width: 48,
+        height: 48,
+        child: IgnorePointer(
+          ignoring: _expanded,
+          child: Visibility(
+            visible: !_expanded,
+            maintainAnimation: true,
+            maintainState: true,
+            child: IconButton(
+              padding: EdgeInsets.zero,
+              tooltip: context.read<AppLanguageProvider>().tr('volume'),
+              onPressed: () {
+                HapticFeedback.selectionClick();
+                _toggleVolume();
+              },
+              icon: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 250),
+                transitionBuilder: (child, animation) {
+                  return ScaleTransition(
+                    scale: Tween<double>(begin: 0.4, end: 1.0).animate(
+                      CurvedAnimation(parent: animation, curve: Curves.easeOutBack),
+                    ),
+                    child: FadeTransition(
+                      opacity: animation,
+                      child: child,
+                    ),
+                  );
+                },
+                child: Icon(icon, key: ValueKey(icon), size: 20, color: cs.onSurface),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -72,13 +163,11 @@ class _SessionVolumeButtonState extends State<_SessionVolumeButton> {
 
 class _VerticalVolumeSlider extends StatefulWidget {
   const _VerticalVolumeSlider({
-    required this.link,
     required this.session,
     required this.provider,
     required this.onClose,
   });
 
-  final LayerLink link;
   final PlaybackSession session;
   final AudioProvider provider;
   final VoidCallback onClose;
@@ -147,97 +236,114 @@ class _VerticalVolumeSliderState extends State<_VerticalVolumeSlider> {
     );
     final isBoosted = volume > 1.0;
 
-    return Stack(
-      children: [
-        Positioned.fill(
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: widget.onClose,
-            child: const ColoredBox(color: Colors.transparent),
-          ),
+    return Container(
+      width: 44,
+      height: 250,
+      decoration: BoxDecoration(
+        color: cs.surfaceContainerHigh.withValues(alpha: 0.95),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(
+          color: cs.outlineVariant.withValues(alpha: 0.8),
         ),
-        CompositedTransformFollower(
-          link: widget.link,
-          followerAnchor: Alignment.bottomCenter,
-          targetAnchor: Alignment.topCenter,
-          offset: const Offset(0, -8),
-          child: Material(
-            color: Colors.transparent,
-            child: Container(
-              width: 44,
-              height: 220,
-              decoration: BoxDecoration(
-                color: cs.surfaceContainerHigh.withValues(alpha: 0.95),
-                borderRadius: BorderRadius.circular(22),
-                border: Border.all(
-                  color: cs.outlineVariant.withValues(alpha: 0.8),
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.1),
-                    blurRadius: 12,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              child: Column(
-                children: [
-                  GestureDetector(
-                    onTap: _showVolumeInputDialog,
-                    child: Text(
-                      '${(volume * 100).round()}%',
-                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        fontWeight: FontWeight.w900,
-                        fontSize: 10,
-                        color: isBoosted ? cs.primary : null,
-                        decoration: TextDecoration.underline,
-                        decorationColor: (isBoosted ? cs.primary : cs.onSurface)
-                            .withValues(alpha: 0.3),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Expanded(
-                    child: RotatedBox(
-                      quarterTurns: 3,
-                      child: SliderTheme(
-                        data: SliderTheme.of(context).copyWith(
-                          trackHeight: 7,
-                          thumbShape: const RoundSliderThumbShape(),
-                          overlayShape: const RoundSliderOverlayShape(
-                            overlayRadius: 18,
-                          ),
-                          activeTrackColor: isBoosted ? cs.primary : null,
-                        ),
-                        child: Slider(
-                          value: volume,
-                          max: _maxSessionVolume,
-                          onChanged: (v) {
-                            setState(() => _dragVolume = v);
-                            widget.provider.setSessionVolume(
-                              widget.session.id,
-                              v,
-                              persist: false,
-                            );
-                          },
-                          onChangeEnd: (v) {
-                            setState(() => _dragVolume = null);
-                            widget.provider.setSessionVolume(
-                              widget.session.id,
-                              v,
-                            );
-                          },
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.1),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.fromLTRB(0, 12, 0, 4),
+      child: Column(
+        children: [
+          GestureDetector(
+            onTap: _showVolumeInputDialog,
+            child: Text(
+              '${(volume * 100).round()}%',
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                fontWeight: FontWeight.w900,
+                fontSize: 10,
+                color: isBoosted ? cs.primary : null,
+                decoration: TextDecoration.underline,
+                decorationColor: (isBoosted ? cs.primary : cs.onSurface)
+                    .withValues(alpha: 0.3),
               ),
             ),
           ),
-        ),
-      ],
+          const SizedBox(height: 8),
+          Expanded(
+            child: RotatedBox(
+              quarterTurns: 3,
+              child: SliderTheme(
+                data: SliderTheme.of(context).copyWith(
+                  trackHeight: 7,
+                  thumbShape: const RoundSliderThumbShape(),
+                  overlayShape: const RoundSliderOverlayShape(
+                    overlayRadius: 18,
+                  ),
+                  activeTrackColor: isBoosted ? cs.primary : null,
+                ),
+                child: Slider(
+                  value: volume,
+                  max: _maxSessionVolume,
+                  onChanged: (v) {
+                    setState(() => _dragVolume = v);
+                    widget.provider.setSessionVolume(
+                      widget.session.id,
+                      v,
+                      persist: false,
+                    );
+                  },
+                  onChangeEnd: (v) {
+                    setState(() => _dragVolume = null);
+                    widget.provider.setSessionVolume(
+                      widget.session.id,
+                      v,
+                    );
+                  },
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 2),
+          IconButton(
+            constraints: const BoxConstraints.tightFor(width: 40, height: 40),
+            padding: EdgeInsets.zero,
+            onPressed: () {
+              HapticFeedback.selectionClick();
+              widget.onClose();
+            },
+            icon: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 250),
+              transitionBuilder: (child, animation) {
+                return ScaleTransition(
+                  scale: Tween<double>(begin: 0.4, end: 1.0).animate(
+                    CurvedAnimation(parent: animation, curve: Curves.easeOutBack),
+                  ),
+                  child: FadeTransition(
+                    opacity: animation,
+                    child: child,
+                  ),
+                );
+              },
+              child: Icon(
+                volume == 0
+                    ? Icons.volume_off_rounded
+                    : volume < 0.45
+                        ? Icons.volume_down_rounded
+                        : Icons.volume_up_rounded,
+                key: ValueKey(volume == 0
+                    ? Icons.volume_off_rounded
+                    : volume < 0.45
+                        ? Icons.volume_down_rounded
+                        : Icons.volume_up_rounded),
+                size: 20,
+                color: cs.primary,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

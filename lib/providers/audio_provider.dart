@@ -673,7 +673,6 @@ class AudioProvider with ChangeNotifier {
     _nativePlaybackSubscription = _nativePlaybackRepository.snapshots.listen(
       _handleNativePlaybackSnapshot,
     );
-    _bindNotificationHandler();
     _loadData();
   }
 

@@ -177,7 +177,7 @@ class _AsyncCoverImageState extends State<AsyncCoverImage> {
       content = widget.fallbackBuilder(context);
     }
 
-    final duration = ScrollActivityGate.isScrollingOf(context)
+    final duration = ScrollActivityGate.isScrollingWithoutDependencyOf(context)
         ? Duration.zero
         : widget.duration;
     if (duration == Duration.zero) {

@@ -8,18 +8,75 @@ class _PlaylistLoadingSkeleton extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     return ListView(
       physics: const NeverScrollableScrollPhysics(),
-      padding: const EdgeInsets.fromLTRB(16, 324, 16, 24),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
       children: [
-        for (var index = 0; index < 5; index++)
+        for (var index = 0; index < 4; index++)
           Container(
-            height: 94,
-            margin: const EdgeInsets.only(bottom: 8),
+            height: 88,
+            margin: const EdgeInsets.only(bottom: 6),
+            padding: const EdgeInsets.fromLTRB(12, 7, 10, 6),
             decoration: BoxDecoration(
-              color: cs.surfaceContainerHigh,
+              color: cs.surfaceContainerLow,
               borderRadius: BorderRadius.circular(14),
               border: Border.all(
-                color: cs.outlineVariant.withValues(alpha: 0.28),
+                color: cs.outlineVariant.withValues(alpha: 0.32),
               ),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 96,
+                  height: 72,
+                  decoration: BoxDecoration(
+                    color: cs.surfaceContainerHigh,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: 94,
+                        height: 9,
+                        decoration: BoxDecoration(
+                          color: cs.surfaceContainerHigh,
+                          borderRadius: BorderRadius.circular(5),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        width: double.infinity,
+                        height: 13,
+                        decoration: BoxDecoration(
+                          color: cs.surfaceContainerHigh,
+                          borderRadius: BorderRadius.circular(7),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Container(
+                        width: 136,
+                        height: 10,
+                        decoration: BoxDecoration(
+                          color: cs.surfaceContainerHigh,
+                          borderRadius: BorderRadius.circular(5),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: cs.surfaceContainerHigh,
+                  ),
+                ),
+              ],
             ),
           ),
       ],
@@ -137,31 +194,16 @@ class _SessionListCard extends ConsumerStatefulWidget {
   ConsumerState<_SessionListCard> createState() => _SessionListCardState();
 }
 
-class _SessionListCardState extends ConsumerState<_SessionListCard>
-    with SingleTickerProviderStateMixin {
+class _SessionListCardState extends ConsumerState<_SessionListCard> {
   Future<String?>? _coverPathFuture;
   String? _lastTrackPath;
   int _lastCoverGeneration = -1;
   bool _lastCoverWasCachedOnly = true;
-  late final AnimationController _playPauseController;
-  bool _wasPlaying = false;
 
   @override
   void initState() {
     super.initState();
-    _wasPlaying = widget.session.state.playing;
-    _playPauseController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 300),
-      value: _wasPlaying ? 1.0 : 0.0,
-    );
     _updateFutureIfNeeded(cachedOnly: true);
-  }
-
-  @override
-  void dispose() {
-    _playPauseController.dispose();
-    super.dispose();
   }
 
   @override
@@ -223,7 +265,6 @@ class _SessionListCardState extends ConsumerState<_SessionListCard>
     final provider = widget.provider;
     final uiState = ref.watch(sessionDetailUiProvider(widget.session.id));
     final coverGeneration = uiState.coverGeneration;
-    final isScrolling = ScrollActivityGate.isScrollingOf(context);
     final detailState = uiState.detail;
     final trackPath = detailState?.trackPath ?? session.currentTrackPath;
     final sessionView = (
@@ -238,12 +279,6 @@ class _SessionListCardState extends ConsumerState<_SessionListCard>
     if (_lastTrackPath != trackPath ||
         _lastCoverGeneration != coverGeneration) {
       _lastCoverGeneration = coverGeneration;
-      _updateFutureIfNeeded(
-        cachedOnly: isScrolling,
-        trackPath: trackPath,
-        coverGeneration: coverGeneration,
-      );
-    } else if (_lastCoverWasCachedOnly && !isScrolling) {
       _updateFutureIfNeeded(
         cachedOnly: false,
         trackPath: trackPath,
@@ -261,14 +296,6 @@ class _SessionListCardState extends ConsumerState<_SessionListCard>
         ? track.groupTitle
         : i18n.tr('imported_files');
     final isPlaying = sessionView.isPlaying;
-    if (_wasPlaying != isPlaying) {
-      _wasPlaying = isPlaying;
-      if (isPlaying) {
-        _playPauseController.forward();
-      } else {
-        _playPauseController.reverse();
-      }
-    }
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final isAsmrOne = track?.remoteMetadataKind == 'asmr.one';
@@ -312,9 +339,7 @@ class _SessionListCardState extends ConsumerState<_SessionListCard>
             elevation: 0,
             shadowColor: Colors.transparent,
             child: AnimatedContainer(
-              duration: isScrolling
-                  ? Duration.zero
-                  : const Duration(seconds: 1),
+              duration: const Duration(seconds: 1),
               curve: Curves.easeOutCubic,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(14),
@@ -387,28 +412,14 @@ class _SessionListCardState extends ConsumerState<_SessionListCard>
                                 runSpacing: 2,
                                 children: [
                                   _SessionMetaChip(
-                                    icon: sessionView.isLoading
-                                        ? Icons.sync_rounded
-                                        : Icons.repeat_rounded,
-                                    text: sessionView.isLoading
-                                        ? i18n.tr('loading_dot')
-                                        : _loopModeSummary(
-                                            context,
-                                            sessionView.loopMode,
-                                          ),
+                                    icon: Icons.repeat_rounded,
+                                    text: _loopModeSummary(
+                                      context,
+                                      sessionView.loopMode,
+                                    ),
                                   ),
                                 ],
                               ),
-                              if (sessionView.isLoading) ...[
-                                const SizedBox(height: 2),
-                                _SessionMetaChip(
-                                  icon: Icons.repeat_rounded,
-                                  text: _loopModeSummary(
-                                    context,
-                                    sessionView.loopMode,
-                                  ),
-                                ),
-                              ],
                             ],
                           ),
                         ),
@@ -452,24 +463,13 @@ class _SessionListCardState extends ConsumerState<_SessionListCard>
                                     ),
                                   );
                                 },
-                                child: sessionView.isLoading
-                                    ? SizedBox(
-                                        key: const ValueKey('loading'),
-                                        width: 26,
-                                        height: 26,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2.5,
-                                          color: isPlaying
-                                              ? activeColor
-                                              : cs.onSurface,
-                                        ),
-                                      )
-                                    : AnimatedIcon(
-                                        icon: AnimatedIcons.play_pause,
-                                        progress: _playPauseController,
-                                        key: const ValueKey('play_pause_anim'),
-                                        size: 26,
-                                      ),
+                                child: Icon(
+                                  isPlaying
+                                      ? Icons.pause_rounded
+                                      : Icons.play_arrow_rounded,
+                                  key: ValueKey(isPlaying),
+                                  size: 28,
+                                ),
                               ),
                             ),
                             Consumer(

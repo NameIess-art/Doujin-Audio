@@ -20,6 +20,11 @@ class ScrollActivityGate extends StatefulWidget {
     return scope?.notifier?.value ?? false;
   }
 
+  static bool isScrollingWithoutDependencyOf(BuildContext context) {
+    final scope = context.getInheritedWidgetOfExactType<_ScrollActivityScope>();
+    return scope?.notifier?.value ?? false;
+  }
+
   @override
   State<ScrollActivityGate> createState() => _ScrollActivityGateState();
 }

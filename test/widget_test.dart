@@ -106,5 +106,24 @@ void main() {
     expect(pageFades.where((widget) => widget.opacity == 0).length, 1);
     expect(pageFades.every((widget) => widget.child is Align), isTrue);
     expect(languageProvider.tr('app_version'), 'NL Audio v0.9.9');
+
+    Stack mainPageStack() => tester
+        .widgetList<Stack>(find.byType(Stack))
+        .firstWhere((widget) => widget.key is ValueKey<int>);
+
+    expect((mainPageStack().key! as ValueKey<int>).value, 0);
+    tester.view.viewInsets = const FakeViewPadding(bottom: 600);
+    tester.view.physicalSize = Size(
+      tester.view.physicalSize.width,
+      tester.view.physicalSize.height - 600,
+    );
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetViewInsets();
+    });
+
+    await tester.pump(const Duration(milliseconds: 32));
+
+    expect((mainPageStack().key! as ValueKey<int>).value, 0);
   });
 }

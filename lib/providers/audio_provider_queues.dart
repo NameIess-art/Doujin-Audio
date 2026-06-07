@@ -81,6 +81,12 @@ extension AudioProviderQueues on AudioProvider {
               .toList(growable: false)
             ..sort(getTrackComparator));
     if (tracks.isEmpty) return;
+    final resolvedWorkRootPath = workRootForTrack(track.path);
+    final workRootPath = resolvedWorkRootPath?.isNotEmpty == true
+        ? resolvedWorkRootPath
+        : track.groupKey.trim().isEmpty || track.groupKey == '__single_files__'
+        ? null
+        : PathMatcher.normalize(track.groupKey);
     await _addPlaybackQueueEntry(
       sessionId,
       PlaybackQueueEntry(
@@ -88,6 +94,7 @@ extension AudioProviderQueues on AudioProvider {
         kind: PlaybackQueueEntryKind.work,
         title: track.groupTitle,
         tracks: List<MusicTrack>.unmodifiable(tracks),
+        workRootPath: workRootPath,
       ),
     );
   }
@@ -174,6 +181,68 @@ extension AudioProviderQueues on AudioProvider {
     _markActiveSessionsDirty();
     _notifyPlaybackChanged();
     _scheduleSessionPersistence();
+  }
+
+  bool _replaceSessionTrackSnapshots(MusicTrack updatedTrack) {
+    var changed = false;
+    for (final session in _sessions.values) {
+      final customQueueTracks = session.customQueueTracks;
+      if (customQueueTracks != null) {
+        var customQueueChanged = false;
+        final tracks = customQueueTracks
+            .map((track) {
+              if (!PathMatcher.equalsNormalized(
+                track.path,
+                updatedTrack.path,
+              )) {
+                return track;
+              }
+              customQueueChanged = true;
+              return updatedTrack;
+            })
+            .toList(growable: false);
+        if (customQueueChanged) {
+          session.customQueueTracks = List<MusicTrack>.unmodifiable(tracks);
+          changed = true;
+        }
+      }
+
+      final queue = session.playbackQueue;
+      if (queue == null) continue;
+      var queueChanged = false;
+      final entries = queue.entries
+          .map((entry) {
+            var entryChanged = false;
+            final tracks = entry.tracks
+                .map((track) {
+                  if (!PathMatcher.equalsNormalized(
+                    track.path,
+                    updatedTrack.path,
+                  )) {
+                    return track;
+                  }
+                  entryChanged = true;
+                  queueChanged = true;
+                  return updatedTrack;
+                })
+                .toList(growable: false);
+            if (!entryChanged) return entry;
+            return PlaybackQueueEntry(
+              id: entry.id,
+              kind: entry.kind,
+              title: entry.title,
+              tracks: List<MusicTrack>.unmodifiable(tracks),
+              workRootPath: entry.workRootPath,
+            );
+          })
+          .toList(growable: false);
+      if (!queueChanged) continue;
+      session.playbackQueue = queue.copyWith(
+        entries: List<PlaybackQueueEntry>.unmodifiable(entries),
+      );
+      changed = true;
+    }
+    return changed;
   }
 
   String _nextQueueEntryId() =>

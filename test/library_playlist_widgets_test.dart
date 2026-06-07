@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -527,6 +528,23 @@ void main() {
           ?.name,
       languageProvider.tr('default_playback_queue_name', {'number': 1}),
     );
+    final queueSession = audioProvider.activeSessions.singleWhere(
+      (session) => session.isPlaybackQueue,
+    );
+    unawaited(
+      showPlaybackQueueEditPanel(
+        tester.element(find.byType(PlaylistTab)),
+        queueSession.id,
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text(languageProvider.tr('edit_queue_audio')), findsOneWidget);
+    expect(find.text(languageProvider.tr('edit_queue_name')), findsOneWidget);
+    expect(find.text(languageProvider.tr('edit_card_color')), findsOneWidget);
+    expect(find.text(languageProvider.tr('remove_queue')), findsOneWidget);
+
     await tester.pump(const Duration(milliseconds: 300));
   });
 

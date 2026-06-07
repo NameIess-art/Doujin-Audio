@@ -8,17 +8,20 @@ class PlaybackQueueEntry {
     required this.kind,
     required this.title,
     required this.tracks,
+    this.workRootPath,
   });
 
   final String id;
   final PlaybackQueueEntryKind kind;
   final String title;
   final List<MusicTrack> tracks;
+  final String? workRootPath;
 
   Map<String, Object?> toJson() => <String, Object?>{
     'id': id,
     'kind': kind.name,
     'title': title,
+    'workRootPath': workRootPath,
     'tracks': tracks.map((track) => track.toJson()).toList(growable: false),
   };
 
@@ -30,6 +33,7 @@ class PlaybackQueueEntry {
         orElse: () => PlaybackQueueEntryKind.track,
       ),
       title: json['title'] as String? ?? '',
+      workRootPath: json['workRootPath'] as String?,
       tracks: (json['tracks'] as List<dynamic>? ?? const <dynamic>[])
           .whereType<Map<String, dynamic>>()
           .map(MusicTrack.fromJson)

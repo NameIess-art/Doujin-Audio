@@ -184,7 +184,6 @@ extension AudioProviderPlaybackSessions on AudioProvider {
     final wasLoading = session.isLoading;
     session.isLoading = true;
     _syncKeepCpuAwake();
-    _syncNotificationState();
     if (!wasLoading) {
       _notifyPlaybackChanged();
     }
@@ -215,7 +214,10 @@ extension AudioProviderPlaybackSessions on AudioProvider {
           : Uri.file(resolvedNextPath);
 
       final track = _sessionTrackForPath(session, resolvedNextPath);
-      final coverPath = await _resolveNotificationCoverPathForTrack(track);
+      final coverPath = resolvedCoverPathForTrack(track);
+      if (coverPath == null) {
+        unawaited(_resolveNotificationCoverPathForTrack(track));
+      }
 
       final isNewTrack = session.loadedPath != resolvedNextPath;
       final isInitialLoad = session.loadedPath == null;

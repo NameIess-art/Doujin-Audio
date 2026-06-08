@@ -256,9 +256,7 @@ class _ProgressBarState extends State<_ProgressBar> {
                           overlayRadius: 16,
                         ),
                         activeTrackColor: cs.onSurface,
-                        inactiveTrackColor: cs.onSurface.withValues(
-                          alpha: 0.2,
-                        ),
+                        inactiveTrackColor: cs.onSurface.withValues(alpha: 0.2),
                         thumbColor: cs.onSurface,
                         overlayColor: cs.onSurface.withValues(alpha: 0.15),
                       ),
@@ -269,7 +267,9 @@ class _ProgressBarState extends State<_ProgressBar> {
                         onChangeStart: !canSeek
                             ? null
                             : (value) {
-                                HapticFeedback.selectionClick();
+                                AppInteractionFeedback.trigger(
+                                  AppInteractionFeedbackType.selection,
+                                );
                                 setState(() {
                                   _isDragging = true;
                                   _dragValueMs = value;
@@ -296,7 +296,9 @@ class _ProgressBarState extends State<_ProgressBar> {
                         onChangeEnd: !canSeek
                             ? null
                             : (value) {
-                                HapticFeedback.selectionClick();
+                                AppInteractionFeedback.trigger(
+                                  AppInteractionFeedbackType.selection,
+                                );
                                 setState(() {
                                   _isDragging = false;
                                   _dragValueMs = null;

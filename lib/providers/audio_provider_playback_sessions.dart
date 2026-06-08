@@ -174,6 +174,7 @@ extension AudioProviderPlaybackSessions on AudioProvider {
     required String nextPath,
     bool autoPlay = true,
     bool forceStartAtZero = false,
+    bool showLoading = true,
   }) async {
     if (!_sessions.containsKey(session.id)) return;
 
@@ -182,9 +183,11 @@ extension AudioProviderPlaybackSessions on AudioProvider {
     session.playbackCommandGeneration = generation;
 
     final wasLoading = session.isLoading;
-    session.isLoading = true;
+    if (showLoading) {
+      session.isLoading = true;
+    }
     _syncKeepCpuAwake();
-    if (!wasLoading) {
+    if (showLoading && !wasLoading) {
       _notifyPlaybackChanged();
     }
 
@@ -240,6 +243,7 @@ extension AudioProviderPlaybackSessions on AudioProvider {
       _notifyPlaybackChanged();
 
       if (isNewTrack) {
+        session.pendingNativeTrackPath = resolvedNextPath;
         final title =
             track?.displayName ??
             path.basenameWithoutExtension(resolvedNextPath);
@@ -304,6 +308,7 @@ extension AudioProviderPlaybackSessions on AudioProvider {
           );
         }
         session.loadedPath = resolvedNextPath;
+        session.pendingNativeTrackPath = null;
       } else {
         if (forceStartAtZero) {
           await _nativePlaybackRepository.seek(session.id, Duration.zero);
@@ -320,12 +325,15 @@ extension AudioProviderPlaybackSessions on AudioProvider {
     } finally {
       if (_sessions.containsKey(session.id) &&
           session.loadGeneration == generation) {
+        session.pendingNativeTrackPath = null;
         session.isLoading = false;
         session.isAdvancingAfterCompletion = false;
         _syncKeepCpuAwake();
         _syncNotificationState();
         _scheduleSaveSessionState();
-        _notifyPlaybackChanged();
+        if (showLoading || wasLoading) {
+          _notifyPlaybackChanged();
+        }
       }
     }
 
@@ -350,7 +358,25 @@ extension AudioProviderPlaybackSessions on AudioProvider {
       session,
       currentPath: currentPath,
     );
-    return paths.map(_nativePlaybackQueueItemForPath).toList(growable: false);
+    final cacheKey = Object.hash(
+      session.loopMode,
+      Object.hashAll(
+        paths.map((trackPath) {
+          final track = _trackForAnyPath(trackPath);
+          return Object.hash(trackPath, track?.displayName, track?.groupTitle);
+        }),
+      ),
+    );
+    final cached = session.nativePlaybackQueueCache;
+    if (session.nativePlaybackQueueCacheKey == cacheKey && cached != null) {
+      return cached;
+    }
+    final queue = List<Map<String, Object?>>.unmodifiable(
+      paths.map(_nativePlaybackQueueItemForPath),
+    );
+    session.nativePlaybackQueueCacheKey = cacheKey;
+    session.nativePlaybackQueueCache = queue;
+    return queue;
   }
 
   int? _nativePlaybackQueueStartIndexFor(

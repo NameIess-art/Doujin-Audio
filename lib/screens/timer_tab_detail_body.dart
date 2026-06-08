@@ -106,7 +106,9 @@ extension _TimerTabDetailBody on _TimerTabState {
                                 Switch.adaptive(
                                   value: provider.autoResumeEnabled,
                                   onChanged: (value) {
-                                    HapticFeedback.selectionClick();
+                                    AppInteractionFeedback.trigger(
+                                      AppInteractionFeedbackType.selection,
+                                    );
                                     unawaited(
                                       _setAutoResumeWithCapabilityCheck(
                                         provider,
@@ -181,8 +183,9 @@ extension _TimerTabDetailBody on _TimerTabState {
                       if (timerConfigured)
                         OutlinedButton.icon(
                           onPressed: () {
-                            Feedback.forTap(context);
-                            HapticFeedback.mediumImpact();
+                            AppInteractionFeedback.trigger(
+                              AppInteractionFeedbackType.destructive,
+                            );
                             provider.cancelTimer();
                             _setLocalState(() => _showCompactDetail = false);
                           },

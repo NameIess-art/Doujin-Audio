@@ -136,9 +136,11 @@ class _ActiveSessionCard extends ConsumerWidget {
                 children: [
                   _ActiveSessionPlayPauseButton(
                     isPlaying: isPlaying,
-                    enabled: !view.loading,
+                    enabled: view.trackPath.isNotEmpty,
                     onPressed: () {
-                      HapticFeedback.mediumImpact();
+                      AppInteractionFeedback.trigger(
+                        AppInteractionFeedbackType.confirmation,
+                      );
                       provider.toggleSessionPlayPause(session.id);
                     },
                   ),
@@ -209,7 +211,7 @@ class _ActiveSessionPlayPauseButton extends StatelessWidget {
           customBorder: const CircleBorder(),
           child: Center(
             child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 250),
+              duration: const Duration(milliseconds: 120),
               transitionBuilder: (child, animation) {
                 return ScaleTransition(
                   scale: Tween<double>(begin: 0.4, end: 1.0).animate(
@@ -218,10 +220,7 @@ class _ActiveSessionPlayPauseButton extends StatelessWidget {
                       curve: Curves.easeOutBack,
                     ),
                   ),
-                  child: FadeTransition(
-                    opacity: animation,
-                    child: child,
-                  ),
+                  child: FadeTransition(opacity: animation, child: child),
                 );
               },
               child: Icon(

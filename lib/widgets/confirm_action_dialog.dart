@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
+import 'app_feedback.dart';
 import 'app_transitions.dart';
 
 Future<bool> showConfirmActionDialog({
@@ -203,8 +203,10 @@ Future<bool> showConfirmActionDialog({
                                         child: _DialogActionButton(
                                           child: FilledButton.icon(
                                             onPressed: () {
-                                              Feedback.forTap(ctx);
-                                              HapticFeedback.mediumImpact();
+                                              AppInteractionFeedback.trigger(
+                                                AppInteractionFeedbackType
+                                                    .destructive,
+                                              );
                                               Navigator.of(ctx).pop(true);
                                             },
                                             style: FilledButton.styleFrom(
@@ -237,8 +239,10 @@ Future<bool> showConfirmActionDialog({
                                         child: _DialogActionButton(
                                           child: FilledButton.icon(
                                             onPressed: () {
-                                              Feedback.forTap(ctx);
-                                              HapticFeedback.mediumImpact();
+                                              AppInteractionFeedback.trigger(
+                                                AppInteractionFeedbackType
+                                                    .destructive,
+                                              );
                                               Navigator.of(ctx).pop(true);
                                             },
                                             style: FilledButton.styleFrom(

@@ -40,6 +40,7 @@ class PlaybackSession {
   bool get isPlaybackQueue => playbackQueue != null;
   String currentTrackPath;
   String? loadedPath;
+  String? pendingNativeTrackPath;
   SessionLoopMode loopMode;
   SessionLoopMode nonSingleLoopMode;
   double volume;
@@ -50,6 +51,8 @@ class PlaybackSession {
   int playbackCommandGeneration = 0;
   int lastHandledCompletionGeneration = -1;
   bool isAdvancingAfterCompletion = false;
+  int? nativePlaybackQueueCacheKey;
+  List<Map<String, Object?>>? nativePlaybackQueueCache;
   Duration lastKnownPosition = Duration.zero;
   Duration? duration;
   Duration bufferedPosition = Duration.zero;

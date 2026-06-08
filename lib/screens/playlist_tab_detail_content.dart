@@ -649,7 +649,10 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
                 _QueueTreeNodeTile(
                   node: node,
                   onTrackTap: (node) {
-                    Feedback.forTap(ctx);
+                    AppInteractionFeedback.trigger(
+                      AppInteractionFeedbackType.tap,
+                      context: ctx,
+                    );
                     Navigator.of(ctx).pop();
                     if (widget.session.isPlaybackQueue) {
                       widget.provider.switchSessionQueueTrack(

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+
+import 'app_feedback.dart';
 
 class SwipeRevealCard extends StatefulWidget {
   const SwipeRevealCard({
@@ -123,7 +124,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
         return;
       }
       _dragAccepted = true;
-      HapticFeedback.selectionClick();
+      AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
       widget.onWillReveal?.call();
     }
 
@@ -362,8 +363,10 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                                             if (_hasTertiaryAction) ...[
                                               _SwipeRevealActionButton(
                                                 onPressed: () {
-                                                  Feedback.forTap(context);
-                                                  HapticFeedback.selectionClick();
+                                                  AppInteractionFeedback.trigger(
+                                                    AppInteractionFeedbackType
+                                                        .selection,
+                                                  );
                                                   _closePane();
                                                   widget.onTertiaryAction
                                                       ?.call();
@@ -385,8 +388,10 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                                             if (_hasSecondaryAction) ...[
                                               _SwipeRevealActionButton(
                                                 onPressed: () {
-                                                  Feedback.forTap(context);
-                                                  HapticFeedback.selectionClick();
+                                                  AppInteractionFeedback.trigger(
+                                                    AppInteractionFeedbackType
+                                                        .selection,
+                                                  );
                                                   _closePane();
                                                   widget.onSecondaryAction
                                                       ?.call();
@@ -408,8 +413,13 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                                             ],
                                             _SwipeRevealActionButton(
                                               onPressed: () {
-                                                Feedback.forTap(context);
-                                                HapticFeedback.mediumImpact();
+                                                AppInteractionFeedback.trigger(
+                                                  widget.destructive
+                                                      ? AppInteractionFeedbackType
+                                                            .destructive
+                                                      : AppInteractionFeedbackType
+                                                            .confirmation,
+                                                );
                                                 _closePane();
                                                 widget.onRemove();
                                               },
@@ -433,8 +443,10 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                                       if (_hasTertiaryAction) ...[
                                         _SwipeRevealActionButton(
                                           onPressed: () {
-                                            Feedback.forTap(context);
-                                            HapticFeedback.selectionClick();
+                                            AppInteractionFeedback.trigger(
+                                              AppInteractionFeedbackType
+                                                  .selection,
+                                            );
                                             _closePane();
                                             widget.onTertiaryAction?.call();
                                           },
@@ -453,8 +465,10 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                                       if (_hasSecondaryAction) ...[
                                         _SwipeRevealActionButton(
                                           onPressed: () {
-                                            Feedback.forTap(context);
-                                            HapticFeedback.selectionClick();
+                                            AppInteractionFeedback.trigger(
+                                              AppInteractionFeedbackType
+                                                  .selection,
+                                            );
                                             _closePane();
                                             widget.onSecondaryAction?.call();
                                           },
@@ -471,8 +485,13 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                                       ],
                                       _SwipeRevealActionButton(
                                         onPressed: () {
-                                          Feedback.forTap(context);
-                                          HapticFeedback.mediumImpact();
+                                          AppInteractionFeedback.trigger(
+                                            widget.destructive
+                                                ? AppInteractionFeedbackType
+                                                      .destructive
+                                                : AppInteractionFeedbackType
+                                                      .confirmation,
+                                          );
                                           _closePane();
                                           widget.onRemove();
                                         },

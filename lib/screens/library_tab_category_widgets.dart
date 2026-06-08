@@ -315,7 +315,7 @@ class _LibraryCategoryTermBox extends StatelessWidget {
 
   void _copyCategoryTerm(BuildContext context, String term) {
     Clipboard.setData(ClipboardData(text: term));
-    HapticFeedback.selectionClick();
+    AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
     showAppSnackBar(
       context,
       context.read<AppLanguageProvider>().tr('copied_to_clipboard', {
@@ -398,7 +398,10 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
     final track = entry.firstTrack;
     if (track == null) return;
     final i18n = context.read<AppLanguageProvider>();
-    Feedback.forTap(context);
+    AppInteractionFeedback.trigger(
+      AppInteractionFeedbackType.tap,
+      context: context,
+    );
     unawaited(provider.spawnSession(track, autoPlay: true));
     _showSessionCreatedSnack(
       context,

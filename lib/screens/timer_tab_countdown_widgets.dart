@@ -370,16 +370,16 @@ class _WheelPickerState extends State<_WheelPicker> {
         // In Dart, % operator on negative numbers returns a positive modulo
         // consistent with Euclidean division, which is perfect for this.
         final currentItemIndex = currentLogicalIndex % maxCount;
-        
+
         int diff = widget.value - currentItemIndex;
         if (diff > maxCount ~/ 2) {
           diff -= maxCount;
         } else if (diff < -(maxCount ~/ 2)) {
           diff += maxCount;
         }
-        
+
         final targetLogicalIndex = currentLogicalIndex + diff;
-        
+
         if (currentLogicalIndex != targetLogicalIndex) {
           _controller.animateToItem(
             targetLogicalIndex,
@@ -429,7 +429,9 @@ class _WheelPickerState extends State<_WheelPicker> {
               final actualIndex = index % (widget.max + 1);
               if (actualIndex != _lastReportedValue) {
                 _lastReportedValue = actualIndex;
-                HapticFeedback.selectionClick();
+                AppInteractionFeedback.trigger(
+                  AppInteractionFeedbackType.selection,
+                );
                 widget.onChanged(actualIndex);
               }
             },

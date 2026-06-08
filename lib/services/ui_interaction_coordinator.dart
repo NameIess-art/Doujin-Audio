@@ -22,6 +22,8 @@ class UiInteractionCoordinator extends ChangeNotifier {
   final Map<Object, Timer> _idleTimers = <Object, Timer>{};
   final Map<String, _PendingCommit> _pendingCommits =
       <String, _PendingCommit>{};
+  final Map<String, Timer> _throttleTimers = <String, Timer>{};
+  final Map<String, VoidCallback> _throttledCommits = <String, VoidCallback>{};
   bool _frameScheduled = false;
   int _generation = 0;
 
@@ -96,6 +98,34 @@ class UiInteractionCoordinator extends ChangeNotifier {
     _pendingCommits.remove(key);
   }
 
+  void scheduleThrottledCommit({
+    required String key,
+    Duration interval = const Duration(milliseconds: 72),
+    required VoidCallback commit,
+  }) {
+    if (!_throttleTimers.containsKey(key)) {
+      commit();
+      _armThrottleTimer(key, interval);
+      return;
+    }
+    _throttledCommits[key] = commit;
+  }
+
+  void cancelThrottledCommit(String key) {
+    _throttleTimers.remove(key)?.cancel();
+    _throttledCommits.remove(key);
+  }
+
+  void _armThrottleTimer(String key, Duration interval) {
+    _throttleTimers[key] = Timer(interval, () {
+      _throttleTimers.remove(key);
+      final pending = _throttledCommits.remove(key);
+      if (pending == null) return;
+      pending();
+      _armThrottleTimer(key, interval);
+    });
+  }
+
   void _dropStaleCommits() {
     _pendingCommits.removeWhere(
       (_, commit) =>
@@ -151,6 +181,11 @@ class UiInteractionCoordinator extends ChangeNotifier {
     _idleTimers.clear();
     _backgroundScheduler.clear();
     _pendingCommits.clear();
+    for (final timer in _throttleTimers.values) {
+      timer.cancel();
+    }
+    _throttleTimers.clear();
+    _throttledCommits.clear();
     super.dispose();
   }
 }

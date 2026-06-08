@@ -75,7 +75,11 @@ class _AsmrCategoryListState extends State<_AsmrCategoryList>
                   notification.metrics.pixels < -68 &&
                   !_refreshTriggeredInCurrentScroll) {
                 _refreshTriggeredInCurrentScroll = true;
-                unawaited(HapticFeedback.mediumImpact());
+                unawaited(
+                  AppInteractionFeedback.trigger(
+                    AppInteractionFeedbackType.confirmation,
+                  ),
+                );
                 _refreshIndicatorKey.currentState?.show();
               } else if (notification is ScrollEndNotification) {
                 _refreshTriggeredInCurrentScroll = false;
@@ -92,7 +96,11 @@ class _AsmrCategoryListState extends State<_AsmrCategoryList>
               displacement: 32,
               triggerMode: GlassRefreshIndicatorTriggerMode.anywhere,
               onRefresh: () async {
-                unawaited(HapticFeedback.mediumImpact());
+                unawaited(
+                  AppInteractionFeedback.trigger(
+                    AppInteractionFeedbackType.confirmation,
+                  ),
+                );
                 await widget.onRefresh();
                 await Future<void>.delayed(const Duration(milliseconds: 300));
               },

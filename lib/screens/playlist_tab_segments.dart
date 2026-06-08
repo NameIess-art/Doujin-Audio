@@ -78,7 +78,7 @@ class _PlaybackPrimaryControls extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final i18n = context.read<AppLanguageProvider>();
-    final enabled = !session.isLoading;
+    final enabled = session.currentTrackPath.isNotEmpty;
     final hasPrevious = provider.hasSessionAdjacentTrack(
       session.id,
       forward: false,
@@ -110,7 +110,9 @@ class _PlaybackPrimaryControls extends StatelessWidget {
                 icon: Icons.skip_previous_rounded,
                 iconSize: skipIconSize,
                 onPressed: () {
-                  HapticFeedback.selectionClick();
+                  AppInteractionFeedback.trigger(
+                    AppInteractionFeedbackType.selection,
+                  );
                   provider.seekSessionToPrev(session.id);
                 },
               ),
@@ -120,7 +122,9 @@ class _PlaybackPrimaryControls extends StatelessWidget {
                 icon: Icons.replay_5_rounded,
                 iconSize: skipIconSize * 0.8,
                 onPressed: () {
-                  HapticFeedback.selectionClick();
+                  AppInteractionFeedback.trigger(
+                    AppInteractionFeedbackType.selection,
+                  );
                   final newPos = session.position - const Duration(seconds: 5);
                   provider.seekSession(
                     session.id,
@@ -151,13 +155,15 @@ class _PlaybackPrimaryControls extends StatelessWidget {
                   padding: EdgeInsets.zero,
                   onPressed: enabled
                       ? () {
-                          HapticFeedback.mediumImpact();
+                          AppInteractionFeedback.trigger(
+                            AppInteractionFeedbackType.confirmation,
+                          );
                           provider.toggleSessionPlayPause(session.id);
                         }
                       : null,
                   iconSize: playIconSize,
                   icon: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 250),
+                    duration: const Duration(milliseconds: 120),
                     transitionBuilder: (child, animation) {
                       return ScaleTransition(
                         scale: Tween<double>(begin: 0.4, end: 1.0).animate(
@@ -166,10 +172,7 @@ class _PlaybackPrimaryControls extends StatelessWidget {
                             curve: Curves.easeOutBack,
                           ),
                         ),
-                        child: FadeTransition(
-                          opacity: animation,
-                          child: child,
-                        ),
+                        child: FadeTransition(opacity: animation, child: child),
                       );
                     },
                     child: Icon(
@@ -191,7 +194,9 @@ class _PlaybackPrimaryControls extends StatelessWidget {
                 icon: Icons.forward_5_rounded,
                 iconSize: skipIconSize * 0.8,
                 onPressed: () {
-                  HapticFeedback.selectionClick();
+                  AppInteractionFeedback.trigger(
+                    AppInteractionFeedbackType.selection,
+                  );
                   provider.seekSession(
                     session.id,
                     session.position + const Duration(seconds: 5),
@@ -205,7 +210,9 @@ class _PlaybackPrimaryControls extends StatelessWidget {
                 icon: Icons.skip_next_rounded,
                 iconSize: skipIconSize,
                 onPressed: () {
-                  HapticFeedback.selectionClick();
+                  AppInteractionFeedback.trigger(
+                    AppInteractionFeedbackType.selection,
+                  );
                   provider.seekSessionToNext(session.id);
                 },
               ),
@@ -308,7 +315,9 @@ class _PlaybackSecondaryControls extends StatelessWidget {
                   tooltip: i18n.tr('switch_audio'),
                   onPressed: hasSiblings
                       ? () {
-                          HapticFeedback.selectionClick();
+                          AppInteractionFeedback.trigger(
+                            AppInteractionFeedbackType.selection,
+                          );
                           onShowTrackSwitcher();
                         }
                       : null,
@@ -391,10 +400,14 @@ class _SecondaryControlButton extends StatelessWidget {
           foregroundColor: active ? cs.onPrimaryContainer : cs.onSurface,
           disabledForegroundColor: cs.onSurface.withValues(alpha: 0.35),
         ),
-        onPressed: onPressed != null ? () {
-          HapticFeedback.selectionClick();
-          onPressed!();
-        } : null,
+        onPressed: onPressed != null
+            ? () {
+                AppInteractionFeedback.trigger(
+                  AppInteractionFeedbackType.selection,
+                );
+                onPressed!();
+              }
+            : null,
         icon: AnimatedSwitcher(
           duration: const Duration(milliseconds: 250),
           transitionBuilder: (child, animation) {
@@ -402,13 +415,15 @@ class _SecondaryControlButton extends StatelessWidget {
               scale: Tween<double>(begin: 0.4, end: 1.0).animate(
                 CurvedAnimation(parent: animation, curve: Curves.easeOutBack),
               ),
-              child: FadeTransition(
-                opacity: animation,
-                child: child,
-              ),
+              child: FadeTransition(opacity: animation, child: child),
             );
           },
-          child: Icon(icon, key: ValueKey(icon), size: 20, color: enabled ? null : null),
+          child: Icon(
+            icon,
+            key: ValueKey(icon),
+            size: 20,
+            color: enabled ? null : null,
+          ),
         ),
       ),
     );
@@ -486,7 +501,7 @@ class _TimeSegmentPanelState extends State<_TimeSegmentPanel> {
 
   void _animateToPanelPage(int index) {
     if (_pageIndex == index) return;
-    HapticFeedback.selectionClick();
+    AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
     setState(() => _pageIndex = index);
     _pageController.animateToPage(
       index,
@@ -819,7 +834,7 @@ class _AudioFeaturesPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final i18n = context.read<AppLanguageProvider>();
-    final liveProvider = context.watch<AudioProvider>();
+    final liveProvider = context.read<AudioProvider>();
     final liveSession = liveProvider.sessionById(session.id) ?? session;
     final effects = liveSession.audioEffects;
     return ListView(
@@ -831,7 +846,9 @@ class _AudioFeaturesPage extends StatelessWidget {
           icon: Icons.fast_forward_rounded,
           value: effects.skipSilenceEnabled,
           onChanged: (value) {
-            HapticFeedback.selectionClick();
+            AppInteractionFeedback.trigger(
+              AppInteractionFeedbackType.selection,
+            );
             unawaited(
               liveProvider.setSessionSkipSilence(liveSession.id, value),
             );
@@ -844,7 +861,9 @@ class _AudioFeaturesPage extends StatelessWidget {
           icon: Icons.graphic_eq_rounded,
           value: effects.noiseReductionEnabled,
           onChanged: (value) {
-            HapticFeedback.selectionClick();
+            AppInteractionFeedback.trigger(
+              AppInteractionFeedbackType.selection,
+            );
             unawaited(
               liveProvider.setSessionNoiseReduction(liveSession.id, value),
             );
@@ -857,7 +876,9 @@ class _AudioFeaturesPage extends StatelessWidget {
           icon: Icons.compress_rounded,
           value: effects.volumeNormalizationEnabled,
           onChanged: (value) {
-            HapticFeedback.selectionClick();
+            AppInteractionFeedback.trigger(
+              AppInteractionFeedbackType.selection,
+            );
             unawaited(
               liveProvider.setSessionVolumeNormalization(liveSession.id, value),
             );
@@ -870,7 +891,9 @@ class _AudioFeaturesPage extends StatelessWidget {
           icon: Icons.swap_horiz_rounded,
           value: liveSession.channelSwapEnabled,
           onChanged: (value) {
-            HapticFeedback.selectionClick();
+            AppInteractionFeedback.trigger(
+              AppInteractionFeedbackType.selection,
+            );
             unawaited(
               liveProvider.setSessionChannelSwap(liveSession.id, value),
             );
@@ -944,7 +967,7 @@ class _VolumeBalancePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final liveProvider = context.watch<AudioProvider>();
+    final liveProvider = context.read<AudioProvider>();
     final liveSession = liveProvider.sessionById(session.id) ?? session;
     final panning = liveSession.audioEffects.panning;
     final colorScheme = Theme.of(context).colorScheme;
@@ -985,17 +1008,25 @@ class _VolumeBalancePage extends StatelessWidget {
                     divisions: 20,
                     label: panning == 0 ? '0' : panning.toStringAsFixed(1),
                     onChanged: (value) {
-                      HapticFeedback.selectionClick();
-                      unawaited(
-                        liveProvider.setSessionPanning(liveSession.id, value),
+                      AppInteractionFeedback.continuous((value * 10).round());
+                      UiInteractionCoordinator.instance.scheduleThrottledCommit(
+                        key: 'session_panning:${liveSession.id}',
+                        commit: () => unawaited(
+                          liveProvider.setSessionPanning(liveSession.id, value),
+                        ),
                       );
                     },
                     onChangeEnd: (value) {
-                      if (value.abs() < 0.1) {
-                        unawaited(
-                          liveProvider.setSessionPanning(liveSession.id, 0.0),
-                        );
-                      }
+                      AppInteractionFeedback.resetContinuous();
+                      UiInteractionCoordinator.instance.cancelThrottledCommit(
+                        'session_panning:${liveSession.id}',
+                      );
+                      unawaited(
+                        liveProvider.setSessionPanning(
+                          liveSession.id,
+                          value.abs() < 0.1 ? 0.0 : value,
+                        ),
+                      );
                     },
                   ),
                 ),
@@ -1025,7 +1056,7 @@ class _EqualizerPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final i18n = context.read<AppLanguageProvider>();
     final cs = Theme.of(context).colorScheme;
-    final liveProvider = context.watch<AudioProvider>();
+    final liveProvider = context.read<AudioProvider>();
     final liveSession = liveProvider.sessionById(session.id) ?? session;
     final effects = liveSession.audioEffects;
     final capabilities = liveSession.eqCapabilities;
@@ -1054,7 +1085,9 @@ class _EqualizerPage extends StatelessWidget {
           ),
           value: effects.eqEnabled,
           onChanged: (value) {
-            HapticFeedback.selectionClick();
+            AppInteractionFeedback.trigger(
+              AppInteractionFeedbackType.selection,
+            );
             unawaited(liveProvider.setSessionEqEnabled(liveSession.id, value));
           },
         ),
@@ -1081,7 +1114,9 @@ class _EqualizerPage extends StatelessWidget {
                 .where((item) => item.id == value)
                 .firstOrNull;
             if (preset == null) return;
-            HapticFeedback.selectionClick();
+            AppInteractionFeedback.trigger(
+              AppInteractionFeedbackType.selection,
+            );
             unawaited(
               liveProvider.applySessionEqPreset(liveSession.id, preset),
             );
@@ -1109,15 +1144,34 @@ class _EqualizerPage extends StatelessWidget {
               max: capabilities.maxGainDb,
               onChanged: effects.eqEnabled
                   ? (nextValue) {
-                      unawaited(
-                        liveProvider.setSessionEqBandLevel(
-                          liveSession.id,
-                          band.frequencyHz,
-                          nextValue,
+                      AppInteractionFeedback.continuous(
+                        '${band.frequencyHz}:${(nextValue * 2).round()}',
+                      );
+                      UiInteractionCoordinator.instance.scheduleThrottledCommit(
+                        key: 'session_eq:${liveSession.id}:${band.frequencyHz}',
+                        commit: () => unawaited(
+                          liveProvider.setSessionEqBandLevel(
+                            liveSession.id,
+                            band.frequencyHz,
+                            nextValue,
+                          ),
                         ),
                       );
                     }
                   : null,
+              onChangeEnd: (value) {
+                AppInteractionFeedback.resetContinuous();
+                UiInteractionCoordinator.instance.cancelThrottledCommit(
+                  'session_eq:${liveSession.id}:${band.frequencyHz}',
+                );
+                unawaited(
+                  liveProvider.setSessionEqBandLevel(
+                    liveSession.id,
+                    band.frequencyHz,
+                    value,
+                  ),
+                );
+              },
             );
           }),
         const SizedBox(height: 12),
@@ -1196,6 +1250,7 @@ class _EqBandSlider extends StatelessWidget {
     required this.min,
     required this.max,
     required this.onChanged,
+    this.onChangeEnd,
   });
 
   final String label;
@@ -1203,6 +1258,7 @@ class _EqBandSlider extends StatelessWidget {
   final double min;
   final double max;
   final ValueChanged<double>? onChanged;
+  final ValueChanged<double>? onChangeEnd;
 
   @override
   Widget build(BuildContext context) {
@@ -1226,6 +1282,7 @@ class _EqBandSlider extends StatelessWidget {
             divisions: divisions,
             label: '${value.toStringAsFixed(1)} dB',
             onChanged: onChanged,
+            onChangeEnd: onChangeEnd,
           ),
         ),
         SizedBox(
@@ -1319,7 +1376,7 @@ class _SpeedWheelPageState extends State<_SpeedWheelPage> {
     final nextIndex = index.clamp(0, _speeds.length - 1);
     final nextSpeed = _speeds[nextIndex];
     if (_selectedIndex != nextIndex) {
-      HapticFeedback.selectionClick();
+      AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
       setState(() => _selectedIndex = nextIndex);
     }
     unawaited(
@@ -1435,7 +1492,9 @@ class _SpeedWheelPageState extends State<_SpeedWheelPage> {
                     final selected = index == _selectedIndex;
                     return GestureDetector(
                       onTap: () {
-                        HapticFeedback.selectionClick();
+                        AppInteractionFeedback.trigger(
+                          AppInteractionFeedbackType.selection,
+                        );
                         _controller.animateToItem(
                           index,
                           duration: const Duration(milliseconds: 300),

@@ -72,7 +72,11 @@ class _AsmrWorkDetailSheet extends StatelessWidget {
                   foregroundColor: asmrBlue,
                 ),
                 onPressed: () async {
-                  unawaited(HapticFeedback.lightImpact());
+                  unawaited(
+                    AppInteractionFeedback.trigger(
+                      AppInteractionFeedbackType.tap,
+                    ),
+                  );
                   await controller.playWork(
                     context.read<AudioProvider>(),
                     effectiveWork,

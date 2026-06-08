@@ -4,7 +4,6 @@ import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as path;
 
@@ -15,6 +14,7 @@ import '../providers/subtitle_settings_provider.dart';
 import '../services/audio_state_services.dart';
 import '../services/subtitle_parser.dart';
 import '../screens/playlist_tab.dart';
+import 'app_feedback.dart';
 import 'async_cover_image.dart';
 import 'library_like_cards.dart';
 
@@ -130,7 +130,7 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
   }
 
   void _openSessionDetail(BuildContext context, PlaybackSession session) {
-    HapticFeedback.lightImpact();
+    AppInteractionFeedback.trigger(AppInteractionFeedbackType.tap);
     final onOpenSession = widget.onOpenSession;
     if (onOpenSession != null) {
       onOpenSession(session.id);

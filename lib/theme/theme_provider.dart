@@ -162,7 +162,7 @@ class ThemeProvider with ChangeNotifier {
       scaffoldBackgroundColor: scheme.surface,
       canvasColor: scheme.surface,
       dividerColor: scheme.outlineVariant,
-      splashFactory: InkSparkle.splashFactory,
+      splashFactory: InkRipple.splashFactory,
       cardTheme: CardThemeData(
         color: scheme.surfaceContainerLow,
         elevation: 0,

@@ -59,6 +59,15 @@ extension AudioProviderNativeBridge on AudioProvider {
   void _handleNativePlaybackSnapshot(NativePlaybackSnapshot snapshot) {
     final normalizedSnapshot = _normalizeNativePlaybackSnapshot(snapshot);
     final existingSession = _sessions[normalizedSnapshot.sessionId];
+    final pendingPath = existingSession?.pendingNativeTrackPath;
+    final snapshotPath =
+        normalizedSnapshot.path ??
+        _nativeSnapshotPathFromUri(normalizedSnapshot.uri);
+    if (pendingPath != null &&
+        snapshotPath != null &&
+        !PathMatcher.equalsNormalized(pendingPath, snapshotPath)) {
+      return;
+    }
     final previousTrackPath = existingSession?.currentTrackPath;
     final previousState = existingSession?.state;
     final previousIsPlaybackStarting = existingSession?.isPlaybackStarting;
@@ -104,11 +113,9 @@ extension AudioProviderNativeBridge on AudioProvider {
       }
     }
     if (session != null &&
-        (session.state != previousState ||
-            session.isPlaybackStarting != previousIsPlaybackStarting)) {
+        session.state == previousState &&
+        session.isPlaybackStarting != previousIsPlaybackStarting) {
       _syncKeepCpuAwake();
-      _syncNotificationState();
-      _notifyPlaybackChanged();
     }
   }
 }

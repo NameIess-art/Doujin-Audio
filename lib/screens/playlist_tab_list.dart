@@ -339,7 +339,7 @@ class _SessionListCardState extends ConsumerState<_SessionListCard> {
             elevation: 0,
             shadowColor: Colors.transparent,
             child: AnimatedContainer(
-              duration: const Duration(seconds: 1),
+              duration: const Duration(milliseconds: 180),
               curve: Curves.easeOutCubic,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(14),
@@ -366,7 +366,9 @@ class _SessionListCardState extends ConsumerState<_SessionListCard> {
                 label: displayName,
                 child: InkWell(
                   onTap: () {
-                    HapticFeedback.lightImpact();
+                    AppInteractionFeedback.trigger(
+                      AppInteractionFeedbackType.tap,
+                    );
                     widget.onOpen();
                   },
                   child: Padding(
@@ -431,14 +433,12 @@ class _SessionListCardState extends ConsumerState<_SessionListCard> {
                               tooltip: isPlaying
                                   ? i18n.tr('pause')
                                   : i18n.tr('play'),
-                              onPressed: sessionView.isLoading
-                                  ? null
-                                  : () {
-                                      HapticFeedback.selectionClick();
-                                      provider.toggleSessionPlayPause(
-                                        session.id,
-                                      );
-                                    },
+                              onPressed: () {
+                                AppInteractionFeedback.trigger(
+                                  AppInteractionFeedbackType.selection,
+                                );
+                                provider.toggleSessionPlayPause(session.id);
+                              },
                               style: IconButton.styleFrom(
                                 foregroundColor: isPlaying
                                     ? activeColor
@@ -448,15 +448,16 @@ class _SessionListCardState extends ConsumerState<_SessionListCard> {
                                 padding: EdgeInsets.zero,
                               ),
                               icon: AnimatedSwitcher(
-                                duration: const Duration(milliseconds: 250),
+                                duration: const Duration(milliseconds: 120),
                                 transitionBuilder: (child, animation) {
                                   return ScaleTransition(
-                                    scale: Tween<double>(begin: 0.4, end: 1.0).animate(
-                                      CurvedAnimation(
-                                        parent: animation,
-                                        curve: Curves.easeOutBack,
-                                      ),
-                                    ),
+                                    scale: Tween<double>(begin: 0.4, end: 1.0)
+                                        .animate(
+                                          CurvedAnimation(
+                                            parent: animation,
+                                            curve: Curves.easeOutBack,
+                                          ),
+                                        ),
                                     child: FadeTransition(
                                       opacity: animation,
                                       child: child,

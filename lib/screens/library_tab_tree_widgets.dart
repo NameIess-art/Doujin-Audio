@@ -101,7 +101,10 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
     final i18n = context.read<AppLanguageProvider>();
     final firstTrack = widget.folder.firstTrack;
     if (firstTrack == null) return;
-    Feedback.forTap(context);
+    AppInteractionFeedback.trigger(
+      AppInteractionFeedbackType.tap,
+      context: context,
+    );
     unawaited(provider.spawnSession(firstTrack));
     _showSessionCreatedSnack(
       context,
@@ -399,7 +402,10 @@ class _TrackNodeWidget extends ConsumerWidget {
                     detail: singleDetail,
                     detailLoading: isSingleDetailLoading,
                     onPlay: () {
-                      Feedback.forTap(context);
+                      AppInteractionFeedback.trigger(
+                        AppInteractionFeedbackType.tap,
+                        context: context,
+                      );
                       unawaited(provider.spawnSession(track, autoPlay: true));
                       _showSessionCreatedSnack(
                         context,
@@ -421,7 +427,10 @@ class _TrackNodeWidget extends ConsumerWidget {
                       ),
                       IconButton(
                         onPressed: () {
-                          Feedback.forTap(context);
+                          AppInteractionFeedback.trigger(
+                            AppInteractionFeedbackType.tap,
+                            context: context,
+                          );
                           unawaited(
                             provider.spawnSession(track, autoPlay: true),
                           );
@@ -482,7 +491,10 @@ class _TrackNodeWidget extends ConsumerWidget {
               ),
               IconButton(
                 onPressed: () {
-                  Feedback.forTap(context);
+                  AppInteractionFeedback.trigger(
+                    AppInteractionFeedbackType.tap,
+                    context: context,
+                  );
                   unawaited(provider.spawnSession(track, autoPlay: true));
                   _showSessionCreatedSnack(
                     context,

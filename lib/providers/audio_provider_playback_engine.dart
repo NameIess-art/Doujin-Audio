@@ -99,7 +99,6 @@ extension AudioProviderPlaybackEngine on AudioProvider {
       return;
     }
     _syncKeepCpuAwake();
-    _notifyPlaybackChanged();
     unawaited(_clearPlaybackStartingIfStillPending(session.id, generation));
     if (shouldStartTriggerCountdown) {
       _maybeStartTriggerCountdown();
@@ -163,7 +162,6 @@ extension AudioProviderPlaybackEngine on AudioProvider {
     _notificationFocusSessionId = keepSessionId;
     if (sessionsToPause.isEmpty) {
       _syncNotificationState();
-      _notifyPlaybackChanged();
       return;
     }
 
@@ -181,7 +179,6 @@ extension AudioProviderPlaybackEngine on AudioProvider {
     _notificationFocusSessionId = keepSessionId;
     _syncKeepCpuAwake();
     _syncNotificationState();
-    _notifyPlaybackChanged();
   }
 
   String? get _preferredSingleSessionId {

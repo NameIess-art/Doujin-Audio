@@ -1,8 +1,9 @@
 import 'dart:async';
-import 'dart:ui';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+
+import '../services/ui_interaction_coordinator.dart';
+import 'app_feedback.dart';
 
 class UnifiedMenuEntry<T> {
   const UnifiedMenuEntry.action({
@@ -69,14 +70,15 @@ class _UnifiedPopupMenuButtonState<T> extends State<UnifiedPopupMenuButton<T>>
   final GlobalKey _anchorKey = GlobalKey();
   OverlayEntry? _entry;
   late final AnimationController _controller;
+  final Object _interactionSource = Object();
 
   @override
   void initState() {
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 220),
-      reverseDuration: const Duration(milliseconds: 150),
+      duration: const Duration(milliseconds: 160),
+      reverseDuration: const Duration(milliseconds: 100),
     );
   }
 
@@ -134,6 +136,7 @@ class _UnifiedPopupMenuButtonState<T> extends State<UnifiedPopupMenuButton<T>>
         );
       },
     );
+    UiInteractionCoordinator.instance.beginInteraction(_interactionSource);
     overlay.insert(_entry!);
     _controller.forward(from: 0);
   }
@@ -148,6 +151,7 @@ class _UnifiedPopupMenuButtonState<T> extends State<UnifiedPopupMenuButton<T>>
       } catch (_) {}
     }
     entry.remove();
+    UiInteractionCoordinator.instance.endInteraction(_interactionSource);
   }
 
   @override
@@ -244,37 +248,34 @@ class _UnifiedPopupMenuCard<T> extends StatelessWidget {
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(20),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: background.withValues(alpha: isDark ? 0.94 : 0.98),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: cs.outlineVariant.withValues(alpha: isDark ? 0.36 : 0.52),
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: cs.shadow.withValues(alpha: isDark ? 0.36 : 0.18),
-                blurRadius: 30,
-                offset: const Offset(0, 16),
-              ),
-            ],
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: background.withValues(alpha: isDark ? 0.94 : 0.98),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: cs.outlineVariant.withValues(alpha: isDark ? 0.36 : 0.52),
           ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: entries
-                  .map(
-                    (entry) => _UnifiedPopupMenuRow<T>(
-                      entry: entry,
-                      onSelected: onSelected,
-                      onTrailingSelected: onTrailingSelected,
-                    ),
-                  )
-                  .toList(growable: false),
+          boxShadow: [
+            BoxShadow(
+              color: cs.shadow.withValues(alpha: isDark ? 0.36 : 0.18),
+              blurRadius: 30,
+              offset: const Offset(0, 16),
             ),
+          ],
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: entries
+                .map(
+                  (entry) => _UnifiedPopupMenuRow<T>(
+                    entry: entry,
+                    onSelected: onSelected,
+                    onTrailingSelected: onTrailingSelected,
+                  ),
+                )
+                .toList(growable: false),
           ),
         ),
       ),
@@ -314,7 +315,11 @@ class _UnifiedPopupMenuRow<T> extends StatelessWidget {
       child: InkWell(
         onTap: entry.enabled && value != null
             ? () {
-                HapticFeedback.selectionClick();
+                AppInteractionFeedback.trigger(
+                  entry.destructive
+                      ? AppInteractionFeedbackType.destructive
+                      : AppInteractionFeedbackType.selection,
+                );
                 onSelected(value);
               }
             : null,
@@ -350,7 +355,9 @@ class _UnifiedPopupMenuRow<T> extends StatelessWidget {
                         context,
                       ).deleteButtonTooltip,
                       onPressed: () {
-                        HapticFeedback.mediumImpact();
+                        AppInteractionFeedback.trigger(
+                          AppInteractionFeedbackType.confirmation,
+                        );
                         onTrailingSelected!(entry.trailingValue as T);
                       },
                       icon: entry.trailing!,

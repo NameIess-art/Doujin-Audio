@@ -1,8 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
+import 'app_feedback.dart';
 import 'marquee_text.dart';
 
 class LibraryLikeInfoLineData {
@@ -120,7 +120,11 @@ class LibraryLikeFeaturedCardContent extends StatelessWidget {
                     const SizedBox(width: 8),
                     IconButton(
                       onPressed: () {
-                        unawaited(HapticFeedback.lightImpact());
+                        unawaited(
+                          AppInteractionFeedback.trigger(
+                            AppInteractionFeedbackType.tap,
+                          ),
+                        );
                         onPlay();
                       },
                       visualDensity: VisualDensity.compact,

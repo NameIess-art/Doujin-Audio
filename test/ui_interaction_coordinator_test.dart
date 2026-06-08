@@ -166,4 +166,56 @@ void main() {
     expect(coordinator.isInteracting, isFalse);
     coordinator.dispose();
   });
+
+  testWidgets(
+    'throttled commits run immediately and keep only latest pending',
+    (tester) async {
+      final coordinator = UiInteractionCoordinator();
+      final values = <int>[];
+
+      coordinator.scheduleThrottledCommit(
+        key: 'volume',
+        interval: const Duration(milliseconds: 50),
+        commit: () => values.add(1),
+      );
+      coordinator.scheduleThrottledCommit(
+        key: 'volume',
+        interval: const Duration(milliseconds: 50),
+        commit: () => values.add(2),
+      );
+      coordinator.scheduleThrottledCommit(
+        key: 'volume',
+        interval: const Duration(milliseconds: 50),
+        commit: () => values.add(3),
+      );
+
+      expect(values, <int>[1]);
+      await tester.pump(const Duration(milliseconds: 51));
+      expect(values, <int>[1, 3]);
+      coordinator.dispose();
+    },
+  );
+
+  testWidgets('cancelled throttled commit does not publish pending value', (
+    tester,
+  ) async {
+    final coordinator = UiInteractionCoordinator();
+    var value = 0;
+
+    coordinator.scheduleThrottledCommit(
+      key: 'eq',
+      interval: const Duration(milliseconds: 50),
+      commit: () => value = 1,
+    );
+    coordinator.scheduleThrottledCommit(
+      key: 'eq',
+      interval: const Duration(milliseconds: 50),
+      commit: () => value = 2,
+    );
+    coordinator.cancelThrottledCommit('eq');
+    await tester.pump(const Duration(milliseconds: 51));
+
+    expect(value, 1);
+    coordinator.dispose();
+  });
 }

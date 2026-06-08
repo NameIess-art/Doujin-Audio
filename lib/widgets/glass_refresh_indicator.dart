@@ -12,7 +12,8 @@ import 'dart:ui' as ui;
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart' show clampDouble;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+
+import 'app_feedback.dart';
 
 // The over-scroll distance that moves the indicator to its maximum
 // displacement, as a percentage of the scrollable's container extent.
@@ -621,7 +622,11 @@ class GlassRefreshIndicatorState extends State<GlassRefreshIndicator>
               _status = GlassGlassRefreshIndicatorStatus.refresh;
             });
 
-            unawaited(HapticFeedback.mediumImpact());
+            unawaited(
+              AppInteractionFeedback.trigger(
+                AppInteractionFeedbackType.confirmation,
+              ),
+            );
             final Future<void> refreshResult = widget.onRefresh();
             refreshResult.whenComplete(() {
               if (mounted &&

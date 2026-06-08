@@ -934,6 +934,22 @@ class AsmrLibraryController extends ChangeNotifier {
     return _flattenTracks(work, <AsmrTrackFile>[node]);
   }
 
+  Future<List<MusicTrack>> loadPlayableTracksStartingAt(
+    AsmrWork work,
+    AsmrTrackFile target,
+  ) async {
+    final tracks = await loadPlayableTracks(work);
+    final targetTrackPath = target.toMusicTrack().path;
+    final targetIndex = tracks.indexWhere(
+      (track) => track.path == targetTrackPath,
+    );
+    if (targetIndex <= 0) return tracks;
+    return <MusicTrack>[
+      ...tracks.skip(targetIndex),
+      ...tracks.take(targetIndex),
+    ];
+  }
+
   List<MusicTrack> _flattenTracks(
     AsmrWork work,
     Iterable<AsmrTrackFile> roots, {
@@ -1150,35 +1166,10 @@ class AsmrLibraryController extends ChangeNotifier {
     AsmrWork work,
     AsmrTrackFile target,
   ) async {
-    final tracks = await loadPlayableTracks(work);
-    if (tracks.isEmpty) {
+    final queue = await loadPlayableTracksStartingAt(work, target);
+    if (queue.isEmpty) {
       return;
     }
-    final targetTrack = target.toMusicTrack(
-      groupTitleOverride: work.title,
-      remoteCoverUrl: work.mainCoverUrl.isNotEmpty
-          ? work.mainCoverUrl
-          : work.coverUrl,
-      remoteMetadataKind: 'asmr.one',
-      remoteMetadata: work.toJson(),
-    );
-    final siblingDirectoryPath = path.dirname(target.relativePath);
-    final siblingTracks = _flattenTracks(
-      work,
-      _trackCache[work.id] ?? const <AsmrTrackFile>[],
-      includeAudioNode: (node) =>
-          path.dirname(node.relativePath) == siblingDirectoryPath,
-    );
-    final effectiveTracks = siblingTracks.isNotEmpty ? siblingTracks : tracks;
-    final effectiveTargetIndex = effectiveTracks.indexWhere(
-      (track) => track.path == targetTrack.path,
-    );
-    final queue = effectiveTargetIndex <= 0
-        ? effectiveTracks
-        : <MusicTrack>[
-            ...effectiveTracks.skip(effectiveTargetIndex),
-            ...effectiveTracks.take(effectiveTargetIndex),
-          ];
     await recordHistory(work);
     await provider.spawnSessionWithQueue(
       queue,

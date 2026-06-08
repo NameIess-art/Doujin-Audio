@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:nameless_audio/models/audio_effects.dart';
 import 'package:nameless_audio/models/library_node.dart';
 import 'package:nameless_audio/models/music_track.dart';
 import 'package:nameless_audio/models/playback_mode.dart';
@@ -207,5 +208,29 @@ void main() {
     expect(detailState?.trackPath, '/tracks/detail.mp3');
     expect(detailState?.isPlaying, isTrue);
     expect(detailState?.loopMode, SessionLoopMode.folderSequential);
+  });
+
+  test('session detail view state tracks console control inputs', () {
+    final detailSession = session(id: 'detail', path: '/tracks/detail.mp3');
+    addTearDown(detailSession.dispose);
+
+    final original = sessionDetailViewStateFromPlaybackState(
+      PlaybackStateSliceData(activeSessions: [detailSession]),
+      'detail',
+    );
+    detailSession.volume = 0.6;
+    detailSession.speed = 1.5;
+    detailSession.audioEffects = const AudioEffectsState(
+      skipSilenceEnabled: true,
+    );
+    final updated = sessionDetailViewStateFromPlaybackState(
+      PlaybackStateSliceData(activeSessions: [detailSession]),
+      'detail',
+    );
+
+    expect(updated, isNot(original));
+    expect(updated?.volume, 0.6);
+    expect(updated?.speed, 1.5);
+    expect(updated?.audioEffects.skipSilenceEnabled, isTrue);
   });
 }

@@ -298,6 +298,8 @@ const Map<String, String> appLanguageJa = {
   'dark_mode_subtitle': '夜間に眩しさを抑えた配色を使います。',
   'blur_player_background': 'プレーヤーの背景をぼかす',
   'blur_player_background_subtitle': '再生詳細ページの背景にぼかしたカバーを表示します。',
+  'ui_blur_effect': 'UI ぼかし効果',
+  'ui_blur_effect_subtitle': 'メニューバー、再生カード、上部タイトルバーのぼかし効果を有効にします。',
   'multi_thread_playback': 'マルチスレッド再生',
   'multi_thread_playback_subtitle': 'オンにすると複数音声を同時再生し、オフでは再生セッションを1つだけ保持します。',
   'notification_bar': '再生通知コントロール',

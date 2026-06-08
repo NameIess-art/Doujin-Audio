@@ -296,6 +296,8 @@ const Map<String, String> appLanguageZh = {
   'dark_mode_subtitle': '夜间使用更低眩光的配色。',
   'blur_player_background': '模糊播放器背景',
   'blur_player_background_subtitle': '在播放详细页显示模糊的封面作为背景。',
+  'ui_blur_effect': '界面模糊效果',
+  'ui_blur_effect_subtitle': '开启后下方菜单栏、播放卡片、上方标题栏会有模糊效果。没有模糊效果时它们会变为92%不透明度。',
   'multi_thread_playback': '多线程播放',
   'multi_thread_playback_subtitle': '开启后可同时播放多首音频；关闭后始终只保留一个播放会话。',
   'notification_bar': '播放通知控制',

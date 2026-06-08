@@ -302,12 +302,31 @@ extension AudioProviderPlaybackTimer on AudioProvider {
     );
     if (tick.expired) {
       _timerRemaining = tick.remaining;
+      _applyFadeMultiplierToAllPlaying(1.0);
       _notifyListeners();
       _onTimerExpired();
       return;
     }
     if (!tick.changed) return;
     _timerRemaining = tick.remaining;
+
+    final duration = _timerDuration;
+    if (duration != null && duration.inMinutes >= 2) {
+      final remainingMs = _timerRemaining!.inMilliseconds;
+      if (remainingMs <= 120000) {
+        final multiplier = (remainingMs / 120000.0).clamp(0.0, 1.0);
+        _applyFadeMultiplierToAllPlaying(multiplier);
+      }
+    }
+
     _notifyListeners();
+  }
+
+  void _applyFadeMultiplierToAllPlaying(double multiplier) {
+    for (final session in _sessions.values) {
+      if (session.state.playing) {
+        unawaited(_nativePlaybackRepository.setFadeMultiplier(session.id, multiplier));
+      }
+    }
   }
 }

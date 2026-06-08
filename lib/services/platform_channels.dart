@@ -42,6 +42,7 @@ abstract final class NativePlaybackMethod {
   static const String setSpeed = 'setSpeed';
   static const String setRepeatOne = 'setRepeatOne';
   static const String setAudioEffects = 'setAudioEffects';
+  static const String setFadeMultiplier = 'setFadeMultiplier';
   static const String removeSession = 'removeSession';
   static const String pauseAll = 'pauseAll';
   static const String clearAll = 'clearAll';

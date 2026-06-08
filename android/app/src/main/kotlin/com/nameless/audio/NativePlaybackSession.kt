@@ -67,6 +67,7 @@ internal class NativePlaybackSession(
     var subtitle: String? = null
     var artUri: String? = null
     var volume: Float = 1f
+    var fadeMultiplier: Float = 1f
     var speed: Float = 1f
     var repeatOne: Boolean = false
     var repeatAll: Boolean = false
@@ -211,6 +212,11 @@ internal class NativePlaybackSession(
         playerOrNull()?.let(::applyVolumeToPlayer)
     }
 
+    fun applyFadeMultiplier(multiplier: Float) {
+        this.fadeMultiplier = multiplier.coerceIn(0f, 1f)
+        playerOrNull()?.let(::applyVolumeToPlayer)
+    }
+
     fun applySpeed(speed: Float) {
         this.speed = normalizeSpeed(speed)
         playerOrNull()?.let(::applySpeedToPlayer)
@@ -239,7 +245,7 @@ internal class NativePlaybackSession(
     private fun applyVolumeToPlayer(player: ExoPlayer) {
         val normalizedVolume = PlaybackVolumeMapper.normalize(volume)
         this.volume = normalizedVolume
-        player.volume = PlaybackVolumeMapper.playerVolume(normalizedVolume)
+        player.volume = PlaybackVolumeMapper.playerVolume(normalizedVolume) * fadeMultiplier
         syncLoudnessEnhancer(player.audioSessionId)
     }
 

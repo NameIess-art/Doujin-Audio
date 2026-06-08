@@ -21,6 +21,7 @@ internal object NativePlaybackMethods {
     const val SET_SPEED = "setSpeed"
     const val SET_REPEAT_ONE = "setRepeatOne"
     const val SET_AUDIO_EFFECTS = "setAudioEffects"
+    const val SET_FADE_MULTIPLIER = "setFadeMultiplier"
     const val REMOVE_SESSION = "removeSession"
     const val PAUSE_ALL = "pauseAll"
     const val CLEAR_ALL = "clearAll"

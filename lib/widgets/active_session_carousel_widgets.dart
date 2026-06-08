@@ -43,12 +43,10 @@ class _ActiveSessionCard extends ConsumerWidget {
     final screenSize = MediaQuery.sizeOf(context);
     final isTinyWindow = screenSize.width < 300 || screenSize.height < 300;
 
-    return Semantics(
-      button: true,
-      label: displayName,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(cardRadius),
-        child: Material(
+    final blurEnabled = ref.watch(settingsStateProvider.select((s) => s.valueOrNull?.uiBlurEffectEnabled ?? true));
+    final currentAlpha = blurEnabled ? (isDark ? 0.72 : 0.80) : 0.92;
+
+    Widget buildCardBody() => Material(
           color: Colors.transparent,
           child: InkWell(
             borderRadius: BorderRadius.circular(cardRadius),
@@ -57,7 +55,7 @@ class _ActiveSessionCard extends ConsumerWidget {
               height: 74,
               decoration: BoxDecoration(
                 color: (isDark ? cs.surfaceBright : cs.surfaceContainerHigh)
-                    .withValues(alpha: isDark ? 0.94 : 0.96),
+                    .withValues(alpha: currentAlpha),
                 borderRadius: BorderRadius.circular(cardRadius),
                 border: Border.all(
                   color: cs.outlineVariant.withValues(
@@ -95,7 +93,19 @@ class _ActiveSessionCard extends ConsumerWidget {
               ),
             ),
           ),
-        ),
+        );
+
+    return Semantics(
+      button: true,
+      label: displayName,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(cardRadius),
+        child: blurEnabled
+            ? BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+                child: buildCardBody(),
+              )
+            : buildCardBody(),
       ),
     );
   }

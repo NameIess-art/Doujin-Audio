@@ -97,6 +97,59 @@ void main() {
     expect(work.tags, <String>['English tag']);
   });
 
+  test('ASMR single-track playback keeps the complete work tree', () async {
+    await resetPrefs();
+    final first = _trackFile('first.mp3', 'root/part-a/first.mp3');
+    final target = _trackFile('target.mp3', 'root/part-b/target.mp3');
+    final last = _trackFile('last.mp3', 'root/part-c/last.mp3');
+    final api = _FakeAsmrApiService(
+      trackTree: <AsmrTrackFile>[
+        _trackFolder(
+          'root',
+          'root',
+          children: <AsmrTrackFile>[
+            _trackFolder(
+              'part-a',
+              'root/part-a',
+              children: <AsmrTrackFile>[first],
+            ),
+            _trackFolder(
+              'part-b',
+              'root/part-b',
+              children: <AsmrTrackFile>[target],
+            ),
+            _trackFolder(
+              'part-c',
+              'root/part-c',
+              children: <AsmrTrackFile>[last],
+            ),
+          ],
+        ),
+      ],
+    );
+    final controller = AsmrLibraryController(apiService: api);
+
+    final tracks = await controller.loadPlayableTracksStartingAt(
+      _work(id: 1, title: 'Work'),
+      target,
+    );
+
+    expect(tracks, hasLength(3));
+    expect(tracks.map((track) => track.displayName), <String>[
+      'target',
+      'last',
+      'first',
+    ]);
+    expect(
+      tracks.map((track) => track.remoteMetadata?['trackRelativePath']),
+      <String>[
+        'root/part-b/target.mp3',
+        'root/part-c/last.mp3',
+        'root/part-a/first.mp3',
+      ],
+    );
+  });
+
   test(
     'ASMR controller ranks recommendations from ordinary work lists',
     () async {

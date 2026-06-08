@@ -1,10 +1,14 @@
+import 'dart:ui' as dart_ui;
+
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:provider/provider.dart' hide Consumer;
 
 import '../i18n/app_language_provider.dart';
+import '../providers/audio_provider_riverpod.dart';
 import 'marquee_text.dart';
 
-class TopPageHeader extends StatelessWidget {
+class TopPageHeader extends ConsumerWidget {
   const TopPageHeader({
     super.key,
     this.icon,
@@ -41,8 +45,11 @@ class TopPageHeader extends StatelessWidget {
   final bool forceMarqueeTitle;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final cs = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final blurEnabled = ref.watch(settingsStateProvider.select((s) => s.valueOrNull?.uiBlurEffectEnabled ?? true));
+    final currentAlpha = blurEnabled ? (isDark ? 0.75 : 0.85) : 0.92;
     final i18n = context.watch<AppLanguageProvider>();
     final topPadding = useSafeAreaTop ? MediaQuery.paddingOf(context).top : 0.0;
     final resolvedTitle = isLoading ? i18n.tr('loading_dot') : title;
@@ -126,10 +133,10 @@ class TopPageHeader extends StatelessWidget {
       ),
     );
 
-    return Container(
+    Widget headerContainer = Container(
       padding: EdgeInsets.only(top: topPadding),
       decoration: BoxDecoration(
-        color: cs.surface.withValues(alpha: 0.98),
+        color: cs.surface.withValues(alpha: currentAlpha),
         border: Border(
           bottom: BorderSide(
             color: cs.outlineVariant.withValues(alpha: 0.15),
@@ -140,8 +147,18 @@ class TopPageHeader extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [headerContent, ?additionalChild],
+        children: [headerContent, if (additionalChild != null) additionalChild!],
       ),
     );
+
+    if (blurEnabled) {
+      return ClipRect(
+        child: BackdropFilter(
+          filter: dart_ui.ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+          child: headerContainer,
+        ),
+      );
+    }
+    return headerContainer;
   }
 }

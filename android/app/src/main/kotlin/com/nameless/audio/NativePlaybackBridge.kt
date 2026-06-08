@@ -42,6 +42,10 @@ class NativePlaybackBridge(
                     call.requiredString("sessionId"),
                     call.requiredDouble("speed").toFloat()
                 ) ?: mapOf("ok" to false, "error" to "Native playback service is not ready.")
+                NativePlaybackMethods.SET_FADE_MULTIPLIER -> service?.setFadeMultiplier(
+                    call.requiredString("sessionId"),
+                    call.requiredDouble("multiplier").toFloat()
+                ) ?: mapOf("ok" to false, "error" to "Native playback service is not ready.")
                 NativePlaybackMethods.SET_REPEAT_ONE -> service?.setRepeatOne(
                     call.requiredString("sessionId"),
                     call.argument<Boolean>("repeatOne") ?: false,

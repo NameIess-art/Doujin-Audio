@@ -615,7 +615,7 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
     final i18n = context.read<AppLanguageProvider>();
     final tracks = widget.session.isPlaybackQueue
         ? widget.session.customQueueTracks ?? const <MusicTrack>[]
-        : widget.provider.tracksInSameWork(widget.session.currentTrackPath);
+        : widget.provider.tracksForSessionSwitcher(widget.session.id);
     if (tracks.isEmpty) return;
     final workRoot = widget.provider.workRootForTrack(
       widget.session.currentTrackPath,
@@ -690,6 +690,7 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
       var queueIndex = 0;
       for (final entry in widget.session.playbackQueue!.entries) {
         final firstTrack = entry.tracks.firstOrNull;
+        final isAsmrEntry = firstTrack?.remoteMetadataKind == 'asmr.one';
         final fallbackRoot = firstTrack == null
             ? null
             : widget.provider.workRootForTrack(firstTrack.path);
@@ -702,9 +703,15 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
                     groupRoot == '__single_files__')
                 ? null
                 : PathMatcher.normalize(groupRoot));
-        final parent = entry.kind == PlaybackQueueEntryKind.work
+        final showWorkRoot =
+            entry.kind == PlaybackQueueEntryKind.work || isAsmrEntry;
+        final parent = showWorkRoot
             ? _QueueTreeNode.folder(
-                entryWorkRoot == null
+                isAsmrEntry
+                    ? (firstTrack!.groupTitle.trim().isEmpty
+                          ? entry.title
+                          : firstTrack.groupTitle)
+                    : entryWorkRoot == null
                     ? entry.title
                     : PathDisplay.folderName(entryWorkRoot),
               )
@@ -719,7 +726,7 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
               ? latestTrack
               : track;
           var trackParent = parent;
-          if (entry.kind == PlaybackQueueEntryKind.work) {
+          if (showWorkRoot) {
             for (final folder in _queueFolderSegments(
               track,
               workRoot: entryWorkRoot,
@@ -778,9 +785,6 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
         .map((segment) => segment.trim())
         .where((segment) => segment.isNotEmpty)
         .toList();
-    if (track.remoteMetadataKind == 'asmr.one' && segments.length > 1) {
-      segments.removeAt(0);
-    }
     if (segments.length <= 1) return const <String>[];
     return segments.take(segments.length - 1).toList(growable: false);
   }

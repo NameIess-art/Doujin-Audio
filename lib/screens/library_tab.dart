@@ -3,6 +3,7 @@ import 'dart:collection';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:flutter/services.dart';
@@ -414,7 +415,10 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
             : _LibraryTreeItem(key: ValueKey(node.path), node: node),
       );
 
-      return KeyedSubtree(key: ValueKey(node.path), child: item);
+      return KeyedSubtree(key: ValueKey(node.path), child: item)
+          .animate(delay: (index.clamp(0, 15) * 40).ms)
+          .fade(duration: 300.ms)
+          .slideY(begin: 0.15, duration: 300.ms, curve: Curves.easeOutCubic);
     }
 
     Widget emptyListBody() {

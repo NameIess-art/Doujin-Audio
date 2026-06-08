@@ -76,7 +76,7 @@ class _TimerPresentation {
   int get hashCode => Object.hash(duration, remaining, active, mode);
 }
 
-class _FloatingGlassPanel extends StatelessWidget {
+class _FloatingGlassPanel extends ConsumerWidget {
   const _FloatingGlassPanel({
     required this.child,
     this.padding = EdgeInsets.zero,
@@ -93,15 +93,17 @@ class _FloatingGlassPanel extends StatelessWidget {
   final bool tinyMode;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bgColor = isDark ? cs.surfaceBright : cs.surfaceContainerHigh;
+    final blurEnabled = ref.watch(settingsStateProvider.select((s) => s.valueOrNull?.uiBlurEffectEnabled ?? true));
+    final currentAlpha = blurEnabled ? (isDark ? 0.72 : 0.80) : 0.92;
 
     Widget buildPanel() => DecoratedBox(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(radius),
-        color: bgColor.withValues(alpha: isDark ? 0.94 : 0.96),
+        color: bgColor.withValues(alpha: currentAlpha),
         border: Border.all(
           color: cs.outlineVariant.withValues(alpha: isDark ? 0.24 : 0.42),
         ),
@@ -150,7 +152,12 @@ class _FloatingGlassPanel extends StatelessWidget {
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(radius),
-      child: buildPanel(),
+      child: blurEnabled
+          ? BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+              child: buildPanel(),
+            )
+          : buildPanel(),
     );
   }
 }

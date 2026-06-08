@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_acrylic/flutter_acrylic.dart';
 import 'package:window_manager/window_manager.dart';
 
 import '../windows/subtitle_overlay_window.dart';
@@ -57,9 +58,17 @@ abstract final class AppWindowBootstrap {
   }
 
   static Future<void> initializeMainWindow() async {
-    if (!AppPlatform.isWindows) return;
+    if (!AppPlatform.isWindows && !Platform.isMacOS) return;
 
     await windowManager.ensureInitialized();
+    await Window.initialize();
+
+    if (AppPlatform.isWindows) {
+      await Window.setEffect(effect: WindowEffect.mica);
+    } else if (Platform.isMacOS) {
+      await Window.setEffect(effect: WindowEffect.sidebar);
+    }
+
     const windowOptions = WindowOptions(
       size: Size(1100, 750),
       minimumSize: Size(800, 600),

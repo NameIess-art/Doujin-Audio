@@ -1,5 +1,42 @@
 part of 'settings_tab.dart';
 
+class _SettingsGroupCard extends StatelessWidget {
+  const _SettingsGroupCard({required this.children});
+
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    
+    final List<Widget> separatedChildren = [];
+    for (int i = 0; i < children.length; i++) {
+      separatedChildren.add(children[i]);
+      if (i < children.length - 1) {
+        separatedChildren.add(const SizedBox(height: 4));
+      }
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        color: cs.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: cs.outlineVariant.withValues(alpha: isDark ? 0.15 : 0.3),
+          width: 0.5,
+        ),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: separatedChildren,
+      ),
+    );
+  }
+}
+
 class _CapabilitySettingsTile extends StatelessWidget {
   const _CapabilitySettingsTile({
     required this.title,
@@ -214,17 +251,13 @@ class _SectionHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    return SizedBox(
-      width: double.infinity,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        child: Text(
-          title,
-          textAlign: TextAlign.left,
-          style: Theme.of(context).textTheme.titleSmall?.copyWith(
-            color: cs.primary,
-            fontWeight: FontWeight.w700,
-          ),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
+      child: Text(
+        title,
+        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+          color: cs.primary,
+          fontWeight: FontWeight.w700,
         ),
       ),
     );
@@ -420,9 +453,7 @@ class _SubtitleWindowSettingsSheet extends StatelessWidget {
                         divisions: 20,
                         onChanged: (v) => notifier.setFontSize(v),
                       ),
-                      const SizedBox(height: 12),
-                      const Divider(),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 24),
 
                       _buildRgbSliders(
                         label: i18n.tr('font_color'),
@@ -434,9 +465,7 @@ class _SubtitleWindowSettingsSheet extends StatelessWidget {
                         onChanged: (c) => notifier.setFontColor(c),
                         onReset: () => notifier.setFontColor(null),
                       ),
-                      const SizedBox(height: 12),
-                      const Divider(),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 24),
 
                       Row(
                         children: [
@@ -499,9 +528,7 @@ class _SubtitleWindowSettingsSheet extends StatelessWidget {
                         onChanged: (c) => notifier.setBackgroundColor(c),
                         onReset: () => notifier.setBackgroundColor(null),
                       ),
-                      const SizedBox(height: 12),
-                      const Divider(),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 24),
 
                       Row(
                         children: [

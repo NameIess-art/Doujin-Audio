@@ -539,6 +539,13 @@ class NativePlaybackService : MediaSessionService() {
         return okResult(session.snapshot())
     }
 
+    fun setFadeMultiplier(sessionId: String, multiplier: Float): Map<String, Any?> {
+        val session = sessions[sessionId] ?: return errorResult("Unknown session.")
+        session.applyFadeMultiplier(multiplier)
+        // Note: we don't necessarily need to persist this, as it's transient
+        return okResult(session.snapshot())
+    }
+
     fun setSpeed(sessionId: String, speed: Float): Map<String, Any?> {
         val session = sessions[sessionId] ?: return errorResult("Unknown session.")
         session.applySpeed(speed)

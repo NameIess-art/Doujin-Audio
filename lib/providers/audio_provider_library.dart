@@ -1413,7 +1413,9 @@ extension AudioProviderLibrary on AudioProvider {
         (candidate) =>
             PathMatcher.equalsNormalized(candidate.path, resolvedPath),
       )) {
-        return customQueueTracks;
+        return customQueueTracks
+            .where((candidate) => candidate.groupKey == track.groupKey)
+            .toList(growable: false);
       }
     }
     return const <MusicTrack>[];
@@ -1442,6 +1444,16 @@ extension AudioProviderLibrary on AudioProvider {
             .toList(growable: false)
           ..sort(getTrackComparator);
     return tracks;
+  }
+
+  List<MusicTrack> tracksForSessionSwitcher(String sessionId) {
+    final session = _sessions[sessionId];
+    if (session == null) return const <MusicTrack>[];
+    final sessionTracks = session.customQueueTracks;
+    if (sessionTracks != null && sessionTracks.isNotEmpty) {
+      return sessionTracks;
+    }
+    return tracksInSameWork(session.currentTrackPath);
   }
 
   String? workRootForTrack(String trackPath) {

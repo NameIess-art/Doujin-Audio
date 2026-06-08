@@ -369,6 +369,7 @@ class SettingsState {
     this.maxCacheBytes = 300 * 1024 * 1024,
     this.recordPlaybackProgress = true,
     this.blurPlayerBackgroundEnabled = true,
+    this.uiBlurEffectEnabled = true,
   });
 
   final String converterFormat;
@@ -385,6 +386,7 @@ class SettingsState {
   final int maxCacheBytes;
   final bool recordPlaybackProgress;
   final bool blurPlayerBackgroundEnabled;
+  final bool uiBlurEffectEnabled;
 
   @override
   bool operator ==(Object other) {
@@ -402,7 +404,8 @@ class SettingsState {
         listEquals(other.customEqPresets, customEqPresets) &&
         other.maxCacheBytes == maxCacheBytes &&
         other.recordPlaybackProgress == recordPlaybackProgress &&
-        other.blurPlayerBackgroundEnabled == blurPlayerBackgroundEnabled;
+        other.blurPlayerBackgroundEnabled == blurPlayerBackgroundEnabled &&
+        other.uiBlurEffectEnabled == uiBlurEffectEnabled;
   }
 
   @override
@@ -421,6 +424,7 @@ class SettingsState {
     maxCacheBytes,
     recordPlaybackProgress,
     blurPlayerBackgroundEnabled,
+    uiBlurEffectEnabled,
   );
 }
 
@@ -1429,6 +1433,7 @@ class SettingsRepository {
   bool keepAliveKeepsForegroundService = false;
   bool recordPlaybackProgress = true;
   bool blurPlayerBackgroundEnabled = true;
+  bool uiBlurEffectEnabled = true;
   final AudioStateSlice<SettingsState> slice = AudioStateSlice<SettingsState>(
     const SettingsState(),
   );
@@ -1450,6 +1455,7 @@ class SettingsRepository {
         maxCacheBytes: maxCacheBytes,
         recordPlaybackProgress: recordPlaybackProgress,
         blurPlayerBackgroundEnabled: blurPlayerBackgroundEnabled,
+        uiBlurEffectEnabled: uiBlurEffectEnabled,
       ),
     );
   }

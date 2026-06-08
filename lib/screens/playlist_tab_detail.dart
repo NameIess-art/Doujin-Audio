@@ -752,9 +752,9 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
           final shouldExpand =
               !panelExpanded &&
               widget.dismissAnimation.value <= 0.01 &&
-              (_segmentPanelDragDelta < -42 || velocity < -400);
+              (_segmentPanelDragDelta < -120 || velocity < -800);
           final shouldCollapse =
-              panelExpanded && (_segmentPanelDragDelta > 42 || velocity > 400);
+              panelExpanded && (_segmentPanelDragDelta > 120 || velocity > 800);
           _segmentPanelDragDelta = 0;
           if (shouldExpand) {
             detailState?.expandSegmentPanel();

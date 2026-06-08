@@ -322,7 +322,9 @@ const Map<String, String> appLanguageEn = {
   'dark_mode_subtitle': 'Use a lower-glare palette at night.',
   'blur_player_background': 'Blur Player Background',
   'blur_player_background_subtitle':
-      'Show a blurred cover as the background in the playback details page.',
+      'Display blurred cover as background on the playback detail page.',
+  'ui_blur_effect': 'UI Blur Effect',
+  'ui_blur_effect_subtitle': 'Enable blur effects on bottom bar, playback card, and top bars.',
   'multi_thread_playback': 'Multi-thread playback',
   'multi_thread_playback_subtitle':
       'When on, multiple tracks can play together. When off, only one playback session is kept.',

@@ -231,6 +231,11 @@ abstract interface class NativePlaybackBridgeBase {
     NativeAudioEffects effects,
   );
 
+  Future<NativeResult<NativePlaybackSnapshot>> setFadeMultiplier(
+    String sessionId,
+    double multiplier,
+  );
+
   Future<NativeResult<void>> removeSession(String sessionId);
 
   Future<NativeResult<void>> pauseAll();
@@ -463,6 +468,17 @@ class NativePlaybackBridge implements NativePlaybackBridgeBase {
     return _invokeSnapshot(NativePlaybackMethod.setAudioEffects, {
       'sessionId': sessionId,
       'effects': effects.toPlatformMap(),
+    });
+  }
+
+  @override
+  Future<NativeResult<NativePlaybackSnapshot>> setFadeMultiplier(
+    String sessionId,
+    double multiplier,
+  ) {
+    return _invokeSnapshot(NativePlaybackMethod.setFadeMultiplier, {
+      'sessionId': sessionId,
+      'multiplier': multiplier,
     });
   }
 

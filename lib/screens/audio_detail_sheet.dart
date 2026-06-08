@@ -458,7 +458,7 @@ class _AudioDetailSheetState extends State<AudioDetailSheet> {
                     onTap: () => _editField(field),
                   ),
                   if (field != _AudioDetailField.values.last)
-                    const Divider(height: 1),
+                    const SizedBox(height: 4),
                 ],
               ),
             ],

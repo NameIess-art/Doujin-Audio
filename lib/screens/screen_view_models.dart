@@ -2,6 +2,7 @@ import 'dart:collection';
 
 import 'package:flutter/foundation.dart';
 
+import '../models/audio_effects.dart';
 import '../models/library_node.dart';
 import '../models/playback_mode.dart';
 import '../models/playback_session.dart';
@@ -302,6 +303,10 @@ class SessionDetailViewState {
     required this.isPlaying,
     required this.isLoading,
     required this.channelSwapEnabled,
+    required this.volume,
+    required this.speed,
+    required this.audioEffects,
+    required this.eqCapabilities,
   });
 
   final String sessionId;
@@ -310,6 +315,10 @@ class SessionDetailViewState {
   final bool isPlaying;
   final bool isLoading;
   final bool channelSwapEnabled;
+  final double volume;
+  final double speed;
+  final AudioEffectsState audioEffects;
+  final EqCapabilities eqCapabilities;
 
   @override
   bool operator ==(Object other) {
@@ -319,7 +328,11 @@ class SessionDetailViewState {
         other.loopMode == loopMode &&
         other.isPlaying == isPlaying &&
         other.isLoading == isLoading &&
-        other.channelSwapEnabled == channelSwapEnabled;
+        other.channelSwapEnabled == channelSwapEnabled &&
+        other.volume == volume &&
+        other.speed == speed &&
+        other.audioEffects == audioEffects &&
+        other.eqCapabilities == eqCapabilities;
   }
 
   @override
@@ -330,6 +343,10 @@ class SessionDetailViewState {
     isPlaying,
     isLoading,
     channelSwapEnabled,
+    volume,
+    speed,
+    audioEffects,
+    eqCapabilities,
   );
 }
 
@@ -628,6 +645,10 @@ SessionDetailViewState? sessionDetailViewStateFromPlaybackState(
       isPlaying: session.state.playing,
       isLoading: session.isLoading,
       channelSwapEnabled: session.channelSwapEnabled,
+      volume: session.volume,
+      speed: session.speed,
+      audioEffects: session.audioEffects,
+      eqCapabilities: session.eqCapabilities,
     );
   }
   return null;

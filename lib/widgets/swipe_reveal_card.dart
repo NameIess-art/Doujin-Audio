@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../platform/app_platform.dart';
 import 'app_feedback.dart';
 
 class SwipeRevealCard extends StatefulWidget {
@@ -75,6 +76,83 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
       ? 144
       : 72;
   bool get _isOpen => _revealedWidth > (_actionWidth * 0.5);
+
+  void _showWindowsContextMenu(BuildContext context, Offset position) {
+    final cs = Theme.of(context).colorScheme;
+    final items = <PopupMenuEntry<VoidCallback>>[];
+
+    if (_hasTertiaryAction) {
+      items.add(
+        PopupMenuItem(
+          value: widget.onTertiaryAction,
+          child: Row(
+            children: [
+              Icon(widget.tertiaryActionIcon, size: 20, color: cs.onSurface),
+              const SizedBox(width: 12),
+              Text(widget.tertiaryActionLabel ?? widget.tertiaryActionTooltip ?? ''),
+            ],
+          ),
+        ),
+      );
+    }
+    if (_hasSecondaryAction) {
+      items.add(
+        PopupMenuItem(
+          value: widget.onSecondaryAction,
+          child: Row(
+            children: [
+              Icon(widget.secondaryActionIcon, size: 20, color: cs.onSurface),
+              const SizedBox(width: 12),
+              Text(widget.secondaryActionLabel ?? widget.secondaryActionTooltip ?? ''),
+            ],
+          ),
+        ),
+      );
+    }
+    items.add(
+      PopupMenuItem(
+        value: widget.onRemove,
+        child: Row(
+          children: [
+            Icon(
+              widget.primaryActionIcon,
+              size: 20,
+              color: widget.destructive ? cs.error : cs.primary,
+            ),
+            const SizedBox(width: 12),
+            Text(
+              widget.actionLabel,
+              style: TextStyle(
+                color: widget.destructive ? cs.error : cs.primary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    showMenu<VoidCallback>(
+      context: context,
+      position: RelativeRect.fromLTRB(position.dx, position.dy, position.dx, position.dy),
+      items: items,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      elevation: 4,
+    ).then((action) {
+      if (action != null) {
+        if (action == widget.onRemove) {
+          AppInteractionFeedback.trigger(
+            widget.destructive
+                ? AppInteractionFeedbackType.destructive
+                : AppInteractionFeedbackType.confirmation,
+          );
+        } else {
+          AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
+        }
+        action();
+      }
+    });
+  }
 
   @override
   void didUpdateWidget(covariant SwipeRevealCard oldWidget) {
@@ -215,15 +293,20 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
         padding: widget.margin,
         child: GestureDetector(
           behavior: HitTestBehavior.translucent,
-          onHorizontalDragStart: _handleHorizontalDragStart,
-          onHorizontalDragUpdate: _handleHorizontalDragUpdate,
-          onHorizontalDragEnd: _handleHorizontalDragEnd,
-          onSecondaryTap: () {
-            setState(() {
-              _revealedWidth = _isOpen ? 0 : _actionWidth;
-            });
-          },
-          onHorizontalDragCancel: () {
+          onHorizontalDragStart: AppPlatform.isWindows ? null : _handleHorizontalDragStart,
+          onHorizontalDragUpdate: AppPlatform.isWindows ? null : _handleHorizontalDragUpdate,
+          onHorizontalDragEnd: AppPlatform.isWindows ? null : _handleHorizontalDragEnd,
+          onSecondaryTapDown: AppPlatform.isWindows
+              ? (details) => _showWindowsContextMenu(context, details.globalPosition)
+              : null,
+          onSecondaryTap: AppPlatform.isWindows
+              ? null
+              : () {
+                  setState(() {
+                    _revealedWidth = _isOpen ? 0 : _actionWidth;
+                  });
+                },
+          onHorizontalDragCancel: AppPlatform.isWindows ? null : () {
             _dragAccepted = false;
             _dragRejected = false;
           },

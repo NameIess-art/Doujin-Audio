@@ -183,6 +183,8 @@ extension AudioProviderPersistence on AudioProvider {
           map['recordPlaybackProgress'] as bool? ?? true;
       _settingsRepository.blurPlayerBackgroundEnabled =
           map['blurPlayerBackgroundEnabled'] as bool? ?? true;
+      _settingsRepository.uiBlurEffectEnabled =
+          map['uiBlurEffectEnabled'] as bool? ?? true;
       _dlsiteMetadataLanguage = _decodeDlsiteMetadataLanguage(
         map['dlsiteMetadataLanguage'],
       );
@@ -214,6 +216,7 @@ extension AudioProviderPersistence on AudioProvider {
         'autoCheckUpdates': _autoCheckUpdates,
         'recordPlaybackProgress': _settingsRepository.recordPlaybackProgress,
         'blurPlayerBackgroundEnabled': _settingsRepository.blurPlayerBackgroundEnabled,
+        'uiBlurEffectEnabled': _settingsRepository.uiBlurEffectEnabled,
         'dlsiteMetadataLanguage': _dlsiteMetadataLanguage.name,
         'cardInfoFields': _settingsRepository.cardInfoFields
             .map((field) => field.name)
@@ -487,6 +490,13 @@ extension AudioProviderPersistence on AudioProvider {
   Future<void> setBlurPlayerBackgroundEnabled(bool enabled) async {
     if (_settingsRepository.blurPlayerBackgroundEnabled == enabled) return;
     _settingsRepository.blurPlayerBackgroundEnabled = enabled;
+    _notifySettingsChanged();
+    unawaited(_savePlaybackSettings());
+  }
+
+  Future<void> setUiBlurEffectEnabled(bool enabled) async {
+    if (_settingsRepository.uiBlurEffectEnabled == enabled) return;
+    _settingsRepository.uiBlurEffectEnabled = enabled;
     _notifySettingsChanged();
     unawaited(_savePlaybackSettings());
   }

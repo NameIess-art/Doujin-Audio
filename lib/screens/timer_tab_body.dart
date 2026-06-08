@@ -476,7 +476,7 @@ extension _TimerTabBody on _TimerTabState {
                               ),
                             ),
                             if (timerSlice.autoResumeEnabled) ...[
-                              const Divider(height: 1),
+                              const SizedBox(height: 4),
                               ListTile(
                                 leading: const Icon(Icons.alarm_rounded),
                                 title: Text(

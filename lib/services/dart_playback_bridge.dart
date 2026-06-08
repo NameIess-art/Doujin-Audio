@@ -264,6 +264,17 @@ class DartPlaybackBridge implements NativePlaybackBridgeBase {
   }
 
   @override
+  Future<NativeResult<NativePlaybackSnapshot>> setFadeMultiplier(
+    String sessionId,
+    double multiplier,
+  ) async {
+    final session = _sessions[sessionId];
+    if (session == null) return NativeFailure('Unknown session: $sessionId');
+    await session.setFadeMultiplier(multiplier);
+    return NativeSuccess(_emit(sessionId));
+  }
+
+  @override
   Future<NativeResult<void>> removeSession(String sessionId) async {
     final session = _sessions.remove(sessionId);
     if (_focusedSessionId == sessionId) _focusedSessionId = null;
@@ -489,10 +500,21 @@ class _DartPlaybackSession {
   Duration? duration;
   String? error;
   Duration? _pendingSeekPosition;
+  double fadeMultiplier = 1.0;
 
   Future<void> setVolume(double nextVolume, {bool reloadSource = true}) async {
     volume = _normalizeSessionVolume(nextVolume);
-    await player.setVolume(volume * 100);
+    await _applyVolume();
+  }
+
+  Future<void> setFadeMultiplier(double multiplier) async {
+    fadeMultiplier = multiplier.clamp(0.0, 1.0);
+    await _applyVolume();
+  }
+
+  Future<void> _applyVolume() async {
+    final effectiveVolume = volume * fadeMultiplier;
+    await player.setVolume(effectiveVolume * 100);
   }
 
   Future<void> setSpeed(double nextSpeed) async {
@@ -539,7 +561,7 @@ class _DartPlaybackSession {
         ),
         play: false,
       );
-      await player.setVolume(volume * 100);
+      await _applyVolume();
       await player.setRate(speed);
       await _applyManagedAudioFilters();
       if (initialPosition > Duration.zero) {

@@ -159,8 +159,8 @@ class ThemeProvider with ChangeNotifier {
       hoverColor: scheme.primary.withValues(alpha: 0.08),
       focusColor: scheme.primary.withValues(alpha: 0.12),
       highlightColor: scheme.primary.withValues(alpha: 0.12),
-      scaffoldBackgroundColor: scheme.surface,
-      canvasColor: scheme.surface,
+      scaffoldBackgroundColor: isDesktop ? Colors.transparent : scheme.surface,
+      canvasColor: isDesktop ? Colors.transparent : scheme.surface,
       dividerColor: scheme.outlineVariant,
       splashFactory: InkRipple.splashFactory,
       cardTheme: CardThemeData(

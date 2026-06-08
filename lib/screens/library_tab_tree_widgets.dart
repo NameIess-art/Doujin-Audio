@@ -550,33 +550,37 @@ class _LibraryCoverThumbnail extends ConsumerWidget {
         padding: EdgeInsets.zero,
         child: ClipRRect(
           borderRadius: BorderRadius.circular(12),
-          child: AsyncCoverImage(
-            future: coverPathFuture,
-            initialPath: provider.resolvedCoverPathForFolder(folderPath),
-            retryFutureBuilder: () =>
-                provider.coverPathFutureForFolder(folderPath),
-            duration: Duration.zero,
-            fallbackBuilder: (_) => fallback(),
-            loadingBuilder: (_) => Stack(
-              fit: StackFit.expand,
-              children: [
-                fallback(hideIcon: true),
-                CoverLoadingIndicator(
-                  size: 34,
-                  strokeWidth: 3,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-              ],
+          child: Hero(
+            tag: 'cover_$folderPath',
+            placeholderBuilder: (context, heroSize, child) => child,
+            child: AsyncCoverImage(
+              future: coverPathFuture,
+              initialPath: provider.resolvedCoverPathForFolder(folderPath),
+              retryFutureBuilder: () =>
+                  provider.coverPathFutureForFolder(folderPath),
+              duration: Duration.zero,
+              fallbackBuilder: (_) => fallback(),
+              loadingBuilder: (_) => Stack(
+                fit: StackFit.expand,
+                children: [
+                  fallback(hideIcon: true),
+                  CoverLoadingIndicator(
+                    size: 34,
+                    strokeWidth: 3,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                ],
+              ),
+              imageBuilder: (context, coverPath) {
+                final dpr = MediaQuery.devicePixelRatioOf(context);
+                return RetryingFileImage(
+                  path: coverPath,
+                  cacheWidth: (width * dpr).round(),
+                  fit: BoxFit.cover,
+                  fallbackBuilder: (_) => fallback(),
+                );
+              },
             ),
-            imageBuilder: (context, coverPath) {
-              final dpr = MediaQuery.devicePixelRatioOf(context);
-              return RetryingFileImage(
-                path: coverPath,
-                cacheWidth: (width * dpr).round(),
-                fit: BoxFit.cover,
-                fallbackBuilder: (_) => fallback(),
-              );
-            },
           ),
         ),
       ),
@@ -614,26 +618,30 @@ class _LibraryTrackCoverThumbnail extends ConsumerWidget {
       height: height,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(12),
-        child: AsyncCoverImage(
-          future: coverPathFuture,
-          initialPath: provider.resolvedCoverPathForTrack(track),
-          retryFutureBuilder: () => provider.coverPathFutureForTrack(track),
-          duration: Duration.zero,
-          fallbackBuilder: (_) => fallback(),
-          loadingBuilder: (_) => CoverLoadingIndicator(
-            size: 34,
-            strokeWidth: 3,
-            color: Theme.of(context).colorScheme.primary,
+        child: Hero(
+          tag: 'cover_${track.path}',
+          placeholderBuilder: (context, heroSize, child) => child,
+          child: AsyncCoverImage(
+            future: coverPathFuture,
+            initialPath: provider.resolvedCoverPathForTrack(track),
+            retryFutureBuilder: () => provider.coverPathFutureForTrack(track),
+            duration: Duration.zero,
+            fallbackBuilder: (_) => fallback(),
+            loadingBuilder: (_) => CoverLoadingIndicator(
+              size: 34,
+              strokeWidth: 3,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+            imageBuilder: (context, coverPath) {
+              final dpr = MediaQuery.devicePixelRatioOf(context);
+              return RetryingFileImage(
+                path: coverPath,
+                cacheWidth: (width * dpr).round(),
+                fit: BoxFit.cover,
+                fallbackBuilder: (_) => fallback(),
+              );
+            },
           ),
-          imageBuilder: (context, coverPath) {
-            final dpr = MediaQuery.devicePixelRatioOf(context);
-            return RetryingFileImage(
-              path: coverPath,
-              cacheWidth: (width * dpr).round(),
-              fit: BoxFit.cover,
-              fallbackBuilder: (_) => fallback(),
-            );
-          },
         ),
       ),
     );

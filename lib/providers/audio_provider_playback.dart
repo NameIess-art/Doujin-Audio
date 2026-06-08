@@ -42,6 +42,7 @@ extension AudioProviderPlayback on AudioProvider {
     if (clearPausedSessions) {
       _pausedByTimerSessionIds.clear();
     }
+    _applyFadeMultiplierToAllPlaying(1.0);
     unawaited(_syncNativeTimerAlarms());
   }
 
@@ -433,14 +434,15 @@ extension AudioProviderPlayback on AudioProvider {
     } else {
       _deferredVolumeReloadSessionIds.add(session.id);
     }
+    if (notify) {
+      _markActiveSessionsDirty();
+      _notifyPlaybackChanged();
+    }
     await _nativePlaybackRepository.setVolume(
       session.id,
       session.volume,
       reloadSource: persist,
     );
-    if (notify) {
-      _notifyPlaybackChanged();
-    }
     if (persist) {
       _scheduleSaveSessionState();
     }

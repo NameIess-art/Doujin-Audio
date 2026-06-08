@@ -36,8 +36,8 @@ object PlaybackTimerAlarmScheduler {
 
     private const val timerRequestCode = 32001
     private const val autoResumeRequestCode = 32002
-    private const val maxServiceDeliveryAttempts = 8
-    private const val serviceDeliveryRetryDelayMs = 160L
+    private const val maxServiceDeliveryAttempts = 40
+    private const val serviceDeliveryRetryDelayMs = 250L
     private val mainHandler = Handler(Looper.getMainLooper())
 
     fun sync(

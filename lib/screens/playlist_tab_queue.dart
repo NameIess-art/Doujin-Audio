@@ -202,9 +202,17 @@ class _QueueCoverGrid extends StatelessWidget {
 
   Widget _buildCell(BuildContext context, int index) {
     if (index >= tracks.length) {
+      final cs = Theme.of(context).colorScheme;
+      final isDark = Theme.of(context).brightness == Brightness.dark;
       return ColoredBox(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        child: const Icon(Icons.music_note_rounded, size: 16),
+        color: cs.surfaceContainerHighest.withValues(alpha: isDark ? 0.4 : 0.6),
+        child: Center(
+          child: Icon(
+            Icons.audiotrack_rounded,
+            size: 18,
+            color: cs.onSurfaceVariant.withValues(alpha: 0.35),
+          ),
+        ),
       );
     }
     final track = tracks[index];

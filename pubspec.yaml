@@ -37,6 +37,8 @@ dependencies:
   desktop_multi_window: ^0.3.0
   media_kit: ^1.0.2
   media_kit_libs_windows_audio: ^1.0.9
+  flutter_acrylic: ^1.1.4
+  flutter_animate: ^4.5.2
 
 dev_dependencies:
   flutter_test:

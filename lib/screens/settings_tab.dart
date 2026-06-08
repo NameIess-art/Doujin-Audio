@@ -194,209 +194,71 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                 child: Column(
                   children: [
                     _SectionHeader(title: i18n.tr('section_appearance')),
-                    const SizedBox(height: 2),
-                    Consumer(
-                      builder: (context, ref, _) {
-                        final isDarkMode = context.select<ThemeProvider, bool>((p) => p.isDarkMode);
-                        final toggleTheme = context.read<ThemeProvider>().toggleTheme;
-                        return SwitchListTile(
-                          value: isDarkMode,
-                          onChanged: toggleTheme,
-                          title: Text(i18n.tr('dark_mode')),
-                          subtitle: Text(
-                            i18n.tr('dark_mode_subtitle'),
-                            style: descStyle,
-                          ),
-                          secondary: Container(
-                            width: 38,
-                            height: 38,
-                            decoration: BoxDecoration(
-                              color: cs.primaryContainer,
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Icon(
-                              Icons.dark_mode_rounded,
-                              color: cs.onPrimaryContainer,
-                            ),
-                          ),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 2),
-                    Consumer(
-                      builder: (context, ref, _) {
-                        final blurEnabled = ref.watch(settingsStateProvider.select((s) => s.valueOrNull?.blurPlayerBackgroundEnabled ?? true));
-                        return SwitchListTile(
-                          value: blurEnabled,
-                          onChanged: audioProvider.setBlurPlayerBackgroundEnabled,
-                          title: Text(i18n.tr('blur_player_background')),
-                          subtitle: Text(
-                            i18n.tr('blur_player_background_subtitle'),
-                            style: descStyle,
-                          ),
-                          secondary: Container(
-                            width: 38,
-                            height: 38,
-                            decoration: BoxDecoration(
-                              color: cs.primaryContainer,
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Icon(
-                              Icons.blur_on_rounded,
-                              color: cs.onPrimaryContainer,
-                            ),
-                          ),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 2),
-                    ListTile(
-                      title: Text(i18n.tr('language')),
-                      subtitle: Text(
-                        i18n.tr('language_subtitle'),
-                        style: descStyle,
-                      ),
-                      leading: Container(
-                        width: 38,
-                        height: 38,
-                        decoration: BoxDecoration(
-                          color: cs.primaryContainer,
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Icon(
-                          Icons.language_rounded,
-                          color: cs.onPrimaryContainer,
-                        ),
-                      ),
-                      trailing: DropdownButtonHideUnderline(
-                        child: DropdownButton<AppLanguage>(
-                          value: i18n.language,
-                          borderRadius: BorderRadius.circular(12),
-                          onChanged: (value) {
-                            if (value != null) {
-                              i18n.setLanguage(value);
-                            }
-                          },
-                          items: AppLanguage.values
-                              .map(
-                                (lang) => DropdownMenuItem<AppLanguage>(
-                                  value: lang,
-                                  child: Text(
-                                    i18n.languageName(lang),
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
+                    _SettingsGroupCard(
+                      children: [
+                        Consumer(
+                          builder: (context, ref, _) {
+                            final isDarkMode = context
+                                .select<ThemeProvider, bool>(
+                                  (p) => p.isDarkMode,
+                                );
+                            final toggleTheme = context
+                                .read<ThemeProvider>()
+                                .toggleTheme;
+                            return SwitchListTile(
+                              value: isDarkMode,
+                              onChanged: toggleTheme,
+                              title: Text(i18n.tr('dark_mode')),
+                              subtitle: Text(
+                                i18n.tr('dark_mode_subtitle'),
+                                style: descStyle,
+                              ),
+                              secondary: Container(
+                                width: 38,
+                                height: 38,
+                                decoration: BoxDecoration(
+                                  color: cs.primaryContainer,
+                                  borderRadius: BorderRadius.circular(10),
                                 ),
-                              )
-                              .toList(),
+                                child: Icon(
+                                  Icons.dark_mode_rounded,
+                                  color: cs.onPrimaryContainer,
+                                ),
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                            );
+                          },
                         ),
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 2,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Consumer(
-                      builder: (context, ref, _) {
-                        final showPlaybackCard = ref.watch(settingsStateProvider.select((s) => s.valueOrNull?.showPlaybackCard ?? true));
-                        return SwitchListTile(
-                          value: showPlaybackCard,
-                          onChanged: audioProvider.setShowPlaybackCard,
-                          title: Text(i18n.tr('show_playback_card')),
+                        ListTile(
+                          title: Text(i18n.tr('language')),
                           subtitle: Text(
-                            i18n.tr('show_playback_card_subtitle'),
-                            style: descStyle,
-                          ),
-                          secondary: Container(
-                            width: 38,
-                            height: 38,
-                            decoration: BoxDecoration(
-                              color: cs.primaryContainer,
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Icon(
-                              Icons.play_circle_outline_rounded,
-                              color: cs.onPrimaryContainer,
-                            ),
-                          ),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 2),
-                    ListTile(
-                      title: Text(i18n.tr('subtitle_window_settings')),
-                      subtitle: Text(
-                        i18n.tr('subtitle_window_settings_subtitle'),
-                        style: descStyle,
-                      ),
-                      leading: Container(
-                        width: 38,
-                        height: 38,
-                        decoration: BoxDecoration(
-                          color: cs.primaryContainer,
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Icon(
-                          Icons.subtitles_rounded,
-                          color: cs.onPrimaryContainer,
-                        ),
-                      ),
-                      trailing: Icon(
-                        Icons.chevron_right_rounded,
-                        size: 20,
-                        color: cs.onSurfaceVariant,
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      onTap: () => _showSubtitleWindowSettings(context),
-                    ),
-                    const SizedBox(height: 12),
-                    _SectionHeader(title: i18n.tr('section_detail_info')),
-                    const SizedBox(height: 2),
-                    Consumer(
-                      builder: (context, ref, _) {
-                        final dlsiteLanguage = ref.watch(settingsStateProvider.select((s) => s.valueOrNull?.dlsiteMetadataLanguage ?? AppLanguage.ja));
-                        return ListTile(
-                          title: Text(i18n.tr('dlsite_metadata_language')),
-                          subtitle: Text(
-                            i18n.tr('dlsite_metadata_language_subtitle'),
+                            i18n.tr('language_subtitle'),
                             style: descStyle,
                           ),
                           leading: Container(
                             width: 38,
                             height: 38,
                             decoration: BoxDecoration(
-                              color: cs.secondaryContainer,
+                              color: cs.primaryContainer,
                               borderRadius: BorderRadius.circular(10),
                             ),
                             child: Icon(
-                              Icons.public_rounded,
-                              color: cs.onSecondaryContainer,
+                              Icons.language_rounded,
+                              color: cs.onPrimaryContainer,
                             ),
                           ),
                           trailing: DropdownButtonHideUnderline(
                             child: DropdownButton<AppLanguage>(
-                              value: dlsiteLanguage,
+                              value: i18n.language,
                               borderRadius: BorderRadius.circular(12),
                               onChanged: (value) {
                                 if (value != null) {
-                                  audioProvider.setDlsiteMetadataLanguage(value);
+                                  i18n.setLanguage(value);
                                 }
                               },
                               items: AppLanguage.values
@@ -418,39 +280,101 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                             horizontal: 8,
                             vertical: 2,
                           ),
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 2),
-                    Consumer(
-                      builder: (context, ref, _) {
-                        final fields = ref.watch(
-                          settingsStateProvider.select(
-                            (s) =>
-                                s.valueOrNull?.cardInfoFields ??
-                                CardInfoField.defaults,
+                        ),
+                        Consumer(
+                          builder: (context, ref, _) {
+                            final blurEnabled = ref.watch(
+                              settingsStateProvider.select(
+                                (s) =>
+                                    s
+                                        .valueOrNull
+                                        ?.blurPlayerBackgroundEnabled ??
+                                    true,
+                              ),
+                            );
+                            return SwitchListTile(
+                              value: blurEnabled,
+                              onChanged:
+                                  audioProvider.setBlurPlayerBackgroundEnabled,
+                              title: Text(i18n.tr('blur_player_background')),
+                              subtitle: Text(
+                                i18n.tr('blur_player_background_subtitle'),
+                                style: descStyle,
+                              ),
+                              secondary: Container(
+                                width: 38,
+                                height: 38,
+                                decoration: BoxDecoration(
+                                  color: cs.primaryContainer,
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Icon(
+                                  Icons.blur_on_rounded,
+                                  color: cs.onPrimaryContainer,
+                                ),
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                            );
+                          },
+                        ),
+                        Consumer(
+                          builder: (context, ref, _) {
+                            final uiBlurEnabled = ref.watch(
+                              settingsStateProvider.select(
+                                (s) =>
+                                    s.valueOrNull?.uiBlurEffectEnabled ?? true,
+                              ),
+                            );
+                            return SwitchListTile(
+                              value: uiBlurEnabled,
+                              onChanged: audioProvider.setUiBlurEffectEnabled,
+                              title: Text(i18n.tr('ui_blur_effect')),
+                              subtitle: Text(
+                                i18n.tr('ui_blur_effect_subtitle'),
+                                style: descStyle,
+                              ),
+                              secondary: Container(
+                                width: 38,
+                                height: 38,
+                                decoration: BoxDecoration(
+                                  color: cs.primaryContainer,
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Icon(
+                                  Icons.blur_linear_rounded,
+                                  color: cs.onPrimaryContainer,
+                                ),
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                            );
+                          },
+                        ),
+                        ListTile(
+                          title: Text(i18n.tr('subtitle_window_settings')),
+                          subtitle: Text(
+                            i18n.tr('subtitle_window_settings_subtitle'),
+                            style: descStyle,
                           ),
-                        );
-                        final summary = fields.isEmpty
-                            ? i18n.tr('card_info_none')
-                            : fields
-                                  .map(
-                                    (field) => _cardInfoFieldLabel(i18n, field),
-                                  )
-                                  .join('\uFF0C');
-                        return ListTile(
-                          title: Text(i18n.tr('card_info_display')),
-                          subtitle: Text(summary, style: descStyle),
                           leading: Container(
                             width: 38,
                             height: 38,
                             decoration: BoxDecoration(
-                              color: cs.secondaryContainer,
+                              color: cs.primaryContainer,
                               borderRadius: BorderRadius.circular(10),
                             ),
                             child: Icon(
-                              Icons.badge_rounded,
-                              color: cs.onSecondaryContainer,
+                              Icons.subtitles_rounded,
+                              color: cs.onPrimaryContainer,
                             ),
                           ),
                           trailing: Icon(
@@ -464,322 +388,517 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(14),
                           ),
-                          onTap: () => _showCardInfoFieldsSettings(context),
-                        );
-                      },
+                          onTap: () => _showSubtitleWindowSettings(context),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 12),
                     _SectionHeader(title: i18n.tr('section_playback')),
-                    const SizedBox(height: 2),
-                    Consumer(
-                      builder: (context, ref, _) {
-                        final multiThreadEnabled = ref.watch(settingsStateProvider.select((s) => s.valueOrNull?.multiThreadPlaybackEnabled ?? false));
-                        return SwitchListTile(
-                          value: multiThreadEnabled,
-                          onChanged: (value) {
-                            audioProvider.setMultiThreadPlaybackEnabled(value);
-                            if (!value) {
-                              ref
-                                  .read(subtitleSettingsProvider.notifier)
-                                  .turnOffAllSubtitles();
-                            }
-                          },
-                          title: Text(i18n.tr('multi_thread_playback')),
-                          subtitle: Text(
-                            i18n.tr('multi_thread_playback_subtitle'),
-                            style: descStyle,
-                          ),
-                          secondary: Container(
-                            width: 38,
-                            height: 38,
-                            decoration: BoxDecoration(
-                              color: cs.secondaryContainer,
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Icon(
-                              Icons.multitrack_audio_rounded,
-                              color: cs.onSecondaryContainer,
-                            ),
-                          ),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 2),
-                    Consumer(
-                      builder: (context, ref, _) {
-                        final autoPlay = ref.watch(settingsStateProvider.select((s) => s.valueOrNull?.autoPlayAddedSessions ?? true));
-                        return SwitchListTile(
-                          value: autoPlay,
-                          onChanged: audioProvider.setAutoPlayAddedSessions,
-                          title: Text(i18n.tr('auto_play_added_sessions')),
-                          subtitle: Text(
-                            i18n.tr('auto_play_added_sessions_subtitle'),
-                            style: descStyle,
-                          ),
-                          secondary: Container(
-                            width: 38,
-                            height: 38,
-                            decoration: BoxDecoration(
-                              color: cs.primaryContainer,
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Icon(
-                              Icons.playlist_play_rounded,
-                              color: cs.onPrimaryContainer,
-                            ),
-                          ),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 2),
-                    Consumer(
-                      builder: (context, ref, _) {
-                        final recordProgress = ref.watch(settingsStateProvider.select((s) => s.valueOrNull?.recordPlaybackProgress ?? true));
-                        return SwitchListTile(
-                          value: recordProgress,
-                          onChanged: audioProvider.setRecordPlaybackProgress,
-                          title: Text(i18n.tr('record_playback_progress')),
-                          subtitle: Text(
-                            i18n.tr('record_playback_progress_subtitle'),
-                            style: descStyle,
-                          ),
-                          secondary: Container(
-                            width: 38,
-                            height: 38,
-                            decoration: BoxDecoration(
-                              color: cs.secondaryContainer,
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Icon(
-                              Icons.restore_rounded,
-                              color: cs.onSecondaryContainer,
-                            ),
-                          ),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                        );
-                      },
-                    ),
-                    if (!Platform.isWindows) ...[
-                      const SizedBox(height: 12),
-                      _SectionHeader(title: i18n.tr('section_notification')),
-                      const SizedBox(height: 2),
-                      _CapabilitySettingsTile(
-                        title: i18n.tr('notification_permission_status'),
-                        icon: Icons.notifications_rounded,
-                        okFuture: _notificationsAllowedFuture,
-                        okText: i18n.tr('notification_permission_ready'),
-                        missingText: i18n.tr('notification_permission_missing'),
-                        checkingText: i18n.tr(
-                          'notification_permission_checking',
-                        ),
-                        onTap: () => _openNotificationSettings(context),
-                      ),
-                      const SizedBox(height: 2),
-                      _CapabilitySettingsTile(
-                        title: i18n.tr('exact_alarm_permission_status'),
-                        icon: Icons.alarm_on_rounded,
-                        okFuture: _exactAlarmAllowedFuture,
-                        okText: i18n.tr('exact_alarm_permission_ready'),
-                        missingText: i18n.tr('exact_alarm_permission_missing'),
-                        checkingText: i18n.tr(
-                          'exact_alarm_permission_checking',
-                        ),
-                        onTap: () => _openExactAlarmSettings(context),
-                      ),
-                      const SizedBox(height: 2),
-                      ListTile(
-                        onTap: () => _openBackgroundRunSettings(context),
-                        title: Text(i18n.tr('allow_background_run')),
-                        subtitle: FutureBuilder<bool>(
-                          future: _backgroundRunAllowedFuture,
-                          builder: (context, snapshot) {
-                            if (snapshot.connectionState !=
-                                    ConnectionState.done &&
-                                snapshot.data == null) {
-                              return Text(
-                                i18n.tr('allow_background_run_checking'),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
+                    _SettingsGroupCard(
+                      children: [
+                        Consumer(
+                          builder: (context, ref, _) {
+                            final showPlaybackCard = ref.watch(
+                              settingsStateProvider.select(
+                                (s) => s.valueOrNull?.showPlaybackCard ?? true,
+                              ),
+                            );
+                            return SwitchListTile(
+                              value: showPlaybackCard,
+                              onChanged: audioProvider.setShowPlaybackCard,
+                              title: Text(i18n.tr('show_playback_card')),
+                              subtitle: Text(
+                                i18n.tr('show_playback_card_subtitle'),
                                 style: descStyle,
-                              );
-                            }
-                            final ignoring = snapshot.data == true;
-                            final status = ignoring
-                                ? i18n.tr('allow_background_run_ready')
-                                : i18n.tr('allow_background_run_subtitle');
-                            return Text(
-                              status,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: descStyle,
+                              ),
+                              secondary: Container(
+                                width: 38,
+                                height: 38,
+                                decoration: BoxDecoration(
+                                  color: cs.primaryContainer,
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Icon(
+                                  Icons.play_circle_outline_rounded,
+                                  color: cs.onPrimaryContainer,
+                                ),
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
                             );
                           },
                         ),
-                        leading: Container(
-                          width: 38,
-                          height: 38,
-                          decoration: BoxDecoration(
-                            color: cs.tertiaryContainer,
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Icon(
-                            Icons.battery_saver_rounded,
-                            color: cs.onTertiaryContainer,
-                          ),
+                        Consumer(
+                          builder: (context, ref, _) {
+                            final autoPlay = ref.watch(
+                              settingsStateProvider.select(
+                                (s) =>
+                                    s.valueOrNull?.autoPlayAddedSessions ??
+                                    true,
+                              ),
+                            );
+                            return SwitchListTile(
+                              value: autoPlay,
+                              onChanged: audioProvider.setAutoPlayAddedSessions,
+                              title: Text(i18n.tr('auto_play_added_sessions')),
+                              subtitle: Text(
+                                i18n.tr('auto_play_added_sessions_subtitle'),
+                                style: descStyle,
+                              ),
+                              secondary: Container(
+                                width: 38,
+                                height: 38,
+                                decoration: BoxDecoration(
+                                  color: cs.primaryContainer,
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Icon(
+                                  Icons.playlist_play_rounded,
+                                  color: cs.onPrimaryContainer,
+                                ),
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                            );
+                          },
                         ),
-                        trailing: Icon(
-                          Icons.chevron_right_rounded,
-                          color: cs.onSurfaceVariant,
+                        Consumer(
+                          builder: (context, ref, _) {
+                            final multiThreadEnabled = ref.watch(
+                              settingsStateProvider.select(
+                                (s) =>
+                                    s.valueOrNull?.multiThreadPlaybackEnabled ??
+                                    false,
+                              ),
+                            );
+                            return SwitchListTile(
+                              value: multiThreadEnabled,
+                              onChanged: (value) {
+                                audioProvider.setMultiThreadPlaybackEnabled(
+                                  value,
+                                );
+                                if (!value) {
+                                  ref
+                                      .read(subtitleSettingsProvider.notifier)
+                                      .turnOffAllSubtitles();
+                                }
+                              },
+                              title: Text(i18n.tr('multi_thread_playback')),
+                              subtitle: Text(
+                                i18n.tr('multi_thread_playback_subtitle'),
+                                style: descStyle,
+                              ),
+                              secondary: Container(
+                                width: 38,
+                                height: 38,
+                                decoration: BoxDecoration(
+                                  color: cs.secondaryContainer,
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Icon(
+                                  Icons.multitrack_audio_rounded,
+                                  color: cs.onSecondaryContainer,
+                                ),
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                            );
+                          },
                         ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
+                        Consumer(
+                          builder: (context, ref, _) {
+                            final recordProgress = ref.watch(
+                              settingsStateProvider.select(
+                                (s) =>
+                                    s.valueOrNull?.recordPlaybackProgress ??
+                                    true,
+                              ),
+                            );
+                            return SwitchListTile(
+                              value: recordProgress,
+                              onChanged:
+                                  audioProvider.setRecordPlaybackProgress,
+                              title: Text(i18n.tr('record_playback_progress')),
+                              subtitle: Text(
+                                i18n.tr('record_playback_progress_subtitle'),
+                                style: descStyle,
+                              ),
+                              secondary: Container(
+                                width: 38,
+                                height: 38,
+                                decoration: BoxDecoration(
+                                  color: cs.secondaryContainer,
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Icon(
+                                  Icons.restore_rounded,
+                                  color: cs.onSecondaryContainer,
+                                ),
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                            );
+                          },
                         ),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 2,
+                      ],
+                    ),
+                    _SectionHeader(title: i18n.tr('section_detail_info')),
+                    _SettingsGroupCard(
+                      children: [
+                        Consumer(
+                          builder: (context, ref, _) {
+                            final dlsiteLanguage = ref.watch(
+                              settingsStateProvider.select(
+                                (s) =>
+                                    s.valueOrNull?.dlsiteMetadataLanguage ??
+                                    AppLanguage.ja,
+                              ),
+                            );
+                            return ListTile(
+                              title: Text(i18n.tr('dlsite_metadata_language')),
+                              subtitle: Text(
+                                i18n.tr('dlsite_metadata_language_subtitle'),
+                                style: descStyle,
+                              ),
+                              leading: Container(
+                                width: 38,
+                                height: 38,
+                                decoration: BoxDecoration(
+                                  color: cs.secondaryContainer,
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Icon(
+                                  Icons.public_rounded,
+                                  color: cs.onSecondaryContainer,
+                                ),
+                              ),
+                              trailing: DropdownButtonHideUnderline(
+                                child: DropdownButton<AppLanguage>(
+                                  value: dlsiteLanguage,
+                                  borderRadius: BorderRadius.circular(12),
+                                  onChanged: (value) {
+                                    if (value != null) {
+                                      audioProvider.setDlsiteMetadataLanguage(
+                                        value,
+                                      );
+                                    }
+                                  },
+                                  items: AppLanguage.values
+                                      .map(
+                                        (lang) => DropdownMenuItem<AppLanguage>(
+                                          value: lang,
+                                          child: Text(
+                                            i18n.languageName(lang),
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          ),
+                                        ),
+                                      )
+                                      .toList(),
+                                ),
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 2,
+                              ),
+                            );
+                          },
                         ),
-                      ),
-                      const SizedBox(height: 14),
-                      const Divider(),
-                    ],
-                    const SizedBox(height: 8),
-                    _SectionHeader(title: i18n.tr('section_other')),
-                    const SizedBox(height: 2),
+                        Consumer(
+                          builder: (context, ref, _) {
+                            final fields = ref.watch(
+                              settingsStateProvider.select(
+                                (s) =>
+                                    s.valueOrNull?.cardInfoFields ??
+                                    CardInfoField.defaults,
+                              ),
+                            );
+                            final summary = fields.isEmpty
+                                ? i18n.tr('card_info_none')
+                                : fields
+                                      .map(
+                                        (field) =>
+                                            _cardInfoFieldLabel(i18n, field),
+                                      )
+                                      .join('\uFF0C');
+                            return ListTile(
+                              title: Text(i18n.tr('card_info_display')),
+                              subtitle: Text(summary, style: descStyle),
+                              leading: Container(
+                                width: 38,
+                                height: 38,
+                                decoration: BoxDecoration(
+                                  color: cs.secondaryContainer,
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Icon(
+                                  Icons.badge_rounded,
+                                  color: cs.onSecondaryContainer,
+                                ),
+                              ),
+                              trailing: Icon(
+                                Icons.chevron_right_rounded,
+                                size: 20,
+                                color: cs.onSurfaceVariant,
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                              onTap: () => _showCardInfoFieldsSettings(context),
+                            );
+                          },
+                        ),
+                      ],
+                    ),
                     if (!Platform.isWindows) ...[
-                      Consumer(
-                        builder: (context, ref, _) {
-                          final maxCacheBytes = ref.watch(settingsStateProvider.select((s) => s.valueOrNull?.maxCacheBytes ?? AppCacheService.defaultMaxCacheBytes));
-                          return ListTile(
-                            title: Text(i18n.tr('max_cache_size')),
+                      _SectionHeader(title: i18n.tr('section_notification')),
+                      _SettingsGroupCard(
+                        children: [
+                          _CapabilitySettingsTile(
+                            title: i18n.tr('notification_permission_status'),
+                            icon: Icons.notifications_rounded,
+                            okFuture: _notificationsAllowedFuture,
+                            okText: i18n.tr('notification_permission_ready'),
+                            missingText: i18n.tr(
+                              'notification_permission_missing',
+                            ),
+                            checkingText: i18n.tr(
+                              'notification_permission_checking',
+                            ),
+                            onTap: () => _openNotificationSettings(context),
+                          ),
+                          _CapabilitySettingsTile(
+                            title: i18n.tr('exact_alarm_permission_status'),
+                            icon: Icons.alarm_on_rounded,
+                            okFuture: _exactAlarmAllowedFuture,
+                            okText: i18n.tr('exact_alarm_permission_ready'),
+                            missingText: i18n.tr(
+                              'exact_alarm_permission_missing',
+                            ),
+                            checkingText: i18n.tr(
+                              'exact_alarm_permission_checking',
+                            ),
+                            onTap: () => _openExactAlarmSettings(context),
+                          ),
+                          ListTile(
+                            onTap: () => _openBackgroundRunSettings(context),
+                            title: Text(i18n.tr('allow_background_run')),
+                            subtitle: FutureBuilder<bool>(
+                              future: _backgroundRunAllowedFuture,
+                              builder: (context, snapshot) {
+                                if (snapshot.connectionState !=
+                                        ConnectionState.done &&
+                                    snapshot.data == null) {
+                                  return Text(
+                                    i18n.tr('allow_background_run_checking'),
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: descStyle,
+                                  );
+                                }
+                                final ignoring = snapshot.data == true;
+                                final status = ignoring
+                                    ? i18n.tr('allow_background_run_ready')
+                                    : i18n.tr('allow_background_run_subtitle');
+                                return Text(
+                                  status,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: descStyle,
+                                );
+                              },
+                            ),
+                            leading: Container(
+                              width: 38,
+                              height: 38,
+                              decoration: BoxDecoration(
+                                color: cs.tertiaryContainer,
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Icon(
+                                Icons.battery_saver_rounded,
+                                color: cs.onTertiaryContainer,
+                              ),
+                            ),
+                            trailing: Icon(
+                              Icons.chevron_right_rounded,
+                              color: cs.onSurfaceVariant,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 2,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                    _SectionHeader(title: i18n.tr('section_other')),
+                    _SettingsGroupCard(
+                      children: [
+                        if (!Platform.isWindows) ...[
+                          Consumer(
+                            builder: (context, ref, _) {
+                              final maxCacheBytes = ref.watch(
+                                settingsStateProvider.select(
+                                  (s) =>
+                                      s.valueOrNull?.maxCacheBytes ??
+                                      AppCacheService.defaultMaxCacheBytes,
+                                ),
+                              );
+                              return ListTile(
+                                title: Text(i18n.tr('max_cache_size')),
+                                subtitle: Text(
+                                  i18n.tr('max_cache_size_subtitle', {
+                                    'size': AppCacheService.formatBytes(
+                                      maxCacheBytes,
+                                    ),
+                                  }),
+                                  style: descStyle,
+                                ),
+                                leading: Container(
+                                  width: 38,
+                                  height: 38,
+                                  decoration: BoxDecoration(
+                                    color: cs.primaryContainer,
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: Icon(
+                                    Icons.storage_rounded,
+                                    color: cs.onPrimaryContainer,
+                                  ),
+                                ),
+                                trailing: DropdownButtonHideUnderline(
+                                  child: DropdownButton<int>(
+                                    value:
+                                        _cacheLimitOptions.contains(
+                                          maxCacheBytes,
+                                        )
+                                        ? maxCacheBytes
+                                        : AppCacheService.defaultMaxCacheBytes,
+                                    borderRadius: BorderRadius.circular(12),
+                                    onChanged: (value) {
+                                      if (value != null) {
+                                        audioProvider.setMaxCacheBytes(value);
+                                      }
+                                    },
+                                    items: _cacheLimitOptions
+                                        .map(
+                                          (value) => DropdownMenuItem<int>(
+                                            value: value,
+                                            child: Text(
+                                              AppCacheService.formatBytes(
+                                                value,
+                                              ),
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.w700,
+                                              ),
+                                            ),
+                                          ),
+                                        )
+                                        .toList(),
+                                  ),
+                                ),
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 2,
+                                ),
+                              );
+                            },
+                          ),
+                          ListTile(
+                            onTap: () => _clearApplicationCache(context),
+                            title: Text(i18n.tr('clear_app_cache')),
                             subtitle: Text(
-                              i18n.tr('max_cache_size_subtitle', {
-                                'size': AppCacheService.formatBytes(maxCacheBytes),
-                              }),
+                              i18n.tr('clear_app_cache_subtitle'),
                               style: descStyle,
                             ),
                             leading: Container(
                               width: 38,
                               height: 38,
                               decoration: BoxDecoration(
-                                color: cs.primaryContainer,
+                                color: cs.secondaryContainer,
                                 borderRadius: BorderRadius.circular(10),
                               ),
                               child: Icon(
-                                Icons.storage_rounded,
-                                color: cs.onPrimaryContainer,
-                              ),
-                            ),
-                            trailing: DropdownButtonHideUnderline(
-                              child: DropdownButton<int>(
-                                value:
-                                    _cacheLimitOptions.contains(maxCacheBytes)
-                                    ? maxCacheBytes
-                                    : AppCacheService.defaultMaxCacheBytes,
-                                borderRadius: BorderRadius.circular(12),
-                                onChanged: (value) {
-                                  if (value != null) {
-                                    audioProvider.setMaxCacheBytes(value);
-                                  }
-                                },
-                                items: _cacheLimitOptions
-                                    .map(
-                                      (value) => DropdownMenuItem<int>(
-                                        value: value,
-                                        child: Text(
-                                          AppCacheService.formatBytes(value),
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.w700,
-                                          ),
-                                        ),
-                                      ),
-                                    )
-                                    .toList(),
+                                Icons.cleaning_services_rounded,
+                                color: cs.onSecondaryContainer,
                               ),
                             ),
                             contentPadding: const EdgeInsets.symmetric(
                               horizontal: 8,
                               vertical: 2,
                             ),
-                          );
-                        },
-                      ),
-                      const SizedBox(height: 2),
-                      ListTile(
-                        onTap: () => _clearApplicationCache(context),
-                        title: Text(i18n.tr('clear_app_cache')),
-                        subtitle: Text(
-                          i18n.tr('clear_app_cache_subtitle'),
-                          style: descStyle,
-                        ),
-                        leading: Container(
-                          width: 38,
-                          height: 38,
-                          decoration: BoxDecoration(
-                            color: cs.secondaryContainer,
-                            borderRadius: BorderRadius.circular(10),
                           ),
-                          child: Icon(
-                            Icons.cleaning_services_rounded,
-                            color: cs.onSecondaryContainer,
-                          ),
+                        ],
+                        _UpdateSettingsTile(
+                          checking: _checkingUpdate,
+                          downloading: _downloadingUpdate,
+                          progress: _downloadProgress,
+                          updateInfo: _lastUpdateInfo,
+                          textStyle: descStyle,
+                          onCheck: () => _checkForUpdates(context),
                         ),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 2,
+                        Consumer(
+                          builder: (context, ref, _) {
+                            final autoCheckUpdates = ref.watch(
+                              settingsStateProvider.select(
+                                (s) => s.valueOrNull?.autoCheckUpdates ?? false,
+                              ),
+                            );
+                            return SwitchListTile(
+                              value: autoCheckUpdates,
+                              onChanged: audioProvider.setAutoCheckUpdates,
+                              title: Text(i18n.tr('auto_check_updates')),
+                              subtitle: Text(
+                                i18n.tr('auto_check_updates_subtitle'),
+                                style: descStyle,
+                              ),
+                              secondary: Container(
+                                width: 38,
+                                height: 38,
+                                decoration: BoxDecoration(
+                                  color: cs.secondaryContainer,
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Icon(
+                                  Icons.update_rounded,
+                                  color: cs.onSecondaryContainer,
+                                ),
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                            );
+                          },
                         ),
-                      ),
-                      const SizedBox(height: 2),
-                    ],
-                    _UpdateSettingsTile(
-                      checking: _checkingUpdate,
-                      downloading: _downloadingUpdate,
-                      progress: _downloadProgress,
-                      updateInfo: _lastUpdateInfo,
-                      textStyle: descStyle,
-                      onCheck: () => _checkForUpdates(context),
+                      ],
                     ),
-                    const SizedBox(height: 2),
-                    Consumer(
-                      builder: (context, ref, _) {
-                        final autoCheckUpdates = ref.watch(settingsStateProvider.select((s) => s.valueOrNull?.autoCheckUpdates ?? false));
-                        return SwitchListTile(
-                          value: autoCheckUpdates,
-                          onChanged: audioProvider.setAutoCheckUpdates,
-                          title: Text(i18n.tr('auto_check_updates')),
-                          subtitle: Text(
-                            i18n.tr('auto_check_updates_subtitle'),
-                            style: descStyle,
-                          ),
-                          secondary: Container(
-                            width: 38,
-                            height: 38,
-                            decoration: BoxDecoration(
-                              color: cs.secondaryContainer,
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Icon(
-                              Icons.update_rounded,
-                              color: cs.onSecondaryContainer,
-                            ),
-                          ),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                        );
-                      },
-                    ),
+                    const SizedBox(height: 24),
                   ],
                 ),
               ),

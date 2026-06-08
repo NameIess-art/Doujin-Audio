@@ -9,8 +9,7 @@ import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.common.audio.AudioProcessor
 import androidx.media3.exoplayer.audio.DefaultAudioSink
-
-internal fun nativePlaybackWakeMode(): Int = C.WAKE_MODE_LOCAL
+internal fun nativePlaybackWakeMode(): Int = C.WAKE_MODE_NETWORK
 
 internal interface NativePlayerEventCallbacks {
     fun onPlaybackStateChanged(sessionId: String, playbackState: Int)

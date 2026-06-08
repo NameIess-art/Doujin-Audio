@@ -118,6 +118,11 @@ ThemeData _asmrPanelTheme(BuildContext context) {
       style: TextButton.styleFrom(foregroundColor: blue),
     ),
     iconTheme: base.iconTheme.copyWith(color: blue),
+    textSelectionTheme: base.textSelectionTheme.copyWith(
+      cursorColor: blue,
+      selectionColor: blue.withValues(alpha: 0.3),
+      selectionHandleColor: blue,
+    ),
     inputDecorationTheme: base.inputDecorationTheme.copyWith(
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),

@@ -531,12 +531,7 @@ class _TimeSegmentPanelState extends State<_TimeSegmentPanel> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Divider(
-            color: Theme.of(
-              context,
-            ).colorScheme.outlineVariant.withValues(alpha: 0.5),
-            height: 1,
-          ),
+          const SizedBox(height: 4),
           const SizedBox(height: 8),
           _SegmentPanelPageHeader(
             pageIndex: _pageIndex,

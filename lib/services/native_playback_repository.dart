@@ -120,6 +120,13 @@ class NativePlaybackRepository {
     return _bridge.setAudioEffects(sessionId, effects);
   }
 
+  Future<NativeResult<NativePlaybackSnapshot>> setFadeMultiplier(
+    String sessionId,
+    double multiplier,
+  ) {
+    return _bridge.setFadeMultiplier(sessionId, multiplier);
+  }
+
   Future<NativeResult<void>> removeSession(String sessionId) {
     return _bridge.removeSession(sessionId);
   }

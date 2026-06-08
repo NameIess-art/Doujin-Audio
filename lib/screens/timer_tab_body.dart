@@ -58,7 +58,12 @@ extension _TimerTabBody on _TimerTabState {
     final showCompactDetail =
         showCompactOnly && _showCompactDetail && timerConfigured;
     Future<void> pickAutoResumeTime() async {
-      unawaited(Feedback.forTap(context));
+      unawaited(
+        AppInteractionFeedback.trigger(
+          AppInteractionFeedbackType.tap,
+          context: context,
+        ),
+      );
       final picked = await showTimePicker(
         context: context,
         initialTime: TimeOfDay(
@@ -225,7 +230,9 @@ extension _TimerTabBody on _TimerTabState {
           showSubtitle: !compactMode,
           compact: compactMode,
           onChanged: (mode) {
-            HapticFeedback.selectionClick();
+            AppInteractionFeedback.trigger(
+              AppInteractionFeedbackType.selection,
+            );
             if (timerConfigured && timerSlice.mode != mode) {
               provider.configureTimer(mode, _pickedDuration);
               if (mode == TimerMode.manual) {
@@ -246,8 +253,9 @@ extension _TimerTabBody on _TimerTabState {
           onPressed: _durationIsZero
               ? null
               : () {
-                  Feedback.forTap(context);
-                  HapticFeedback.mediumImpact();
+                  AppInteractionFeedback.trigger(
+                    AppInteractionFeedbackType.confirmation,
+                  );
                   _onConfirm(provider);
                 },
           icon: Icon(
@@ -420,8 +428,9 @@ extension _TimerTabBody on _TimerTabState {
                   if (!showCompactOnly && timerConfigured) ...[
                     OutlinedButton.icon(
                       onPressed: () {
-                        Feedback.forTap(context);
-                        HapticFeedback.mediumImpact();
+                        AppInteractionFeedback.trigger(
+                          AppInteractionFeedbackType.destructive,
+                        );
                         provider.cancelTimer();
                       },
                       icon: const Icon(Icons.cancel_outlined),
@@ -448,7 +457,9 @@ extension _TimerTabBody on _TimerTabState {
                               secondary: const Icon(Icons.restore_rounded),
                               value: timerSlice.autoResumeEnabled,
                               onChanged: (value) {
-                                HapticFeedback.selectionClick();
+                                AppInteractionFeedback.trigger(
+                                  AppInteractionFeedbackType.selection,
+                                );
                                 unawaited(
                                   _setAutoResumeWithCapabilityCheck(
                                     provider,
@@ -486,7 +497,12 @@ extension _TimerTabBody on _TimerTabState {
                                   Icons.chevron_right_rounded,
                                 ),
                                 onTap: () async {
-                                  unawaited(Feedback.forTap(context));
+                                  unawaited(
+                                    AppInteractionFeedback.trigger(
+                                      AppInteractionFeedbackType.tap,
+                                      context: context,
+                                    ),
+                                  );
                                   final picked = await showTimePicker(
                                     context: context,
                                     initialTime: TimeOfDay(

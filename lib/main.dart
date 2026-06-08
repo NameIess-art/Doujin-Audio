@@ -73,7 +73,7 @@ Future<void> _runAudioPlayerApp(List<String> args) async {
     ),
   );
 
-  final results = await initFutures;
+  await initFutures;
 
   final notificationService = PlaybackNotificationService();
   final audioDatabaseRepository = AudioDatabaseRepository();

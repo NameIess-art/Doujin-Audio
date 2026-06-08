@@ -47,7 +47,7 @@ extension AudioProviderPlayback on AudioProvider {
 
   Future<void> toggleSessionPlayPause(String sessionId) async {
     final session = _playbackService.sessionById(sessionId);
-    if (session == null || session.isLoading) return;
+    if (session == null) return;
     if (session.currentTrackPath.isEmpty) return;
 
     if (session.state.playing) {
@@ -119,22 +119,25 @@ extension AudioProviderPlayback on AudioProvider {
     if (mode != SessionLoopMode.single) {
       session.nonSingleLoopMode = mode;
     }
-    await _nativePlaybackRepository.setRepeatOne(
-      session.id,
-      mode == SessionLoopMode.single,
-      queue: _nativePlaybackQueueFor(
-        session,
-        currentPath: session.currentTrackPath,
-      ),
-      queueStartIndex: _nativePlaybackQueueStartIndexFor(
-        session,
-        currentPath: session.currentTrackPath,
-      ),
-      repeatAll: mode != SessionLoopMode.single,
-      shuffle: _isShuffleMode(mode),
-    );
-    _syncNotificationState();
+    _markActiveSessionsDirty();
     _notifyPlaybackChanged();
+    _syncNotificationState();
+    unawaited(
+      _nativePlaybackRepository.setRepeatOne(
+        session.id,
+        mode == SessionLoopMode.single,
+        queue: _nativePlaybackQueueFor(
+          session,
+          currentPath: session.currentTrackPath,
+        ),
+        queueStartIndex: _nativePlaybackQueueStartIndexFor(
+          session,
+          currentPath: session.currentTrackPath,
+        ),
+        repeatAll: mode != SessionLoopMode.single,
+        shuffle: _isShuffleMode(mode),
+      ),
+    );
     _scheduleSaveSessionState();
   }
 
@@ -491,7 +494,6 @@ extension AudioProviderPlayback on AudioProvider {
   Future<void> seekSession(String sessionId, Duration position) async {
     final session = _sessions[sessionId];
     if (session != null) {
-      await _nativePlaybackRepository.seek(session.id, position);
       session.setOptimisticPosition(position);
       session.lastPersistedPositionBucket = position.inSeconds ~/ 5;
       _refreshNotificationSubtitleForSession(
@@ -500,23 +502,26 @@ extension AudioProviderPlayback on AudioProvider {
         syncNotification: false,
       );
       _scheduleFocusedNotificationRefresh(session.id, immediate: true);
+      await _nativePlaybackRepository.seek(session.id, position);
     }
   }
 
   Future<void> switchSessionTrack(String sessionId, String newPath) async {
     final session = _sessions[sessionId];
-    if (session == null || session.isLoading) return;
-    await _prepareAndPlay(session, nextPath: newPath, forceStartAtZero: true);
+    if (session == null) return;
+    await _prepareAndPlay(
+      session,
+      nextPath: newPath,
+      forceStartAtZero: true,
+      showLoading: false,
+    );
     _scheduleSaveSessionState();
   }
 
   Future<void> switchSessionQueueTrack(String sessionId, int queueIndex) async {
     final session = _sessions[sessionId];
     final tracks = session?.customQueueTracks;
-    if (session == null ||
-        tracks == null ||
-        tracks.isEmpty ||
-        session.isLoading) {
+    if (session == null || tracks == null || tracks.isEmpty) {
       return;
     }
     final index = queueIndex.clamp(0, tracks.length - 1);
@@ -525,28 +530,29 @@ extension AudioProviderPlayback on AudioProvider {
       session,
       nextPath: tracks[index].path,
       forceStartAtZero: true,
+      showLoading: false,
     );
     _scheduleSaveSessionState();
   }
 
   Future<void> seekSessionToNext(String sessionId) async {
     final session = _sessions[sessionId];
-    if (session == null || session.isLoading) return;
+    if (session == null) return;
     final nextPath = _nextPathFor(session, forward: true);
     if (nextPath != null) {
       await _prepareAndPlay(
         session,
         nextPath: nextPath,
         forceStartAtZero: true,
+        showLoading: false,
       );
     }
   }
 
   Future<void> seekSessionToPrev(String sessionId) async {
     final session = _sessions[sessionId];
-    if (session == null || session.isLoading) return;
+    if (session == null) return;
     if (session.position.inSeconds > 3) {
-      await _nativePlaybackRepository.seek(session.id, Duration.zero);
       session.setOptimisticPosition(Duration.zero);
       session.lastPersistedPositionBucket = 0;
       _refreshNotificationSubtitleForSession(
@@ -555,6 +561,7 @@ extension AudioProviderPlayback on AudioProvider {
         syncNotification: false,
       );
       _scheduleFocusedNotificationRefresh(session.id, immediate: true);
+      await _nativePlaybackRepository.seek(session.id, Duration.zero);
       return;
     }
     final prevPath = _nextPathFor(session, forward: false);
@@ -563,6 +570,7 @@ extension AudioProviderPlayback on AudioProvider {
         session,
         nextPath: prevPath,
         forceStartAtZero: true,
+        showLoading: false,
       );
     }
   }

@@ -28,7 +28,10 @@ class _ModeSelector extends StatelessWidget {
       return InkWell(
         borderRadius: BorderRadius.circular(20),
         onTap: () {
-          Feedback.forTap(context);
+          AppInteractionFeedback.trigger(
+            AppInteractionFeedbackType.tap,
+            context: context,
+          );
           onChanged(mode);
         },
         child: AnimatedContainer(

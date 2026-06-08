@@ -6,7 +6,6 @@ import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:path/path.dart' as path;
@@ -22,6 +21,7 @@ import '../services/path_matcher.dart';
 import '../services/permission_action_controller.dart';
 import '../services/subtitle_parser.dart';
 import '../services/subtitle_overlay_controller.dart';
+import '../services/ui_interaction_coordinator.dart';
 import '../widgets/app_feedback.dart';
 import '../widgets/app_transitions.dart';
 import '../widgets/async_cover_image.dart';
@@ -158,12 +158,18 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
   }
 
   void _openSessionDetail(BuildContext context, String sessionId) {
-    Feedback.forTap(context);
+    AppInteractionFeedback.trigger(
+      AppInteractionFeedbackType.tap,
+      context: context,
+    );
     Navigator.of(context).push(buildSessionDetailRoute(sessionId: sessionId));
   }
 
   void _openQueueEditor(BuildContext context, String sessionId) {
-    Feedback.forTap(context);
+    AppInteractionFeedback.trigger(
+      AppInteractionFeedbackType.tap,
+      context: context,
+    );
     showPlaybackQueueEditPanel(context, sessionId);
   }
 
@@ -179,15 +185,12 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     super.build(context);
     final i18n = context.watch<AppLanguageProvider>();
     final provider = ref.read(audioProviderFacadeProvider);
-    final uiState = ref.watch(playlistUiProvider);
+    final listState = ref.watch(
+      playlistUiProvider.select((state) => state.list),
+    );
     final settingsState =
         ref.watch(settingsStateProvider).valueOrNull ?? const SettingsState();
     final cardPositionsLocked = settingsState.cardPositionsLocked;
-    final headerState = uiState.header;
-    final listState = uiState.list;
-    final sessionSummary =
-        '${i18n.tr('sessions_count', {'count': headerState.sessionCount})} · '
-        '${i18n.tr('playing_count', {'count': headerState.playingCount})}';
     final listBottomInset = MobileOverlayInset.of(context);
     final listCacheExtent = (_headerHeight + 800)
         .clamp(_headerHeight + 4, 1600.0)
@@ -321,7 +324,12 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                                       },
                                       onReorderStart: (_) {
                                         setState(() => _isReordering = true);
-                                        unawaited(HapticFeedback.heavyImpact());
+                                        unawaited(
+                                          AppInteractionFeedback.trigger(
+                                            AppInteractionFeedbackType
+                                                .destructive,
+                                          ),
+                                        );
                                       },
                                       onReorderEnd: (_) {
                                         if (_isReordering) {
@@ -348,102 +356,113 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
             top: 0,
             left: 0,
             right: 0,
-            child: TopPageHeader(
-              key: _headerKey,
-              icon: Icons.graphic_eq_rounded,
-              title: i18n.tr('playback_sessions'),
-              isLoading: !listState.isInitialized,
-              subtitle: sessionSummary,
-              subtitleFontSize: 11,
-              fitSubtitleToWidth: true,
-              trailing: SizedBox(
-                height: 44,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    if (headerState.hasTimer)
-                      _TimerCountdownCapsule(
-                        remaining:
-                            headerState.timerRemaining ??
-                            headerState.timerDuration ??
-                            Duration.zero,
-                        active: headerState.timerActive,
-                        autoResumeAt: headerState.autoResumeAt,
-                        onTap: widget.onTimerTap,
-                      )
-                    else
-                      IconButton(
-                        onPressed: widget.onTimerTap,
-                        icon: const Icon(Icons.alarm_rounded),
-                        tooltip: i18n.tr('timer'),
-                      ),
-                    UnifiedPopupMenuButton<String>(
-                      icon: Icons.more_horiz_rounded,
-                      tooltip: i18n.tr('more_actions'),
-                      entries: [
-                        UnifiedMenuEntry<String>.action(
-                          value: 'add_playback_queue',
-                          icon: Icons.playlist_add_rounded,
-                          label: i18n.tr('add_playback_queue'),
-                        ),
-                        const UnifiedMenuEntry<String>.divider(),
-                        UnifiedMenuEntry<String>.action(
-                          value: 'pause_all',
-                          icon: Icons.pause_circle_outline_rounded,
-                          label: i18n.tr('pause_all_sessions'),
-                          enabled: listState.hasSessions,
-                        ),
-                        UnifiedMenuEntry<String>.action(
-                          value: 'clear_all',
-                          icon: Icons.delete_sweep_rounded,
-                          label: i18n.tr('clear_all_sessions'),
-                          destructive: true,
-                          enabled: listState.hasSessions,
-                        ),
-                        const UnifiedMenuEntry<String>.divider(),
-                        UnifiedMenuEntry<String>.action(
-                          value: 'toggle_card_positions_locked',
-                          icon: Icons.push_pin_rounded,
-                          label: i18n.tr('fixed_card_positions'),
-                          trailing: cardPositionsLocked
-                              ? const Icon(Icons.check_rounded, size: 18)
-                              : null,
+            child: Consumer(
+              builder: (context, ref, child) {
+                final headerState = ref.watch(
+                  playlistUiProvider.select((state) => state.header),
+                );
+                final sessionSummary =
+                    '${i18n.tr('sessions_count', {'count': headerState.sessionCount})} · '
+                    '${i18n.tr('playing_count', {'count': headerState.playingCount})}';
+                return TopPageHeader(
+                  key: _headerKey,
+                  icon: Icons.graphic_eq_rounded,
+                  title: i18n.tr('playback_sessions'),
+                  isLoading: !listState.isInitialized,
+                  subtitle: sessionSummary,
+                  subtitleFontSize: 11,
+                  fitSubtitleToWidth: true,
+                  trailing: SizedBox(
+                    height: 44,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        if (headerState.hasTimer)
+                          _TimerCountdownCapsule(
+                            remaining:
+                                headerState.timerRemaining ??
+                                headerState.timerDuration ??
+                                Duration.zero,
+                            active: headerState.timerActive,
+                            autoResumeAt: headerState.autoResumeAt,
+                            onTap: widget.onTimerTap,
+                          )
+                        else
+                          IconButton(
+                            onPressed: widget.onTimerTap,
+                            icon: const Icon(Icons.alarm_rounded),
+                            tooltip: i18n.tr('timer'),
+                          ),
+                        UnifiedPopupMenuButton<String>(
+                          icon: Icons.more_horiz_rounded,
+                          tooltip: i18n.tr('more_actions'),
+                          entries: [
+                            UnifiedMenuEntry<String>.action(
+                              value: 'add_playback_queue',
+                              icon: Icons.playlist_add_rounded,
+                              label: i18n.tr('add_playback_queue'),
+                            ),
+                            const UnifiedMenuEntry<String>.divider(),
+                            UnifiedMenuEntry<String>.action(
+                              value: 'pause_all',
+                              icon: Icons.pause_circle_outline_rounded,
+                              label: i18n.tr('pause_all_sessions'),
+                              enabled: listState.hasSessions,
+                            ),
+                            UnifiedMenuEntry<String>.action(
+                              value: 'clear_all',
+                              icon: Icons.delete_sweep_rounded,
+                              label: i18n.tr('clear_all_sessions'),
+                              destructive: true,
+                              enabled: listState.hasSessions,
+                            ),
+                            const UnifiedMenuEntry<String>.divider(),
+                            UnifiedMenuEntry<String>.action(
+                              value: 'toggle_card_positions_locked',
+                              icon: Icons.push_pin_rounded,
+                              label: i18n.tr('fixed_card_positions'),
+                              trailing: cardPositionsLocked
+                                  ? const Icon(Icons.check_rounded, size: 18)
+                                  : null,
+                            ),
+                          ],
+                          onSelected: (value) {
+                            if (value == 'add_playback_queue') {
+                              final queueCount = listState.sessions
+                                  .where((session) => session.isPlaybackQueue)
+                                  .length;
+                              provider.createPlaybackQueue(
+                                i18n.tr('default_playback_queue_name', {
+                                  'number': queueCount + 1,
+                                }),
+                              );
+                            } else if (value == 'pause_all') {
+                              provider.pauseAllSessions();
+                              showAppSnackBar(
+                                context,
+                                i18n.tr('all_paused'),
+                                tone: AppFeedbackTone.warning,
+                                icon: Icons.pause_circle_outline_rounded,
+                              );
+                            } else if (value == 'clear_all') {
+                              _confirmClearAll(context, provider);
+                            } else if (value ==
+                                'toggle_card_positions_locked') {
+                              unawaited(
+                                provider.setCardPositionsLocked(
+                                  !cardPositionsLocked,
+                                ),
+                              );
+                            }
+                          },
                         ),
                       ],
-                      onSelected: (value) {
-                        if (value == 'add_playback_queue') {
-                          final queueCount = listState.sessions
-                              .where((session) => session.isPlaybackQueue)
-                              .length;
-                          provider.createPlaybackQueue(
-                            i18n.tr('default_playback_queue_name', {
-                              'number': queueCount + 1,
-                            }),
-                          );
-                        } else if (value == 'pause_all') {
-                          provider.pauseAllSessions();
-                          showAppSnackBar(
-                            context,
-                            i18n.tr('all_paused'),
-                            tone: AppFeedbackTone.warning,
-                            icon: Icons.pause_circle_outline_rounded,
-                          );
-                        } else if (value == 'clear_all') {
-                          _confirmClearAll(context, provider);
-                        } else if (value == 'toggle_card_positions_locked') {
-                          unawaited(
-                            provider.setCardPositionsLocked(
-                              !cardPositionsLocked,
-                            ),
-                          );
-                        }
-                      },
                     ),
-                  ],
-                ),
-              ),
-              padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+                  ),
+                  padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+                );
+              },
             ),
           ),
         ],

@@ -312,10 +312,7 @@ class _SwitcherSlot extends StatelessWidget {
           scale: Tween<double>(begin: 0.4, end: 1.0).animate(
             CurvedAnimation(parent: animation, curve: Curves.easeOutBack),
           ),
-          child: FadeTransition(
-            opacity: animation,
-            child: child,
-          ),
+          child: FadeTransition(opacity: animation, child: child),
         );
       },
       child: child,
@@ -349,7 +346,7 @@ class _LoopModeButton extends StatelessWidget {
         );
     return IconButton(
       onPressed: () {
-        HapticFeedback.selectionClick();
+        AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
         onPressed();
       },
       style: IconButton.styleFrom(

@@ -621,7 +621,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
       return;
     }
     if (withFeedback) {
-      HapticFeedback.selectionClick();
+      AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
     }
 
     final coordinator = UiInteractionCoordinator.instance;

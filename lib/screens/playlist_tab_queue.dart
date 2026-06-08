@@ -114,10 +114,12 @@ class _PlaybackQueueCardState extends State<_PlaybackQueueCard> {
                     tooltip: session.state.playing
                         ? i18n.tr('pause')
                         : i18n.tr('play'),
-                    onPressed: tracks.isEmpty || session.isLoading
+                    onPressed: tracks.isEmpty
                         ? null
                         : () {
-                            HapticFeedback.selectionClick();
+                            AppInteractionFeedback.trigger(
+                              AppInteractionFeedbackType.selection,
+                            );
                             provider.toggleSessionPlayPause(session.id);
                           },
                     style: IconButton.styleFrom(
@@ -127,7 +129,7 @@ class _PlaybackQueueCardState extends State<_PlaybackQueueCard> {
                       padding: EdgeInsets.zero,
                     ),
                     icon: AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 250),
+                      duration: const Duration(milliseconds: 120),
                       transitionBuilder: (child, animation) {
                         return ScaleTransition(
                           scale: Tween<double>(begin: 0.4, end: 1.0).animate(

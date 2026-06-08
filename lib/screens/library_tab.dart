@@ -504,7 +504,11 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
               !listState.isScanning &&
               _effectiveSearchQuery.isEmpty) {
             _refreshTriggeredInCurrentScroll = true;
-            unawaited(HapticFeedback.mediumImpact());
+            unawaited(
+              AppInteractionFeedback.trigger(
+                AppInteractionFeedbackType.confirmation,
+              ),
+            );
             _refreshIndicatorKey.currentState?.show();
           } else if (notification is ScrollEndNotification) {
             _refreshTriggeredInCurrentScroll = false;
@@ -611,7 +615,11 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                             onReorderStart: (index) {
                               if (cardPositionsLocked) return;
                               setState(() => _isReordering = true);
-                              unawaited(HapticFeedback.heavyImpact());
+                              unawaited(
+                                AppInteractionFeedback.trigger(
+                                  AppInteractionFeedbackType.destructive,
+                                ),
+                              );
                             },
                             onReorderEnd: (_) {
                               if (_isReordering) {

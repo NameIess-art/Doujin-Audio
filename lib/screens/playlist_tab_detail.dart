@@ -240,7 +240,9 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
         .clamp(0, sessions.length - 1)
         .toInt();
     if (nextIndex == currentIndex) return;
-    unawaited(HapticFeedback.selectionClick());
+    unawaited(
+      AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection),
+    );
     final direction = offset.sign == 0 ? 1 : offset.sign;
     _slideController.stop();
     _slideAnimation =

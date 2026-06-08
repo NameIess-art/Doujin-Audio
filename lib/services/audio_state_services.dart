@@ -15,7 +15,6 @@ import '../models/playback_session.dart';
 import 'library_organizer.dart';
 import 'native_playback_bridge.dart';
 import 'path_matcher.dart';
-import 'playback_notification_service.dart';
 import 'subtitle_parser.dart';
 import 'warmup_scheduler.dart';
 

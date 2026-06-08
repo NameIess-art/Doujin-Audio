@@ -60,8 +60,8 @@ class _SessionVolumeButtonState extends State<_SessionVolumeButton>
     return volume == 0
         ? Icons.volume_off_rounded
         : volume < 0.45
-            ? Icons.volume_down_rounded
-            : Icons.volume_up_rounded;
+        ? Icons.volume_down_rounded
+        : Icons.volume_up_rounded;
   }
 
   Widget _buildOverlay(BuildContext context) {
@@ -84,8 +84,10 @@ class _SessionVolumeButtonState extends State<_SessionVolumeButton>
             child: AnimatedBuilder(
               animation: _expandController,
               builder: (context, _) {
-                final progress = Curves.easeOutCubic.transform(_expandController.value).clamp(0.0, 1.0);
-                
+                final progress = Curves.easeOutCubic
+                    .transform(_expandController.value)
+                    .clamp(0.0, 1.0);
+
                 return Transform.scale(
                   alignment: Alignment.bottomCenter,
                   scale: 0.85 + (progress * 0.15),
@@ -135,7 +137,9 @@ class _SessionVolumeButtonState extends State<_SessionVolumeButton>
               padding: EdgeInsets.zero,
               tooltip: context.read<AppLanguageProvider>().tr('volume'),
               onPressed: () {
-                HapticFeedback.selectionClick();
+                AppInteractionFeedback.trigger(
+                  AppInteractionFeedbackType.selection,
+                );
                 _toggleVolume();
               },
               icon: AnimatedSwitcher(
@@ -143,15 +147,20 @@ class _SessionVolumeButtonState extends State<_SessionVolumeButton>
                 transitionBuilder: (child, animation) {
                   return ScaleTransition(
                     scale: Tween<double>(begin: 0.4, end: 1.0).animate(
-                      CurvedAnimation(parent: animation, curve: Curves.easeOutBack),
+                      CurvedAnimation(
+                        parent: animation,
+                        curve: Curves.easeOutBack,
+                      ),
                     ),
-                    child: FadeTransition(
-                      opacity: animation,
-                      child: child,
-                    ),
+                    child: FadeTransition(opacity: animation, child: child),
                   );
                 },
-                child: Icon(icon, key: ValueKey(icon), size: 20, color: cs.onSurface),
+                child: Icon(
+                  icon,
+                  key: ValueKey(icon),
+                  size: 20,
+                  color: cs.onSurface,
+                ),
               ),
             ),
           ),
@@ -242,9 +251,7 @@ class _VerticalVolumeSliderState extends State<_VerticalVolumeSlider> {
       decoration: BoxDecoration(
         color: cs.surfaceContainerHigh.withValues(alpha: 0.95),
         borderRadius: BorderRadius.circular(22),
-        border: Border.all(
-          color: cs.outlineVariant.withValues(alpha: 0.8),
-        ),
+        border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.8)),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.1),
@@ -288,18 +295,23 @@ class _VerticalVolumeSliderState extends State<_VerticalVolumeSlider> {
                   max: _maxSessionVolume,
                   onChanged: (v) {
                     setState(() => _dragVolume = v);
-                    widget.provider.setSessionVolume(
-                      widget.session.id,
-                      v,
-                      persist: false,
+                    AppInteractionFeedback.continuous((v * 100).round());
+                    UiInteractionCoordinator.instance.scheduleThrottledCommit(
+                      key: 'session_volume:${widget.session.id}',
+                      commit: () => widget.provider.setSessionVolume(
+                        widget.session.id,
+                        v,
+                        persist: false,
+                      ),
                     );
                   },
                   onChangeEnd: (v) {
                     setState(() => _dragVolume = null);
-                    widget.provider.setSessionVolume(
-                      widget.session.id,
-                      v,
+                    AppInteractionFeedback.resetContinuous();
+                    UiInteractionCoordinator.instance.cancelThrottledCommit(
+                      'session_volume:${widget.session.id}',
                     );
+                    widget.provider.setSessionVolume(widget.session.id, v);
                   },
                 ),
               ),
@@ -310,7 +322,9 @@ class _VerticalVolumeSliderState extends State<_VerticalVolumeSlider> {
             constraints: const BoxConstraints.tightFor(width: 40, height: 40),
             padding: EdgeInsets.zero,
             onPressed: () {
-              HapticFeedback.selectionClick();
+              AppInteractionFeedback.trigger(
+                AppInteractionFeedbackType.selection,
+              );
               widget.onClose();
             },
             icon: AnimatedSwitcher(
@@ -318,25 +332,27 @@ class _VerticalVolumeSliderState extends State<_VerticalVolumeSlider> {
               transitionBuilder: (child, animation) {
                 return ScaleTransition(
                   scale: Tween<double>(begin: 0.4, end: 1.0).animate(
-                    CurvedAnimation(parent: animation, curve: Curves.easeOutBack),
+                    CurvedAnimation(
+                      parent: animation,
+                      curve: Curves.easeOutBack,
+                    ),
                   ),
-                  child: FadeTransition(
-                    opacity: animation,
-                    child: child,
-                  ),
+                  child: FadeTransition(opacity: animation, child: child),
                 );
               },
               child: Icon(
                 volume == 0
                     ? Icons.volume_off_rounded
                     : volume < 0.45
-                        ? Icons.volume_down_rounded
-                        : Icons.volume_up_rounded,
-                key: ValueKey(volume == 0
-                    ? Icons.volume_off_rounded
-                    : volume < 0.45
-                        ? Icons.volume_down_rounded
-                        : Icons.volume_up_rounded),
+                    ? Icons.volume_down_rounded
+                    : Icons.volume_up_rounded,
+                key: ValueKey(
+                  volume == 0
+                      ? Icons.volume_off_rounded
+                      : volume < 0.45
+                      ? Icons.volume_down_rounded
+                      : Icons.volume_up_rounded,
+                ),
                 size: 20,
                 color: cs.primary,
               ),
@@ -448,8 +464,7 @@ class _TimerCountdownCapsuleState extends State<_TimerCountdownCapsule> {
       child: InkWell(
         borderRadius: BorderRadius.circular(999),
         onTap: () {
-          Feedback.forTap(context);
-          HapticFeedback.selectionClick();
+          AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
           widget.onTap?.call();
         },
         child: Container(

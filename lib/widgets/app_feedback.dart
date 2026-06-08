@@ -1,13 +1,56 @@
 import 'dart:async';
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 enum AppFeedbackTone { info, success, warning, destructive }
 
+enum AppInteractionFeedbackType { tap, selection, confirmation, destructive }
+
 OverlayEntry? _activeFeedbackEntry;
 Timer? _activeFeedbackTimer;
+
+abstract final class AppInteractionFeedback {
+  static DateTime? _lastContinuousFeedbackAt;
+  static Object? _lastContinuousValue;
+
+  static Future<void> trigger(
+    AppInteractionFeedbackType type, {
+    BuildContext? context,
+  }) {
+    switch (type) {
+      case AppInteractionFeedbackType.tap:
+        return context == null
+            ? HapticFeedback.lightImpact()
+            : Feedback.forTap(context);
+      case AppInteractionFeedbackType.selection:
+        return HapticFeedback.selectionClick();
+      case AppInteractionFeedbackType.confirmation:
+        return HapticFeedback.mediumImpact();
+      case AppInteractionFeedbackType.destructive:
+        return HapticFeedback.heavyImpact();
+    }
+  }
+
+  static Future<void> continuous(
+    Object value, {
+    Duration interval = const Duration(milliseconds: 72),
+  }) {
+    final now = DateTime.now();
+    final previousAt = _lastContinuousFeedbackAt;
+    if (_lastContinuousValue == value ||
+        (previousAt != null && now.difference(previousAt) < interval)) {
+      return Future<void>.value();
+    }
+    _lastContinuousValue = value;
+    _lastContinuousFeedbackAt = now;
+    return HapticFeedback.selectionClick();
+  }
+
+  static void resetContinuous() {
+    _lastContinuousFeedbackAt = null;
+    _lastContinuousValue = null;
+  }
+}
 
 void showAppSnackBar(
   BuildContext context,
@@ -56,7 +99,9 @@ void _showTopFeedback(
 }) {
   final overlay = Overlay.of(context, rootOverlay: true);
   final resolvedIcon = icon ?? _defaultIconForTone(tone);
-  HapticFeedback.selectionClick();
+  unawaited(
+    AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection),
+  );
 
   _activeFeedbackTimer?.cancel();
   _activeFeedbackEntry?.remove();
@@ -204,83 +249,78 @@ class AppFeedbackSurface extends StatelessWidget {
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(borderRadius),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: surfaceColor,
-            borderRadius: BorderRadius.circular(borderRadius),
-            border: Border.all(
-              color: cs.outlineVariant.withValues(alpha: 0.18),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: surfaceColor,
+          borderRadius: BorderRadius.circular(borderRadius),
+          border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.18)),
+          boxShadow: [
+            BoxShadow(
+              color: cs.shadow.withValues(alpha: 0.12),
+              blurRadius: 24,
+              offset: const Offset(0, 12),
             ),
-            boxShadow: [
-              BoxShadow(
-                color: cs.shadow.withValues(alpha: 0.12),
-                blurRadius: 24,
-                offset: const Offset(0, 12),
-              ),
-              BoxShadow(
-                color: cs.shadow.withValues(alpha: 0.06),
-                blurRadius: 10,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: Padding(
-            padding: padding,
-            child: Row(
-              children: [
-                Container(
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    color: chipBackground,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Icon(icon, size: 18, color: accent),
+            BoxShadow(
+              color: cs.shadow.withValues(alpha: 0.06),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Padding(
+          padding: padding,
+          child: Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: chipBackground,
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (title != null) ...[
-                        Text(
-                          title!,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.labelLarge?.copyWith(
-                            color: cs.onSurface,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                      ],
+                child: Icon(icon, size: 18, color: accent),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (title != null) ...[
                       Text(
-                        message,
-                        maxLines: 2,
+                        title!,
+                        maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style:
-                            (title != null
-                                    ? theme.textTheme.bodyMedium
-                                    : theme.textTheme.titleSmall)
-                                ?.copyWith(
-                                  color: title != null
-                                      ? cs.onSurfaceVariant
-                                      : cs.onSurface,
-                                  fontWeight: title != null
-                                      ? FontWeight.w600
-                                      : FontWeight.w800,
-                                  height: 1.25,
-                                ),
+                        style: theme.textTheme.labelLarge?.copyWith(
+                          color: cs.onSurface,
+                          fontWeight: FontWeight.w800,
+                        ),
                       ),
+                      const SizedBox(height: 2),
                     ],
-                  ),
+                    Text(
+                      message,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style:
+                          (title != null
+                                  ? theme.textTheme.bodyMedium
+                                  : theme.textTheme.titleSmall)
+                              ?.copyWith(
+                                color: title != null
+                                    ? cs.onSurfaceVariant
+                                    : cs.onSurface,
+                                fontWeight: title != null
+                                    ? FontWeight.w600
+                                    : FontWeight.w800,
+                                height: 1.25,
+                              ),
+                    ),
+                  ],
                 ),
-                if (trailing != null) ...[const SizedBox(width: 12), trailing!],
-              ],
-            ),
+              ),
+              if (trailing != null) ...[const SizedBox(width: 12), trailing!],
+            ],
           ),
         ),
       ),

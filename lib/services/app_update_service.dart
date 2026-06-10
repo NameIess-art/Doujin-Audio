@@ -210,7 +210,7 @@ class AppUpdateService {
       final buildNumber = (raw?['buildNumber'] as num?)?.toInt() ?? 0;
       return AppVersionInfo(versionName: versionName, buildNumber: buildNumber);
     } catch (_) {
-      return const AppVersionInfo(versionName: '0.9.91', buildNumber: 991);
+      return const AppVersionInfo(versionName: '0.9.92', buildNumber: 992);
     }
   }
 

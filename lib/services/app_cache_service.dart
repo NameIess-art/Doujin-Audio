@@ -84,7 +84,9 @@ class AppCacheService {
   static Future<List<Directory>> _dartCacheRoots() async {
     final roots = <Directory>[];
     try {
-      roots.add(await getTemporaryDirectory());
+      final tempDir = await getTemporaryDirectory();
+      roots.add(Directory(path.join(tempDir.path, 'updates')));
+      roots.add(Directory(path.join(tempDir.path, 'asmr_downloads')));
     } catch (_) {}
     roots.add(
       Directory(path.join(Directory.systemTemp.path, 'nameless_audio_imports')),

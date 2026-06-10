@@ -152,10 +152,12 @@ class TopPageHeader extends ConsumerWidget {
     );
 
     if (blurEnabled) {
-      return ClipRect(
-        child: BackdropFilter(
-          filter: dart_ui.ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-          child: headerContainer,
+      return RepaintBoundary(
+        child: ClipRect(
+          child: BackdropFilter(
+            filter: dart_ui.ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+            child: headerContainer,
+          ),
         ),
       );
     }

@@ -4,6 +4,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
+import android.app.PendingIntent
 import android.content.pm.ServiceInfo
 import android.media.AudioAttributes as AndroidAudioAttributes
 import android.media.AudioFocusRequest
@@ -43,6 +44,8 @@ class NativePlaybackService : MediaSessionService() {
         // transient buffering/focus failures under 10 minutes; a short grace
         // window lets screen-off playback get killed during those gaps.
         private const val PLAYBACK_STOP_GRACE_MS = 10 * 60 * 1000L
+        private const val MAX_ERROR_RETRY_ATTEMPTS = 3
+        private const val ERROR_RETRY_BASE_DELAY_MS = 2000L
         private const val LOG_TAG = "NativePlaybackService"
 
         @Volatile
@@ -171,6 +174,7 @@ class NativePlaybackService : MediaSessionService() {
     private val pendingAudioFocusResumeSessionIds = linkedSetOf<String>()
     private var attemptedStickyPlaybackRestore = false
     private var pendingPersistScheduled = false
+    private val errorRetryAttempts = mutableMapOf<String, Int>()
     // Whether a deferred foreground-stop is pending (grace period after
     // playback appears to have stopped).
     private var foregroundStopGracePending = false
@@ -188,6 +192,17 @@ class NativePlaybackService : MediaSessionService() {
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
                 audioFocusHeld = false
                 transientAudioFocusLossActive = true
+                // Pause playing sessions so they can be properly resumed on
+                // AUDIOFOCUS_GAIN. Without this, ExoPlayer (handleAudioFocus=
+                // false) keeps playing but the system may mute audio output,
+                // and the sessions are never tracked for pending resume.
+                sessions.values.forEach { session ->
+                    val player = session.playerOrNull()
+                    if (player != null && (player.isPlaying || player.playWhenReady)) {
+                        pendingAudioFocusResumeSessionIds.add(session.sessionId)
+                        player.pause()
+                    }
+                }
             }
             AudioManager.AUDIOFOCUS_GAIN -> {
                 audioFocusHeld = true
@@ -882,6 +897,7 @@ class NativePlaybackService : MediaSessionService() {
 
     private fun handleIsPlayingChanged(sessionId: String, isPlaying: Boolean) {
         logInfo("player_is_playing_changed isPlaying=$isPlaying", sessions[sessionId])
+        if (isPlaying) errorRetryAttempts.remove(sessionId)
         publishSessionState(sessionId)
         schedulePersistSessionState()
         syncForegroundState()
@@ -889,15 +905,63 @@ class NativePlaybackService : MediaSessionService() {
 
     private fun handlePlayerError(sessionId: String, error: PlaybackException) {
         pendingAudioFocusResumeSessionIds.remove(sessionId)
+        val attempts = errorRetryAttempts.getOrDefault(sessionId, 0)
         logWarn(
             "player_error code=${error.errorCodeName} message=${error.message} " +
-                "cause=${error.cause?.javaClass?.simpleName}:${error.cause?.message}",
+                "cause=${error.cause?.javaClass?.simpleName}:${error.cause?.message} " +
+                "retryAttempt=$attempts",
             sessions[sessionId],
             error
         )
         publishSessionState(sessionId)
         persistSessionStateNow()
+        // Auto-retry transient errors (IO / source errors) during background
+        // playback to survive temporary filesystem or decoder glitches.
+        if (isRetryableError(error) && attempts < MAX_ERROR_RETRY_ATTEMPTS) {
+            errorRetryAttempts[sessionId] = attempts + 1
+            val delayMs = ERROR_RETRY_BASE_DELAY_MS * (1L shl attempts)
+            logInfo("player_error_retry_scheduled sessionId=$sessionId delay=${delayMs}ms attempt=${attempts + 1}")
+            mainHandler.postDelayed({
+                retryPlaybackAfterError(sessionId)
+            }, delayMs)
+        } else {
+            errorRetryAttempts.remove(sessionId)
+        }
         syncForegroundState()
+    }
+
+    private fun isRetryableError(error: PlaybackException): Boolean {
+        return when (error.errorCode) {
+            PlaybackException.ERROR_CODE_IO_UNSPECIFIED,
+            PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
+            PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT,
+            PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND,
+            PlaybackException.ERROR_CODE_IO_NO_PERMISSION,
+            PlaybackException.ERROR_CODE_IO_READ_POSITION_OUT_OF_RANGE,
+            PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED,
+            PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED,
+            PlaybackException.ERROR_CODE_DECODER_INIT_FAILED,
+            PlaybackException.ERROR_CODE_AUDIO_TRACK_INIT_FAILED,
+            PlaybackException.ERROR_CODE_AUDIO_TRACK_WRITE_FAILED -> true
+            else -> false
+        }
+    }
+
+    private fun retryPlaybackAfterError(sessionId: String) {
+        val session = sessions[sessionId] ?: run {
+            errorRetryAttempts.remove(sessionId)
+            return
+        }
+        logInfo("player_error_retry_executing sessionId=$sessionId")
+        try {
+            session.reprepareCurrentMediaItem()
+            publishSessionState(sessionId)
+            syncForegroundState()
+        } catch (e: Exception) {
+            logWarn("player_error_retry_failed sessionId=$sessionId", session, e as? PlaybackException)
+            errorRetryAttempts.remove(sessionId)
+            syncForegroundState()
+        }
     }
 
     private fun focusSession(sessionId: String) {
@@ -918,9 +982,23 @@ class NativePlaybackService : MediaSessionService() {
             }
             return existingSession
         }
-        return MediaSession.Builder(this, player)
+        val launchIntent = packageManager.getLaunchIntentForPackage(packageName)?.apply {
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val pendingIntent = launchIntent?.let {
+            val pendingIntentFlags = PendingIntent.FLAG_UPDATE_CURRENT or if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                PendingIntent.FLAG_IMMUTABLE
+            } else {
+                0
+            }
+            PendingIntent.getActivity(this, 0, it, pendingIntentFlags)
+        }
+        val builder = MediaSession.Builder(this, player)
             .setId("Nameless Audio")
-            .build()
+        if (pendingIntent != null) {
+            builder.setSessionActivity(pendingIntent)
+        }
+        return builder.build()
             .also {
                 mediaSession = it
                 logInfo("media_session_create", session)

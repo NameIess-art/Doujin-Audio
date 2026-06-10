@@ -411,6 +411,7 @@ internal object UnifiedPlaybackNotificationController {
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setCategory(NotificationCompat.CATEGORY_TRANSPORT)
+            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
             .addExtras(Bundle().apply {
                 putBoolean(unifiedNotificationExtra, true)
             })

@@ -342,34 +342,24 @@ object PlaybackTimerAlarmScheduler {
         val safeTriggerAtMs = triggerElapsedRealtimeMs.coerceAtLeast(
             SystemClock.elapsedRealtime() + 250L
         )
+        val triggerRtcMs = System.currentTimeMillis() + (safeTriggerAtMs - SystemClock.elapsedRealtime())
 
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
-                !alarmManager.canScheduleExactAlarms()
-            ) {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                    alarmManager.setAndAllowWhileIdle(
-                        AlarmManager.ELAPSED_REALTIME_WAKEUP,
-                        safeTriggerAtMs,
-                        pendingIntent
-                    )
-                } else {
-                    alarmManager.set(
-                        AlarmManager.ELAPSED_REALTIME_WAKEUP,
-                        safeTriggerAtMs,
-                        pendingIntent
-                    )
-                }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                alarmManager.setAlarmClock(
+                    AlarmManager.AlarmClockInfo(triggerRtcMs, pendingIntent),
+                    pendingIntent
+                )
             } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 alarmManager.setExactAndAllowWhileIdle(
-                    AlarmManager.ELAPSED_REALTIME_WAKEUP,
-                    safeTriggerAtMs,
+                    AlarmManager.RTC_WAKEUP,
+                    triggerRtcMs,
                     pendingIntent
                 )
             } else {
                 alarmManager.setExact(
-                    AlarmManager.ELAPSED_REALTIME_WAKEUP,
-                    safeTriggerAtMs,
+                    AlarmManager.RTC_WAKEUP,
+                    triggerRtcMs,
                     pendingIntent
                 )
             }
@@ -409,22 +399,11 @@ object PlaybackTimerAlarmScheduler {
         val safeTriggerAtMs = triggerAtWallClockMs.coerceAtLeast(System.currentTimeMillis() + 250L)
 
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
-                !alarmManager.canScheduleExactAlarms()
-            ) {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                    alarmManager.setAndAllowWhileIdle(
-                        AlarmManager.RTC_WAKEUP,
-                        safeTriggerAtMs,
-                        pendingIntent
-                    )
-                } else {
-                    alarmManager.set(
-                        AlarmManager.RTC_WAKEUP,
-                        safeTriggerAtMs,
-                        pendingIntent
-                    )
-                }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                alarmManager.setAlarmClock(
+                    AlarmManager.AlarmClockInfo(safeTriggerAtMs, pendingIntent),
+                    pendingIntent
+                )
             } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 alarmManager.setExactAndAllowWhileIdle(
                     AlarmManager.RTC_WAKEUP,

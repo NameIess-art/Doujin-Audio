@@ -2,9 +2,9 @@
 
 Nameless Audio 是一个 Flutter + Android 原生 + Windows 桌面混合实现的本地音频播放器，面向 ASMR、语音作品和大体量本地音频库。它同时支持 ASMR.ONE 在线浏览与下载、本地曲库管理、多会话播放、字幕、睡眠计时器、DLsite 元数据、视频转音频和应用内更新。
 
-当前版本：`0.9.9+990`
+当前版本：`0.9.91+991`
 
-最新发布页：[v0.9.9](https://github.com/NameIess-art/nameless-audio/releases/tag/v0.9.9)
+最新发布页：[v0.9.91](https://github.com/NameIess-art/nameless-audio/releases/tag/v0.9.91)
 
 许可证：[MIT](LICENSE)
 
@@ -21,12 +21,12 @@ Nameless Audio 是一个 Flutter + Android 原生 + Windows 桌面混合实现�
 
 ## 下载
 
-从 [GitHub Release v0.9.9](https://github.com/NameIess-art/nameless-audio/releases/tag/v0.9.9) 下载：
+从 [GitHub Release v0.9.91](https://github.com/NameIess-art/nameless-audio/releases/tag/v0.9.91) 下载：
 
 | 文件 | 适用设备 |
 |---|---|
 | `app-arm64-v8a-release.apk` | 大多数 64 位 Android 手机，优先推荐 |
-| `NamelessAudio-windows-x64-v0.9.9.zip` | Windows x64 桌面环境 |
+| `NamelessAudio-windows-x64-v0.9.91.zip` | Windows x64 桌面环境 |
 
 Windows 版请解压整个 ZIP 后运行 `nameless_audio.exe`。不要只复制 exe，播放器、视频转音频和字幕窗口依赖同目录 DLL、`data/` 目录、MPV 与 FFmpeg 文件。
 
@@ -89,7 +89,7 @@ Windows 版请解压整个 ZIP 后运行 `nameless_audio.exe`。不要只复制 
 
 ### 播放列表、会话详情与字幕
 
-- 会话列表：支持拖拽排序、左滑移除，并通过统一“更多”菜单支持暂停全部和清空全部。
+- 会话列表：支持拖拽排序、左滑移除，并通过统一“更多”菜单支持暂停全部和清空全部，具备流畅的列表交互性能。
 - 底部播放卡片：可选常驻底部卡片，同步封面、进度、字幕和播放状态。
 - 会话详情页：以封面作为模糊背景，提供进度条、快进快退、循环模式、音量、计时器、字幕和声道控制。
 - 轨道切换：在会话详情页直接切换当前文件夹或分组内的其他音轨，无需新建会话。
@@ -102,7 +102,7 @@ Windows 版请解压整个 ZIP 后运行 `nameless_audio.exe`。不要只复制 
 ### 睡眠计时器
 
 - 两种启动模式：立即开始倒计时，或等待播放开始后触发倒计时。
-- 到点暂停：倒计时结束后通过 Android 原生链路暂停相关会话。
+- 到点暂停与淡出：倒计时结束后平滑淡出音量再通过 Android 原生链路暂停相关会话，避免生硬打断。
 - 自动恢复：可在指定本地时间恢复被计时器暂停的会话。
 - 秒级 UI 刷新：倒计时显示按可见秒数变化刷新，减少高频 Provider 通知。
 - 原生闹钟与恢复：使用精确定时能力提升长时间后台、息屏和应用重启后的可靠性。
@@ -211,6 +211,15 @@ Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath dist\
 - Fork 相关定制说明位于 `third_party/audio_service/CUSTOMIZATION.md`。
 - 后续同步上游时，请同时更新该说明文件中的来源版本、改动文件和保留原因。
 
+## 发行说明 v0.9.91
+
+- 新增睡眠计时器结束时的音量平滑淡出效果，避免暂停时声音生硬打断。
+- 优化了播放队列 UI 与交互切换逻辑，提升了大量列表项时的滚动操作性能。
+- 修复了搜索界面由于键盘弹出引发的页面重建及卡顿问题。
+- 优化了播放及暂停时的按钮响应及交互性能。
+- 完善了 Android 端全局播放状态与后台通知的同步流，增强了锁屏状态下的播放操作可靠性。
+- 发布 Android arm64-v8a APK 与 Windows x64 ZIP，保证双端应用内自更新正常运行。
+
 ## 发行说明 v0.9.9
 
 - 修复了息屏长时间播放后由于 Android 保活机制打断导致的暂停问题。
@@ -249,6 +258,7 @@ Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath dist\
 
 ## 近期重要变更
 
+- `v0.9.91`：新增睡眠计时器淡出效果，优化播放队列 UI 和按键交互性能，修复键盘引起的卡顿重绘；发布 Android arm64 与 Windows x64 ZIP。
 - `v0.9.9`：大幅优化后台稳定性、UI页面过渡动效、设置页面性能以及解决账户状态丢失的严重缺陷。
 - `v0.9.8`：修复 Windows 应用内 ZIP 更新、GitHub API 限流导致检查更新失败、Windows 拉伸窗口时页面跳转卡顿；发布 Android arm64 与 Windows x64 ZIP。
 - `v0.9.71`：修复 Android 搜索框点击后页面抽搐；修复编辑曲库菜单显示曲库根下子文件夹；发布 Android arm64 与 Windows x64 ZIP。

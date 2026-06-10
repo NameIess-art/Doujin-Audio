@@ -51,6 +51,8 @@ app.*.map.json
 .claude/
 
 # Gradle build cache
+
+# Gradle build cache
 **/.gradle/
 
 # Local deployment scripts
@@ -59,3 +61,6 @@ assets/ffmpeg/*.exe
 
 # Local agent instructions
 AGENTS.md
+
+# Analyzer output
+analyze_output.txt

@@ -2,9 +2,9 @@
 
 Nameless Audio 是一个 Flutter + Android 原生 + Windows 桌面混合实现的本地音频播放器，面向 ASMR、语音作品和大体量本地音频库。它同时支持 ASMR.ONE 在线浏览与下载、本地曲库管理、多会话播放、字幕、睡眠计时器、DLsite 元数据、视频转音频和应用内更新。
 
-当前版本：`0.9.91+991`
+当前版本：`0.9.92+992`
 
-最新发布页：[v0.9.91](https://github.com/NameIess-art/nameless-audio/releases/tag/v0.9.91)
+最新发布页：[v0.9.92](https://github.com/NameIess-art/nameless-audio/releases/tag/v0.9.92)
 
 许可证：[MIT](LICENSE)
 
@@ -21,12 +21,12 @@ Nameless Audio 是一个 Flutter + Android 原生 + Windows 桌面混合实现�
 
 ## 下载
 
-从 [GitHub Release v0.9.91](https://github.com/NameIess-art/nameless-audio/releases/tag/v0.9.91) 下载：
+从 [GitHub Release v0.9.92](https://github.com/NameIess-art/nameless-audio/releases/tag/v0.9.92) 下载：
 
 | 文件 | 适用设备 |
 |---|---|
 | `app-arm64-v8a-release.apk` | 大多数 64 位 Android 手机，优先推荐 |
-| `NamelessAudio-windows-x64-v0.9.91.zip` | Windows x64 桌面环境 |
+| `NamelessAudio-windows-x64-v0.9.92.zip` | Windows x64 桌面环境 |
 
 Windows 版请解压整个 ZIP 后运行 `nameless_audio.exe`。不要只复制 exe，播放器、视频转音频和字幕窗口依赖同目录 DLL、`data/` 目录、MPV 与 FFmpeg 文件。
 
@@ -211,7 +211,7 @@ Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath dist\
 - Fork 相关定制说明位于 `third_party/audio_service/CUSTOMIZATION.md`。
 - 后续同步上游时，请同时更新该说明文件中的来源版本、改动文件和保留原因。
 
-## 发行说明 v0.9.91
+## 发行说明 v0.9.92
 
 - 新增睡眠计时器结束时的音量平滑淡出效果，避免暂停时声音生硬打断。
 - 优化了播放队列 UI 与交互切换逻辑，提升了大量列表项时的滚动操作性能。

@@ -9,6 +9,13 @@ internal class NativePlaybackWakeLock(
     private val logInfo: (String) -> Unit,
     private val logWarn: (String, Exception) -> Unit
 ) {
+    companion object {
+        // Slightly longer than the foreground watchdog interval (4 min) so
+        // the lock never expires during normal operation but auto-releases
+        // if the service crashes or the watchdog stops.
+        private const val DEFAULT_TIMEOUT_MS = 5 * 60 * 1000L
+    }
+
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
 
@@ -33,11 +40,8 @@ internal class NativePlaybackWakeLock(
 
         wakeLock?.let { lock ->
             try {
-                if (timeoutMs != null) {
-                    lock.acquire(timeoutMs)
-                } else {
-                    lock.acquire()
-                }
+                val effectiveTimeout = timeoutMs ?: DEFAULT_TIMEOUT_MS
+                lock.acquire(effectiveTimeout)
                 acquiredAny = lock.isHeld
             } catch (e: Exception) {
                 logWarn("wakelock_acquire_failed", e)
@@ -80,12 +84,9 @@ internal class NativePlaybackWakeLock(
             return
         }
         try {
-            if (timeoutMs != null) {
-                wakeLock?.acquire(timeoutMs)
-            } else {
-                wakeLock?.acquire()
-            }
-            logInfo("wakelock_refreshed timeoutMs=$timeoutMs")
+            val effectiveTimeout = timeoutMs ?: DEFAULT_TIMEOUT_MS
+            wakeLock?.acquire(effectiveTimeout)
+            logInfo("wakelock_refreshed timeoutMs=$effectiveTimeout")
         } catch (e: Exception) {
             logWarn("wakelock_refresh_failed", e)
         }

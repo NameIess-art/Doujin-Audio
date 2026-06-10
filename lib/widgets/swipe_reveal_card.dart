@@ -287,8 +287,9 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
         : _hasSecondaryAction
         ? widget.secondaryActionTooltip ?? widget.removeTooltip
         : widget.removeTooltip;
-    return TapRegion(
-      onTapOutside: (_) => _closePane(),
+    return RepaintBoundary(
+      child: TapRegion(
+        onTapOutside: (_) => _closePane(),
       child: Padding(
         padding: widget.margin,
         child: GestureDetector(
@@ -337,7 +338,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                                 ? 158
                                 : 86,
                           ),
-                          child: AnimatedOpacity(
+                          child: revealProgress == 0 ? const SizedBox.shrink() : AnimatedOpacity(
                             opacity: 0.24 + (revealProgress * 0.76),
                             duration: const Duration(milliseconds: 160),
                             curve: Curves.easeOutCubic,
@@ -645,6 +646,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                 ),
             ],
           ),
+        ),
         ),
       ),
     );

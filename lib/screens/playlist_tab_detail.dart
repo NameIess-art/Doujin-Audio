@@ -466,32 +466,36 @@ class _SessionDetailBackdrop extends StatelessWidget {
     return Stack(
       fit: StackFit.expand,
       children: [
-        Opacity(
-          opacity: gradientAlpha,
-          child: DecoratedBox(
+        if (gradientAlpha > 0)
+          DecoratedBox(
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
                 colors: [
-                  cs.surface.withValues(alpha: 0.2),
-                  cs.surface.withValues(alpha: 0.5),
-                  cs.surface.withValues(alpha: 0.85),
+                  cs.surface.withValues(alpha: 0.2 * gradientAlpha),
+                  cs.surface.withValues(alpha: 0.5 * gradientAlpha),
+                  cs.surface.withValues(alpha: 0.85 * gradientAlpha),
                 ],
                 stops: const [0.0, 0.4, 1.0],
               ),
             ),
           ),
-        ),
-        ClipRect(
-          child: Opacity(
-            opacity: progress,
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 64, sigmaY: 64),
-              child: const SizedBox.expand(),
-            ),
+        if (progress > 0)
+          ClipRect(
+            child: progress == 1.0
+                ? BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 64, sigmaY: 64),
+                    child: const SizedBox.expand(),
+                  )
+                : Opacity(
+                    opacity: progress,
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 64, sigmaY: 64),
+                      child: const SizedBox.expand(),
+                    ),
+                  ),
           ),
-        ),
       ],
     );
   }
@@ -839,13 +843,15 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                     widget.dismissAnimation.value.clamp(0.0, 1.0),
                   );
                   return Positioned.fill(
-                    child: Opacity(
-                      opacity: 1 - dismissProgress,
-                      child: BackdropFilter(
-                        filter: ImageFilter.blur(sigmaX: 64, sigmaY: 64),
-                        child: const SizedBox.expand(),
-                      ),
-                    ),
+                    child: dismissProgress < 1.0
+                        ? Opacity(
+                            opacity: 1 - dismissProgress,
+                            child: BackdropFilter(
+                              filter: ImageFilter.blur(sigmaX: 64, sigmaY: 64),
+                              child: const SizedBox.expand(),
+                            ),
+                          )
+                        : const SizedBox.shrink(),
                   );
                 },
               ),
@@ -865,13 +871,18 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                       );
                       final opacity =
                           lerpDouble(0.88, 1.0, switchProgress) ?? 1;
-                      return Opacity(
-                        opacity: opacity,
-                        child: SlideTransition(
-                          position: slideAnimation,
-                          child: child,
-                        ),
-                      );
+                      return opacity == 1.0
+                          ? SlideTransition(
+                              position: slideAnimation,
+                              child: child,
+                            )
+                          : Opacity(
+                              opacity: opacity,
+                              child: SlideTransition(
+                                position: slideAnimation,
+                                child: child,
+                              ),
+                            );
                     },
                     child: Column(
                       children: [

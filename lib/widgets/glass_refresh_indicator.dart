@@ -746,19 +746,21 @@ class GlassRefreshIndicatorState extends State<GlassRefreshIndicator>
                                 ),
                             ],
                           ),
-                          child: ClipOval(
-                            child: BackdropFilter(
-                              filter: ui.ImageFilter.blur(
-                                sigmaX: 12,
-                                sigmaY: 12,
-                              ),
-                              child: Container(
-                                color:
-                                    widget.backgroundColor ??
-                                    cs.surfaceContainerHigh.withValues(
-                                      alpha: 0.6,
-                                    ),
-                                child: innerIndicator,
+                          child: RepaintBoundary(
+                            child: ClipOval(
+                              child: BackdropFilter(
+                                filter: ui.ImageFilter.blur(
+                                  sigmaX: 12,
+                                  sigmaY: 12,
+                                ),
+                                child: Container(
+                                  color:
+                                      widget.backgroundColor ??
+                                      cs.surfaceContainerHigh.withValues(
+                                        alpha: 0.6,
+                                      ),
+                                  child: innerIndicator,
+                                ),
                               ),
                             ),
                           ),

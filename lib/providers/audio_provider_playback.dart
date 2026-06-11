@@ -13,6 +13,17 @@ double _nearestPlaybackSpeed(double speed) {
   });
 }
 
+String _folderKeyForTrack(MusicTrack track) {
+  if (track.remoteMetadataKind == 'asmr.one' ||
+      PathMatcher.isRemoteUri(track.path)) {
+    final remotePath = track.remoteMetadata?['trackDirectoryPath']?.toString();
+    if (remotePath != null && remotePath.isNotEmpty && remotePath != '.') {
+      return '${track.groupKey}::$remotePath';
+    }
+  }
+  return track.groupKey;
+}
+
 extension AudioProviderPlayback on AudioProvider {
   bool get _hasArmedTimerRuntime {
     return _timerRuntimeCalculator.hasArmedRuntime(

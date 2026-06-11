@@ -406,7 +406,17 @@ extension AudioProviderPlaybackSessions on AudioProvider {
       if (session.loopMode == SessionLoopMode.single) {
         return <String>[resolvedCurrentPath];
       }
-      return customQueueTracks
+      Iterable<MusicTrack> candidateTracks = customQueueTracks;
+      if (!session.isPlaybackQueue && !_isCrossFolderMode(session.loopMode)) {
+        final currentTrack = _sessionTrackForPath(session, resolvedCurrentPath);
+        if (currentTrack != null) {
+          final folderKey = _folderKeyForTrack(currentTrack);
+          candidateTracks = customQueueTracks.where(
+            (t) => _folderKeyForTrack(t) == folderKey,
+          );
+        }
+      }
+      return candidateTracks
           .map((track) => _resolveRetargetedPath(track.path))
           .toList(growable: false);
     }

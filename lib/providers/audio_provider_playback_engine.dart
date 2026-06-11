@@ -269,7 +269,17 @@ extension AudioProviderPlaybackEngine on AudioProvider {
       if (session.loopMode == SessionLoopMode.single) {
         return session.currentTrackPath;
       }
-      final paths = customQueueTracks
+      Iterable<MusicTrack> candidateTracks = customQueueTracks;
+      if (!session.isPlaybackQueue && !_isCrossFolderMode(session.loopMode)) {
+        final currentTrack = _sessionTrackForPath(session, session.currentTrackPath);
+        if (currentTrack != null) {
+          final folderKey = _folderKeyForTrack(currentTrack);
+          candidateTracks = customQueueTracks.where(
+            (t) => _folderKeyForTrack(t) == folderKey,
+          );
+        }
+      }
+      final paths = candidateTracks
           .map((track) => _resolveRetargetedPath(track.path))
           .toList(growable: false);
       if (paths.isEmpty) {
@@ -318,6 +328,14 @@ extension AudioProviderPlaybackEngine on AudioProvider {
   bool _hasAdjacentPathFor(PlaybackSession session, {required bool forward}) {
     final customQueueTracks = session.customQueueTracks;
     if (customQueueTracks != null) {
+      if (session.isPlaybackQueue || _isCrossFolderMode(session.loopMode)) {
+        return customQueueTracks.length > 1;
+      }
+      final currentTrack = _sessionTrackForPath(session, session.currentTrackPath);
+      if (currentTrack != null) {
+        final folderKey = _folderKeyForTrack(currentTrack);
+        return customQueueTracks.where((t) => _folderKeyForTrack(t) == folderKey).length > 1;
+      }
       return customQueueTracks.length > 1;
     }
     final currentTrack = trackByPath(session.currentTrackPath);

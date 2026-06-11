@@ -56,7 +56,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
 
   int _currentIndex = 1;
   late final List<Widget> _pages;
-  final Set<int> _visitedPageIndices = <int>{1};
   final Object _pageSwitchInteraction = Object();
   final GlobalKey _bottomDockKey = GlobalKey();
   final GlobalKey _dockContentKey = GlobalKey();
@@ -74,7 +73,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
       PermissionActionController();
   bool _timerOverlayPrimed = false;
   bool _needsMeasurement = true;
-  bool _bootstrapDone = false;
   bool _isDataReady = false;
   bool? _lastShowCard;
   Timer? _notificationSessionNavigationTimer;
@@ -636,10 +634,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
       coordinator.scheduleCommit(
         key: 'main_page_$index',
         priority: 0,
-        commit: () {
-          if (!mounted || _currentIndex != index) return;
-          setState(() => _visitedPageIndices.add(index));
-        },
+        commit: () {},
       );
       coordinator.scheduleAfterIdle(
         key: 'main_page_warmup_$index',
@@ -783,14 +778,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
                           ],
                         ),
                       if (_timerOverlayPrimed) const _ImmediateTimerScrim(),
-
-                      if (!_bootstrapDone)
-                        _BootstrapOverlay(
-                          visible: !_isDataReady,
-                          onAnimationEnd: () {
-                            if (mounted) setState(() => _bootstrapDone = true);
-                          },
-                        ),
                     ],
                   ),
                 ),

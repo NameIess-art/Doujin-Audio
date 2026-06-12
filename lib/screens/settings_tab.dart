@@ -138,7 +138,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
   }
 
   void _showSubtitleWindowSettings(BuildContext context) {
-    showModalBottomSheet(
+    showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
@@ -150,7 +150,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
   }
 
   void _showCardInfoFieldsSettings(BuildContext context) {
-    showModalBottomSheet(
+    showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,

@@ -87,7 +87,9 @@ class AppCacheService {
       final tempDir = await getTemporaryDirectory();
       roots.add(Directory(path.join(tempDir.path, 'updates')));
       roots.add(Directory(path.join(tempDir.path, 'asmr_downloads')));
-    } catch (_) {}
+    } catch (_) {
+      // Temporary cache roots are optional and may be unavailable on startup.
+    }
     roots.add(
       Directory(path.join(Directory.systemTemp.path, 'nameless_audio_imports')),
     );
@@ -121,7 +123,9 @@ class AppCacheService {
         await directory.delete();
         return deletedBytes;
       }
-    } catch (_) {}
+    } catch (_) {
+      // Cache cleanup is best effort; inaccessible files are left untouched.
+    }
     return 0;
   }
 
@@ -149,7 +153,9 @@ class AppCacheService {
         entries.add(
           _CacheFileEntry(file: file, size: stat.size, modified: stat.modified),
         );
-      } catch (_) {}
+      } catch (_) {
+        // Skip cache entries that disappear or become inaccessible mid-scan.
+      }
     }
     entries.sort((a, b) => a.modified.compareTo(b.modified));
     var remainingFiles = entries.length;
@@ -159,7 +165,9 @@ class AppCacheService {
         await entry.file.delete();
         totalBytes -= entry.size;
         remainingFiles -= 1;
-      } catch (_) {}
+      } catch (_) {
+        // Cache eviction is best effort; a locked file can be retried later.
+      }
     }
   }
 }

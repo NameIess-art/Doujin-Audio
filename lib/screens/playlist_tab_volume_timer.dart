@@ -193,7 +193,7 @@ class _VerticalVolumeSliderState extends State<_VerticalVolumeSlider> {
     final controller = TextEditingController(
       text: '${((_dragVolume ?? widget.session.volume) * 100).round()}',
     );
-    showDialog(
+    showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text(i18n.tr('volume')),

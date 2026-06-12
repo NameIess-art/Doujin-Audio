@@ -1025,7 +1025,9 @@ class LibraryScannerService {
         FileCacheMethod.cancelFolderScan,
         <String, Object?>{'sessionId': sessionId},
       );
-    } catch (_) {}
+    } catch (_) {
+      // Cancellation is best effort because the native scan may already end.
+    }
   }
 
   Future<NativeScanResult> _scanFolderViaNativeLegacy(String folderPath) async {
@@ -1133,7 +1135,9 @@ class LibraryScannerService {
             return folders;
           }
         }
-      } catch (_) {}
+      } catch (_) {
+        // Native folder listing is optional; fall back to Dart file-system I/O.
+      }
     }
 
     final directory = Directory(folderPath);
@@ -1171,7 +1175,9 @@ class LibraryScannerService {
         AudioDetailTarget.libraryRootFolder(folderPath),
         _displaySourceName(folderPath),
       );
-    } catch (_) {}
+    } catch (_) {
+      // Metadata prefill is optional and must not block adding the library.
+    }
   }
 
   bool _isFolderAlreadyInLibrary(AudioProvider provider, String folderPath) {
@@ -1354,7 +1360,9 @@ class LibraryScannerService {
         await stream.pipe(sink);
         await sink.close();
         return outPath;
-      } catch (_) {}
+      } catch (_) {
+        // Failed archive extraction falls through to the next import strategy.
+      }
     }
 
     if (Platform.isAndroid &&
@@ -1366,7 +1374,9 @@ class LibraryScannerService {
           'name': file.name,
           'index': index,
         });
-      } catch (_) {}
+      } catch (_) {
+        // Failed native import falls through to the remaining import strategy.
+      }
     }
     return null;
   }
@@ -1629,7 +1639,9 @@ class LibraryScannerService {
         FileStat? fileStat;
         try {
           fileStat = await file.stat();
-        } catch (_) {}
+        } catch (_) {
+          // File timestamps are optional scan metadata.
+        }
         candidates.add(
           MusicTrack(
             path: p,
@@ -1700,7 +1712,9 @@ Map<String, Object?> _scanFileSystemFolderPayload(String folderPath) {
       FileStat? fileStat;
       try {
         fileStat = entity.statSync();
-      } catch (_) {}
+      } catch (_) {
+        // File timestamps are optional scan metadata.
+      }
 
       final parentFolder = path.dirname(absolutePath);
       final folderName = path.basename(parentFolder);

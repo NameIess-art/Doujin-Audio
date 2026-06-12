@@ -153,21 +153,21 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     if (!mounted) return;
     await Navigator.of(
       context,
-    ).push(MaterialPageRoute(builder: (_) => const VideoConverterTab()));
+    ).push(MaterialPageRoute<void>(builder: (_) => const VideoConverterTab()));
   }
 
   Future<void> _openLibraryManagementPage() async {
     if (!mounted) return;
-    await Navigator.of(
-      context,
-    ).push(MaterialPageRoute(builder: (_) => const LibraryManagementPage()));
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => const LibraryManagementPage()),
+    );
   }
 
   Future<void> _openBatchMetadataPage() async {
     if (!mounted) return;
-    await Navigator.of(
-      context,
-    ).push(MaterialPageRoute(builder: (_) => const DlsiteMetadataBatchPage()));
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => const DlsiteMetadataBatchPage()),
+    );
   }
 
   Future<void> _scheduleWatchedFoldersRefresh({

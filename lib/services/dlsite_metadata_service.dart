@@ -194,7 +194,9 @@ class DlsiteMetadataService {
         if (rjCodes.isNotEmpty) return rjCodes;
       } on DlsiteMetadataException catch (error) {
         if (error.isNetworkFailure) rethrow;
-      } catch (_) {}
+      } catch (_) {
+        // Ignore malformed optional search candidates and try the next source.
+      }
     }
     return const <String>[];
   }
@@ -467,11 +469,11 @@ String? _normalizeDlsiteUrl(String? rawUrl) {
 }
 
 Map<Object?, Object?>? _firstDlsiteProductObject(Object? decoded) {
-  if (decoded is List) {
-    return decoded.whereType<Map>().cast<Map<Object?, Object?>>().firstOrNull;
+  if (decoded is List<Object?>) {
+    return decoded.whereType<Map<Object?, Object?>>().firstOrNull;
   }
-  if (decoded is Map) {
-    final map = decoded.cast<Object?, Object?>();
+  if (decoded is Map<Object?, Object?>) {
+    final map = decoded;
     if (_looksLikeDlsiteProduct(map)) return map;
     for (final key in const <String>['work', 'works', 'products', 'result']) {
       final nested = _firstDlsiteProductObject(map[key]);

@@ -200,8 +200,8 @@ void main() {
       );
       expect(await backupFile.exists(), isTrue);
       final decoded = json.decode(await backupFile.readAsString());
-      expect(decoded, isA<List>());
-      final entries = decoded as List;
+      expect(decoded, isA<List<Object?>>());
+      final entries = decoded as List<Object?>;
       expect(entries.length, 1);
       expect((entries.first as Map<String, dynamic>)['workTitle'], 'Single');
     },

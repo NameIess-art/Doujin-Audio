@@ -242,7 +242,9 @@ class AudioDetailRepository {
         if (detail.target.targetType != target.targetType) return null;
         return detail.copyWith(target: target);
       }
-    } catch (_) {}
+    } catch (_) {
+      // Invalid optional backup metadata should not block repository reads.
+    }
     return null;
   }
 

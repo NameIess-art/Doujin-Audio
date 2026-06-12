@@ -301,7 +301,7 @@ class NativePlaybackBridge implements NativePlaybackBridgeBase {
           }
         }
       },
-      onError: (error) {
+      onError: (Object error) {
         debugPrint('NativePlaybackBridge EventChannel error: $error');
         _scheduleReconnect();
       },

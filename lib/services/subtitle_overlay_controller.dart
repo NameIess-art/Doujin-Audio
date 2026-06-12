@@ -61,7 +61,9 @@ class SubtitleOverlayController {
     }
     try {
       await _channel.invokeMethod('startOverlay');
-    } on PlatformException catch (_) {}
+    } on PlatformException catch (_) {
+      // Overlay support is optional on platforms without the native channel.
+    }
   }
 
   static Future<void> stopOverlay({bool immediate = false}) async {
@@ -89,7 +91,9 @@ class SubtitleOverlayController {
     }
     try {
       await _channel.invokeMethod('stopOverlay');
-    } on PlatformException catch (_) {}
+    } on PlatformException catch (_) {
+      // Overlay support is optional on platforms without the native channel.
+    }
   }
 
   static Future<void> updateSubtitle(String text) async {
@@ -105,7 +109,9 @@ class SubtitleOverlayController {
     }
     try {
       await _channel.invokeMethod('updateSubtitle', {'text': text});
-    } on PlatformException catch (_) {}
+    } on PlatformException catch (_) {
+      // Subtitle updates are best effort when the overlay is unavailable.
+    }
   }
 
   static Future<void> updatePlaybackState(bool isPlaying) async {
@@ -151,7 +157,9 @@ class SubtitleOverlayController {
     }
     try {
       await _channel.invokeMethod('updateStyle', args);
-    } on PlatformException catch (_) {}
+    } on PlatformException catch (_) {
+      // Style updates are best effort when the overlay is unavailable.
+    }
   }
 
   static Future<void> _replayWindowsState(WindowController window) async {
@@ -184,7 +192,9 @@ class SubtitleOverlayController {
   static Future<void> _showWindowsOverlay(WindowController window) async {
     try {
       await window.show();
-    } catch (_) {}
+    } catch (_) {
+      // The detached overlay window may already be closed.
+    }
   }
 
   static void _scheduleWindowsShow(WindowController window) {
@@ -226,8 +236,12 @@ class SubtitleOverlayController {
     try {
       await window.invokeMethod(method, arguments);
     } on PlatformException catch (_) {
+      // The detached overlay window may not expose this optional method.
     } on MissingPluginException catch (_) {
-    } catch (_) {}
+      // Desktop multi-window support is optional on unsupported platforms.
+    } catch (_) {
+      // Overlay synchronization is best effort during window teardown.
+    }
   }
 
   static void initMethodHandler(

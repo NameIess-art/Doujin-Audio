@@ -620,7 +620,7 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
     final workRoot = widget.provider.workRootForTrack(
       widget.session.currentTrackPath,
     );
-    showModalBottomSheet(
+    showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,

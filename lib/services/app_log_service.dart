@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io';
-
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
@@ -57,8 +56,36 @@ abstract final class AppLogService {
     };
   }
 
+  static void installPlatformErrorHandler() {
+    final previousHandler = PlatformDispatcher.instance.onError;
+    PlatformDispatcher.instance.onError = (error, stackTrace) {
+      AppLogService.error(
+        'platform_uncaught_error',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      return previousHandler?.call(error, stackTrace) ?? false;
+    };
+  }
+
+  static void info(String message) {
+    _write('INFO', message);
+  }
+
+  static void warning(String message, {Object? error, StackTrace? stackTrace}) {
+    _writeWithError('WARNING', message, error: error, stackTrace: stackTrace);
+  }
+
+  static void error(String message, {Object? error, StackTrace? stackTrace}) {
+    _writeWithError('ERROR', message, error: error, stackTrace: stackTrace);
+  }
+
   static void logZoneError(Object error, StackTrace stackTrace) {
-    _write('ZONE', '$error\n$stackTrace');
+    AppLogService.error(
+      'zone_uncaught_error',
+      error: error,
+      stackTrace: stackTrace,
+    );
   }
 
   static void _debugPrint(String? message, {int? wrapWidth}) {
@@ -83,6 +110,22 @@ abstract final class AppLogService {
   static void _write(String level, String message) {
     final timestamp = DateTime.now().toIso8601String();
     _sink?.writeln('$timestamp [$level] $message');
+  }
+
+  static void _writeWithError(
+    String level,
+    String message, {
+    Object? error,
+    StackTrace? stackTrace,
+  }) {
+    final details = StringBuffer(message);
+    if (error != null) {
+      details.write(' error=$error');
+    }
+    if (stackTrace != null) {
+      details.write('\n$stackTrace');
+    }
+    _write(level, details.toString());
   }
 
   static Future<void> dispose() async {

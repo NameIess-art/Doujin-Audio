@@ -133,7 +133,11 @@ extension AudioProviderNotificationCovers on AudioProvider {
     if (session.isLoading || session.state.playing) return;
     _notificationFocusSessionId = session.id;
     if (session.state.processingState == ProcessingState.completed) {
-      await _prepareAndPlay(session, nextPath: session.currentTrackPath, forceStartAtZero: true);
+      await _prepareAndPlay(
+        session,
+        nextPath: session.currentTrackPath,
+        forceStartAtZero: true,
+      );
       return;
     }
     await _startSessionPlayback(session, shouldStartTriggerCountdown: true);
@@ -476,7 +480,9 @@ extension AudioProviderNotificationCovers on AudioProvider {
         _notificationCoverSearchMisses.remove(normalizedFolderPath);
         return candidates.first;
       }
-    } catch (_) {}
+    } catch (_) {
+      // Cover discovery is optional; notification rendering uses its fallback.
+    }
 
     _notificationCoverSearchMisses.add(normalizedFolderPath);
     return null;

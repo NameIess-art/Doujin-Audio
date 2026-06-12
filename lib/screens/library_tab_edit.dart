@@ -111,7 +111,7 @@ class LibraryManagementPage extends ConsumerWidget {
                       overflow: TextOverflow.ellipsis,
                     ),
                     onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute(
+                      MaterialPageRoute<void>(
                         builder: (_) =>
                             LibraryEditPage(libraryPath: libraryPath),
                       ),
@@ -283,7 +283,9 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage>
           }
         }
       }
-    } catch (_) {}
+    } catch (_) {
+      // Live disk discovery is optional; retain the latest scanned paths.
+    }
     final liveFolderPaths = _buildLiveDiskFolderPathSet(
       scannedTrackPaths: audioFiles,
     );

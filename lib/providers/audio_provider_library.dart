@@ -426,7 +426,9 @@ extension AudioProviderLibrary on AudioProvider {
         FileStat? fileStat;
         try {
           fileStat = await entity.stat();
-        } catch (_) {}
+        } catch (_) {
+          // File timestamps are optional library metadata.
+        }
 
         final parentFolder = path.dirname(absolutePath);
         final folderName = path.basename(parentFolder);

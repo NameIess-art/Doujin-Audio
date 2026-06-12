@@ -7,6 +7,7 @@ import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 
 import 'app_cache_service.dart';
+import 'app_log_service.dart';
 import 'path_display.dart';
 import 'platform_channels.dart';
 
@@ -71,7 +72,12 @@ class AppUpdateService {
     try {
       try {
         return await _checkLatestFromApi(client, currentVersion);
-      } catch (_) {
+      } catch (error, stackTrace) {
+        AppLogService.warning(
+          'update_api_check_failed_falling_back_to_release_page',
+          error: error,
+          stackTrace: stackTrace,
+        );
         return await _checkLatestFromReleasePage(client, currentVersion);
       }
     } finally {
@@ -209,7 +215,12 @@ class AppUpdateService {
       final versionName = raw?['versionName'] as String? ?? '0.0.0';
       final buildNumber = (raw?['buildNumber'] as num?)?.toInt() ?? 0;
       return AppVersionInfo(versionName: versionName, buildNumber: buildNumber);
-    } catch (_) {
+    } catch (error, stackTrace) {
+      AppLogService.warning(
+        'app_version_channel_failed_using_build_fallback',
+        error: error,
+        stackTrace: stackTrace,
+      );
       return const AppVersionInfo(versionName: '0.9.92', buildNumber: 992);
     }
   }
@@ -273,7 +284,12 @@ class AppUpdateService {
             UpdateMethod.canInstallUnknownApps,
           ) ??
           true;
-    } catch (_) {
+    } catch (error, stackTrace) {
+      AppLogService.warning(
+        'unknown_app_install_permission_check_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
       return true;
     }
   }
@@ -285,7 +301,12 @@ class AppUpdateService {
             UpdateMethod.openInstallPermissionSettings,
           ) ??
           false;
-    } catch (_) {
+    } catch (error, stackTrace) {
+      AppLogService.warning(
+        'open_install_permission_settings_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
       return false;
     }
   }
@@ -439,7 +460,12 @@ class AppUpdateService {
       // Wait slightly longer before exit to ensure powershell starts successfully
       Timer(const Duration(milliseconds: 1500), () => exit(0));
       return const UpdateInstallResult(ok: true, needsPermission: false);
-    } catch (error) {
+    } catch (error, stackTrace) {
+      AppLogService.error(
+        'windows_update_install_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
       return UpdateInstallResult(
         ok: false,
         needsPermission: false,

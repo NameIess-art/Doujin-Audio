@@ -29,15 +29,13 @@ import 'services/app_database.dart';
 import 'widgets/global_shortcuts.dart';
 
 Future<void> main(List<String> args) async {
-  await runZonedGuarded<Future<void>>(
-    () async {
-      WidgetsFlutterBinding.ensureInitialized();
-      await AppLogService.initialize();
-      AppLogService.installFlutterErrorHandler();
-      await _runAudioPlayerApp(args);
-    },
-    AppLogService.logZoneError,
-  );
+  await runZonedGuarded<Future<void>>(() async {
+    WidgetsFlutterBinding.ensureInitialized();
+    await AppLogService.initialize();
+    AppLogService.installFlutterErrorHandler();
+    AppLogService.installPlatformErrorHandler();
+    await _runAudioPlayerApp(args);
+  }, AppLogService.logZoneError);
 }
 
 Future<void> _runAudioPlayerApp(List<String> args) async {

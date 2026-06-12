@@ -109,7 +109,9 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
                 NetworkImage(remoteCoverUrl),
                 imageConfiguration,
               );
-            } catch (_) {}
+            } catch (_) {
+              // Cover precaching is optional; the UI has a visual fallback.
+            }
             return;
           }
           final coverPath = await coverPathFuture;
@@ -125,7 +127,9 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
               ),
               imageConfiguration,
             );
-          } catch (_) {}
+          } catch (_) {
+            // Cover precaching is optional; the UI has a visual fallback.
+          }
         }),
       );
     });
@@ -167,7 +171,9 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
                   NetworkImage(remoteCoverUrl),
                   imageConfiguration,
                 );
-              } catch (_) {}
+              } catch (_) {
+                // Cover precaching is optional; the UI has a visual fallback.
+              }
               return;
             }
             final coverPath = await future;
@@ -181,7 +187,9 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
                 ),
                 imageConfiguration,
               );
-            } catch (_) {}
+            } catch (_) {
+              // Cover precaching is optional; the UI has a visual fallback.
+            }
           }),
         );
       });

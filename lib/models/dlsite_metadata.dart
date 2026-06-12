@@ -122,12 +122,12 @@ double? _ratingValue(Object? value) {
 
 List<String> _creatorNames(Map<String, dynamic> json, String key) {
   final creators = json['creaters'] ?? json['creators'];
-  if (creators is! Map) return const <String>[];
+  if (creators is! Map<Object?, Object?>) return const <String>[];
   final rawList = creators[key];
-  if (rawList is! List) return const <String>[];
+  if (rawList is! List<Object?>) return const <String>[];
   return _uniqueStrings(
     rawList
-        .whereType<Map>()
+        .whereType<Map<Object?, Object?>>()
         .map((item) => _stringValue(item['name']))
         .whereType<String>(),
   );
@@ -135,10 +135,10 @@ List<String> _creatorNames(Map<String, dynamic> json, String key) {
 
 List<String> _genreNames(Map<String, dynamic> json) {
   final rawGenres = json['genres_replaced'] ?? json['genres'];
-  if (rawGenres is! List) return const <String>[];
+  if (rawGenres is! List<Object?>) return const <String>[];
   return _uniqueStrings(
     rawGenres
-        .whereType<Map>()
+        .whereType<Map<Object?, Object?>>()
         .map((item) => _stringValue(item['name']))
         .whereType<String>(),
   );

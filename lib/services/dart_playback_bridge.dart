@@ -437,7 +437,7 @@ class _DartPlaybackSession {
             update(value);
             _notifyChanged();
           },
-          onError: (e, st) {
+          onError: (Object e, StackTrace st) {
             debugPrint('DartPlaybackSession stream error: $e\n$st');
             error = e.toString();
             _notifyChanged();

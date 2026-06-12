@@ -88,7 +88,7 @@ class _SubtitleOverlayWindowState extends State<SubtitleOverlayWindow> {
     return Color(int.parse(hexColor, radix: 16));
   }
 
-  void _applyStyle(Map args) {
+  void _applyStyle(Map<Object?, Object?> args) {
     if (args['fontSize'] != null) {
       _fontSize = (args['fontSize'] as num).toDouble();
     }

@@ -2335,10 +2335,10 @@ void main() {
           .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
             if (call.method == NativePlaybackMethod.prepareSession) {
               final arguments = Map<String, Object?>.from(
-                call.arguments as Map,
+                call.arguments as Map<Object?, Object?>,
               );
               final queue = (arguments['queue'] as List<dynamic>? ?? const [])
-                  .whereType<Map>()
+                  .whereType<Map<Object?, Object?>>()
                   .map((item) => item['path'] as String)
                   .toList(growable: false);
               preparedQueues.add(queue);

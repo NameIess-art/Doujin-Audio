@@ -346,7 +346,9 @@ class AsmrDownloadManager extends ChangeNotifier {
       }
     } on PlatformException {
       // Fall through to the file picker.
-    } catch (_) {}
+    } catch (_) {
+      // Native folder selection is optional; fall through to the file picker.
+    }
 
     if (!Platform.isAndroid || kIsWeb) {
       final directory = await FilePicker.platform.getDirectoryPath(
@@ -693,7 +695,9 @@ class AsmrDownloadManager extends ChangeNotifier {
         if (await tempResult.file.exists()) {
           await tempResult.file.delete();
         }
-      } catch (_) {}
+      } catch (_) {
+        // Temporary download cleanup is best effort after the primary result.
+      }
     }
   }
 
@@ -956,7 +960,9 @@ class AsmrDownloadManager extends ChangeNotifier {
       if (await directory.exists()) {
         await directory.delete(recursive: true);
       }
-    } catch (_) {}
+    } catch (_) {
+      // Temporary task directory cleanup is best effort.
+    }
   }
 }
 

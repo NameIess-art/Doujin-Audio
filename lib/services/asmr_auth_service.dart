@@ -5,6 +5,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../models/asmr_models.dart';
 import 'app_preferences.dart';
+import 'app_log_service.dart';
 import 'asmr_api_service.dart';
 
 abstract class AsmrTokenStore {
@@ -145,7 +146,7 @@ class AsmrAuthService {
         await _tokenStore.writeToken(session.token);
       }
       return session;
-    } catch (error) {
+    } catch (error, stackTrace) {
       if (error is AsmrApiException &&
           error.statusCode == HttpStatus.unauthorized) {
         // Token expired. Try auto-login using saved credentials.
@@ -158,7 +159,12 @@ class AsmrAuthService {
             );
             await _tokenStore.writeToken(newSession.token);
             return newSession;
-          } catch (loginError) {
+          } catch (loginError, loginStackTrace) {
+            AppLogService.error(
+              'asmr_auto_login_failed',
+              error: loginError,
+              stackTrace: loginStackTrace,
+            );
             // Auto-login failed. Clear everything.
             await _tokenStore.clearToken();
             await _tokenStore.clearCredentials();
@@ -169,6 +175,11 @@ class AsmrAuthService {
           return null;
         }
       }
+      AppLogService.warning(
+        'asmr_session_restore_failed_using_cached_token',
+        error: error,
+        stackTrace: stackTrace,
+      );
       return AsmrAuthSession(token: token, userName: '');
     }
   }

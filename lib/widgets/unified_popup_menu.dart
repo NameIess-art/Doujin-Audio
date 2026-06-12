@@ -148,7 +148,9 @@ class _UnifiedPopupMenuButtonState<T> extends State<UnifiedPopupMenuButton<T>>
     if (!immediate) {
       try {
         await _controller.reverse();
-      } catch (_) {}
+      } catch (_) {
+        // The entry may be disposed while its closing animation is running.
+      }
     }
     entry.remove();
     UiInteractionCoordinator.instance.endInteraction(_interactionSource);

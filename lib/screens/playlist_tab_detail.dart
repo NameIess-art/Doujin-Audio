@@ -121,7 +121,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
           try {
             await _precacheImageProvider(
               ResizeImage.resizeIfNeeded(
-                cacheWidth,
+                kCoverImageCacheSize,
                 null,
                 FileImage(File(coverPath)),
               ),
@@ -181,8 +181,8 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
             try {
               await _precacheImageProvider(
                 ResizeImage.resizeIfNeeded(
-                  cacheWidth,
-                  cacheWidth,
+                  kCoverImageCacheSize,
+                  null,
                   FileImage(File(coverPath)),
                 ),
                 imageConfiguration,

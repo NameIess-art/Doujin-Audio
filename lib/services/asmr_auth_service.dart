@@ -19,14 +19,16 @@ abstract class AsmrTokenStore {
 
 class SecureAsmrTokenStore implements AsmrTokenStore {
   SecureAsmrTokenStore({FlutterSecureStorage? storage})
-    : _storage = storage ?? const FlutterSecureStorage(
-        aOptions: AndroidOptions(encryptedSharedPreferences: true),
-      );
+    : _storage =
+          storage ??
+          const FlutterSecureStorage(
+            aOptions: AndroidOptions(encryptedSharedPreferences: true),
+          );
 
   static const String _tokenKey = 'asmr_one_jwt_token_v1';
   static const String _nameKey = 'asmr_one_name_v1';
   static const String _passKey = 'asmr_one_pass_v1';
-  static const String _migratedKey = 'asmr_auth_migrated_v1';
+  static const String _migratedKey = 'asmr_auth_secure_storage_migrated_v2';
 
   final FlutterSecureStorage _storage;
 
@@ -34,55 +36,72 @@ class SecureAsmrTokenStore implements AsmrTokenStore {
     final migrated = await AppPreferences.getBool(_migratedKey);
     if (migrated == true) return;
 
+    final secureToken = await _storage.read(key: _tokenKey);
+    final secureName = await _storage.read(key: _nameKey);
+    final securePass = await _storage.read(key: _passKey);
+    final legacyToken = await AppPreferences.getString(_tokenKey);
+    final legacyName = await AppPreferences.getString(_nameKey);
+    final legacyEncodedPass = await AppPreferences.getString(_passKey);
+
+    if (secureToken == null && legacyToken?.isNotEmpty == true) {
+      await _storage.write(key: _tokenKey, value: legacyToken);
+    }
+    final legacyPass = _decodeLegacyPassword(legacyEncodedPass);
+    if (secureName == null && legacyName?.isNotEmpty == true) {
+      await _storage.write(key: _nameKey, value: legacyName);
+    }
+    if (securePass == null && legacyPass != null) {
+      await _storage.write(key: _passKey, value: legacyPass);
+    }
+
+    await _removeLegacyValue(_tokenKey);
+    await _removeLegacyValue(_nameKey);
+    await _removeLegacyValue(_passKey);
+    if (!await AppPreferences.setBool(_migratedKey, true)) {
+      throw StateError('Failed to mark ASMR credential migration complete');
+    }
+  }
+
+  String? _decodeLegacyPassword(String? encodedPassword) {
+    if (encodedPassword == null || encodedPassword.isEmpty) return null;
     try {
-      final token = await _storage.read(key: _tokenKey);
-      final name = await _storage.read(key: _nameKey);
-      final pass = await _storage.read(key: _passKey);
+      return utf8.decode(base64.decode(encodedPassword));
+    } on FormatException {
+      return null;
+    }
+  }
 
-      if (token != null && token.isNotEmpty) {
-        await AppPreferences.setString(_tokenKey, token);
-      }
-      if (name != null && pass != null && name.isNotEmpty) {
-        await AppPreferences.setString(_nameKey, name);
-        // Basic obfuscation so it's not plain text in the XML
-        final encodedPass = base64.encode(utf8.encode(pass));
-        await AppPreferences.setString(_passKey, encodedPass);
-      }
-    } catch (_) {}
-
-    await AppPreferences.setBool(_migratedKey, true);
+  Future<void> _removeLegacyValue(String key) async {
+    if (!await AppPreferences.remove(key)) {
+      throw StateError('Failed to remove legacy ASMR credential: $key');
+    }
   }
 
   @override
   Future<String?> readToken() async {
     await _ensureMigrated();
-    return AppPreferences.getString(_tokenKey);
+    return _storage.read(key: _tokenKey);
   }
 
   @override
   Future<void> writeToken(String token) async {
     await _ensureMigrated();
-    await AppPreferences.setString(_tokenKey, token);
+    await _storage.write(key: _tokenKey, value: token);
   }
 
   @override
   Future<void> clearToken() async {
-    await _ensureMigrated();
-    await AppPreferences.remove(_tokenKey);
+    await _storage.delete(key: _tokenKey);
+    await _removeLegacyValue(_tokenKey);
   }
 
   @override
   Future<Map<String, String>?> readCredentials() async {
     await _ensureMigrated();
-    final name = await AppPreferences.getString(_nameKey);
-    final encodedPass = await AppPreferences.getString(_passKey);
-    if (name != null && encodedPass != null && name.isNotEmpty) {
-      try {
-        final pass = utf8.decode(base64.decode(encodedPass));
-        return {'name': name, 'password': pass};
-      } catch (_) {
-        return null;
-      }
+    final name = await _storage.read(key: _nameKey);
+    final pass = await _storage.read(key: _passKey);
+    if (name != null && pass != null && name.isNotEmpty) {
+      return {'name': name, 'password': pass};
     }
     return null;
   }
@@ -90,16 +109,16 @@ class SecureAsmrTokenStore implements AsmrTokenStore {
   @override
   Future<void> writeCredentials(String name, String password) async {
     await _ensureMigrated();
-    await AppPreferences.setString(_nameKey, name);
-    final encodedPass = base64.encode(utf8.encode(password));
-    await AppPreferences.setString(_passKey, encodedPass);
+    await _storage.write(key: _nameKey, value: name);
+    await _storage.write(key: _passKey, value: password);
   }
 
   @override
   Future<void> clearCredentials() async {
-    await _ensureMigrated();
-    await AppPreferences.remove(_nameKey);
-    await AppPreferences.remove(_passKey);
+    await _storage.delete(key: _nameKey);
+    await _storage.delete(key: _passKey);
+    await _removeLegacyValue(_nameKey);
+    await _removeLegacyValue(_passKey);
   }
 }
 

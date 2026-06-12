@@ -11,6 +11,7 @@ import 'package:flutter/services.dart';
 import '../models/audio_detail.dart';
 import '../models/asmr_models.dart';
 import 'app_cache_service.dart';
+import 'app_log_service.dart';
 import 'app_preferences.dart';
 import 'path_display.dart';
 import 'path_matcher.dart';
@@ -559,7 +560,12 @@ class AsmrDownloadManager extends ChangeNotifier {
         message: 'cancelled',
       );
       _notifyTaskChanged();
-    } catch (error) {
+    } catch (error, stackTrace) {
+      AppLogService.error(
+        'asmr_download_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
       _currentTask = _currentTask?.copyWith(
         status: AsmrDownloadTaskStatus.failed,
         error: error.toString(),
@@ -759,7 +765,12 @@ class AsmrDownloadManager extends ChangeNotifier {
       );
     } on _DownloadCancelled {
       rethrow;
-    } catch (_) {
+    } catch (error, stackTrace) {
+      AppLogService.error(
+        'asmr_download_transfer_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
       return _TemporaryDownloadResult(
         file: tempFile,
         bytesDownloaded: received,

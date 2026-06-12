@@ -2,10 +2,10 @@
 
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import 'native_result.dart';
+import 'app_log_service.dart';
 import 'platform_channels.dart';
 import '../models/audio_effects.dart';
 
@@ -294,15 +294,20 @@ class NativePlaybackBridge implements NativePlaybackBridgeBase {
         if (event is Map) {
           try {
             _controller.add(NativePlaybackSnapshot.fromMap(event));
-          } catch (error) {
-            debugPrint(
-              'NativePlaybackBridge: dropping invalid snapshot: $error',
+          } catch (error, stackTrace) {
+            AppLogService.error(
+              'native_playback_invalid_snapshot',
+              error: error,
+              stackTrace: stackTrace,
             );
           }
         }
       },
       onError: (Object error) {
-        debugPrint('NativePlaybackBridge EventChannel error: $error');
+        AppLogService.error(
+          'native_playback_event_channel_failed',
+          error: error,
+        );
         _scheduleReconnect();
       },
       onDone: () {
@@ -318,9 +323,9 @@ class NativePlaybackBridge implements NativePlaybackBridgeBase {
     if (_reconnectAttempt >= _maxReconnectAttempts) return;
     _reconnectAttempt++;
     final delay = Duration(milliseconds: 200 * _reconnectAttempt);
-    debugPrint(
-      'NativePlaybackBridge: reconnecting in ${delay.inMilliseconds}ms '
-      '(attempt $_reconnectAttempt/$_maxReconnectAttempts)',
+    AppLogService.warning(
+      'native_playback_reconnecting delayMs=${delay.inMilliseconds} '
+      'attempt=$_reconnectAttempt max=$_maxReconnectAttempts',
     );
     _reconnectTimer?.cancel();
     _reconnectTimer = Timer(delay, () {

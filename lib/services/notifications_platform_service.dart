@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import '../platform/app_platform.dart';
+import 'app_log_service.dart';
 import 'platform_channels.dart';
 
 typedef NotificationSessionHandler = void Function(String sessionId);
@@ -30,7 +31,12 @@ class NotificationsPlatformService {
           true;
     } on MissingPluginException {
       return true;
-    } catch (_) {
+    } catch (error, stackTrace) {
+      AppLogService.warning(
+        'notification_permission_check_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
       return true;
     }
   }
@@ -44,7 +50,12 @@ class NotificationsPlatformService {
           false;
     } on MissingPluginException {
       return false;
-    } catch (_) {
+    } catch (error, stackTrace) {
+      AppLogService.warning(
+        'open_notification_settings_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
       return false;
     }
   }
@@ -58,7 +69,12 @@ class NotificationsPlatformService {
       return sessionId == null || sessionId.isEmpty ? null : sessionId;
     } on MissingPluginException {
       return null;
-    } catch (_) {
+    } catch (error, stackTrace) {
+      AppLogService.warning(
+        'consume_pending_notification_session_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
       return null;
     }
   }
@@ -92,15 +108,16 @@ class NotificationsPlatformService {
           )
           .timeout(
             _timeout,
-            onTimeout: () => debugPrint(
-              'NotificationsPlatformService.syncUnifiedPlaybackNotifications timed out',
-            ),
+            onTimeout: () =>
+                AppLogService.warning('notification_sync_timed_out'),
           );
     } on MissingPluginException {
       // Channel not available on this platform.
-    } catch (e) {
-      debugPrint(
-        'NotificationsPlatformService.syncUnifiedPlaybackNotifications error: $e',
+    } catch (error, stackTrace) {
+      AppLogService.error(
+        'notification_sync_failed',
+        error: error,
+        stackTrace: stackTrace,
       );
     }
   }
@@ -114,15 +131,16 @@ class NotificationsPlatformService {
           )
           .timeout(
             _timeout,
-            onTimeout: () => debugPrint(
-              'NotificationsPlatformService.clearUnifiedPlaybackNotifications timed out',
-            ),
+            onTimeout: () =>
+                AppLogService.warning('notification_clear_timed_out'),
           );
     } on MissingPluginException {
       // Channel not available on this platform.
-    } catch (e) {
-      debugPrint(
-        'NotificationsPlatformService.clearUnifiedPlaybackNotifications error: $e',
+    } catch (error, stackTrace) {
+      AppLogService.error(
+        'notification_clear_failed',
+        error: error,
+        stackTrace: stackTrace,
       );
     }
   }

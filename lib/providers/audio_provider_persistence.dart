@@ -1,5 +1,13 @@
 part of 'audio_provider.dart';
 
+void _logAudioProviderPersistenceFailure(Object error, StackTrace stackTrace) {
+  AppLogService.error(
+    'audio_provider_persistence_failed',
+    error: error,
+    stackTrace: stackTrace,
+  );
+}
+
 extension AudioProviderPersistence on AudioProvider {
   Future<void> _loadLibrary() async {
     try {
@@ -25,8 +33,8 @@ extension AudioProviderPersistence on AudioProvider {
         _rebuildLibraryIndexes();
         _notifyListeners();
       }
-    } catch (e) {
-      debugPrint('AudioProvider persistence error: $e');
+    } catch (error, stackTrace) {
+      _logAudioProviderPersistenceFailure(error, stackTrace);
     }
   }
 
@@ -42,8 +50,8 @@ extension AudioProviderPersistence on AudioProvider {
       _groupOrderSet
         ..clear()
         ..addAll(list);
-    } catch (e) {
-      debugPrint('AudioProvider persistence error: $e');
+    } catch (error, stackTrace) {
+      _logAudioProviderPersistenceFailure(error, stackTrace);
     }
   }
 
@@ -51,8 +59,8 @@ extension AudioProviderPersistence on AudioProvider {
     try {
       final prefs = await _prefs;
       await prefs.setString(_kGroupOrderKey, json.encode(_groupOrder));
-    } catch (e) {
-      debugPrint('AudioProvider persistence error: $e');
+    } catch (error, stackTrace) {
+      _logAudioProviderPersistenceFailure(error, stackTrace);
     }
   }
 
@@ -65,8 +73,8 @@ extension AudioProviderPersistence on AudioProvider {
       _libraryNodeOrder
         ..clear()
         ..addAll(list);
-    } catch (e) {
-      debugPrint('AudioProvider persistence error: $e');
+    } catch (error, stackTrace) {
+      _logAudioProviderPersistenceFailure(error, stackTrace);
     }
   }
 
@@ -77,8 +85,8 @@ extension AudioProviderPersistence on AudioProvider {
         _kLibraryNodeOrderKey,
         json.encode(_libraryNodeOrder),
       );
-    } catch (e) {
-      debugPrint('AudioProvider persistence error: $e');
+    } catch (error, stackTrace) {
+      _logAudioProviderPersistenceFailure(error, stackTrace);
     }
   }
 
@@ -92,8 +100,8 @@ extension AudioProviderPersistence on AudioProvider {
         ..clear()
         ..addAll(list);
       _markActiveSessionsDirty();
-    } catch (e) {
-      debugPrint('AudioProvider persistence error: $e');
+    } catch (error, stackTrace) {
+      _logAudioProviderPersistenceFailure(error, stackTrace);
     }
   }
 
@@ -101,8 +109,8 @@ extension AudioProviderPersistence on AudioProvider {
     try {
       final prefs = await _prefs;
       await prefs.setString(_kSessionOrderKey, json.encode(_sessionOrder));
-    } catch (e) {
-      debugPrint('AudioProvider persistence error: $e');
+    } catch (error, stackTrace) {
+      _logAudioProviderPersistenceFailure(error, stackTrace);
     }
   }
 
@@ -156,8 +164,8 @@ extension AudioProviderPersistence on AudioProvider {
         await _enforceSingleThreadPlayback();
       }
       await loadTimerRuntimeFromSystem();
-    } catch (e) {
-      debugPrint('Critical error during AudioProvider _loadData: $e');
+    } catch (error, stackTrace) {
+      _logAudioProviderPersistenceFailure(error, stackTrace);
     } finally {
       // Phase 7: Deferred warmup, keep-alive sync, final UI update.
       scheduleUiWarmup(currentPageIndex: 0);
@@ -201,8 +209,8 @@ extension AudioProviderPersistence on AudioProvider {
           (map['maxCacheBytes'] as num?)?.toInt() ??
           AppCacheService.defaultMaxCacheBytes;
       unawaited(AppCacheService.setMaxCacheBytes(_maxCacheBytes));
-    } catch (e) {
-      debugPrint('AudioProvider persistence error: $e');
+    } catch (error, stackTrace) {
+      _logAudioProviderPersistenceFailure(error, stackTrace);
     }
   }
 
@@ -217,7 +225,8 @@ extension AudioProviderPersistence on AudioProvider {
         'autoPlayAddedSessions': _autoPlayAddedSessions,
         'autoCheckUpdates': _autoCheckUpdates,
         'recordPlaybackProgress': _settingsRepository.recordPlaybackProgress,
-        'blurPlayerBackgroundEnabled': _settingsRepository.blurPlayerBackgroundEnabled,
+        'blurPlayerBackgroundEnabled':
+            _settingsRepository.blurPlayerBackgroundEnabled,
         'uiBlurEffectEnabled': _settingsRepository.uiBlurEffectEnabled,
         'dlsiteMetadataLanguage': _dlsiteMetadataLanguage.name,
         'cardInfoFields': _settingsRepository.cardInfoFields
@@ -230,8 +239,8 @@ extension AudioProviderPersistence on AudioProvider {
         'maxCacheBytes': _maxCacheBytes,
       });
       await prefs.setString(_kPlaybackSettingsKey, encoded);
-    } catch (e) {
-      debugPrint('AudioProvider persistence error: $e');
+    } catch (error, stackTrace) {
+      _logAudioProviderPersistenceFailure(error, stackTrace);
     }
   }
 
@@ -268,8 +277,8 @@ extension AudioProviderPersistence on AudioProvider {
       _watchedFolders
         ..clear()
         ..addAll(list);
-    } catch (e) {
-      debugPrint('AudioProvider persistence error: $e');
+    } catch (error, stackTrace) {
+      _logAudioProviderPersistenceFailure(error, stackTrace);
     }
   }
 
@@ -277,8 +286,8 @@ extension AudioProviderPersistence on AudioProvider {
     try {
       final prefs = await _prefs;
       await prefs.setString(_kWatchedFoldersKey, json.encode(_watchedFolders));
-    } catch (e) {
-      debugPrint('AudioProvider persistence error: $e');
+    } catch (error, stackTrace) {
+      _logAudioProviderPersistenceFailure(error, stackTrace);
     }
   }
 
@@ -291,8 +300,8 @@ extension AudioProviderPersistence on AudioProvider {
       _watchedLibraries
         ..clear()
         ..addAll(list);
-    } catch (e) {
-      debugPrint('AudioProvider persistence error: $e');
+    } catch (error, stackTrace) {
+      _logAudioProviderPersistenceFailure(error, stackTrace);
     }
   }
 
@@ -303,8 +312,8 @@ extension AudioProviderPersistence on AudioProvider {
         _kWatchedLibrariesKey,
         json.encode(_watchedLibraries),
       );
-    } catch (e) {
-      debugPrint('AudioProvider persistence error: $e');
+    } catch (error, stackTrace) {
+      _logAudioProviderPersistenceFailure(error, stackTrace);
     }
   }
 
@@ -316,8 +325,8 @@ extension AudioProviderPersistence on AudioProvider {
       final data = json.decode(raw) as Map<String, dynamic>;
       _decodeExclusionMap(data['folders'], _excludedLibraryFolders);
       _decodeExclusionMap(data['tracks'], _excludedLibraryTracks);
-    } catch (e) {
-      debugPrint('AudioProvider persistence error: $e');
+    } catch (error, stackTrace) {
+      _logAudioProviderPersistenceFailure(error, stackTrace);
     }
   }
 
@@ -329,8 +338,8 @@ extension AudioProviderPersistence on AudioProvider {
         'tracks': _encodeExclusionMap(_excludedLibraryTracks),
       });
       await prefs.setString(_kLibraryExclusionsKey, encoded);
-    } catch (e) {
-      debugPrint('AudioProvider persistence error: $e');
+    } catch (error, stackTrace) {
+      _logAudioProviderPersistenceFailure(error, stackTrace);
     }
   }
 
@@ -349,8 +358,8 @@ extension AudioProviderPersistence on AudioProvider {
       // so we must prune the excluded ones here.  _removeTracksWhere will
       // call _rebuildLibraryIndexes again, but only if there are exclusions.
       _applyExclusionsToLibrary();
-    } catch (e) {
-      debugPrint('AudioProvider persistence error: $e');
+    } catch (error, stackTrace) {
+      _logAudioProviderPersistenceFailure(error, stackTrace);
     }
   }
 
@@ -376,8 +385,8 @@ extension AudioProviderPersistence on AudioProvider {
       if (entriesToPersist.isEmpty) return;
       _libraryService.replaceLibraryEntries(entriesToPersist);
       await _audioDatabaseRepository.upsertLibraryEntries(entriesToPersist);
-    } catch (e) {
-      debugPrint('AudioProvider persistence error: $e');
+    } catch (error, stackTrace) {
+      _logAudioProviderPersistenceFailure(error, stackTrace);
     }
   }
 
@@ -420,8 +429,8 @@ extension AudioProviderPersistence on AudioProvider {
           AudioProvider.converterBitrates.contains(savedBitrate)) {
         _converterBitrate = savedBitrate;
       }
-    } catch (e) {
-      debugPrint('AudioProvider persistence error: $e');
+    } catch (error, stackTrace) {
+      _logAudioProviderPersistenceFailure(error, stackTrace);
     }
   }
 
@@ -433,8 +442,8 @@ extension AudioProviderPersistence on AudioProvider {
         'bitrate': _converterBitrate,
       });
       await prefs.setString(_kConverterSettingsKey, encoded);
-    } catch (e) {
-      debugPrint('AudioProvider persistence error: $e');
+    } catch (error, stackTrace) {
+      _logAudioProviderPersistenceFailure(error, stackTrace);
     }
   }
 

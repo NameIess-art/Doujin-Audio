@@ -150,8 +150,8 @@ extension AudioProviderPersistenceSessions on AudioProvider {
             position: session.lastKnownPosition,
             syncNotification: false,
           );
-        } catch (e) {
-          debugPrint('AudioProvider persistence error: $e');
+        } catch (error, stackTrace) {
+          _logAudioProviderPersistenceFailure(error, stackTrace);
         }
       }
 
@@ -165,8 +165,8 @@ extension AudioProviderPersistenceSessions on AudioProvider {
 
       _syncNotificationState();
       if (_sessions.isNotEmpty) _notifyListeners();
-    } catch (e) {
-      debugPrint('AudioProvider persistence error: $e');
+    } catch (error, stackTrace) {
+      _logAudioProviderPersistenceFailure(error, stackTrace);
     }
   }
 
@@ -243,8 +243,8 @@ extension AudioProviderPersistenceSessions on AudioProvider {
       await _audioDatabaseRepository.saveAllSessions(payload);
       final prefs = await _prefs;
       await prefs.remove(_kSessionsKey);
-    } catch (e) {
-      debugPrint('AudioProvider persistence error: $e');
+    } catch (error, stackTrace) {
+      _logAudioProviderPersistenceFailure(error, stackTrace);
     }
   }
 

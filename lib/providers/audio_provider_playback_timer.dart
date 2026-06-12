@@ -22,8 +22,12 @@ extension AudioProviderPlaybackTimer on AudioProvider {
         pausedSessionIds: _pausedByTimerSessionIds,
         generation: _timerGeneration,
       );
-    } catch (e) {
-      debugPrint('AudioProvider._syncNativeTimerAlarms error: $e');
+    } catch (error, stackTrace) {
+      AppLogService.error(
+        'sync_native_timer_alarms_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
     }
   }
 
@@ -186,8 +190,12 @@ extension AudioProviderPlaybackTimer on AudioProvider {
   ) async {
     try {
       return await action(generation);
-    } catch (e) {
-      debugPrint('AudioProvider timer action error: $e');
+    } catch (error, stackTrace) {
+      AppLogService.error(
+        'execute_timer_action_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
       return false;
     }
   }
@@ -325,7 +333,9 @@ extension AudioProviderPlaybackTimer on AudioProvider {
   void _applyFadeMultiplierToAllPlaying(double multiplier) {
     for (final session in _sessions.values) {
       if (session.state.playing) {
-        unawaited(_nativePlaybackRepository.setFadeMultiplier(session.id, multiplier));
+        unawaited(
+          _nativePlaybackRepository.setFadeMultiplier(session.id, multiplier),
+        );
       }
     }
   }

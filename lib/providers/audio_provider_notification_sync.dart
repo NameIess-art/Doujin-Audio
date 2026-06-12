@@ -9,8 +9,12 @@ extension AudioProviderNotificationSync on AudioProvider {
   Future<void> _stopPlaybackKeepAliveOnPlatform() async {
     try {
       await _powerPlatformService.stopPlaybackKeepAlive();
-    } catch (e) {
-      debugPrint('AudioProvider._stopPlaybackKeepAliveOnPlatform error: $e');
+    } catch (error, stackTrace) {
+      AppLogService.error(
+        'stop_playback_keep_alive_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
     }
   }
 

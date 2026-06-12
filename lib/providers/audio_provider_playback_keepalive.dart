@@ -106,8 +106,12 @@ extension AudioProviderPlaybackKeepAlive on AudioProvider {
         usesUnifiedPlaybackNotifications: usesUnifiedPlaybackNotifications,
         keepForegroundServiceAlive: keepForegroundServiceAlive,
       );
-    } catch (e) {
-      debugPrint('AudioProvider._setKeepCpuAwake error: $e');
+    } catch (error, stackTrace) {
+      AppLogService.error(
+        'set_keep_cpu_awake_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
     }
   }
 
@@ -115,8 +119,12 @@ extension AudioProviderPlaybackKeepAlive on AudioProvider {
     try {
       final audioSession = await AudioSession.instance;
       return await audioSession.setActive(true);
-    } catch (e) {
-      debugPrint('AudioProvider._activateAudioSessionForPlayback error: $e');
+    } catch (error, stackTrace) {
+      AppLogService.error(
+        'activate_audio_session_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
       return true;
     }
   }
@@ -125,8 +133,12 @@ extension AudioProviderPlaybackKeepAlive on AudioProvider {
     try {
       final audioSession = await AudioSession.instance;
       await audioSession.setActive(false);
-    } catch (e) {
-      debugPrint('AudioProvider._deactivateAudioSession error: $e');
+    } catch (error, stackTrace) {
+      AppLogService.error(
+        'deactivate_audio_session_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
     }
   }
 }

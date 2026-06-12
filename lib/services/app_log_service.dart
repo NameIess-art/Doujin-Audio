@@ -109,7 +109,29 @@ abstract final class AppLogService {
 
   static void _write(String level, String message) {
     final timestamp = DateTime.now().toIso8601String();
-    _sink?.writeln('$timestamp [$level] $message');
+    _sink?.writeln('$timestamp [$level] ${sanitize(message)}');
+  }
+
+  @visibleForTesting
+  static String sanitize(String message) {
+    var sanitized = message.replaceAll(
+      RegExp(r'\bBearer\s+[A-Za-z0-9._~+/=-]+', caseSensitive: false),
+      'Bearer [REDACTED]',
+    );
+    sanitized = sanitized.replaceAllMapped(
+      RegExp(
+        r'''\b(token|password|passwd|authorization|api[_-]?key|access[_-]?token|refresh[_-]?token)\b(\s*[:=]\s*|"\s*:\s*")([^,\s&}"']+)''',
+        caseSensitive: false,
+      ),
+      (match) => '${match.group(1)}${match.group(2)}[REDACTED]',
+    );
+    sanitized = sanitized.replaceAllMapped(RegExp(r'https?://[^\s]+'), (match) {
+      final value = match.group(0)!;
+      final uri = Uri.tryParse(value);
+      if (uri == null || !uri.hasQuery) return value;
+      return uri.replace(query: '').toString();
+    });
+    return sanitized;
   }
 
   static void _writeWithError(

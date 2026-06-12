@@ -41,6 +41,8 @@ class PlatformChannelsTest {
             FileCacheMethods.RESOLVE_TRACK_SUBTITLE,
             FileCacheMethods.RESOLVE_VIDEO_FRAME,
             FileCacheMethods.SCAN_FOLDER,
+            FileCacheMethods.START_FOLDER_SCAN,
+            FileCacheMethods.CANCEL_FOLDER_SCAN,
             FileCacheMethods.SET_APPLICATION_CACHE_LIMIT,
             FileCacheMethods.WRITE_AUDIO_DETAIL_BACKUP,
             FileCacheMethods.WRITE_FILE_BYTES_TO_FOLDER,
@@ -48,5 +50,20 @@ class PlatformChannelsTest {
         )
 
         assertEquals(methods.size, methods.toSet().size)
+    }
+
+    @Test
+    fun `critical method names remain protocol compatible`() {
+        assertEquals("prepareSession", NativePlaybackMethods.PREPARE_SESSION)
+        assertEquals("snapshot", NativePlaybackMethods.SNAPSHOT)
+        assertEquals("startFolderScan", FileCacheMethods.START_FOLDER_SCAN)
+        assertEquals("cancelFolderScan", FileCacheMethods.CANCEL_FOLDER_SCAN)
+        assertEquals(
+            "syncUnifiedPlaybackNotifications",
+            NotificationsMethods.SYNC_UNIFIED_PLAYBACK_NOTIFICATIONS
+        )
+        assertEquals("getAppVersion", UpdateMethods.GET_APP_VERSION)
+        assertEquals("installApk", UpdateMethods.INSTALL_APK)
+        assertEquals("openReleasePage", UpdateMethods.OPEN_RELEASE_PAGE)
     }
 }

@@ -438,7 +438,7 @@ class NativePlaybackService : MediaSessionService() {
         val volume = (args["volume"] as? Number)?.toFloat() ?: 1f
         val speed = (args["speed"] as? Number)?.toFloat() ?: 1f
         val repeatOne = args["repeatOne"] as? Boolean ?: false
-        val queue = parseQueue(args["queue"]).ifEmpty {
+        val queue = NativePlaybackCommandPayloads.parseQueue(args["queue"]).ifEmpty {
             listOf(NativeMediaItemDescriptor(path, uri, title, subtitle, artUri))
         }
         val queueStartIndex = ((args["queueStartIndex"] as? Number)?.toInt() ?: 0)
@@ -584,7 +584,7 @@ class NativePlaybackService : MediaSessionService() {
     fun setAudioEffects(sessionId: String, effectsMap: Map<String, Any?>): Map<String, Any?> {
         val session = sessions[sessionId] ?: return errorResult("Unknown session.")
         val previousChannelSwap = session.channelSwapEnabled
-        session.applyAudioEffects(parseAudioEffects(effectsMap))
+        session.applyAudioEffects(NativePlaybackCommandPayloads.parseAudioEffects(effectsMap))
         if (previousChannelSwap != session.channelSwapEnabled) {
             session.reprepareCurrentMediaItem()
         }
@@ -602,7 +602,7 @@ class NativePlaybackService : MediaSessionService() {
         val session = sessions[sessionId] ?: return errorResult("Unknown session.")
         session.lastUsedMs = System.currentTimeMillis()
         session.repeatOne = repeatOne
-        val queue = parseQueue(args["queue"])
+        val queue = NativePlaybackCommandPayloads.parseQueue(args["queue"])
         if (queue.isNotEmpty()) {
             val queueStartIndex = ((args["queueStartIndex"] as? Number)?.toInt() ?: 0)
                 .coerceIn(0, queue.lastIndex)
@@ -815,48 +815,6 @@ class NativePlaybackService : MediaSessionService() {
             evictPlayersIfNeeded = ::evictPlayersIfNeeded,
             logWarn = { message, session, error -> logWarn(message, session, error) }
         )
-    }
-
-    private fun parseQueue(rawQueue: Any?): List<NativeMediaItemDescriptor> {
-        val queue = rawQueue as? List<*> ?: return emptyList()
-        return queue.mapNotNull { rawItem ->
-            val item = rawItem as? Map<*, *> ?: return@mapNotNull null
-            val uri = item["uri"] as? String ?: return@mapNotNull null
-            val path = item["path"] as? String ?: uri
-            val title = item["title"] as? String ?: "Audio"
-            NativeMediaItemDescriptor(
-                path = path,
-                uri = uri,
-                title = title,
-                subtitle = item["subtitle"] as? String,
-                artUri = item["artUri"] as? String
-            )
-        }
-    }
-
-    private fun parseAudioEffects(rawEffects: Map<String, Any?>): NativeAudioEffects {
-        return NativeAudioEffects(
-            skipSilenceEnabled = rawEffects["skipSilenceEnabled"] as? Boolean ?: false,
-            noiseReductionEnabled = rawEffects["noiseReductionEnabled"] as? Boolean ?: false,
-            eqEnabled = rawEffects["eqEnabled"] as? Boolean ?: false,
-            eqPresetId = (rawEffects["eqPresetId"] as? String)?.takeIf { it.isNotBlank() },
-            eqBandLevels = parseEqBandLevels(rawEffects["eqBandLevels"]),
-            channelSwapEnabled = rawEffects["channelSwapEnabled"] as? Boolean ?: false,
-            volumeNormalizationEnabled = rawEffects["volumeNormalizationEnabled"] as? Boolean ?: false,
-            panning = (rawEffects["panning"] as? Number)?.toFloat() ?: 0f
-        )
-    }
-
-    private fun parseEqBandLevels(rawLevels: Any?): Map<Int, Float> {
-        val levels = rawLevels as? List<*> ?: return emptyMap()
-        return buildMap {
-            levels.forEach { rawItem ->
-                val item = rawItem as? Map<*, *> ?: return@forEach
-                val frequencyHz = (item["frequencyHz"] as? Number)?.toInt() ?: return@forEach
-                val gainDb = (item["gainDb"] as? Number)?.toFloat() ?: return@forEach
-                if (frequencyHz > 0) put(frequencyHz, gainDb)
-            }
-        }
     }
 
     private fun handlePlaybackStateChanged(sessionId: String, playbackState: Int) {

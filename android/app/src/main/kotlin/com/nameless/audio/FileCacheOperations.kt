@@ -3,8 +3,6 @@ package com.nameless.audio
 import android.content.Context
 import android.content.ContentUris
 import android.content.Intent
-import android.graphics.Bitmap
-import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
@@ -35,6 +33,14 @@ internal class FileCacheOperations(
             scanFileSystemAsDocumentTree = ::scanFileSystemAsDocumentTree,
             scanFileSystem = ::scanFileSystem,
             scanMediaStore = ::scanMediaStore
+        )
+    }
+    private val videoFrameResolver by lazy {
+        FileCacheVideoFrameResolver(
+            context = context,
+            cacheDir = cacheDir,
+            touchCacheFile = ::touchCacheFile,
+            enforceApplicationCacheLimit = { enforceApplicationCacheLimit() }
         )
     }
     val defaultMaxApplicationCacheBytes: Long = ApplicationCachePolicy.DEFAULT_MAX_BYTES
@@ -1494,121 +1500,11 @@ internal class FileCacheOperations(
             }
         }
 
-        private fun isBlankBitmap(bitmap: Bitmap): Boolean {
-            val width = bitmap.width
-            val height = bitmap.height
-            if (width == 0 || height == 0) return true
-
-            val stepX = (width / 10).coerceAtLeast(1)
-            val stepY = (height / 10).coerceAtLeast(1)
-
-            var darkPixels = 0
-            var lightPixels = 0
-            var totalSamples = 0
-
-            for (y in 0 until height step stepY) {
-                for (x in 0 until width step stepX) {
-                    val pixel = bitmap.getPixel(x, y)
-                    val r = (pixel shr 16) and 0xFF
-                    val g = (pixel shr 8) and 0xFF
-                    val b = pixel and 0xFF
-                    val lum = (0.299 * r + 0.587 * g + 0.114 * b).toInt()
-                    if (lum < 20) darkPixels++
-                    if (lum > 235) lightPixels++
-                    totalSamples++
-                }
-            }
-
-            if (totalSamples == 0) return true
-            if (darkPixels > totalSamples * 0.95) return true
-            if (lightPixels > totalSamples * 0.95) return true
-
-            return false
-        }
-
         fun resolveVideoFrame(
             trackPath: String,
             modifiedAtMs: Long?
         ): String? {
-            val coverCacheDir = File(cacheDir, "nameless_audio_covers")
-            if (!coverCacheDir.exists()) {
-                coverCacheDir.mkdirs()
-            }
-            val cacheKey = buildString {
-                append(trackPath)
-                if (modifiedAtMs != null) {
-                    append('|')
-                    append(modifiedAtMs)
-                }
-                append("|v2")
-            }
-            val outputFile = File(
-                coverCacheDir,
-                "video_frame_${kotlin.math.abs(cacheKey.hashCode())}.jpg"
-            )
-            if (outputFile.exists() && outputFile.length() > 0) {
-                touchCacheFile(outputFile)
-                return outputFile.absolutePath
-            }
-
-            var retriever: MediaMetadataRetriever? = null
-            try {
-                retriever = MediaMetadataRetriever()
-                if (trackPath.startsWith("content://")) {
-                    retriever.setDataSource(context, Uri.parse(trackPath))
-                } else {
-                    retriever.setDataSource(trackPath)
-                }
-                
-                val durationStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
-                val durationMs = durationStr?.toLongOrNull() ?: 0L
-                
-                var bitmap: Bitmap? = null
-                if (durationMs > 3000L) {
-                    val timestampsUs = listOf(
-                        durationMs * 300L, // 30%
-                        durationMs * 500L, // 50%
-                        durationMs * 700L, // 70%
-                        durationMs * 150L  // 15%
-                    )
-                    for (tsUs in timestampsUs) {
-                        val frame = retriever.getFrameAtTime(tsUs, MediaMetadataRetriever.OPTION_CLOSEST)
-                        if (frame != null) {
-                            if (!isBlankBitmap(frame)) {
-                                bitmap = frame
-                                break
-                            }
-                            frame.recycle()
-                        }
-                    }
-                }
-                
-                if (bitmap == null) {
-                    bitmap = retriever.getFrameAtTime(
-                        1_000_000L,
-                        MediaMetadataRetriever.OPTION_CLOSEST_SYNC
-                    ) ?: retriever.frameAtTime ?: return null
-                }
-                
-                FileOutputStream(outputFile).use { output ->
-                    bitmap.compress(Bitmap.CompressFormat.JPEG, 88, output)
-                    output.flush()
-                }
-                touchCacheFile(outputFile)
-                enforceApplicationCacheLimit()
-                bitmap.recycle()
-                return outputFile.absolutePath
-            } catch (_: Exception) {
-                if (outputFile.exists()) {
-                    outputFile.delete()
-                }
-                return null
-            } finally {
-                try {
-                    retriever?.release()
-                } catch (_: Exception) {
-                }
-            }
+            return videoFrameResolver.resolve(trackPath, modifiedAtMs)
         }
 
         fun discoverRootImages(

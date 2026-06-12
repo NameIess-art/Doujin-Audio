@@ -256,7 +256,7 @@ class _BootstrapOverlayState extends State<_BootstrapOverlay>
   @override
   void initState() {
     super.initState();
-    // Total duration 1.5s: 0.75s grow + 0.75s shrink/fade
+    // Total duration 1.5s: 0.75s grow + 0.75s fade
     _controller = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1500),
@@ -271,10 +271,7 @@ class _BootstrapOverlayState extends State<_BootstrapOverlay>
         weight: 50, // 0.75s
       ),
       TweenSequenceItem(
-        tween: Tween<double>(
-          begin: 1.0,
-          end: 0.0,
-        ).chain(CurveTween(curve: Curves.easeInBack)),
+        tween: ConstantTween<double>(1.0),
         weight: 50, // 0.75s
       ),
     ]).animate(_controller);

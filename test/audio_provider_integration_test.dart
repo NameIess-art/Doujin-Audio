@@ -570,6 +570,21 @@ void main() {
     );
   });
 
+  group('settings persistence', () {
+    test('startup page is saved with playback settings', () async {
+      SharedPreferences.setMockInitialValues(const <String, Object>{});
+
+      await provider.setStartupPage(StartupPage.playlist);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      final prefs = await SharedPreferences.getInstance();
+      final settings =
+          json.decode(prefs.getString('playback_settings_v1')!)
+              as Map<String, dynamic>;
+      expect(settings['startupPage'], StartupPage.playlist.name);
+    });
+  });
+
   group('playback queues', () {
     test('queue supports duplicate track entries and removal', () async {
       const track = MusicTrack(
@@ -902,6 +917,46 @@ void main() {
   // ── notification integration ───────────────────────────────────
 
   group('playback notification integration', () {
+    test('passes ASMR remote cover to native session and queue', () async {
+      Map<Object?, Object?>? prepareArguments;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+            if (call.method == NativePlaybackMethod.prepareSession) {
+              prepareArguments = call.arguments as Map<Object?, Object?>;
+            }
+            return <String, Object?>{'ok': true, 'value': null};
+          });
+
+      const track = MusicTrack(
+        path: 'https://example.com/asmr/01.mp3',
+        displayName: '01',
+        groupKey: 'asmr-work',
+        groupTitle: 'ASMR Work',
+        groupSubtitle: 'RJ000001',
+        isSingle: false,
+        remoteCoverUrl: 'https://example.com/cover.jpg',
+        remoteMetadataKind: 'asmr.one',
+      );
+      provider.addTracks(
+        const <MusicTrack>[track],
+        notify: false,
+        persist: false,
+      );
+      await provider.spawnSession(track, autoPlay: false);
+
+      for (var i = 0; i < 20 && prepareArguments == null; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+
+      expect(prepareArguments?['artUri'], track.remoteCoverUrl);
+      final queue = prepareArguments?['queue'] as List<Object?>?;
+      expect(queue, isNotEmpty);
+      expect(
+        (queue!.first as Map<Object?, Object?>)['artUri'],
+        track.remoteCoverUrl,
+      );
+    });
+
     test('dismissing active playback keeps session playing', () async {
       final nativeCalls = <String>[];
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger

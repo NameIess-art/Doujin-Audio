@@ -87,6 +87,7 @@ class AppCacheService {
       final tempDir = await getTemporaryDirectory();
       roots.add(Directory(path.join(tempDir.path, 'updates')));
       roots.add(Directory(path.join(tempDir.path, 'asmr_downloads')));
+      roots.add(Directory(path.join(tempDir.path, 'notification_covers')));
     } catch (_) {
       // Temporary cache roots are optional and may be unavailable on startup.
     }

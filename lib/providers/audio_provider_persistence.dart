@@ -177,6 +177,7 @@ extension AudioProviderPersistence on AudioProvider {
           map['multiThreadPlaybackEnabled'] as bool? ?? false;
       _notificationsEnabled = map['notificationsEnabled'] as bool? ?? true;
       _showPlaybackCard = map['showPlaybackCard'] as bool? ?? true;
+      _startupPage = _decodeStartupPage(map['startupPage']);
       _autoPlayAddedSessions = map['autoPlayAddedSessions'] as bool? ?? true;
       _autoCheckUpdates = map['autoCheckUpdates'] as bool? ?? false;
       _settingsRepository.recordPlaybackProgress =
@@ -212,6 +213,7 @@ extension AudioProviderPersistence on AudioProvider {
         'multiThreadPlaybackEnabled': _multiThreadPlaybackEnabled,
         'notificationsEnabled': _notificationsEnabled,
         'showPlaybackCard': _showPlaybackCard,
+        'startupPage': _startupPage.name,
         'autoPlayAddedSessions': _autoPlayAddedSessions,
         'autoCheckUpdates': _autoCheckUpdates,
         'recordPlaybackProgress': _settingsRepository.recordPlaybackProgress,
@@ -239,6 +241,14 @@ extension AudioProviderPersistence on AudioProvider {
       if (language.name == value) return language;
     }
     return AppLanguage.ja;
+  }
+
+  StartupPage _decodeStartupPage(Object? value) {
+    if (value is! String) return StartupPage.library;
+    return StartupPage.values.firstWhere(
+      (page) => page.name == value,
+      orElse: () => StartupPage.library,
+    );
   }
 
   List<EqPreset> _decodeCustomEqPresets(Object? value) {
@@ -483,6 +493,13 @@ extension AudioProviderPersistence on AudioProvider {
   Future<void> setShowPlaybackCard(bool show) async {
     if (_showPlaybackCard == show) return;
     _showPlaybackCard = show;
+    _notifySettingsChanged();
+    unawaited(_savePlaybackSettings());
+  }
+
+  Future<void> setStartupPage(StartupPage page) async {
+    if (_startupPage == page) return;
+    _startupPage = page;
     _notifySettingsChanged();
     unawaited(_savePlaybackSettings());
   }

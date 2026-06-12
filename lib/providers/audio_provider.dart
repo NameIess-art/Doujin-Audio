@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:path/path.dart' as path;
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../i18n/app_language_provider.dart';
@@ -27,6 +28,7 @@ import '../models/playback_session.dart';
 import '../models/time_segment_label.dart';
 import '../platform/app_platform.dart';
 import '../services/app_cache_service.dart';
+import '../services/app_log_service.dart';
 import '../services/audio_database_repository.dart';
 import '../services/audio_detail_repository.dart';
 import '../services/audio_state_services.dart';
@@ -56,6 +58,7 @@ export '../models/playback_mode.dart';
 export '../models/playback_queue.dart';
 export '../models/playback_session.dart';
 export '../models/time_segment_label.dart';
+export '../services/audio_state_services.dart' show StartupPage;
 import '../services/native_playback_bridge.dart';
 import '../services/playback_notification_service.dart';
 import '../services/playback_command_runner.dart';
@@ -213,6 +216,7 @@ class AudioProvider with ChangeNotifier {
   int _audioLibraryCategorySnapshotRevision = 0;
   bool _notifyListenersQueued = false;
   bool _isDisposed = false;
+  bool _nativeRuntimeStarted = false;
 
   void requestCarouselSnapTo(String sessionId) {
     _carouselSnapNotifier.value = sessionId;
@@ -453,6 +457,9 @@ class AudioProvider with ChangeNotifier {
   bool get _showPlaybackCard => _settingsRepository.showPlaybackCard;
   set _showPlaybackCard(bool value) =>
       _settingsRepository.showPlaybackCard = value;
+  StartupPage get _startupPage => _settingsRepository.startupPage;
+  set _startupPage(StartupPage value) =>
+      _settingsRepository.startupPage = value;
   bool get _autoPlayAddedSessions => _settingsRepository.autoPlayAddedSessions;
   set _autoPlayAddedSessions(bool value) {
     _settingsRepository.autoPlayAddedSessions = value;
@@ -559,6 +566,7 @@ class AudioProvider with ChangeNotifier {
     TimerService? timerService,
     NotificationCoordinatorService? notificationStateService,
     SettingsRepository? settingsRepository,
+    bool deferRuntimeStart = false,
   }) {
     final resolvedAudioDatabaseRepository =
         audioDatabaseRepository ?? AudioDatabaseRepository();
@@ -583,7 +591,7 @@ class AudioProvider with ChangeNotifier {
           notificationStateService ?? NotificationCoordinatorService(),
       settingsRepository: settingsRepository ?? SettingsRepository(),
       skipDisposePersistence: false,
-      startNativeRuntime: true,
+      startNativeRuntime: !deferRuntimeStart,
     );
   }
 
@@ -669,12 +677,16 @@ class AudioProvider with ChangeNotifier {
   }
 
   void _startNativeRuntime() {
+    if (_nativeRuntimeStarted || _isDisposed) return;
+    _nativeRuntimeStarted = true;
     _nativePlaybackRepository.startListening();
     _nativePlaybackSubscription = _nativePlaybackRepository.snapshots.listen(
       _handleNativePlaybackSnapshot,
     );
     _loadData();
   }
+
+  void startRuntime() => _startNativeRuntime();
 
   void _initializeControllers() {
     libraryController = LibraryController(

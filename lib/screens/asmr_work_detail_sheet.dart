@@ -6,7 +6,6 @@ import 'package:provider/provider.dart';
 
 import '../i18n/app_language_provider.dart';
 import '../models/asmr_models.dart';
-import '../providers/audio_provider.dart';
 import '../services/asmr_library_controller.dart';
 import '../widgets/app_feedback.dart';
 import '../widgets/async_cover_image.dart';

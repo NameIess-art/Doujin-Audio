@@ -19,6 +19,7 @@ void main() {
         ..multiThreadPlaybackEnabled = true
         ..notificationsEnabled = false
         ..showPlaybackCard = false
+        ..startupPage = StartupPage.asmrOne
         ..autoPlayAddedSessions = false
         ..autoCheckUpdates = true
         ..dlsiteMetadataLanguage = AppLanguage.en
@@ -42,6 +43,11 @@ void main() {
               isFalse,
             )
             .having((state) => state.showPlaybackCard, 'show card', isFalse)
+            .having(
+              (state) => state.startupPage,
+              'startup page',
+              StartupPage.asmrOne,
+            )
             .having(
               (state) => state.autoPlayAddedSessions,
               'auto play',

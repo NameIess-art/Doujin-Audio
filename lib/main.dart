@@ -86,9 +86,6 @@ Future<void> _runAudioPlayerApp(List<String> args) async {
     audioDatabaseRepository: audioDatabaseRepository,
   );
   final asmrDownloadManager = AsmrDownloadManager();
-  unawaited(asmrLibraryController.initialize());
-  unawaited(asmrDownloadManager.initialize());
-
   final audioProvider = AudioProvider(
     notificationService: notificationService,
     audioDatabaseRepository: audioDatabaseRepository,
@@ -98,6 +95,7 @@ Future<void> _runAudioPlayerApp(List<String> args) async {
     timerService: timerService,
     notificationStateService: notificationCoordinatorService,
     settingsRepository: settingsRepository,
+    deferRuntimeStart: true,
   );
 
   runApp(
@@ -125,6 +123,12 @@ Future<void> _runAudioPlayerApp(List<String> args) async {
       ),
     ),
   );
+
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    audioProvider.startRuntime();
+    unawaited(asmrLibraryController.initialize());
+    unawaited(asmrDownloadManager.initialize());
+  });
 }
 
 class AppOrientationPolicy {

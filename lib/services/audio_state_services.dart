@@ -352,6 +352,8 @@ class TimerStateSliceData {
   );
 }
 
+enum StartupPage { asmrOne, library, playlist }
+
 @immutable
 class SettingsState {
   const SettingsState({
@@ -370,6 +372,7 @@ class SettingsState {
     this.recordPlaybackProgress = true,
     this.blurPlayerBackgroundEnabled = true,
     this.uiBlurEffectEnabled = true,
+    this.startupPage = StartupPage.library,
   });
 
   final String converterFormat;
@@ -387,6 +390,7 @@ class SettingsState {
   final bool recordPlaybackProgress;
   final bool blurPlayerBackgroundEnabled;
   final bool uiBlurEffectEnabled;
+  final StartupPage startupPage;
 
   @override
   bool operator ==(Object other) {
@@ -405,7 +409,8 @@ class SettingsState {
         other.maxCacheBytes == maxCacheBytes &&
         other.recordPlaybackProgress == recordPlaybackProgress &&
         other.blurPlayerBackgroundEnabled == blurPlayerBackgroundEnabled &&
-        other.uiBlurEffectEnabled == uiBlurEffectEnabled;
+        other.uiBlurEffectEnabled == uiBlurEffectEnabled &&
+        other.startupPage == startupPage;
   }
 
   @override
@@ -425,6 +430,7 @@ class SettingsState {
     recordPlaybackProgress,
     blurPlayerBackgroundEnabled,
     uiBlurEffectEnabled,
+    startupPage,
   );
 }
 
@@ -1434,6 +1440,7 @@ class SettingsRepository {
   bool recordPlaybackProgress = true;
   bool blurPlayerBackgroundEnabled = true;
   bool uiBlurEffectEnabled = true;
+  StartupPage startupPage = StartupPage.library;
   final AudioStateSlice<SettingsState> slice = AudioStateSlice<SettingsState>(
     const SettingsState(),
   );
@@ -1456,6 +1463,7 @@ class SettingsRepository {
         recordPlaybackProgress: recordPlaybackProgress,
         blurPlayerBackgroundEnabled: blurPlayerBackgroundEnabled,
         uiBlurEffectEnabled: uiBlurEffectEnabled,
+        startupPage: startupPage,
       ),
     );
   }

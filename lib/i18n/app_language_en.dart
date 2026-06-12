@@ -426,6 +426,12 @@ const Map<String, String> appLanguageEn = {
   'app_desc': 'Supports concurrent sessions and high-fidelity audio playback.',
   'language': 'Language',
   'language_subtitle': 'Switch UI language',
+  'startup_page': 'Page shown on app launch',
+  'startup_page_subtitle':
+      'Choose the first page shown whenever the app opens.',
+  'startup_page_asmrOne': 'ASMR.ONE',
+  'startup_page_library': 'Library',
+  'startup_page_playlist': 'Playlist',
   'dlsite_metadata_language': 'DLsite metadata language',
   'dlsite_metadata_language_subtitle':
       'Choose the language used when reading titles, circles, voice actors, and tags from DLsite.',

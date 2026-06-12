@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
@@ -25,6 +27,7 @@ class AppUpdateInfo {
     required this.tagName,
     required this.assetName,
     required this.assetUrl,
+    required this.checksumAssetUrl,
     required this.releaseUrl,
     required this.isUpdateAvailable,
     this.releaseName,
@@ -37,6 +40,7 @@ class AppUpdateInfo {
   final String? releaseName;
   final String assetName;
   final String assetUrl;
+  final String? checksumAssetUrl;
   final String releaseUrl;
   final DateTime? publishedAt;
   final bool isUpdateAvailable;
@@ -189,15 +193,21 @@ class AppUpdateService {
     if (assetUrl.isEmpty) {
       throw const FormatException('Update asset does not have a download URL.');
     }
+    final assetName =
+        updateAsset['name'] as String? ??
+        'NamelessAudio-$tagName${Platform.isWindows ? '.zip' : '.apk'}';
+    final checksumAsset = assets.cast<Map<String, dynamic>?>().firstWhere(
+      (asset) => asset?['name'] == '$assetName.sha256',
+      orElse: () => null,
+    );
     return AppUpdateInfo(
       currentVersion: currentVersion,
       latestVersionName: latestVersionName,
       tagName: tagName,
       releaseName: releaseName,
-      assetName:
-          updateAsset['name'] as String? ??
-          'NamelessAudio-$tagName${Platform.isWindows ? '.zip' : '.apk'}',
+      assetName: assetName,
       assetUrl: assetUrl,
+      checksumAssetUrl: checksumAsset?['browser_download_url'] as String?,
       releaseUrl: releaseUrl,
       publishedAt: publishedAt,
       isUpdateAvailable: _isNewerVersion(
@@ -212,16 +222,16 @@ class AppUpdateService {
       final raw = await _channel.invokeMapMethod<String, Object?>(
         UpdateMethod.getAppVersion,
       );
-      final versionName = raw?['versionName'] as String? ?? '0.0.0';
+      final versionName = raw?['versionName'] as String? ?? 'unknown';
       final buildNumber = (raw?['buildNumber'] as num?)?.toInt() ?? 0;
       return AppVersionInfo(versionName: versionName, buildNumber: buildNumber);
     } catch (error, stackTrace) {
       AppLogService.warning(
-        'app_version_channel_failed_using_build_fallback',
+        'app_version_channel_failed',
         error: error,
         stackTrace: stackTrace,
       );
-      return const AppVersionInfo(versionName: '0.9.92', buildNumber: 992);
+      return const AppVersionInfo(versionName: 'unknown', buildNumber: 0);
     }
   }
 
@@ -235,12 +245,27 @@ class AppUpdateService {
       await updateDir.create(recursive: true);
     }
     final file = File(path.join(updateDir.path, _safeFileName(info.assetName)));
+    final partialFile = File('${file.path}.part');
     if (await file.exists()) {
       await file.delete();
+    }
+    if (await partialFile.exists()) {
+      await partialFile.delete();
     }
 
     final client = HttpClient();
     try {
+      final checksumUrl = info.checksumAssetUrl;
+      if (checksumUrl == null || checksumUrl.isEmpty) {
+        throw const FormatException(
+          'The release does not provide a checksum for this update.',
+        );
+      }
+      final expectedChecksum = await _downloadExpectedChecksum(
+        client,
+        checksumUrl,
+        info.assetName,
+      );
       final request = await client.getUrl(Uri.parse(info.assetUrl));
       request.headers.set(
         HttpHeaders.userAgentHeader,
@@ -253,7 +278,7 @@ class AppUpdateService {
 
       final total = response.contentLength;
       var received = 0;
-      final sink = file.openWrite();
+      final sink = partialFile.openWrite();
       try {
         await for (final chunk in response) {
           received += chunk.length;
@@ -268,13 +293,60 @@ class AppUpdateService {
       } finally {
         await sink.close();
       }
+      final actualChecksum = await sha256.bind(partialFile.openRead()).first;
+      if (actualChecksum.toString() != expectedChecksum) {
+        throw const FormatException('Update checksum verification failed.');
+      }
+      await partialFile.rename(file.path);
       await file.setLastModified(DateTime.now());
       await AppCacheService.enforceLimit();
       onProgress(1);
       return file;
+    } catch (error) {
+      if (await partialFile.exists()) {
+        await partialFile.delete();
+      }
+      if (await file.exists()) {
+        await file.delete();
+      }
+      rethrow;
     } finally {
       client.close(force: true);
     }
+  }
+
+  static Future<String> _downloadExpectedChecksum(
+    HttpClient client,
+    String checksumUrl,
+    String assetName,
+  ) async {
+    final request = await client.getUrl(Uri.parse(checksumUrl));
+    request.headers.set(HttpHeaders.userAgentHeader, 'Nameless Audio updater');
+    final response = await request.close();
+    final body = await response.transform(utf8.decoder).join();
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw const HttpException('Update checksum download failed.');
+    }
+    return parseExpectedChecksum(body, assetName);
+  }
+
+  @visibleForTesting
+  static String parseExpectedChecksum(String body, String assetName) {
+    final trimmed = body.trim();
+    final match = RegExp(
+      r'^([a-fA-F0-9]{64})(?:\s+\*?.+)?$',
+    ).firstMatch(trimmed);
+    if (match == null) {
+      throw const FormatException('Update checksum file is invalid.');
+    }
+    final listedName = trimmed.split(RegExp(r'\s+')).skip(1).join(' ');
+    if (listedName.isNotEmpty &&
+        listedName.replaceFirst('*', '') != assetName) {
+      throw const FormatException(
+        'Update checksum does not describe the selected asset.',
+      );
+    }
+    return match.group(1)!.toLowerCase();
   }
 
   static Future<bool> canInstallUnknownApps() async {
@@ -304,6 +376,30 @@ class AppUpdateService {
     } catch (error, stackTrace) {
       AppLogService.warning(
         'open_install_permission_settings_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      return false;
+    }
+  }
+
+  static Future<bool> openReleasePage(String url) async {
+    try {
+      if (Platform.isAndroid) {
+        return await _channel.invokeMethod<bool>(UpdateMethod.openReleasePage, {
+              'url': url,
+            }) ??
+            false;
+      }
+      if (Platform.isWindows) {
+        await Process.start('cmd', ['/c', 'start', '', url]);
+        return true;
+      }
+      await Process.start('xdg-open', [url]);
+      return true;
+    } catch (error, stackTrace) {
+      AppLogService.warning(
+        'open_release_page_failed',
         error: error,
         stackTrace: stackTrace,
       );

@@ -397,6 +397,7 @@ const Map<String, String> appLanguageEn = {
   'check_updates_subtitle_latest': 'You are on the latest version: {version}',
   'checking_updates': 'Checking the latest GitHub release...',
   'latest_version_available': 'New version available',
+  'open_release_page': 'Open release page',
   'current_version_label': 'Current version: {version}',
   'latest_version_label': 'Latest version: {version}',
   'update_available_subtitle': 'Available update: {version}',
@@ -422,7 +423,6 @@ const Map<String, String> appLanguageEn = {
   'bitrate_not_used':
       '{format} uses built-in encoding parameters. Bitrate setting is ignored.',
   'about': 'About',
-  'app_version': 'NL Audio v0.9.9',
   'app_desc': 'Supports concurrent sessions and high-fidelity audio playback.',
   'language': 'Language',
   'language_subtitle': 'Switch UI language',

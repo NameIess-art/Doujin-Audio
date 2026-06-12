@@ -52,6 +52,7 @@ internal object UpdateMethods {
     const val GET_APP_VERSION = "getAppVersion"
     const val INSTALL_APK = "installApk"
     const val OPEN_INSTALL_PERMISSION_SETTINGS = "openInstallPermissionSettings"
+    const val OPEN_RELEASE_PAGE = "openReleasePage"
 }
 
 internal object SubtitleOverlayMethods {

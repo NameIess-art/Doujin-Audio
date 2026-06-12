@@ -247,11 +247,7 @@ extension AudioProviderPlaybackSessions on AudioProvider {
         final title =
             track?.displayName ??
             path.basenameWithoutExtension(resolvedNextPath);
-        final artUri = coverPath != null
-            ? Uri.file(coverPath)
-            : (track?.remoteCoverUrl != null
-                ? Uri.parse(track!.remoteCoverUrl!)
-                : null);
+        final artUri = coverPath == null ? null : Uri.file(coverPath);
         var ok = false;
         for (var attempt = 0; attempt < 2; attempt++) {
           if (attempt > 0) {
@@ -449,10 +445,6 @@ extension AudioProviderPlaybackSessions on AudioProvider {
     final resolvedTrackPath = _resolveRetargetedPath(trackPath);
     final track = _trackForAnyPath(resolvedTrackPath);
     final subtitle = track?.groupTitle;
-    final coverPath = resolvedCoverPathForTrack(track);
-    final artUri = coverPath != null
-        ? Uri.file(coverPath).toString()
-        : track?.remoteCoverUrl;
     return <String, Object?>{
       'path': resolvedTrackPath,
       'uri':
@@ -465,7 +457,6 @@ extension AudioProviderPlaybackSessions on AudioProvider {
           path.basenameWithoutExtension(resolvedTrackPath),
       // ignore: use_null_aware_elements
       if (subtitle != null) 'subtitle': subtitle,
-      if (artUri != null) 'artUri': artUri,
     };
   }
 

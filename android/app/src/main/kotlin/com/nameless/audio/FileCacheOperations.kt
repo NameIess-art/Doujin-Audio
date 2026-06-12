@@ -15,7 +15,6 @@ import android.webkit.MimeTypeMap
 import androidx.documentfile.provider.DocumentFile
 import java.io.File
 import java.io.FileOutputStream
-import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
 import java.util.ArrayDeque
 import java.util.Locale
@@ -27,7 +26,18 @@ internal class FileCacheOperations(
     private val filesDir get() = context.filesDir
     private val cacheDir get() = context.cacheDir
     private val externalCacheDir get() = context.externalCacheDir
-    val defaultMaxApplicationCacheBytes: Long = 300L * 1024L * 1024L
+    private val applicationCachePolicy = ApplicationCachePolicy(context)
+    private val mediaScanOrchestrator by lazy {
+        FileCacheMediaScanOrchestrator(
+            resolveContentUri = ::resolveContentUri,
+            contentUriToFilePath = ::contentUriToFilePath,
+            scanDocumentTree = ::scanDocumentTree,
+            scanFileSystemAsDocumentTree = ::scanFileSystemAsDocumentTree,
+            scanFileSystem = ::scanFileSystem,
+            scanMediaStore = ::scanMediaStore
+        )
+    }
+    val defaultMaxApplicationCacheBytes: Long = ApplicationCachePolicy.DEFAULT_MAX_BYTES
 
     fun cacheFromUri(uriString: String, name: String, index: Int): String {
         val uri = Uri.parse(uriString)
@@ -68,23 +78,12 @@ internal class FileCacheOperations(
         "mp4", "mkv", "webm", "mov", "m4v", "avi", "3gp"
     )
 
-    private val supportedVideoExtensions = setOf(
-        "mp4", "mkv", "webm", "mov", "m4v", "avi", "3gp"
-    )
-
     private val preferredCoverBasenames = listOf(
         "cover", "folder", "front", "album", "artwork", "poster"
     )
 
     private val audioDetailBackupFileName = "nameless-audio.json"
     private val legacyAudioDetailBackupFileName = ".nameless-audio.json"
-
-        private val blockedExtensions = setOf(
-            "vtt", "srt", "ass", "ssa", "lrc", "txt", "md", "json", "xml",
-            "jpg", "jpeg", "png", "gif", "webp", "bmp", "heic", "heif",
-            "pdf", "zip", "rar", "7z", "tar", "gz", "doc", "docx"
-        )
-
 
         data class ScannedTrack(
             val path: String,
@@ -96,11 +95,6 @@ internal class FileCacheOperations(
             val scannedAtMs: Long = System.currentTimeMillis(),
             val fileSizeBytes: Long? = null,
             val modifiedAtMs: Long? = null
-        )
-
-        private data class MediaNameInfo(
-            val title: String,
-            val isVideo: Boolean
         )
 
         private data class DocumentScanNode(
@@ -143,49 +137,7 @@ internal class FileCacheOperations(
         )
 
         fun scanFolder(folder: String): List<ScannedTrack> {
-            val byPath = linkedMapOf<String, ScannedTrack>()
-            val folderTrimmed = folder.trim()
-            val uri = resolveContentUri(folderTrimmed)
-
-            if (uri != null) {
-                scanDocumentTree(uri, byPath)
-                if (byPath.isNotEmpty()) {
-                    return byPath.values.toList()
-                }
-
-                // After a tree-root rename performed via File.renameTo, some ROMs
-                // keep the underlying directory readable while the new SAF tree URI
-                // is not yet queryable. Fall back to direct file scanning so a
-                // refresh does not incorrectly prune the folder from the library.
-                val filePath = contentUriToFilePath(folderTrimmed)
-                if (filePath != null) {
-                    val root = File(filePath)
-                    if (root.exists() && root.isDirectory) {
-                        scanFileSystemAsDocumentTree(
-                            rootUri = uri,
-                            root = root,
-                            output = byPath
-                        )
-                        if (byPath.isNotEmpty()) {
-                            return byPath.values.toList()
-                        }
-                        scanMediaStore(filePath, byPath)
-                        return byPath.values.toList()
-                    }
-                }
-                return byPath.values.toList()
-            }
-
-            val root = File(folderTrimmed)
-            if (root.exists() && root.isDirectory) {
-                scanFileSystem(root, byPath)
-                if (byPath.isNotEmpty()) {
-                    return byPath.values.toList()
-                }
-            }
-
-            scanMediaStore(folderTrimmed, byPath)
-            return byPath.values.toList()
+            return mediaScanOrchestrator.scanFolder(folder)
         }
 
         fun listChildFolders(folder: String): List<String> {
@@ -1399,92 +1351,14 @@ internal class FileCacheOperations(
         }
 
         private fun normalizeDisplayName(raw: String): String {
-            var text = raw.trim()
-            if (text.isEmpty()) return text
-
-            text = tryDecodePercent(text)
-
-            val maybeFixed = tryLatin1ToUtf8(text)
-            if (looksLikeMojibake(text) && !looksLikeMojibake(maybeFixed)) {
-                text = maybeFixed
-            }
-            return text.trim()
-        }
-
-        private fun tryDecodePercent(value: String): String {
-            if (!value.contains('%')) return value
-            return try {
-                URLDecoder.decode(value, StandardCharsets.UTF_8.name())
-            } catch (_: Exception) {
-                value
-            }
-        }
-
-        private fun tryLatin1ToUtf8(value: String): String {
-            return try {
-                String(value.toByteArray(Charsets.ISO_8859_1), Charsets.UTF_8)
-            } catch (_: Exception) {
-                value
-            }
-        }
-
-        private fun looksLikeMojibake(value: String): Boolean {
-            if (value.isEmpty()) return false
-            if (value.any { it == '\uFFFD' || it == '\u951F' }) return true
-            return value.count { it.code in 0x00C0..0x00FF } >= 2
+            return MediaNameMetadata.normalizeDisplayName(raw)
         }
 
         private fun mediaNameInfoOrNull(
             name: String,
             mime: String? = null
         ): MediaNameInfo? {
-            val displayName = name.ifBlank { "audio_file" }
-            val extension = displayName.substringAfterLast('.', "").lowercase(Locale.US)
-            val normalizedMime = mime?.lowercase(Locale.US)
-            if (!isSupportedMediaName(extension, normalizedMime)) return null
-            return MediaNameInfo(
-                title = displayName.substringBeforeLast('.', displayName),
-                isVideo = isVideoMediaName(extension, normalizedMime)
-            )
-        }
-
-        private fun isSupportedMediaName(extension: String, mime: String?): Boolean {
-            if (mime != null && isSupportedMediaMime(mime)) {
-                return true
-            }
-            if (extension.isBlank()) {
-                return true
-            }
-            if (blockedExtensions.contains(extension)) {
-                return false
-            }
-            val extensionMime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension)
-                ?.lowercase(Locale.US)
-            if (extensionMime == null) {
-                return true
-            }
-            return isSupportedMediaMime(extensionMime)
-        }
-
-        private fun isSupportedMediaMime(mime: String): Boolean {
-            return mime.startsWith("audio/") ||
-                mime.startsWith("video/") ||
-                mime == "application/ogg"
-        }
-
-        private fun isVideoMediaName(extension: String, mime: String?): Boolean {
-            if (mime?.startsWith("video/") == true) {
-                return true
-            }
-            if (extension.isBlank()) {
-                return false
-            }
-            if (extension in supportedVideoExtensions) {
-                return true
-            }
-            val extensionMime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension)
-                ?.lowercase(Locale.US)
-            return extensionMime?.startsWith("video/") == true
+            return MediaNameMetadata.mediaNameInfoOrNull(name, mime)
         }
 
         private data class DocumentImageCandidate(
@@ -1552,119 +1426,26 @@ internal class FileCacheOperations(
             return findPreferredCoverViaFile(folderPath, trackPath)
         }
 
-        private val cachePolicyPrefsName = "app_cache_policy"
-        private val maxCacheBytesKey = "max_cache_bytes"
-
         fun maxApplicationCacheBytes(): Long {
-            return context.getSharedPreferences(cachePolicyPrefsName, Context.MODE_PRIVATE)
-                .getLong(maxCacheBytesKey, defaultMaxApplicationCacheBytes)
-                .coerceAtLeast(1L)
+            return applicationCachePolicy.maxBytes()
         }
 
         fun setMaxApplicationCacheBytes(maxBytes: Long) {
-            context.getSharedPreferences(cachePolicyPrefsName, Context.MODE_PRIVATE)
-                .edit()
-                .putLong(maxCacheBytesKey, maxBytes.coerceAtLeast(1L))
-                .apply()
+            applicationCachePolicy.setMaxBytes(maxBytes)
         }
 
         fun clearApplicationCache(): Long {
-            var deletedBytes = 0L
-            applicationCacheRoots().forEach { root ->
-                if (!root.exists()) return@forEach
-                root.listFiles()?.forEach { child ->
-                    deletedBytes += deleteCacheEntity(child)
-                }
-            }
-            return deletedBytes.coerceAtMost(Int.MAX_VALUE.toLong())
-        }
-
-        private fun deleteCacheEntity(entity: File): Long {
-            val size = cacheEntitySize(entity)
-            try {
-                if (entity.isDirectory) {
-                    entity.deleteRecursively()
-                } else {
-                    entity.delete()
-                }
-            } catch (_: Exception) {
-            }
-            return if (entity.exists()) 0L else size
+            return applicationCachePolicy.clear()
         }
 
         fun enforceApplicationCacheLimit(
             maxBytes: Long = maxApplicationCacheBytes()
         ) {
-            val files = applicationCacheRoots()
-                .filter { it.exists() }
-                .flatMap(::collectCacheFiles)
-                .distinctBy { it.absolutePath }
-            if (files.size <= 1) return
-
-            var totalBytes = files.sumOf { file -> file.length().coerceAtLeast(0L) }
-            var remainingFiles = files.size
-            files.sortedBy { it.lastModified() }.forEach { file ->
-                if (totalBytes <= maxBytes || remainingFiles <= 1) return@forEach
-                val size = file.length().coerceAtLeast(0L)
-                try {
-                    if (file.delete()) {
-                        totalBytes -= size
-                        remainingFiles -= 1
-                    }
-                } catch (_: Exception) {
-                }
-            }
-            applicationCacheRoots().forEach(::deleteEmptyCacheDirectories)
-        }
-
-        private fun applicationCacheRoots(): List<File> {
-            return listOfNotNull(cacheDir, externalCacheDir)
-        }
-
-        private fun collectCacheFiles(root: File): List<File> {
-            val children = root.listFiles() ?: return emptyList()
-            val result = mutableListOf<File>()
-            children.forEach { child ->
-                if (child.isDirectory) {
-                    result.addAll(collectCacheFiles(child))
-                } else if (child.isFile) {
-                    result.add(child)
-                }
-            }
-            return result
-        }
-
-        private fun cacheEntitySize(entity: File): Long {
-            return try {
-                if (entity.isFile) {
-                    entity.length().coerceAtLeast(0L)
-                } else {
-                    entity.listFiles()?.sumOf(::cacheEntitySize) ?: 0L
-                }
-            } catch (_: Exception) {
-                0L
-            }
-        }
-
-        private fun deleteEmptyCacheDirectories(root: File) {
-            root.listFiles()?.forEach { child ->
-                if (child.isDirectory) {
-                    deleteEmptyCacheDirectories(child)
-                    if (child.listFiles()?.isEmpty() == true) {
-                        try {
-                            child.delete()
-                        } catch (_: Exception) {
-                        }
-                    }
-                }
-            }
+            applicationCachePolicy.enforceLimit(maxBytes)
         }
 
         private fun touchCacheFile(file: File) {
-            try {
-                file.setLastModified(System.currentTimeMillis())
-            } catch (_: Exception) {
-            }
+            applicationCachePolicy.touch(file)
         }
 
         /**

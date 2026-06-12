@@ -15,152 +15,12 @@ import '../i18n/app_language_provider.dart';
 import 'audio_state_services.dart';
 import 'path_matcher.dart';
 import 'path_display.dart';
-import 'platform_channels.dart';
 import 'media_file_support.dart';
+import 'library_scan_models.dart';
 import 'library_scanner_isolate.dart';
+import 'library_scanner_platform_gateway.dart';
 
-class PickedAudioFile {
-  const PickedAudioFile({required this.uri, required this.name});
-  final String uri;
-  final String name;
-}
-
-class ScannedTrack {
-  const ScannedTrack({
-    required this.path,
-    required this.groupKey,
-    required this.groupTitle,
-    required this.groupSubtitle,
-    required this.isSingle,
-    required this.isVideo,
-    this.displayName,
-    this.scannedAt,
-    this.fileSizeBytes,
-    this.modifiedAt,
-  });
-
-  final String path;
-  final String groupKey;
-  final String groupTitle;
-  final String groupSubtitle;
-  final bool isSingle;
-  final bool isVideo;
-  final String? displayName;
-  final DateTime? scannedAt;
-  final int? fileSizeBytes;
-  final DateTime? modifiedAt;
-
-  factory ScannedTrack.fromPayload(Map<Object?, Object?> payload) {
-    final scannedAtMs = payload['scannedAtMs'] as num?;
-    final modifiedAtMs = payload['modifiedAtMs'] as num?;
-    return ScannedTrack(
-      path: payload['path']?.toString() ?? '',
-      displayName: payload['displayName']?.toString(),
-      groupKey: payload['groupKey']?.toString() ?? '',
-      groupTitle: payload['groupTitle']?.toString() ?? '',
-      groupSubtitle: payload['groupSubtitle']?.toString() ?? '',
-      isSingle: payload['isSingle'] as bool? ?? false,
-      isVideo: payload['isVideo'] as bool? ?? false,
-      scannedAt: scannedAtMs == null
-          ? null
-          : DateTime.fromMillisecondsSinceEpoch(scannedAtMs.toInt()),
-      fileSizeBytes: (payload['fileSizeBytes'] as num?)?.toInt(),
-      modifiedAt: modifiedAtMs == null
-          ? null
-          : DateTime.fromMillisecondsSinceEpoch(modifiedAtMs.toInt()),
-    );
-  }
-}
-
-class NativeScanResult {
-  const NativeScanResult._({
-    required this.ok,
-    this.tracks = const <ScannedTrack>[],
-    this.paths = const <String>{},
-    this.errorCode,
-    this.errorMessage,
-    this.notSupported = false,
-  });
-
-  const NativeScanResult.success(List<ScannedTrack> tracks, Set<String> paths)
-    : this._(ok: true, tracks: tracks, paths: paths);
-
-  const NativeScanResult.failed({String? code, String? message})
-    : this._(ok: false, errorCode: code, errorMessage: message);
-
-  const NativeScanResult.notSupported() : this._(ok: false, notSupported: true);
-
-  final bool ok;
-  final List<ScannedTrack> tracks;
-  final Set<String> paths;
-  final String? errorCode;
-  final String? errorMessage;
-  final bool notSupported;
-}
-
-class NativeScanPayload {
-  const NativeScanPayload({required this.tracks, required this.paths});
-  final List<ScannedTrack> tracks;
-  final Set<String> paths;
-}
-
-class FolderScanChunk {
-  const FolderScanChunk({
-    this.tracks = const <ScannedTrack>[],
-    this.paths = const <String>{},
-    this.folders = const <String>[],
-    this.failureCount = 0,
-  });
-
-  final List<ScannedTrack> tracks;
-  final Set<String> paths;
-  final List<String> folders;
-  final int failureCount;
-}
-
-class FolderScanSessionEvent {
-  const FolderScanSessionEvent({
-    required this.sessionId,
-    required this.type,
-    required this.chunk,
-    this.errorCode,
-    this.errorMessage,
-  });
-
-  final String sessionId;
-  final String type;
-  final FolderScanChunk chunk;
-  final String? errorCode;
-  final String? errorMessage;
-
-  bool get isChunk => type == 'chunk';
-  bool get isDone => type == 'done';
-  bool get isError => type == 'error';
-
-  factory FolderScanSessionEvent.fromPayload(Map<Object?, Object?> payload) {
-    final rawTracks = payload['tracks'];
-    final trackPayload = rawTracks is List ? rawTracks : const <Object?>[];
-    final parsedTracks = _parseNativeScanPayload(trackPayload);
-    final eventPaths = _stringSetFromPayload(
-      payload['paths'],
-    ).map(PathMatcher.normalize).toSet();
-    final folders = _stringSetFromPayload(
-      payload['folders'],
-    ).map(PathMatcher.normalize).toList(growable: false);
-    return FolderScanSessionEvent(
-      sessionId: payload['sessionId']?.toString() ?? '',
-      type: payload['type']?.toString() ?? '',
-      chunk: FolderScanChunk(
-        tracks: parsedTracks.tracks,
-        paths: eventPaths.isEmpty ? parsedTracks.paths : eventPaths,
-        folders: folders,
-        failureCount: (payload['failureCount'] as num?)?.toInt() ?? 0,
-      ),
-      errorCode: payload['code']?.toString(),
-      errorMessage: payload['message']?.toString(),
-    );
-  }
-}
+export 'library_scan_models.dart';
 
 class LibraryScanMergeContext {
   LibraryScanMergeContext({
@@ -224,21 +84,15 @@ class LibraryRefreshFolderResult {
 }
 
 class LibraryScannerService {
-  LibraryScannerService();
-
-  static const MethodChannel _fileCacheChannel = MethodChannel(
-    FileCacheChannel.name,
-  );
-  static const EventChannel _fileCacheScanEvents = EventChannel(
-    FileCacheChannel.scanEvents,
-  );
+  LibraryScannerService({LibraryScannerPlatformGateway? platformGateway})
+    : _platformGateway = platformGateway ?? LibraryScannerPlatformGateway();
 
   static const Duration _foregroundRefreshCommitInterval = Duration(
     milliseconds: 400,
   );
 
+  final LibraryScannerPlatformGateway _platformGateway;
   DateTime? _lastBatchFlushTime;
-  int _scanSessionSeed = 0;
 
   bool _pathsOverlap(String first, String second) {
     return PathMatcher.isWithinOrEqual(first, second) ||
@@ -497,7 +351,7 @@ class LibraryScannerService {
               .whereType<Map<Object?, Object?>>()
               .map(ScannedTrack.fromPayload)
               .toList(growable: false);
-      final discoveredPaths = _stringSetFromPayload(payload['discoveredPaths']);
+      final discoveredPaths = stringSetFromPayload(payload['discoveredPaths']);
       final discoveredFolders =
           ((payload['folderPaths'] as List<Object?>?) ?? const <Object?>[])
               .whereType<String>()
@@ -806,7 +660,7 @@ class LibraryScannerService {
             .whereType<Map<Object?, Object?>>()
             .map(ScannedTrack.fromPayload)
             .toList(growable: false);
-    final discoveredPaths = _stringSetFromPayload(payload['discoveredPaths']);
+    final discoveredPaths = stringSetFromPayload(payload['discoveredPaths']);
     final discoveredFolders =
         ((payload['folderPaths'] as List<Object?>?) ?? const <Object?>[])
             .whereType<String>()
@@ -920,139 +774,7 @@ class LibraryScannerService {
   }
 
   Future<NativeScanResult> _scanFolderViaNative(String folderPath) async {
-    if (!Platform.isAndroid) {
-      return const NativeScanResult.notSupported();
-    }
-    final streamedScan = await _scanFolderViaNativeStream(folderPath);
-    if (streamedScan.ok || !streamedScan.notSupported) {
-      return streamedScan;
-    }
-    return _scanFolderViaNativeLegacy(folderPath);
-  }
-
-  Future<NativeScanResult> _scanFolderViaNativeStream(String folderPath) async {
-    final sessionId =
-        '${DateTime.now().microsecondsSinceEpoch}-${_scanSessionSeed++}';
-    final tracks = <ScannedTrack>[];
-    final paths = <String>{};
-    final completer = Completer<NativeScanResult>();
-    StreamSubscription<dynamic>? subscription;
-
-    void complete(NativeScanResult result) {
-      if (!completer.isCompleted) {
-        completer.complete(result);
-      }
-    }
-
-    try {
-      subscription = _fileCacheScanEvents
-          .receiveBroadcastStream(<String, Object?>{'sessionId': sessionId})
-          .listen(
-            (event) {
-              if (event is! Map) return;
-              final scanEvent = FolderScanSessionEvent.fromPayload(
-                event.cast<Object?, Object?>(),
-              );
-              if (scanEvent.sessionId != sessionId) return;
-              if (scanEvent.isChunk) {
-                tracks.addAll(scanEvent.chunk.tracks);
-                paths.addAll(scanEvent.chunk.paths);
-                return;
-              }
-              if (scanEvent.isDone) {
-                complete(
-                  NativeScanResult.success(
-                    List<ScannedTrack>.unmodifiable(tracks),
-                    Set<String>.unmodifiable(paths),
-                  ),
-                );
-                return;
-              }
-              if (scanEvent.isError) {
-                complete(
-                  NativeScanResult.failed(
-                    code: scanEvent.errorCode,
-                    message: scanEvent.errorMessage,
-                  ),
-                );
-              }
-            },
-            onError: (Object error) {
-              complete(
-                NativeScanResult.failed(
-                  code: 'scan_event_error',
-                  message: error.toString(),
-                ),
-              );
-            },
-          );
-
-      final started = await _fileCacheChannel.invokeMethod<bool>(
-        FileCacheMethod.startFolderScan,
-        <String, Object?>{
-          'sessionId': sessionId,
-          'folder': folderPath,
-          'chunkSize': 120,
-        },
-      );
-      if (started != true) {
-        return const NativeScanResult.notSupported();
-      }
-      return await completer.future;
-    } on MissingPluginException {
-      return const NativeScanResult.notSupported();
-    } on PlatformException catch (error) {
-      if (error.code == 'notImplemented') {
-        return const NativeScanResult.notSupported();
-      }
-      return NativeScanResult.failed(code: error.code, message: error.message);
-    } catch (error) {
-      return NativeScanResult.failed(
-        code: 'scan_unknown_error',
-        message: error.toString(),
-      );
-    } finally {
-      await subscription?.cancel();
-      if (!completer.isCompleted) {
-        unawaited(_cancelNativeFolderScan(sessionId));
-      }
-    }
-  }
-
-  Future<void> _cancelNativeFolderScan(String sessionId) async {
-    try {
-      await _fileCacheChannel.invokeMethod<bool>(
-        FileCacheMethod.cancelFolderScan,
-        <String, Object?>{'sessionId': sessionId},
-      );
-    } catch (_) {
-      // Cancellation is best effort because the native scan may already end.
-    }
-  }
-
-  Future<NativeScanResult> _scanFolderViaNativeLegacy(String folderPath) async {
-    try {
-      final data = await _fileCacheChannel.invokeMethod<List<dynamic>>(
-        FileCacheMethod.scanFolder,
-        {'folder': folderPath},
-      );
-      if (data == null) {
-        return const NativeScanResult.failed(
-          code: 'scan_empty_response',
-          message: 'Native scan returned null data.',
-        );
-      }
-
-      final payload = await Isolate.run(() => _parseNativeScanPayload(data));
-      return NativeScanResult.success(payload.tracks, payload.paths);
-    } on PlatformException catch (error) {
-      return NativeScanResult.failed(code: error.code, message: error.message);
-    } catch (error) {
-      return NativeScanResult.failed(
-        code: 'scan_unknown_error',
-        message: error.toString(),
-      );
-    }
+    return _platformGateway.scanFolder(folderPath);
   }
 
   Future<int> _importLibraryWithSingleScan(
@@ -1121,22 +843,9 @@ class LibraryScannerService {
 
   Future<List<String>> _listImmediateChildFolders(String folderPath) async {
     if (Platform.isAndroid) {
-      try {
-        final data = await _fileCacheChannel.invokeMethod<List<dynamic>>(
-          FileCacheMethod.listChildFolders,
-          {'folder': folderPath},
-        );
-        if (data != null) {
-          final folders = data
-              .map((item) => item?.toString().trim() ?? '')
-              .where((item) => item.isNotEmpty)
-              .toList(growable: false);
-          if (folders.isNotEmpty) {
-            return folders;
-          }
-        }
-      } catch (_) {
-        // Native folder listing is optional; fall back to Dart file-system I/O.
+      final folders = await _platformGateway.listChildFolders(folderPath);
+      if (folders != null && folders.isNotEmpty) {
+        return folders;
       }
     }
 
@@ -1274,46 +983,11 @@ class LibraryScannerService {
   }
 
   Future<String?> _pickAudioFolderViaNative() async {
-    final raw = await _fileCacheChannel.invokeMapMethod<String, Object?>(
-      FileCacheMethod.pickAudioFolder,
-    );
-    final pathValue = raw?['path']?.toString().trim();
-    if (pathValue == null || pathValue.isEmpty) {
-      return null;
-    }
-    return pathValue;
+    return _platformGateway.pickAudioFolder();
   }
 
   Future<List<PickedAudioFile>?> _pickAudioFilesViaNative() async {
-    final raw = await _fileCacheChannel.invokeMapMethod<String, Object?>(
-      FileCacheMethod.pickAudioFiles,
-    );
-    final items = raw?['files'];
-    if (items is! List) {
-      return null;
-    }
-    final files = <PickedAudioFile>[];
-    for (final item in items) {
-      if (item is! Map) continue;
-      final map = item.cast<Object?, Object?>();
-      final uri = map['uri']?.toString().trim();
-      final name = map['name']?.toString().trim();
-      final audioTypeHint = name == null || name.isEmpty
-          ? (uri ?? '')
-          : path.normalize(name);
-      if (uri == null || uri.isEmpty || !isSupportedMediaFile(audioTypeHint)) {
-        continue;
-      }
-      files.add(
-        PickedAudioFile(
-          uri: uri,
-          name: name == null || name.isEmpty
-              ? PathDisplay.fileName(uri, withoutExtension: true)
-              : name,
-        ),
-      );
-    }
-    return files;
+    return _platformGateway.pickAudioFiles();
   }
 
   List<MusicTrack> _tracksFromPickedAudioFiles(
@@ -1369,11 +1043,11 @@ class LibraryScannerService {
         identifier != null &&
         identifier.startsWith('content://')) {
       try {
-        return await _fileCacheChannel.invokeMethod<String>('cacheFromUri', {
-          'uri': identifier,
-          'name': file.name,
-          'index': index,
-        });
+        return await _platformGateway.cacheFromUri(
+          uri: identifier,
+          name: file.name,
+          index: index,
+        );
       } catch (_) {
         // Failed native import falls through to the remaining import strategy.
       }
@@ -1739,84 +1413,6 @@ Map<String, Object?> _scanFileSystemFolderPayload(String folderPath) {
     'discoveredPaths': Set<String>.unmodifiable(seenPaths),
     'failureCount': failures,
   };
-}
-
-Set<String> _stringSetFromPayload(Object? value) {
-  if (value is Set<String>) {
-    return value;
-  }
-  if (value is Iterable) {
-    final result = <String>{};
-    for (final item in value) {
-      if (item is String) result.add(item);
-    }
-    return result;
-  }
-  return const <String>{};
-}
-
-NativeScanPayload _parseNativeScanPayload(List<dynamic> data) {
-  final scanned = <ScannedTrack>[];
-  final paths = <String>{};
-  for (final item in data) {
-    if (item is! Map) continue;
-    final scannedPath = item['path']?.toString().trim();
-    if (scannedPath == null ||
-        scannedPath.isEmpty ||
-        !isSupportedMediaFile(scannedPath)) {
-      continue;
-    }
-    final resolvedPath = PathMatcher.isContentUri(scannedPath)
-        ? scannedPath
-        : path.normalize(scannedPath);
-    final normalizedPath = PathMatcher.normalize(resolvedPath);
-
-    final nativeGroupKey = item['groupKey']?.toString().trim();
-    final nativeGroupTitle = item['groupTitle']?.toString().trim();
-    final nativeGroupSubtitle = item['groupSubtitle']?.toString().trim();
-
-    final groupKey = (nativeGroupKey?.isNotEmpty ?? false)
-        ? nativeGroupKey!
-        : path.dirname(resolvedPath);
-    final groupTitle = (nativeGroupTitle?.isNotEmpty ?? false)
-        ? nativeGroupTitle!
-        : PathDisplay.folderName(groupKey);
-    final groupSubtitle = (nativeGroupSubtitle?.isNotEmpty ?? false)
-        ? nativeGroupSubtitle!
-        : groupKey;
-    final displayName = item['title']?.toString().trim();
-    final isVideo =
-        item['isVideo'] as bool? ??
-        isVideoMediaFile(
-          displayName?.isEmpty ?? true ? resolvedPath : displayName!,
-        );
-    final scannedAtMs = item['scannedAtMs'] as num?;
-    final modifiedAtMs = item['modifiedAtMs'] as num?;
-
-    scanned.add(
-      ScannedTrack(
-        path: resolvedPath,
-        groupKey: groupKey,
-        groupTitle: groupTitle,
-        groupSubtitle: groupSubtitle,
-        isSingle: false,
-        isVideo: isVideo,
-        displayName: displayName?.isEmpty ?? true ? null : displayName,
-        scannedAt: scannedAtMs == null
-            ? null
-            : DateTime.fromMillisecondsSinceEpoch(scannedAtMs.toInt()),
-        fileSizeBytes: (item['fileSizeBytes'] as num?)?.toInt(),
-        modifiedAt: modifiedAtMs == null
-            ? null
-            : DateTime.fromMillisecondsSinceEpoch(modifiedAtMs.toInt()),
-      ),
-    );
-    paths.add(normalizedPath);
-  }
-  return NativeScanPayload(
-    tracks: List<ScannedTrack>.unmodifiable(scanned),
-    paths: Set<String>.unmodifiable(paths),
-  );
 }
 
 Set<String> _checkExistingPaths(List<String> paths) {

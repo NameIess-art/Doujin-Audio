@@ -8,6 +8,9 @@ import '../screens/screen_view_models.dart';
 import 'audio_provider.dart';
 import 'subtitle_settings_provider.dart';
 
+// AudioProvider remains the single mutable UI facade. Riverpod providers below
+// only expose repositories, service slices, and derived UI projections; they
+// must not introduce a second mutable source for playback or library state.
 final audioProviderFacadeProvider = Provider<AudioProvider>((ref) {
   throw UnimplementedError(
     'audioProviderFacadeProvider must be overridden in ProviderScope.',

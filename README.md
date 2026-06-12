@@ -162,7 +162,8 @@ Windows 版请解压整个 ZIP 后运行 `nameless_audio.exe`。不要只复制 
 lib/
   i18n/                         中文、日文、英文文案
   models/                       曲目、曲库节点、播放会话、ASMR 和 DLsite 模型
-  providers/                    AudioProvider 门面与功能拆分
+  providers/                    AudioProvider 单一可变门面、Riverpod 状态切片与功能拆分
+  services/                     业务规则、扫描编排与平台网关
   screens/                      ASMR.ONE、本地库、播放列表、计时器、设置、视频转音频
   services/                     SQLite、Native 桥接、更新、字幕、通知、权限、DLsite、ASMR 下载
   theme/                        主题与深色模式

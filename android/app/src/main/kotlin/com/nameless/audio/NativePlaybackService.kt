@@ -140,6 +140,18 @@ class NativePlaybackService : MediaSessionService() {
             }
         )
     }
+    private val sessionRestorer by lazy {
+        NativePlaybackSessionRestorer(
+            getOrCreateSession = { sessionId ->
+                sessions.getOrPut(sessionId) { createNativePlaybackSession(sessionId) }
+            },
+            removeSession = { sessionId -> sessions.remove(sessionId) },
+            focusSession = ::focusSession,
+            logRestoreFailure = { sessionId, error ->
+                logWarn("restore_session_failed sessionId=$sessionId", error = error)
+            }
+        )
+    }
     private var mediaSession: MediaSession? = null
     private var dummyPlayer: ExoPlayer? = null
 
@@ -1298,54 +1310,10 @@ class NativePlaybackService : MediaSessionService() {
         notificationsDismissed = false
         playbackSuspended = false
 
-        val restoredSessionIds = mutableListOf<String>()
-        storedSessions.forEach { stored ->
-            val nativeSession = sessions.getOrPut(stored.sessionId) {
-                createNativePlaybackSession(stored.sessionId)
-            }
-            try {
-                nativeSession.applyAudioEffects(stored.toNativeAudioEffects())
-                val queue = stored.queue.map { queueItem ->
-                    NativeMediaItemDescriptor(
-                        path = queueItem.path,
-                        uri = queueItem.uri,
-                        title = queueItem.title,
-                        subtitle = queueItem.subtitle,
-                        artUri = queueItem.artUri
-                    )
-                }.ifEmpty {
-                    listOf(
-                        NativeMediaItemDescriptor(
-                            path = stored.path,
-                            uri = stored.uri,
-                            title = stored.title,
-                            subtitle = stored.subtitle,
-                            artUri = stored.artUri
-                        )
-                    )
-                }
-                val queueStartIndex = stored.queueStartIndex
-                    .coerceIn(0, queue.lastIndex)
-                nativeSession.configure(
-                    descriptor = queue[queueStartIndex],
-                    queue = queue,
-                    queueStartIndex = queueStartIndex,
-                    startPositionMs = stored.positionMs,
-                    volume = stored.volume,
-                    speed = stored.speed,
-                    repeatOne = stored.repeatOne,
-                    repeatAll = stored.repeatAll,
-                    shuffleModeEnabled = stored.shuffleModeEnabled,
-                    autoPlay = stored.playWhenReady || stored.playing
-                )
-                focusSession(stored.sessionId)
-                restoredSessionIds += stored.sessionId
-            } catch (error: Exception) {
-                sessions.remove(stored.sessionId)
-                nativeSession.release()
-                logWarn("sticky_restore_session_failed sessionId=${stored.sessionId}", error = error)
-            }
-        }
+        val restoredSessionIds = sessionRestorer.restore(
+            storedSessions = storedSessions,
+            autoPlay = { stored -> stored.playWhenReady || stored.playing }
+        )
 
         if (restoredSessionIds.isEmpty()) {
             logInfo("sticky_restore_skip restore_failed")
@@ -1368,53 +1336,12 @@ class NativePlaybackService : MediaSessionService() {
     private fun restorePersistedSessionsForTimer(sessionIds: List<String>) {
         val missingSessionIds = sessionIds.filterNot { sessions.containsKey(it) }.toSet()
         if (missingSessionIds.isEmpty()) return
-        NativePlaybackStateStore.loadSessions(this)
-            .filter { it.sessionId in missingSessionIds }
-            .forEach { stored ->
-                val nativeSession = sessions.getOrPut(stored.sessionId) {
-                    createNativePlaybackSession(stored.sessionId)
-                }
-                try {
-                    nativeSession.applyAudioEffects(stored.toNativeAudioEffects())
-                    val descriptor = NativeMediaItemDescriptor(
-                        path = stored.path,
-                        uri = stored.uri,
-                        title = stored.title,
-                        subtitle = stored.subtitle,
-                        artUri = stored.artUri
-                    )
-                    val queue = stored.queue.map { queueItem ->
-                        NativeMediaItemDescriptor(
-                            path = queueItem.path,
-                            uri = queueItem.uri,
-                            title = queueItem.title,
-                            subtitle = queueItem.subtitle,
-                            artUri = queueItem.artUri
-                        )
-                    }.ifEmpty {
-                        listOf(descriptor)
-                    }
-                    val queueStartIndex = stored.queueStartIndex
-                        .coerceIn(0, queue.lastIndex)
-                    nativeSession.configure(
-                        descriptor = queue[queueStartIndex],
-                        queue = queue,
-                        queueStartIndex = queueStartIndex,
-                        startPositionMs = stored.positionMs,
-                        volume = stored.volume,
-                        speed = stored.speed,
-                        repeatOne = stored.repeatOne,
-                        repeatAll = stored.repeatAll,
-                        shuffleModeEnabled = stored.shuffleModeEnabled,
-                        autoPlay = false
-                    )
-                    focusSession(stored.sessionId)
-                    publishSessionState(stored.sessionId)
-                } catch (_: Exception) {
-                    sessions.remove(stored.sessionId)
-                    nativeSession.release()
-                }
-            }
+        sessionRestorer.restore(
+            storedSessions = NativePlaybackStateStore.loadSessions(this)
+                .filter { it.sessionId in missingSessionIds },
+            autoPlay = { false },
+            onRestored = ::publishSessionState
+        )
         persistSessionStateNow()
     }
 
@@ -1593,19 +1520,6 @@ class NativePlaybackService : MediaSessionService() {
         if (tickerScheduled || stateListeners.isEmpty()) return
         tickerScheduled = true
         mainHandler.post(positionTicker)
-    }
-
-    private fun StoredNativePlaybackSession.toNativeAudioEffects(): NativeAudioEffects {
-        return NativeAudioEffects(
-            skipSilenceEnabled = skipSilenceEnabled,
-            noiseReductionEnabled = noiseReductionEnabled,
-            eqEnabled = eqEnabled,
-            eqPresetId = eqPresetId,
-            eqBandLevels = eqBandLevels,
-            channelSwapEnabled = channelSwapEnabled,
-            volumeNormalizationEnabled = volumeNormalizationEnabled,
-            panning = panning
-        )
     }
 
     private fun okResult(value: Any?): Map<String, Any?> {

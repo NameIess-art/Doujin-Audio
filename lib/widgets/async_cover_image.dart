@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import '../services/ui_interaction_coordinator.dart';
 import 'scroll_activity_gate.dart';
 
+const int kCoverImageCacheSize = 600;
+
 class PulsingPlaceholder extends StatelessWidget {
   const PulsingPlaceholder({super.key, required this.child, this.borderRadius});
 
@@ -401,8 +403,8 @@ class RetryingNetworkImage extends StatelessWidget {
     return RetryingImage(
       retryKey: trimmedUrl,
       imageProviderBuilder: () => ResizeImage.resizeIfNeeded(
-        cacheWidth,
-        cacheHeight,
+        kCoverImageCacheSize,
+        null,
         NetworkImage(trimmedUrl),
       ),
       fallbackBuilder: fallbackBuilder,
@@ -572,5 +574,5 @@ ImageProvider<Object> resizeFileImageIfNeeded({
   int? cacheHeight,
 }) {
   final provider = FileImage(File(path));
-  return ResizeImage.resizeIfNeeded(cacheWidth, cacheHeight, provider);
+  return ResizeImage.resizeIfNeeded(kCoverImageCacheSize, null, provider);
 }

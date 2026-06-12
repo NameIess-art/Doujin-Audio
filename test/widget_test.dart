@@ -116,7 +116,6 @@ void main() {
     expect(pageFades.where((widget) => widget.opacity == 1).length, 1);
     expect(pageFades.where((widget) => widget.opacity == 0).length, 1);
     expect(pageFades.every((widget) => widget.child is Align), isTrue);
-    expect(languageProvider.tr('app_version'), 'NL Audio v0.9.9');
 
     Stack mainPageStack() => tester
         .widgetList<Stack>(find.byType(Stack))

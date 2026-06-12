@@ -151,6 +151,10 @@ class MainActivity : FlutterFragmentActivity() {
                     UpdateMethods.OPEN_INSTALL_PERMISSION_SETTINGS -> {
                         result.success(openInstallPermissionSettings())
                     }
+                    UpdateMethods.OPEN_RELEASE_PAGE -> {
+                        val url = call.argument<String>("url")
+                        result.success(openReleasePage(url))
+                    }
                     else -> result.notImplemented()
                 }
             }
@@ -494,6 +498,16 @@ class MainActivity : FlutterFragmentActivity() {
             } catch (_: Exception) {
                 false
             }
+        }
+    }
+
+    private fun openReleasePage(url: String?): Boolean {
+        if (url.isNullOrBlank()) return false
+        return try {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+            true
+        } catch (_: Exception) {
+            false
         }
     }
 

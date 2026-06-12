@@ -314,13 +314,31 @@ extension _SettingsTabActions on _SettingsTabState {
           _setLocalState(() => _downloadProgress = progress);
         },
       );
-    } catch (_) {
+    } catch (error, stackTrace) {
+      AppLogService.error(
+        'manual_update_download_or_verification_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
       if (!context.mounted) return;
-      showAppSnackBar(
-        context,
-        i18n.tr('update_download_failed'),
-        tone: AppFeedbackTone.destructive,
-        icon: Icons.error_outline_rounded,
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: Text(i18n.tr('update_download_failed')),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: Text(i18n.tr('close')),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+                unawaited(AppUpdateService.openReleasePage(info.releaseUrl));
+              },
+              child: Text(i18n.tr('open_release_page')),
+            ),
+          ],
+        ),
       );
       return;
     } finally {

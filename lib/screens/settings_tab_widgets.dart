@@ -9,7 +9,7 @@ class _SettingsGroupCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    
+
     final List<Widget> separatedChildren = [];
     for (int i = 0; i < children.length; i++) {
       separatedChildren.add(children[i]);
@@ -95,6 +95,7 @@ class _UpdateSettingsTile extends StatelessWidget {
     required this.downloading,
     required this.progress,
     required this.updateInfo,
+    required this.currentVersion,
     required this.textStyle,
     required this.onCheck,
   });
@@ -103,6 +104,7 @@ class _UpdateSettingsTile extends StatelessWidget {
   final bool downloading;
   final double? progress;
   final AppUpdateInfo? updateInfo;
+  final Future<AppVersionInfo> currentVersion;
   final TextStyle? textStyle;
   final VoidCallback onCheck;
 
@@ -149,6 +151,7 @@ class _UpdateSettingsTile extends StatelessWidget {
                     downloading: downloading,
                     progress: progress,
                     updateInfo: updateInfo,
+                    currentVersion: currentVersion,
                     textStyle: textStyle,
                   ),
                 ],
@@ -185,6 +188,7 @@ class _UpdateSubtitle extends StatelessWidget {
     required this.downloading,
     required this.progress,
     required this.updateInfo,
+    required this.currentVersion,
     required this.textStyle,
   });
 
@@ -192,6 +196,7 @@ class _UpdateSubtitle extends StatelessWidget {
   final bool downloading;
   final double? progress;
   final AppUpdateInfo? updateInfo;
+  final Future<AppVersionInfo> currentVersion;
   final TextStyle? textStyle;
 
   @override
@@ -234,11 +239,16 @@ class _UpdateSubtitle extends StatelessWidget {
         style: textStyle,
       );
     }
-    return Text(
-      i18n.tr('check_updates_subtitle'),
-      maxLines: 2,
-      overflow: TextOverflow.ellipsis,
-      style: textStyle,
+    return FutureBuilder<AppVersionInfo>(
+      future: currentVersion,
+      builder: (context, snapshot) => Text(
+        i18n.tr('current_version_label', {
+          'version': snapshot.data?.versionName ?? '...',
+        }),
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: textStyle,
+      ),
     );
   }
 }

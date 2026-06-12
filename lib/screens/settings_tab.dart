@@ -10,6 +10,7 @@ import '../i18n/app_language_provider.dart';
 import '../providers/audio_provider.dart';
 import '../providers/audio_provider_riverpod.dart';
 import '../services/app_cache_service.dart';
+import '../services/app_log_service.dart';
 import '../services/app_update_service.dart';
 import '../services/notifications_platform_service.dart';
 import '../services/permission_action_controller.dart';
@@ -49,6 +50,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
   bool _downloadingUpdate = false;
   double? _downloadProgress;
   AppUpdateInfo? _lastUpdateInfo;
+  late Future<AppVersionInfo> _appVersionFuture;
   late Future<bool> _backgroundRunAllowedFuture;
   late Future<bool> _exactAlarmAllowedFuture;
   late Future<bool> _notificationsAllowedFuture;
@@ -80,6 +82,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _backgroundRunAllowedFuture = _isIgnoringBatteryOptimizations();
+    _appVersionFuture = AppUpdateService.currentAppVersion();
     _exactAlarmAllowedFuture = _canScheduleExactAlarms();
     _notificationsAllowedFuture = _areNotificationsEnabled();
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -917,6 +920,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                           downloading: _downloadingUpdate,
                           progress: _downloadProgress,
                           updateInfo: _lastUpdateInfo,
+                          currentVersion: _appVersionFuture,
                           textStyle: descStyle,
                           onCheck: () => _checkForUpdates(context),
                         ),

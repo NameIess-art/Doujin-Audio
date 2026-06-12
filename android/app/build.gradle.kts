@@ -26,19 +26,18 @@ val releaseSigningConfigured = keystorePropertiesFile.exists() &&
 
 val validateReleaseSigning by tasks.registering {
     group = "verification"
-    description = "Warns if a complete release signing configuration is not available."
+    description = "Fails if a complete release signing configuration is not available."
     doLast {
         if (!keystorePropertiesFile.exists()) {
-            logger.warn("Release signing requires android/key.properties. Using debug keystore.")
-        } else {
-            requiredReleaseSigningProperties.forEach { property ->
-                if (keystoreProperties.getProperty(property).isNullOrBlank()) {
-                    logger.warn("Release signing property '$property' is missing from android/key.properties.")
-                }
+            throw GradleException("Release signing requires android/key.properties.")
+        }
+        requiredReleaseSigningProperties.forEach { property ->
+            if (keystoreProperties.getProperty(property).isNullOrBlank()) {
+                throw GradleException("Release signing property '$property' is missing from android/key.properties.")
             }
-            if (releaseKeystoreFile?.isFile != true) {
-                logger.warn("Release keystore does not exist: ${releaseKeystoreFile?.path ?: "<missing storeFile>"}")
-            }
+        }
+        if (releaseKeystoreFile?.isFile != true) {
+            throw GradleException("Release keystore does not exist: ${releaseKeystoreFile?.path ?: "<missing storeFile>"}")
         }
     }
 }
@@ -79,8 +78,6 @@ android {
         release {
             if (releaseSigningConfigured) {
                 signingConfig = signingConfigs.getByName("release")
-            } else {
-                signingConfig = signingConfigs.getByName("debug")
             }
             isMinifyEnabled = true
             isShrinkResources = true

@@ -151,7 +151,7 @@ Windows 版请解压整个 ZIP 后运行 `nameless_audio.exe`。不要只复制 
 | `FOREGROUND_SERVICE` / `FOREGROUND_SERVICE_MEDIA_PLAYBACK` | 是 | 后台与息屏播放 |
 | `WAKE_LOCK` | 是 | 降低息屏后 CPU 过早休眠导致播放中断的概率 |
 | `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` | 推荐 | 引导用户允许后台运行或忽略电池优化 |
-| `SCHEDULE_EXACT_ALARM` / `USE_EXACT_ALARM` | 推荐 | 提升定时暂停和自动恢复可靠性 |
+| `SCHEDULE_EXACT_ALARM` | 可选 | 用户授权后提升定时暂停和自动恢复可靠性 |
 | `RECEIVE_BOOT_COMPLETED` | 推荐 | 系统重启或应用更新后恢复计时器状态 |
 | `REQUEST_INSTALL_PACKAGES` | 仅应用内更新需要 | 下载新 APK 后触发系统安装流程 |
 | `INTERNET` | 在线功能需要 | ASMR.ONE、DLsite、GitHub Releases 检查更新和下载 |

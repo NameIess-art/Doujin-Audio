@@ -15,6 +15,7 @@ import '../providers/audio_provider_riverpod.dart';
 import '../providers/subtitle_settings_provider.dart';
 import '../services/app_preferences.dart';
 import '../services/app_update_service.dart';
+import '../services/app_log_service.dart';
 import '../services/notifications_platform_service.dart';
 import '../services/permission_action_controller.dart';
 import '../services/power_platform_service.dart';
@@ -255,13 +256,31 @@ class _MainScreenState extends ConsumerState<MainScreen>
         info,
         onProgress: (_) {},
       );
-    } catch (_) {
+    } catch (error, stackTrace) {
+      AppLogService.error(
+        'automatic_update_download_or_verification_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
       if (!mounted) return;
-      showAppSnackBar(
-        context,
-        i18n.tr('update_download_failed'),
-        tone: AppFeedbackTone.destructive,
-        icon: Icons.error_outline_rounded,
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: Text(i18n.tr('update_download_failed')),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: Text(i18n.tr('close')),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+                unawaited(AppUpdateService.openReleasePage(info.releaseUrl));
+              },
+              child: Text(i18n.tr('open_release_page')),
+            ),
+          ],
+        ),
       );
       return;
     }

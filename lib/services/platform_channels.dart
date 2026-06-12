@@ -132,5 +132,6 @@ abstract final class UpdateMethod {
   static const String canInstallUnknownApps = 'canInstallUnknownApps';
   static const String openInstallPermissionSettings =
       'openInstallPermissionSettings';
+  static const String openReleasePage = 'openReleasePage';
   static const String installApk = 'installApk';
 }

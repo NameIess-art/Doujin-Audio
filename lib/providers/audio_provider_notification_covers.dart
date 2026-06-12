@@ -314,6 +314,12 @@ extension AudioProviderNotificationCovers on AudioProvider {
           if (coverPath == null && track?.isVideo == true) {
             coverPath = await _resolveVideoFramePathForTrack(track!);
           }
+          if (coverPath == null && track?.remoteCoverUrl != null) {
+            final remoteUrl = track!.remoteCoverUrl!.trim();
+            if (remoteUrl.isNotEmpty) {
+              coverPath = await _downloadRemoteCoverForTrack(track, remoteUrl);
+            }
+          }
         }
       }
 
@@ -485,6 +491,33 @@ extension AudioProviderNotificationCovers on AudioProvider {
     }
 
     _notificationCoverSearchMisses.add(normalizedFolderPath);
+    return null;
+  }
+
+  Future<String?> _downloadRemoteCoverForTrack(
+      MusicTrack track, String remoteUrl) async {
+    try {
+      final cacheDir = await getTemporaryDirectory();
+      final coverDir = Directory(path.join(cacheDir.path, 'remote_covers'));
+      if (!await coverDir.exists()) {
+        await coverDir.create(recursive: true);
+      }
+      final filename = 'cover_${remoteUrl.hashCode}.jpg';
+      final file = File(path.join(coverDir.path, filename));
+      if (await file.exists() && await file.length() > 0) {
+        return file.path;
+      }
+      final client = HttpClient();
+      final request = await client.getUrl(Uri.parse(remoteUrl));
+      final response = await request.close();
+      if (response.statusCode == 200) {
+        final bytes = await consolidateHttpClientResponseBytes(response);
+        await file.writeAsBytes(bytes);
+        return file.path;
+      }
+    } catch (e) {
+      debugPrint('AudioProvider._downloadRemoteCoverForTrack error: $e');
+    }
     return null;
   }
 }

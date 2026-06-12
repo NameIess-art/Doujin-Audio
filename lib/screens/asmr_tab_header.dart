@@ -221,29 +221,36 @@ class _AsmrCategoryButton extends StatelessWidget {
         ? const Color(0xFFDBEAFE)
         : const Color(0xFF1E40AF);
 
-    return Material(
-      color: selected ? asmrBlueContainer : cs.surfaceContainerHigh,
-      shape: RoundedRectangleBorder(
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeOutCubic,
+      decoration: BoxDecoration(
+        color: selected ? asmrBlueContainer : cs.surfaceContainerHigh,
         borderRadius: BorderRadius.circular(16),
-        side: BorderSide(
+        border: Border.all(
           color: selected
               ? asmrBlue.withValues(alpha: isDark ? 0.58 : 0.45)
               : cs.outlineVariant.withValues(alpha: isDark ? 0.68 : 1),
         ),
       ),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
-        child: SizedBox(
-          height: 34,
-          child: Center(
-            child: Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
-                color: selected ? onAsmrBlueContainer : cs.onSurfaceVariant,
+      child: Material(
+        type: MaterialType.transparency,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(16),
+          child: SizedBox(
+            height: 34,
+            child: Center(
+              child: AnimatedDefaultTextStyle(
+                duration: const Duration(milliseconds: 200),
+                curve: Curves.easeOutCubic,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.labelMedium!.copyWith(
+                  fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                  color: selected ? onAsmrBlueContainer : cs.onSurfaceVariant,
+                ),
+                child: Text(label),
               ),
             ),
           ),

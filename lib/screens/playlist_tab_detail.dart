@@ -489,21 +489,6 @@ class _SessionDetailBackdrop extends StatelessWidget {
               ),
             ),
           ),
-        if (progress > 0)
-          ClipRect(
-            child: progress == 1.0
-                ? BackdropFilter(
-                    filter: ImageFilter.blur(sigmaX: 64, sigmaY: 64),
-                    child: const SizedBox.expand(),
-                  )
-                : Opacity(
-                    opacity: progress,
-                    child: BackdropFilter(
-                      filter: ImageFilter.blur(sigmaX: 64, sigmaY: 64),
-                      child: const SizedBox.expand(),
-                    ),
-                  ),
-          ),
       ],
     );
   }
@@ -787,83 +772,83 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
           fit: StackFit.expand,
           children: [
             // Dynamic Blurred Background
-            if (blurEnabled) ...[
+            if (blurEnabled)
               Positioned.fill(
-                child: track?.remoteCoverUrl?.trim().isNotEmpty == true
-                    ? RetryingNetworkImage(
-                        url: track!.remoteCoverUrl!.trim(),
-                        fit: BoxFit.cover,
-                        cacheWidth:
-                            (MediaQuery.sizeOf(context).width *
-                                    MediaQuery.devicePixelRatioOf(context))
-                                .round(),
-                        color: cs.surface.withValues(alpha: 0.45),
-                        colorBlendMode: BlendMode.darken,
-                        loadingBuilder: (context, child, loadingProgress) =>
-                            loadingProgress == null
-                            ? child
-                            : ColoredBox(
-                                color: cs.surfaceDim,
-                                child: CoverLoadingIndicator(
-                                  size: 36,
-                                  strokeWidth: 3,
-                                  color: cs.primary,
-                                ),
+                child: RepaintBoundary(
+                  child: AnimatedBuilder(
+                    animation: widget.dismissAnimation,
+                    builder: (context, child) {
+                      final dismissProgress = Curves.easeOutCubic.transform(
+                        widget.dismissAnimation.value.clamp(0.0, 1.0),
+                      );
+                      if (dismissProgress >= 1.0) {
+                        return const SizedBox.shrink();
+                      }
+                      return Opacity(
+                        opacity: 1 - dismissProgress,
+                        child: child,
+                      );
+                    },
+                    child: ImageFiltered(
+                      imageFilter: ImageFilter.blur(sigmaX: 64, sigmaY: 64),
+                      child: track?.remoteCoverUrl?.trim().isNotEmpty == true
+                          ? RetryingNetworkImage(
+                              url: track!.remoteCoverUrl!.trim(),
+                              fit: BoxFit.cover,
+                              cacheWidth:
+                                  (MediaQuery.sizeOf(context).width *
+                                          MediaQuery.devicePixelRatioOf(context))
+                                      .round(),
+                              color: cs.surface.withValues(alpha: 0.45),
+                              colorBlendMode: BlendMode.darken,
+                              loadingBuilder: (context, child, loadingProgress) =>
+                                  loadingProgress == null
+                                  ? child
+                                  : ColoredBox(
+                                      color: cs.surfaceDim,
+                                      child: CoverLoadingIndicator(
+                                        size: 36,
+                                        strokeWidth: 3,
+                                        color: cs.primary,
+                                      ),
+                                    ),
+                              fallbackBuilder: (_) => CoverFallbackArtwork(
+                                seed: track.displayName,
+                                showIcon: false,
                               ),
-                        fallbackBuilder: (_) => CoverFallbackArtwork(
-                          seed: track.displayName,
-                          showIcon: false,
-                        ),
-                      )
-                    : AsyncCoverImage(
-                        duration: Duration.zero,
-                        future: coverPathFuture,
-                        initialPath: provider.resolvedCoverPathForTrack(track),
-                        retryFutureBuilder: () =>
-                            _coverFutureForTrack(provider, track),
-                        fallbackBuilder: (_) => CoverFallbackArtwork(
-                          seed: track?.displayName ?? session.currentTrackPath,
-                          showIcon: false,
-                        ),
-                        imageBuilder: (context, coverPath) {
-                          final mediaSize = MediaQuery.sizeOf(context);
-                          final dpr = MediaQuery.devicePixelRatioOf(context);
-                          return RetryingFileImage(
-                            path: coverPath,
-                            cacheWidth: (mediaSize.width * dpr).round(),
-                            fit: BoxFit.cover,
-                            color: cs.surface.withValues(alpha: 0.45),
-                            colorBlendMode: BlendMode.darken,
-                            fallbackBuilder: (_) => CoverFallbackArtwork(
-                              seed:
-                                  track?.displayName ??
-                                  session.currentTrackPath,
-                              showIcon: false,
+                            )
+                          : AsyncCoverImage(
+                              duration: Duration.zero,
+                              future: coverPathFuture,
+                              initialPath: provider.resolvedCoverPathForTrack(track),
+                              retryFutureBuilder: () =>
+                                  _coverFutureForTrack(provider, track),
+                              fallbackBuilder: (_) => CoverFallbackArtwork(
+                                seed: track?.displayName ?? session.currentTrackPath,
+                                showIcon: false,
+                              ),
+                              imageBuilder: (context, coverPath) {
+                                final mediaSize = MediaQuery.sizeOf(context);
+                                final dpr = MediaQuery.devicePixelRatioOf(context);
+                                return RetryingFileImage(
+                                  path: coverPath,
+                                  cacheWidth: (mediaSize.width * dpr).round(),
+                                  fit: BoxFit.cover,
+                                  color: cs.surface.withValues(alpha: 0.45),
+                                  colorBlendMode: BlendMode.darken,
+                                  fallbackBuilder: (_) => CoverFallbackArtwork(
+                                    seed:
+                                        track?.displayName ??
+                                        session.currentTrackPath,
+                                    showIcon: false,
+                                  ),
+                                );
+                              },
                             ),
-                          );
-                        },
-                      ),
+                    ),
+                  ),
+                ),
               ),
-              AnimatedBuilder(
-                animation: widget.dismissAnimation,
-                builder: (context, _) {
-                  final dismissProgress = Curves.easeOutCubic.transform(
-                    widget.dismissAnimation.value.clamp(0.0, 1.0),
-                  );
-                  return Positioned.fill(
-                    child: dismissProgress < 1.0
-                        ? Opacity(
-                            opacity: 1 - dismissProgress,
-                            child: BackdropFilter(
-                              filter: ImageFilter.blur(sigmaX: 64, sigmaY: 64),
-                              child: const SizedBox.expand(),
-                            ),
-                          )
-                        : const SizedBox.shrink(),
-                  );
-                },
-              ),
-            ],
             // Content
             SafeArea(
               child: LayoutBuilder(

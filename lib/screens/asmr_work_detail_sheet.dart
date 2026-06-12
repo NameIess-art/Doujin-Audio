@@ -63,39 +63,6 @@ class _AsmrWorkDetailSheet extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _AsmrDetailHero(work: effectiveWork),
-              const SizedBox(height: 20),
-              FilledButton.tonalIcon(
-                style: FilledButton.styleFrom(
-                  backgroundColor: isDark
-                      ? const Color(0xFF1E2E4A)
-                      : const Color(0xFFE6F0FA),
-                  foregroundColor: asmrBlue,
-                ),
-                onPressed: () async {
-                  unawaited(
-                    AppInteractionFeedback.trigger(
-                      AppInteractionFeedbackType.tap,
-                    ),
-                  );
-                  await controller.playWork(
-                    context.read<AudioProvider>(),
-                    effectiveWork,
-                  );
-                  if (context.mounted) {
-                    showAppSnackBar(
-                      context,
-                      i18n.tr('asmr_added_to_playlist', {
-                        'title': effectiveWork.title,
-                      }),
-                      tone: AppFeedbackTone.success,
-                      icon: Icons.add_circle_rounded,
-                      iconColor: asmrBlue,
-                    );
-                  }
-                },
-                icon: const Icon(Icons.add_circle_rounded),
-                label: Text(i18n.tr('asmr_add_to_playlist')),
-              ),
             ],
           );
 

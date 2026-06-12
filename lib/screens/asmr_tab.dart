@@ -511,31 +511,36 @@ class _AsmrTabState extends State<AsmrTab>
               height: 42,
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(12, 1, 12, 7),
-                child: Row(
-                  children: [
-                    for (
-                      var index = 0;
-                      index < _categories.length;
-                      index++
-                    ) ...[
-                      if (index > 0) const SizedBox(width: 8),
-                      Expanded(
-                        child: _AsmrCategoryButton(
-                          label: i18n.tr(
-                            _asmrCategoryLabelKey(_categories[index]),
+                child: AnimatedBuilder(
+                  animation: _tabController,
+                  builder: (context, _) {
+                    return Row(
+                      children: [
+                        for (
+                          var index = 0;
+                          index < _categories.length;
+                          index++
+                        ) ...[
+                          if (index > 0) const SizedBox(width: 8),
+                          Expanded(
+                            child: _AsmrCategoryButton(
+                              label: i18n.tr(
+                                _asmrCategoryLabelKey(_categories[index]),
+                              ),
+                              selected: _tabController.index == index,
+                              onTap: () {
+                                if (_tabController.index == index) {
+                                  return;
+                                }
+                                FocusScope.of(context).unfocus();
+                                _tabController.animateTo(index);
+                              },
+                            ),
                           ),
-                          selected: _tabController.index == index,
-                          onTap: () {
-                            if (_tabController.index == index) {
-                              return;
-                            }
-                            FocusScope.of(context).unfocus();
-                            _tabController.animateTo(index);
-                          },
-                        ),
-                      ),
-                    ],
-                  ],
+                        ],
+                      ],
+                    );
+                  },
                 ),
               ),
             ),

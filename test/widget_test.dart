@@ -10,7 +10,6 @@ import 'package:nameless_audio/services/audio_database_repository.dart';
 import 'package:nameless_audio/services/audio_state_services.dart';
 import 'package:nameless_audio/services/native_playback_repository.dart';
 import 'package:nameless_audio/services/playback_command_runner.dart';
-import 'package:nameless_audio/services/playback_notification_handler.dart';
 import 'package:nameless_audio/services/playback_notification_service.dart';
 import 'package:nameless_audio/theme/theme_provider.dart';
 import 'package:provider/provider.dart' as legacy_provider;
@@ -23,10 +22,7 @@ void main() {
   testWidgets('app shell renders tab navigation', (WidgetTester tester) async {
     final themeProvider = ThemeProvider();
     final languageProvider = AppLanguageProvider();
-    final notificationHandler = PlaybackNotificationHandler();
-    final notificationService = PlaybackNotificationService(
-      notificationHandler,
-    );
+    final notificationService = PlaybackNotificationService();
     final audioDatabaseRepository = AudioDatabaseRepository();
     final nativePlaybackRepository = NativePlaybackRepository();
     const playbackCommandRunner = PlaybackCommandRunner();
@@ -78,17 +74,24 @@ void main() {
     expect(find.text(languageProvider.tr('nav_sessions')), findsWidgets);
     expect(find.text(languageProvider.tr('nav_settings')), findsWidgets);
     expect(find.byKey(const ValueKey<String>('main_page_fade_1')), findsOne);
+    expect(find.byKey(const ValueKey<String>('main_page_fade_0')), findsOne);
+    expect(find.byKey(const ValueKey<String>('main_page_fade_2')), findsOne);
+    expect(find.byKey(const ValueKey<String>('main_page_fade_3')), findsOne);
     expect(
-      find.byKey(const ValueKey<String>('main_page_fade_0')),
-      findsNothing,
+      tester
+          .widget<AnimatedOpacity>(
+            find.byKey(const ValueKey<String>('main_page_fade_1')),
+          )
+          .opacity,
+      1,
     );
     expect(
-      find.byKey(const ValueKey<String>('main_page_fade_2')),
-      findsNothing,
-    );
-    expect(
-      find.byKey(const ValueKey<String>('main_page_fade_3')),
-      findsNothing,
+      tester
+          .widget<AnimatedOpacity>(
+            find.byKey(const ValueKey<String>('main_page_fade_0')),
+          )
+          .opacity,
+      0,
     );
 
     await tester.tap(find.text(languageProvider.tr('nav_settings')).last);

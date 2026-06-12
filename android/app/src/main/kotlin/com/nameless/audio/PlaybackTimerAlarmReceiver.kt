@@ -106,7 +106,6 @@ object PlaybackTimerAlarmScheduler {
         } else {
             cancelAlarm(context, actionAutoResume, autoResumeRequestCode)
         }
-        syncKeepAliveService(context, runtimeState)
     }
 
     fun rescheduleFromStoredState(
@@ -118,7 +117,6 @@ object PlaybackTimerAlarmScheduler {
             cancelAlarm(context, actionTimerExpired, timerRequestCode)
             cancelAlarm(context, actionAutoResume, autoResumeRequestCode)
             NativePlaybackStateStore.clearTimerRuntimeState(context)
-            syncKeepAliveService(context, null)
             return
         }
 
@@ -173,7 +171,6 @@ object PlaybackTimerAlarmScheduler {
         } else {
             cancelAlarm(context, actionAutoResume, autoResumeRequestCode)
         }
-        syncKeepAliveService(context, runtimeState)
     }
 
     fun executeNow(
@@ -190,7 +187,6 @@ object PlaybackTimerAlarmScheduler {
             pendingResult?.finish()
             return
         }
-        promoteKeepAliveService(context, action)
         deliverToService(
             context = context,
             action = action,
@@ -198,10 +194,6 @@ object PlaybackTimerAlarmScheduler {
             attempt = 0,
             pendingResult = pendingResult
         )
-    }
-
-    fun promoteKeepAliveService(context: Context, action: String) {
-        // No-op: Keep alive service has been removed. NativePlaybackService maintains partial wake lock.
     }
 
     private fun deliverToService(
@@ -464,13 +456,6 @@ object PlaybackTimerAlarmScheduler {
             putExtra(extraGeneration, generation)
         }
         return PendingIntent.getBroadcast(context, requestCode, intent, flags)
-    }
-
-    private fun syncKeepAliveService(
-        context: Context,
-        runtimeState: StoredPlaybackTimerRuntimeState?
-    ) {
-        // No-op: Keep alive service has been removed. NativePlaybackService maintains partial wake lock.
     }
 
     private fun elapsedTriggerFromWallClock(triggerAtWallClockMs: Long): Long {

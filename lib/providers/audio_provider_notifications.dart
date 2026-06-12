@@ -193,7 +193,6 @@ extension AudioProviderNotifications on AudioProvider {
     await _clearUnifiedPlaybackNotificationsOnPlatform();
     await _stopPlaybackKeepAliveOnPlatform();
     await pauseAllSessions();
-    // We no longer use audio_service or its snapshot.
     // Unified notification buttons are handled natively.
     _notificationFocusSessionId = _preferredSingleSessionId;
     _syncKeepCpuAwake();

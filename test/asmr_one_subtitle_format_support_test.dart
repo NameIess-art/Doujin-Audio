@@ -3,7 +3,6 @@ import 'dart:io';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/providers/audio_provider.dart';
-import 'package:nameless_audio/services/playback_notification_handler.dart';
 import 'package:nameless_audio/services/playback_notification_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -27,9 +26,7 @@ void main() {
       });
 
       final provider = AudioProvider.test(
-        notificationService: PlaybackNotificationService(
-          PlaybackNotificationHandler(),
-        ),
+        notificationService: PlaybackNotificationService(),
       );
       addTearDown(provider.dispose);
 

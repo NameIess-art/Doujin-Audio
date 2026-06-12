@@ -92,6 +92,14 @@ jobs:
           cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk "$apk"
           sha256sum "$apk" > "$apk.sha256"
 
+      - name: Verify Android release assets
+        run: |
+          set -euo pipefail
+          apk="NamelessAudio-android-arm64-${GITHUB_REF_NAME}.apk"
+          test -s "$apk"
+          test -s "$apk.sha256"
+          sha256sum --check "$apk.sha256"
+
       - name: Upload Android release assets
         env:
           GH_TOKEN: ${{ github.token }}
@@ -160,6 +168,20 @@ jobs:
           Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath $zipName -Force
           $hash = (Get-FileHash -LiteralPath $zipName -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  $zipName" | Set-Content -LiteralPath "$zipName.sha256" -Encoding ascii
+
+      - name: Verify Windows release assets
+        shell: pwsh
+        run: |
+          $zipName = "NamelessAudio-windows-x64-${{ github.ref_name }}.zip"
+          if (-not (Test-Path -LiteralPath $zipName -PathType Leaf)) {
+            throw "Missing release ZIP: $zipName"
+          }
+          $checksumPath = "$zipName.sha256"
+          $expected = (Get-Content -LiteralPath $checksumPath -Raw).Split()[0].ToLowerInvariant()
+          $actual = (Get-FileHash -LiteralPath $zipName -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $expected) {
+            throw "Windows release checksum mismatch: expected $expected, got $actual"
+          }
 
       - name: Upload Windows release assets
         shell: pwsh

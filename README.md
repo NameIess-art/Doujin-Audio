@@ -170,7 +170,6 @@ lib/
   widgets/                      通用组件与业务组件
 android/app/src/main/kotlin/    原生播放、通知、文件访问、计时器闹钟、保活服务、字幕悬浮窗
 windows/                        Windows runner、完整 libmpv 下载与桌面打包配置
-third_party/audio_service/      项目内维护的 audio_service fork
 test/                           数据库、Provider、通知、计时器、播放桥接、ASMR 下载等测试
 ```
 
@@ -209,12 +208,6 @@ Windows 构建会下载完整 libmpv，并把 `assets/ffmpeg/ffmpeg.exe`、`asse
 flutter build windows --release
 Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath dist\NamelessAudio-windows-x64-v0.9.9.zip -Force
 ```
-
-## audio_service fork notes
-
-- 项目当前通过 `dependency_overrides` 指向 `third_party/audio_service`。
-- Fork 相关定制说明位于 `third_party/audio_service/CUSTOMIZATION.md`。
-- 后续同步上游时，请同时更新该说明文件中的来源版本、改动文件和保留原因。
 
 ## 发行说明 v0.9.92
 

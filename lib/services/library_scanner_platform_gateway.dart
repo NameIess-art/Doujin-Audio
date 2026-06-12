@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:path/path.dart' as path;
 
 import 'library_scan_models.dart';
+import 'app_log_service.dart';
 import 'media_file_support.dart';
 import 'path_display.dart';
 import 'platform_channels.dart';
@@ -159,7 +160,12 @@ class LibraryScannerPlatformGateway {
         return const NativeScanResult.notSupported();
       }
       return NativeScanResult.failed(code: error.code, message: error.message);
-    } catch (error) {
+    } catch (error, stackTrace) {
+      AppLogService.error(
+        'streamed_library_scan_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
       return NativeScanResult.failed(
         code: 'scan_unknown_error',
         message: error.toString(),
@@ -197,7 +203,12 @@ class LibraryScannerPlatformGateway {
       return NativeScanResult.success(payload.tracks, payload.paths);
     } on PlatformException catch (error) {
       return NativeScanResult.failed(code: error.code, message: error.message);
-    } catch (error) {
+    } catch (error, stackTrace) {
+      AppLogService.error(
+        'legacy_library_scan_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
       return NativeScanResult.failed(
         code: 'scan_unknown_error',
         message: error.toString(),

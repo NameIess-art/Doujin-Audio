@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'app_log_service.dart';
+
 typedef JsonValueReader<T> = T Function(Object? value);
 
 class AppPreferences {
@@ -22,7 +24,8 @@ class AppPreferences {
   static Future<String?> getString(String key) async {
     try {
       return (await _prefs).getString(key);
-    } catch (_) {
+    } catch (error, stackTrace) {
+      _logFailure('read_string', key, error, stackTrace);
       return null;
     }
   }
@@ -30,7 +33,8 @@ class AppPreferences {
   static Future<List<String>?> getStringList(String key) async {
     try {
       return (await _prefs).getStringList(key);
-    } catch (_) {
+    } catch (error, stackTrace) {
+      _logFailure('read_string_list', key, error, stackTrace);
       return null;
     }
   }
@@ -38,7 +42,8 @@ class AppPreferences {
   static Future<bool?> getBool(String key) async {
     try {
       return (await _prefs).getBool(key);
-    } catch (_) {
+    } catch (error, stackTrace) {
+      _logFailure('read_bool', key, error, stackTrace);
       return null;
     }
   }
@@ -46,7 +51,8 @@ class AppPreferences {
   static Future<bool> setString(String key, String value) async {
     try {
       return await (await _prefs).setString(key, value);
-    } catch (_) {
+    } catch (error, stackTrace) {
+      _logFailure('write_string', key, error, stackTrace);
       return false;
     }
   }
@@ -54,7 +60,8 @@ class AppPreferences {
   static Future<bool> setStringList(String key, List<String> value) async {
     try {
       return await (await _prefs).setStringList(key, value);
-    } catch (_) {
+    } catch (error, stackTrace) {
+      _logFailure('write_string_list', key, error, stackTrace);
       return false;
     }
   }
@@ -62,7 +69,8 @@ class AppPreferences {
   static Future<bool> setBool(String key, bool value) async {
     try {
       return await (await _prefs).setBool(key, value);
-    } catch (_) {
+    } catch (error, stackTrace) {
+      _logFailure('write_bool', key, error, stackTrace);
       return false;
     }
   }
@@ -70,7 +78,8 @@ class AppPreferences {
   static Future<bool> remove(String key) async {
     try {
       return await (await _prefs).remove(key);
-    } catch (_) {
+    } catch (error, stackTrace) {
+      _logFailure('remove', key, error, stackTrace);
       return false;
     }
   }
@@ -83,12 +92,26 @@ class AppPreferences {
 
     try {
       return reader(json.decode(raw));
-    } catch (_) {
+    } catch (error, stackTrace) {
+      _logFailure('decode_json', key, error, stackTrace);
       return null;
     }
   }
 
   static Future<bool> writeJson(String key, Object? value) async {
     return setString(key, json.encode(value));
+  }
+
+  static void _logFailure(
+    String operation,
+    String key,
+    Object error,
+    StackTrace stackTrace,
+  ) {
+    AppLogService.error(
+      'preferences_${operation}_failed key=$key',
+      error: error,
+      stackTrace: stackTrace,
+    );
   }
 }

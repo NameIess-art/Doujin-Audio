@@ -17,11 +17,18 @@ keystore. Missing or incomplete release signing configuration intentionally
 fails `assembleRelease`, `bundleRelease`, and Flutter release APK builds.
 Tag workflows create temporary signing files from GitHub Secrets and publish
 arm64 APK/Windows ZIP assets together with SHA-256 checksum files.
+The app refuses to install downloaded updates unless the matching checksum
+asset is present and valid.
 
 Notification behavior is covered through Dart platform-service tests and
 Android notification-routing tests. Keep these tests aligned with the native
 notification payload instead of introducing a second Dart notification
 handler.
+
+MethodChannel names and methods are centralized in Dart and Kotlin platform
+channel constants. Keep `test/platform_channels_test.dart` and
+`android/app/src/test/.../PlatformChannelsTest.kt` aligned whenever the
+protocol changes.
 
 Focused core logic tests can be run while refactoring playback behavior:
 

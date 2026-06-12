@@ -20,16 +20,13 @@ extension _MainScreenLayout on _MainScreenState {
 
     Widget pageShell(int actualIndex) {
       final bool isActive = actualIndex == _currentIndex;
-      final bool isReady = _visitedPageIndices.contains(actualIndex);
       final Widget page = TickerMode(
         enabled: isActive,
         child: ExcludeFocus(
           excluding: !isActive,
           child: ExcludeSemantics(
             excluding: !isActive,
-            child: isReady
-                ? _pages[actualIndex]
-                : const _MainPageLoadingPlaceholder(),
+            child: _pages[actualIndex],
           ),
         ),
       );
@@ -111,7 +108,7 @@ extension _MainScreenLayout on _MainScreenState {
     return Stack(
       key: ValueKey<int>(_metricsEpoch),
       clipBehavior: Clip.none,
-      children: <int>{..._visitedPageIndices, _currentIndex}
+      children: const <int>[0, 1, 2, 3]
           .map((i) {
             final bool isActive = i == _currentIndex;
             return IgnorePointer(
@@ -468,36 +465,5 @@ extension _MainScreenLayout on _MainScreenState {
     final systemBottom = MediaQuery.of(context).padding.bottom;
     if (hasNowPlaying) return systemBottom + 150;
     return systemBottom + 60;
-  }
-}
-
-class _MainPageLoadingPlaceholder extends StatelessWidget {
-  const _MainPageLoadingPlaceholder();
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return ColoredBox(
-      color: cs.surface,
-      child: Center(
-        child: Container(
-          width: 44,
-          height: 44,
-          decoration: BoxDecoration(
-            color: cs.surfaceContainerLow,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: cs.outlineVariant.withValues(alpha: 0.36),
-            ),
-          ),
-          padding: const EdgeInsets.all(12),
-          child: Icon(
-            Icons.graphic_eq_rounded,
-            size: 20,
-            color: cs.primary.withValues(alpha: 0.72),
-          ),
-        ),
-      ),
-    );
   }
 }

@@ -40,6 +40,10 @@ flutter test test/timer_runtime_calculator_test.dart
 
 These tests cover pure Dart logic extracted from the provider layer: library grouping and sorting, next-track queue resolution, and sleep timer runtime calculations.
 
+Run the Android device integration smoke test and use the release-candidate
+matrix and performance baseline process in
+[`docs/release-quality.md`](release-quality.md) before publishing a tag.
+
 For Android playback changes, also perform a device smoke test:
 
 1. Install the debug APK on a physical Android device.

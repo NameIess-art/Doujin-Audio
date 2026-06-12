@@ -252,7 +252,7 @@ class _UnifiedPopupMenuCard<T> extends StatelessWidget {
       borderRadius: BorderRadius.circular(20),
       child: DecoratedBox(
         decoration: BoxDecoration(
-          color: background.withValues(alpha: isDark ? 0.94 : 0.98),
+          color: background,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
             color: cs.outlineVariant.withValues(alpha: isDark ? 0.36 : 0.52),

@@ -56,17 +56,10 @@ class _SessionHeroArtwork extends ConsumerWidget {
                 ),
               ],
             ),
-            child: Hero(
-              tag: 'cover_$sessionId',
-              flightShuttleBuilder:
-                  (context, animation, direction, fromContext, toContext) =>
-                      fromContext.widget,
-              createRectTween: (begin, end) =>
-                  MaterialRectCenterArcTween(begin: begin, end: end),
-              child: Material(
-                type: MaterialType.transparency,
-                borderRadius: BorderRadius.circular(24),
-                clipBehavior: Clip.antiAlias,
+            child: Material(
+              type: MaterialType.transparency,
+              borderRadius: BorderRadius.circular(24),
+              clipBehavior: Clip.antiAlias,
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
@@ -139,7 +132,6 @@ class _SessionHeroArtwork extends ConsumerWidget {
                   ],
                 ),
               ),
-            ),
           ),
         );
       },
@@ -172,21 +164,13 @@ class _SessionCoverThumbnail extends ConsumerWidget {
       );
     }
 
-    return Hero(
-      tag: 'cover_$sessionId',
-      placeholderBuilder: (context, heroSize, child) => child,
-      flightShuttleBuilder:
-          (context, animation, direction, fromContext, toContext) =>
-              fromContext.widget,
-      createRectTween: (begin, end) =>
-          MaterialRectCenterArcTween(begin: begin, end: end),
-      child: SizedBox(
-        width: 96,
-        height: 72,
-        child: Material(
-          type: MaterialType.transparency,
-          borderRadius: BorderRadius.circular(14),
-          clipBehavior: Clip.antiAlias,
+    return SizedBox(
+      width: 96,
+      height: 72,
+      child: Material(
+        type: MaterialType.transparency,
+        borderRadius: BorderRadius.circular(14),
+        clipBehavior: Clip.antiAlias,
           child: track?.remoteCoverUrl?.trim().isNotEmpty == true
               ? RetryingNetworkImage(
                   url: track!.remoteCoverUrl!,
@@ -232,7 +216,6 @@ class _SessionCoverThumbnail extends ConsumerWidget {
                   },
                 ),
         ),
-      ),
     );
   }
 }

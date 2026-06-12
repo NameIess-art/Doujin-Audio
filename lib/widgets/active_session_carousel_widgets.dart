@@ -516,18 +516,10 @@ class _ActiveSessionCover extends ConsumerWidget {
     return SizedBox(
       width: 58,
       height: 58,
-      child: Hero(
-        tag: 'cover_$sessionId',
-        placeholderBuilder: (context, heroSize, child) => child,
-        flightShuttleBuilder:
-            (context, animation, direction, fromContext, toContext) =>
-                fromContext.widget,
-        createRectTween: (begin, end) =>
-            MaterialRectCenterArcTween(begin: begin, end: end),
-        child: Material(
-          type: MaterialType.transparency,
-          borderRadius: BorderRadius.circular(14),
-          clipBehavior: Clip.antiAlias,
+      child: Material(
+        type: MaterialType.transparency,
+        borderRadius: BorderRadius.circular(14),
+        clipBehavior: Clip.antiAlias,
           child: track?.remoteCoverUrl?.trim().isNotEmpty == true
               ? RetryingNetworkImage(
                   url: track!.remoteCoverUrl!.trim(),
@@ -566,7 +558,6 @@ class _ActiveSessionCover extends ConsumerWidget {
                   },
                 ),
         ),
-      ),
     );
   }
 }

@@ -138,14 +138,20 @@ class _UnifiedPopupMenuButtonState<T> extends State<UnifiedPopupMenuButton<T>>
     );
     UiInteractionCoordinator.instance.beginInteraction(_interactionSource);
     overlay.insert(_entry!);
-    _controller.forward(from: 0);
+    if (MediaQuery.maybeOf(context)?.disableAnimations ?? false) {
+      _controller.value = 1;
+    } else {
+      _controller.forward(from: 0);
+    }
   }
 
   Future<void> _removeOverlay({bool immediate = false}) async {
     final entry = _entry;
     if (entry == null) return;
     _entry = null;
-    if (!immediate) {
+    final reduceMotion =
+        MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+    if (!immediate && !reduceMotion) {
       try {
         await _controller.reverse();
       } catch (_) {

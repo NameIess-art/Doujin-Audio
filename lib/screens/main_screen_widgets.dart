@@ -97,7 +97,11 @@ class _FloatingGlassPanel extends ConsumerWidget {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bgColor = isDark ? cs.surfaceBright : cs.surfaceContainerHigh;
-    final blurEnabled = ref.watch(settingsStateProvider.select((s) => s.valueOrNull?.uiBlurEffectEnabled ?? true));
+    final blurEnabled = ref.watch(
+      settingsStateProvider.select(
+        (s) => s.valueOrNull?.uiBlurEffectEnabled ?? true,
+      ),
+    );
     final currentAlpha = blurEnabled ? (isDark ? 0.72 : 0.80) : 0.92;
 
     Widget buildPanel() => DecoratedBox(
@@ -252,6 +256,8 @@ class _BootstrapOverlayState extends State<_BootstrapOverlay>
   late final Animation<double> _logoScale;
   late final Animation<double> _opacity;
   late final Animation<double> _blur;
+  bool _disableAnimations = false;
+  bool _completionScheduled = false;
 
   @override
   void initState() {
@@ -314,8 +320,33 @@ class _BootstrapOverlayState extends State<_BootstrapOverlay>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final disableAnimations =
+        MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+    if (_disableAnimations == disableAnimations) return;
+    _disableAnimations = disableAnimations;
+    if (_disableAnimations) {
+      _controller
+        ..stop()
+        ..value = widget.visible ? 0.5 : 1.0;
+      _scheduleReducedMotionCompletion();
+    }
+  }
+
+  @override
   void didUpdateWidget(covariant _BootstrapOverlay oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (_disableAnimations) {
+      if (widget.visible) {
+        _completionScheduled = false;
+        _controller.value = 0.5;
+      } else {
+        _controller.value = 1.0;
+        _scheduleReducedMotionCompletion();
+      }
+      return;
+    }
     if (oldWidget.visible && !widget.visible) {
       if (_controller.value >= 0.5 && !_controller.isAnimating) {
         _controller.animateTo(1.0).then((_) {
@@ -323,6 +354,14 @@ class _BootstrapOverlayState extends State<_BootstrapOverlay>
         });
       }
     }
+  }
+
+  void _scheduleReducedMotionCompletion() {
+    if (widget.visible || _completionScheduled) return;
+    _completionScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && !widget.visible) widget.onAnimationEnd();
+    });
   }
 
   @override

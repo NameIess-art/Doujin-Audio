@@ -48,6 +48,7 @@ class _ShimmerLoaderState extends State<ShimmerLoader>
     final shouldAnimate =
         widget.enabled &&
         TickerMode.valuesOf(context).enabled &&
+        !(MediaQuery.maybeOf(context)?.disableAnimations ?? false) &&
         !ScrollActivityGate.isScrollingOf(context);
     if (shouldAnimate && !_controller.isAnimating) {
       _controller.repeat();

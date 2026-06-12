@@ -17,10 +17,12 @@ import 'path_matcher.dart';
 import 'path_display.dart';
 import 'media_file_support.dart';
 import 'library_scan_models.dart';
+import 'library_refresh_chunk_planner.dart';
 import 'library_scanner_isolate.dart';
 import 'library_scanner_platform_gateway.dart';
 
 export 'library_scan_models.dart';
+export 'library_refresh_chunk_planner.dart';
 
 class LibraryScanMergeContext {
   LibraryScanMergeContext({
@@ -35,52 +37,6 @@ class LibraryScanMergeContext {
   final LibraryEntrySnapshot entrySnapshot;
 
   bool isExcluded(String entityPath) => exclusionMatcher.isExcluded(entityPath);
-}
-
-class LibraryRefreshChunk {
-  const LibraryRefreshChunk({
-    required this.sourceFolderPath,
-    required this.libraryRoot,
-    this.tracks = const <MusicTrack>[],
-    this.folderPaths = const <String>[],
-    this.removeWatchedFolders = const <String>[],
-    this.addWatchedFolders = const <String>[],
-    this.removeTrackPaths = const <String>[],
-    this.removeEntryPaths = const <String>[],
-    this.progressLabel = '',
-    this.duplicateCount = 0,
-    this.failureCount = 0,
-  });
-
-  final String sourceFolderPath;
-  final String libraryRoot;
-  final List<MusicTrack> tracks;
-  final List<String> folderPaths;
-  final List<String> removeWatchedFolders;
-  final List<String> addWatchedFolders;
-  final List<String> removeTrackPaths;
-  final List<String> removeEntryPaths;
-  final String progressLabel;
-  final int duplicateCount;
-  final int failureCount;
-}
-
-class LibraryRefreshFolderResult {
-  const LibraryRefreshFolderResult({
-    required this.sourceFolderPath,
-    required this.libraryRoot,
-    this.chunks = const <LibraryRefreshChunk>[],
-    this.addedCount = 0,
-    this.duplicateCount = 0,
-    this.failureCount = 0,
-  });
-
-  final String sourceFolderPath;
-  final String libraryRoot;
-  final List<LibraryRefreshChunk> chunks;
-  final int addedCount;
-  final int duplicateCount;
-  final int failureCount;
 }
 
 class LibraryScannerService {
@@ -449,9 +405,10 @@ class LibraryScannerService {
           sum +
           (existingPaths.contains(PathMatcher.normalize(track.path)) ? 0 : 1),
     );
-    final chunks = _buildRefreshChunks(
+    final chunks = buildLibraryRefreshChunks(
       sourceFolderPath: sourceFolderPath,
       libraryRoot: libraryRoot,
+      sourceLabel: _displaySourceName(sourceFolderPath),
       tracks: result.trackBatch,
       folderPaths: folderPaths,
       removeWatchedFolders: removeWatchedFolders,
@@ -470,74 +427,6 @@ class LibraryScannerService {
       duplicateCount: result.duplicatesCount,
       failureCount: failureCount,
     );
-  }
-
-  List<LibraryRefreshChunk> _buildRefreshChunks({
-    required String sourceFolderPath,
-    required String libraryRoot,
-    required List<MusicTrack> tracks,
-    required List<String> folderPaths,
-    required List<String> removeWatchedFolders,
-    required List<String> addWatchedFolders,
-    required List<String> removeTrackPaths,
-    required List<String> removeEntryPaths,
-    required int duplicateCount,
-    required int failureCount,
-    required String progressPrefix,
-  }) {
-    const chunkSize = 120;
-    final sourceLabel = _displaySourceName(sourceFolderPath);
-    final chunks = <LibraryRefreshChunk>[];
-    if (tracks.isEmpty) {
-      final label = [
-        if (progressPrefix.isNotEmpty) progressPrefix,
-        sourceLabel,
-      ].join(' ');
-      return <LibraryRefreshChunk>[
-        LibraryRefreshChunk(
-          sourceFolderPath: sourceFolderPath,
-          libraryRoot: libraryRoot,
-          folderPaths: folderPaths,
-          removeWatchedFolders: removeWatchedFolders,
-          addWatchedFolders: addWatchedFolders,
-          removeTrackPaths: removeTrackPaths,
-          removeEntryPaths: removeEntryPaths,
-          progressLabel: label,
-          duplicateCount: duplicateCount,
-          failureCount: failureCount,
-        ),
-      ];
-    }
-
-    for (var i = 0; i < tracks.length; i += chunkSize) {
-      final end = (i + chunkSize < tracks.length)
-          ? i + chunkSize
-          : tracks.length;
-      final isLast = end == tracks.length;
-      final label = [
-        if (progressPrefix.isNotEmpty) progressPrefix,
-        '[$end/${tracks.length}]',
-        sourceLabel,
-      ].join(' ');
-      chunks.add(
-        LibraryRefreshChunk(
-          sourceFolderPath: sourceFolderPath,
-          libraryRoot: libraryRoot,
-          tracks: tracks.sublist(i, end),
-          folderPaths: isLast ? folderPaths : const <String>[],
-          removeWatchedFolders: isLast
-              ? removeWatchedFolders
-              : const <String>[],
-          addWatchedFolders: isLast ? addWatchedFolders : const <String>[],
-          removeTrackPaths: isLast ? removeTrackPaths : const <String>[],
-          removeEntryPaths: isLast ? removeEntryPaths : const <String>[],
-          progressLabel: label,
-          duplicateCount: isLast ? duplicateCount : 0,
-          failureCount: isLast ? failureCount : 0,
-        ),
-      );
-    }
-    return chunks;
   }
 
   Future<int> _mergeScannedTracksIncrementally({

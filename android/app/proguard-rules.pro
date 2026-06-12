@@ -9,12 +9,6 @@
 -keep class com.antonkarpenko.** { *; }
 -keep class com.ryanheise.** { *; }
 
-# Application classes
--keep class com.nameless.audio.** { *; }
-
-# Media3 (reflection-based initialization for MediaSession)
--keep class androidx.media3.** { *; }
-
 # Kotlin metadata
 -keepattributes *Annotation*, InnerClasses, Signature, EnclosingMethod
 

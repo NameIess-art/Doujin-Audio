@@ -11,17 +11,20 @@ on:
 permissions:
   contents: read
 
+env:
+  FLUTTER_VERSION: '3.41.6'
+
 jobs:
   verify:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Set up Flutter
-        uses: subosito/flutter-action@v2
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
-          flutter-version: '3.41.6'
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
 
       - name: Install dependencies
@@ -40,12 +43,6 @@ jobs:
       - name: Build debug APK
         run: flutter build apk --debug
 
-      - name: Build release APK
-        run: flutter build apk --release
-
-      - name: Build split release APKs
-        run: flutter build apk --release --split-per-abi
-
   release-android:
     if: startsWith(github.ref, 'refs/tags/')
     needs: verify
@@ -54,24 +51,57 @@ jobs:
       contents: write
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Set up Flutter
-        uses: subosito/flutter-action@v2
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
-          flutter-version: '3.41.6'
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
 
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Build split release APKs
+      - name: Configure release signing
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          : "${ANDROID_KEYSTORE_BASE64:?ANDROID_KEYSTORE_BASE64 is required}"
+          : "${ANDROID_KEYSTORE_PASSWORD:?ANDROID_KEYSTORE_PASSWORD is required}"
+          : "${ANDROID_KEY_ALIAS:?ANDROID_KEY_ALIAS is required}"
+          : "${ANDROID_KEY_PASSWORD:?ANDROID_KEY_PASSWORD is required}"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/release-keystore.jks
+          cat > android/key.properties <<EOF
+          storeFile=release-keystore.jks
+          storePassword=$ANDROID_KEYSTORE_PASSWORD
+          keyAlias=$ANDROID_KEY_ALIAS
+          keyPassword=$ANDROID_KEY_PASSWORD
+          EOF
+
+      - name: Build arm64 release APK
         run: flutter build apk --release --split-per-abi
 
-      - name: Upload Android release APKs
-        uses: softprops/action-gh-release@v2
-        with:
-          files: build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+      - name: Prepare Android release assets
+        run: |
+          set -euo pipefail
+          apk="NamelessAudio-android-arm64-${GITHUB_REF_NAME}.apk"
+          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk "$apk"
+          sha256sum "$apk" > "$apk.sha256"
+
+      - name: Upload Android release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 ||
+            gh release create "$GITHUB_REF_NAME" --generate-notes --title "$GITHUB_REF_NAME"
+          gh release upload "$GITHUB_REF_NAME" \
+            "NamelessAudio-android-arm64-${GITHUB_REF_NAME}.apk" \
+            "NamelessAudio-android-arm64-${GITHUB_REF_NAME}.apk.sha256" \
+            --clobber
 
   release-windows:
     if: startsWith(github.ref, 'refs/tags/')
@@ -83,12 +113,12 @@ jobs:
       contents: write
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Set up Flutter
-        uses: subosito/flutter-action@v2
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
-          flutter-version: '3.41.6'
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
 
       - name: Enable Windows desktop
@@ -97,15 +127,21 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Download Windows FFmpeg tools
+      - name: Download verified Windows FFmpeg tools
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $zip = Join-Path $env:RUNNER_TEMP 'ffmpeg.zip'
+          $ffmpegName = 'ffmpeg-N-124953-gd30dead35e-win64-gpl.zip'
+          $expectedSha256 = '1610cd7b4d691f0e70ea6f52b5dba0c9fa6207c62b6936ac9f0178f7527438'
+          $zip = Join-Path $env:RUNNER_TEMP $ffmpegName
           $extract = Join-Path $env:RUNNER_TEMP 'ffmpeg'
           Invoke-WebRequest `
-            -Uri 'https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip' `
+            -Uri "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-06-11-14-22/$ffmpegName" `
             -OutFile $zip
+          $actualSha256 = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actualSha256 -ne $expectedSha256) {
+            throw "FFmpeg checksum mismatch: expected $expectedSha256, got $actualSha256"
+          }
           Expand-Archive -LiteralPath $zip -DestinationPath $extract -Force
           $bin = Get-ChildItem -LiteralPath $extract -Directory |
             Select-Object -First 1 |
@@ -117,13 +153,20 @@ jobs:
       - name: Build Windows release
         run: flutter build windows
 
-      - name: Create Windows ZIP
+      - name: Create Windows release assets
         shell: pwsh
         run: |
           $zipName = "NamelessAudio-windows-x64-${{ github.ref_name }}.zip"
           Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath $zipName -Force
+          $hash = (Get-FileHash -LiteralPath $zipName -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $zipName" | Set-Content -LiteralPath "$zipName.sha256" -Encoding ascii
 
-      - name: Upload Windows release ZIP
-        uses: softprops/action-gh-release@v2
-        with:
-          files: NamelessAudio-windows-x64-${{ github.ref_name }}.zip
+      - name: Upload Windows release assets
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "${{ github.ref_name }}" `
+            "NamelessAudio-windows-x64-${{ github.ref_name }}.zip" `
+            "NamelessAudio-windows-x64-${{ github.ref_name }}.zip.sha256" `
+            --clobber

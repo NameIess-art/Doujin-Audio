@@ -184,7 +184,11 @@ flutter run
 
 ### Android Release 构建
 
-Release 构建需要签名密钥。仓库保留了本地验证用的回退逻辑：未配置 `android/key.properties` 时，会使用 debug signing 生成 release 模式 APK；正式发布前建议配置 release keystore。
+Release 构建必须使用正式签名密钥。未配置完整的 `android/key.properties`
+和对应 keystore 时，release APK/App Bundle 构建会直接失败，不再回退到
+debug signing。GitHub tag 发布使用仓库 Secrets 临时生成签名配置：
+`ANDROID_KEYSTORE_BASE64`、`ANDROID_KEYSTORE_PASSWORD`、
+`ANDROID_KEY_ALIAS`、`ANDROID_KEY_PASSWORD`。
 
 ```bash
 flutter build apk --release --target-platform android-arm64

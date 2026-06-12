@@ -8,11 +8,15 @@ flutter analyze
 flutter test
 cd android && ./gradlew testDebugUnitTest && cd ..
 flutter build apk --debug
-flutter build apk --release
-flutter build apk --release --split-per-abi
 ```
 
 `flutter analyze` is expected to report zero issues. CI runs the same baseline checks on pushes to `main` and on pull requests. The Gradle unit test task is configured to run app and in-repository Android tests while skipping external Flutter plugin test tasks from the Pub cache.
+
+Release builds require a complete `android/key.properties` and matching
+keystore. Missing or incomplete release signing configuration intentionally
+fails `assembleRelease`, `bundleRelease`, and Flutter release APK builds.
+Tag workflows create temporary signing files from GitHub Secrets and publish
+arm64 APK/Windows ZIP assets together with SHA-256 checksum files.
 
 Notification behavior is covered through Dart platform-service tests and
 Android notification-routing tests. Keep these tests aligned with the native

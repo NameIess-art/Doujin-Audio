@@ -104,7 +104,7 @@ flutter {
 
 dependencies {
     implementation("androidx.documentfile:documentfile:1.0.1")
-    implementation("androidx.media:media:1.7.0")
+    implementation("androidx.media:media:1.8.0")
     implementation("androidx.media3:media3-exoplayer:1.10.0")
     implementation("androidx.media3:media3-session:1.10.0")
     testImplementation("junit:junit:4.13.2")

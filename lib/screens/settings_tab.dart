@@ -283,6 +283,66 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                         ),
                         Consumer(
                           builder: (context, ref, _) {
+                            final startupPage = ref.watch(
+                              settingsStateProvider.select(
+                                (state) =>
+                                    state.valueOrNull?.startupPage ??
+                                    StartupPage.library,
+                              ),
+                            );
+                            return ListTile(
+                              title: Text(i18n.tr('startup_page')),
+                              subtitle: Text(
+                                i18n.tr('startup_page_subtitle'),
+                                style: descStyle,
+                              ),
+                              leading: Container(
+                                width: 38,
+                                height: 38,
+                                decoration: BoxDecoration(
+                                  color: cs.primaryContainer,
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Icon(
+                                  Icons.home_rounded,
+                                  color: cs.onPrimaryContainer,
+                                ),
+                              ),
+                              trailing: DropdownButtonHideUnderline(
+                                child: DropdownButton<StartupPage>(
+                                  value: startupPage,
+                                  borderRadius: BorderRadius.circular(12),
+                                  onChanged: (value) {
+                                    if (value != null) {
+                                      audioProvider.setStartupPage(value);
+                                    }
+                                  },
+                                  items: StartupPage.values
+                                      .map(
+                                        (page) => DropdownMenuItem<StartupPage>(
+                                          value: page,
+                                          child: Text(
+                                            i18n.tr(
+                                              'startup_page_${page.name}',
+                                            ),
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          ),
+                                        ),
+                                      )
+                                      .toList(),
+                                ),
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 2,
+                              ),
+                            );
+                          },
+                        ),
+                        Consumer(
+                          builder: (context, ref, _) {
                             final blurEnabled = ref.watch(
                               settingsStateProvider.select(
                                 (s) =>

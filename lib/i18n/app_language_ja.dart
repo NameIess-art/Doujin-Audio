@@ -383,6 +383,11 @@ const Map<String, String> appLanguageJa = {
   'app_desc': '並行セッションと高音質再生に対応。',
   'language': '言語',
   'language_subtitle': '表示言語を切り替え',
+  'startup_page': 'アプリ起動時のページ',
+  'startup_page_subtitle': 'アプリを開いたときに最初に表示するページを選びます。',
+  'startup_page_asmrOne': 'ASMR.ONE',
+  'startup_page_library': 'ライブラリ',
+  'startup_page_playlist': 'プレイリスト',
   'dlsite_metadata_language': 'DLsiteデータ取得言語',
   'dlsite_metadata_language_subtitle':
       'DLsiteからタイトル、サークル、声優、タグなどを取得するときの言語を選びます。',

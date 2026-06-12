@@ -41,6 +41,14 @@ void main() {
       notificationStateService: notificationCoordinatorService,
       settingsRepository: settingsRepository,
     );
+    playbackService.syncSlice(
+      activeSessions: const [],
+      playingSessionCount: 0,
+      focusedSessionId: null,
+      multiThreadPlaybackEnabled: false,
+      coverGeneration: 0,
+      isInitialized: true,
+    );
 
     await tester.pumpWidget(
       ProviderScope(
@@ -74,9 +82,18 @@ void main() {
     expect(find.text(languageProvider.tr('nav_sessions')), findsWidgets);
     expect(find.text(languageProvider.tr('nav_settings')), findsWidgets);
     expect(find.byKey(const ValueKey<String>('main_page_fade_1')), findsOne);
-    expect(find.byKey(const ValueKey<String>('main_page_fade_0')), findsOne);
-    expect(find.byKey(const ValueKey<String>('main_page_fade_2')), findsOne);
-    expect(find.byKey(const ValueKey<String>('main_page_fade_3')), findsOne);
+    expect(
+      find.byKey(const ValueKey<String>('main_page_fade_0')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('main_page_fade_2')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('main_page_fade_3')),
+      findsNothing,
+    );
     expect(
       tester
           .widget<AnimatedOpacity>(
@@ -85,15 +102,6 @@ void main() {
           .opacity,
       1,
     );
-    expect(
-      tester
-          .widget<AnimatedOpacity>(
-            find.byKey(const ValueKey<String>('main_page_fade_0')),
-          )
-          .opacity,
-      0,
-    );
-
     await tester.tap(find.text(languageProvider.tr('nav_settings')).last);
     await tester.pumpAndSettle();
 

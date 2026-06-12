@@ -596,6 +596,7 @@ void main() {
       find.text(languageProvider.tr('dlsite_metadata_language')),
       findsOneWidget,
     );
+    expect(find.text(languageProvider.tr('startup_page')), findsOneWidget);
     expect(find.text(languageProvider.tr('card_info_display')), findsOneWidget);
 
     final cardInfoTile = find.widgetWithText(

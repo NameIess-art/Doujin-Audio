@@ -31,6 +31,7 @@ extension AudioProviderState on AudioProvider {
   bool get multiThreadPlaybackEnabled => _multiThreadPlaybackEnabled;
   bool get notificationsEnabled => _notificationsEnabled;
   bool get showPlaybackCard => _showPlaybackCard;
+  StartupPage get startupPage => _startupPage;
   bool get autoPlayAddedSessions => _autoPlayAddedSessions;
   bool get recordPlaybackProgress => _settingsRepository.recordPlaybackProgress;
   AppLanguage get dlsiteMetadataLanguage => _dlsiteMetadataLanguage;

@@ -228,7 +228,10 @@ extension AudioProviderNotificationCovers on AudioProvider {
       return null;
     }
     if (PathMatcher.isRemoteUri(pathValue)) {
-      return null;
+      final remoteCoverUrl = track?.remoteCoverUrl?.trim();
+      return remoteCoverUrl == null || remoteCoverUrl.isEmpty
+          ? null
+          : 'remote-cover:$remoteCoverUrl';
     }
     if (track?.isVideo == true) {
       return PathMatcher.normalize(pathValue);
@@ -280,7 +283,13 @@ extension AudioProviderNotificationCovers on AudioProvider {
 
     return _notificationCoverPathFutures.putIfAbsent(coverSearchKey, () async {
       String? coverPath;
-      if (pathValue != null) {
+      final remoteCoverUrl = track?.remoteCoverUrl?.trim();
+      if (remoteCoverUrl != null && remoteCoverUrl.isNotEmpty) {
+        coverPath = await _downloadRemoteNotificationCover(remoteCoverUrl);
+      }
+      if (coverPath == null &&
+          pathValue != null &&
+          !PathMatcher.isRemoteUri(pathValue)) {
         final coverScopeFolder = _resolveCoverScopeFolderPath(
           this,
           track,
@@ -339,6 +348,44 @@ extension AudioProviderNotificationCovers on AudioProvider {
 
       return coverPath;
     });
+  }
+
+  Future<String?> _downloadRemoteNotificationCover(String remoteUrl) async {
+    HttpClient? client;
+    try {
+      final cacheRoot = await getTemporaryDirectory();
+      final coverDirectory = Directory(
+        path.join(cacheRoot.path, 'notification_covers'),
+      );
+      await coverDirectory.create(recursive: true);
+      final file = File(
+        path.join(coverDirectory.path, '${remoteUrl.hashCode}.image'),
+      );
+      if (await file.exists() && await file.length() > 0) {
+        return file.path;
+      }
+
+      client = HttpClient();
+      final request = await client.getUrl(Uri.parse(remoteUrl));
+      final response = await request.close();
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        return null;
+      }
+      final bytes = await consolidateHttpClientResponseBytes(response);
+      if (bytes.isEmpty) return null;
+      await file.writeAsBytes(bytes, flush: true);
+      unawaited(AppCacheService.enforceLimit());
+      return file.path;
+    } catch (error, stackTrace) {
+      AppLogService.warning(
+        'Unable to cache remote notification cover.',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      return null;
+    } finally {
+      client?.close(force: true);
+    }
   }
 
   Future<String?> _resolveVideoFramePathForTrack(MusicTrack track) async {

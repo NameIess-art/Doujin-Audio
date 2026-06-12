@@ -680,6 +680,11 @@ class _MainScreenState extends ConsumerState<MainScreen>
             systemNavigationBarContrastEnforced: false,
           );
     final overlayUi = ref.watch(mainOverlayUiProvider);
+    final startupPage = ref.watch(
+      settingsStateProvider.select(
+        (value) => value.valueOrNull?.startupPage ?? StartupPage.library,
+      ),
+    );
     final autoCheckUpdates = ref.watch(
       settingsStateProvider.select(
         (value) => value.valueOrNull?.autoCheckUpdates ?? false,
@@ -719,6 +724,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
       });
     }
     if (!_isDataReady && overlayUi.isInitialized) {
+      _currentIndex = startupPage.index;
       _isDataReady = true;
     }
     final layoutSize = _layoutViewSize();

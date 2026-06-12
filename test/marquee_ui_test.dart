@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart' show ProviderScope;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/i18n/app_language_provider.dart';
 import 'package:nameless_audio/i18n/app_language_ja.dart';
@@ -9,9 +10,11 @@ import 'package:nameless_audio/widgets/top_page_header.dart';
 import 'package:provider/provider.dart';
 
 Widget _buildApp(Widget child) {
-  return ChangeNotifierProvider(
-    create: (_) => AppLanguageProvider(),
-    child: MaterialApp(home: Scaffold(body: child)),
+  return ProviderScope(
+    child: ChangeNotifierProvider(
+      create: (_) => AppLanguageProvider(),
+      child: MaterialApp(home: Scaffold(body: child)),
+    ),
   );
 }
 

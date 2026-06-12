@@ -6,7 +6,7 @@ import org.junit.Test
 
 class NativePlayerFactoryTest {
     @Test
-    fun `native playback uses local wake mode for screen off audio`() {
-        assertEquals(C.WAKE_MODE_LOCAL, nativePlaybackWakeMode())
+    fun `native playback uses network wake mode for background streaming`() {
+        assertEquals(C.WAKE_MODE_NETWORK, nativePlaybackWakeMode())
     }
 }

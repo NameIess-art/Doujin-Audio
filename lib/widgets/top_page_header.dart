@@ -147,7 +147,7 @@ class TopPageHeader extends ConsumerWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [headerContent, if (additionalChild != null) additionalChild!],
+        children: [headerContent, ?additionalChild],
       ),
     );
 

@@ -259,6 +259,7 @@ extension AudioProviderPersistenceSessions on AudioProvider {
   }
 
   void _scheduleSessionPersistence() {
+    if (_skipDisposePersistence) return;
     _scheduleSaveSessionState();
     _scheduleSaveSessionOrder();
   }

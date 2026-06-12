@@ -14,6 +14,11 @@ flutter build apk --release --split-per-abi
 
 `flutter analyze` is expected to report zero issues. CI runs the same baseline checks on pushes to `main` and on pull requests. The Gradle unit test task is configured to run app and in-repository Android tests while skipping external Flutter plugin test tasks from the Pub cache.
 
+Notification behavior is covered through Dart platform-service tests and
+Android notification-routing tests. Keep these tests aligned with the native
+notification payload instead of introducing a second Dart notification
+handler.
+
 Focused core logic tests can be run while refactoring playback behavior:
 
 ```bash

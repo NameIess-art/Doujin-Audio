@@ -42,9 +42,6 @@ class UnifiedPlaybackActionReceiver : BroadcastReceiver() {
             pendingDismissIds.clear()
             pendingDismissCount = 0
             pendingDismissExtras = null
-            // Forward dismiss to Dart if needed, or handle natively
-            // Since we removed audio_service, we can just let NativePlaybackService know,
-            // but dismiss usually just stops the service or is handled natively.
             NativePlaybackService.controller()?.dismissNotifications()
         }
     }

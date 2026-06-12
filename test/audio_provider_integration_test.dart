@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:audio_service/audio_service.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio/just_audio.dart';
@@ -12,7 +11,6 @@ import 'package:nameless_audio/services/audio_database_repository.dart';
 import 'package:nameless_audio/services/library_scanner_service.dart';
 import 'package:nameless_audio/services/native_playback_bridge.dart';
 import 'package:nameless_audio/services/path_matcher.dart';
-import 'package:nameless_audio/services/playback_notification_handler.dart';
 import 'package:nameless_audio/services/playback_notification_service.dart';
 import 'package:nameless_audio/services/platform_channels.dart';
 import 'package:nameless_audio/services/ui_interaction_coordinator.dart';
@@ -28,7 +26,6 @@ void main() {
   const nativePlaybackChannel = MethodChannel(NativePlaybackChannel.name);
   const notificationsChannel = MethodChannel(NotificationsChannel.name);
   late AudioProvider provider;
-  late PlaybackNotificationHandler handler;
   late PlaybackNotificationService notificationService;
   late Database db;
 
@@ -43,8 +40,7 @@ void main() {
     final databaseRepository = AudioDatabaseRepository(
       database: AppDatabase.test(db),
     );
-    handler = PlaybackNotificationHandler();
-    notificationService = PlaybackNotificationService(handler);
+    notificationService = PlaybackNotificationService();
     provider = AudioProvider.test(
       notificationService: notificationService,
       audioDatabaseRepository: databaseRepository,
@@ -906,68 +902,6 @@ void main() {
   // ── notification integration ───────────────────────────────────
 
   group('playback notification integration', () {
-    test('notification state initializes with idle controls', () {
-      final state = handler.playbackState.value;
-      expect(state.playing, isFalse);
-      expect(state.processingState, AudioProcessingState.idle);
-    });
-
-    test('notification snapshot populates queue and media item', () {
-      handler.updateSnapshot(
-        const PlaybackNotificationSnapshot(
-          queue: <MediaItem>[MediaItem(id: 's1', title: 'One')],
-          queueIndex: 0,
-          mediaItem: MediaItem(id: 's1', title: 'One'),
-          playing: false,
-          processingState: AudioProcessingState.ready,
-          updatePosition: Duration.zero,
-          bufferedPosition: Duration.zero,
-          speed: 1.0,
-          hasPrevious: false,
-          hasNext: false,
-        ),
-      );
-
-      expect(handler.queue.value, hasLength(1));
-      expect(handler.mediaItem.value!.id, 's1');
-    });
-
-    test('notification delete invokes callback', () async {
-      var called = false;
-      handler.bindCallbacks(
-        onNotificationDeleted: () async {
-          called = true;
-        },
-      );
-      await handler.onNotificationDeleted();
-      expect(called, isTrue);
-    });
-
-    test('clearing notification resets to empty idle state', () {
-      handler.updateSnapshot(
-        const PlaybackNotificationSnapshot(
-          queue: <MediaItem>[MediaItem(id: 's1', title: 'One')],
-          queueIndex: 0,
-          mediaItem: MediaItem(id: 's1', title: 'One'),
-          playing: true,
-          processingState: AudioProcessingState.ready,
-          updatePosition: Duration(seconds: 1),
-          bufferedPosition: Duration(seconds: 2),
-          speed: 1.0,
-          hasPrevious: false,
-          hasNext: false,
-        ),
-      );
-      handler.updateSnapshot(null);
-
-      expect(handler.queue.value, isEmpty);
-      expect(handler.mediaItem.value, isNull);
-      expect(
-        handler.playbackState.value.controls.single.action,
-        MediaAction.play,
-      );
-    });
-
     test('dismissing active playback keeps session playing', () async {
       final nativeCalls = <String>[];
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger

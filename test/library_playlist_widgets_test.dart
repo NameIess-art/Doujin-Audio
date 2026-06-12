@@ -19,7 +19,6 @@ import 'package:nameless_audio/services/audio_state_services.dart';
 import 'package:nameless_audio/services/dlsite_metadata_service.dart';
 import 'package:nameless_audio/services/native_playback_repository.dart';
 import 'package:nameless_audio/services/playback_command_runner.dart';
-import 'package:nameless_audio/services/playback_notification_handler.dart';
 import 'package:nameless_audio/services/playback_notification_service.dart';
 import 'package:nameless_audio/theme/theme_provider.dart';
 import 'package:provider/provider.dart' as legacy_provider;
@@ -144,8 +143,7 @@ void main() {
   testWidgets('library tab search filters results and shows empty state copy', (
     WidgetTester tester,
   ) async {
-    final handler = PlaybackNotificationHandler();
-    final notificationService = PlaybackNotificationService(handler);
+    final notificationService = PlaybackNotificationService();
     final audioDatabaseRepository = AudioDatabaseRepository();
     final nativePlaybackRepository = NativePlaybackRepository();
     const playbackCommandRunner = PlaybackCommandRunner();
@@ -203,7 +201,7 @@ void main() {
         child: const LibraryTab(),
       ),
     );
-    await tester.pumpAndSettle();
+    await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
 
     expect(find.byType(TextField), findsOneWidget);
@@ -214,13 +212,15 @@ void main() {
 
     expect(find.text('Ocean Waves', findRichText: true), findsOneWidget);
     expect(find.text('Soft Rain', findRichText: true), findsNothing);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(milliseconds: 1));
   });
 
   testWidgets(
     'library tab refreshes stale card details after library loads',
     (WidgetTester tester) async {
-      final handler = PlaybackNotificationHandler();
-      final notificationService = PlaybackNotificationService(handler);
+      final notificationService = PlaybackNotificationService();
       final audioDatabaseRepository = AudioDatabaseRepository();
       final nativePlaybackRepository = NativePlaybackRepository();
       const playbackCommandRunner = PlaybackCommandRunner();
@@ -303,8 +303,7 @@ void main() {
   testWidgets(
     'library tab shows localized empty state when search has no matches',
     (WidgetTester tester) async {
-      final handler = PlaybackNotificationHandler();
-      final notificationService = PlaybackNotificationService(handler);
+      final notificationService = PlaybackNotificationService();
       final audioDatabaseRepository = AudioDatabaseRepository();
       final nativePlaybackRepository = NativePlaybackRepository();
       const playbackCommandRunner = PlaybackCommandRunner();
@@ -373,8 +372,7 @@ void main() {
   testWidgets('library more menu opens formal library management only', (
     WidgetTester tester,
   ) async {
-    final handler = PlaybackNotificationHandler();
-    final notificationService = PlaybackNotificationService(handler);
+    final notificationService = PlaybackNotificationService();
     final audioDatabaseRepository = AudioDatabaseRepository();
     final nativePlaybackRepository = NativePlaybackRepository();
     const playbackCommandRunner = PlaybackCommandRunner();
@@ -452,8 +450,7 @@ void main() {
   testWidgets('playlist more menu toggles fixed card positions', (
     WidgetTester tester,
   ) async {
-    final handler = PlaybackNotificationHandler();
-    final notificationService = PlaybackNotificationService(handler);
+    final notificationService = PlaybackNotificationService();
     final audioDatabaseRepository = AudioDatabaseRepository();
     final nativePlaybackRepository = NativePlaybackRepository();
     const playbackCommandRunner = PlaybackCommandRunner();
@@ -551,8 +548,7 @@ void main() {
   testWidgets('settings detail section configures card info fields', (
     WidgetTester tester,
   ) async {
-    final handler = PlaybackNotificationHandler();
-    final notificationService = PlaybackNotificationService(handler);
+    final notificationService = PlaybackNotificationService();
     final audioDatabaseRepository = AudioDatabaseRepository();
     final nativePlaybackRepository = NativePlaybackRepository();
     const playbackCommandRunner = PlaybackCommandRunner();
@@ -602,11 +598,13 @@ void main() {
     );
     expect(find.text(languageProvider.tr('card_info_display')), findsOneWidget);
 
-    await tester.scrollUntilVisible(
-      find.text(languageProvider.tr('card_info_display')),
-      300,
+    final cardInfoTile = find.widgetWithText(
+      ListTile,
+      languageProvider.tr('card_info_display'),
     );
-    await tester.tap(find.text(languageProvider.tr('card_info_display')));
+    await tester.ensureVisible(cardInfoTile);
+    await tester.pump();
+    await tester.tap(cardInfoTile);
     await tester.pumpAndSettle();
 
     expect(
@@ -647,8 +645,7 @@ void main() {
   testWidgets(
     'batch metadata page defaults to missing works and shows counts',
     (WidgetTester tester) async {
-      final handler = PlaybackNotificationHandler();
-      final notificationService = PlaybackNotificationService(handler);
+      final notificationService = PlaybackNotificationService();
       final audioDatabaseRepository = AudioDatabaseRepository();
       final nativePlaybackRepository = NativePlaybackRepository();
       const playbackCommandRunner = PlaybackCommandRunner();
@@ -763,8 +760,7 @@ void main() {
   testWidgets('metadata review batch mode shows progress and skip action', (
     WidgetTester tester,
   ) async {
-    final handler = PlaybackNotificationHandler();
-    final notificationService = PlaybackNotificationService(handler);
+    final notificationService = PlaybackNotificationService();
     final audioDatabaseRepository = AudioDatabaseRepository();
     final nativePlaybackRepository = NativePlaybackRepository();
     const playbackCommandRunner = PlaybackCommandRunner();
@@ -852,8 +848,7 @@ void main() {
   test(
     'preferred title metadata fills missing ASMR fields from DLsite',
     () async {
-      final handler = PlaybackNotificationHandler();
-      final notificationService = PlaybackNotificationService(handler);
+      final notificationService = PlaybackNotificationService();
       final audioDatabaseRepository = AudioDatabaseRepository();
       final nativePlaybackRepository = NativePlaybackRepository();
       final libraryService = LibraryService();
@@ -891,8 +886,7 @@ void main() {
   testWidgets('audio detail fetch opens metadata scope page', (
     WidgetTester tester,
   ) async {
-    final handler = PlaybackNotificationHandler();
-    final notificationService = PlaybackNotificationService(handler);
+    final notificationService = PlaybackNotificationService();
     final audioDatabaseRepository = AudioDatabaseRepository();
     final nativePlaybackRepository = NativePlaybackRepository();
     const playbackCommandRunner = PlaybackCommandRunner();
@@ -963,8 +957,7 @@ void main() {
   testWidgets('library edit keeps restored content folder visible', (
     WidgetTester tester,
   ) async {
-    final handler = PlaybackNotificationHandler();
-    final notificationService = PlaybackNotificationService(handler);
+    final notificationService = PlaybackNotificationService();
     final audioDatabaseRepository = AudioDatabaseRepository();
     final nativePlaybackRepository = NativePlaybackRepository();
     const playbackCommandRunner = PlaybackCommandRunner();
@@ -1082,8 +1075,7 @@ void main() {
   testWidgets('library edit keeps decoded content track name after exclusion', (
     WidgetTester tester,
   ) async {
-    final handler = PlaybackNotificationHandler();
-    final notificationService = PlaybackNotificationService(handler);
+    final notificationService = PlaybackNotificationService();
     final audioDatabaseRepository = AudioDatabaseRepository();
     final nativePlaybackRepository = NativePlaybackRepository();
     const playbackCommandRunner = PlaybackCommandRunner();

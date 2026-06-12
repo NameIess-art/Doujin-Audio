@@ -1,6 +1,6 @@
 import '../models/music_track.dart';
 import 'audio_state_services.dart';
-import 'library_scanner_service.dart';
+import 'library_scan_models.dart';
 import 'path_matcher.dart';
 import 'path_display.dart';
 

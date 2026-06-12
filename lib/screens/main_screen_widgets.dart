@@ -307,9 +307,25 @@ class _BootstrapOverlayState extends State<_BootstrapOverlay>
       ),
     ]).animate(_controller);
 
-    _controller.forward().then((_) {
-      if (mounted) widget.onAnimationEnd();
+    _controller.animateTo(0.5).then((_) {
+      if (mounted && !widget.visible) {
+        _controller.animateTo(1.0).then((_) {
+          if (mounted) widget.onAnimationEnd();
+        });
+      }
     });
+  }
+
+  @override
+  void didUpdateWidget(covariant _BootstrapOverlay oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.visible && !widget.visible) {
+      if (_controller.value >= 0.5 && !_controller.isAnimating) {
+        _controller.animateTo(1.0).then((_) {
+          if (mounted) widget.onAnimationEnd();
+        });
+      }
+    }
   }
 
   @override

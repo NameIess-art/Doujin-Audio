@@ -137,10 +137,13 @@ class _MainScreenState extends ConsumerState<MainScreen>
       unawaited(_consumePendingNotificationSession());
       unawaited(_ensureManageFilesPermission());
       unawaited(_maybeEnableBackgroundKeepAliveOnFirstLaunch());
-      provider.scheduleUiWarmup(
-        currentPageIndex: _currentIndex,
-        immediate: true,
-      );
+      Future.delayed(const Duration(milliseconds: 750), () {
+        if (!mounted) return;
+        provider.scheduleUiWarmup(
+          currentPageIndex: _currentIndex,
+          immediate: true,
+        );
+      });
     });
   }
 

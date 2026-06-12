@@ -108,8 +108,10 @@ extension _MainScreenLayout on _MainScreenState {
     return Stack(
       key: ValueKey<int>(_metricsEpoch),
       clipBehavior: Clip.none,
-      children: const <int>[0, 1, 2, 3]
-          .map((i) {
+      children: <int>{
+        ..._visitedPageIndices,
+        if (_isDataReady) _currentIndex,
+      }.map((i) {
             final bool isActive = i == _currentIndex;
             return IgnorePointer(
               key: ValueKey<int>(i),

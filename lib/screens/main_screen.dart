@@ -56,6 +56,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
 
   int _currentIndex = 1;
   late final List<Widget> _pages;
+  final Set<int> _visitedPageIndices = <int>{};
   final Object _pageSwitchInteraction = Object();
   final GlobalKey _bottomDockKey = GlobalKey();
   final GlobalKey _dockContentKey = GlobalKey();
@@ -630,6 +631,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
     coordinator.beginInteraction(_pageSwitchInteraction);
     final generation = coordinator.beginGeneration();
     setState(() {
+      if (_isDataReady) _visitedPageIndices.add(_currentIndex);
       _currentIndex = index;
     });
 

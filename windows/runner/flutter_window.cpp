@@ -5,6 +5,11 @@
 #include "flutter/generated_plugin_registrant.h"
 #include "desktop_multi_window/desktop_multi_window_plugin.h"
 
+#include <flutter/method_channel.h>
+#include <flutter/standard_method_codec.h>
+#include <map>
+#include <string>
+
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
     : project_(project) {}
 
@@ -32,6 +37,30 @@ bool FlutterWindow::OnCreate() {
     auto *registry = flutter_view_controller->engine();
     RegisterPlugins(registry);
   });
+
+  // Register the update channel to provide the app version.
+  flutter::MethodChannel<flutter::EncodableValue> update_channel(
+      flutter_controller_->engine()->messenger(), "nameless_audio/update",
+      &flutter::StandardMethodCodec::GetInstance());
+
+  update_channel.SetMethodCallHandler(
+      [](const flutter::MethodCall<flutter::EncodableValue>& call,
+         std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+        if (call.method_name() == "getAppVersion") {
+          std::string version = FLUTTER_VERSION;
+#ifdef FLUTTER_VERSION_BUILD
+          int build_number = FLUTTER_VERSION_BUILD;
+#else
+          int build_number = 0;
+#endif
+          flutter::EncodableMap map;
+          map[flutter::EncodableValue("versionName")] = flutter::EncodableValue(version);
+          map[flutter::EncodableValue("buildNumber")] = flutter::EncodableValue(build_number);
+          result->Success(flutter::EncodableValue(map));
+        } else {
+          result->NotImplemented();
+        }
+      });
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {

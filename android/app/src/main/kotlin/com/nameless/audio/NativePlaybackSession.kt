@@ -159,7 +159,8 @@ internal class NativePlaybackSession(
         repeatOne: Boolean,
         repeatAll: Boolean,
         shuffleModeEnabled: Boolean,
-        autoPlay: Boolean
+        autoPlay: Boolean,
+        deferPlayerCreation: Boolean = false
     ) {
         this.queue = queue.ifEmpty { listOf(descriptor) }
         this.path = descriptor.path
@@ -175,6 +176,12 @@ internal class NativePlaybackSession(
         this.shuffleModeEnabled = shuffleModeEnabled
         this.lastPlayWhenReady = autoPlay
         applyChannelMap()
+
+        if (!shouldCreatePlayerForConfiguration(deferPlayerCreation, hasPlayer())) {
+            lastIsPlaying = false
+            lastPlaybackState = "idle"
+            return
+        }
 
         val p = playerOrNull() ?: createPlayer(
             sessionId,
@@ -734,6 +741,11 @@ internal class NativePlaybackSession(
 }
 
 private fun normalizeSpeed(speed: Float): Float = speed.coerceIn(0.5f, 2.0f)
+
+internal fun shouldCreatePlayerForConfiguration(
+    deferPlayerCreation: Boolean,
+    hasPlayer: Boolean
+): Boolean = !deferPlayerCreation || hasPlayer
 
 internal fun noiseReductionGainFor(frequencyHz: Int): Float {
     return when {

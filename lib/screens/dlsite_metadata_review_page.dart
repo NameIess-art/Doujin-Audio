@@ -261,18 +261,19 @@ class _DlsiteMetadataReviewPageState extends State<DlsiteMetadataReviewPage> {
                           loadingBuilder: (context, child, loadingProgress) =>
                               loadingProgress == null
                               ? child
-                              : CoverLoadingIndicator(
+                              : CoverLoadingArtwork(
+                                  placeholder: CoverFallbackArtwork(
+                                    seed: coverUrl,
+                                    showIcon: false,
+                                  ),
                                   size: 40,
                                   strokeWidth: 3,
                                   color: cs.primary,
                                 ),
-                          errorBuilder: (_, _, _) => ColoredBox(
-                            color: cs.surfaceContainerHighest,
-                            child: Icon(
-                              Icons.image_not_supported_rounded,
-                              color: cs.onSurfaceVariant,
-                              size: 48,
-                            ),
+                          errorBuilder: (_, _, _) => CoverFallbackArtwork(
+                            seed: coverUrl,
+                            icon: Icons.image_not_supported_rounded,
+                            iconSize: 48,
                           ),
                         ),
                       ),

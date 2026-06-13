@@ -3,67 +3,88 @@ package com.nameless.audio
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 
 class UnifiedPlaybackActionReceiver : BroadcastReceiver() {
     companion object {
         private const val dismissAction = "dismiss_all_playback_notifications"
-        private const val restoreAction = "restore_playback_notifications"
-        private const val dismissNotificationIdExtra = "notificationId"
         private const val dismissSettleDelayMs = 160L
+        private const val serviceDeliveryRetryDelayMs = 250L
+        private const val maxServiceDeliveryAttempts = 40
         private val mainHandler = Handler(Looper.getMainLooper())
-        private val pendingDismissIds = linkedSetOf<Int>()
-        private var pendingDismissCount = 0
-        private var pendingDismissExtras: Bundle? = null
         private val flushDismissRunnable = Runnable { flushPendingDismisses() }
 
         @Synchronized
-        private fun queueDismiss(intent: Intent) {
+        private fun queueDismiss() {
             // Block notification re-posts immediately so the Dart side
             // cannot repost notifications while the 160ms debounce runs.
             UnifiedPlaybackNotificationController.dismissPending = true
             // Keep dismissPending latched until explicit restore or clear.
             // This prevents the Dart sync loop from re-posting after swipe dismiss.
-            val notificationId = intent.getIntExtra(dismissNotificationIdExtra, Int.MIN_VALUE)
-            if (notificationId != Int.MIN_VALUE) {
-                pendingDismissIds.add(notificationId)
-            }
-            pendingDismissCount += 1
-            pendingDismissExtras = intent.extras
             mainHandler.removeCallbacks(flushDismissRunnable)
             mainHandler.postDelayed(flushDismissRunnable, dismissSettleDelayMs)
         }
 
         @Synchronized
         private fun flushPendingDismisses() {
-            val extras = pendingDismissExtras
-            pendingDismissIds.clear()
-            pendingDismissCount = 0
-            pendingDismissExtras = null
             NativePlaybackService.controller()?.dismissNotifications()
+        }
+
+        private fun deliverControlAction(
+            context: Context,
+            action: String,
+            requestedSessionId: String,
+            attempt: Int,
+            pendingResult: BroadcastReceiver.PendingResult
+        ) {
+            val service = NativePlaybackService.ensureStarted(
+                context,
+                requireForegroundBootstrap = true
+            )
+            if (service == null) {
+                if (attempt >= maxServiceDeliveryAttempts) {
+                    pendingResult.finish()
+                    return
+                }
+                mainHandler.postDelayed(
+                    {
+                        deliverControlAction(
+                            context = context,
+                            action = action,
+                            requestedSessionId = requestedSessionId,
+                            attempt = attempt + 1,
+                            pendingResult = pendingResult
+                        )
+                    },
+                    serviceDeliveryRetryDelayMs
+                )
+                return
+            }
+
+            try {
+                service.executeNotificationAction(action, requestedSessionId)
+            } finally {
+                pendingResult.finish()
+            }
         }
     }
 
     override fun onReceive(context: Context, intent: Intent?) {
         val action = intent?.action ?: return
         if (action == dismissAction) {
-            queueDismiss(intent)
+            queueDismiss()
             return
         }
         
+        if (!NotificationCommand.isPlaybackControl(action)) return
         val intentSessionId = intent.getStringExtra("sessionId") ?: return
-        val sessionId = if (intentSessionId.isEmpty()) {
-            NativePlaybackService.controller()?.focusedSessionId ?: return
-        } else {
-            intentSessionId
-        }
-        
-        when (action) {
-            "toggle_session_playback" -> NativePlaybackService.controller()?.togglePlayPause(sessionId)
-            "session_skip_previous" -> NativePlaybackService.controller()?.skipToPrevious(sessionId)
-            "session_skip_next" -> NativePlaybackService.controller()?.skipToNext(sessionId)
-        }
+        deliverControlAction(
+            context = context.applicationContext,
+            action = action,
+            requestedSessionId = intentSessionId,
+            attempt = 0,
+            pendingResult = goAsync()
+        )
     }
 }

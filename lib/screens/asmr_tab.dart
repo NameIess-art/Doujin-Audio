@@ -259,6 +259,13 @@ class _AsmrTabState extends State<AsmrTab>
         .map((work) => work.id)
         .toList(growable: false);
 
+    showAppSnackBar(
+      context,
+      i18n.tr('loading_dot'),
+      icon: Icons.sync_rounded,
+      iconColor: asmrBlue,
+    );
+
     await Future.wait(<Future<void>>[
       controller.refreshCategory(category, searchQuery: _searchQuery),
       if (controller.isAsmrAccountLoggedIn)

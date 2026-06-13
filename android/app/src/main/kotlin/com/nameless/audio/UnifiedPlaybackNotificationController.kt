@@ -23,6 +23,14 @@ internal enum class NotificationCommand(
     next("session_skip_next", 3),
     dismissAll("dismiss_all_playback_notifications", 9),
     restore("restore_playback_notifications", 10);
+
+    companion object {
+        fun isPlaybackControl(actionName: String): Boolean {
+            return actionName == toggle.actionName ||
+                actionName == previous.actionName ||
+                actionName == next.actionName
+        }
+    }
 }
 
 internal data class UnifiedPlaybackNotificationItem(

@@ -62,6 +62,7 @@ class PlaybackSession {
   double nativeBoostGain = 1.0;
   int lastPersistedPositionBucket = 0;
   PlayerState state;
+  String? playbackError;
   PlayerState? previousStateBeforeLastStateEvent;
 
   Stream<PlayerState> get stateStream => _stateController.stream;
@@ -73,28 +74,15 @@ class PlaybackSession {
 
   void applyNativeSnapshot(NativePlaybackSnapshot snapshot) {
     if (snapshot.sessionId != id) return;
+    playbackError = snapshot.error;
     if (isPlaybackStarting && snapshot.playing) {
       isPlaybackStarting = false;
     }
     final nativeProcessingState = _nativeProcessingState(
       snapshot.processingState,
     );
-    final nativeIntendsPlayback =
-        snapshot.playWhenReady &&
-        snapshot.error == null &&
-        nativeProcessingState != ProcessingState.idle &&
-        nativeProcessingState != ProcessingState.completed;
-    var effectivePlaying = snapshot.playing || nativeIntendsPlayback;
+    var effectivePlaying = snapshot.playing;
     var effectiveProcessingState = nativeProcessingState;
-    if (isPlaybackStarting && !effectivePlaying && snapshot.error == null) {
-      effectivePlaying = true;
-      if (effectiveProcessingState == ProcessingState.idle ||
-          effectiveProcessingState == ProcessingState.completed) {
-        effectiveProcessingState = state.processingState == ProcessingState.idle
-            ? ProcessingState.loading
-            : state.processingState;
-      }
-    }
     final nextState = PlayerState(effectivePlaying, effectiveProcessingState);
     if (state != nextState) {
       previousStateBeforeLastStateEvent = state;
@@ -105,7 +93,7 @@ class PlaybackSession {
       lastKnownPosition = snapshot.position;
       _positionController.add(lastKnownPosition);
     }
-    if (duration != snapshot.duration) {
+    if (snapshot.duration != null && duration != snapshot.duration) {
       duration = snapshot.duration;
       _durationController.add(duration);
     }

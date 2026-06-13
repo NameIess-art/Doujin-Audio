@@ -511,13 +511,16 @@ class AsmrTrackFile {
     String? remoteMetadataKind,
     Map<String, Object?>? remoteMetadata,
   }) {
-    var playbackUrl = lowQualityUrl?.trim() ?? '';
-    if (playbackUrl.isEmpty) {
-      playbackUrl = streamUrl?.trim() ?? '';
-    }
-    if (playbackUrl.isEmpty) {
-      playbackUrl = downloadUrl?.trim() ?? '';
-    }
+    final playbackUrls = <String>[
+      lowQualityUrl?.trim() ?? '',
+      streamUrl?.trim() ?? '',
+      downloadUrl?.trim() ?? '',
+    ].where((url) => url.isNotEmpty).toSet().toList(growable: false);
+    final playbackUrl = playbackUrls.isEmpty ? '' : playbackUrls.first;
+    final metadata = Map<String, Object?>.from(
+      remoteMetadata ?? const <String, Object?>{},
+    );
+    metadata['playbackUrls'] = playbackUrls;
     return MusicTrack(
       path: playbackUrl,
       displayName: displayTitle,
@@ -527,7 +530,7 @@ class AsmrTrackFile {
       isSingle: false,
       remoteCoverUrl: remoteCoverUrl,
       remoteMetadataKind: remoteMetadataKind,
-      remoteMetadata: remoteMetadata,
+      remoteMetadata: metadata,
       duration: duration,
       fileSizeBytes: size,
     );

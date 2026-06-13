@@ -99,7 +99,7 @@ extension AudioProviderPlaybackSessions on AudioProvider {
           isNewCompletion &&
           !session.isLoading &&
           !session.isAdvancingAfterCompletion &&
-          session.loopMode != SessionLoopMode.single &&
+          session.playbackError == null &&
           _nextPathFor(session, forward: true) != null &&
           session.lastHandledCompletionGeneration != currentGeneration;
       if (shouldAutoAdvanceAfterCompletion) {
@@ -217,6 +217,7 @@ extension AudioProviderPlaybackSessions on AudioProvider {
           : Uri.file(resolvedNextPath);
 
       final track = _sessionTrackForPath(session, resolvedNextPath);
+      final candidateUris = _candidatePlaybackUrisForTrack(track);
       final coverPath = resolvedCoverPathForTrack(track);
       if (coverPath == null) {
         unawaited(_resolveNotificationCoverPathForTrack(track));
@@ -236,6 +237,9 @@ extension AudioProviderPlaybackSessions on AudioProvider {
         if (!isInitialLoad) {
           session.resetStreamsForNewTrack();
         }
+        if (track != null && track.duration > Duration.zero) {
+          session.setOptimisticDuration(track.duration);
+        }
       } else if (forceStartAtZero) {
         session.setOptimisticPosition(startPosition);
       }
@@ -253,7 +257,8 @@ extension AudioProviderPlaybackSessions on AudioProvider {
                   ? null
                   : Uri.tryParse(track!.remoteCoverUrl!));
         var ok = false;
-        for (var attempt = 0; attempt < 2; attempt++) {
+        final maxAttempts = AppPlatform.usesDesktopPlaybackBridge ? 1 : 2;
+        for (var attempt = 0; attempt < maxAttempts; attempt++) {
           if (attempt > 0) {
             debugPrint(
               'AudioProvider._prepareAndPlay: retrying prepareSession '
@@ -286,12 +291,23 @@ extension AudioProviderPlaybackSessions on AudioProvider {
             ),
             repeatAll: session.loopMode != SessionLoopMode.single,
             shuffle: _isShuffleMode(session.loopMode),
+            candidateUris: candidateUris,
           );
           if (!_sessions.containsKey(session.id) ||
               session.loadGeneration != generation) {
             return;
           }
           if (result.isOk) {
+            final snapshot = result.valueOrNull;
+            if (snapshot != null) {
+              _handleNativePlaybackSnapshot(
+                snapshot.copyWith(
+                  audioEffects: session.audioEffects,
+                  eqCapabilities: session.eqCapabilities,
+                  channelSwapEnabled: session.channelSwapEnabled,
+                ),
+              );
+            }
             ok = true;
             break;
           }
@@ -352,6 +368,20 @@ extension AudioProviderPlaybackSessions on AudioProvider {
       _syncNotificationState();
       _syncKeepCpuAwake();
     }
+  }
+
+  List<Uri>? _candidatePlaybackUrisForTrack(MusicTrack? track) {
+    if (track?.remoteMetadataKind != 'asmr.one') return null;
+    final raw = track?.remoteMetadata?['playbackUrls'];
+    if (raw is! List) return null;
+    final candidates = raw
+        .whereType<String>()
+        .map((value) => Uri.tryParse(value.trim()))
+        .whereType<Uri>()
+        .where((uri) => uri.scheme == 'http' || uri.scheme == 'https')
+        .toSet()
+        .toList(growable: false);
+    return candidates.isEmpty ? null : candidates;
   }
 
   List<Map<String, Object?>> _nativePlaybackQueueFor(

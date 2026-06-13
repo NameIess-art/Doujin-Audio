@@ -378,7 +378,6 @@ class _AsmrTrackTreeNodeState extends State<_AsmrTrackTreeNode> {
     await controller.recordHistory(widget.work);
     await provider.spawnSessionWithQueue(
       tracks,
-      autoPlay: null,
       loopMode: tracks.length > 1
           ? SessionLoopMode.folderSequential
           : SessionLoopMode.single,

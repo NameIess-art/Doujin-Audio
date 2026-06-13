@@ -275,6 +275,7 @@ class _SessionListCardState extends ConsumerState<_SessionListCard> {
       isPlaying: detailState?.isPlaying ?? session.state.playing,
       channelSwapEnabled:
           detailState?.channelSwapEnabled ?? session.channelSwapEnabled,
+      playbackError: session.playbackError,
     );
     if (_lastTrackPath != trackPath ||
         _lastCoverGeneration != coverGeneration) {
@@ -433,12 +434,16 @@ class _SessionListCardState extends ConsumerState<_SessionListCard> {
                               tooltip: isPlaying
                                   ? i18n.tr('pause')
                                   : i18n.tr('play'),
-                              onPressed: () {
-                                AppInteractionFeedback.trigger(
-                                  AppInteractionFeedbackType.selection,
-                                );
-                                provider.toggleSessionPlayPause(session.id);
-                              },
+                              onPressed: sessionView.isLoading
+                                  ? null
+                                  : () {
+                                      AppInteractionFeedback.trigger(
+                                        AppInteractionFeedbackType.selection,
+                                      );
+                                      provider.toggleSessionPlayPause(
+                                        session.id,
+                                      );
+                                    },
                               style: IconButton.styleFrom(
                                 foregroundColor: isPlaying
                                     ? activeColor
@@ -464,15 +469,30 @@ class _SessionListCardState extends ConsumerState<_SessionListCard> {
                                     ),
                                   );
                                 },
-                                child: Icon(
-                                  isPlaying
-                                      ? Icons.pause_rounded
-                                      : Icons.play_arrow_rounded,
-                                  key: ValueKey(isPlaying),
-                                  size: 28,
-                                ),
+                                child: sessionView.isLoading
+                                    ? const SizedBox(
+                                        key: ValueKey('loading'),
+                                        width: 22,
+                                        height: 22,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2.3,
+                                        ),
+                                      )
+                                    : Icon(
+                                        isPlaying
+                                            ? Icons.pause_rounded
+                                            : Icons.play_arrow_rounded,
+                                        key: ValueKey(isPlaying),
+                                        size: 28,
+                                      ),
                               ),
                             ),
+                            if (sessionView.playbackError != null)
+                              Text(
+                                i18n.tr('playback_failed_retry'),
+                                style: Theme.of(context).textTheme.labelSmall
+                                    ?.copyWith(color: cs.error),
+                              ),
                             Consumer(
                               builder: (context, ref, child) {
                                 final settings = ref.watch(

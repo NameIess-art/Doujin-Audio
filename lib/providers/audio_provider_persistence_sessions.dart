@@ -129,9 +129,15 @@ extension AudioProviderPersistenceSessions on AudioProvider {
             ),
             repeatAll: session.loopMode != SessionLoopMode.single,
             shuffle: _isShuffleMode(session.loopMode),
+            candidateUris: _candidatePlaybackUrisForTrack(track),
           );
           if (!prepareResult.isOk) {
             continue;
+          }
+          final preparedSnapshot = prepareResult.valueOrNull;
+          if (AppPlatform.usesDesktopPlaybackBridge &&
+              preparedSnapshot != null) {
+            _handleNativePlaybackSnapshot(preparedSnapshot);
           }
           if (session.channelSwapEnabled ||
               session.audioEffects.hasEnabledEffects) {

@@ -44,6 +44,7 @@ const Map<String, String> appLanguageEn = {
   'search_audio_placeholder': 'Search audio...',
   'scanning_title': 'Scanning...',
   'loading_dot': 'Loading...',
+  'playback_failed_retry': 'Playback failed. Tap to retry',
   'scan_cancel': 'Cancel',
   'scan_current_folder': 'Current folder',
   'scan_found': 'Found',
@@ -329,17 +330,14 @@ const Map<String, String> appLanguageEn = {
   'blur_player_background_subtitle':
       'Use blurred cover as background on player page.',
   'ui_blur_effect': 'UI Blur Effect',
-  'ui_blur_effect_subtitle':
-      'Enable UI blur effects.',
+  'ui_blur_effect_subtitle': 'Enable UI blur effects.',
   'multi_thread_playback': 'Multi-thread playback',
   'multi_thread_playback_subtitle':
       'Allow playing multiple audios simultaneously.',
   'notification_bar': 'Playback notification controls',
-  'notification_bar_subtitle':
-      'Control playback notification display.',
+  'notification_bar_subtitle': 'Control playback notification display.',
   'show_playback_card': 'Show playback card',
-  'show_playback_card_subtitle':
-      'Show playback card at the bottom.',
+  'show_playback_card_subtitle': 'Show playback card at the bottom.',
   'section_detail_info': 'Details',
   'card_info_display': 'Card info display',
   'card_info_display_subtitle': 'Selected {count} / {max}; up to five items.',
@@ -359,8 +357,7 @@ const Map<String, String> appLanguageEn = {
   'section_data_storage': 'Data & Storage',
   'section_system_updates': 'System & Updates',
   'permission_center': 'Permissions & background',
-  'permission_center_subtitle':
-      'Manage optional app permissions.',
+  'permission_center_subtitle': 'Manage optional app permissions.',
   'permission_enabled': 'Enabled',
   'permission_not_enabled': 'Not enabled',
   'system_settings_open_failed':
@@ -378,11 +375,9 @@ const Map<String, String> appLanguageEn = {
   'permission_update_install_description':
       'Only used to install GitHub Release updates you explicitly download.',
   'data_and_support': 'Data & support',
-  'data_and_support_subtitle':
-      'Manage backups and diagnostic reports.',
+  'data_and_support_subtitle': 'Manage backups and diagnostic reports.',
   'export_backup': 'Export backup',
-  'export_backup_subtitle':
-      'Export local database and settings.',
+  'export_backup_subtitle': 'Export local database and settings.',
   'restore_backup': 'Restore backup',
   'restore_backup_subtitle':
       'Validate a backup before restoring its database and settings.',
@@ -393,14 +388,12 @@ const Map<String, String> appLanguageEn = {
   'backup_restored_restart':
       'Backup restored. Restart the app to load the restored data.',
   'export_diagnostics': 'Export diagnostics',
-  'export_diagnostics_subtitle':
-      'Export sanitized diagnostic info.',
+  'export_diagnostics_subtitle': 'Export sanitized diagnostic info.',
   'diagnostics_exported': 'Diagnostic report exported.',
   'operation_failed_retry': 'Operation failed. Please try again.',
   'section_danger_zone': 'Other',
   'allow_background_run': 'Allow background run',
-  'allow_background_run_subtitle':
-      'Prevent system restrictions in background.',
+  'allow_background_run_subtitle': 'Prevent system restrictions in background.',
   'allow_background_run_ready':
       'This app is already allowed to run in the background. Screen-off playback should be more stable.',
   'allow_background_run_checking': 'Checking background run status...',
@@ -424,22 +417,18 @@ const Map<String, String> appLanguageEn = {
   'exact_alarm_settings_open_failed':
       'Could not open exact alarm settings. Please change it manually in system settings.',
   'clear_app_cache': 'Clear app cache',
-  'clear_app_cache_subtitle':
-      'Clear cached images and temp files.',
+  'clear_app_cache_subtitle': 'Clear cached images and temp files.',
   'clear_app_cache_confirm':
       'This clears cache files created by the app. Library source files will not be deleted. Continue?',
   'app_cache_cleaned': 'Cleared {size} of cache.',
   'app_cache_none': 'No app cache to clear.',
   'max_cache_size': 'Max cache size',
-  'max_cache_size_subtitle':
-      'Limit: {size}. Evicts old cache automatically.',
+  'max_cache_size_subtitle': 'Limit: {size}. Evicts old cache automatically.',
   'check': 'Check',
   'check_updates': 'Check for updates',
-  'check_updates_subtitle':
-      'Check for updates on GitHub.',
+  'check_updates_subtitle': 'Check for updates on GitHub.',
   'auto_check_updates': 'Automatically check for updates',
-  'auto_check_updates_subtitle':
-      'Check for updates automatically on startup.',
+  'auto_check_updates_subtitle': 'Check for updates automatically on startup.',
   'check_updates_subtitle_latest': 'You are on the latest version: {version}',
   'checking_updates': 'Checking the latest GitHub release...',
   'latest_version_available': 'New version available',
@@ -473,14 +462,12 @@ const Map<String, String> appLanguageEn = {
   'language': 'Language',
   'language_subtitle': 'Switch UI language',
   'startup_page': 'Page shown on app launch',
-  'startup_page_subtitle':
-      'Default page on app startup.',
+  'startup_page_subtitle': 'Default page on app startup.',
   'startup_page_asmrOne': 'ASMR.ONE',
   'startup_page_library': 'Library',
   'startup_page_playlist': 'Playlist',
   'dlsite_metadata_language': 'DLsite metadata language',
-  'dlsite_metadata_language_subtitle':
-      'Language for fetching DLsite metadata.',
+  'dlsite_metadata_language_subtitle': 'Language for fetching DLsite metadata.',
   'timer_title': 'Timer',
   'set_countdown': 'Set countdown',
   'start_mode': 'Start mode',
@@ -489,8 +476,7 @@ const Map<String, String> appLanguageEn = {
   'set_duration_first': 'Please set a countdown duration first.',
   'cancel_timer': 'Cancel timer',
   'auto_resume_after_timer': 'Scheduled resume',
-  'auto_resume_subtitle':
-      'Resume playback automatically at specified time.',
+  'auto_resume_subtitle': 'Resume playback automatically at specified time.',
   'resume_time': 'Resume time: {time}',
   'tap_choose_resume_time': 'Tap to choose auto-resume time',
   'choose_auto_resume_time': 'Choose auto-resume time',
@@ -557,8 +543,7 @@ const Map<String, String> appLanguageEn = {
   'exclude': 'Exclude',
   'library_edit_empty': 'No imported libraries yet.',
   'subtitle_window_settings': 'Subtitle Floating Window',
-  'subtitle_window_settings_subtitle':
-      'Adjust font, colors, and background.',
+  'subtitle_window_settings_subtitle': 'Adjust font, colors, and background.',
   'subtitle_window_preview': 'Live preview',
   'subtitle_window_preview_hint':
       'Pinned in place while you tune the controls below.',

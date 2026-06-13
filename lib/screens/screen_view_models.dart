@@ -643,7 +643,7 @@ SessionDetailViewState? sessionDetailViewStateFromPlaybackState(
       trackPath: session.currentTrackPath,
       loopMode: session.loopMode,
       isPlaying: session.state.playing,
-      isLoading: session.isLoading,
+      isLoading: session.isLoading || session.isPlaybackStarting,
       channelSwapEnabled: session.channelSwapEnabled,
       volume: session.volume,
       speed: session.speed,

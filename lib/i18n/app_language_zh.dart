@@ -43,6 +43,7 @@ const Map<String, String> appLanguageZh = {
   'search_audio_placeholder': '搜索音频...',
   'scanning_title': '正在扫描...',
   'loading_dot': '正在加载...',
+  'playback_failed_retry': '播放失败，点击重试',
   'scan_cancel': '取消',
   'scan_current_folder': '当前文件夹',
   'scan_found': '已发现',

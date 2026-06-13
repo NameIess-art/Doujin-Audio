@@ -60,9 +60,7 @@ class _AsmrWorkDetailSheet extends StatelessWidget {
         } else {
           final heroAndButton = Column(
             crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _AsmrDetailHero(work: effectiveWork),
-            ],
+            children: [_AsmrDetailHero(work: effectiveWork)],
           );
 
           final detailsSections = Column(
@@ -237,7 +235,11 @@ class _AsmrDetailHero extends StatelessWidget {
               loadingBuilder: (context, child, loadingProgress) =>
                   loadingProgress == null
                   ? child
-                  : CoverLoadingIndicator(
+                  : CoverLoadingArtwork(
+                      placeholder: CoverFallbackArtwork(
+                        seed: work.title,
+                        showIcon: false,
+                      ),
                       size: 36,
                       strokeWidth: 3,
                       color: asmrBlue,

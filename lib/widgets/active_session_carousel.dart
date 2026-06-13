@@ -75,19 +75,8 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
   @override
   void didUpdateWidget(covariant ActiveSessionCarousel oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.compactForFab == widget.compactForFab) return;
-
-    final currentPage = _pageController.hasClients
-        ? (_pageController.page ?? _page).round()
-        : _page.round();
-    _pageController
-      ..removeListener(_handlePageTick)
-      ..dispose();
-    _pageController = PageController(
-      initialPage: currentPage,
-      viewportFraction: 0.90,
-    );
-    _pageController.addListener(_handlePageTick);
+    // Removed dangerous _pageController disposal and recreation
+    // that caused "ScrollController attached to multiple scroll views" crashes.
   }
 
   @override
@@ -103,9 +92,12 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
 
   void _handlePageTick() {
     final current = _pageNotifier.value;
-    final nextPage = _pageController.hasClients
-        ? (_pageController.page ?? current)
-        : current;
+    double nextPage = current;
+    try {
+      if (_pageController.hasClients) {
+        nextPage = _pageController.page ?? current;
+      }
+    } catch (_) {}
     if ((nextPage - current).abs() < 0.001) return;
     _pageNotifier.value = nextPage;
   }
@@ -141,9 +133,9 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
   }
 
   void _ensureValidPage(int length) {
-    if (!_pageController.hasClients || length == 0) return;
+    if (length == 0) return;
     final maxPage = length - 1;
-    final currentPage = (_pageController.page ?? 0).round();
+    final currentPage = _pageNotifier.value.round();
     if (currentPage <= maxPage) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_pageController.hasClients) return;
@@ -209,6 +201,7 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
                   session: session,
                   provider: provider,
                   coverPathFuture: _sessionCoverFutureForTrack(provider, track),
+                  compact: widget.compactForFab,
                   onOpen: () => _openSessionDetail(context, session),
                 ),
               ),

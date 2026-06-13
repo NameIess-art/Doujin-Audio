@@ -295,13 +295,19 @@ extension _MainScreenLayout on _MainScreenState {
         Platform.isWindows ||
         MediaQuery.orientationOf(context) == Orientation.landscape;
 
-    return Container(
-      width: isWindows ? 260 : 292,
+    final double expandedWidth = isWindows ? 260 : 292;
+    final double collapsedWidth = isWindows ? 80 : 92;
+    final double containerWidth = _isMenuCollapsed ? collapsedWidth : expandedWidth;
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeOutCubic,
+      width: containerWidth,
       margin: isWindows
           ? EdgeInsets.zero
           : const EdgeInsets.fromLTRB(16, 18, 8, 18),
       padding: isWindows
-          ? const EdgeInsets.fromLTRB(16, 16, 16, 16)
+          ? const EdgeInsets.fromLTRB(8, 4, 8, 8)
           : const EdgeInsets.fromLTRB(10, 16, 10, 10),
       decoration: BoxDecoration(
         color: isWindows ? Colors.transparent : cs.surfaceContainerLow,
@@ -313,105 +319,135 @@ extension _MainScreenLayout on _MainScreenState {
             ? null
             : [
                 BoxShadow(
-                  color: cs.shadow.withValues(alpha: 0.1),
-                  blurRadius: 28,
-                  offset: const Offset(0, 14),
+                  color: Colors.black.withValues(alpha: 0.1),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
                 ),
               ],
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (!isWindows)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(10, 2, 10, 14),
-              child: Row(
-                children: [
-                  Container(
-                    width: 38,
-                    height: 38,
-                    decoration: BoxDecoration(
-                      color: cs.primaryContainer,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Icon(
-                      Icons.graphic_eq_rounded,
-                      color: cs.onPrimaryContainer,
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      i18n.tr('asmr_player'),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
           Expanded(
-            child: Theme(
-              data: Theme.of(context).copyWith(
-                navigationRailTheme: Theme.of(context).navigationRailTheme
-                    .copyWith(
-                      indicatorShape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      indicatorColor: isDark
-                          ? cs.primary.withValues(alpha: 0.15)
-                          : cs.primaryContainer.withValues(alpha: 0.6),
-                    ),
-              ),
-              child: NavigationRail(
-                backgroundColor: Colors.transparent,
-                selectedIndex: _currentIndex,
-                onDestinationSelected: _switchPage,
-                extended: true,
-                minExtendedWidth: isWindows ? 228 : 256,
-                useIndicator: true,
-                groupAlignment: isWindows
-                    ? -1.0
-                    : 0.0, // Top aligned for desktop apps
-                destinations: _MainScreenState._destinations
-                    .asMap()
-                    .entries
-                    .map((entry) {
-                      final idx = entry.key;
-                      final item = entry.value;
-                      final isAsmr = idx == 0;
-                      final isSelected = idx == _currentIndex;
-
-                      return NavigationRailDestination(
-                        icon: Icon(
-                          item.icon,
-                          color: isSelected && isAsmr ? asmrBlue : null,
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final rail = Theme(
+                  data: Theme.of(context).copyWith(
+                    navigationRailTheme: Theme.of(context).navigationRailTheme
+                        .copyWith(
+                          indicatorShape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          indicatorColor: isDark
+                              ? cs.primary.withValues(alpha: 0.15)
+                              : cs.primaryContainer.withValues(alpha: 0.6),
                         ),
+                  ),
+                  child: NavigationRail(
+                    backgroundColor: Colors.transparent,
+                    selectedIndex: _currentIndex,
+                    onDestinationSelected: _switchPage,
+                    extended: !_isMenuCollapsed,
+                    minWidth: 64,
+                    minExtendedWidth: isWindows ? 212 : 236,
+                    useIndicator: true,
+                    groupAlignment: -1.0,
+                    leading: isWindows
+                        ? Container(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            alignment: _isMenuCollapsed ? Alignment.center : Alignment.centerLeft,
+                            child: Padding(
+                              padding: EdgeInsets.only(left: _isMenuCollapsed ? 0 : 12),
+                              child: IconButton(
+                                icon: Icon(_isMenuCollapsed ? Icons.menu_rounded : Icons.menu_open_rounded),
+                                onPressed: _toggleMenuCollapsed,
+                              ),
+                            ),
+                          )
+                        : Container(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            alignment: _isMenuCollapsed ? Alignment.center : Alignment.centerLeft,
+                            child: Padding(
+                              padding: EdgeInsets.only(left: _isMenuCollapsed ? 0 : 6),
+                              child: _isMenuCollapsed
+                                  ? IconButton(
+                                      icon: const Icon(Icons.menu_rounded),
+                                      onPressed: _toggleMenuCollapsed,
+                                    )
+                                  : Row(
+                                      mainAxisAlignment: MainAxisAlignment.start,
+                                      children: [
+                                        Container(
+                                          width: 38,
+                                          height: 38,
+                                          decoration: BoxDecoration(
+                                            color: cs.primaryContainer,
+                                            borderRadius: BorderRadius.circular(12),
+                                          ),
+                                          child: Icon(
+                                            Icons.graphic_eq_rounded,
+                                            color: cs.onPrimaryContainer,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 10),
+                                        Expanded(
+                                          child: Text(
+                                            i18n.tr('asmr_player'),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                              fontWeight: FontWeight.w800,
+                                            ),
+                                          ),
+                                        ),
+                                        IconButton(
+                                          icon: const Icon(Icons.menu_open_rounded),
+                                          onPressed: _toggleMenuCollapsed,
+                                        ),
+                                      ],
+                                    ),
+                            ),
+                          ),
+                    destinations: _MainScreenState._destinations
+                        .asMap()
+                        .entries
+                        .map((entry) {
+                      final item = entry.value;
+                      final isSelected = _currentIndex == entry.key;
+                      final isAsmr = isSelected && item.labelKey == 'asmr';
+                      return NavigationRailDestination(
+                        icon: Icon(item.icon),
                         selectedIcon: Icon(
                           item.selectedIcon,
                           color: isAsmr ? asmrBlue : null,
                         ),
                         label: Text(
-                          i18n.tr(item.labelKey),
+                          _isMenuCollapsed ? '' : i18n.tr(item.labelKey),
                           style: isSelected
                               ? TextStyle(
                                   color: isAsmr ? asmrBlue : cs.primary,
-                                  fontWeight: FontWeight.w800,
+                                  fontWeight: FontWeight.w700,
                                 )
-                              : TextStyle(
-                                  color: cs.onSurfaceVariant.withValues(
-                                    alpha: 0.8,
-                                  ),
-                                  fontWeight: FontWeight.w600,
-                                ),
+                              : null,
                         ),
                       );
-                    })
-                    .toList(),
-              ),
+                    }).toList(),
+                  ),
+                );
+
+                if (constraints.maxHeight < 380) {
+                  return SingleChildScrollView(
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        minHeight: constraints.maxHeight,
+                        maxHeight: 380,
+                      ),
+                      child: rail,
+                    ),
+                  );
+                }
+                return rail;
+              },
             ),
           ),
           if (overlaySessions.isNotEmpty)
@@ -421,6 +457,7 @@ extension _MainScreenLayout on _MainScreenState {
                 sessions: overlaySessions,
                 provider: ref.read(audioProviderFacadeProvider),
                 i18n: i18n,
+                compactForFab: _isMenuCollapsed,
                 onOpenSession: (sessionId) {
                   Navigator.of(
                     context,
@@ -433,26 +470,7 @@ extension _MainScreenLayout on _MainScreenState {
     );
   }
 
-  void _measureBottomDock() {
-    final safeAreaBox =
-        _bottomDockKey.currentContext?.findRenderObject() as RenderBox?;
-    if (safeAreaBox != null && safeAreaBox.hasSize && mounted) {
-      final h = safeAreaBox.size.height;
-      if (h > 0 && (_measuredBottomInset - h).abs() > 0.5) {
-        _setLocalState(() => _measuredBottomInset = h);
-      }
-    }
-  }
-
   double _mobileContentInset({required bool hasNowPlaying}) {
-    // If we just toggled the card, the render box size is still stale.
-    // Use predicted values for one frame until post-frame measurement completes.
-    if (_needsMeasurement) {
-      final systemBottom = MediaQuery.of(context).padding.bottom;
-      if (hasNowPlaying) return systemBottom + 150;
-      return systemBottom + 60;
-    }
-
     // Read the content column render box live so it stays accurate when the
     // playback card appears or disappears without a metrics change.
     final contentBox =

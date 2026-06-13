@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart' hide Consumer;
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../i18n/app_language_provider.dart';
 import '../providers/audio_provider.dart';
@@ -52,12 +53,13 @@ class _MainScreenState extends ConsumerState<MainScreen>
       NotificationsPlatformService();
 
   int _currentIndex = 1;
+  bool _isMenuCollapsed = false;
   late final List<Widget> _pages;
   final Set<int> _visitedPageIndices = <int>{};
   final Object _pageSwitchInteraction = Object();
   final GlobalKey _bottomDockKey = GlobalKey();
   final GlobalKey _dockContentKey = GlobalKey();
-  double _measuredBottomInset = 0;
+
   bool _notificationPermissionCheckDone = false;
   bool _notificationPermissionCheckQueued = false;
   bool _notificationSettingsDialogVisible = false;
@@ -69,7 +71,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
   final PermissionActionController _permissionActionController =
       PermissionActionController();
   bool _timerOverlayPrimed = false;
-  bool _needsMeasurement = true;
+
   bool _bootstrapDone = false;
   bool _isDataReady = false;
   bool? _lastShowCard;
@@ -123,6 +125,13 @@ class _MainScreenState extends ConsumerState<MainScreen>
       PlaylistTab(onTimerTap: _openTimerFromPlaylist),
       const SettingsTab(),
     ];
+    SharedPreferences.getInstance().then((prefs) {
+      if (mounted) {
+        setState(() {
+          _isMenuCollapsed = prefs.getBool('desktop_menu_collapsed') ?? false;
+        });
+      }
+    });
     WidgetsBinding.instance.addObserver(this);
     _notificationsPlatformService.setOpenSessionHandler(
       _queueNotificationSessionNavigation,
@@ -152,6 +161,15 @@ class _MainScreenState extends ConsumerState<MainScreen>
       mode: provider.timerMode,
     );
     _openTimerSettingsPage(context, timerState);
+  }
+
+  void _toggleMenuCollapsed() {
+    setState(() {
+      _isMenuCollapsed = !_isMenuCollapsed;
+    });
+    SharedPreferences.getInstance().then((prefs) {
+      prefs.setBool('desktop_menu_collapsed', _isMenuCollapsed);
+    });
   }
 
   Future<bool> _ensureInstallPermissionThenRun(
@@ -437,21 +455,15 @@ class _MainScreenState extends ConsumerState<MainScreen>
     if (_isKeyboardVisible) return;
 
     if (!_hasRecoverableViewMetricChange()) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _measureBottomDock();
-      });
       return;
     }
 
     setState(() {
       _metricsEpoch++;
-      _needsMeasurement = true;
-      _measuredBottomInset = 0;
     });
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      _measureBottomDock();
       ref
           .read(audioProviderFacadeProvider)
           .scheduleUiWarmup(currentPageIndex: _currentIndex, immediate: true);
@@ -716,7 +728,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
     final visibleSessions = overlayUi.visibleSessions;
     if (_lastShowCard != showCard) {
       _lastShowCard = showCard;
-      _needsMeasurement = true;
     }
     final hasNowPlaying = overlayUi.hasNowPlaying;
     if (activeSessionCount > 0 &&
@@ -750,11 +761,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
         ? 0.0
         : _mobileContentInset(hasNowPlaying: hasNowPlaying);
 
-    if (_needsMeasurement) {
-      _needsMeasurement = false;
-      WidgetsBinding.instance.addPostFrameCallback((_) => _measureBottomDock());
-    }
-
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: overlayStyle,
       child: Scaffold(
@@ -774,6 +780,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
                     children: [
                       if (isDesktop)
                         Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
                             _buildDesktopNavigation(
                               context,

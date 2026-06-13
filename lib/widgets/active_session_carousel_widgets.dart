@@ -6,12 +6,14 @@ class _ActiveSessionCard extends ConsumerWidget {
     required this.provider,
     required this.coverPathFuture,
     required this.onOpen,
+    this.compact = false,
   });
 
   final PlaybackSession session;
   final AudioProvider provider;
   final Future<String?> coverPathFuture;
   final VoidCallback onOpen;
+  final bool compact;
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final cs = Theme.of(context).colorScheme;
@@ -87,14 +89,22 @@ class _ActiveSessionCard extends ConsumerWidget {
                     ),
                   ],
           ),
-          child: _buildCardContent(
-            context,
-            cs,
-            isPlaying,
-            view,
-            currentTrack,
-            displayName,
-          ),
+          child: compact
+              ? Center(
+                  child: _ActiveSessionCover(
+                    sessionId: session.id,
+                    track: currentTrack,
+                    coverPathFuture: coverPathFuture,
+                  ),
+                )
+              : _buildCardContent(
+                  context,
+                  cs,
+                  isPlaying,
+                  view,
+                  currentTrack,
+                  displayName,
+                ),
         ),
       ),
     );
@@ -563,7 +573,8 @@ class _ActiveSessionCover extends ConsumerWidget {
                 loadingBuilder: (context, child, loadingProgress) =>
                     loadingProgress == null
                     ? child
-                    : CoverLoadingIndicator(
+                    : CoverLoadingArtwork(
+                        placeholder: fallback(hideIcon: true),
                         size: 28,
                         strokeWidth: 2.6,
                         color: cs.primary,
@@ -576,7 +587,8 @@ class _ActiveSessionCover extends ConsumerWidget {
                 retryFutureBuilder: () =>
                     _sessionCoverFutureForTrack(provider, track),
                 fallbackBuilder: (_) => fallback(),
-                loadingBuilder: (_) => CoverLoadingIndicator(
+                loadingBuilder: (_) => CoverLoadingArtwork(
+                  placeholder: fallback(hideIcon: true),
                   size: 28,
                   strokeWidth: 2.6,
                   color: cs.primary,

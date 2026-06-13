@@ -8,7 +8,6 @@ class _AsmrWorkCover extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
     final width = this.width;
     final height = width * 0.8;
     final url = this.url.trim();
@@ -39,7 +38,15 @@ class _AsmrWorkCover extends StatelessWidget {
                   if (loadingProgress == null) {
                     return child;
                   }
-                  return _AsmrCoverLoading(seed: url, colorScheme: cs);
+                  return CoverLoadingArtwork(
+                    placeholder: CoverFallbackArtwork(
+                      seed: url,
+                      showIcon: false,
+                      compact: true,
+                    ),
+                    size: 36,
+                    strokeWidth: 3,
+                  );
                 },
                 fallbackBuilder: (_) => CoverFallbackArtwork(
                   seed: url,
@@ -65,37 +72,6 @@ String _asmrWorkListCoverUrl(AsmrWork work) {
     }
   }
   return '';
-}
-
-class _AsmrCoverLoading extends StatelessWidget {
-  const _AsmrCoverLoading({required this.seed, required this.colorScheme});
-
-  final String seed;
-  final ColorScheme colorScheme;
-
-  @override
-  Widget build(BuildContext context) {
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        CoverFallbackArtwork(
-          seed: seed,
-          showIcon: false,
-          compact: true,
-          icon: Icons.graphic_eq_rounded,
-        ),
-        Center(
-          child: SizedBox.square(
-            dimension: 36,
-            child: CircularProgressIndicator(
-              strokeWidth: 3,
-              color: colorScheme.primary,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
 }
 
 class _AsmrWorkSkeletonCard extends StatelessWidget {

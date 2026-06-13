@@ -171,6 +171,8 @@ class NativePlaybackBundleSnapshot {
 abstract interface class NativePlaybackBridgeBase {
   Stream<NativePlaybackSnapshot> get snapshots;
 
+  bool get supportsDeferredSessionRegistration;
+
   void startListening();
 
   Future<void> stopListening();
@@ -194,6 +196,7 @@ abstract interface class NativePlaybackBridgeBase {
     bool repeatAll = false,
     bool shuffle = false,
     List<Uri>? candidateUris,
+    bool deferPlayerCreation = false,
   });
 
   Future<NativeResult<NativePlaybackSnapshot>> play(String sessionId);
@@ -276,6 +279,9 @@ class NativePlaybackBridge implements NativePlaybackBridgeBase {
 
   @override
   Stream<NativePlaybackSnapshot> get snapshots => _controller.stream;
+
+  @override
+  bool get supportsDeferredSessionRegistration => true;
 
   @override
   void startListening() {
@@ -370,6 +376,7 @@ class NativePlaybackBridge implements NativePlaybackBridgeBase {
     bool repeatAll = false,
     bool shuffle = false,
     List<Uri>? candidateUris,
+    bool deferPlayerCreation = false,
   }) {
     return _invokeSnapshot(NativePlaybackMethod.prepareSession, {
       'sessionId': sessionId,
@@ -392,6 +399,7 @@ class NativePlaybackBridge implements NativePlaybackBridgeBase {
       if (queueStartIndex != null) 'queueStartIndex': queueStartIndex,
       'repeatAll': repeatAll,
       'shuffle': shuffle,
+      'deferPlayerCreation': deferPlayerCreation,
     });
   }
 

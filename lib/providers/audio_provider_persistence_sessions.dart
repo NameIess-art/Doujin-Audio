@@ -95,10 +95,11 @@ extension AudioProviderPersistenceSessions on AudioProvider {
         final session = _sessions[id];
         if (session == null) continue;
 
-        // Only prepare the first (focused) session to save memory.
-        // Others will be lazily prepared when the user interacts with them.
         final shouldPrepareNow = id == firstSessionId;
-        if (!shouldPrepareNow) continue;
+        if (!shouldPrepareNow &&
+            !_nativePlaybackRepository.supportsDeferredSessionRegistration) {
+          continue;
+        }
 
         try {
           final track = _sessionTrackForPath(session, session.currentTrackPath);
@@ -130,6 +131,7 @@ extension AudioProviderPersistenceSessions on AudioProvider {
             repeatAll: session.loopMode != SessionLoopMode.single,
             shuffle: _isShuffleMode(session.loopMode),
             candidateUris: _candidatePlaybackUrisForTrack(track),
+            deferPlayerCreation: !shouldPrepareNow,
           );
           if (!prepareResult.isOk) {
             continue;

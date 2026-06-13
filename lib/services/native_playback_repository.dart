@@ -19,6 +19,9 @@ class NativePlaybackRepository {
 
   Stream<NativePlaybackSnapshot> get snapshots => _bridge.snapshots;
 
+  bool get supportsDeferredSessionRegistration =>
+      _bridge.supportsDeferredSessionRegistration;
+
   void startListening() => _bridge.startListening();
 
   Future<void> stopListening() => _bridge.stopListening();
@@ -42,6 +45,7 @@ class NativePlaybackRepository {
     bool repeatAll = false,
     bool shuffle = false,
     List<Uri>? candidateUris,
+    bool deferPlayerCreation = false,
   }) {
     return _bridge.prepareSession(
       sessionId: sessionId,
@@ -60,6 +64,7 @@ class NativePlaybackRepository {
       repeatAll: repeatAll,
       shuffle: shuffle,
       candidateUris: candidateUris,
+      deferPlayerCreation: deferPlayerCreation,
     );
   }
 

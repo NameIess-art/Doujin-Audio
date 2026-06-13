@@ -558,16 +558,11 @@ class _LibraryCoverThumbnail extends ConsumerWidget {
                   provider.coverPathFutureForFolder(folderPath),
               duration: Duration.zero,
               fallbackBuilder: (_) => fallback(),
-              loadingBuilder: (_) => Stack(
-                fit: StackFit.expand,
-                children: [
-                  fallback(hideIcon: true),
-                  CoverLoadingIndicator(
-                    size: 34,
-                    strokeWidth: 3,
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
-                ],
+              loadingBuilder: (_) => CoverLoadingArtwork(
+                placeholder: fallback(hideIcon: true),
+                size: 34,
+                strokeWidth: 3,
+                color: Theme.of(context).colorScheme.primary,
               ),
               imageBuilder: (context, coverPath) {
                 final dpr = MediaQuery.devicePixelRatioOf(context);
@@ -602,9 +597,10 @@ class _LibraryTrackCoverThumbnail extends ConsumerWidget {
     final provider = ref.read(audioProviderFacadeProvider);
     final coverPathFuture = provider.coverPathFutureForTrack(track);
 
-    Widget fallback() {
+    Widget fallback({bool hideIcon = false}) {
       return CoverFallbackArtwork(
         seed: track.displayName,
+        showIcon: !hideIcon,
         compact: true,
         iconSize: 28,
       );
@@ -625,7 +621,8 @@ class _LibraryTrackCoverThumbnail extends ConsumerWidget {
             retryFutureBuilder: () => provider.coverPathFutureForTrack(track),
             duration: Duration.zero,
             fallbackBuilder: (_) => fallback(),
-            loadingBuilder: (_) => CoverLoadingIndicator(
+            loadingBuilder: (_) => CoverLoadingArtwork(
+              placeholder: fallback(hideIcon: true),
               size: 34,
               strokeWidth: 3,
               color: Theme.of(context).colorScheme.primary,

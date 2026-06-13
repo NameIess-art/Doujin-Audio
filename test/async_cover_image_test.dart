@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -6,6 +7,37 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/widgets/async_cover_image.dart';
 
 void main() {
+  testWidgets('AsyncCoverImage shows fallback artwork while loading', (
+    tester,
+  ) async {
+    final completer = Completer<String?>();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SizedBox(
+          width: 120,
+          height: 90,
+          child: AsyncCoverImage(
+            future: completer.future,
+            duration: Duration.zero,
+            imageBuilder: (_, path) => Text('loaded:$path'),
+            fallbackBuilder: (_) =>
+                const CoverFallbackArtwork(seed: 'pending-cover'),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byType(CoverFallbackArtwork), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+
+    completer.complete(null);
+    await tester.pump();
+
+    expect(find.byType(CoverFallbackArtwork), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+  });
+
   testWidgets('AsyncCoverImage retries when the first path is empty', (
     tester,
   ) async {

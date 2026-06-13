@@ -797,21 +797,25 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                               fit: BoxFit.cover,
                               cacheWidth:
                                   (MediaQuery.sizeOf(context).width *
-                                          MediaQuery.devicePixelRatioOf(context))
+                                          MediaQuery.devicePixelRatioOf(
+                                            context,
+                                          ))
                                       .round(),
                               color: cs.surface.withValues(alpha: 0.45),
                               colorBlendMode: BlendMode.darken,
-                              loadingBuilder: (context, child, loadingProgress) =>
-                                  loadingProgress == null
-                                  ? child
-                                  : ColoredBox(
-                                      color: cs.surfaceDim,
-                                      child: CoverLoadingIndicator(
-                                        size: 36,
-                                        strokeWidth: 3,
-                                        color: cs.primary,
-                                      ),
-                                    ),
+                              loadingBuilder:
+                                  (context, child, loadingProgress) =>
+                                      loadingProgress == null
+                                      ? child
+                                      : CoverLoadingArtwork(
+                                          placeholder: CoverFallbackArtwork(
+                                            seed: track.displayName,
+                                            showIcon: false,
+                                          ),
+                                          size: 36,
+                                          strokeWidth: 3,
+                                          color: cs.primary,
+                                        ),
                               fallbackBuilder: (_) => CoverFallbackArtwork(
                                 seed: track.displayName,
                                 showIcon: false,
@@ -820,16 +824,22 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                           : AsyncCoverImage(
                               duration: Duration.zero,
                               future: coverPathFuture,
-                              initialPath: provider.resolvedCoverPathForTrack(track),
+                              initialPath: provider.resolvedCoverPathForTrack(
+                                track,
+                              ),
                               retryFutureBuilder: () =>
                                   _coverFutureForTrack(provider, track),
                               fallbackBuilder: (_) => CoverFallbackArtwork(
-                                seed: track?.displayName ?? session.currentTrackPath,
+                                seed:
+                                    track?.displayName ??
+                                    session.currentTrackPath,
                                 showIcon: false,
                               ),
                               imageBuilder: (context, coverPath) {
                                 final mediaSize = MediaQuery.sizeOf(context);
-                                final dpr = MediaQuery.devicePixelRatioOf(context);
+                                final dpr = MediaQuery.devicePixelRatioOf(
+                                  context,
+                                );
                                 return RetryingFileImage(
                                   path: coverPath,
                                   cacheWidth: (mediaSize.width * dpr).round(),

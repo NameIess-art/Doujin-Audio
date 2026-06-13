@@ -445,6 +445,7 @@ class NativePlaybackService : MediaSessionService() {
             .coerceIn(0, queue.lastIndex)
         val repeatAll = args["repeatAll"] as? Boolean ?: false
         val shuffle = args["shuffle"] as? Boolean ?: false
+        val deferPlayerCreation = args["deferPlayerCreation"] as? Boolean ?: false
         if (autoPlay) {
             notificationsDismissed = false
             playbackSuspended = false
@@ -465,9 +466,12 @@ class NativePlaybackService : MediaSessionService() {
                 repeatOne = repeatOne,
                 repeatAll = repeatAll,
                 shuffleModeEnabled = shuffle,
-                autoPlay = autoPlay
+                autoPlay = autoPlay,
+                deferPlayerCreation = deferPlayerCreation
             )
-            focusSession(sessionId)
+            if (!deferPlayerCreation) {
+                focusSession(sessionId)
+            }
             publishSessionState(sessionId)
             ensureTicker()
             persistSessionStateNow()
@@ -529,25 +533,82 @@ class NativePlaybackService : MediaSessionService() {
 
     fun skipToNext(sessionId: String): Map<String, Any?> {
         val session = sessions[sessionId] ?: return errorResult("Session not found")
-        session.playerOrNull()?.seekToNextMediaItem()
+        session.lastUsedMs = System.currentTimeMillis()
+        focusSession(sessionId)
+        session.ensurePlayer().seekToNextMediaItem()
+        evictPlayersIfNeeded()
+        publishSessionState(sessionId)
+        persistSessionStateNow()
+        syncForegroundState()
         return okResult(session.snapshot())
     }
 
     fun skipToPrevious(sessionId: String): Map<String, Any?> {
         val session = sessions[sessionId] ?: return errorResult("Session not found")
-        session.playerOrNull()?.seekToPreviousMediaItem()
+        session.lastUsedMs = System.currentTimeMillis()
+        focusSession(sessionId)
+        session.ensurePlayer().seekToPreviousMediaItem()
+        evictPlayersIfNeeded()
+        publishSessionState(sessionId)
+        persistSessionStateNow()
+        syncForegroundState()
         return okResult(session.snapshot())
     }
 
     fun togglePlayPause(sessionId: String): Map<String, Any?> {
         val session = sessions[sessionId] ?: return errorResult("Session not found")
-        val player = session.playerOrNull() ?: return errorResult("Player not found")
+        session.lastUsedMs = System.currentTimeMillis()
+        pendingAudioFocusResumeSessionIds.remove(sessionId)
+        notificationsDismissed = false
+        playbackSuspended = false
+        focusSession(sessionId)
+        val player = session.ensurePlayer()
         if (player.playWhenReady) {
             player.pause()
         } else {
             player.play()
         }
+        evictPlayersIfNeeded()
+        publishSessionState(sessionId)
+        ensureTicker()
+        persistSessionStateNow()
+        ensureStatePersistenceTicker()
+        syncForegroundState()
         return okResult(session.snapshot())
+    }
+
+    fun executeNotificationAction(
+        action: String,
+        requestedSessionId: String
+    ): Map<String, Any?> {
+        val storedSessions = if (
+            requestedSessionId.isBlank() ||
+            !sessions.containsKey(requestedSessionId)
+        ) {
+            NativePlaybackStateStore.loadSessions(this)
+        } else {
+            emptyList()
+        }
+        val sessionId = resolveNotificationSessionId(
+            requestedSessionId = requestedSessionId,
+            focusedSessionId = focusedSessionId,
+            activeSessionIds = sessions.values
+                .filter { it.isPlaying() }
+                .map { it.sessionId },
+            existingSessionIds = sessions.keys,
+            storedActiveSessionIds = storedSessions
+                .filter { it.playing || it.playWhenReady }
+                .map { it.sessionId },
+            storedSessionIds = storedSessions.map { it.sessionId }
+        )
+        if (sessionId.isEmpty()) return errorResult("No focused session")
+        restorePersistedSessionForNotification(sessionId, storedSessions)
+        return when (action) {
+            NotificationCommand.toggle.actionName -> togglePlayPause(sessionId)
+            NotificationCommand.previous.actionName -> skipToPrevious(sessionId)
+            NotificationCommand.next.actionName -> skipToNext(sessionId)
+            else -> errorResult("Unknown notification action")
+        }
     }
 
     fun seek(sessionId: String, positionMs: Long): Map<String, Any?> {
@@ -1303,6 +1364,18 @@ class NativePlaybackService : MediaSessionService() {
         persistSessionStateNow()
     }
 
+    private fun restorePersistedSessionForNotification(
+        sessionId: String,
+        loadedSessions: List<StoredNativePlaybackSession>
+    ) {
+        if (sessions.containsKey(sessionId)) return
+        sessionRestorer.restore(
+            storedSessions = loadedSessions.filter { it.sessionId == sessionId },
+            autoPlay = { false },
+            onRestored = ::publishSessionState
+        )
+    }
+
     private fun requestAudioFocusIfNeeded() {
         if (audioFocusHeld) return
         val manager = getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: run {
@@ -1489,6 +1562,24 @@ class NativePlaybackService : MediaSessionService() {
     }
 
 
+}
+
+internal fun resolveNotificationSessionId(
+    requestedSessionId: String,
+    focusedSessionId: String?,
+    activeSessionIds: Collection<String>,
+    existingSessionIds: Collection<String>,
+    storedActiveSessionIds: Collection<String>,
+    storedSessionIds: Collection<String>
+): String {
+    return requestedSessionId.ifBlank {
+        focusedSessionId
+            ?: activeSessionIds.firstOrNull()
+            ?: existingSessionIds.firstOrNull()
+            ?: storedActiveSessionIds.firstOrNull()
+            ?: storedSessionIds.firstOrNull()
+            ?: ""
+    }
 }
 
 private fun playWhenReadyReasonName(reason: Int): String {

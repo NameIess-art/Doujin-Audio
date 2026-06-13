@@ -98,6 +98,9 @@ class DartPlaybackBridge implements NativePlaybackBridgeBase {
   Stream<NativePlaybackSnapshot> get snapshots => _snapshots.stream;
 
   @override
+  bool get supportsDeferredSessionRegistration => false;
+
+  @override
   void startListening() {}
 
   @override
@@ -130,6 +133,7 @@ class DartPlaybackBridge implements NativePlaybackBridgeBase {
     bool repeatAll = false,
     bool shuffle = false,
     List<Uri>? candidateUris,
+    bool deferPlayerCreation = false,
   }) async {
     if (uri.scheme == 'content') {
       return const NativeFailure(

@@ -451,7 +451,7 @@ void main() {
     );
 
     test(
-      'audio effects lazily prepare a restored session before native sync',
+      'restored sessions register natively without eagerly creating players',
       () async {
         const firstSessionId = 'restored_first';
         const secondSessionId = 'restored_second';
@@ -514,6 +514,8 @@ void main() {
 
         final preparedSessionIds = <String>{};
         var secondPrepareCalls = 0;
+        bool? firstDeferredPlayerCreation;
+        bool? secondDeferredPlayerCreation;
         var setAudioEffectsCalls = 0;
         Map<Object?, Object?>? lastEffects;
 
@@ -548,8 +550,12 @@ void main() {
                   final args = call.arguments as Map<Object?, Object?>;
                   final sessionId = args['sessionId'] as String;
                   preparedSessionIds.add(sessionId);
+                  final deferred = args['deferPlayerCreation'] as bool?;
                   if (sessionId == secondSessionId) {
                     secondPrepareCalls++;
+                    secondDeferredPlayerCreation = deferred;
+                  } else {
+                    firstDeferredPlayerCreation = deferred;
                   }
                   return <String, Object?>{
                     'ok': true,
@@ -595,7 +601,10 @@ void main() {
 
         final secondSession = restoredProvider.sessionById(secondSessionId);
         expect(secondSession, isNotNull);
-        expect(secondSession!.loadedPath, isNull);
+        expect(firstDeferredPlayerCreation, isFalse);
+        expect(secondDeferredPlayerCreation, isTrue);
+        expect(secondPrepareCalls, 1);
+        expect(secondSession!.loadedPath, secondTrack.path);
 
         await restoredProvider.setSessionSkipSilence(secondSessionId, true);
 

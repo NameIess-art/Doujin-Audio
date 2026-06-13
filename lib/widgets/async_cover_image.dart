@@ -174,7 +174,7 @@ class _AsyncCoverImageState extends State<AsyncCoverImage> {
       final loadingBuilder = widget.loadingBuilder;
       content = loadingBuilder != null
           ? loadingBuilder(context)
-          : const CoverLoadingIndicator();
+          : CoverLoadingArtwork(placeholder: widget.fallbackBuilder(context));
     } else {
       content = widget.fallbackBuilder(context);
     }
@@ -227,6 +227,36 @@ class CoverLoadingIndicator extends StatelessWidget {
           color: color ?? cs.primary,
         ),
       ),
+    );
+  }
+}
+
+class CoverLoadingArtwork extends StatelessWidget {
+  const CoverLoadingArtwork({
+    super.key,
+    required this.placeholder,
+    this.size = 32,
+    this.strokeWidth = 2.8,
+    this.color,
+  });
+
+  final Widget placeholder;
+  final double size;
+  final double strokeWidth;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        placeholder,
+        CoverLoadingIndicator(
+          size: size,
+          strokeWidth: strokeWidth,
+          color: color,
+        ),
+      ],
     );
   }
 }
@@ -559,7 +589,15 @@ class _RetryingImageState extends State<RetryingImage> {
       colorBlendMode: widget.colorBlendMode,
       filterQuality: widget.filterQuality,
       gaplessPlayback: widget.gaplessPlayback,
-      loadingBuilder: widget.loadingBuilder,
+      loadingBuilder: (context, child, loadingProgress) {
+        if (loadingProgress == null) {
+          return child;
+        }
+        final loadingBuilder = widget.loadingBuilder;
+        return loadingBuilder != null
+            ? loadingBuilder(context, child, loadingProgress)
+            : CoverLoadingArtwork(placeholder: widget.fallbackBuilder(context));
+      },
       errorBuilder: (context, error, stackTrace) {
         _scheduleRetry(provider);
         return widget.fallbackBuilder(context);

@@ -629,15 +629,10 @@ class _FolderCoverSelectorState extends State<_FolderCoverSelector> {
                         cacheWidth:
                             (140 * MediaQuery.devicePixelRatioOf(context))
                                 .round(),
-                        fallbackBuilder: (_) => DecoratedBox(
-                          decoration: BoxDecoration(
-                            color: cs.surfaceContainerHighest,
-                          ),
-                          child: Icon(
-                            Icons.image_not_supported_rounded,
-                            color: cs.onSurfaceVariant,
-                            size: 42,
-                          ),
+                        fallbackBuilder: (_) => CoverFallbackArtwork(
+                          seed: _images[index],
+                          icon: Icons.image_not_supported_rounded,
+                          iconSize: 42,
                         ),
                       );
                     },

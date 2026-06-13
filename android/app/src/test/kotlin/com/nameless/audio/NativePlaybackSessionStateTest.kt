@@ -26,6 +26,13 @@ class NativePlaybackSessionStateTest {
     }
 
     @Test
+    fun `deferred session registration does not eagerly create a player`() {
+        assertEquals(false, shouldCreatePlayerForConfiguration(true, false))
+        assertEquals(true, shouldCreatePlayerForConfiguration(false, false))
+        assertEquals(true, shouldCreatePlayerForConfiguration(true, true))
+    }
+
+    @Test
     fun `noise reduction curve stays conservative for ASMR details`() {
         assertEquals(NOISE_REDUCTION_LOW_GAIN_DB, noiseReductionGainFor(60), 0.001f)
         assertEquals(0f, noiseReductionGainFor(1000), 0.001f)

@@ -7,7 +7,7 @@ import '../i18n/app_language_provider.dart';
 import '../providers/audio_provider.dart';
 import 'dlsite_metadata_review_page.dart';
 
-enum _BatchMetadataScope { anyMissing, noMetadata, hasRjCode, all }
+enum _BatchMetadataScope { anyMissing, noMetadata, hasRjCode, all, specific }
 
 class DlsiteMetadataBatchPage extends StatefulWidget {
   const DlsiteMetadataBatchPage({super.key, @visibleForTesting this.entries});
@@ -22,6 +22,8 @@ class DlsiteMetadataBatchPage extends StatefulWidget {
 
 class _DlsiteMetadataBatchPageState extends State<DlsiteMetadataBatchPage> {
   List<AudioLibraryCategoryEntry> _entries =
+      const <AudioLibraryCategoryEntry>[];
+  List<AudioLibraryCategoryEntry> _specificEntries =
       const <AudioLibraryCategoryEntry>[];
   _BatchMetadataScope _scope = _BatchMetadataScope.anyMissing;
   _BatchMetadataSummary? _summary;
@@ -47,6 +49,7 @@ class _DlsiteMetadataBatchPageState extends State<DlsiteMetadataBatchPage> {
     _BatchMetadataScope.noMetadata => _noMetadataEntries,
     _BatchMetadataScope.hasRjCode => _hasRjCodeEntries,
     _BatchMetadataScope.all => _entries,
+    _BatchMetadataScope.specific => _specificEntries,
   };
 
   @override
@@ -58,6 +61,23 @@ class _DlsiteMetadataBatchPageState extends State<DlsiteMetadataBatchPage> {
       _loading = false;
     } else {
       unawaited(_load());
+    }
+  }
+
+  Future<void> _pickSpecific() async {
+    final result = await Navigator.of(context).push<List<AudioLibraryCategoryEntry>>(
+      MaterialPageRoute(
+        builder: (_) => DlsiteMetadataWorkPickerPage(
+          entries: _entries,
+          initialSelection: _specificEntries,
+        ),
+      ),
+    );
+    if (result != null) {
+      setState(() {
+        _specificEntries = result;
+        _scope = _BatchMetadataScope.specific;
+      });
     }
   }
 
@@ -175,12 +195,19 @@ class _DlsiteMetadataBatchPageState extends State<DlsiteMetadataBatchPage> {
                 noMetadataCount: _noMetadataEntries.length,
                 anyMissingCount: _anyMissingEntries.length,
                 hasRjCodeCount: _hasRjCodeEntries.length,
+                specificCount: _specificEntries.length,
                 running: _running,
                 currentIndex: _currentIndex,
                 activeTotal: _activeTotal,
-                onScopeChanged: (scope) => setState(() {
-                  _scope = scope;
-                }),
+                onScopeChanged: (scope) {
+                  setState(() {
+                    _scope = scope;
+                  });
+                  if (scope == _BatchMetadataScope.specific && _specificEntries.isEmpty) {
+                    _pickSpecific();
+                  }
+                },
+                onPickSpecific: _pickSpecific,
                 onStart: _run,
               ),
       ),
@@ -209,10 +236,12 @@ class _BatchMetadataSetupView extends StatelessWidget {
     required this.noMetadataCount,
     required this.anyMissingCount,
     required this.hasRjCodeCount,
+    required this.specificCount,
     required this.running,
     required this.currentIndex,
     required this.activeTotal,
     required this.onScopeChanged,
+    required this.onPickSpecific,
     required this.onStart,
   });
 
@@ -221,10 +250,12 @@ class _BatchMetadataSetupView extends StatelessWidget {
   final int noMetadataCount;
   final int anyMissingCount;
   final int hasRjCodeCount;
+  final int specificCount;
   final bool running;
   final int currentIndex;
   final int activeTotal;
   final ValueChanged<_BatchMetadataScope> onScopeChanged;
+  final VoidCallback onPickSpecific;
   final VoidCallback onStart;
 
   @override
@@ -282,6 +313,14 @@ class _BatchMetadataSetupView extends StatelessWidget {
                 ),
               ),
               RadioListTile<_BatchMetadataScope>(
+                value: _BatchMetadataScope.specific,
+                title: Text('${i18n.tr('batch_metadata_specific')} ($specificCount)'),
+                secondary: scope == _BatchMetadataScope.specific ? IconButton(
+                  icon: const Icon(Icons.edit),
+                  onPressed: onPickSpecific,
+                ) : null,
+              ),
+              RadioListTile<_BatchMetadataScope>(
                 value: _BatchMetadataScope.all,
                 title: Text('${i18n.tr('batch_metadata_all')} ($allCount)'),
               ),
@@ -298,6 +337,134 @@ class _BatchMetadataSetupView extends StatelessWidget {
     );
   }
 }
+
+class DlsiteMetadataWorkPickerPage extends StatefulWidget {
+  const DlsiteMetadataWorkPickerPage({
+    super.key,
+    required this.entries,
+    required this.initialSelection,
+  });
+
+  final List<AudioLibraryCategoryEntry> entries;
+  final List<AudioLibraryCategoryEntry> initialSelection;
+
+  @override
+  State<DlsiteMetadataWorkPickerPage> createState() =>
+      _DlsiteMetadataWorkPickerPageState();
+}
+
+class _DlsiteMetadataWorkPickerPageState
+    extends State<DlsiteMetadataWorkPickerPage> {
+  late final Set<String> _selectedIds;
+  String _searchQuery = '';
+  late final TextEditingController _searchController;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedIds = widget.initialSelection.map((e) => AudioLibraryCategorySnapshot.targetKey(e.target)).toSet();
+    _searchController = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _toggleSelection(String id, bool? selected) {
+    setState(() {
+      if (selected == true) {
+        _selectedIds.add(id);
+      } else {
+        _selectedIds.remove(id);
+      }
+    });
+  }
+
+  List<AudioLibraryCategoryEntry> get _filteredEntries {
+    if (_searchQuery.trim().isEmpty) return widget.entries;
+    final query = _searchQuery.trim().toLowerCase();
+    return widget.entries.where((e) {
+      final title = (e.detail.workTitle.isNotEmpty ? e.detail.workTitle : e.title).toLowerCase();
+      final rjCode = e.detail.rjCode.toLowerCase();
+      return title.contains(query) || rjCode.contains(query);
+    }).toList(growable: false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final i18n = context.watch<AppLanguageProvider>();
+    final filtered = _filteredEntries;
+    final cs = Theme.of(context).colorScheme;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: TextField(
+          controller: _searchController,
+          autofocus: true,
+          decoration: InputDecoration(
+            hintText: i18n.tr('batch_metadata_picker_search'),
+            border: InputBorder.none,
+            hintStyle: TextStyle(color: cs.onSurfaceVariant),
+          ),
+          onChanged: (val) {
+            setState(() {
+              _searchQuery = val;
+            });
+          },
+        ),
+        actions: [
+          if (_searchQuery.isNotEmpty)
+            IconButton(
+              icon: const Icon(Icons.clear),
+              onPressed: () {
+                _searchController.clear();
+                setState(() {
+                  _searchQuery = '';
+                });
+              },
+            ),
+        ],
+      ),
+      body: ListView.builder(
+        itemCount: filtered.length,
+        itemBuilder: (context, index) {
+          final entry = filtered[index];
+          final id = AudioLibraryCategorySnapshot.targetKey(entry.target);
+          final selected = _selectedIds.contains(id);
+          return CheckboxListTile(
+            value: selected,
+            onChanged: (val) => _toggleSelection(id, val),
+            title: Text(
+              entry.detail.workTitle.isNotEmpty ? entry.detail.workTitle : entry.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            subtitle: entry.detail.rjCode.isNotEmpty
+                ? Text(entry.detail.rjCode)
+                : null,
+          );
+        },
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () {
+          final result = widget.entries
+              .where((e) => _selectedIds.contains(AudioLibraryCategorySnapshot.targetKey(e.target)))
+              .toList(growable: false);
+          Navigator.of(context).pop(result);
+        },
+        icon: const Icon(Icons.check),
+        label: Text(
+          i18n.tr('batch_metadata_picker_done', {
+            'count': _selectedIds.length,
+          }),
+        ),
+      ),
+    );
+  }
+}
+
 
 class _BatchMetadataSummaryView extends StatelessWidget {
   const _BatchMetadataSummaryView({

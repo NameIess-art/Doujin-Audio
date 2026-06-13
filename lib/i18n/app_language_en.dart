@@ -26,6 +26,9 @@ const Map<String, String> appLanguageEn = {
   'batch_metadata_no_metadata': 'Works missing all data',
   'batch_metadata_any_missing': 'Works with missing data',
   'batch_metadata_has_rj_code': 'Works with an RJ code',
+  'batch_metadata_specific': 'Specify works',
+  'batch_metadata_picker_search': 'Search RJ code or title',
+  'batch_metadata_picker_done': 'Done ({count})',
   'batch_metadata_all': 'All data',
   'batch_metadata_start': 'Start',
   'batch_metadata_progress': '{current} / {total}',
@@ -283,14 +286,13 @@ const Map<String, String> appLanguageEn = {
   'no_other_audio_in_folder': 'No other audio available in this folder.',
   'switch_audio': 'Switch audio',
   'channel_swap': 'Channel Swap',
-  'channel_swap_desc': 'Swaps the left and right audio channels',
+  'channel_swap_desc': 'Swap audio channels.',
   'volume_normalization': 'Volume Normalization',
-  'volume_normalization_desc':
-      'Gently limits sudden loud noises and evens out overall volume',
+  'volume_normalization_desc': 'Limit sudden loud sounds and equalize volume.',
   'skip_silence': 'Skip silence',
-  'skip_silence_desc': 'Shorten long silent sections while playing.',
+  'skip_silence_desc': 'Shorten silent segments.',
   'noise_reduction': 'Light noise reduction',
-  'noise_reduction_desc': 'Applies a gentle real-time filter, not AI denoise.',
+  'noise_reduction_desc': 'Reduce sharp background noise.',
   'audio_features': 'Features',
   'equalizer': 'Equalizer',
   'time_segments': 'Segments',
@@ -319,25 +321,25 @@ const Map<String, String> appLanguageEn = {
   'cross_folder_play': 'Cross-folder play',
   'current_folder_only': 'Current folder only',
   'dark_mode': 'Dark mode',
-  'dark_mode_subtitle': 'Choose system, light, or dark appearance.',
+  'dark_mode_subtitle': 'Choose app appearance.',
   'theme_system': 'System',
   'theme_light': 'Light',
   'theme_dark': 'Dark',
   'blur_player_background': 'Blur Player Background',
   'blur_player_background_subtitle':
-      'Display blurred cover as background on the playback detail page.',
+      'Use blurred cover as background on player page.',
   'ui_blur_effect': 'UI Blur Effect',
   'ui_blur_effect_subtitle':
-      'Enable blur effects on bottom bar, playback card, and top bars.',
+      'Enable UI blur effects.',
   'multi_thread_playback': 'Multi-thread playback',
   'multi_thread_playback_subtitle':
-      'When on, multiple tracks can play together. When off, only one playback session is kept.',
+      'Allow playing multiple audios simultaneously.',
   'notification_bar': 'Playback notification controls',
   'notification_bar_subtitle':
-      'Toggle rich playback controls; a minimal foreground notification stays during playback for screen-off stability.',
+      'Control playback notification display.',
   'show_playback_card': 'Show playback card',
   'show_playback_card_subtitle':
-      'Show the current playback card at the bottom of the screen.',
+      'Show playback card at the bottom.',
   'section_detail_info': 'Details',
   'card_info_display': 'Card info display',
   'card_info_display_subtitle': 'Selected {count} / {max}; up to five items.',
@@ -350,14 +352,15 @@ const Map<String, String> appLanguageEn = {
       'Create library-added audio sessions in the playing state.',
   'record_playback_progress': 'Record last playback progress',
   'record_playback_progress_subtitle':
-      'Restore the last playback progress when opening the app. New audio added from the library will always start from the beginning.',
+      'Resume playback progress on app startup.',
+  'section_general': 'General',
   'section_appearance': 'Appearance',
-  'section_playback': 'Features',
-  'section_notification': 'Notifications',
-  'section_other': 'Other',
+  'section_playback': 'Playback',
+  'section_data_storage': 'Data & Storage',
+  'section_system_updates': 'System & Updates',
   'permission_center': 'Permissions & background',
   'permission_center_subtitle':
-      'Review optional capabilities in one place. Enable them only when you use the related feature.',
+      'Manage optional app permissions.',
   'permission_enabled': 'Enabled',
   'permission_not_enabled': 'Not enabled',
   'system_settings_open_failed':
@@ -376,10 +379,10 @@ const Map<String, String> appLanguageEn = {
       'Only used to install GitHub Release updates you explicitly download.',
   'data_and_support': 'Data & support',
   'data_and_support_subtitle':
-      'Back up app data, restore a backup, or export a sanitized diagnostic report.',
+      'Manage backups and diagnostic reports.',
   'export_backup': 'Export backup',
   'export_backup_subtitle':
-      'Includes the library database and portable settings, but no credentials or audio files.',
+      'Export local database and settings.',
   'restore_backup': 'Restore backup',
   'restore_backup_subtitle':
       'Validate a backup before restoring its database and settings.',
@@ -391,13 +394,13 @@ const Map<String, String> appLanguageEn = {
       'Backup restored. Restart the app to load the restored data.',
   'export_diagnostics': 'Export diagnostics',
   'export_diagnostics_subtitle':
-      'Exports sanitized logs, version, permission, and cache details. Nothing is uploaded automatically.',
+      'Export sanitized diagnostic info.',
   'diagnostics_exported': 'Diagnostic report exported.',
   'operation_failed_retry': 'Operation failed. Please try again.',
   'section_danger_zone': 'Other',
   'allow_background_run': 'Allow background run',
   'allow_background_run_subtitle':
-      'Open system settings and set this app to unrestricted/allowed in the background to reduce screen-off restrictions.',
+      'Prevent system restrictions in background.',
   'allow_background_run_ready':
       'This app is already allowed to run in the background. Screen-off playback should be more stable.',
   'allow_background_run_checking': 'Checking background run status...',
@@ -422,21 +425,21 @@ const Map<String, String> appLanguageEn = {
       'Could not open exact alarm settings. Please change it manually in system settings.',
   'clear_app_cache': 'Clear app cache',
   'clear_app_cache_subtitle':
-      'Delete cached covers, video frames, update packages, and download temp files.',
+      'Clear cached images and temp files.',
   'clear_app_cache_confirm':
       'This clears cache files created by the app. Library source files will not be deleted. Continue?',
   'app_cache_cleaned': 'Cleared {size} of cache.',
   'app_cache_none': 'No app cache to clear.',
   'max_cache_size': 'Max cache size',
   'max_cache_size_subtitle':
-      'Current limit: {size}. New cache replaces older cache first.',
+      'Limit: {size}. Evicts old cache automatically.',
   'check': 'Check',
   'check_updates': 'Check for updates',
   'check_updates_subtitle':
-      'Automatically check GitHub Releases and download the latest update package.',
+      'Check for updates on GitHub.',
   'auto_check_updates': 'Automatically check for updates',
   'auto_check_updates_subtitle':
-      'When enabled, checks on app launch and only prompts when a new version is available.',
+      'Check for updates automatically on startup.',
   'check_updates_subtitle_latest': 'You are on the latest version: {version}',
   'checking_updates': 'Checking the latest GitHub release...',
   'latest_version_available': 'New version available',
@@ -471,13 +474,13 @@ const Map<String, String> appLanguageEn = {
   'language_subtitle': 'Switch UI language',
   'startup_page': 'Page shown on app launch',
   'startup_page_subtitle':
-      'Choose the first page shown whenever the app opens.',
+      'Default page on app startup.',
   'startup_page_asmrOne': 'ASMR.ONE',
   'startup_page_library': 'Library',
   'startup_page_playlist': 'Playlist',
   'dlsite_metadata_language': 'DLsite metadata language',
   'dlsite_metadata_language_subtitle':
-      'Choose the language used when reading titles, circles, voice actors, and tags from DLsite.',
+      'Language for fetching DLsite metadata.',
   'timer_title': 'Timer',
   'set_countdown': 'Set countdown',
   'start_mode': 'Start mode',
@@ -487,7 +490,7 @@ const Map<String, String> appLanguageEn = {
   'cancel_timer': 'Cancel timer',
   'auto_resume_after_timer': 'Scheduled resume',
   'auto_resume_subtitle':
-      'Automatically resume audio paused by timer at the configured time.',
+      'Resume playback automatically at specified time.',
   'resume_time': 'Resume time: {time}',
   'tap_choose_resume_time': 'Tap to choose auto-resume time',
   'choose_auto_resume_time': 'Choose auto-resume time',
@@ -505,8 +508,8 @@ const Map<String, String> appLanguageEn = {
   'hour': 'Hour',
   'minute': 'Minute',
   'second': 'Second',
-  'manual_start_subtitle': 'Starts countdown immediately after confirmation.',
-  'trigger_start_subtitle': 'Starts countdown when playback is detected.',
+  'manual_start_subtitle': 'Start countdown immediately.',
+  'trigger_start_subtitle': 'Start countdown on playback.',
   'selected_file': 'Selected: {name}',
   'select_video_and_output':
       'Please select a video file and output directory first.',
@@ -555,7 +558,7 @@ const Map<String, String> appLanguageEn = {
   'library_edit_empty': 'No imported libraries yet.',
   'subtitle_window_settings': 'Subtitle Floating Window',
   'subtitle_window_settings_subtitle':
-      'Adjust font, color and background effects',
+      'Adjust font, colors, and background.',
   'subtitle_window_preview': 'Live preview',
   'subtitle_window_preview_hint':
       'Pinned in place while you tune the controls below.',

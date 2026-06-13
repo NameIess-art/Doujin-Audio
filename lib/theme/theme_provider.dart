@@ -170,11 +170,11 @@ class ThemeProvider with ChangeNotifier {
       ),
       pageTransitionsTheme: const PageTransitionsTheme(
         builders: {
-          TargetPlatform.android: FadeUpwardsPageTransitionsBuilder(),
-          TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
-          TargetPlatform.linux: FadeUpwardsPageTransitionsBuilder(),
-          TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
-          TargetPlatform.windows: FadeUpwardsPageTransitionsBuilder(),
+          TargetPlatform.android: CenterScalePageTransitionsBuilder(),
+          TargetPlatform.iOS: CenterScalePageTransitionsBuilder(),
+          TargetPlatform.linux: CenterScalePageTransitionsBuilder(),
+          TargetPlatform.macOS: CenterScalePageTransitionsBuilder(),
+          TargetPlatform.windows: CenterScalePageTransitionsBuilder(),
         },
       ),
       hoverColor: scheme.primary.withValues(alpha: 0.08),
@@ -328,6 +328,37 @@ class ThemeProvider with ChangeNotifier {
         crossAxisMargin: 4,
         mainAxisMargin: 4,
         radius: const Radius.circular(8),
+      ),
+    );
+  }
+}
+
+class CenterScalePageTransitionsBuilder extends PageTransitionsBuilder {
+  const CenterScalePageTransitionsBuilder();
+
+  @override
+  Widget buildTransitions<T>(
+    PageRoute<T> route,
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) {
+    return ScaleTransition(
+      scale: Tween<double>(begin: 0.0, end: 1.0).animate(
+        CurvedAnimation(
+          parent: animation,
+          curve: Curves.fastOutSlowIn,
+        ),
+      ),
+      child: FadeTransition(
+        opacity: Tween<double>(begin: 0.0, end: 1.0).animate(
+          CurvedAnimation(
+            parent: animation,
+            curve: Curves.easeIn,
+          ),
+        ),
+        child: child,
       ),
     );
   }

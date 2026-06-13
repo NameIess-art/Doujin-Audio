@@ -679,8 +679,6 @@ class _SubtitleChip extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Text(
         text,
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
           color: cs.onSurface.withValues(alpha: 0.85),
           fontWeight: FontWeight.w600,

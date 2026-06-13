@@ -190,69 +190,9 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                 visualDensity: VisualDensity.compact,
                 child: Column(
                   children: [
-                    _SectionHeader(title: i18n.tr('section_appearance')),
+                    _SectionHeader(title: i18n.tr('section_general')),
                     _SettingsGroupCard(
                       children: [
-                        Consumer(
-                          builder: (context, ref, _) {
-                            final themeMode = context
-                                .select<ThemeProvider, ThemeMode>(
-                                  (provider) => provider.themeMode,
-                                );
-                            final modeLabels = <ThemeMode, String>{
-                              ThemeMode.system: i18n.tr('theme_system'),
-                              ThemeMode.light: i18n.tr('theme_light'),
-                              ThemeMode.dark: i18n.tr('theme_dark'),
-                            };
-                            return ListTile(
-                              title: Text(i18n.tr('dark_mode')),
-                              subtitle: Text(
-                                i18n.tr('dark_mode_subtitle'),
-                                style: descStyle,
-                              ),
-                              leading: Container(
-                                width: 38,
-                                height: 38,
-                                decoration: BoxDecoration(
-                                  color: cs.primaryContainer,
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: Icon(
-                                  Icons.dark_mode_rounded,
-                                  color: cs.onPrimaryContainer,
-                                ),
-                              ),
-                              trailing: PopupMenuButton<ThemeMode>(
-                                tooltip: i18n.tr('dark_mode'),
-                                initialValue: themeMode,
-                                onSelected: context
-                                    .read<ThemeProvider>()
-                                    .setThemeMode,
-                                itemBuilder: (_) => ThemeMode.values
-                                    .map(
-                                      (mode) => PopupMenuItem(
-                                        value: mode,
-                                        child: Text(modeLabels[mode]!),
-                                      ),
-                                    )
-                                    .toList(growable: false),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text(modeLabels[themeMode]!),
-                                    const Icon(Icons.arrow_drop_down_rounded),
-                                  ],
-                                ),
-                              ),
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                              ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                            );
-                          },
-                        ),
                         ListTile(
                           title: Text(i18n.tr('language')),
                           subtitle: Text(
@@ -362,285 +302,6 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                         ),
                         Consumer(
                           builder: (context, ref, _) {
-                            final blurEnabled = ref.watch(
-                              settingsStateProvider.select(
-                                (s) =>
-                                    s
-                                        .valueOrNull
-                                        ?.blurPlayerBackgroundEnabled ??
-                                    true,
-                              ),
-                            );
-                            return SwitchListTile(
-                              value: blurEnabled,
-                              onChanged:
-                                  audioProvider.setBlurPlayerBackgroundEnabled,
-                              title: Text(i18n.tr('blur_player_background')),
-                              subtitle: Text(
-                                i18n.tr('blur_player_background_subtitle'),
-                                style: descStyle,
-                              ),
-                              secondary: Container(
-                                width: 38,
-                                height: 38,
-                                decoration: BoxDecoration(
-                                  color: cs.primaryContainer,
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: Icon(
-                                  Icons.blur_on_rounded,
-                                  color: cs.onPrimaryContainer,
-                                ),
-                              ),
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                              ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                            );
-                          },
-                        ),
-                        Consumer(
-                          builder: (context, ref, _) {
-                            final uiBlurEnabled = ref.watch(
-                              settingsStateProvider.select(
-                                (s) =>
-                                    s.valueOrNull?.uiBlurEffectEnabled ?? true,
-                              ),
-                            );
-                            return SwitchListTile(
-                              value: uiBlurEnabled,
-                              onChanged: audioProvider.setUiBlurEffectEnabled,
-                              title: Text(i18n.tr('ui_blur_effect')),
-                              subtitle: Text(
-                                i18n.tr('ui_blur_effect_subtitle'),
-                                style: descStyle,
-                              ),
-                              secondary: Container(
-                                width: 38,
-                                height: 38,
-                                decoration: BoxDecoration(
-                                  color: cs.primaryContainer,
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: Icon(
-                                  Icons.blur_linear_rounded,
-                                  color: cs.onPrimaryContainer,
-                                ),
-                              ),
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                              ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                            );
-                          },
-                        ),
-                        ListTile(
-                          title: Text(i18n.tr('subtitle_window_settings')),
-                          subtitle: Text(
-                            i18n.tr('subtitle_window_settings_subtitle'),
-                            style: descStyle,
-                          ),
-                          leading: Container(
-                            width: 38,
-                            height: 38,
-                            decoration: BoxDecoration(
-                              color: cs.primaryContainer,
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Icon(
-                              Icons.subtitles_rounded,
-                              color: cs.onPrimaryContainer,
-                            ),
-                          ),
-                          trailing: Icon(
-                            Icons.chevron_right_rounded,
-                            size: 20,
-                            color: cs.onSurfaceVariant,
-                          ),
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                          ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                          onTap: () => _showSubtitleWindowSettings(context),
-                        ),
-                      ],
-                    ),
-                    _SectionHeader(title: i18n.tr('section_playback')),
-                    _SettingsGroupCard(
-                      children: [
-                        Consumer(
-                          builder: (context, ref, _) {
-                            final showPlaybackCard = ref.watch(
-                              settingsStateProvider.select(
-                                (s) => s.valueOrNull?.showPlaybackCard ?? true,
-                              ),
-                            );
-                            return SwitchListTile(
-                              value: showPlaybackCard,
-                              onChanged: audioProvider.setShowPlaybackCard,
-                              title: Text(i18n.tr('show_playback_card')),
-                              subtitle: Text(
-                                i18n.tr('show_playback_card_subtitle'),
-                                style: descStyle,
-                              ),
-                              secondary: Container(
-                                width: 38,
-                                height: 38,
-                                decoration: BoxDecoration(
-                                  color: cs.primaryContainer,
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: Icon(
-                                  Icons.play_circle_outline_rounded,
-                                  color: cs.onPrimaryContainer,
-                                ),
-                              ),
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                              ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                            );
-                          },
-                        ),
-                        Consumer(
-                          builder: (context, ref, _) {
-                            final autoPlay = ref.watch(
-                              settingsStateProvider.select(
-                                (s) =>
-                                    s.valueOrNull?.autoPlayAddedSessions ??
-                                    true,
-                              ),
-                            );
-                            return SwitchListTile(
-                              value: autoPlay,
-                              onChanged: audioProvider.setAutoPlayAddedSessions,
-                              title: Text(i18n.tr('auto_play_added_sessions')),
-                              subtitle: Text(
-                                i18n.tr('auto_play_added_sessions_subtitle'),
-                                style: descStyle,
-                              ),
-                              secondary: Container(
-                                width: 38,
-                                height: 38,
-                                decoration: BoxDecoration(
-                                  color: cs.primaryContainer,
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: Icon(
-                                  Icons.playlist_play_rounded,
-                                  color: cs.onPrimaryContainer,
-                                ),
-                              ),
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                              ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                            );
-                          },
-                        ),
-                        Consumer(
-                          builder: (context, ref, _) {
-                            final multiThreadEnabled = ref.watch(
-                              settingsStateProvider.select(
-                                (s) =>
-                                    s.valueOrNull?.multiThreadPlaybackEnabled ??
-                                    false,
-                              ),
-                            );
-                            return SwitchListTile(
-                              value: multiThreadEnabled,
-                              onChanged: (value) {
-                                audioProvider.setMultiThreadPlaybackEnabled(
-                                  value,
-                                );
-                                if (!value) {
-                                  ref
-                                      .read(subtitleSettingsProvider.notifier)
-                                      .turnOffAllSubtitles();
-                                }
-                              },
-                              title: Text(i18n.tr('multi_thread_playback')),
-                              subtitle: Text(
-                                i18n.tr('multi_thread_playback_subtitle'),
-                                style: descStyle,
-                              ),
-                              secondary: Container(
-                                width: 38,
-                                height: 38,
-                                decoration: BoxDecoration(
-                                  color: cs.secondaryContainer,
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: Icon(
-                                  Icons.multitrack_audio_rounded,
-                                  color: cs.onSecondaryContainer,
-                                ),
-                              ),
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                              ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                            );
-                          },
-                        ),
-                        Consumer(
-                          builder: (context, ref, _) {
-                            final recordProgress = ref.watch(
-                              settingsStateProvider.select(
-                                (s) =>
-                                    s.valueOrNull?.recordPlaybackProgress ??
-                                    true,
-                              ),
-                            );
-                            return SwitchListTile(
-                              value: recordProgress,
-                              onChanged:
-                                  audioProvider.setRecordPlaybackProgress,
-                              title: Text(i18n.tr('record_playback_progress')),
-                              subtitle: Text(
-                                i18n.tr('record_playback_progress_subtitle'),
-                                style: descStyle,
-                              ),
-                              secondary: Container(
-                                width: 38,
-                                height: 38,
-                                decoration: BoxDecoration(
-                                  color: cs.secondaryContainer,
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: Icon(
-                                  Icons.restore_rounded,
-                                  color: cs.onSecondaryContainer,
-                                ),
-                              ),
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                              ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                            );
-                          },
-                        ),
-                      ],
-                    ),
-                    _SectionHeader(title: i18n.tr('section_detail_info')),
-                    _SettingsGroupCard(
-                      children: [
-                        Consumer(
-                          builder: (context, ref, _) {
                             final dlsiteLanguage = ref.watch(
                               settingsStateProvider.select(
                                 (s) =>
@@ -658,12 +319,12 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                                 width: 38,
                                 height: 38,
                                 decoration: BoxDecoration(
-                                  color: cs.secondaryContainer,
+                                  color: cs.primaryContainer,
                                   borderRadius: BorderRadius.circular(10),
                                 ),
                                 child: Icon(
                                   Icons.public_rounded,
-                                  color: cs.onSecondaryContainer,
+                                  color: cs.onPrimaryContainer,
                                 ),
                               ),
                               trailing: DropdownButtonHideUnderline(
@@ -695,6 +356,185 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                               contentPadding: const EdgeInsets.symmetric(
                                 horizontal: 8,
                                 vertical: 2,
+                              ),
+                            );
+                          },
+                        ),
+                      ],
+                    ),
+                    _SectionHeader(title: i18n.tr('section_appearance')),
+                    _SettingsGroupCard(
+                      children: [
+                        Consumer(
+                          builder: (context, ref, _) {
+                            final themeMode = context
+                                .select<ThemeProvider, ThemeMode>(
+                                  (provider) => provider.themeMode,
+                                );
+                            final modeLabels = <ThemeMode, String>{
+                              ThemeMode.system: i18n.tr('theme_system'),
+                              ThemeMode.light: i18n.tr('theme_light'),
+                              ThemeMode.dark: i18n.tr('theme_dark'),
+                            };
+                            return ListTile(
+                              title: Text(i18n.tr('dark_mode')),
+                              subtitle: Text(
+                                i18n.tr('dark_mode_subtitle'),
+                                style: descStyle,
+                              ),
+                              leading: Container(
+                                width: 38,
+                                height: 38,
+                                decoration: BoxDecoration(
+                                  color: cs.secondaryContainer,
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Icon(
+                                  Icons.dark_mode_rounded,
+                                  color: cs.onSecondaryContainer,
+                                ),
+                              ),
+                              trailing: PopupMenuButton<ThemeMode>(
+                                tooltip: i18n.tr('dark_mode'),
+                                initialValue: themeMode,
+                                onSelected: context
+                                    .read<ThemeProvider>()
+                                    .setThemeMode,
+                                itemBuilder: (_) => ThemeMode.values
+                                    .map(
+                                      (mode) => PopupMenuItem(
+                                        value: mode,
+                                        child: Text(modeLabels[mode]!),
+                                      ),
+                                    )
+                                    .toList(growable: false),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(modeLabels[themeMode]!),
+                                    const Icon(Icons.arrow_drop_down_rounded),
+                                  ],
+                                ),
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                            );
+                          },
+                        ),
+                        Consumer(
+                          builder: (context, ref, _) {
+                            final uiBlurEnabled = ref.watch(
+                              settingsStateProvider.select(
+                                (s) =>
+                                    s.valueOrNull?.uiBlurEffectEnabled ?? true,
+                              ),
+                            );
+                            return SwitchListTile(
+                              value: uiBlurEnabled,
+                              onChanged: audioProvider.setUiBlurEffectEnabled,
+                              title: Text(i18n.tr('ui_blur_effect')),
+                              subtitle: Text(
+                                i18n.tr('ui_blur_effect_subtitle'),
+                                style: descStyle,
+                              ),
+                              secondary: Container(
+                                width: 38,
+                                height: 38,
+                                decoration: BoxDecoration(
+                                  color: cs.secondaryContainer,
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Icon(
+                                  Icons.blur_linear_rounded,
+                                  color: cs.onSecondaryContainer,
+                                ),
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                            );
+                          },
+                        ),
+                        Consumer(
+                          builder: (context, ref, _) {
+                            final blurEnabled = ref.watch(
+                              settingsStateProvider.select(
+                                (s) =>
+                                    s
+                                        .valueOrNull
+                                        ?.blurPlayerBackgroundEnabled ??
+                                    true,
+                              ),
+                            );
+                            return SwitchListTile(
+                              value: blurEnabled,
+                              onChanged:
+                                  audioProvider.setBlurPlayerBackgroundEnabled,
+                              title: Text(i18n.tr('blur_player_background')),
+                              subtitle: Text(
+                                i18n.tr('blur_player_background_subtitle'),
+                                style: descStyle,
+                              ),
+                              secondary: Container(
+                                width: 38,
+                                height: 38,
+                                decoration: BoxDecoration(
+                                  color: cs.secondaryContainer,
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Icon(
+                                  Icons.blur_on_rounded,
+                                  color: cs.onSecondaryContainer,
+                                ),
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                            );
+                          },
+                        ),
+                        Consumer(
+                          builder: (context, ref, _) {
+                            final showPlaybackCard = ref.watch(
+                              settingsStateProvider.select(
+                                (s) => s.valueOrNull?.showPlaybackCard ?? true,
+                              ),
+                            );
+                            return SwitchListTile(
+                              value: showPlaybackCard,
+                              onChanged: audioProvider.setShowPlaybackCard,
+                              title: Text(i18n.tr('show_playback_card')),
+                              subtitle: Text(
+                                i18n.tr('show_playback_card_subtitle'),
+                                style: descStyle,
+                              ),
+                              secondary: Container(
+                                width: 38,
+                                height: 38,
+                                decoration: BoxDecoration(
+                                  color: cs.secondaryContainer,
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Icon(
+                                  Icons.play_circle_outline_rounded,
+                                  color: cs.onSecondaryContainer,
+                                ),
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
                               ),
                             );
                           },
@@ -746,47 +586,169 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                             );
                           },
                         ),
-                      ],
-                    ),
-                    if (!Platform.isWindows) ...[
-                      _SectionHeader(title: i18n.tr('section_notification')),
-                      _SettingsGroupCard(
-                        children: [
-                          ListTile(
-                            onTap: _openPermissionCenter,
-                            title: Text(i18n.tr('permission_center')),
-                            subtitle: Text(
-                              i18n.tr('permission_center_subtitle'),
-                              style: descStyle,
+                        ListTile(
+                          title: Text(i18n.tr('subtitle_window_settings')),
+                          subtitle: Text(
+                            i18n.tr('subtitle_window_settings_subtitle'),
+                            style: descStyle,
+                          ),
+                          leading: Container(
+                            width: 38,
+                            height: 38,
+                            decoration: BoxDecoration(
+                              color: cs.secondaryContainer,
+                              borderRadius: BorderRadius.circular(10),
                             ),
-                            leading: Container(
-                              width: 38,
-                              height: 38,
-                              decoration: BoxDecoration(
-                                color: cs.tertiaryContainer,
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: Icon(
-                                Icons.admin_panel_settings_rounded,
-                                color: cs.onTertiaryContainer,
-                              ),
-                            ),
-                            trailing: Icon(
-                              Icons.chevron_right_rounded,
-                              color: cs.onSurfaceVariant,
-                            ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 2,
+                            child: Icon(
+                              Icons.subtitles_rounded,
+                              color: cs.onSecondaryContainer,
                             ),
                           ),
-                        ],
-                      ),
-                    ],
-                    _SectionHeader(title: i18n.tr('section_other')),
+                          trailing: Icon(
+                            Icons.chevron_right_rounded,
+                            size: 20,
+                            color: cs.onSurfaceVariant,
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          onTap: () => _showSubtitleWindowSettings(context),
+                        ),
+                      ],
+                    ),
+                    _SectionHeader(title: i18n.tr('section_playback')),
+                    _SettingsGroupCard(
+                      children: [
+                        Consumer(
+                          builder: (context, ref, _) {
+                            final autoPlay = ref.watch(
+                              settingsStateProvider.select(
+                                (s) =>
+                                    s.valueOrNull?.autoPlayAddedSessions ??
+                                    true,
+                              ),
+                            );
+                            return SwitchListTile(
+                              value: autoPlay,
+                              onChanged: audioProvider.setAutoPlayAddedSessions,
+                              title: Text(i18n.tr('auto_play_added_sessions')),
+                              subtitle: Text(
+                                i18n.tr('auto_play_added_sessions_subtitle'),
+                                style: descStyle,
+                              ),
+                              secondary: Container(
+                                width: 38,
+                                height: 38,
+                                decoration: BoxDecoration(
+                                  color: cs.tertiaryContainer,
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Icon(
+                                  Icons.playlist_play_rounded,
+                                  color: cs.onTertiaryContainer,
+                                ),
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                            );
+                          },
+                        ),
+                        Consumer(
+                          builder: (context, ref, _) {
+                            final recordProgress = ref.watch(
+                              settingsStateProvider.select(
+                                (s) =>
+                                    s.valueOrNull?.recordPlaybackProgress ??
+                                    true,
+                              ),
+                            );
+                            return SwitchListTile(
+                              value: recordProgress,
+                              onChanged:
+                                  audioProvider.setRecordPlaybackProgress,
+                              title: Text(i18n.tr('record_playback_progress')),
+                              subtitle: Text(
+                                i18n.tr('record_playback_progress_subtitle'),
+                                style: descStyle,
+                              ),
+                              secondary: Container(
+                                width: 38,
+                                height: 38,
+                                decoration: BoxDecoration(
+                                  color: cs.tertiaryContainer,
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Icon(
+                                  Icons.restore_rounded,
+                                  color: cs.onTertiaryContainer,
+                                ),
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                            );
+                          },
+                        ),
+                        Consumer(
+                          builder: (context, ref, _) {
+                            final multiThreadEnabled = ref.watch(
+                              settingsStateProvider.select(
+                                (s) =>
+                                    s.valueOrNull?.multiThreadPlaybackEnabled ??
+                                    false,
+                              ),
+                            );
+                            return SwitchListTile(
+                              value: multiThreadEnabled,
+                              onChanged: (value) {
+                                audioProvider.setMultiThreadPlaybackEnabled(
+                                  value,
+                                );
+                                if (!value) {
+                                  ref
+                                      .read(subtitleSettingsProvider.notifier)
+                                      .turnOffAllSubtitles();
+                                }
+                              },
+                              title: Text(i18n.tr('multi_thread_playback')),
+                              subtitle: Text(
+                                i18n.tr('multi_thread_playback_subtitle'),
+                                style: descStyle,
+                              ),
+                              secondary: Container(
+                                width: 38,
+                                height: 38,
+                                decoration: BoxDecoration(
+                                  color: cs.tertiaryContainer,
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Icon(
+                                  Icons.multitrack_audio_rounded,
+                                  color: cs.onTertiaryContainer,
+                                ),
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                            );
+                          },
+                        ),
+                      ],
+                    ),
+                    _SectionHeader(title: i18n.tr('section_data_storage')),
                     _SettingsGroupCard(
                       children: [
                         ListTile(
@@ -800,12 +762,12 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                             width: 38,
                             height: 38,
                             decoration: BoxDecoration(
-                              color: cs.tertiaryContainer,
+                              color: cs.primaryContainer,
                               borderRadius: BorderRadius.circular(10),
                             ),
                             child: Icon(
                               Icons.health_and_safety_rounded,
-                              color: cs.onTertiaryContainer,
+                              color: cs.onPrimaryContainer,
                             ),
                           ),
                           trailing: Icon(
@@ -898,13 +860,51 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                               width: 38,
                               height: 38,
                               decoration: BoxDecoration(
-                                color: cs.secondaryContainer,
+                                color: cs.primaryContainer,
                                 borderRadius: BorderRadius.circular(10),
                               ),
                               child: Icon(
                                 Icons.cleaning_services_rounded,
+                                color: cs.onPrimaryContainer,
+                              ),
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 2,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                    _SectionHeader(title: i18n.tr('section_system_updates')),
+                    _SettingsGroupCard(
+                      children: [
+                        if (!Platform.isWindows) ...[
+                          ListTile(
+                            onTap: _openPermissionCenter,
+                            title: Text(i18n.tr('permission_center')),
+                            subtitle: Text(
+                              i18n.tr('permission_center_subtitle'),
+                              style: descStyle,
+                            ),
+                            leading: Container(
+                              width: 38,
+                              height: 38,
+                              decoration: BoxDecoration(
+                                color: cs.secondaryContainer,
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Icon(
+                                Icons.admin_panel_settings_rounded,
                                 color: cs.onSecondaryContainer,
                               ),
+                            ),
+                            trailing: Icon(
+                              Icons.chevron_right_rounded,
+                              color: cs.onSurfaceVariant,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
                             ),
                             contentPadding: const EdgeInsets.symmetric(
                               horizontal: 8,

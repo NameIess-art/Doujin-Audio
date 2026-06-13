@@ -20,6 +20,10 @@ if (keystorePropertiesFile.exists()) {
 }
 
 val releaseKeystoreFile = (keystoreProperties["storeFile"] as String?)?.let(rootProject::file)
+val generatedPluginRegistrant = file("src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java")
+val integrationTestRegistrantBlock = Regex(
+    """(?s)\s+try \{\s+flutterEngine\.getPlugins\(\)\.add\(new dev\.flutter\.plugins\.integration_test\.IntegrationTestPlugin\(\)\);\s+\} catch \(Exception e\) \{\s+Log\.e\(TAG, "Error registering plugin integration_test,[^"]+", e\);\s+\}""",
+)
 val releaseSigningConfigured = keystorePropertiesFile.exists() &&
     requiredReleaseSigningProperties.all { !keystoreProperties.getProperty(it).isNullOrBlank() } &&
     releaseKeystoreFile?.isFile == true
@@ -29,8 +33,11 @@ val validateReleaseSigning by tasks.registering {
     description = "Fails if a complete release signing configuration is not available."
     doLast {
         if (!keystorePropertiesFile.exists()) {
-            logger.warn("WARNING: Release signing requires android/key.properties. Building with default debug keystore.")
-            return@doLast
+            throw GradleException(
+                "Release signing requires android/key.properties. " +
+                    "Debug signing is never allowed for release builds. " +
+                    "For local deployment, run tool/setup_local_release_signing.ps1.",
+            )
         }
         requiredReleaseSigningProperties.forEach { property ->
             if (keystoreProperties.getProperty(property).isNullOrBlank()) {
@@ -80,8 +87,6 @@ android {
         release {
             if (releaseSigningConfigured) {
                 signingConfig = signingConfigs.getByName("release")
-            } else {
-                signingConfig = signingConfigs.getByName("debug")
             }
             isMinifyEnabled = true
             isShrinkResources = true
@@ -91,6 +96,20 @@ android {
 }
 
 tasks.configureEach {
+    if (name == "compileReleaseJavaWithJavac") {
+        // A prior integration-test/debug build can leave a dev-only plugin in
+        // this ignored generated file. It must never enter a release compile.
+        doFirst {
+            if (generatedPluginRegistrant.isFile) {
+                generatedPluginRegistrant.writeText(
+                    integrationTestRegistrantBlock.replace(
+                        generatedPluginRegistrant.readText(),
+                        "",
+                    ),
+                )
+            }
+        }
+    }
     if (
         name == "compileFlutterBuildRelease" ||
         (

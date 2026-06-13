@@ -115,7 +115,8 @@ Windows 版请解压整个 ZIP 后运行 `nameless_audio.exe`。不要只复制 
 - 后台运行引导：可跳转系统电池优化、后台运行、通知、悬浮窗、精确定时和未知来源安装设置。
 - 沉浸式动效：主页面切换采用快速淡入淡出动效，不相邻页面切换直接跨级不渲染中间层。
 - 设置页防卡顿：重构顶层架构，主题切换、开关选项触发均采用最小化局部渲染，保障交互顺滑。
-- 深色模式：支持跟随系统或手动切换。
+- 主题外观：支持跟随系统、浅色和深色三态，Outfit 与 Raleway 字体随应用离线打包。
+- 数据与支持：支持导出、校验和回滚恢复 `.nalbackup` 备份，以及用户主动导出的脱敏诊断 ZIP。
 - 多语言：支持中文、日文和英文界面。
 - 多线程播放开关：可控制是否允许多个活跃播放会话同时存在。
 - 添加后自动播放：从音频库添加音频时可立即以播放状态创建会话。
@@ -189,6 +190,21 @@ Release 构建必须使用正式签名密钥。未配置完整的 `android/key.p
 debug signing。GitHub tag 发布使用仓库 Secrets 临时生成签名配置：
 `ANDROID_KEYSTORE_BASE64`、`ANDROID_KEYSTORE_PASSWORD`、
 `ANDROID_KEY_ALIAS`、`ANDROID_KEY_PASSWORD`。
+
+本地真机 Release 部署可首次运行以下命令，生成并持久复用独立的本地签名：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tool/setup_local_release_signing.ps1
+```
+
+生成的 `android/key.properties` 和 `android/local-release-keystore.jks` 均被
+Git 忽略，且必须成对保留。GitHub Release 仍必须使用 CI Secrets 中的正式发布密钥。
+项目使用平台系统 SQLite 库，Release 构建不再依赖临时下载 GitHub sqlite3 二进制文件。
+
+如果设备上仍安装着旧版 debug 签名构建，Android 不允许新签名直接覆盖。请先在应用内
+导出 `.nalbackup`，再执行一次
+`powershell -ExecutionPolicy Bypass -File tool/deploy_android_release.ps1 -ReplaceSignature`。
+该参数会卸载旧应用并删除其本地数据；完成首次迁移后，普通部署可持续覆盖安装。
 
 ```bash
 flutter build apk --release --target-platform android-arm64

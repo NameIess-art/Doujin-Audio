@@ -112,7 +112,6 @@ abstract final class AppLogService {
     _sink?.writeln('$timestamp [$level] ${sanitize(message)}');
   }
 
-  @visibleForTesting
   static String sanitize(String message) {
     var sanitized = message.replaceAll(
       RegExp(r'\bBearer\s+[A-Za-z0-9._~+/=-]+', caseSensitive: false),

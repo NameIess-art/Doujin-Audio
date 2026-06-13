@@ -13,7 +13,6 @@ import '../i18n/app_language_provider.dart';
 import '../providers/audio_provider.dart';
 import '../providers/audio_provider_riverpod.dart';
 import '../providers/subtitle_settings_provider.dart';
-import '../services/app_preferences.dart';
 import '../services/app_update_service.dart';
 import '../services/app_log_service.dart';
 import '../services/notifications_platform_service.dart';
@@ -34,7 +33,6 @@ import '../widgets/mobile_overlay_inset.dart';
 import '../widgets/windows_title_bar.dart';
 
 part 'main_screen_notifications.dart';
-part 'main_screen_storage_permission.dart';
 part 'main_screen_layout.dart';
 part 'main_screen_widgets.dart';
 part 'main_screen_timer_scrim.dart';
@@ -49,8 +47,6 @@ class MainScreen extends ConsumerStatefulWidget {
 class _MainScreenState extends ConsumerState<MainScreen>
     with WidgetsBindingObserver {
   static const double _desktopBreakpoint = 980;
-  static const String _backgroundKeepAliveInitializedKey =
-      'background_keep_alive_initialized_v2';
   final PowerPlatformService _powerPlatformService = PowerPlatformService();
   final NotificationsPlatformService _notificationsPlatformService =
       NotificationsPlatformService();
@@ -68,7 +64,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
   bool _notificationSettingsOpened = false;
   bool _backgroundPlaybackPromptShownThisLaunch = false;
   bool _backgroundPlaybackPromptQueued = false;
-  bool _manageFilesPermissionCheckDone = false;
   bool _autoUpdateCheckQueued = false;
   bool _autoUpdateCheckRunning = false;
   final PermissionActionController _permissionActionController =
@@ -137,8 +132,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
       _rememberCurrentViewMetrics();
       final provider = ref.read(audioProviderFacadeProvider);
       unawaited(_consumePendingNotificationSession());
-      unawaited(_ensureManageFilesPermission());
-      unawaited(_maybeEnableBackgroundKeepAliveOnFirstLaunch());
       Future.delayed(const Duration(milliseconds: 750), () {
         if (!mounted) return;
         provider.scheduleUiWarmup(

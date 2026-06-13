@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:audio_session/audio_session.dart';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart' show ProviderScope;
@@ -27,6 +28,7 @@ import 'theme/theme_provider.dart';
 import 'services/app_preferences.dart';
 import 'services/app_database.dart';
 import 'widgets/global_shortcuts.dart';
+import 'widgets/app_error_view.dart';
 
 Future<void> main(List<String> args) async {
   await runZonedGuarded<Future<void>>(() async {
@@ -34,6 +36,16 @@ Future<void> main(List<String> args) async {
     await AppLogService.initialize();
     AppLogService.installFlutterErrorHandler();
     AppLogService.installPlatformErrorHandler();
+    if (kReleaseMode) {
+      ErrorWidget.builder = (details) {
+        AppLogService.error(
+          'release_error_widget',
+          error: details.exception,
+          stackTrace: details.stack,
+        );
+        return AppErrorView(details: details);
+      };
+    }
     await _runAudioPlayerApp(args);
   }, AppLogService.logZoneError);
 }
@@ -159,9 +171,7 @@ class MusicPlayerApp extends StatelessWidget {
           title: languageProvider.tr('app_title'),
           debugShowCheckedModeBanner: false,
           navigatorObservers: [UiInteractionNavigatorObserver.instance],
-          color: themeProvider.isDarkMode
-              ? const Color(0xFF121017)
-              : const Color(0xFFF7F4EE),
+          color: const Color(0xFFC94D63),
           locale: languageProvider.locale,
           supportedLocales: AppLanguageProvider.supportedLocales,
           localizationsDelegates: const [
@@ -169,7 +179,9 @@ class MusicPlayerApp extends StatelessWidget {
             GlobalCupertinoLocalizations.delegate,
             GlobalWidgetsLocalizations.delegate,
           ],
-          theme: themeProvider.currentTheme,
+          theme: themeProvider.lightTheme,
+          darkTheme: themeProvider.darkTheme,
+          themeMode: themeProvider.themeMode,
           scrollBehavior: const MaterialScrollBehavior().copyWith(
             scrollbars: AppPlatform.showsDesktopScrollbars,
             physics: const BouncingScrollPhysics(

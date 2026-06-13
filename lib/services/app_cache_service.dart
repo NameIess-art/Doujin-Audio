@@ -64,6 +64,25 @@ class AppCacheService {
     return deletedBytes;
   }
 
+  static Future<int> estimateDartCacheBytes() async {
+    var totalBytes = 0;
+    for (final root in await _dartCacheRoots()) {
+      if (!await root.exists()) continue;
+      await for (final entity in root.list(
+        recursive: true,
+        followLinks: false,
+      )) {
+        if (entity is! File) continue;
+        try {
+          totalBytes += await entity.length();
+        } catch (_) {
+          // Cache accounting is best effort when entries change mid-scan.
+        }
+      }
+    }
+    return totalBytes;
+  }
+
   static Future<void> enforceLimit() async {
     if (Platform.isAndroid) {
       try {

@@ -16,6 +16,9 @@ import 'path_matcher.dart';
 class AppDatabase {
   AppDatabase._();
 
+  static const int schemaVersion = 16;
+  static const String fileName = 'audio_player.db';
+
   @visibleForTesting
   AppDatabase.test(Database db) : _db = db;
 
@@ -39,13 +42,26 @@ class AppDatabase {
   Future<Database> _open() async {
     final dbPath = await getDatabasesPath();
     final db = await openDatabase(
-      p.join(dbPath, 'audio_player.db'),
-      version: 16,
+      p.join(dbPath, fileName),
+      version: schemaVersion,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
       onOpen: _ensurePlaybackQueueColumns,
     );
     return db;
+  }
+
+  Future<String> get filePath async =>
+      p.join(await getDatabasesPath(), fileName);
+
+  Future<void> close() async {
+    final db = _db;
+    _db = null;
+    await db?.close();
+  }
+
+  Future<void> reopen() async {
+    await database;
   }
 
   static Future<void> _onCreate(Database db, int version) async {

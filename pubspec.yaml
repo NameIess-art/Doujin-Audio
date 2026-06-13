@@ -6,6 +6,14 @@ version: 0.9.92+992
 environment:
   sdk: ^3.11.1
 
+hooks:
+  user_defines:
+    sqlite3:
+      source: system
+      name_windows: winsqlite3
+      name_android: sqlite
+      name: sqlite3
+
 dependencies:
   flutter:
     sdk: flutter
@@ -16,7 +24,6 @@ dependencies:
   file_picker: ^10.3.10
   permission_handler: ^12.0.1
   path: ^1.9.1
-  google_fonts: ^8.0.2
   mime: ^2.0.0
   path_provider: ^2.1.5
   shared_preferences: ^2.5.1
@@ -35,6 +42,7 @@ dependencies:
   flutter_acrylic: ^1.1.4
   flutter_animate: ^4.5.2
   crypto: ^3.0.6
+  archive: ^4.0.9
 
 dev_dependencies:
   flutter_test:
@@ -50,3 +58,10 @@ flutter:
   uses-material-design: true
   assets:
     - assets/lottie/empty_library.json
+  fonts:
+    - family: Outfit
+      fonts:
+        - asset: assets/fonts/Outfit-Variable.ttf
+    - family: Raleway
+      fonts:
+        - asset: assets/fonts/Raleway-Variable.ttf

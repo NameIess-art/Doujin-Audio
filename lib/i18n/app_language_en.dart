@@ -1,5 +1,5 @@
 const Map<String, String> appLanguageEn = {
-  'app_title': 'NL Audio',
+  'app_title': 'Nameless Audio',
   'nav_library': 'Library',
   'nav_sessions': 'Playlist',
   'nav_settings': 'Settings',
@@ -319,12 +319,16 @@ const Map<String, String> appLanguageEn = {
   'cross_folder_play': 'Cross-folder play',
   'current_folder_only': 'Current folder only',
   'dark_mode': 'Dark mode',
-  'dark_mode_subtitle': 'Use a lower-glare palette at night.',
+  'dark_mode_subtitle': 'Choose system, light, or dark appearance.',
+  'theme_system': 'System',
+  'theme_light': 'Light',
+  'theme_dark': 'Dark',
   'blur_player_background': 'Blur Player Background',
   'blur_player_background_subtitle':
       'Display blurred cover as background on the playback detail page.',
   'ui_blur_effect': 'UI Blur Effect',
-  'ui_blur_effect_subtitle': 'Enable blur effects on bottom bar, playback card, and top bars.',
+  'ui_blur_effect_subtitle':
+      'Enable blur effects on bottom bar, playback card, and top bars.',
   'multi_thread_playback': 'Multi-thread playback',
   'multi_thread_playback_subtitle':
       'When on, multiple tracks can play together. When off, only one playback session is kept.',
@@ -351,6 +355,45 @@ const Map<String, String> appLanguageEn = {
   'section_playback': 'Features',
   'section_notification': 'Notifications',
   'section_other': 'Other',
+  'permission_center': 'Permissions & background',
+  'permission_center_subtitle':
+      'Review optional capabilities in one place. Enable them only when you use the related feature.',
+  'permission_enabled': 'Enabled',
+  'permission_not_enabled': 'Not enabled',
+  'system_settings_open_failed':
+      'Could not open system settings. Adjust this app manually from system app settings.',
+  'permission_notification_description':
+      'Shows background playback status and media controls.',
+  'permission_background_description':
+      'Reduces the chance of some devices restricting playback while the screen is off.',
+  'permission_exact_alarm_description':
+      'Improves sleep timer auto-resume reliability.',
+  'permission_manage_files_description':
+      'Only needed for advanced direct filesystem library scans. Prefer the system folder picker.',
+  'permission_overlay_description':
+      'Only needed to show global subtitles over other apps.',
+  'permission_update_install_description':
+      'Only used to install GitHub Release updates you explicitly download.',
+  'data_and_support': 'Data & support',
+  'data_and_support_subtitle':
+      'Back up app data, restore a backup, or export a sanitized diagnostic report.',
+  'export_backup': 'Export backup',
+  'export_backup_subtitle':
+      'Includes the library database and portable settings, but no credentials or audio files.',
+  'restore_backup': 'Restore backup',
+  'restore_backup_subtitle':
+      'Validate a backup before restoring its database and settings.',
+  'restore_backup_confirm':
+      'Restoring replaces the current library database and portable settings. Failures are rolled back automatically. Continue?',
+  'backup_exported': 'Backup exported.',
+  'backup_invalid': 'The backup is invalid, damaged, or unsupported.',
+  'backup_restored_restart':
+      'Backup restored. Restart the app to load the restored data.',
+  'export_diagnostics': 'Export diagnostics',
+  'export_diagnostics_subtitle':
+      'Exports sanitized logs, version, permission, and cache details. Nothing is uploaded automatically.',
+  'diagnostics_exported': 'Diagnostic report exported.',
+  'operation_failed_retry': 'Operation failed. Please try again.',
   'section_danger_zone': 'Other',
   'allow_background_run': 'Allow background run',
   'allow_background_run_subtitle':

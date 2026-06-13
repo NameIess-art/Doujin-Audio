@@ -42,19 +42,19 @@ PageRouteBuilder<T> buildAppPageRoute<T>({
         curve: Curves.easeOut,
         reverseCurve: Curves.easeIn,
       );
-      final slideAnimation = CurvedAnimation(
+      final scaleAnimation = CurvedAnimation(
         parent: animation,
-        curve: Curves.easeOutCubic,
-        reverseCurve: Curves.easeInCubic,
+        curve: Curves.fastOutSlowIn,
+        reverseCurve: Curves.fastOutSlowIn,
       );
 
       return FadeTransition(
         opacity: opacityAnimation,
-        child: SlideTransition(
-          position: Tween<Offset>(
-            begin: beginOffset,
-            end: Offset.zero,
-          ).animate(slideAnimation),
+        child: ScaleTransition(
+          scale: Tween<double>(
+            begin: 0.0,
+            end: 1.0,
+          ).animate(scaleAnimation),
           child: routedChild,
         ),
       );
@@ -82,19 +82,19 @@ PageRouteBuilder<T> buildAppOverlayRoute<T>({
         curve: Curves.easeOut,
         reverseCurve: Curves.easeIn,
       );
-      final slideAnimation = CurvedAnimation(
+      final scaleAnimation = CurvedAnimation(
         parent: animation,
-        curve: Curves.easeOutCubic,
-        reverseCurve: Curves.easeInCubic,
+        curve: Curves.fastOutSlowIn,
+        reverseCurve: Curves.fastOutSlowIn,
       );
 
       return FadeTransition(
         opacity: opacityAnimation,
-        child: SlideTransition(
-          position: Tween<Offset>(
-            begin: beginOffset,
-            end: Offset.zero,
-          ).animate(slideAnimation),
+        child: ScaleTransition(
+          scale: Tween<double>(
+            begin: 0.0,
+            end: 1.0,
+          ).animate(scaleAnimation),
           child: routedChild,
         ),
       );

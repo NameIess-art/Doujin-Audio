@@ -127,70 +127,70 @@ class _AsmrSearchBar extends StatelessWidget {
             selectionColor: asmrBlue.withValues(alpha: 0.28),
             selectionHandleColor: asmrBlue,
           ),
-          child: ValueListenableBuilder<TextEditingValue>(
-            valueListenable: controller,
-            builder: (context, value, _) {
-              final hasText = value.text.isNotEmpty;
-              return TextField(
-                controller: controller,
-                cursorColor: asmrBlue,
+          child: TextField(
+            controller: controller,
+            cursorColor: asmrBlue,
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(fontSize: 13),
+            textInputAction: TextInputAction.search,
+            onTapOutside: (event) =>
+                FocusManager.instance.primaryFocus?.unfocus(),
+            onSubmitted: (_) =>
+                FocusManager.instance.primaryFocus?.unfocus(),
+            decoration: InputDecoration(
+              filled: true,
+              fillColor: cs.surfaceContainerHigh,
+              prefixIcon: Icon(
+                Icons.search_rounded,
+                color: cs.onSurfaceVariant,
+                size: 18,
+              ),
+              suffixIcon: ValueListenableBuilder<TextEditingValue>(
+                valueListenable: controller,
+                builder: (context, value, _) {
+                  if (value.text.isEmpty) {
+                    return const SizedBox.shrink();
+                  }
+                  return IconButton(
+                    icon: const Icon(Icons.clear_rounded, size: 18),
+                    onPressed: onClear,
+                    color: cs.onSurfaceVariant,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 32,
+                      minHeight: 32,
+                    ),
+                  );
+                },
+              ),
+              floatingLabelBehavior: FloatingLabelBehavior.never,
+              label: MarqueeText(
+                text: i18n.tr('asmr_search_hint'),
                 style: Theme.of(
                   context,
-                ).textTheme.bodyMedium?.copyWith(fontSize: 13),
-                textInputAction: TextInputAction.search,
-                onTapOutside: (event) =>
-                    FocusManager.instance.primaryFocus?.unfocus(),
-                onSubmitted: (_) =>
-                    FocusManager.instance.primaryFocus?.unfocus(),
-                decoration: InputDecoration(
-                  filled: true,
-                  fillColor: cs.surfaceContainerHigh,
-                  prefixIcon: Icon(
-                    Icons.search_rounded,
-                    color: cs.onSurfaceVariant,
-                    size: 18,
-                  ),
-                  suffixIcon: hasText
-                      ? IconButton(
-                          icon: const Icon(Icons.clear_rounded, size: 18),
-                          onPressed: onClear,
-                          color: cs.onSurfaceVariant,
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(
-                            minWidth: 32,
-                            minHeight: 32,
-                          ),
-                        )
-                      : null,
-                  floatingLabelBehavior: FloatingLabelBehavior.never,
-                  label: MarqueeText(
-                    text: i18n.tr('asmr_search_hint'),
-                    style: Theme.of(
-                      context,
-                    ).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
-                    edgePadding: 0,
-                  ),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(17),
-                    borderSide: BorderSide.none,
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(17),
-                    borderSide: BorderSide.none,
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(17),
-                    borderSide: BorderSide.none,
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 7,
-                  ),
-                  isDense: true,
-                ),
-                onChanged: onChanged,
-              );
-            },
+                ).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                edgePadding: 0,
+              ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(17),
+                borderSide: BorderSide.none,
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(17),
+                borderSide: BorderSide.none,
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(17),
+                borderSide: BorderSide.none,
+              ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 7,
+              ),
+              isDense: true,
+            ),
+            onChanged: onChanged,
           ),
         ),
       ),

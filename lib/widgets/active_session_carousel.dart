@@ -54,20 +54,21 @@ class ActiveSessionCarousel extends ConsumerStatefulWidget {
 
 class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
   late PageController _pageController;
+  late final ValueListenable<String?> _carouselSnapListenable;
   final ValueNotifier<double> _pageNotifier = ValueNotifier<double>(0);
   String? _lastCarouselSnapSessionId;
-
-  double get _page => _pageNotifier.value;
 
   @override
   void initState() {
     super.initState();
     _pageController = PageController(viewportFraction: 0.90);
     _pageController.addListener(_handlePageTick);
+    final AudioProvider provider =
+        widget.provider ?? ref.read(audioProviderFacadeProvider);
+    _carouselSnapListenable = provider.carouselSnapListenable;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        final provider = ref.read(audioProviderFacadeProvider);
-        provider.carouselSnapListenable.addListener(_handleCarouselSnap);
+        _carouselSnapListenable.addListener(_handleCarouselSnap);
       }
     });
   }
@@ -81,8 +82,7 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
 
   @override
   void dispose() {
-    final provider = ref.read(audioProviderFacadeProvider);
-    provider.carouselSnapListenable.removeListener(_handleCarouselSnap);
+    _carouselSnapListenable.removeListener(_handleCarouselSnap);
     _pageController
       ..removeListener(_handlePageTick)
       ..dispose();
@@ -103,10 +103,8 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
   }
 
   void _handleCarouselSnap() {
-    final sessionId = ref
-        .read(audioProviderFacadeProvider)
-        .carouselSnapListenable
-        .value;
+    if (!mounted) return;
+    final sessionId = _carouselSnapListenable.value;
     if (sessionId == null || sessionId == _lastCarouselSnapSessionId) return;
     _lastCarouselSnapSessionId = sessionId;
     final sessions =

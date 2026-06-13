@@ -294,6 +294,9 @@ extension _MainScreenLayout on _MainScreenState {
     final isWindows =
         Platform.isWindows ||
         MediaQuery.orientationOf(context) == Orientation.landscape;
+    final isAndroidLandscape =
+        Theme.of(context).platform == TargetPlatform.android &&
+        MediaQuery.orientationOf(context) == Orientation.landscape;
 
     final double expandedWidth = isWindows ? 260 : 292;
     final double collapsedWidth = isWindows ? 80 : 92;
@@ -375,7 +378,6 @@ extension _MainScreenLayout on _MainScreenState {
                                       onPressed: _toggleMenuCollapsed,
                                     )
                                   : Row(
-                                      mainAxisAlignment: MainAxisAlignment.start,
                                       children: [
                                         Container(
                                           width: 38,
@@ -435,8 +437,9 @@ extension _MainScreenLayout on _MainScreenState {
                   ),
                 );
 
-                if (constraints.maxHeight < 380) {
-                  return SingleChildScrollView(
+                Widget railLayout = rail;
+                if (!isAndroidLandscape && constraints.maxHeight < 380) {
+                  railLayout = SingleChildScrollView(
                     child: ConstrainedBox(
                       constraints: BoxConstraints(
                         minHeight: constraints.maxHeight,
@@ -446,7 +449,15 @@ extension _MainScreenLayout on _MainScreenState {
                     ),
                   );
                 }
-                return rail;
+                return isAndroidLandscape
+                    ? Transform.translate(
+                        key: const ValueKey<String>(
+                          'android_landscape_navigation_shift',
+                        ),
+                        offset: const Offset(0, -28),
+                        child: railLayout,
+                      )
+                    : railLayout;
               },
             ),
           ),

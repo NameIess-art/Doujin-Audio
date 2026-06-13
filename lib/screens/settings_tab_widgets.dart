@@ -62,70 +62,52 @@ class _UpdateSettingsTile extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     final busy = checking || downloading;
 
-    return InkWell(
+    return ListTile(
       onTap: busy ? null : onCheck,
-      borderRadius: BorderRadius.circular(14),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-        child: Row(
-          children: [
-            Container(
-              width: 38,
-              height: 38,
-              decoration: BoxDecoration(
-                color: cs.primaryContainer,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Icon(
-                Icons.system_update_alt_rounded,
-                color: cs.onPrimaryContainer,
-              ),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    i18n.tr('check_updates'),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  const SizedBox(height: 3),
-                  _UpdateSubtitle(
-                    checking: checking,
-                    downloading: downloading,
-                    progress: progress,
-                    updateInfo: updateInfo,
-                    currentVersion: currentVersion,
-                    textStyle: textStyle,
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 12),
-            SizedBox(
-              width: 48,
-              height: 48,
-              child: busy
-                  ? const Center(
-                      child: SizedBox(
-                        width: 22,
-                        height: 22,
-                        child: CircularProgressIndicator(strokeWidth: 2.4),
-                      ),
-                    )
-                  : IconButton.filledTonal(
-                      onPressed: onCheck,
-                      tooltip: i18n.tr('check'),
-                      icon: const Icon(Icons.refresh_rounded, size: 20),
-                    ),
-            ),
-          ],
+      leading: Container(
+        width: 38,
+        height: 38,
+        decoration: BoxDecoration(
+          color: cs.primaryContainer,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Icon(
+          Icons.system_update_alt_rounded,
+          color: cs.onPrimaryContainer,
         ),
       ),
+      title: Text(
+        i18n.tr('check_updates'),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      subtitle: _UpdateSubtitle(
+        checking: checking,
+        downloading: downloading,
+        progress: progress,
+        updateInfo: updateInfo,
+        currentVersion: currentVersion,
+        textStyle: textStyle,
+      ),
+      trailing: SizedBox(
+        width: 48,
+        height: 48,
+        child: busy
+            ? const Center(
+                child: SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(strokeWidth: 2.4),
+                ),
+              )
+            : IconButton.filledTonal(
+                onPressed: onCheck,
+                tooltip: i18n.tr('check'),
+                icon: const Icon(Icons.refresh_rounded, size: 20),
+              ),
+      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
     );
   }
 }

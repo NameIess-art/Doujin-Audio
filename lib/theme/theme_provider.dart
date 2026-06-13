@@ -1,29 +1,41 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 import '../services/app_preferences.dart';
 
 class ThemeProvider with ChangeNotifier {
-  bool _isDarkMode = false;
+  static const _themeModeKey = 'themeMode';
+
+  ThemeMode _themeMode = ThemeMode.system;
   late final ThemeData _lightTheme = _buildTheme(_lightScheme);
   late final ThemeData _darkTheme = _buildTheme(_darkScheme);
 
-  bool get isDarkMode => _isDarkMode;
+  ThemeMode get themeMode => _themeMode;
+  ThemeData get lightTheme => _lightTheme;
+  ThemeData get darkTheme => _darkTheme;
 
   ThemeProvider() {
     _loadThemeSync();
   }
 
   void _loadThemeSync() {
-    _isDarkMode = AppPreferences.getBoolSync('isDarkMode') ?? false;
+    final storedMode = AppPreferences.getStringSync(_themeModeKey);
+    _themeMode = ThemeMode.values.firstWhere(
+      (mode) => mode.name == storedMode,
+      orElse: () {
+        final legacyDarkMode = AppPreferences.getBoolSync('isDarkMode');
+        if (legacyDarkMode == null) return ThemeMode.system;
+        return legacyDarkMode ? ThemeMode.dark : ThemeMode.light;
+      },
+    );
   }
 
-  Future<void> toggleTheme(bool value) async {
-    if (_isDarkMode == value) return;
-    _isDarkMode = value;
+  Future<void> setThemeMode(ThemeMode value) async {
+    if (_themeMode == value) return;
+    _themeMode = value;
     notifyListeners();
-    await AppPreferences.setBool('isDarkMode', value);
+    await AppPreferences.setString(_themeModeKey, value.name);
+    await AppPreferences.remove('isDarkMode');
   }
 
   static final ColorScheme _lightScheme =
@@ -88,47 +100,57 @@ class ThemeProvider with ChangeNotifier {
         !const bool.fromEnvironment('dart.library.html') &&
         (Platform.isWindows || Platform.isMacOS || Platform.isLinux);
 
-    // Modern UI for desktop
-    final fontFamily = isDesktop ? 'Segoe UI' : null;
-
-    final bodyText = GoogleFonts.ralewayTextTheme().copyWith(
-      bodyMedium: GoogleFonts.raleway(
+    final bodyText = const TextTheme().copyWith(
+      bodyMedium: TextStyle(
+        fontFamily: 'Raleway',
         fontSize: isDesktop ? 13 : 14,
         height: 1.5,
       ),
-      bodyLarge: GoogleFonts.raleway(
+      bodyLarge: TextStyle(
+        fontFamily: 'Raleway',
         fontSize: isDesktop ? 14 : 15,
         height: 1.5,
       ),
-      labelLarge: GoogleFonts.raleway(
+      labelLarge: TextStyle(
+        fontFamily: 'Raleway',
         fontSize: isDesktop ? 11 : 12,
         fontWeight: FontWeight.w700,
         letterSpacing: 0.1,
       ),
-      labelMedium: GoogleFonts.raleway(
+      labelMedium: const TextStyle(
+        fontFamily: 'Raleway',
         fontSize: 11,
         fontWeight: FontWeight.w600,
       ),
-      labelSmall: GoogleFonts.raleway(
+      labelSmall: const TextStyle(
+        fontFamily: 'Raleway',
         fontSize: 10,
         fontWeight: FontWeight.w600,
       ),
-      bodySmall: GoogleFonts.raleway(fontSize: 11, fontWeight: FontWeight.w500),
-      titleMedium: GoogleFonts.raleway(
+      bodySmall: const TextStyle(
+        fontFamily: 'Raleway',
+        fontSize: 11,
+        fontWeight: FontWeight.w500,
+      ),
+      titleMedium: TextStyle(
+        fontFamily: 'Raleway',
         fontWeight: FontWeight.w700,
         fontSize: isDesktop ? 13 : 14,
         height: 1.25,
       ),
-      titleLarge: GoogleFonts.outfit(
+      titleLarge: TextStyle(
+        fontFamily: 'Outfit',
         fontWeight: FontWeight.w700,
         fontSize: isDesktop ? 16 : 18,
       ),
-      headlineMedium: GoogleFonts.outfit(
+      headlineMedium: TextStyle(
+        fontFamily: 'Outfit',
         fontWeight: FontWeight.w800,
         fontSize: isDesktop ? 26 : 31,
         height: 1.05,
       ),
-      headlineSmall: GoogleFonts.outfit(
+      headlineSmall: TextStyle(
+        fontFamily: 'Outfit',
         fontWeight: FontWeight.w800,
         fontSize: isDesktop ? 18 : 20,
       ),
@@ -145,7 +167,6 @@ class ThemeProvider with ChangeNotifier {
       textTheme: bodyText.apply(
         bodyColor: scheme.onSurface,
         displayColor: scheme.onSurface,
-        fontFamily: fontFamily,
       ),
       pageTransitionsTheme: const PageTransitionsTheme(
         builders: {
@@ -214,7 +235,7 @@ class ThemeProvider with ChangeNotifier {
       ),
       iconButtonTheme: IconButtonThemeData(
         style: IconButton.styleFrom(
-          minimumSize: const Size(44, 44),
+          minimumSize: const Size(48, 48),
           visualDensity: VisualDensity.standard,
         ),
       ),
@@ -309,9 +330,5 @@ class ThemeProvider with ChangeNotifier {
         radius: const Radius.circular(8),
       ),
     );
-  }
-
-  ThemeData get currentTheme {
-    return _isDarkMode ? _darkTheme : _lightTheme;
   }
 }

@@ -30,11 +30,22 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Verify release metadata
+        run: dart run tool/verify_release.dart
+
       - name: Analyze
         run: flutter analyze
 
       - name: Test
         run: flutter test
+
+      - name: Verify release signing cannot fall back to debug
+        working-directory: android
+        run: |
+          if ./gradlew :app:validateReleaseSigning; then
+            echo "Release signing validation unexpectedly passed without key.properties"
+            exit 1
+          fi
 
       - name: Android JVM tests
         working-directory: android
@@ -61,6 +72,9 @@ jobs:
 
       - name: Install dependencies
         run: flutter pub get
+
+      - name: Verify release metadata
+        run: dart run tool/verify_release.dart --tag "$GITHUB_REF_NAME"
 
       - name: Configure release signing
         env:
@@ -99,6 +113,10 @@ jobs:
           test -s "$apk"
           test -s "$apk.sha256"
           sha256sum --check "$apk.sha256"
+          apksigner="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)"
+          test -x "$apksigner"
+          "$apksigner" verify --verbose --print-certs "$apk" | tee apk-signature.txt
+          ! grep -qi "Android Debug" apk-signature.txt
 
       - name: Upload Android release assets
         env:
@@ -134,6 +152,9 @@ jobs:
 
       - name: Install dependencies
         run: flutter pub get
+
+      - name: Verify release metadata
+        run: dart run tool/verify_release.dart --tag "${{ github.ref_name }}"
 
       - name: Download verified Windows FFmpeg tools
         shell: pwsh

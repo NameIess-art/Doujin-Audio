@@ -84,6 +84,62 @@ class AppPreferences {
     }
   }
 
+  static Future<Map<String, Object>> exportSafeValues() async {
+    final prefs = await _prefs;
+    final values = <String, Object>{};
+    for (final key in prefs.getKeys()) {
+      if (_isSensitiveKey(key)) continue;
+      final value = prefs.get(key);
+      if (value is String ||
+          value is bool ||
+          value is int ||
+          value is double ||
+          value is List<String>) {
+        values[key] = value as Object;
+      }
+    }
+    return values;
+  }
+
+  static Future<void> restoreSafeValues(Map<String, Object?> values) async {
+    final prefs = await _prefs;
+    for (final key in prefs.getKeys()) {
+      if (!_isSensitiveKey(key)) {
+        await prefs.remove(key);
+      }
+    }
+    for (final entry in values.entries) {
+      if (_isSensitiveKey(entry.key)) continue;
+      final value = entry.value;
+      if (value is String) {
+        await prefs.setString(entry.key, value);
+      } else if (value is bool) {
+        await prefs.setBool(entry.key, value);
+      } else if (value is int) {
+        await prefs.setInt(entry.key, value);
+      } else if (value is double) {
+        await prefs.setDouble(entry.key, value);
+      } else if (value is List<dynamic>) {
+        await prefs.setStringList(
+          entry.key,
+          value.whereType<String>().toList(growable: false),
+        );
+      }
+    }
+  }
+
+  static bool _isSensitiveKey(String key) {
+    final normalized = key.toLowerCase();
+    return normalized.contains('token') ||
+        normalized.contains('password') ||
+        normalized.contains('passwd') ||
+        normalized.contains('credential') ||
+        normalized.contains('authorization') ||
+        normalized == 'asmr_one_name_v1' ||
+        normalized == 'asmr_one_pass_v1' ||
+        normalized == 'asmr_auth_secure_storage_migrated_v2';
+  }
+
   static Future<T?> readJson<T>(String key, JsonValueReader<T> reader) async {
     final raw = await getString(key);
     if (raw == null || raw.isEmpty) {

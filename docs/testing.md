@@ -15,8 +15,21 @@ flutter build apk --debug
 Release builds require a complete `android/key.properties` and matching
 keystore. Missing or incomplete release signing configuration intentionally
 fails `assembleRelease`, `bundleRelease`, and Flutter release APK builds.
+For repeatable local release deployment, run
+`powershell -ExecutionPolicy Bypass -File tool/setup_local_release_signing.ps1`
+once. It creates a persistent, Git-ignored local signing identity and does not
+replace the official GitHub Release signing key.
+The sqlite3 native-assets hook uses each platform's system SQLite library
+(`winsqlite3` on Windows and `sqlite` on Android), so builds do not depend on
+downloading a GitHub-hosted sqlite3 binary.
+Devices carrying a legacy debug-signed release require a one-time migration.
+After exporting a `.nalbackup`, run `script\deploy_arm64.bat --replace-signature`;
+or run `tool/deploy_android_release.ps1 -ReplaceSignature`. The flag explicitly
+allows uninstalling the old package and its local data.
 Tag workflows create temporary signing files from GitHub Secrets and publish
 arm64 APK/Windows ZIP assets together with SHA-256 checksum files.
+CI also proves that release signing validation fails when `key.properties` is
+absent, preventing accidental debug-signed release artifacts.
 The app refuses to install downloaded updates unless the matching checksum
 asset is present and valid.
 
@@ -39,6 +52,15 @@ flutter test test/timer_runtime_calculator_test.dart
 ```
 
 These tests cover pure Dart logic extracted from the provider layer: library grouping and sorting, next-track queue resolution, and sleep timer runtime calculations.
+
+Release-safety and recovery contracts have focused tests:
+
+```bash
+dart run tool/verify_release.dart
+flutter test test/app_backup_service_test.dart test/diagnostic_report_service_test.dart
+flutter test test/permission_status_service_test.dart test/theme_provider_test.dart
+flutter test test/accessibility_motion_test.dart test/i18n_language_tables_test.dart
+```
 
 Run the Android device integration smoke test and use the release-candidate
 matrix and performance baseline process in

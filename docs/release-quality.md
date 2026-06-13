@@ -10,6 +10,7 @@ flutter analyze
 flutter test
 cd android && ./gradlew testDebugUnitTest && cd ..
 flutter build apk --debug
+dart run tool/verify_release.dart
 ```
 
 Run the device integration smoke test on an Android release candidate:
@@ -19,7 +20,8 @@ flutter test integration_test/app_smoke_test.dart -d <device-id>
 ```
 
 Tag workflows must verify the generated APK/ZIP names and their SHA-256 files
-before uploading them.
+before uploading them. Android assets must also pass `apksigner verify` and
+must not contain an Android Debug signing certificate.
 
 ## Android Release Candidate Matrix
 
@@ -37,6 +39,8 @@ release candidate.
 | Timer | Pause on expiry, auto-resume, reboot/process-restart recovery |
 | Subtitle overlay | Permission handoff, display, close, Windows overlay |
 | Update | Valid checksum install; missing/mismatched checksum refusal |
+| Permissions | First launch with all optional permissions denied; contextual request timing |
+| Backup | Export, validate, restore, corrupted backup refusal, rollback after failure |
 
 ## Performance Baselines
 
@@ -51,6 +55,9 @@ approved explanation.
 | First library frame | Startup to populated/empty library state |
 | Long-list scrolling | Flutter DevTools frame times and jank count |
 | Large-library scan | Scan duration, peak memory, discovered track count |
+
+A regression over 20% blocks release unless the release notes record the
+measured reason and approval.
 
 Keep profile traces and the completed release-candidate matrix with the release
 notes or linked issue; do not commit device-specific traces to the repository.

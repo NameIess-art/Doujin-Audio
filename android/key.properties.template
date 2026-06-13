@@ -1,11 +1,14 @@
-# Release keystore configuration — DO NOT commit real secrets.
+# Release keystore configuration - DO NOT commit real secrets.
 # Copy this file to key.properties and fill in your actual values.
 #
-# Generate a keystore:
-#   keytool -genkey -v -keystore ~/upload-keystore.jks -keyalg RSA \
-#     -keysize 2048 -validity 10000 -alias upload
+# For a persistent local deployment key, run from the repository root:
+#   powershell -ExecutionPolicy Bypass -File tool/setup_local_release_signing.ps1
 #
-storeFile=../upload-keystore.jks
+# Generate a keystore manually:
+#   keytool -genkeypair -keystore upload-keystore.jks -keyalg RSA \
+#     -keysize 4096 -validity 10000 -alias upload
+#
+storeFile=upload-keystore.jks
 keyAlias=upload
 storePassword=changeit
 keyPassword=changeit

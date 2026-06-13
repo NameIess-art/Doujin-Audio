@@ -13,30 +13,6 @@ extension _MainScreenNotifications on _MainScreenState {
     await _powerPlatformService.openBatteryOptimizationSettings();
   }
 
-  Future<void> _maybeEnableBackgroundKeepAliveOnFirstLaunch() async {
-    if (!mounted || !Platform.isAndroid) return;
-    final initialized =
-        await AppPreferences.getBool(
-          _MainScreenState._backgroundKeepAliveInitializedKey,
-        ) ??
-        false;
-    if (initialized) return;
-    await AppPreferences.setBool(
-      _MainScreenState._backgroundKeepAliveInitializedKey,
-      true,
-    );
-    final ignoringBatteryOptimizations =
-        await _isIgnoringBatteryOptimizations();
-    if (!mounted || ignoringBatteryOptimizations) {
-      if (ignoringBatteryOptimizations) {
-        _backgroundPlaybackPromptShownThisLaunch = true;
-      }
-      return;
-    }
-    _backgroundPlaybackPromptShownThisLaunch = true;
-    await _promptOpenBatteryOptimizationSettings();
-  }
-
   Future<void> _maybePromptForBackgroundPlaybackReliability() async {
     _backgroundPlaybackPromptQueued = false;
     if (!mounted ||

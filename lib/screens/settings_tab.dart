@@ -12,16 +12,17 @@ import '../providers/audio_provider_riverpod.dart';
 import '../services/app_cache_service.dart';
 import '../services/app_log_service.dart';
 import '../services/app_update_service.dart';
-import '../services/notifications_platform_service.dart';
 import '../services/permission_action_controller.dart';
-import '../services/power_platform_service.dart';
 import '../theme/theme_provider.dart';
 import '../widgets/app_feedback.dart';
+import '../widgets/app_transitions.dart';
 import '../widgets/confirm_action_dialog.dart';
 import '../widgets/mobile_overlay_inset.dart';
 import '../widgets/subtitle_window_visual.dart';
 import '../widgets/top_page_header.dart';
 import '../providers/subtitle_settings_provider.dart';
+import 'permission_status_page.dart';
+import 'data_support_page.dart';
 
 part 'settings_tab_actions.dart';
 part 'settings_tab_widgets.dart';
@@ -35,9 +36,6 @@ class SettingsTab extends ConsumerStatefulWidget {
 
 class _SettingsTabState extends ConsumerState<SettingsTab>
     with WidgetsBindingObserver, AutomaticKeepAliveClientMixin {
-  final PowerPlatformService _powerPlatformService = PowerPlatformService();
-  final NotificationsPlatformService _notificationsPlatformService =
-      NotificationsPlatformService();
   static const List<int> _cacheLimitOptions = <int>[
     100 * 1024 * 1024,
     300 * 1024 * 1024,
@@ -51,9 +49,6 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
   double? _downloadProgress;
   AppUpdateInfo? _lastUpdateInfo;
   late Future<AppVersionInfo> _appVersionFuture;
-  late Future<bool> _backgroundRunAllowedFuture;
-  late Future<bool> _exactAlarmAllowedFuture;
-  late Future<bool> _notificationsAllowedFuture;
   final PermissionActionController _permissionActionController =
       PermissionActionController();
 
@@ -81,10 +76,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _backgroundRunAllowedFuture = _isIgnoringBatteryOptimizations();
     _appVersionFuture = AppUpdateService.currentAppVersion();
-    _exactAlarmAllowedFuture = _canScheduleExactAlarms();
-    _notificationsAllowedFuture = _areNotificationsEnabled();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _measureHeader();
@@ -127,17 +119,19 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       unawaited(_permissionActionController.handleAppResumed());
-      _refreshBackgroundRunStatus();
     }
   }
 
-  void _refreshBackgroundRunStatus() {
-    if (!mounted) return;
-    setState(() {
-      _backgroundRunAllowedFuture = _isIgnoringBatteryOptimizations();
-      _exactAlarmAllowedFuture = _canScheduleExactAlarms();
-      _notificationsAllowedFuture = _areNotificationsEnabled();
-    });
+  void _openPermissionCenter() {
+    Navigator.of(
+      context,
+    ).push(buildAppPageRoute<void>(child: const PermissionStatusPage()));
+  }
+
+  void _openDataAndSupport() {
+    Navigator.of(
+      context,
+    ).push(buildAppPageRoute<void>(child: const DataSupportPage()));
   }
 
   void _showSubtitleWindowSettings(BuildContext context) {
@@ -201,22 +195,22 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                       children: [
                         Consumer(
                           builder: (context, ref, _) {
-                            final isDarkMode = context
-                                .select<ThemeProvider, bool>(
-                                  (p) => p.isDarkMode,
+                            final themeMode = context
+                                .select<ThemeProvider, ThemeMode>(
+                                  (provider) => provider.themeMode,
                                 );
-                            final toggleTheme = context
-                                .read<ThemeProvider>()
-                                .toggleTheme;
-                            return SwitchListTile(
-                              value: isDarkMode,
-                              onChanged: toggleTheme,
+                            final modeLabels = <ThemeMode, String>{
+                              ThemeMode.system: i18n.tr('theme_system'),
+                              ThemeMode.light: i18n.tr('theme_light'),
+                              ThemeMode.dark: i18n.tr('theme_dark'),
+                            };
+                            return ListTile(
                               title: Text(i18n.tr('dark_mode')),
                               subtitle: Text(
                                 i18n.tr('dark_mode_subtitle'),
                                 style: descStyle,
                               ),
-                              secondary: Container(
+                              leading: Container(
                                 width: 38,
                                 height: 38,
                                 decoration: BoxDecoration(
@@ -226,6 +220,28 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                                 child: Icon(
                                   Icons.dark_mode_rounded,
                                   color: cs.onPrimaryContainer,
+                                ),
+                              ),
+                              trailing: PopupMenuButton<ThemeMode>(
+                                tooltip: i18n.tr('dark_mode'),
+                                initialValue: themeMode,
+                                onSelected: context
+                                    .read<ThemeProvider>()
+                                    .setThemeMode,
+                                itemBuilder: (_) => ThemeMode.values
+                                    .map(
+                                      (mode) => PopupMenuItem(
+                                        value: mode,
+                                        child: Text(modeLabels[mode]!),
+                                      ),
+                                    )
+                                    .toList(growable: false),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(modeLabels[themeMode]!),
+                                    const Icon(Icons.arrow_drop_down_rounded),
+                                  ],
                                 ),
                               ),
                               contentPadding: const EdgeInsets.symmetric(
@@ -736,59 +752,12 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                       _SectionHeader(title: i18n.tr('section_notification')),
                       _SettingsGroupCard(
                         children: [
-                          _CapabilitySettingsTile(
-                            title: i18n.tr('notification_permission_status'),
-                            icon: Icons.notifications_rounded,
-                            okFuture: _notificationsAllowedFuture,
-                            okText: i18n.tr('notification_permission_ready'),
-                            missingText: i18n.tr(
-                              'notification_permission_missing',
-                            ),
-                            checkingText: i18n.tr(
-                              'notification_permission_checking',
-                            ),
-                            onTap: () => _openNotificationSettings(context),
-                          ),
-                          _CapabilitySettingsTile(
-                            title: i18n.tr('exact_alarm_permission_status'),
-                            icon: Icons.alarm_on_rounded,
-                            okFuture: _exactAlarmAllowedFuture,
-                            okText: i18n.tr('exact_alarm_permission_ready'),
-                            missingText: i18n.tr(
-                              'exact_alarm_permission_missing',
-                            ),
-                            checkingText: i18n.tr(
-                              'exact_alarm_permission_checking',
-                            ),
-                            onTap: () => _openExactAlarmSettings(context),
-                          ),
                           ListTile(
-                            onTap: () => _openBackgroundRunSettings(context),
-                            title: Text(i18n.tr('allow_background_run')),
-                            subtitle: FutureBuilder<bool>(
-                              future: _backgroundRunAllowedFuture,
-                              builder: (context, snapshot) {
-                                if (snapshot.connectionState !=
-                                        ConnectionState.done &&
-                                    snapshot.data == null) {
-                                  return Text(
-                                    i18n.tr('allow_background_run_checking'),
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: descStyle,
-                                  );
-                                }
-                                final ignoring = snapshot.data == true;
-                                final status = ignoring
-                                    ? i18n.tr('allow_background_run_ready')
-                                    : i18n.tr('allow_background_run_subtitle');
-                                return Text(
-                                  status,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: descStyle,
-                                );
-                              },
+                            onTap: _openPermissionCenter,
+                            title: Text(i18n.tr('permission_center')),
+                            subtitle: Text(
+                              i18n.tr('permission_center_subtitle'),
+                              style: descStyle,
                             ),
                             leading: Container(
                               width: 38,
@@ -798,7 +767,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                                 borderRadius: BorderRadius.circular(10),
                               ),
                               child: Icon(
-                                Icons.battery_saver_rounded,
+                                Icons.admin_panel_settings_rounded,
                                 color: cs.onTertiaryContainer,
                               ),
                             ),
@@ -820,6 +789,34 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                     _SectionHeader(title: i18n.tr('section_other')),
                     _SettingsGroupCard(
                       children: [
+                        ListTile(
+                          onTap: _openDataAndSupport,
+                          title: Text(i18n.tr('data_and_support')),
+                          subtitle: Text(
+                            i18n.tr('data_and_support_subtitle'),
+                            style: descStyle,
+                          ),
+                          leading: Container(
+                            width: 38,
+                            height: 38,
+                            decoration: BoxDecoration(
+                              color: cs.tertiaryContainer,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Icon(
+                              Icons.health_and_safety_rounded,
+                              color: cs.onTertiaryContainer,
+                            ),
+                          ),
+                          trailing: Icon(
+                            Icons.chevron_right_rounded,
+                            color: cs.onSurfaceVariant,
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 2,
+                          ),
+                        ),
                         if (!Platform.isWindows) ...[
                           Consumer(
                             builder: (context, ref, _) {

@@ -2,6 +2,11 @@
 
 Nameless Audio uses Android permissions for local media playback, library scanning, notifications, app updates, and background reliability.
 
+No optional permission is requested during first launch. Permission prompts are
+shown only after the user starts the related feature. The centralized
+**Permissions & background** settings page explains each capability and opens
+the relevant system settings page.
+
 ## Media and Storage
 
 - `READ_MEDIA_AUDIO`: reads audio files on Android 13 and newer.
@@ -9,6 +14,10 @@ Nameless Audio uses Android permissions for local media playback, library scanni
 - `MANAGE_EXTERNAL_STORAGE`: supports broad folder scanning for user-selected local libraries when scoped media access is not enough.
 
 If broad storage access is denied, users should still prefer Android's picker or folder selection flows where available. Features that depend on direct filesystem traversal may be limited.
+
+SAF import is the default recommended flow and does not require
+`MANAGE_EXTERNAL_STORAGE`. Broad file access is requested only when the user
+chooses direct folder scanning that needs it.
 
 ## Playback and Background Reliability
 
@@ -22,6 +31,10 @@ If broad storage access is denied, users should still prefer Android's picker or
 During playback, Android requires a visible foreground media notification so the system can treat the app as active media playback while the screen is off. Disabling rich in-app notification controls does not remove the minimal foreground playback notification while audio is playing.
 
 If the user denies battery optimization exemption, playback still works best-effort through the native media service and wake locks, but some OEM ROMs may stop background work more aggressively.
+
+Notification and battery optimization guidance is shown when the user enables
+background playback. Exact alarm access is requested only when reliable sleep
+timer restoration needs it.
 
 ## Subtitle Overlay
 
@@ -41,3 +54,6 @@ If notification permission is denied or rich playback notifications are disabled
 - `REQUEST_INSTALL_PACKAGES`: allows the in-app update flow to hand a downloaded APK to the Android installer.
 
 If this permission is denied, users can still install updates manually from the release APK.
+
+Unknown-source installation access is requested only after the user chooses to
+install a downloaded APK update.

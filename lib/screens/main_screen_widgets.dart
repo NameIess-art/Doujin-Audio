@@ -443,7 +443,7 @@ class _BootstrapOverlayState extends State<_BootstrapOverlay>
                     ),
                     const SizedBox(height: 24),
                     Text(
-                      'NL Audio',
+                      'Nameless Audio',
                       style: Theme.of(context).textTheme.headlineSmall
                           ?.copyWith(
                             fontWeight: FontWeight.w900,

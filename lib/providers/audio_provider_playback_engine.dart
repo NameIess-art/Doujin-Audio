@@ -26,9 +26,10 @@ extension AudioProviderPlaybackEngine on AudioProvider {
     _notificationsDismissedWhilePaused = false;
     unawaited(_nativePlaybackRepository.undismissNotifications());
     _notificationFocusSessionId = session.id;
+    session.playbackError = null;
     session.isPlaybackStarting = true;
     session.setOptimisticState(
-      playing: true,
+      playing: AppPlatform.usesDesktopPlaybackBridge ? false : true,
       processingState: session.state.processingState == ProcessingState.idle
           ? ProcessingState.loading
           : null,
@@ -68,17 +69,11 @@ extension AudioProviderPlaybackEngine on AudioProvider {
         );
         _syncKeepCpuAwake();
         _notifyPlaybackChanged();
-      } else if (!session.state.playing && session.isPlaybackStarting) {
-        // Stale EventChannel snapshots from prepareSession may have
-        // overwritten the optimistic playing state. Re-assert it.
-        session.setOptimisticState(
-          playing: true,
-          processingState: session.loadedPath != null
-              ? ProcessingState.ready
-              : ProcessingState.idle,
-        );
-        _syncKeepCpuAwake();
-        _notifyPlaybackChanged();
+      } else {
+        final snapshot = playResult.valueOrNull;
+        if (snapshot != null) {
+          _handleNativePlaybackSnapshot(snapshot);
+        }
       }
     } catch (e) {
       if (_isSessionCommandCurrent(session, token)) {
@@ -211,11 +206,6 @@ extension AudioProviderPlaybackEngine on AudioProvider {
   Future<void> _handleSessionCompleted(String sessionId) async {
     final session = _sessions[sessionId];
     if (session == null) return;
-    if (session.loopMode == SessionLoopMode.single) {
-      session.isAdvancingAfterCompletion = false;
-      return;
-    }
-
     final nextPath = _nextPathFor(session, forward: true);
     if (nextPath == null) {
       session.isAdvancingAfterCompletion = false;
@@ -271,7 +261,10 @@ extension AudioProviderPlaybackEngine on AudioProvider {
       }
       Iterable<MusicTrack> candidateTracks = customQueueTracks;
       if (!session.isPlaybackQueue && !_isCrossFolderMode(session.loopMode)) {
-        final currentTrack = _sessionTrackForPath(session, session.currentTrackPath);
+        final currentTrack = _sessionTrackForPath(
+          session,
+          session.currentTrackPath,
+        );
         if (currentTrack != null) {
           final folderKey = _folderKeyForTrack(currentTrack);
           candidateTracks = customQueueTracks.where(
@@ -331,10 +324,16 @@ extension AudioProviderPlaybackEngine on AudioProvider {
       if (session.isPlaybackQueue || _isCrossFolderMode(session.loopMode)) {
         return customQueueTracks.length > 1;
       }
-      final currentTrack = _sessionTrackForPath(session, session.currentTrackPath);
+      final currentTrack = _sessionTrackForPath(
+        session,
+        session.currentTrackPath,
+      );
       if (currentTrack != null) {
         final folderKey = _folderKeyForTrack(currentTrack);
-        return customQueueTracks.where((t) => _folderKeyForTrack(t) == folderKey).length > 1;
+        return customQueueTracks
+                .where((t) => _folderKeyForTrack(t) == folderKey)
+                .length >
+            1;
       }
       return customQueueTracks.length > 1;
     }

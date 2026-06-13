@@ -116,4 +116,48 @@ void main() {
     expect(session.state.playing, isTrue);
     expect(session.state.processingState, ProcessingState.ready);
   });
+
+  test('playback errors are stored and cleared by authoritative snapshots', () {
+    final session = PlaybackSession(
+      id: 'session_1',
+      currentTrackPath: '/audio/one.mp3',
+      loopMode: SessionLoopMode.folderSequential,
+      nonSingleLoopMode: SessionLoopMode.folderSequential,
+      volume: 1,
+      createdAt: DateTime(2026),
+      state: PlayerState(false, ProcessingState.idle),
+    );
+    addTearDown(session.dispose);
+
+    session.applyNativeSnapshot(
+      const NativePlaybackSnapshot(
+        sessionId: 'session_1',
+        playing: false,
+        playWhenReady: false,
+        processingState: 'idle',
+        position: Duration.zero,
+        bufferedPosition: Duration.zero,
+        volume: 1,
+        boostGain: 1,
+        channelSwapEnabled: false,
+        error: 'network failed',
+      ),
+    );
+    expect(session.playbackError, 'network failed');
+
+    session.applyNativeSnapshot(
+      const NativePlaybackSnapshot(
+        sessionId: 'session_1',
+        playing: true,
+        playWhenReady: true,
+        processingState: 'ready',
+        position: Duration.zero,
+        bufferedPosition: Duration.zero,
+        volume: 1,
+        boostGain: 1,
+        channelSwapEnabled: false,
+      ),
+    );
+    expect(session.playbackError, isNull);
+  });
 }

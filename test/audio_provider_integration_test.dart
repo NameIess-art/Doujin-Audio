@@ -65,6 +65,44 @@ void main() {
       expect(provider.activeSessions, isEmpty);
     });
 
+    test('added sessions follow the auto-play setting', () async {
+      var prepareCalls = 0;
+      var playCalls = 0;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+            if (call.method == NativePlaybackMethod.prepareSession) {
+              prepareCalls++;
+            } else if (call.method == NativePlaybackMethod.play) {
+              playCalls++;
+            }
+            return <String, Object?>{'ok': true, 'value': null};
+          });
+      const track = MusicTrack(
+        path: '/music/auto-play-setting.mp3',
+        displayName: 'Auto Play Setting',
+        groupKey: '/music',
+        groupTitle: 'Music',
+        groupSubtitle: '',
+        isSingle: true,
+      );
+
+      await provider.setAutoPlayAddedSessions(false);
+      await provider.spawnSession(track);
+      for (var i = 0; i < 20 && prepareCalls < 1; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      expect(prepareCalls, 1);
+      expect(playCalls, 0);
+
+      await provider.setAutoPlayAddedSessions(true);
+      await provider.spawnSession(track);
+      for (var i = 0; i < 20 && playCalls < 1; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      expect(prepareCalls, 2);
+      expect(playCalls, 1);
+    });
+
     test('toggling play-pause with unknown id does not throw', () {
       provider.toggleSessionPlayPause('non_existent_session');
       expect(provider.activeSessions, isEmpty);

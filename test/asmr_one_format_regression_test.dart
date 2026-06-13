@@ -5,6 +5,32 @@ import 'package:nameless_audio/models/asmr_models.dart';
 import 'package:nameless_audio/services/asmr_library_controller.dart';
 
 void main() {
+  test('ASMR tracks persist ordered deduplicated playback candidates', () {
+    const node = AsmrTrackFile(
+      hash: 'hash',
+      title: 'track.m4a',
+      type: 'audio',
+      streamUrl: 'https://example.com/high.m4a',
+      downloadUrl: 'https://example.com/high.m4a',
+      lowQualityUrl: 'https://example.com/low.m4a',
+      duration: Duration(minutes: 1),
+      size: 1,
+      children: <AsmrTrackFile>[],
+      workId: 1,
+      workTitle: 'work',
+      sourceId: 'RJ1',
+      relativePath: 'track.m4a',
+    );
+
+    final track = node.toMusicTrack(remoteMetadataKind: 'asmr.one');
+
+    expect(track.path, 'https://example.com/low.m4a');
+    expect(track.remoteMetadata?['playbackUrls'], <String>[
+      'https://example.com/low.m4a',
+      'https://example.com/high.m4a',
+    ]);
+  });
+
   test(
     'ASMR matches URL-based subtitle extensions even when titles omit suffixes',
     () {

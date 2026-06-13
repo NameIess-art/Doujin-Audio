@@ -41,6 +41,7 @@ class NativePlaybackRepository {
     int? queueStartIndex,
     bool repeatAll = false,
     bool shuffle = false,
+    List<Uri>? candidateUris,
   }) {
     return _bridge.prepareSession(
       sessionId: sessionId,
@@ -58,6 +59,7 @@ class NativePlaybackRepository {
       queueStartIndex: queueStartIndex,
       repeatAll: repeatAll,
       shuffle: shuffle,
+      candidateUris: candidateUris,
     );
   }
 

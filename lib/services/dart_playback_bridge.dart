@@ -43,6 +43,8 @@ const String _windowsNoiseReductionFilter =
     '$_noiseReductionAudioFilterLabel:lavfi=[afftdn=nr=6:nf=-55]';
 const String _windowsVolumeNormalizationFilter =
     '$_volumeNormalizationAudioFilterLabel:lavfi=[dynaudnorm=f=500:g=5:p=0.6:m=3,alimiter=limit=0.95]';
+const int _windowsLoadAttemptCount = 3;
+const Duration _windowsLoadRetryDelay = Duration(milliseconds: 400);
 
 @visibleForTesting
 const EqCapabilities dartPlaybackWindowsEqCapabilities = EqCapabilities(
@@ -70,8 +72,12 @@ List<String> buildDartPlaybackAudioFiltersForTest(NativeAudioEffects effects) {
 }
 
 class DartPlaybackBridge implements NativePlaybackBridgeBase {
-  DartPlaybackBridge() {
-    _ensureMediaKitInitialized();
+  DartPlaybackBridge({
+    @visibleForTesting media.Player Function()? playerFactory,
+  }) : _playerFactory = playerFactory ?? media.Player.new {
+    if (playerFactory == null) {
+      _ensureMediaKitInitialized();
+    }
   }
 
   static bool _mediaKitInitialized = false;
@@ -83,6 +89,7 @@ class DartPlaybackBridge implements NativePlaybackBridgeBase {
   }
 
   final Map<String, _DartPlaybackSession> _sessions = {};
+  final media.Player Function() _playerFactory;
   final StreamController<NativePlaybackSnapshot> _snapshots =
       StreamController<NativePlaybackSnapshot>.broadcast();
   String? _focusedSessionId;
@@ -122,6 +129,7 @@ class DartPlaybackBridge implements NativePlaybackBridgeBase {
     int? queueStartIndex,
     bool repeatAll = false,
     bool shuffle = false,
+    List<Uri>? candidateUris,
   }) async {
     if (uri.scheme == 'content') {
       return const NativeFailure(
@@ -134,36 +142,41 @@ class DartPlaybackBridge implements NativePlaybackBridgeBase {
         sessionId,
         () => _DartPlaybackSession(
           sessionId: sessionId,
-          onChanged: () => _emit(sessionId),
+          onChanged: () {
+            if (_sessions.containsKey(sessionId)) {
+              _emit(sessionId);
+            }
+          },
+          player: _playerFactory(),
         ),
       );
       _focusedSessionId = sessionId;
-      final items = _itemsFor(
+      final item = _itemFor(
         uri: uri,
         title: title,
         path: path,
         subtitle: subtitle,
         artUri: artUri,
-        queue: queue,
-        queueStartIndex: queueStartIndex,
       );
-      session.volume = _normalizeSessionVolume(volume);
-      session.speed = _normalizeSessionSpeed(speed);
-      await session.setItems(
-        items,
-        initialIndex: queueStartIndex ?? 0,
-        initialPosition: startPosition,
-      );
-      await _applyLoopAndShuffle(
-        session,
-        repeatOne: repeatOne,
-        repeatAll: repeatAll,
-        shuffle: shuffle,
-      );
-      if (autoPlay) {
-        unawaited(_playSession(session));
-      }
-      return NativeSuccess(_emit(sessionId));
+      await session.runSerialized(() async {
+        session.volume = _normalizeSessionVolume(volume);
+        session.speed = _normalizeSessionSpeed(speed);
+        session.logicalQueueIndex = queueStartIndex ?? 0;
+        await session.setItem(
+          item,
+          initialPosition: startPosition,
+          candidateUris: candidateUris,
+        );
+        await session.setPlaybackMode(
+          repeatOne: false,
+          repeatAll: false,
+          shuffle: false,
+        );
+        if (autoPlay) {
+          await session.play();
+        }
+      });
+      return NativeSuccess(_snapshotFor(sessionId));
     } catch (error) {
       return NativeFailure(error.toString());
     }
@@ -174,15 +187,19 @@ class DartPlaybackBridge implements NativePlaybackBridgeBase {
     final session = _sessions[sessionId];
     if (session == null) return NativeFailure('Unknown session: $sessionId');
     _focusedSessionId = sessionId;
-    unawaited(_playSession(session));
-    return NativeSuccess(_emit(sessionId));
+    try {
+      await session.runSerialized(session.play);
+      return NativeSuccess(_snapshotFor(sessionId));
+    } catch (error) {
+      return NativeFailure(error.toString());
+    }
   }
 
   @override
   Future<NativeResult<NativePlaybackSnapshot>> pause(String sessionId) async {
     final session = _sessions[sessionId];
     if (session == null) return NativeFailure('Unknown session: $sessionId');
-    await session.pause();
+    await session.runSerialized(session.pause);
     return NativeSuccess(_emit(sessionId));
   }
 
@@ -190,7 +207,7 @@ class DartPlaybackBridge implements NativePlaybackBridgeBase {
   Future<NativeResult<NativePlaybackSnapshot>> stop(String sessionId) async {
     final session = _sessions[sessionId];
     if (session == null) return NativeFailure('Unknown session: $sessionId');
-    await session.stop();
+    await session.runSerialized(session.stop);
     return NativeSuccess(_emit(sessionId));
   }
 
@@ -201,7 +218,7 @@ class DartPlaybackBridge implements NativePlaybackBridgeBase {
   ) async {
     final session = _sessions[sessionId];
     if (session == null) return NativeFailure('Unknown session: $sessionId');
-    await session.seek(position);
+    await session.runSerialized(() => session.seek(position));
     return NativeSuccess(_emit(sessionId));
   }
 
@@ -213,7 +230,9 @@ class DartPlaybackBridge implements NativePlaybackBridgeBase {
   }) async {
     final session = _sessions[sessionId];
     if (session == null) return NativeFailure('Unknown session: $sessionId');
-    await session.setVolume(volume, reloadSource: reloadSource);
+    await session.runSerialized(
+      () => session.setVolume(volume, reloadSource: reloadSource),
+    );
     return NativeSuccess(_emit(sessionId));
   }
 
@@ -224,7 +243,7 @@ class DartPlaybackBridge implements NativePlaybackBridgeBase {
   ) async {
     final session = _sessions[sessionId];
     if (session == null) return NativeFailure('Unknown session: $sessionId');
-    await session.setSpeed(speed);
+    await session.runSerialized(() => session.setSpeed(speed));
     return NativeSuccess(_emit(sessionId));
   }
 
@@ -239,11 +258,13 @@ class DartPlaybackBridge implements NativePlaybackBridgeBase {
   }) async {
     final session = _sessions[sessionId];
     if (session == null) return NativeFailure('Unknown session: $sessionId');
-    await _applyLoopAndShuffle(
-      session,
-      repeatOne: repeatOne,
-      repeatAll: repeatAll,
-      shuffle: shuffle,
+    await session.runSerialized(
+      () => _applyLoopAndShuffle(
+        session,
+        repeatOne: repeatOne,
+        repeatAll: repeatAll,
+        shuffle: shuffle,
+      ),
     );
     return NativeSuccess(_emit(sessionId));
   }
@@ -256,7 +277,7 @@ class DartPlaybackBridge implements NativePlaybackBridgeBase {
     final session = _sessions[sessionId];
     if (session == null) return NativeFailure('Unknown session: $sessionId');
     try {
-      await session.setAudioEffects(effects);
+      await session.runSerialized(() => session.setAudioEffects(effects));
     } catch (error) {
       return NativeFailure(error.toString());
     }
@@ -270,7 +291,7 @@ class DartPlaybackBridge implements NativePlaybackBridgeBase {
   ) async {
     final session = _sessions[sessionId];
     if (session == null) return NativeFailure('Unknown session: $sessionId');
-    await session.setFadeMultiplier(multiplier);
+    await session.runSerialized(() => session.setFadeMultiplier(multiplier));
     return NativeSuccess(_emit(sessionId));
   }
 
@@ -284,7 +305,9 @@ class DartPlaybackBridge implements NativePlaybackBridgeBase {
 
   @override
   Future<NativeResult<void>> pauseAll() async {
-    await Future.wait(_sessions.values.map((session) => session.pause()));
+    await Future.wait(
+      _sessions.values.map((session) => session.runSerialized(session.pause)),
+    );
     for (final sessionId in _sessions.keys) {
       _emit(sessionId);
     }
@@ -326,56 +349,19 @@ class DartPlaybackBridge implements NativePlaybackBridgeBase {
     );
   }
 
-  Future<void> _playSession(_DartPlaybackSession session) async {
-    try {
-      await session.play();
-    } catch (error) {
-      debugPrint('DartPlaybackBridge.play error: $error');
-    } finally {
-      if (_sessions.containsKey(session.sessionId)) {
-        _emit(session.sessionId);
-      }
-    }
-  }
-
-  List<_DartPlaybackItem> _itemsFor({
+  _DartPlaybackItem _itemFor({
     required Uri uri,
     required String title,
     required String? path,
     required String? subtitle,
     required Uri? artUri,
-    required List<Map<String, Object?>>? queue,
-    required int? queueStartIndex,
   }) {
-    final queueItems = queue
-        ?.map(_itemFromMap)
-        .whereType<_DartPlaybackItem>()
-        .toList(growable: false);
-    if (queueItems != null && queueItems.isNotEmpty) {
-      return queueItems;
-    }
-    return <_DartPlaybackItem>[
-      _DartPlaybackItem(
-        uri: uri,
-        path: path ?? _pathFromUri(uri),
-        title: title,
-        subtitle: subtitle,
-        artUri: artUri?.toString(),
-      ),
-    ];
-  }
-
-  _DartPlaybackItem? _itemFromMap(Map<String, Object?> map) {
-    final rawUri = map['uri']?.toString();
-    final uri = rawUri == null ? null : Uri.tryParse(rawUri);
-    if (uri == null || uri.scheme == 'content') return null;
-    final rawPath = map['path']?.toString();
     return _DartPlaybackItem(
       uri: uri,
-      path: rawPath == null || rawPath.isEmpty ? _pathFromUri(uri) : rawPath,
-      title: map['title']?.toString(),
-      subtitle: map['subtitle']?.toString(),
-      artUri: map['artUri']?.toString(),
+      path: path ?? _pathFromUri(uri),
+      title: title,
+      subtitle: subtitle,
+      artUri: artUri?.toString(),
     );
   }
 
@@ -422,13 +408,18 @@ class DartPlaybackBridge implements NativePlaybackBridgeBase {
       channelSwapEnabled: session.channelSwapEnabled,
       audioEffects: session.audioEffects,
       eqCapabilities: dartPlaybackWindowsEqCapabilities,
-      queueIndex: session.currentIndex,
+      error: session.error,
+      queueIndex: session.logicalQueueIndex,
     );
   }
 }
 
 class _DartPlaybackSession {
-  _DartPlaybackSession({required this.sessionId, required this.onChanged}) {
+  _DartPlaybackSession({
+    required this.sessionId,
+    required this.onChanged,
+    required this.player,
+  }) {
     void bind<T>(Stream<T> stream, void Function(T value) update) {
       subscriptions.add(
         stream.listen(
@@ -447,44 +438,82 @@ class _DartPlaybackSession {
     }
 
     bind<bool>(player.stream.playing, (value) {
+      if (opening && value) return;
       playing = value;
       if (value) {
+        _hasPlayedCurrentSource = true;
+        _completionTimer?.cancel();
         playWhenReady = true;
         completed = false;
         error = null;
       }
     });
-    bind<bool>(player.stream.completed, (value) {
-      completed = value;
-      if (value) {
-        playing = false;
-        playWhenReady = false;
-      }
-    });
+    subscriptions.add(
+      player.stream.completed.listen((value) {
+        _completionTimer?.cancel();
+        if (!value) {
+          completed = false;
+          _notifyChanged();
+          return;
+        }
+        if (!_hasPlayedCurrentSource || error != null || opening) return;
+        final generation = _sourceGeneration;
+        _completionTimer = Timer(const Duration(milliseconds: 250), () {
+          if (generation != _sourceGeneration ||
+              error != null ||
+              opening ||
+              !_hasPlayedCurrentSource) {
+            return;
+          }
+          completed = true;
+          playing = false;
+          playWhenReady = false;
+          _notifyChanged();
+        });
+      }),
+    );
     bind<bool>(player.stream.buffering, (value) => buffering = value);
-    bind<Duration>(player.stream.position, (value) => position = value);
+    bind<Duration>(player.stream.position, (value) {
+      final pendingPosition = _pendingSeekPosition;
+      if (pendingPosition != null &&
+          (value - pendingPosition).abs() > const Duration(milliseconds: 500)) {
+        return;
+      }
+      if (pendingPosition != null && playing) {
+        _pendingSeekPosition = null;
+      }
+      position = value;
+    });
     bind<Duration>(player.stream.buffer, (value) => bufferedPosition = value);
     bind<Duration>(player.stream.duration, (value) {
       duration = value == Duration.zero ? null : value;
     });
-    bind<media.Playlist>(player.stream.playlist, (value) {
-      currentIndex = value.index.clamp(0, items.isEmpty ? 0 : items.length - 1);
-    });
     bind<String>(player.stream.error, (value) {
+      final wasOpening = opening;
+      final shouldResume = playWhenReady || playing;
+      _completionTimer?.cancel();
       error = value;
       playing = false;
       playWhenReady = false;
-      opening = false;
+      completed = false;
+      if (!wasOpening) {
+        opening = false;
+      }
       debugPrint('DartPlaybackSession media_kit error: $value');
+      if (!wasOpening) {
+        _scheduleAutomaticLoadRetry(shouldResume: shouldResume);
+      }
     });
   }
 
   final String sessionId;
   final VoidCallback onChanged;
-  final media.Player player = media.Player();
+  final media.Player player;
   final List<StreamSubscription<dynamic>> subscriptions = [];
-  List<_DartPlaybackItem> items = const <_DartPlaybackItem>[];
-  int currentIndex = 0;
+  _DartPlaybackItem? item;
+  List<Uri> candidateUris = const <Uri>[];
+  int activeCandidateIndex = 0;
+  int logicalQueueIndex = 0;
   double volume = 1.0;
   double speed = 1.0;
   AudioEffectsState audioEffects = AudioEffectsState.flat;
@@ -501,6 +530,24 @@ class _DartPlaybackSession {
   String? error;
   Duration? _pendingSeekPosition;
   double fadeMultiplier = 1.0;
+  bool _hasPlayedCurrentSource = false;
+  Timer? _completionTimer;
+  Timer? _automaticRetryTimer;
+  bool _automaticRetryScheduled = false;
+  int _sourceGeneration = 0;
+  Future<void> _commandTail = Future<void>.value();
+
+  Future<T> runSerialized<T>(Future<T> Function() command) {
+    final completer = Completer<T>();
+    _commandTail = _commandTail.catchError((_) {}).then((_) async {
+      try {
+        completer.complete(await command());
+      } catch (error, stackTrace) {
+        completer.completeError(error, stackTrace);
+      }
+    });
+    return completer.future;
+  }
 
   Future<void> setVolume(double nextVolume, {bool reloadSource = true}) async {
     volume = _normalizeSessionVolume(nextVolume);
@@ -523,8 +570,7 @@ class _DartPlaybackSession {
   }
 
   _DartPlaybackItem? get currentItem {
-    if (items.isEmpty) return null;
-    return items[currentIndex.clamp(0, items.length - 1)];
+    return item;
   }
 
   String get processingState {
@@ -532,46 +578,42 @@ class _DartPlaybackSession {
     if (opening) return 'loading';
     if (completed) return 'completed';
     if (buffering) return 'buffering';
-    if (items.isEmpty) return 'idle';
+    if (item == null) return 'idle';
     return 'ready';
   }
 
-  Future<void> setItems(
-    List<_DartPlaybackItem> nextItems, {
-    required int initialIndex,
+  Future<void> setItem(
+    _DartPlaybackItem nextItem, {
     required Duration initialPosition,
+    List<Uri>? candidateUris,
   }) async {
-    items = List.of(nextItems);
-    if (items.isEmpty) {
-      await stop();
-      return;
-    }
+    item = nextItem;
+    final fallbackUris = <Uri>{
+      ...?candidateUris,
+      nextItem.uri,
+    }.toList(growable: false);
+    this.candidateUris = fallbackUris;
 
     opening = true;
+    playing = false;
+    playWhenReady = false;
+    buffering = false;
     completed = false;
     error = null;
-    currentIndex = initialIndex.clamp(0, items.length - 1);
+    position = initialPosition;
+    bufferedPosition = Duration.zero;
+    duration = null;
+    _pendingSeekPosition = null;
+    _sourceGeneration++;
+    _automaticRetryTimer?.cancel();
+    _automaticRetryScheduled = false;
+    activeCandidateIndex = 0;
+    _hasPlayedCurrentSource = false;
+    _completionTimer?.cancel();
     onChanged();
 
     try {
-      await player.open(
-        media.Playlist(
-          items.map(_mediaFor).toList(growable: false),
-          index: currentIndex,
-        ),
-        play: false,
-      );
-      if (!playWhenReady) {
-        await player.pause();
-      }
-      await _applyVolume();
-      await player.setRate(speed);
-      await _applyManagedAudioFilters();
-      if (initialPosition > Duration.zero) {
-        _pendingSeekPosition = initialPosition;
-        await player.seek(initialPosition);
-      }
-      position = initialPosition;
+      await _openAvailableCandidateWithRetry(initialPosition);
     } finally {
       opening = false;
       onChanged();
@@ -638,27 +680,58 @@ class _DartPlaybackSession {
     required bool repeatAll,
     required bool shuffle,
   }) async {
-    await player.setPlaylistMode(
-      repeatOne
-          ? media.PlaylistMode.single
-          : repeatAll
-          ? media.PlaylistMode.loop
-          : media.PlaylistMode.none,
-    );
-    await player.setShuffle(shuffle);
+    await player.setPlaylistMode(media.PlaylistMode.none);
+    await player.setShuffle(false);
   }
 
   Future<void> play() async {
+    if (error != null) {
+      opening = true;
+      onChanged();
+      try {
+        await _openAvailableCandidateWithRetry(position);
+      } finally {
+        opening = false;
+        onChanged();
+      }
+    }
     playWhenReady = true;
     completed = false;
     error = null;
     onChanged();
     if (_pendingSeekPosition != null) {
       final pos = _pendingSeekPosition!;
-      _pendingSeekPosition = null;
       await player.seek(pos);
     }
-    await player.play();
+    while (true) {
+      try {
+        await player.play();
+        _syncPlayerStateMetadata();
+        await _awaitPlaybackStart();
+        onChanged();
+        return;
+      } catch (failure) {
+        final nextCandidateIndex = activeCandidateIndex + 1;
+        if (nextCandidateIndex >= candidateUris.length) {
+          error = error ?? failure.toString();
+          playing = false;
+          playWhenReady = false;
+          onChanged();
+          rethrow;
+        }
+        opening = true;
+        onChanged();
+        try {
+          await _openAvailableCandidate(
+            position,
+            startIndex: nextCandidateIndex,
+          );
+        } finally {
+          opening = false;
+          onChanged();
+        }
+      }
+    }
   }
 
   Future<void> pause() async {
@@ -678,8 +751,7 @@ class _DartPlaybackSession {
     position = Duration.zero;
     bufferedPosition = Duration.zero;
     duration = null;
-    items = const <_DartPlaybackItem>[];
-    currentIndex = 0;
+    item = null;
     await player.stop();
     onChanged();
   }
@@ -695,14 +767,148 @@ class _DartPlaybackSession {
       playWhenReady = true;
       await player.play();
     }
+    _syncPlayerStateMetadata();
+    onChanged();
   }
 
-  media.Media _mediaFor(_DartPlaybackItem item) {
-    final itemPath = item.path;
-    if (itemPath == null || PathMatcher.isRemoteUri(itemPath)) {
-      return media.Media(item.uri.toString());
+  void _syncPlayerStateMetadata() {
+    final state = player.state;
+    playing = state.playing;
+    buffering = state.buffering;
+    completed = state.completed;
+    final pendingPosition = _pendingSeekPosition;
+    if (pendingPosition == null) {
+      position = state.position;
+    } else if ((state.position - pendingPosition).abs() <=
+        const Duration(milliseconds: 500)) {
+      position = state.position;
+      if (playing) {
+        _pendingSeekPosition = null;
+      }
+    } else {
+      position = pendingPosition;
     }
-    return media.Media(itemPath);
+    bufferedPosition = state.buffer;
+    duration = state.duration == Duration.zero ? null : state.duration;
+  }
+
+  Future<void> _openAvailableCandidate(
+    Duration initialPosition, {
+    int startIndex = 0,
+  }) async {
+    Object? lastError;
+    for (var index = startIndex; index < candidateUris.length; index++) {
+      activeCandidateIndex = index;
+      error = null;
+      completed = false;
+      _hasPlayedCurrentSource = false;
+      try {
+        await player.open(
+          media.Media(candidateUris[index].toString()),
+          play: false,
+        );
+        await _applyVolume();
+        await player.setRate(speed);
+        await _applyManagedAudioFilters();
+        if (initialPosition > Duration.zero) {
+          _pendingSeekPosition = initialPosition;
+          await player.seek(initialPosition);
+        }
+        _syncPlayerStateMetadata();
+        await _awaitInitialMediaState();
+        error = null;
+        return;
+      } catch (failure) {
+        lastError = error ?? failure;
+        debugPrint(
+          'DartPlaybackSession candidate ${index + 1}/${candidateUris.length} '
+          'failed: $failure',
+        );
+      }
+    }
+    error = lastError?.toString() ?? 'Failed to open media';
+    throw StateError(error!);
+  }
+
+  Future<void> _openAvailableCandidateWithRetry(
+    Duration initialPosition,
+  ) async {
+    Object? lastFailure;
+    for (var attempt = 0; attempt < _windowsLoadAttemptCount; attempt++) {
+      try {
+        await _openAvailableCandidate(initialPosition);
+        return;
+      } catch (failure) {
+        lastFailure = failure;
+        if (attempt + 1 >= _windowsLoadAttemptCount) break;
+        await Future<void>.delayed(_windowsLoadRetryDelay * (attempt + 1));
+      }
+    }
+    throw lastFailure ?? StateError('Failed to open media');
+  }
+
+  void _scheduleAutomaticLoadRetry({required bool shouldResume}) {
+    if (_automaticRetryScheduled || item == null) return;
+    _automaticRetryScheduled = true;
+    final generation = _sourceGeneration;
+    _automaticRetryTimer = Timer(_windowsLoadRetryDelay, () {
+      _automaticRetryTimer = null;
+      unawaited(
+        runSerialized(() async {
+          if (generation != _sourceGeneration || error == null) return;
+          opening = true;
+          onChanged();
+          try {
+            await _openAvailableCandidateWithRetry(position);
+            error = null;
+            if (shouldResume) {
+              await play();
+            }
+          } catch (failure) {
+            error = failure.toString();
+          } finally {
+            opening = false;
+            onChanged();
+          }
+        }),
+      );
+    });
+  }
+
+  Future<void> _awaitInitialMediaState() async {
+    await _waitForState(
+      () => error != null || duration != null,
+      timeout: const Duration(milliseconds: 100),
+    );
+    final failure = error;
+    if (failure != null) {
+      throw StateError(failure);
+    }
+  }
+
+  Future<void> _awaitPlaybackStart() async {
+    await _waitForState(
+      () => error != null || playing,
+      timeout: const Duration(seconds: 8),
+    );
+    final failure = error;
+    if (failure != null) {
+      throw StateError(failure);
+    }
+    if (!playing) {
+      throw StateError('Playback did not start.');
+    }
+  }
+
+  Future<void> _waitForState(
+    bool Function() isComplete, {
+    required Duration timeout,
+  }) async {
+    final deadline = DateTime.now().add(timeout);
+    while (!isComplete() && DateTime.now().isBefore(deadline)) {
+      await Future<void>.delayed(const Duration(milliseconds: 25));
+      _syncPlayerStateMetadata();
+    }
   }
 
   Future<void> _applyManagedAudioFilters() async {
@@ -731,6 +937,8 @@ class _DartPlaybackSession {
   }
 
   Future<void> dispose() async {
+    _completionTimer?.cancel();
+    _automaticRetryTimer?.cancel();
     for (final subscription in subscriptions) {
       await subscription.cancel();
     }

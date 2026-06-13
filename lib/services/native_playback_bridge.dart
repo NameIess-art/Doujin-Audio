@@ -193,6 +193,7 @@ abstract interface class NativePlaybackBridgeBase {
     int? queueStartIndex,
     bool repeatAll = false,
     bool shuffle = false,
+    List<Uri>? candidateUris,
   });
 
   Future<NativeResult<NativePlaybackSnapshot>> play(String sessionId);
@@ -368,6 +369,7 @@ class NativePlaybackBridge implements NativePlaybackBridgeBase {
     int? queueStartIndex,
     bool repeatAll = false,
     bool shuffle = false,
+    List<Uri>? candidateUris,
   }) {
     return _invokeSnapshot(NativePlaybackMethod.prepareSession, {
       'sessionId': sessionId,

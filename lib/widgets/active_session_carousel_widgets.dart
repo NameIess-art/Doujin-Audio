@@ -29,9 +29,11 @@ class _ActiveSessionCard extends ConsumerWidget {
             session;
         return (
           playing: currentSession.state.playing,
-          loading: currentSession.isLoading,
+          loading:
+              currentSession.isLoading || currentSession.isPlaybackStarting,
           trackPath: currentSession.currentTrackPath,
           channelSwapEnabled: currentSession.channelSwapEnabled,
+          error: currentSession.playbackError,
         );
       }),
     );
@@ -43,57 +45,59 @@ class _ActiveSessionCard extends ConsumerWidget {
     final screenSize = MediaQuery.sizeOf(context);
     final isTinyWindow = screenSize.width < 300 || screenSize.height < 300;
 
-    final blurEnabled = ref.watch(settingsStateProvider.select((s) => s.valueOrNull?.uiBlurEffectEnabled ?? true));
+    final blurEnabled = ref.watch(
+      settingsStateProvider.select(
+        (s) => s.valueOrNull?.uiBlurEffectEnabled ?? true,
+      ),
+    );
     final currentAlpha = blurEnabled ? (isDark ? 0.72 : 0.80) : 0.92;
 
     Widget buildCardBody() => Material(
-          color: Colors.transparent,
-          child: InkWell(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(cardRadius),
+        onTap: onOpen,
+        child: Ink(
+          height: 74,
+          decoration: BoxDecoration(
+            color: (isDark ? cs.surfaceBright : cs.surfaceContainerHigh)
+                .withValues(alpha: currentAlpha),
             borderRadius: BorderRadius.circular(cardRadius),
-            onTap: onOpen,
-            child: Ink(
-              height: 74,
-              decoration: BoxDecoration(
-                color: (isDark ? cs.surfaceBright : cs.surfaceContainerHigh)
-                    .withValues(alpha: currentAlpha),
-                borderRadius: BorderRadius.circular(cardRadius),
-                border: Border.all(
-                  color: cs.outlineVariant.withValues(
-                    alpha: isDark ? 0.24 : 0.42,
-                  ),
-                ),
-                boxShadow: isTinyWindow
-                    ? null
-                    : [
-                        BoxShadow(
-                          color: cs.shadow.withValues(
-                            alpha: isPlaying ? 0.18 : 0.12,
-                          ),
-                          blurRadius: isPlaying ? 28 : 22,
-                          spreadRadius: -7,
-                          offset: const Offset(0, 14),
-                        ),
-                        BoxShadow(
-                          color: cs.primary.withValues(
-                            alpha: isPlaying ? 0.06 : 0.03,
-                          ),
-                          blurRadius: 14,
-                          spreadRadius: -10,
-                          offset: const Offset(0, 8),
-                        ),
-                      ],
-              ),
-              child: _buildCardContent(
-                context,
-                cs,
-                isPlaying,
-                view,
-                currentTrack,
-                displayName,
-              ),
+            border: Border.all(
+              color: cs.outlineVariant.withValues(alpha: isDark ? 0.24 : 0.42),
             ),
+            boxShadow: isTinyWindow
+                ? null
+                : [
+                    BoxShadow(
+                      color: cs.shadow.withValues(
+                        alpha: isPlaying ? 0.18 : 0.12,
+                      ),
+                      blurRadius: isPlaying ? 28 : 22,
+                      spreadRadius: -7,
+                      offset: const Offset(0, 14),
+                    ),
+                    BoxShadow(
+                      color: cs.primary.withValues(
+                        alpha: isPlaying ? 0.06 : 0.03,
+                      ),
+                      blurRadius: 14,
+                      spreadRadius: -10,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
           ),
-        );
+          child: _buildCardContent(
+            context,
+            cs,
+            isPlaying,
+            view,
+            currentTrack,
+            displayName,
+          ),
+        ),
+      ),
+    );
 
     return Semantics(
       button: true,
@@ -114,7 +118,13 @@ class _ActiveSessionCard extends ConsumerWidget {
     BuildContext context,
     ColorScheme cs,
     bool isPlaying,
-    ({bool channelSwapEnabled, bool loading, bool playing, String trackPath})
+    ({
+      bool channelSwapEnabled,
+      String? error,
+      bool loading,
+      bool playing,
+      String trackPath,
+    })
     view,
     MusicTrack? currentTrack,
     String displayName,
@@ -138,6 +148,7 @@ class _ActiveSessionCard extends ConsumerWidget {
                   session: session,
                   provider: provider,
                   displayName: displayName,
+                  playbackError: view.error,
                 ),
               ),
               const SizedBox(width: 8),
@@ -146,7 +157,8 @@ class _ActiveSessionCard extends ConsumerWidget {
                 children: [
                   _ActiveSessionPlayPauseButton(
                     isPlaying: isPlaying,
-                    enabled: view.trackPath.isNotEmpty,
+                    isLoading: view.loading,
+                    enabled: view.trackPath.isNotEmpty && !view.loading,
                     onPressed: () {
                       AppInteractionFeedback.trigger(
                         AppInteractionFeedbackType.confirmation,
@@ -199,11 +211,13 @@ class _ActiveSessionCard extends ConsumerWidget {
 class _ActiveSessionPlayPauseButton extends StatelessWidget {
   const _ActiveSessionPlayPauseButton({
     required this.isPlaying,
+    required this.isLoading,
     required this.enabled,
     required this.onPressed,
   });
 
   final bool isPlaying;
+  final bool isLoading;
   final bool enabled;
   final VoidCallback onPressed;
 
@@ -233,12 +247,24 @@ class _ActiveSessionPlayPauseButton extends StatelessWidget {
                   child: FadeTransition(opacity: animation, child: child),
                 );
               },
-              child: Icon(
-                isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                key: ValueKey(isPlaying),
-                size: 38,
-                color: isPlaying ? cs.primary : cs.onSurface,
-              ),
+              child: isLoading
+                  ? SizedBox(
+                      key: const ValueKey('loading'),
+                      width: 26,
+                      height: 26,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.5,
+                        color: cs.primary,
+                      ),
+                    )
+                  : Icon(
+                      isPlaying
+                          ? Icons.pause_rounded
+                          : Icons.play_arrow_rounded,
+                      key: ValueKey(isPlaying),
+                      size: 38,
+                      color: isPlaying ? cs.primary : cs.onSurface,
+                    ),
             ),
           ),
         ),
@@ -253,11 +279,13 @@ class _ActiveSessionTitleSubtitle extends StatefulWidget {
     required this.session,
     required this.provider,
     required this.displayName,
+    required this.playbackError,
   });
 
   final PlaybackSession session;
   final AudioProvider provider;
   final String displayName;
+  final String? playbackError;
 
   @override
   State<_ActiveSessionTitleSubtitle> createState() =>
@@ -336,6 +364,10 @@ class _ActiveSessionTitleSubtitleState
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final i18n = context.watch<AppLanguageProvider>();
+    final secondaryText = widget.playbackError == null
+        ? _subtitleText
+        : i18n.tr('playback_failed_retry');
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -350,14 +382,16 @@ class _ActiveSessionTitleSubtitleState
               ) ??
               const TextStyle(),
         ),
-        if (_subtitleText != null) ...[
+        if (secondaryText != null) ...[
           const SizedBox(height: 2),
           Text(
-            _subtitleText!,
+            secondaryText,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: cs.onSurfaceVariant,
+              color: widget.playbackError == null
+                  ? cs.onSurfaceVariant
+                  : cs.error,
               fontWeight: FontWeight.w600,
               fontSize: 10.2,
               height: 1.15,
@@ -520,44 +554,44 @@ class _ActiveSessionCover extends ConsumerWidget {
         type: MaterialType.transparency,
         borderRadius: BorderRadius.circular(14),
         clipBehavior: Clip.antiAlias,
-          child: track?.remoteCoverUrl?.trim().isNotEmpty == true
-              ? RetryingNetworkImage(
-                  url: track!.remoteCoverUrl!.trim(),
-                  fit: BoxFit.cover,
-                  cacheWidth: (58 * MediaQuery.devicePixelRatioOf(context))
-                      .round(),
-                  loadingBuilder: (context, child, loadingProgress) =>
-                      loadingProgress == null
-                      ? child
-                      : CoverLoadingIndicator(
-                          size: 28,
-                          strokeWidth: 2.6,
-                          color: cs.primary,
-                        ),
-                  fallbackBuilder: (_) => fallback(),
-                )
-              : AsyncCoverImage(
-                  future: coverPathFuture,
-                  initialPath: provider.resolvedCoverPathForTrack(track),
-                  retryFutureBuilder: () =>
-                      _sessionCoverFutureForTrack(provider, track),
-                  fallbackBuilder: (_) => fallback(),
-                  loadingBuilder: (_) => CoverLoadingIndicator(
-                    size: 28,
-                    strokeWidth: 2.6,
-                    color: cs.primary,
-                  ),
-                  imageBuilder: (context, coverPath) {
-                    final dpr = MediaQuery.devicePixelRatioOf(context);
-                    return RetryingFileImage(
-                      path: coverPath,
-                      cacheWidth: (58 * dpr).round(),
-                      fit: BoxFit.cover,
-                      fallbackBuilder: (_) => fallback(),
-                    );
-                  },
+        child: track?.remoteCoverUrl?.trim().isNotEmpty == true
+            ? RetryingNetworkImage(
+                url: track!.remoteCoverUrl!.trim(),
+                fit: BoxFit.cover,
+                cacheWidth: (58 * MediaQuery.devicePixelRatioOf(context))
+                    .round(),
+                loadingBuilder: (context, child, loadingProgress) =>
+                    loadingProgress == null
+                    ? child
+                    : CoverLoadingIndicator(
+                        size: 28,
+                        strokeWidth: 2.6,
+                        color: cs.primary,
+                      ),
+                fallbackBuilder: (_) => fallback(),
+              )
+            : AsyncCoverImage(
+                future: coverPathFuture,
+                initialPath: provider.resolvedCoverPathForTrack(track),
+                retryFutureBuilder: () =>
+                    _sessionCoverFutureForTrack(provider, track),
+                fallbackBuilder: (_) => fallback(),
+                loadingBuilder: (_) => CoverLoadingIndicator(
+                  size: 28,
+                  strokeWidth: 2.6,
+                  color: cs.primary,
                 ),
-        ),
+                imageBuilder: (context, coverPath) {
+                  final dpr = MediaQuery.devicePixelRatioOf(context);
+                  return RetryingFileImage(
+                    path: coverPath,
+                    cacheWidth: (58 * dpr).round(),
+                    fit: BoxFit.cover,
+                    fallbackBuilder: (_) => fallback(),
+                  );
+                },
+              ),
+      ),
     );
   }
 }

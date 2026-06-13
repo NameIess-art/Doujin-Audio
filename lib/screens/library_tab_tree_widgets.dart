@@ -431,9 +431,7 @@ class _TrackNodeWidget extends ConsumerWidget {
                             AppInteractionFeedbackType.tap,
                             context: context,
                           );
-                          unawaited(
-                            provider.spawnSession(track, autoPlay: true),
-                          );
+                          unawaited(provider.spawnSession(track));
                           _showSessionCreatedSnack(
                             context,
                             i18n.tr('session_created', {
@@ -495,7 +493,7 @@ class _TrackNodeWidget extends ConsumerWidget {
                     AppInteractionFeedbackType.tap,
                     context: context,
                   );
-                  unawaited(provider.spawnSession(track, autoPlay: true));
+                  unawaited(provider.spawnSession(track));
                   _showSessionCreatedSnack(
                     context,
                     i18n.tr('session_created', {'name': track.displayName}),

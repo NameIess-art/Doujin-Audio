@@ -43,6 +43,7 @@ const Map<String, String> appLanguageJa = {
   'search_audio_placeholder': 'オーディオを検索...',
   'scanning_title': 'スキャン中...',
   'loading_dot': '読み込み中...',
+  'playback_failed_retry': '再生に失敗しました。タップして再試行',
   'scan_cancel': 'キャンセル',
   'scan_current_folder': '現在のフォルダ',
   'scan_found': '発見',

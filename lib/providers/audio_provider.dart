@@ -794,6 +794,7 @@ class AudioProvider with ChangeNotifier {
   }
 
   void _notifyPlaybackChanged() {
+    _playbackService.markSessionStateDirty();
     _syncPlaybackStateSlice();
     _syncNotificationStateSlice();
     _scheduleNotifyListeners();

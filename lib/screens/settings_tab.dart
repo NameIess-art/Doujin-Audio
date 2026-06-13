@@ -214,6 +214,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                           trailing: DropdownButtonHideUnderline(
                             child: DropdownButton<AppLanguage>(
                               value: i18n.language,
+                              dropdownColor: cs.surfaceContainerHigh.withValues(alpha: 1.0),
                               borderRadius: BorderRadius.circular(12),
                               onChanged: (value) {
                                 if (value != null) {
@@ -270,6 +271,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                               trailing: DropdownButtonHideUnderline(
                                 child: DropdownButton<StartupPage>(
                                   value: startupPage,
+                                  dropdownColor: cs.surfaceContainerHigh.withValues(alpha: 1.0),
                                   borderRadius: BorderRadius.circular(12),
                                   onChanged: (value) {
                                     if (value != null) {
@@ -330,6 +332,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                               trailing: DropdownButtonHideUnderline(
                                 child: DropdownButton<AppLanguage>(
                                   value: dlsiteLanguage,
+                                  dropdownColor: cs.surfaceContainerHigh.withValues(alpha: 1.0),
                                   borderRadius: BorderRadius.circular(12),
                                   onChanged: (value) {
                                     if (value != null) {
@@ -394,26 +397,29 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                                   color: cs.onSecondaryContainer,
                                 ),
                               ),
-                              trailing: PopupMenuButton<ThemeMode>(
-                                tooltip: i18n.tr('dark_mode'),
-                                initialValue: themeMode,
-                                onSelected: context
-                                    .read<ThemeProvider>()
-                                    .setThemeMode,
-                                itemBuilder: (_) => ThemeMode.values
-                                    .map(
-                                      (mode) => PopupMenuItem(
-                                        value: mode,
-                                        child: Text(modeLabels[mode]!),
-                                      ),
-                                    )
-                                    .toList(growable: false),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text(modeLabels[themeMode]!),
-                                    const Icon(Icons.arrow_drop_down_rounded),
-                                  ],
+                              trailing: DropdownButtonHideUnderline(
+                                child: DropdownButton<ThemeMode>(
+                                  value: themeMode,
+                                  dropdownColor: cs.surfaceContainerHigh.withValues(alpha: 1.0),
+                                  borderRadius: BorderRadius.circular(12),
+                                  onChanged: (value) {
+                                    if (value != null) {
+                                      context.read<ThemeProvider>().setThemeMode(value);
+                                    }
+                                  },
+                                  items: ThemeMode.values
+                                      .map(
+                                        (mode) => DropdownMenuItem<ThemeMode>(
+                                          value: mode,
+                                          child: Text(
+                                            modeLabels[mode]!,
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          ),
+                                        ),
+                                      )
+                                      .toList(),
                                 ),
                               ),
                               contentPadding: const EdgeInsets.symmetric(
@@ -819,6 +825,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                                         )
                                         ? maxCacheBytes
                                         : AppCacheService.defaultMaxCacheBytes,
+                                    dropdownColor: cs.surfaceContainerHigh.withValues(alpha: 1.0),
                                     borderRadius: BorderRadius.circular(12),
                                     onChanged: (value) {
                                       if (value != null) {

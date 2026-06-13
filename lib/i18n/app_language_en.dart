@@ -566,7 +566,7 @@ const Map<String, String> appLanguageEn = {
   'border_depth': 'Border depth',
   'font_size': 'Font size',
   'volume': 'Volume',
-  'volume_range_hint': '0-120',
+  'volume_range_hint': '0-200',
   'playback_speed': 'Speed',
   'volume_balance': 'Balance',
   'speed_reset': 'Reset to 1.0x',

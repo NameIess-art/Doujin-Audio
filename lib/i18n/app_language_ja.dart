@@ -515,7 +515,7 @@ const Map<String, String> appLanguageJa = {
   'border_depth': '枠線の深さ',
   'font_size': 'フォントサイズ',
   'volume': '音量',
-  'volume_range_hint': '0-120',
+  'volume_range_hint': '0-200',
   'playback_speed': '再生速度',
   'volume_balance': 'L/R バランス',
   'speed_reset': '1.0x に戻す',

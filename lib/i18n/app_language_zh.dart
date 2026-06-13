@@ -504,7 +504,7 @@ const Map<String, String> appLanguageZh = {
   'border_depth': '边框深度',
   'font_size': '字号',
   'volume': '音量',
-  'volume_range_hint': '0-120',
+  'volume_range_hint': '0-200',
   'playback_speed': '播放速度',
   'volume_balance': '声道平衡',
   'speed_reset': '恢复 1.0x',

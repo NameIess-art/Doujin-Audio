@@ -561,6 +561,9 @@ class _DartPlaybackSession {
         ),
         play: false,
       );
+      if (!playWhenReady) {
+        await player.pause();
+      }
       await _applyVolume();
       await player.setRate(speed);
       await _applyManagedAudioFilters();

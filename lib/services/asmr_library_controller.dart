@@ -1145,7 +1145,7 @@ class AsmrLibraryController extends ChangeNotifier {
   Future<void> playWork(
     AudioProvider provider,
     AsmrWork work, {
-    bool autoPlay = true,
+    bool? autoPlay,
   }) async {
     final tracks = await loadPlayableTracks(work);
     if (tracks.isEmpty) {
@@ -1164,8 +1164,9 @@ class AsmrLibraryController extends ChangeNotifier {
   Future<void> playTrack(
     AudioProvider provider,
     AsmrWork work,
-    AsmrTrackFile target,
-  ) async {
+    AsmrTrackFile target, {
+    bool? autoPlay,
+  }) async {
     final queue = await loadPlayableTracksStartingAt(work, target);
     if (queue.isEmpty) {
       return;
@@ -1173,7 +1174,7 @@ class AsmrLibraryController extends ChangeNotifier {
     await recordHistory(work);
     await provider.spawnSessionWithQueue(
       queue,
-      autoPlay: true,
+      autoPlay: autoPlay,
       loopMode: queue.length > 1
           ? SessionLoopMode.folderSequential
           : SessionLoopMode.single,

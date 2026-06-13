@@ -1,17 +1,21 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter/widgets.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart' show ProviderScope;
+import 'package:just_audio/just_audio.dart';
 import 'package:nameless_audio/main.dart';
 import 'package:nameless_audio/i18n/app_language_provider.dart';
 import 'package:nameless_audio/providers/audio_provider.dart';
 import 'package:nameless_audio/providers/audio_provider_riverpod.dart';
 import 'package:nameless_audio/screens/main_screen.dart';
+import 'package:nameless_audio/screens/settings_tab.dart';
 import 'package:nameless_audio/services/audio_database_repository.dart';
 import 'package:nameless_audio/services/audio_state_services.dart';
 import 'package:nameless_audio/services/native_playback_repository.dart';
 import 'package:nameless_audio/services/playback_command_runner.dart';
 import 'package:nameless_audio/services/playback_notification_service.dart';
 import 'package:nameless_audio/theme/theme_provider.dart';
+import 'package:nameless_audio/widgets/active_session_carousel.dart';
 import 'package:provider/provider.dart' as legacy_provider;
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -41,10 +45,20 @@ void main() {
       notificationStateService: notificationCoordinatorService,
       settingsRepository: settingsRepository,
     );
+    final session = PlaybackSession(
+      id: 'orientation_session',
+      currentTrackPath: '/audio/orientation.mp3',
+      loopMode: SessionLoopMode.single,
+      nonSingleLoopMode: SessionLoopMode.single,
+      volume: 1,
+      createdAt: DateTime(2026),
+      state: PlayerState(false, ProcessingState.ready),
+    );
+    addTearDown(session.dispose);
     playbackService.syncSlice(
-      activeSessions: const [],
+      activeSessions: [session],
       playingSessionCount: 0,
-      focusedSessionId: null,
+      focusedSessionId: session.id,
       multiThreadPlaybackEnabled: false,
       coverGeneration: 0,
       isInitialized: true,
@@ -135,5 +149,73 @@ void main() {
     await tester.pump(const Duration(milliseconds: 32));
 
     expect((mainPageStack().key! as ValueKey<int>).value, 0);
+
+    expect(find.byType(ActiveSessionCarousel), findsOneWidget);
+    while (tester.takeException() != null) {}
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    tester.view.physicalSize = const Size(2400, 1080);
+    await tester.pumpAndSettle();
+    debugDefaultTargetPlatformOverride = null;
+
+    expect(
+      find.byKey(const ValueKey<String>('android_landscape_navigation_shift')),
+      findsOneWidget,
+    );
+    expect(
+      find.ancestor(
+        of: find.byType(NavigationRail),
+        matching: find.byType(SingleChildScrollView),
+      ),
+      findsNothing,
+    );
+    expect(
+      find.ancestor(
+        of: find.byType(NavigationRail),
+        matching: find.byType(FittedBox),
+      ),
+      findsNothing,
+    );
+    final settingsNavigationIcon = find.descendant(
+      of: find.byType(NavigationRail),
+      matching: find.byIcon(Icons.tune_rounded),
+    );
+    expect(settingsNavigationIcon, findsOneWidget);
+    expect(tester.widget<Icon>(settingsNavigationIcon).size, isNull);
+    expect(
+      tester.getBottomRight(settingsNavigationIcon).dy,
+      lessThan(tester.getTopLeft(find.byType(ActiveSessionCarousel)).dy),
+    );
+    final settingsScrollable = find
+        .descendant(
+          of: find.byType(SettingsTab),
+          matching: find.byType(Scrollable),
+        )
+        .first;
+    await tester.scrollUntilVisible(
+      find.byIcon(Icons.system_update_alt_rounded),
+      300,
+      scrollable: settingsScrollable,
+    );
+    expect(
+      tester.getCenter(find.byIcon(Icons.system_update_alt_rounded)).dx,
+      tester.getCenter(find.byIcon(Icons.update_rounded)).dx,
+    );
+
+    tester.view.physicalSize = const Size(1080, 2400);
+    await tester.pumpAndSettle();
+
+    final orientationExceptions = <Object>[];
+    Object? exception;
+    while ((exception = tester.takeException()) != null) {
+      orientationExceptions.add(exception!);
+    }
+    expect(
+      orientationExceptions.where(
+        (error) => error.toString().contains(
+          'Cannot use "ref" after the widget was disposed',
+        ),
+      ),
+      isEmpty,
+    );
   });
 }

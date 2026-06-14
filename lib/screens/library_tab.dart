@@ -191,14 +191,16 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     );
   }
 
-  Future<void> _runLibraryPullRefresh() async {
+  Future<void> _runLibraryPullRefresh({bool showSnackbar = false}) async {
     final i18n = context.read<AppLanguageProvider>();
-    showAppSnackBar(
-      context,
-      i18n.tr('loading_dot'),
-      icon: Icons.sync_rounded,
-      iconColor: Theme.of(context).colorScheme.primary,
-    );
+    if (showSnackbar) {
+      showAppSnackBar(
+        context,
+        i18n.tr('loading_dot'),
+        icon: Icons.sync_rounded,
+        iconColor: Theme.of(context).colorScheme.primary,
+      );
+    }
     await _scheduleWatchedFoldersRefresh(silent: true, forceShowResult: true);
   }
 
@@ -708,7 +710,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                       if (isWindows)
                         IconButton(
                           onPressed: canPullRefresh
-                              ? () => unawaited(_runLibraryPullRefresh())
+                              ? () => unawaited(_runLibraryPullRefresh(showSnackbar: true))
                               : null,
                           icon: const Icon(Icons.refresh_rounded),
                           tooltip: i18n.tr('refresh_watched_folder'),

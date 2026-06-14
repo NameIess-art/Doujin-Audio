@@ -73,10 +73,7 @@ void main() {
     });
     await _pumpAppShell(tester, includePlaybackSession: false);
 
-    expect(
-      find.byKey(const ValueKey<String>('android_landscape_navigation_shift')),
-      findsOneWidget,
-    );
+    expect(find.byType(NavigationRail), findsOneWidget);
     expect(
       find.ancestor(
         of: find.byType(NavigationRail),

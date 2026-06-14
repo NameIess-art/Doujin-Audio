@@ -43,7 +43,7 @@ abstract final class AppWindowBootstrap {
       titleBarStyle: TitleBarStyle.hidden,
       alwaysOnTop: true,
     );
-    await windowManager.waitUntilReadyToShow(windowOptions, () async {
+    windowManager.waitUntilReadyToShow(windowOptions, () async {
       await windowManager.setAsFrameless();
       await windowManager.show();
     });

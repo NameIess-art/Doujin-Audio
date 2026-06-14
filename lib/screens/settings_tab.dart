@@ -193,52 +193,62 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                     _SectionHeader(title: i18n.tr('section_general')),
                     _SettingsGroupCard(
                       children: [
-                        ListTile(
-                          title: Text(i18n.tr('language')),
-                          subtitle: Text(
-                            i18n.tr('language_subtitle'),
-                            style: descStyle,
-                          ),
-                          leading: Container(
-                            width: 38,
-                            height: 38,
-                            decoration: BoxDecoration(
-                              color: cs.primaryContainer,
-                              borderRadius: BorderRadius.circular(10),
+                        LayoutBuilder(
+                          builder: (context, constraints) => ListTile(
+                            title: Text(i18n.tr('language')),
+                            subtitle: Text(
+                              i18n.tr('language_subtitle'),
+                              style: descStyle,
                             ),
-                            child: Icon(
-                              Icons.language_rounded,
-                              color: cs.onPrimaryContainer,
-                            ),
-                          ),
-                          trailing: DropdownButtonHideUnderline(
-                            child: DropdownButton<AppLanguage>(
-                              value: i18n.language,
-                              dropdownColor: cs.surfaceContainerHigh.withValues(alpha: 1.0),
-                              borderRadius: BorderRadius.circular(12),
-                              onChanged: (value) {
-                                if (value != null) {
-                                  i18n.setLanguage(value);
-                                }
-                              },
-                              items: AppLanguage.values
-                                  .map(
-                                    (lang) => DropdownMenuItem<AppLanguage>(
-                                      value: lang,
-                                      child: Text(
-                                        i18n.languageName(lang),
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                      ),
+                            leading: constraints.maxWidth >= 300
+                                ? Container(
+                                    width: 38,
+                                    height: 38,
+                                    decoration: BoxDecoration(
+                                      color: cs.primaryContainer,
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: Icon(
+                                      Icons.language_rounded,
+                                      color: cs.onPrimaryContainer,
                                     ),
                                   )
-                                  .toList(),
+                                : null,
+                            trailing: SizedBox(
+                              width: 72,
+                              child: DropdownButtonHideUnderline(
+                                child: DropdownButton<AppLanguage>(
+                                  isExpanded: true,
+                                  value: i18n.language,
+                                  dropdownColor: cs.surfaceContainerHigh
+                                      .withValues(alpha: 1.0),
+                                  borderRadius: BorderRadius.circular(12),
+                                  onChanged: (value) {
+                                    if (value != null) {
+                                      i18n.setLanguage(value);
+                                    }
+                                  },
+                                  items: AppLanguage.values
+                                      .map(
+                                        (lang) => DropdownMenuItem<AppLanguage>(
+                                          value: lang,
+                                          child: Text(
+                                            i18n.languageName(lang),
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          ),
+                                        ),
+                                      )
+                                      .toList(),
+                                ),
+                              ),
                             ),
-                          ),
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 2,
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 2,
+                            ),
                           ),
                         ),
                         Consumer(
@@ -271,7 +281,8 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                               trailing: DropdownButtonHideUnderline(
                                 child: DropdownButton<StartupPage>(
                                   value: startupPage,
-                                  dropdownColor: cs.surfaceContainerHigh.withValues(alpha: 1.0),
+                                  dropdownColor: cs.surfaceContainerHigh
+                                      .withValues(alpha: 1.0),
                                   borderRadius: BorderRadius.circular(12),
                                   onChanged: (value) {
                                     if (value != null) {
@@ -332,7 +343,8 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                               trailing: DropdownButtonHideUnderline(
                                 child: DropdownButton<AppLanguage>(
                                   value: dlsiteLanguage,
-                                  dropdownColor: cs.surfaceContainerHigh.withValues(alpha: 1.0),
+                                  dropdownColor: cs.surfaceContainerHigh
+                                      .withValues(alpha: 1.0),
                                   borderRadius: BorderRadius.circular(12),
                                   onChanged: (value) {
                                     if (value != null) {
@@ -400,11 +412,14 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                               trailing: DropdownButtonHideUnderline(
                                 child: DropdownButton<ThemeMode>(
                                   value: themeMode,
-                                  dropdownColor: cs.surfaceContainerHigh.withValues(alpha: 1.0),
+                                  dropdownColor: cs.surfaceContainerHigh
+                                      .withValues(alpha: 1.0),
                                   borderRadius: BorderRadius.circular(12),
                                   onChanged: (value) {
                                     if (value != null) {
-                                      context.read<ThemeProvider>().setThemeMode(value);
+                                      context
+                                          .read<ThemeProvider>()
+                                          .setThemeMode(value);
                                     }
                                   },
                                   items: ThemeMode.values
@@ -825,7 +840,8 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                                         )
                                         ? maxCacheBytes
                                         : AppCacheService.defaultMaxCacheBytes,
-                                    dropdownColor: cs.surfaceContainerHigh.withValues(alpha: 1.0),
+                                    dropdownColor: cs.surfaceContainerHigh
+                                        .withValues(alpha: 1.0),
                                     borderRadius: BorderRadius.circular(12),
                                     onChanged: (value) {
                                       if (value != null) {

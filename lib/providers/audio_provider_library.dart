@@ -456,10 +456,9 @@ extension AudioProviderLibrary on AudioProvider {
     String folderPath,
   ) async {
     try {
-      final data = await AudioProvider._fileCacheChannel
-          .invokeMethod<List<dynamic>>(FileCacheMethod.scanFolder, {
-            'folder': folderPath,
-          });
+      final data = await AudioProvider._fileCacheGateway.scanFolderPayload(
+        folderPath,
+      );
       if (data == null) return const <MusicTrack>[];
 
       final restoredTracks = <MusicTrack>[];

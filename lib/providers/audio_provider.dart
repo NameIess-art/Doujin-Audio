@@ -35,12 +35,12 @@ import '../services/audio_state_services.dart';
 import '../services/app_database.dart';
 import '../services/asmr_metadata_service.dart';
 import '../services/dlsite_metadata_service.dart';
+import '../services/file_cache_platform_gateway.dart';
 import '../services/library_organizer.dart';
 import '../services/media_file_support.dart';
 import '../services/native_result.dart';
 import '../services/native_playback_repository.dart';
 import '../services/playback_queue_resolver.dart';
-import '../services/platform_channels.dart';
 import '../services/power_platform_service.dart';
 import '../services/timer_runtime_calculator.dart';
 import '../services/warmup_scheduler.dart';
@@ -120,9 +120,8 @@ class AudioProvider with ChangeNotifier {
   static const Duration _unifiedNotificationDebounceInterval = Duration(
     milliseconds: 90,
   );
-  static const MethodChannel _fileCacheChannel = MethodChannel(
-    FileCacheChannel.name,
-  );
+  static final FileCachePlatformGateway _fileCacheGateway =
+      FileCachePlatformGateway.instance;
   final PlaybackNotificationService _notificationService;
   final AudioDatabaseRepository _audioDatabaseRepository;
   final AudioDetailRepository _audioDetailRepository;
@@ -170,22 +169,48 @@ class AudioProvider with ChangeNotifier {
     EqPreset(
       id: 'asmr_immersive',
       labelKey: 'eq_preset_asmr_immersive',
-      bandLevels: <int, double>{60: 2.5, 170: 1.5, 310: -1.0, 3000: 1.5, 6000: 2.5, 12000: 3.5},
+      bandLevels: <int, double>{
+        60: 2.5,
+        170: 1.5,
+        310: -1.0,
+        3000: 1.5,
+        6000: 2.5,
+        12000: 3.5,
+      },
     ),
     EqPreset(
       id: 'voice_clear',
       labelKey: 'eq_preset_voice_clear',
-      bandLevels: <int, double>{170: -2.0, 310: -1.0, 1000: 1.5, 3000: 3.0, 6000: 1.5},
+      bandLevels: <int, double>{
+        170: -2.0,
+        310: -1.0,
+        1000: 1.5,
+        3000: 3.0,
+        6000: 1.5,
+      },
     ),
     EqPreset(
       id: 'ear_massage',
       labelKey: 'eq_preset_ear_massage',
-      bandLevels: <int, double>{60: 3.0, 170: 1.0, 1000: -1.5, 3000: 1.0, 6000: 3.5, 12000: 4.5},
+      bandLevels: <int, double>{
+        60: 3.0,
+        170: 1.0,
+        1000: -1.5,
+        3000: 1.0,
+        6000: 3.5,
+        12000: 4.5,
+      },
     ),
     EqPreset(
       id: 'night_soft',
       labelKey: 'eq_preset_night_soft',
-      bandLevels: <int, double>{60: -2.0, 170: -1.5, 3000: -1.5, 6000: -3.0, 12000: -4.5},
+      bandLevels: <int, double>{
+        60: -2.0,
+        170: -1.5,
+        3000: -1.5,
+        6000: -3.0,
+        12000: -4.5,
+      },
     ),
     EqPreset(
       id: 'bass_boost',

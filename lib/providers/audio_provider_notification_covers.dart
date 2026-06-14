@@ -390,13 +390,9 @@ extension AudioProviderNotificationCovers on AudioProvider {
 
   Future<String?> _resolveVideoFramePathForTrack(MusicTrack track) async {
     try {
-      return await AudioProvider._fileCacheChannel.invokeMethod<String>(
-        FileCacheMethod.resolveVideoFrame,
-        <String, dynamic>{
-          'path': track.path,
-          if (track.modifiedAt != null)
-            'modifiedAtMs': track.modifiedAt!.millisecondsSinceEpoch,
-        },
+      return await AudioProvider._fileCacheGateway.resolveVideoFrame(
+        path: track.path,
+        modifiedAtMs: track.modifiedAt?.millisecondsSinceEpoch,
       );
     } on MissingPluginException {
       return null;
@@ -411,13 +407,10 @@ extension AudioProviderNotificationCovers on AudioProvider {
     String? rootFolder,
   }) async {
     try {
-      return await AudioProvider._fileCacheChannel.invokeMethod<String>(
-        'resolveTrackCover',
-        <String, dynamic>{
-          'path': track.path,
-          'groupKey': track.groupKey,
-          'rootFolder': rootFolder,
-        },
+      return await AudioProvider._fileCacheGateway.resolveTrackCover(
+        path: track.path,
+        groupKey: track.groupKey,
+        rootFolder: rootFolder,
       );
     } on MissingPluginException {
       return null;
@@ -474,12 +467,11 @@ extension AudioProviderNotificationCovers on AudioProvider {
     }
 
     try {
-      return await AudioProvider._fileCacheChannel
-          .invokeMethod<String>('resolveTrackCover', <String, dynamic>{
-            'path': firstTrack?.path ?? folderPath,
-            'groupKey': firstTrack?.groupKey,
-            'rootFolder': folderPath,
-          });
+      return await AudioProvider._fileCacheGateway.resolveTrackCover(
+        path: firstTrack?.path ?? folderPath,
+        groupKey: firstTrack?.groupKey,
+        rootFolder: folderPath,
+      );
     } on MissingPluginException {
       return null;
     } catch (e) {

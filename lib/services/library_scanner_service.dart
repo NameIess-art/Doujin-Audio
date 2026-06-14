@@ -19,7 +19,7 @@ import 'media_file_support.dart';
 import 'library_scan_models.dart';
 import 'library_refresh_chunk_planner.dart';
 import 'library_scanner_isolate.dart';
-import 'library_scanner_platform_gateway.dart';
+import 'file_cache_platform_gateway.dart';
 
 export 'library_scan_models.dart';
 export 'library_refresh_chunk_planner.dart';
@@ -40,14 +40,14 @@ class LibraryScanMergeContext {
 }
 
 class LibraryScannerService {
-  LibraryScannerService({LibraryScannerPlatformGateway? platformGateway})
-    : _platformGateway = platformGateway ?? LibraryScannerPlatformGateway();
+  LibraryScannerService({FileCachePlatformGateway? platformGateway})
+    : _platformGateway = platformGateway ?? FileCachePlatformGateway.instance;
 
   static const Duration _foregroundRefreshCommitInterval = Duration(
     milliseconds: 400,
   );
 
-  final LibraryScannerPlatformGateway _platformGateway;
+  final FileCachePlatformGateway _platformGateway;
   DateTime? _lastBatchFlushTime;
 
   bool _pathsOverlap(String first, String second) {

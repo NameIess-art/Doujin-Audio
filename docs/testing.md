@@ -43,6 +43,16 @@ channel constants. Keep `test/platform_channels_test.dart` and
 `android/app/src/test/.../PlatformChannelsTest.kt` aligned whenever the
 protocol changes.
 
+All Dart `file_cache` platform behavior is exercised through
+`FileCachePlatformGateway`. Add gateway tests for payload construction, native
+value parsing, missing-plugin/error degradation, and scan-stream fallback
+before changing its wire contract.
+
+Widget tests must fail on every unexpected Flutter exception. Do not drain or
+filter `tester.takeException()` merely to keep a test green. App-shell coverage
+must include portrait, Android landscape, and dynamic view-size changes so
+responsive regressions remain visible.
+
 Focused core logic tests can be run while refactoring playback behavior:
 
 ```bash

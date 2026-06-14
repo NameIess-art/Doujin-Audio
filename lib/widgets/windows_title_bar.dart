@@ -15,44 +15,49 @@ class WindowsTitleBar extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return Container(
+    return SizedBox(
       height: 40,
-      color: Colors.transparent,
-      child: Row(
-        children: [
-          const SizedBox(width: 20),
-          Icon(
-            Icons.graphic_eq_rounded,
-            size: 18,
-            color: isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8),
-          ),
-          const SizedBox(width: 10),
-          Text(
-            'Nameless Audio',
-            style: TextStyle(
-              fontSize: 13,
-              color: cs.onSurface,
-              fontWeight: FontWeight.w700,
+      child: LayoutBuilder(
+        builder: (context, constraints) => Row(
+          children: [
+            if (constraints.maxWidth >= 420) ...[
+              const SizedBox(width: 20),
+              Icon(
+                Icons.graphic_eq_rounded,
+                size: 18,
+                color: isDark
+                    ? const Color(0xFF60A5FA)
+                    : const Color(0xFF1D4ED8),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                'Nameless Audio',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: cs.onSurface,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+            Expanded(
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onPanStart: (details) {
+                  windowManager.startDragging();
+                },
+                child: const SizedBox.expand(),
+              ),
             ),
-          ),
-          Expanded(
-            child: GestureDetector(
-              behavior: HitTestBehavior.translucent,
-              onPanStart: (details) {
-                windowManager.startDragging();
-              },
-              child: const SizedBox.expand(),
+            SizedBox(
+              width: 138,
+              height: 40,
+              child: WindowCaption(
+                brightness: isDark ? Brightness.dark : Brightness.light,
+                backgroundColor: Colors.transparent,
+              ),
             ),
-          ),
-          SizedBox(
-            width: 138,
-            height: 40,
-            child: WindowCaption(
-              brightness: isDark ? Brightness.dark : Brightness.light,
-              backgroundColor: Colors.transparent,
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

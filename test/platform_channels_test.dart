@@ -10,6 +10,7 @@ void main() {
       FileCacheChannel.name,
       FileCacheChannel.scanEvents,
       NotificationsChannel.name,
+      SubtitleOverlayChannel.name,
       UpdateChannel.name,
     ];
 
@@ -19,10 +20,53 @@ void main() {
   });
 
   test('critical method names remain protocol compatible', () {
+    const fileCacheMethods = <String>[
+      FileCacheMethod.discoverRootImages,
+      FileCacheMethod.resolveTrackCover,
+      FileCacheMethod.resolveTrackSubtitle,
+      FileCacheMethod.resolveVideoFrame,
+      FileCacheMethod.cacheFromUri,
+      FileCacheMethod.scanFolder,
+      FileCacheMethod.startFolderScan,
+      FileCacheMethod.cancelFolderScan,
+      FileCacheMethod.listChildFolders,
+      FileCacheMethod.renameDocument,
+      FileCacheMethod.readAudioDetailBackup,
+      FileCacheMethod.writeAudioDetailBackup,
+      FileCacheMethod.readSingleFileDetailBackup,
+      FileCacheMethod.writeSingleFileDetailBackup,
+      FileCacheMethod.writeFileBytesToFolder,
+      FileCacheMethod.documentPathExists,
+      FileCacheMethod.ensureFolderPath,
+      FileCacheMethod.copyFileToFolder,
+      FileCacheMethod.deleteDocumentPath,
+      FileCacheMethod.clearApplicationCache,
+      FileCacheMethod.setApplicationCacheLimit,
+      FileCacheMethod.enforceApplicationCacheLimit,
+      FileCacheMethod.pickAudioSource,
+      FileCacheMethod.pickAudioFiles,
+      FileCacheMethod.pickAudioFolder,
+    ];
+    const subtitleOverlayMethods = <String>[
+      SubtitleOverlayMethod.canDrawOverlays,
+      SubtitleOverlayMethod.openOverlaySettings,
+      SubtitleOverlayMethod.startOverlay,
+      SubtitleOverlayMethod.stopOverlay,
+      SubtitleOverlayMethod.updateSubtitle,
+      SubtitleOverlayMethod.updateStyle,
+    ];
+
+    expect(fileCacheMethods.toSet(), hasLength(fileCacheMethods.length));
+    expect(
+      subtitleOverlayMethods.toSet(),
+      hasLength(subtitleOverlayMethods.length),
+    );
     expect(NativePlaybackMethod.prepareSession, 'prepareSession');
     expect(NativePlaybackMethod.snapshot, 'snapshot');
     expect(FileCacheMethod.startFolderScan, 'startFolderScan');
     expect(FileCacheMethod.cancelFolderScan, 'cancelFolderScan');
+    expect(FileCacheMethod.resolveTrackSubtitle, 'resolveTrackSubtitle');
+    expect(SubtitleOverlayMethod.updateSubtitle, 'updateSubtitle');
     expect(
       NotificationsMethod.syncUnifiedPlaybackNotifications,
       'syncUnifiedPlaybackNotifications',

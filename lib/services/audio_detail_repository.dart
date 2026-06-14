@@ -1,14 +1,13 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter/services.dart';
 import 'package:path/path.dart' as path;
 
 import '../models/audio_detail.dart';
 import 'audio_database_repository.dart';
+import 'file_cache_platform_gateway.dart';
 import 'path_matcher.dart';
 import 'path_display.dart';
-import 'platform_channels.dart';
 
 class AudioDetailLoadResult {
   const AudioDetailLoadResult({
@@ -39,19 +38,19 @@ class AudioDetailSaveResult {
 class AudioDetailRepository {
   AudioDetailRepository({
     AudioDatabaseRepository? databaseRepository,
+    FileCachePlatformGateway? fileCacheGateway,
     DateTime Function()? now,
   }) : _databaseRepository = databaseRepository ?? AudioDatabaseRepository(),
+       _fileCacheGateway =
+           fileCacheGateway ?? FileCachePlatformGateway.instance,
        _now = now ?? DateTime.now;
 
   static const backupFileName = 'nameless-audio.json';
   static const legacyBackupFileName = '.nameless-audio.json';
   // Legacy sidecar suffix kept for migration reads only.
   static const _legacySingleBackupSuffix = '.nameless-audio.json';
-  static const MethodChannel _fileCacheChannel = MethodChannel(
-    FileCacheChannel.name,
-  );
-
   final AudioDatabaseRepository _databaseRepository;
+  final FileCachePlatformGateway _fileCacheGateway;
   final DateTime Function() _now;
 
   Future<AudioDetailLoadResult> load(AudioDetailTarget target) async {
@@ -105,12 +104,10 @@ class AudioDetailRepository {
         '  ',
       ).convert(normalized.toBackupJson());
       if (PathMatcher.isContentUri(normalized.target.targetPath)) {
-        final saved =
-            await _fileCacheChannel.invokeMethod<bool>(
-              FileCacheMethod.writeAudioDetailBackup,
-              {'folder': normalized.target.targetPath, 'json': payload},
-            ) ??
-            false;
+        final saved = await _fileCacheGateway.writeAudioDetailBackup(
+          folder: normalized.target.targetPath,
+          json: payload,
+        );
         if (!saved) {
           throw const FileSystemException('Content backup was not saved.');
         }
@@ -190,9 +187,8 @@ class AudioDetailRepository {
     AudioDetailTarget target,
   ) async {
     try {
-      final raw = await _fileCacheChannel.invokeMethod<String>(
-        FileCacheMethod.readSingleFileDetailBackup,
-        {'filePath': target.targetPath},
+      final raw = await _fileCacheGateway.readSingleFileDetailBackup(
+        target.targetPath,
       );
       if (raw == null || raw.isEmpty) return null;
       return _parseSingleFileEntry(target, raw);
@@ -316,9 +312,8 @@ class AudioDetailRepository {
     // Read the existing backup from the native side first so we can merge.
     String? existingRaw;
     try {
-      existingRaw = await _fileCacheChannel.invokeMethod<String>(
-        FileCacheMethod.readSingleFileDetailBackup,
-        {'filePath': detail.target.targetPath},
+      existingRaw = await _fileCacheGateway.readSingleFileDetailBackup(
+        detail.target.targetPath,
       );
     } catch (_) {
       existingRaw = null;
@@ -348,12 +343,10 @@ class AudioDetailRepository {
     }
 
     final payload = const JsonEncoder.withIndent('  ').convert(entries);
-    final saved =
-        await _fileCacheChannel.invokeMethod<bool>(
-          FileCacheMethod.writeSingleFileDetailBackup,
-          {'filePath': detail.target.targetPath, 'json': payload},
-        ) ??
-        false;
+    final saved = await _fileCacheGateway.writeSingleFileDetailBackup(
+      filePath: detail.target.targetPath,
+      json: payload,
+    );
     if (!saved) {
       throw const FileSystemException(
         'Single-file content backup was not saved.',
@@ -384,10 +377,7 @@ class AudioDetailRepository {
 
   Future<String?> _readFolderBackupJson(AudioDetailTarget target) async {
     if (PathMatcher.isContentUri(target.targetPath)) {
-      return _fileCacheChannel.invokeMethod<String>(
-        FileCacheMethod.readAudioDetailBackup,
-        {'folder': target.targetPath},
-      );
+      return _fileCacheGateway.readAudioDetailBackup(target.targetPath);
     }
     final backupFile = _folderBackupFile(target.targetPath);
     if (!await backupFile.exists()) {

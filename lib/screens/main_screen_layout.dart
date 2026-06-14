@@ -169,9 +169,11 @@ extension _MainScreenLayout on _MainScreenState {
       final selected = index == _currentIndex;
       final label = i18n.tr(item.labelKey);
       final inactive = cs.onSurfaceVariant.withValues(alpha: 0.6);
-      
+
       final isDark = Theme.of(context).brightness == Brightness.dark;
-      final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
+      final asmrBlue = isDark
+          ? const Color(0xFF60A5FA)
+          : const Color(0xFF1D4ED8);
       final isAsmr = item.labelKey == 'ASMR.ONE';
       final activeColor = (selected && isAsmr) ? asmrBlue : cs.primary;
 
@@ -356,7 +358,6 @@ extension _MainScreenLayout on _MainScreenState {
                     groupAlignment: -1.0,
                     leading: isWindows
                         ? Container(
-                            padding: const EdgeInsets.only(bottom: 8),
                             alignment: _isMenuCollapsed
                                 ? Alignment.center
                                 : Alignment.centerLeft,
@@ -375,7 +376,6 @@ extension _MainScreenLayout on _MainScreenState {
                             ),
                           )
                         : Container(
-                            padding: const EdgeInsets.only(bottom: 8),
                             alignment: _isMenuCollapsed
                                 ? Alignment.center
                                 : Alignment.centerLeft,
@@ -434,9 +434,13 @@ extension _MainScreenLayout on _MainScreenState {
                         .map((entry) {
                           final item = entry.value;
                           final isSelected = _currentIndex == entry.key;
-                          final isAsmr = isSelected && item.labelKey == 'ASMR.ONE';
-                          final isDark = Theme.of(context).brightness == Brightness.dark;
-                          final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
+                          final isAsmr =
+                              isSelected && item.labelKey == 'ASMR.ONE';
+                          final isDark =
+                              Theme.of(context).brightness == Brightness.dark;
+                          final asmrBlue = isDark
+                              ? const Color(0xFF60A5FA)
+                              : const Color(0xFF1D4ED8);
                           return NavigationRailDestination(
                             icon: Icon(item.icon),
                             selectedIcon: Icon(
@@ -459,26 +463,19 @@ extension _MainScreenLayout on _MainScreenState {
                 );
 
                 Widget railLayout = rail;
-                if (!isAndroidLandscape && constraints.maxHeight < 380) {
+                final safeMinHeight = 420.0;
+                if (!isAndroidLandscape && constraints.maxHeight < safeMinHeight) {
                   railLayout = SingleChildScrollView(
                     child: ConstrainedBox(
                       constraints: BoxConstraints(
                         minHeight: constraints.maxHeight,
-                        maxHeight: 380,
+                        maxHeight: safeMinHeight,
                       ),
                       child: rail,
                     ),
                   );
                 }
-                return isAndroidLandscape
-                    ? Transform.translate(
-                        key: const ValueKey<String>(
-                          'android_landscape_navigation_shift',
-                        ),
-                        offset: const Offset(0, -28),
-                        child: railLayout,
-                      )
-                    : railLayout;
+                return railLayout;
               },
             ),
           ),

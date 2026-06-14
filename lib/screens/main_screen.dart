@@ -210,6 +210,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
+          scrollable: true,
           title: Text(i18n.tr('latest_version_available')),
           content: Column(
             mainAxisSize: MainAxisSize.min,
@@ -409,7 +410,10 @@ class _MainScreenState extends ConsumerState<MainScreen>
 
   Size _layoutViewSize() {
     if (_isKeyboardVisible && _lastRecoveredViewSize != null) {
-      return _lastRecoveredViewSize!;
+      return Size(
+        _currentLogicalViewSize().width,
+        _lastRecoveredViewSize!.height,
+      );
     }
     return _currentLogicalViewSize();
   }
@@ -771,7 +775,9 @@ class _MainScreenState extends ConsumerState<MainScreen>
     final isLandscape =
         _orientationForSize(layoutSize) == Orientation.landscape;
     final isDesktop =
-        Platform.isWindows || width >= _desktopBreakpoint || isLandscape;
+        (Platform.isWindows && width >= 600) ||
+        width >= _desktopBreakpoint ||
+        isLandscape;
     final isTinyWindow = width < 300 || layoutSize.height < 300;
     final mobileContentInset = isDesktop
         ? 0.0

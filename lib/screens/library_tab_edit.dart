@@ -190,9 +190,8 @@ class LibraryEditPage extends ConsumerStatefulWidget {
 
 class _LibraryEditPageState extends ConsumerState<LibraryEditPage>
     with WidgetsBindingObserver {
-  static const MethodChannel _fileCacheChannel = MethodChannel(
-    'nameless_audio/file_cache',
-  );
+  static final FileCachePlatformGateway _fileCacheGateway =
+      FileCachePlatformGateway.instance;
   final TextEditingController _searchController = TextEditingController();
   List<String> _diskAudioFilePaths = const <String>[];
   Set<String> _diskAudioFilePathSet = const <String>{};
@@ -338,9 +337,8 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage>
     final audioFiles = <String>{};
     final folderPaths = <String>{};
     try {
-      final data = await _fileCacheChannel.invokeMethod<List<dynamic>>(
-        FileCacheMethod.scanFolder,
-        {'folder': widget.libraryPath},
+      final data = await _fileCacheGateway.scanFolderPayload(
+        widget.libraryPath,
       );
       if (data == null) return false;
       for (final item in data) {

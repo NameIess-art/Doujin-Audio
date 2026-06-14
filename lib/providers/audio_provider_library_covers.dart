@@ -1,4 +1,4 @@
-﻿part of 'audio_provider.dart';
+part of 'audio_provider.dart';
 
 extension AudioProviderLibraryCovers on AudioProvider {
   /// Recursively scans for all images in the root folder containing the given track.
@@ -105,20 +105,11 @@ extension AudioProviderLibraryCovers on AudioProvider {
     String? groupKey,
   }) async {
     try {
-      final raw = await AudioProvider._fileCacheChannel
-          .invokeMethod<List<dynamic>>(
-            FileCacheMethod.discoverRootImages,
-            <String, Object?>{
-              'path': trackPath,
-              'groupKey': groupKey,
-              'rootFolder': rootFolder,
-            },
-          );
-      if (raw == null) return [];
-      return raw
-          .map((item) => item?.toString().trim() ?? '')
-          .where((item) => item.isNotEmpty)
-          .toList(growable: false);
+      return AudioProvider._fileCacheGateway.discoverRootImages(
+        path: trackPath,
+        groupKey: groupKey,
+        rootFolder: rootFolder,
+      );
     } on MissingPluginException {
       return [];
     } catch (e) {

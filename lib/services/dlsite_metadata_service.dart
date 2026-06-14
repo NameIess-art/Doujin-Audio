@@ -1,15 +1,15 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
-import 'package:flutter/services.dart';
 import 'package:path/path.dart' as path;
 
 import '../i18n/app_language_provider.dart';
 import '../models/audio_detail.dart';
 import '../models/dlsite_metadata.dart';
+import 'file_cache_platform_gateway.dart';
 import 'path_matcher.dart';
-import 'platform_channels.dart';
 
 class DlsiteMetadataException implements Exception {
   const DlsiteMetadataException(this.message, {this.isNetworkFailure = false});
@@ -24,13 +24,13 @@ class DlsiteMetadataException implements Exception {
 class DlsiteMetadataService {
   DlsiteMetadataService({
     HttpClient? httpClient,
+    FileCachePlatformGateway? fileCacheGateway,
     Duration requestTimeout = const Duration(seconds: 8),
   }) : _httpClient = httpClient ?? HttpClient(),
+       _fileCacheGateway =
+           fileCacheGateway ?? FileCachePlatformGateway.instance,
        _requestTimeout = requestTimeout;
 
-  static const MethodChannel _fileCacheChannel = MethodChannel(
-    FileCacheChannel.name,
-  );
   static const int _maxRequestAttempts = 2;
   static const List<String> _productSites = <String>[
     'maniax',
@@ -42,6 +42,7 @@ class DlsiteMetadataService {
   ];
 
   final HttpClient _httpClient;
+  final FileCachePlatformGateway _fileCacheGateway;
   final Duration _requestTimeout;
 
   Future<DlsiteMetadata> fetchByRjCode(
@@ -226,14 +227,11 @@ class DlsiteMetadataService {
       );
       final mimeType =
           response.headers.contentType?.mimeType ?? _coverMimeType(extension);
-      final savedPath = await _fileCacheChannel.invokeMethod<String>(
-        FileCacheMethod.writeFileBytesToFolder,
-        <String, Object?>{
-          'folder': folderPath,
-          'name': fileName,
-          'bytes': Uint8List.fromList(bytes),
-          'mimeType': mimeType,
-        },
+      final savedPath = await _fileCacheGateway.writeFileBytesToFolder(
+        folder: folderPath,
+        name: fileName,
+        bytes: Uint8List.fromList(bytes),
+        mimeType: mimeType,
       );
       if (savedPath == null || savedPath.isEmpty) {
         throw const DlsiteMetadataException('Content cover save failed');

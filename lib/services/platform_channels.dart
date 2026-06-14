@@ -21,6 +21,10 @@ abstract final class FileCacheChannel {
   static const String scanEvents = 'nameless_audio/file_cache/scan_events';
 }
 
+abstract final class SubtitleOverlayChannel {
+  static const String name = 'nameless_audio/subtitle_overlay';
+}
+
 abstract final class NotificationsChannel {
   static const String name = 'nameless_audio/notifications';
 }
@@ -80,6 +84,7 @@ abstract final class PowerMethod {
 abstract final class FileCacheMethod {
   static const String discoverRootImages = 'discoverRootImages';
   static const String resolveTrackCover = 'resolveTrackCover';
+  static const String resolveTrackSubtitle = 'resolveTrackSubtitle';
   static const String resolveVideoFrame = 'resolveVideoFrame';
   static const String cacheFromUri = 'cacheFromUri';
   static const String scanFolder = 'scanFolder';
@@ -104,6 +109,15 @@ abstract final class FileCacheMethod {
   static const String pickAudioSource = 'pickAudioSource';
   static const String pickAudioFiles = 'pickAudioFiles';
   static const String pickAudioFolder = 'pickAudioFolder';
+}
+
+abstract final class SubtitleOverlayMethod {
+  static const String canDrawOverlays = 'canDrawOverlays';
+  static const String openOverlaySettings = 'openOverlaySettings';
+  static const String startOverlay = 'startOverlay';
+  static const String stopOverlay = 'stopOverlay';
+  static const String updateSubtitle = 'updateSubtitle';
+  static const String updateStyle = 'updateStyle';
 }
 
 // ---------------------------------------------------------------------------

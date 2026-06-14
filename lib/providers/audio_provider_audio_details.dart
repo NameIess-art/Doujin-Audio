@@ -404,11 +404,10 @@ extension AudioProviderAudioDetails on AudioProvider {
       final decodedCurrent = PathMatcher.safeDecodeComponent(currentName);
       if (decodedCurrent == name) return oldTarget.targetPath;
     }
-    final raw = await AudioProvider._fileCacheChannel
-        .invokeMapMethod<String, Object?>(FileCacheMethod.renameDocument, {
-          'path': oldTarget.targetPath,
-          'name': name,
-        });
+    final raw = await AudioProvider._fileCacheGateway.renameDocument(
+      path: oldTarget.targetPath,
+      name: name,
+    );
     final renamedPath = raw?['path'] as String?;
     if (renamedPath == null || renamedPath.isEmpty) {
       throw const AudioDetailRenameException('renameFailed');

@@ -1,4 +1,4 @@
-﻿part of 'audio_provider.dart';
+part of 'audio_provider.dart';
 
 extension AudioProviderNotificationSubtitles on AudioProvider {
   Future<SubtitleTrack?> subtitleTrackForPath(String trackPath) {
@@ -133,11 +133,10 @@ extension AudioProviderNotificationSubtitles on AudioProvider {
   Future<SubtitleTrack?> _loadContentSubtitleTrack(String trackPath) async {
     final track = trackByPath(trackPath);
     try {
-      final raw = await AudioProvider._fileCacheChannel
-          .invokeMapMethod<String, Object?>(
-            'resolveTrackSubtitle',
-            <String, dynamic>{'path': trackPath, 'groupKey': track?.groupKey},
-          );
+      final raw = await AudioProvider._fileCacheGateway.resolveTrackSubtitle(
+        path: trackPath,
+        groupKey: track?.groupKey,
+      );
       if (raw == null) return null;
       final sourcePath = raw['sourcePath']?.toString();
       final text = raw['text']?.toString();

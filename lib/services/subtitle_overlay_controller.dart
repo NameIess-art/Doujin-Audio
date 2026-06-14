@@ -5,8 +5,10 @@ import 'dart:io';
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:flutter/services.dart';
 
+import 'platform_channels.dart';
+
 class SubtitleOverlayController {
-  static const _channel = MethodChannel('nameless_audio/subtitle_overlay');
+  static const _channel = MethodChannel(SubtitleOverlayChannel.name);
   static WindowController? _windowsOverlayController;
   static Map<String, Object?> _windowsStyleArgs = const {};
   static String _windowsSubtitleText = '';
@@ -16,7 +18,10 @@ class SubtitleOverlayController {
   static Future<bool> canDrawOverlays() async {
     if (Platform.isWindows) return true;
     try {
-      return await _channel.invokeMethod<bool>('canDrawOverlays') ?? false;
+      return await _channel.invokeMethod<bool>(
+            SubtitleOverlayMethod.canDrawOverlays,
+          ) ??
+          false;
     } on PlatformException catch (_) {
       return false;
     }
@@ -25,7 +30,10 @@ class SubtitleOverlayController {
   static Future<bool> openOverlaySettings() async {
     if (Platform.isWindows) return true;
     try {
-      return await _channel.invokeMethod<bool>('openOverlaySettings') ?? false;
+      return await _channel.invokeMethod<bool>(
+            SubtitleOverlayMethod.openOverlaySettings,
+          ) ??
+          false;
     } on PlatformException catch (_) {
       return false;
     }
@@ -60,7 +68,7 @@ class SubtitleOverlayController {
       return;
     }
     try {
-      await _channel.invokeMethod('startOverlay');
+      await _channel.invokeMethod(SubtitleOverlayMethod.startOverlay);
     } on PlatformException catch (_) {
       // Overlay support is optional on platforms without the native channel.
     }
@@ -90,7 +98,7 @@ class SubtitleOverlayController {
       return;
     }
     try {
-      await _channel.invokeMethod('stopOverlay');
+      await _channel.invokeMethod(SubtitleOverlayMethod.stopOverlay);
     } on PlatformException catch (_) {
       // Overlay support is optional on platforms without the native channel.
     }
@@ -108,7 +116,9 @@ class SubtitleOverlayController {
       return;
     }
     try {
-      await _channel.invokeMethod('updateSubtitle', {'text': text});
+      await _channel.invokeMethod(SubtitleOverlayMethod.updateSubtitle, {
+        'text': text,
+      });
     } on PlatformException catch (_) {
       // Subtitle updates are best effort when the overlay is unavailable.
     }
@@ -156,7 +166,7 @@ class SubtitleOverlayController {
       return;
     }
     try {
-      await _channel.invokeMethod('updateStyle', args);
+      await _channel.invokeMethod(SubtitleOverlayMethod.updateStyle, args);
     } on PlatformException catch (_) {
       // Style updates are best effort when the overlay is unavailable.
     }

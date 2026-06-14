@@ -4,13 +4,12 @@ import 'package:flutter/services.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 
-import 'platform_channels.dart';
+import 'file_cache_platform_gateway.dart';
 
 class AppCacheService {
   static const int defaultMaxCacheBytes = 300 * 1024 * 1024;
-  static const MethodChannel _fileCacheChannel = MethodChannel(
-    FileCacheChannel.name,
-  );
+  static final FileCachePlatformGateway _fileCache =
+      FileCachePlatformGateway.instance;
 
   static int _maxCacheBytes = defaultMaxCacheBytes;
 
@@ -29,10 +28,7 @@ class AppCacheService {
     _maxCacheBytes = bytes <= 0 ? defaultMaxCacheBytes : bytes;
     if (Platform.isAndroid) {
       try {
-        await _fileCacheChannel.invokeMethod<void>(
-          FileCacheMethod.setApplicationCacheLimit,
-          {'maxBytes': _maxCacheBytes},
-        );
+        await _fileCache.setApplicationCacheLimit(_maxCacheBytes);
       } on MissingPluginException {
         // Non-Android platforms do not expose the native cache channel.
       } catch (_) {
@@ -46,11 +42,7 @@ class AppCacheService {
     var deletedBytes = 0;
     if (Platform.isAndroid) {
       try {
-        deletedBytes +=
-            await _fileCacheChannel.invokeMethod<int>(
-              FileCacheMethod.clearApplicationCache,
-            ) ??
-            0;
+        deletedBytes += await _fileCache.clearApplicationCache();
       } on MissingPluginException {
         // Non-Android platforms do not expose the native cache channel.
       } catch (_) {
@@ -86,10 +78,7 @@ class AppCacheService {
   static Future<void> enforceLimit() async {
     if (Platform.isAndroid) {
       try {
-        await _fileCacheChannel.invokeMethod<void>(
-          FileCacheMethod.enforceApplicationCacheLimit,
-          {'maxBytes': _maxCacheBytes},
-        );
+        await _fileCache.enforceApplicationCacheLimit(_maxCacheBytes);
         return;
       } on MissingPluginException {
         // Non-Android platforms do not expose the native cache channel.

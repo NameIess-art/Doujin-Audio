@@ -16,13 +16,22 @@ no separate Dart audio-service notification handler.
 Current platform responsibility boundaries include:
 
 - `LibraryScannerService`: refresh/import orchestration and scan-result merging.
-- `LibraryScannerPlatformGateway`: Android scan, folder listing, picker, and cache MethodChannel I/O.
-- `FileCacheOperations`: stable file-cache MethodChannel facade.
+- `FileCachePlatformGateway`: the only Dart owner of `file_cache` MethodChannel/EventChannel I/O, including scanning, document operations, cache operations, media helpers, backup, and subtitle resolution.
 - `FileCacheMediaScanOrchestrator`: media-scan strategy and fallback ordering.
 - `MediaNameMetadata`: display-name normalization and media-type rules.
 - `ApplicationCachePolicy`: application-cache preferences, accounting, and eviction.
 - `NativePlaybackService`: MediaSession lifecycle, playback commands, and foreground-service decisions.
 - `NativePlaybackSessionRestorer`: persisted native-session reconstruction.
+
+Screens, providers, repositories, and feature services must use
+`FileCachePlatformGateway` instead of creating direct `file_cache` channels.
+Wire names and method names remain centralized in the Dart and Kotlin platform
+channel constants.
+
+Android `MainActivity` owns Flutter engine assembly, activity lifecycle, picker
+delivery, and notification intent delivery. Power, update, and subtitle-overlay
+method handling live in their dedicated handlers; new platform behavior should
+extend the matching handler instead of growing `MainActivity`.
 
 New core business rules should prefer pure Dart helpers under `lib/services` when they can be tested without Flutter widgets, method channels, or Android services. Current extracted helpers include:
 
@@ -33,3 +42,7 @@ New core business rules should prefer pure Dart helpers under `lib/services` whe
 Shared lightweight models live under `lib/models`. Tests for these pure helpers live in `test/*_test.dart` and should be expanded before changing behavior in the corresponding provider methods.
 
 Large screen and provider files are split with same-library `part` files when the extracted code still depends on private state. This keeps public APIs unchanged while separating page state, UI widgets, notification helpers, playback helpers, and persistence helpers into smaller maintenance units.
+
+`audio_state_services.dart` is the stable import entry point. Its state models,
+library service, playback/timer services, and notification/settings services
+are maintained in responsibility-specific part files.

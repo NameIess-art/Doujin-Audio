@@ -11,25 +11,33 @@ import 'media_file_support.dart';
 import 'path_display.dart';
 import 'platform_channels.dart';
 
-class LibraryScannerPlatformGateway {
-  LibraryScannerPlatformGateway();
+class FileCachePlatformGateway {
+  FileCachePlatformGateway({
+    MethodChannel? channel,
+    EventChannel? scanEvents,
+    bool Function()? isAndroid,
+  }) : _channel = channel ?? const MethodChannel(FileCacheChannel.name),
+       _scanEvents =
+           scanEvents ?? const EventChannel(FileCacheChannel.scanEvents),
+       _isAndroid = isAndroid ?? (() => Platform.isAndroid);
 
-  static const MethodChannel _channel = MethodChannel(FileCacheChannel.name);
-  static const EventChannel _scanEvents = EventChannel(
-    FileCacheChannel.scanEvents,
-  );
+  static final FileCachePlatformGateway instance = FileCachePlatformGateway();
+
+  final MethodChannel _channel;
+  final EventChannel _scanEvents;
+  final bool Function() _isAndroid;
 
   int _scanSessionSeed = 0;
 
   Future<NativeScanResult> scanFolder(String folderPath) async {
-    if (!Platform.isAndroid) return const NativeScanResult.notSupported();
+    if (!_isAndroid()) return const NativeScanResult.notSupported();
     final streamedScan = await _scanFolderStream(folderPath);
     if (streamedScan.ok || !streamedScan.notSupported) return streamedScan;
     return _scanFolderLegacy(folderPath);
   }
 
   Future<List<String>?> listChildFolders(String folderPath) async {
-    if (!Platform.isAndroid) return null;
+    if (!_isAndroid()) return null;
     try {
       final data = await _channel.invokeMethod<List<dynamic>>(
         FileCacheMethod.listChildFolders,
@@ -93,6 +101,199 @@ class LibraryScannerPlatformGateway {
       'name': name,
       'index': index,
     });
+  }
+
+  Future<List<dynamic>?> scanFolderPayload(String folderPath) {
+    return _channel.invokeMethod<List<dynamic>>(
+      FileCacheMethod.scanFolder,
+      <String, Object?>{'folder': folderPath},
+    );
+  }
+
+  Future<Map<String, Object?>?> renameDocument({
+    required String path,
+    required String name,
+  }) {
+    return _channel.invokeMapMethod<String, Object?>(
+      FileCacheMethod.renameDocument,
+      <String, Object?>{'path': path, 'name': name},
+    );
+  }
+
+  Future<List<String>> discoverRootImages({
+    required String path,
+    String? groupKey,
+    required String rootFolder,
+  }) async {
+    final raw = await _channel.invokeMethod<List<dynamic>>(
+      FileCacheMethod.discoverRootImages,
+      <String, Object?>{
+        'path': path,
+        'groupKey': groupKey,
+        'rootFolder': rootFolder,
+      },
+    );
+    return raw
+            ?.map((item) => item?.toString().trim() ?? '')
+            .where((item) => item.isNotEmpty)
+            .toList(growable: false) ??
+        const <String>[];
+  }
+
+  Future<String?> resolveTrackCover({
+    required String path,
+    String? groupKey,
+    String? rootFolder,
+  }) {
+    return _channel.invokeMethod<String>(
+      FileCacheMethod.resolveTrackCover,
+      <String, Object?>{
+        'path': path,
+        'groupKey': groupKey,
+        'rootFolder': rootFolder,
+      },
+    );
+  }
+
+  Future<String?> resolveVideoFrame({required String path, int? modifiedAtMs}) {
+    return _channel.invokeMethod<String>(
+      FileCacheMethod.resolveVideoFrame,
+      <String, Object?>{'path': path, 'modifiedAtMs': ?modifiedAtMs},
+    );
+  }
+
+  Future<Map<String, Object?>?> resolveTrackSubtitle({
+    required String path,
+    String? groupKey,
+  }) {
+    return _channel.invokeMapMethod<String, Object?>(
+      FileCacheMethod.resolveTrackSubtitle,
+      <String, Object?>{'path': path, 'groupKey': groupKey},
+    );
+  }
+
+  Future<bool> writeAudioDetailBackup({
+    required String folder,
+    required String json,
+  }) async {
+    return await _channel.invokeMethod<bool>(
+          FileCacheMethod.writeAudioDetailBackup,
+          <String, Object?>{'folder': folder, 'json': json},
+        ) ??
+        false;
+  }
+
+  Future<String?> readAudioDetailBackup(String folder) {
+    return _channel.invokeMethod<String>(
+      FileCacheMethod.readAudioDetailBackup,
+      <String, Object?>{'folder': folder},
+    );
+  }
+
+  Future<String?> readSingleFileDetailBackup(String filePath) {
+    return _channel.invokeMethod<String>(
+      FileCacheMethod.readSingleFileDetailBackup,
+      <String, Object?>{'filePath': filePath},
+    );
+  }
+
+  Future<bool> writeSingleFileDetailBackup({
+    required String filePath,
+    required String json,
+  }) async {
+    return await _channel.invokeMethod<bool>(
+          FileCacheMethod.writeSingleFileDetailBackup,
+          <String, Object?>{'filePath': filePath, 'json': json},
+        ) ??
+        false;
+  }
+
+  Future<String?> writeFileBytesToFolder({
+    required String folder,
+    required String name,
+    required Uint8List bytes,
+    String? mimeType,
+  }) {
+    return _channel.invokeMethod<String>(
+      FileCacheMethod.writeFileBytesToFolder,
+      <String, Object?>{
+        'folder': folder,
+        'name': name,
+        'bytes': bytes,
+        'mimeType': mimeType,
+      },
+    );
+  }
+
+  Future<bool> documentPathExists(String path) async {
+    return await _channel.invokeMethod<bool>(
+          FileCacheMethod.documentPathExists,
+          <String, Object?>{'path': path},
+        ) ??
+        false;
+  }
+
+  Future<bool> ensureFolderPath({
+    required String folder,
+    required String relativePath,
+    required bool overwrite,
+  }) async {
+    return await _channel.invokeMethod<bool>(
+          FileCacheMethod.ensureFolderPath,
+          <String, Object?>{
+            'folder': folder,
+            'relativePath': relativePath,
+            'overwrite': overwrite,
+          },
+        ) ??
+        false;
+  }
+
+  Future<bool> copyFileToFolder({
+    required String sourcePath,
+    required String folder,
+    required String relativePath,
+    required bool overwrite,
+  }) async {
+    return await _channel.invokeMethod<bool>(
+          FileCacheMethod.copyFileToFolder,
+          <String, Object?>{
+            'sourcePath': sourcePath,
+            'folder': folder,
+            'relativePath': relativePath,
+            'overwrite': overwrite,
+          },
+        ) ??
+        false;
+  }
+
+  Future<bool> deleteDocumentPath(String path) async {
+    return await _channel.invokeMethod<bool>(
+          FileCacheMethod.deleteDocumentPath,
+          <String, Object?>{'path': path},
+        ) ??
+        false;
+  }
+
+  Future<void> setApplicationCacheLimit(int maxBytes) {
+    return _channel.invokeMethod<void>(
+      FileCacheMethod.setApplicationCacheLimit,
+      <String, Object?>{'maxBytes': maxBytes},
+    );
+  }
+
+  Future<int> clearApplicationCache() async {
+    return await _channel.invokeMethod<int>(
+          FileCacheMethod.clearApplicationCache,
+        ) ??
+        0;
+  }
+
+  Future<void> enforceApplicationCacheLimit(int maxBytes) {
+    return _channel.invokeMethod<void>(
+      FileCacheMethod.enforceApplicationCacheLimit,
+      <String, Object?>{'maxBytes': maxBytes},
+    );
   }
 
   Future<NativeScanResult> _scanFolderStream(String folderPath) async {

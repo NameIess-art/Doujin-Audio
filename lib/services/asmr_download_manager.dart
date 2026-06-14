@@ -13,9 +13,9 @@ import '../models/asmr_models.dart';
 import 'app_cache_service.dart';
 import 'app_log_service.dart';
 import 'app_preferences.dart';
+import 'file_cache_platform_gateway.dart';
 import 'path_display.dart';
 import 'path_matcher.dart';
-import 'platform_channels.dart';
 
 enum AsmrDownloadConflictPolicy { skip, overwrite }
 
@@ -242,7 +242,8 @@ class AsmrDownloadTaskHeaderViewState {
 }
 
 class AsmrDownloadManager extends ChangeNotifier {
-  AsmrDownloadManager();
+  AsmrDownloadManager({FileCachePlatformGateway? fileCacheGateway})
+    : _fileCacheGateway = fileCacheGateway ?? FileCachePlatformGateway.instance;
 
   static const String _defaultDestinationKey =
       'asmr_download_default_destination_v1';
@@ -250,9 +251,7 @@ class AsmrDownloadManager extends ChangeNotifier {
     milliseconds: 120,
   );
   static const int _progressNotifyMinByteDelta = 128 * 1024;
-  static const MethodChannel _fileCacheChannel = MethodChannel(
-    FileCacheChannel.name,
-  );
+  final FileCachePlatformGateway _fileCacheGateway;
 
   AsmrDownloadTaskSnapshot? _currentTask;
   String? _defaultDestinationRoot;
@@ -337,10 +336,7 @@ class AsmrDownloadManager extends ChangeNotifier {
   Future<String?> pickDestinationFolder({String? dialogTitle}) async {
     try {
       if (Platform.isAndroid) {
-        final raw = await _fileCacheChannel.invokeMapMethod<String, Object?>(
-          FileCacheMethod.pickAudioFolder,
-        );
-        final pathValue = raw?['path']?.toString().trim();
+        final pathValue = await _fileCacheGateway.pickAudioFolder();
         if (pathValue != null && pathValue.isNotEmpty) {
           return pathValue;
         }
@@ -381,11 +377,7 @@ class AsmrDownloadManager extends ChangeNotifier {
     if (normalized.isEmpty) return false;
     if (PathMatcher.isContentUri(normalized)) {
       try {
-        return await _fileCacheChannel.invokeMethod<bool>(
-              FileCacheMethod.documentPathExists,
-              {'path': normalized},
-            ) ??
-            false;
+        return await _fileCacheGateway.documentPathExists(normalized);
       } catch (_) {
         return false;
       }
@@ -655,16 +647,12 @@ class AsmrDownloadManager extends ChangeNotifier {
     try {
       _throwIfCancelled();
       if (PathMatcher.isContentUri(workRootPath)) {
-        final saved =
-            await _fileCacheChannel
-                .invokeMethod<bool>(FileCacheMethod.copyFileToFolder, {
-                  'sourcePath': tempResult.file.path,
-                  'folder': workRootPath,
-                  'relativePath': item.relativePath,
-                  'overwrite':
-                      conflictPolicy == AsmrDownloadConflictPolicy.overwrite,
-                }) ??
-            false;
+        final saved = await _fileCacheGateway.copyFileToFolder(
+          sourcePath: tempResult.file.path,
+          folder: workRootPath,
+          relativePath: item.relativePath,
+          overwrite: conflictPolicy == AsmrDownloadConflictPolicy.overwrite,
+        );
         if (!saved) {
           return conflictPolicy == AsmrDownloadConflictPolicy.skip
               ? _WriteResult.skipped(
@@ -788,12 +776,10 @@ class AsmrDownloadManager extends ChangeNotifier {
       '  ',
     ).convert(detail.toBackupJson());
     if (PathMatcher.isContentUri(workRootPath)) {
-      final saved =
-          await _fileCacheChannel.invokeMethod<bool>(
-            FileCacheMethod.writeAudioDetailBackup,
-            {'folder': workRootPath, 'json': payload},
-          ) ??
-          false;
+      final saved = await _fileCacheGateway.writeAudioDetailBackup(
+        folder: workRootPath,
+        json: payload,
+      );
       if (!saved) {
         throw const FileSystemException('Unable to write work detail backup.');
       }
@@ -815,15 +801,11 @@ class AsmrDownloadManager extends ChangeNotifier {
     }
 
     if (PathMatcher.isContentUri(basePath)) {
-      return await _fileCacheChannel.invokeMethod<bool>(
-            FileCacheMethod.ensureFolderPath,
-            {
-              'folder': basePath,
-              'relativePath': normalized,
-              'overwrite': overwrite,
-            },
-          ) ??
-          false;
+      return _fileCacheGateway.ensureFolderPath(
+        folder: basePath,
+        relativePath: normalized,
+        overwrite: overwrite,
+      );
     }
 
     final folder = Directory(_joinFolderPath(basePath, normalized));
@@ -961,10 +943,7 @@ class AsmrDownloadManager extends ChangeNotifier {
   Future<void> _deleteDownloadRoot(String workRootPath) async {
     try {
       if (PathMatcher.isContentUri(workRootPath)) {
-        await _fileCacheChannel.invokeMethod<bool>(
-          FileCacheMethod.deleteDocumentPath,
-          {'path': workRootPath},
-        );
+        await _fileCacheGateway.deleteDocumentPath(workRootPath);
         return;
       }
       final directory = Directory(workRootPath);

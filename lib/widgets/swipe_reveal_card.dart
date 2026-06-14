@@ -84,6 +84,8 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
     if (_hasTertiaryAction) {
       items.add(
         PopupMenuItem(
+          height: 28,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
           value: widget.onTertiaryAction,
           child: Row(
             children: [
@@ -98,6 +100,8 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
     if (_hasSecondaryAction) {
       items.add(
         PopupMenuItem(
+          height: 28,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
           value: widget.onSecondaryAction,
           child: Row(
             children: [
@@ -111,6 +115,8 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
     }
     items.add(
       PopupMenuItem(
+        height: 28,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
         value: widget.onRemove,
         child: Row(
           children: [

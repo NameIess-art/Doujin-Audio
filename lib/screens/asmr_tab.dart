@@ -249,7 +249,10 @@ class _AsmrTabState extends State<AsmrTab>
     );
   }
 
-  Future<void> _refreshCategoryWithFeedback(AsmrCategoryType category) async {
+  Future<void> _refreshCategoryWithFeedback(
+    AsmrCategoryType category, {
+    bool showSnackbar = false,
+  }) async {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
     final controller = context.read<AsmrLibraryController>();
@@ -259,12 +262,14 @@ class _AsmrTabState extends State<AsmrTab>
         .map((work) => work.id)
         .toList(growable: false);
 
-    showAppSnackBar(
-      context,
-      i18n.tr('loading_dot'),
-      icon: Icons.sync_rounded,
-      iconColor: asmrBlue,
-    );
+    if (showSnackbar) {
+      showAppSnackBar(
+        context,
+        i18n.tr('loading_dot'),
+        icon: Icons.sync_rounded,
+        iconColor: asmrBlue,
+      );
+    }
 
     await Future.wait(<Future<void>>[
       controller.refreshCategory(category, searchQuery: _searchQuery),
@@ -666,7 +671,10 @@ class _AsmrTabState extends State<AsmrTab>
                     IconButton(
                       onPressed: globalState.initialized
                           ? () => unawaited(
-                              _refreshCategoryWithFeedback(currentCategory),
+                              _refreshCategoryWithFeedback(
+                                currentCategory,
+                                showSnackbar: true,
+                              ),
                             )
                           : null,
                       icon: const Icon(Icons.refresh_rounded),

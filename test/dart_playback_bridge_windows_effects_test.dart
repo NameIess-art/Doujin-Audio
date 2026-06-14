@@ -234,15 +234,37 @@ void main() {
 
       final result = await bridge.prepareSession(
         sessionId: 'session-1',
-        uri: Uri.parse('https://example.com/late-retry.m4a'),
+        uri: Uri.parse('https://example.com/low.m4a'),
         title: 'late retry',
+        candidateUris: <Uri>[
+          Uri.parse('https://example.com/low.m4a'),
+          Uri.parse('https://example.com/high.m4a'),
+        ],
+        autoPlay: true,
       );
       expect(result.isOk, isTrue);
 
       await Future<void>.delayed(const Duration(milliseconds: 800));
       final snapshot = await bridge.snapshot();
-      expect(platformPlayer.openedUris, hasLength(2));
+      expect(platformPlayer.openedUris, <String>[
+        'https://example.com/low.m4a',
+        'https://example.com/high.m4a',
+      ]);
+      expect(platformPlayer.playCalls, 2);
       expect(snapshot.valueOrNull?.sessions.single.error, isNull);
+      expect(snapshot.valueOrNull?.sessions.single.playing, isTrue);
+
+      platformPlayer.emitError('Second late load failure');
+      await Future<void>.delayed(const Duration(milliseconds: 800));
+      final retriedSnapshot = await bridge.snapshot();
+      expect(platformPlayer.openedUris, <String>[
+        'https://example.com/low.m4a',
+        'https://example.com/high.m4a',
+        'https://example.com/low.m4a',
+      ]);
+      expect(platformPlayer.playCalls, 3);
+      expect(retriedSnapshot.valueOrNull?.sessions.single.error, isNull);
+      expect(retriedSnapshot.valueOrNull?.sessions.single.playing, isTrue);
     },
   );
 

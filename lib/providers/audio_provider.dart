@@ -45,6 +45,7 @@ import '../services/power_platform_service.dart';
 import '../services/timer_runtime_calculator.dart';
 import '../services/warmup_scheduler.dart';
 import '../services/ui_interaction_coordinator.dart';
+import '../services/windows_ffmpeg_service.dart';
 
 export '../models/library_node.dart';
 export '../models/library_entry.dart';

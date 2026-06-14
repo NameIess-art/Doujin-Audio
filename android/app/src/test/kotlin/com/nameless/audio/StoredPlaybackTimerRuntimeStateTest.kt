@@ -1,5 +1,6 @@
 package com.nameless.audio
 
+import android.content.Intent
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -36,5 +37,25 @@ class StoredPlaybackTimerRuntimeStateTest {
         assertFalse(pausedState.shouldKeepForegroundServiceAlive)
         assertTrue(autoResumeState.hasRuntime)
         assertTrue(autoResumeState.shouldKeepForegroundServiceAlive)
+    }
+
+    @Test
+    fun `auto resume target survives reboot and package replacement`() {
+        assertFalse(
+            shouldRecalculateAutoResumeAfterSystemEvent(Intent.ACTION_BOOT_COMPLETED)
+        )
+        assertFalse(
+            shouldRecalculateAutoResumeAfterSystemEvent(Intent.ACTION_MY_PACKAGE_REPLACED)
+        )
+    }
+
+    @Test
+    fun `auto resume target follows wall clock changes`() {
+        assertTrue(
+            shouldRecalculateAutoResumeAfterSystemEvent(Intent.ACTION_TIME_CHANGED)
+        )
+        assertTrue(
+            shouldRecalculateAutoResumeAfterSystemEvent(Intent.ACTION_TIMEZONE_CHANGED)
+        )
     }
 }

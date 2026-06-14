@@ -8,8 +8,8 @@ import android.content.Intent
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
 import android.os.SystemClock
-import androidx.core.content.ContextCompat
 import java.util.Calendar
 
 class PlaybackTimerAlarmReceiver : BroadcastReceiver() {
@@ -23,7 +23,8 @@ class PlaybackTimerAlarmReceiver : BroadcastReceiver() {
             context = context.applicationContext,
             action = action,
             generation = generation,
-            pendingResult = goAsync()
+            pendingResult = goAsync(),
+            deliveryWakeLock = PlaybackTimerAlarmScheduler.acquireDeliveryWakeLock(context)
         )
     }
 }
@@ -32,13 +33,28 @@ object PlaybackTimerAlarmScheduler {
     const val actionTimerExpired = "com.nameless.audio.action.TIMER_EXPIRED"
     const val actionAutoResume = "com.nameless.audio.action.AUTO_RESUME"
     const val extraGeneration = "generation"
-    private const val actionTimeSet = "android.intent.action.TIME_SET"
 
     private const val timerRequestCode = 32001
     private const val autoResumeRequestCode = 32002
     private const val maxServiceDeliveryAttempts = 40
     private const val serviceDeliveryRetryDelayMs = 250L
+    private const val deliveryWakeLockTimeoutMs = 15_000L
     private val mainHandler = Handler(Looper.getMainLooper())
+
+    fun acquireDeliveryWakeLock(context: Context): PowerManager.WakeLock? {
+        return try {
+            val powerManager = context.getSystemService(Context.POWER_SERVICE) as? PowerManager
+            powerManager?.newWakeLock(
+                PowerManager.PARTIAL_WAKE_LOCK,
+                "${context.packageName}:playback_timer_delivery"
+            )?.apply {
+                setReferenceCounted(false)
+                acquire(deliveryWakeLockTimeoutMs)
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
 
     fun sync(
         context: Context,
@@ -121,10 +137,8 @@ object PlaybackTimerAlarmScheduler {
         }
 
         if (runtimeState.autoResumeEnabled && runtimeState.pausedSessionIds.isNotEmpty()) {
-            val shouldRecalculateAutoResume = reasonAction == Intent.ACTION_BOOT_COMPLETED ||
-                reasonAction == Intent.ACTION_MY_PACKAGE_REPLACED ||
-                reasonAction == actionTimeSet ||
-                reasonAction == Intent.ACTION_TIMEZONE_CHANGED
+            val shouldRecalculateAutoResume =
+                shouldRecalculateAutoResumeAfterSystemEvent(reasonAction)
             if (shouldRecalculateAutoResume) {
                 val nextAutoResumeAtMs = nextClockTimeMillis(
                     nowWallClockMs = System.currentTimeMillis(),
@@ -177,14 +191,15 @@ object PlaybackTimerAlarmScheduler {
         context: Context,
         action: String,
         generation: Int?,
-        pendingResult: BroadcastReceiver.PendingResult? = null
+        pendingResult: BroadcastReceiver.PendingResult? = null,
+        deliveryWakeLock: PowerManager.WakeLock? = null
     ) {
         val runtimeState = NativePlaybackStateStore.loadTimerRuntimeState(context)
         if (runtimeState != null &&
             generation != null &&
             runtimeState.generation != generation
         ) {
-            pendingResult?.finish()
+            finishDelivery(pendingResult, deliveryWakeLock)
             return
         }
         deliverToService(
@@ -192,7 +207,8 @@ object PlaybackTimerAlarmScheduler {
             action = action,
             runtimeState = runtimeState,
             attempt = 0,
-            pendingResult = pendingResult
+            pendingResult = pendingResult,
+            deliveryWakeLock = deliveryWakeLock
         )
     }
 
@@ -201,7 +217,8 @@ object PlaybackTimerAlarmScheduler {
         action: String,
         runtimeState: StoredPlaybackTimerRuntimeState?,
         attempt: Int,
-        pendingResult: BroadcastReceiver.PendingResult?
+        pendingResult: BroadcastReceiver.PendingResult?,
+        deliveryWakeLock: PowerManager.WakeLock?
     ) {
         val service = NativePlaybackService.ensureStarted(
             context,
@@ -209,7 +226,7 @@ object PlaybackTimerAlarmScheduler {
         )
         if (service == null) {
             if (attempt >= maxServiceDeliveryAttempts) {
-                pendingResult?.finish()
+                finishDelivery(pendingResult, deliveryWakeLock)
                 return
             }
             mainHandler.postDelayed(
@@ -219,7 +236,8 @@ object PlaybackTimerAlarmScheduler {
                         action = action,
                         runtimeState = runtimeState,
                         attempt = attempt + 1,
-                        pendingResult = pendingResult
+                        pendingResult = pendingResult,
+                        deliveryWakeLock = deliveryWakeLock
                     )
                 },
                 serviceDeliveryRetryDelayMs
@@ -233,7 +251,23 @@ object PlaybackTimerAlarmScheduler {
                 actionAutoResume -> executeAutoResume(context, service, runtimeState)
             }
         } finally {
+            finishDelivery(pendingResult, deliveryWakeLock)
+        }
+    }
+
+    private fun finishDelivery(
+        pendingResult: BroadcastReceiver.PendingResult?,
+        deliveryWakeLock: PowerManager.WakeLock?
+    ) {
+        try {
             pendingResult?.finish()
+        } finally {
+            try {
+                if (deliveryWakeLock?.isHeld == true) {
+                    deliveryWakeLock.release()
+                }
+            } catch (_: RuntimeException) {
+            }
         }
     }
 
@@ -480,4 +514,9 @@ object PlaybackTimerAlarmScheduler {
         }
         return calendar.timeInMillis
     }
+}
+
+internal fun shouldRecalculateAutoResumeAfterSystemEvent(reasonAction: String?): Boolean {
+    return reasonAction == Intent.ACTION_TIME_CHANGED ||
+        reasonAction == Intent.ACTION_TIMEZONE_CHANGED
 }

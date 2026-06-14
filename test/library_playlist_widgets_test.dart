@@ -21,6 +21,7 @@ import 'package:nameless_audio/services/native_playback_repository.dart';
 import 'package:nameless_audio/services/playback_command_runner.dart';
 import 'package:nameless_audio/services/playback_notification_service.dart';
 import 'package:nameless_audio/theme/theme_provider.dart';
+import 'package:nameless_audio/widgets/content_bound_reorder_area.dart';
 import 'package:provider/provider.dart' as legacy_provider;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -203,6 +204,35 @@ void main() {
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
+
+    if (Platform.isWindows) {
+      final reorderArea = tester.widget<ContentBoundReorderArea>(
+        find.byType(ContentBoundReorderArea),
+      );
+      expect(reorderArea.bottomExpansion, 320);
+      final list = tester.widget<ReorderableListView>(
+        find.byType(ReorderableListView),
+      );
+      expect(list.padding!.bottom, 336);
+
+      final scrollbar = find.descendant(
+        of: find.byType(ContentBoundReorderArea),
+        matching: find.byType(Scrollbar),
+      );
+      expect(scrollbar, findsOneWidget);
+      expect(
+        MediaQuery.paddingOf(tester.element(scrollbar)).bottom,
+        reorderArea.bottomInset +
+            reorderArea.topExpansion +
+            reorderArea.bottomExpansion,
+      );
+      expect(
+        MediaQuery.paddingOf(
+          tester.element(find.byType(ReorderableListView)),
+        ).bottom,
+        reorderArea.bottomInset,
+      );
+    }
 
     expect(find.byType(TextField), findsOneWidget);
 

@@ -536,9 +536,11 @@ class AppUpdateService {
         'nameless_audio_windows_update_${DateTime.now().millisecondsSinceEpoch}.ps1',
       ),
     );
+    final readyFile = File('${script.path}.ready');
     await script.writeAsString(_windowsUpdateScript, flush: true);
 
     try {
+      if (await readyFile.exists()) await readyFile.delete();
       await Process.start(_windowsPowerShellExecutable(), [
         '-WindowStyle',
         'Hidden',
@@ -552,9 +554,18 @@ class AppUpdateService {
         installDir,
         exePath,
         pid.toString(),
+        readyFile.path,
       ], mode: ProcessStartMode.detached);
-      // Wait slightly longer before exit to ensure powershell starts successfully
-      Timer(const Duration(milliseconds: 1500), () => exit(0));
+
+      final readyResult = await _waitForWindowsUpdaterReady(readyFile);
+      if (readyResult != null) {
+        return UpdateInstallResult(
+          ok: false,
+          needsPermission: false,
+          message: readyResult,
+        );
+      }
+      Timer(const Duration(milliseconds: 500), () => exit(0));
       return const UpdateInstallResult(ok: true, needsPermission: false);
     } catch (error, stackTrace) {
       AppLogService.error(
@@ -570,6 +581,21 @@ class AppUpdateService {
     }
   }
 
+  static Future<String?> _waitForWindowsUpdaterReady(File readyFile) async {
+    final deadline = DateTime.now().add(const Duration(seconds: 60));
+    while (DateTime.now().isBefore(deadline)) {
+      if (await readyFile.exists()) {
+        final status = (await readyFile.readAsString()).trim();
+        if (status == 'ready') return null;
+        if (status.startsWith('error:')) {
+          return status.substring('error:'.length).trim();
+        }
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    }
+    return 'Windows updater did not become ready in time.';
+  }
+
   static String _windowsPowerShellExecutable() {
     final systemRoot = Platform.environment['SystemRoot'] ?? r'C:\Windows';
     final powerShell = path.join(
@@ -581,6 +607,9 @@ class AppUpdateService {
     );
     return File(powerShell).existsSync() ? powerShell : 'powershell.exe';
   }
+
+  @visibleForTesting
+  static String get windowsUpdateScriptForTesting => _windowsUpdateScript;
 
   static String _versionNameFromTag(String tagName) {
     final normalized = tagName.trim();
@@ -644,11 +673,13 @@ param(
   [Parameter(Mandatory=$true)][string]$InstallDir,
   [Parameter(Mandatory=$true)][string]$ExePath,
   [Parameter(Mandatory=$true)][int]$AppProcessId,
+  [Parameter(Mandatory=$true)][string]$ReadyPath,
   [switch]$Elevated
 )
 
 $ErrorActionPreference = 'Stop'
 $logPath = Join-Path $env:TEMP 'nameless_audio_windows_update.log'
+$staging = $null
 
 function Write-UpdateLog([string]$Message) {
   $timestamp = Get-Date -Format o
@@ -702,6 +733,7 @@ function Start-ElevatedUpdater {
     (Quote-Argument $InstallDir),
     (Quote-Argument $ExePath),
     $AppProcessId,
+    (Quote-Argument $ReadyPath),
     '-Elevated'
   ) -join ' '
   Write-UpdateLog 'requesting elevated updater'
@@ -724,17 +756,6 @@ function Show-Failure([string]$Message) {
 
 try {
   Write-UpdateLog "start zip=$ZipPath install=$InstallDir exe=$ExePath pid=$AppProcessId elevated=$Elevated"
-  Wait-AppExit
-
-  if (-not (Test-InstallDirWritable)) {
-    if (-not $Elevated) {
-      Start-ElevatedUpdater
-      Write-UpdateLog 'elevated updater started'
-      exit 0
-    }
-    throw "Cannot write to install directory: $InstallDir"
-  }
-
   $staging = Join-Path $env:TEMP ("nameless_audio_update_" + [Guid]::NewGuid().ToString("N"))
   New-Item -ItemType Directory -Force -Path $staging | Out-Null
   Write-UpdateLog "expanding $ZipPath to $staging"
@@ -749,6 +770,20 @@ try {
     throw "Cannot find $exeName inside update ZIP."
   }
   $payloadDir = $payloadExe.Directory.FullName
+
+  if (-not (Test-InstallDirWritable)) {
+    if (-not $Elevated) {
+      Start-ElevatedUpdater
+      Write-UpdateLog 'elevated updater started'
+      exit 0
+    }
+    throw "Cannot write to install directory: $InstallDir"
+  }
+
+  Set-Content -LiteralPath $ReadyPath -Value 'ready' -Encoding ASCII
+  Write-UpdateLog 'payload verified; waiting for application exit'
+  Wait-AppExit
+
   Write-UpdateLog "copying $payloadDir to $InstallDir with robocopy"
   & robocopy $payloadDir $InstallDir /E /COPY:DAT /R:15 /W:1 /NFL /NDL /NP | Out-Null
   $robocopyExitCode = $LASTEXITCODE
@@ -757,12 +792,19 @@ try {
     throw "File copy failed with robocopy exit code $robocopyExitCode."
   }
 
+  if (-not (Test-Path -LiteralPath $ExePath)) {
+    throw "Updated executable is missing: $ExePath"
+  }
   Write-UpdateLog "restarting $ExePath"
   Start-Process -FilePath $ExePath -WorkingDirectory $InstallDir
-  Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction SilentlyContinue
   Write-UpdateLog 'update complete'
 } catch {
   Write-UpdateLog ("update failed: " + $_.Exception.Message)
+  Set-Content -LiteralPath $ReadyPath -Value ("error:" + $_.Exception.Message) -Encoding UTF8 -ErrorAction SilentlyContinue
   Show-Failure $_.Exception.Message
+} finally {
+  if ($null -ne $staging) {
+    Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction SilentlyContinue
+  }
 }
 ''';

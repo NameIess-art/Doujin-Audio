@@ -96,6 +96,7 @@ class AppCacheService {
       roots.add(Directory(path.join(tempDir.path, 'updates')));
       roots.add(Directory(path.join(tempDir.path, 'asmr_downloads')));
       roots.add(Directory(path.join(tempDir.path, 'notification_covers')));
+      roots.add(Directory(path.join(tempDir.path, 'video_frames')));
     } catch (_) {
       // Temporary cache roots are optional and may be unavailable on startup.
     }

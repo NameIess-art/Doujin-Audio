@@ -390,16 +390,28 @@ extension AudioProviderNotificationCovers on AudioProvider {
 
   Future<String?> _resolveVideoFramePathForTrack(MusicTrack track) async {
     try {
-      return await AudioProvider._fileCacheGateway.resolveVideoFrame(
-        path: track.path,
-        modifiedAtMs: track.modifiedAt?.millisecondsSinceEpoch,
-      );
+      final nativeFrame = await AudioProvider._fileCacheGateway
+          .resolveVideoFrame(
+            path: track.path,
+            modifiedAtMs: track.modifiedAt?.millisecondsSinceEpoch,
+          );
+      if (nativeFrame != null && nativeFrame.isNotEmpty) {
+        return nativeFrame;
+      }
     } on MissingPluginException {
-      return null;
+      // Windows generates the frame through its bundled FFmpeg below.
     } catch (e) {
       debugPrint('AudioProvider._resolveVideoFramePathForTrack error: $e');
-      return null;
     }
+    if (!AppPlatform.isWindows) return null;
+    final framePath = await WindowsFfmpegService.resolveVideoFrame(
+      videoPath: track.path,
+      modifiedAtMs: track.modifiedAt?.millisecondsSinceEpoch,
+    );
+    if (framePath != null) {
+      unawaited(AppCacheService.enforceLimit());
+    }
+    return framePath;
   }
 
   Future<String?> _resolveContentCoverPathForTrack(

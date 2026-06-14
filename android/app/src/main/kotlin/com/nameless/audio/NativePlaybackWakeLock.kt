@@ -1,5 +1,6 @@
 package com.nameless.audio
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.net.wifi.WifiManager
 import android.os.PowerManager
@@ -9,19 +10,13 @@ internal class NativePlaybackWakeLock(
     private val logInfo: (String) -> Unit,
     private val logWarn: (String, Exception) -> Unit
 ) {
-    companion object {
-        // Slightly longer than the foreground watchdog interval (4 min) so
-        // the lock never expires during normal operation but auto-releases
-        // if the service crashes or the watchdog stops.
-        private const val DEFAULT_TIMEOUT_MS = 5 * 60 * 1000L
-    }
-
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
 
     fun isHeld(): Boolean = wakeLock?.isHeld == true || wifiLock?.isHeld == true
 
-    fun acquire(timeoutMs: Long? = null) {
+    @SuppressLint("WakelockTimeout")
+    fun acquire() {
         var acquiredAny = false
 
         if (wakeLock == null) {
@@ -40,9 +35,10 @@ internal class NativePlaybackWakeLock(
 
         wakeLock?.let { lock ->
             try {
-                val effectiveTimeout = timeoutMs ?: DEFAULT_TIMEOUT_MS
-                lock.acquire(effectiveTimeout)
-                acquiredAny = lock.isHeld
+                if (!lock.isHeld) {
+                    lock.acquire()
+                    acquiredAny = lock.isHeld
+                }
             } catch (e: Exception) {
                 logWarn("wakelock_acquire_failed", e)
             }
@@ -64,8 +60,10 @@ internal class NativePlaybackWakeLock(
 
         wifiLock?.let { lock ->
             try {
-                lock.acquire()
-                acquiredAny = acquiredAny || lock.isHeld
+                if (!lock.isHeld) {
+                    lock.acquire()
+                    acquiredAny = acquiredAny || lock.isHeld
+                }
             } catch (e: Exception) {
                 logWarn("wifilock_acquire_failed", e)
             }
@@ -78,24 +76,12 @@ internal class NativePlaybackWakeLock(
         }
     }
 
-    fun refresh(timeoutMs: Long? = null) {
-        if (wakeLock == null) {
-            acquire(timeoutMs)
+    fun refresh() {
+        if (wakeLock?.isHeld == true && wifiLock?.isHeld == true) {
+            logInfo("wakelock_refresh_skip already_held")
             return
         }
-        try {
-            val effectiveTimeout = timeoutMs ?: DEFAULT_TIMEOUT_MS
-            wakeLock?.acquire(effectiveTimeout)
-            logInfo("wakelock_refreshed timeoutMs=$effectiveTimeout")
-        } catch (e: Exception) {
-            logWarn("wakelock_refresh_failed", e)
-        }
-        
-        try {
-            wifiLock?.acquire()
-        } catch (e: Exception) {
-            logWarn("wifilock_refresh_failed", e)
-        }
+        acquire()
     }
 
     fun release() {

@@ -835,12 +835,16 @@ class _DartPlaybackSession {
   }
 
   Future<void> _openAvailableCandidateWithRetry(
-    Duration initialPosition,
-  ) async {
+    Duration initialPosition, {
+    int startIndex = 0,
+  }) async {
     Object? lastFailure;
     for (var attempt = 0; attempt < _windowsLoadAttemptCount; attempt++) {
       try {
-        await _openAvailableCandidate(initialPosition);
+        await _openAvailableCandidate(
+          initialPosition,
+          startIndex: attempt == 0 ? startIndex : 0,
+        );
         return;
       } catch (failure) {
         lastFailure = failure;
@@ -857,13 +861,19 @@ class _DartPlaybackSession {
     final generation = _sourceGeneration;
     _automaticRetryTimer = Timer(_windowsLoadRetryDelay, () {
       _automaticRetryTimer = null;
+      final nextCandidateIndex = activeCandidateIndex + 1;
       unawaited(
         runSerialized(() async {
-          if (generation != _sourceGeneration || error == null) return;
-          opening = true;
-          onChanged();
           try {
-            await _openAvailableCandidateWithRetry(position);
+            if (generation != _sourceGeneration || error == null) return;
+            opening = true;
+            onChanged();
+            await _openAvailableCandidateWithRetry(
+              position,
+              startIndex: nextCandidateIndex < candidateUris.length
+                  ? nextCandidateIndex
+                  : 0,
+            );
             error = null;
             if (shouldResume) {
               await play();
@@ -871,8 +881,11 @@ class _DartPlaybackSession {
           } catch (failure) {
             error = failure.toString();
           } finally {
-            opening = false;
-            onChanged();
+            if (generation == _sourceGeneration) {
+              opening = false;
+              onChanged();
+            }
+            _automaticRetryScheduled = false;
           }
         }),
       );

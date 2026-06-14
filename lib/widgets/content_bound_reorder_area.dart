@@ -79,19 +79,33 @@ class ContentBoundReorderArea extends StatelessWidget {
       children: [expandedScrollable],
     );
 
+    Widget buildBoundedScrollbar() {
+      final mediaQuery = MediaQuery.of(context);
+      // ScrollbarPainter uses the expanded viewport dimension, so consume both
+      // expansions as trailing padding to keep its track inside this area.
+      final scrollbarPadding = mediaQuery.padding.copyWith(
+        bottom: mediaQuery.padding.bottom + topExpansion + bottomExpansion,
+      );
+      return MediaQuery(
+        data: mediaQuery.copyWith(padding: scrollbarPadding),
+        child: ScrollbarTheme(
+          data: ScrollbarTheme.of(
+            context,
+          ).copyWith(mainAxisMargin: scrollbarMainAxisMargin),
+          child: Scrollbar(
+            controller: scrollController,
+            child: MediaQuery(data: mediaQuery, child: content),
+          ),
+        ),
+      );
+    }
+
     return Positioned(
       top: headerHeight,
       bottom: bottomInset,
       left: 0,
       right: 0,
-      child: showScrollbar
-          ? ScrollbarTheme(
-              data: ScrollbarTheme.of(
-                context,
-              ).copyWith(mainAxisMargin: scrollbarMainAxisMargin),
-              child: Scrollbar(controller: scrollController, child: content),
-            )
-          : content,
+      child: showScrollbar ? buildBoundedScrollbar() : content,
     );
   }
 }

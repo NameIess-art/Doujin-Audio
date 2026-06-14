@@ -35,6 +35,9 @@ abstract final class AppWindowBootstrap {
         : jsonDecode(args[2]) as Map<String, dynamic>;
 
     await windowManager.ensureInitialized();
+    await Window.initialize();
+    await Window.setEffect(effect: WindowEffect.transparent, color: Colors.transparent);
+
     const windowOptions = WindowOptions(
       size: Size(800, 200),
       center: true,

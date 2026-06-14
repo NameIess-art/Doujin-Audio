@@ -129,7 +129,7 @@ class ThemeProvider with ChangeNotifier {
       ),
       bodySmall: const TextStyle(
         fontFamily: 'Raleway',
-        fontSize: 11,
+        fontSize: 12,
         fontWeight: FontWeight.w500,
       ),
       titleMedium: TextStyle(
@@ -191,7 +191,7 @@ class ThemeProvider with ChangeNotifier {
         shadowColor: scheme.shadow.withValues(alpha: 0.08),
         surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(isDesktop ? 14 : 18),
+          borderRadius: BorderRadius.circular(isDesktop ? 14 : 16),
           side: BorderSide(
             color: scheme.outlineVariant.withValues(
               alpha: isDesktop ? 0.38 : 0.62,
@@ -306,7 +306,7 @@ class ThemeProvider with ChangeNotifier {
         shadowColor: scheme.shadow.withValues(alpha: 0.12),
         surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(28),
+          borderRadius: BorderRadius.circular(24),
           side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.5)),
         ),
       ),
@@ -346,18 +346,13 @@ class CenterScalePageTransitionsBuilder extends PageTransitionsBuilder {
   ) {
     return ScaleTransition(
       scale: Tween<double>(begin: 0.0, end: 1.0).animate(
-        CurvedAnimation(
-          parent: animation,
-          curve: Curves.fastOutSlowIn,
-        ),
+        CurvedAnimation(parent: animation, curve: Curves.fastOutSlowIn),
       ),
       child: FadeTransition(
-        opacity: Tween<double>(begin: 0.0, end: 1.0).animate(
-          CurvedAnimation(
-            parent: animation,
-            curve: Curves.easeIn,
-          ),
-        ),
+        opacity: Tween<double>(
+          begin: 0.0,
+          end: 1.0,
+        ).animate(CurvedAnimation(parent: animation, curve: Curves.easeIn)),
         child: child,
       ),
     );

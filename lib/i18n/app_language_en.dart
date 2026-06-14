@@ -1,5 +1,27 @@
 const Map<String, String> appLanguageEn = {
   'app_title': 'Nameless Audio',
+  'permission_group_playback': 'Playback basics',
+  'permission_group_reliability': 'Timer & reliability',
+  'permission_group_advanced': 'Advanced features',
+  'onboarding_title': 'Nameless Audio',
+  'onboarding_subtitle': 'A local-first player for ASMR and voice libraries.',
+  'onboarding_local': 'Your library and playback state stay on this device.',
+  'onboarding_online_optional':
+      'ASMR.ONE and other online features are always optional.',
+  'onboarding_permissions':
+      'Permissions are requested only when you use the related feature.',
+  'onboarding_start': 'Get started',
+  'privacy_summary_action': 'View privacy summary',
+  'privacy_summary_title': 'Privacy summary',
+  'privacy_summary_local_title': 'Local by default',
+  'privacy_summary_local_body':
+      'Your library, settings, and playback state are stored on this device.',
+  'privacy_summary_network_title': 'Optional network features',
+  'privacy_summary_network_body':
+      'Network access is used only for features such as ASMR.ONE, metadata, and updates.',
+  'privacy_summary_diagnostics_title': 'Diagnostics stay in your control',
+  'privacy_summary_diagnostics_body':
+      'Sanitized diagnostics are created only when you choose to export them.',
   'nav_library': 'Library',
   'nav_sessions': 'Playlist',
   'nav_settings': 'Settings',
@@ -66,6 +88,8 @@ const Map<String, String> appLanguageEn = {
   'refresh_done_no_new': 'No new audio found.',
   'asmr_refresh_done_updated': 'Category content updated.',
   'asmr_online_playback': 'ASMR.ONE Online Playback',
+  'asmr_online_optional_notice':
+      'ASMR.ONE is optional and connects to the network only while you use it.',
   'asmr_collected_count': 'Currently {count} works collected',
   'asmr_refresh_no_updates': 'No new updates found.',
   'asmr_refresh_failed': 'Sync failed. Pull down to try again.',

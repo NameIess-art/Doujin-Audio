@@ -15,6 +15,7 @@ import 'platform/app_window_bootstrap.dart';
 import 'providers/audio_provider.dart';
 import 'providers/audio_provider_riverpod.dart';
 import 'screens/main_screen.dart';
+import 'screens/onboarding_page.dart';
 import 'services/asmr_library_controller.dart';
 import 'services/asmr_download_manager.dart';
 import 'services/audio_database_repository.dart';
@@ -188,7 +189,9 @@ class MusicPlayerApp extends StatelessWidget {
               parent: AlwaysScrollableScrollPhysics(),
             ),
           ),
-          home: const GlobalShortcuts(child: MainScreen()),
+          home: const OnboardingGate(
+            child: GlobalShortcuts(child: MainScreen()),
+          ),
         );
       },
     );

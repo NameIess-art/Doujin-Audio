@@ -50,7 +50,30 @@ class _PermissionStatusPageState extends State<PermissionStatusPage>
     setState(() => _snapshot = _statusService.load());
   }
 
-  Future<void> _open(Future<bool> Function() action) async {
+  Future<void> _open({
+    required String title,
+    required String description,
+    required Future<bool> Function() action,
+  }) async {
+    final i18n = context.read<AppLanguageProvider>();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(title),
+        content: Text(description),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text(i18n.tr('cancel')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(i18n.tr('go_settings')),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
     final opened = await action();
     if (!mounted) return;
     if (!opened) {
@@ -88,56 +111,100 @@ class _PermissionStatusPageState extends State<PermissionStatusPage>
                   ),
                 ),
                 const SizedBox(height: 16),
+                _PermissionSection(title: i18n.tr('permission_group_playback')),
                 _PermissionTile(
                   title: i18n.tr('notification_permission_status'),
                   description: i18n.tr('permission_notification_description'),
                   icon: Icons.notifications_rounded,
                   enabled: status.notificationsEnabled,
-                  onTap: () =>
-                      _open(_notificationsService.openNotificationSettings),
+                  onTap: () => _open(
+                    title: i18n.tr('notification_permission_status'),
+                    description: i18n.tr('permission_notification_description'),
+                    action: _notificationsService.openNotificationSettings,
+                  ),
                 ),
                 _PermissionTile(
                   title: i18n.tr('allow_background_run'),
                   description: i18n.tr('permission_background_description'),
                   icon: Icons.battery_saver_rounded,
                   enabled: status.backgroundRunAllowed,
-                  onTap: () => _open(_powerService.openBackgroundRunSettings),
+                  onTap: () => _open(
+                    title: i18n.tr('allow_background_run'),
+                    description: i18n.tr('permission_background_description'),
+                    action: _powerService.openBackgroundRunSettings,
+                  ),
+                ),
+                _PermissionSection(
+                  title: i18n.tr('permission_group_reliability'),
                 ),
                 _PermissionTile(
                   title: i18n.tr('exact_alarm_permission_status'),
                   description: i18n.tr('permission_exact_alarm_description'),
                   icon: Icons.alarm_on_rounded,
                   enabled: status.exactAlarmsAllowed,
-                  onTap: () => _open(_powerService.openExactAlarmSettings),
+                  onTap: () => _open(
+                    title: i18n.tr('exact_alarm_permission_status'),
+                    description: i18n.tr('permission_exact_alarm_description'),
+                    action: _powerService.openExactAlarmSettings,
+                  ),
                 ),
+                _PermissionSection(title: i18n.tr('permission_group_advanced')),
                 _PermissionTile(
                   title: i18n.tr('manage_files_permission_title'),
                   description: i18n.tr('permission_manage_files_description'),
                   icon: Icons.folder_open_rounded,
                   enabled: status.manageFilesAllowed,
-                  onTap: () =>
-                      _open(_powerService.openManageAllFilesAccessSettings),
+                  onTap: () => _open(
+                    title: i18n.tr('manage_files_permission_title'),
+                    description: i18n.tr('permission_manage_files_description'),
+                    action: _powerService.openManageAllFilesAccessSettings,
+                  ),
                 ),
                 _PermissionTile(
                   title: i18n.tr('overlay_permission_title'),
                   description: i18n.tr('permission_overlay_description'),
                   icon: Icons.subtitles_rounded,
                   enabled: status.overlayAllowed,
-                  onTap: () =>
-                      _open(SubtitleOverlayController.openOverlaySettings),
+                  onTap: () => _open(
+                    title: i18n.tr('overlay_permission_title'),
+                    description: i18n.tr('permission_overlay_description'),
+                    action: SubtitleOverlayController.openOverlaySettings,
+                  ),
                 ),
                 _PermissionTile(
                   title: i18n.tr('install_permission_title'),
                   description: i18n.tr('permission_update_install_description'),
                   icon: Icons.install_mobile_rounded,
                   enabled: status.updateInstallsAllowed,
-                  onTap: () =>
-                      _open(AppUpdateService.openInstallPermissionSettings),
+                  onTap: () => _open(
+                    title: i18n.tr('install_permission_title'),
+                    description: i18n.tr(
+                      'permission_update_install_description',
+                    ),
+                    action: AppUpdateService.openInstallPermissionSettings,
+                  ),
                 ),
               ],
             ),
           );
         },
+      ),
+    );
+  }
+}
+
+class _PermissionSection extends StatelessWidget {
+  const _PermissionSection({required this.title});
+
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 16, 4, 8),
+      child: Semantics(
+        header: true,
+        child: Text(title, style: Theme.of(context).textTheme.titleMedium),
       ),
     );
   }
@@ -162,7 +229,7 @@ class _PermissionTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final i18n = context.watch<AppLanguageProvider>();
     final cs = Theme.of(context).colorScheme;
-    final statusColor = enabled ? Colors.green : cs.error;
+    final statusColor = enabled ? cs.primary : cs.onSurfaceVariant;
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
       child: ListTile(
@@ -174,7 +241,7 @@ class _PermissionTile extends StatelessWidget {
         trailing: Tooltip(
           message: i18n.tr('go_settings'),
           child: Icon(
-            enabled ? Icons.check_circle_rounded : Icons.warning_rounded,
+            enabled ? Icons.check_circle_rounded : Icons.remove_circle_outline,
             color: statusColor,
             semanticLabel: enabled
                 ? i18n.tr('permission_enabled')

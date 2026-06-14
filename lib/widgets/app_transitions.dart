@@ -37,24 +37,25 @@ PageRouteBuilder<T> buildAppPageRoute<T>({
     reverseTransitionDuration: reverseDuration,
     pageBuilder: (context, animation, secondaryAnimation) => child,
     transitionsBuilder: (context, animation, secondaryAnimation, routedChild) {
+      if (MediaQuery.disableAnimationsOf(context)) return routedChild;
       final opacityAnimation = CurvedAnimation(
         parent: animation,
         curve: Curves.easeOut,
         reverseCurve: Curves.easeIn,
       );
-      final scaleAnimation = CurvedAnimation(
+      final offsetAnimation = CurvedAnimation(
         parent: animation,
-        curve: Curves.fastOutSlowIn,
-        reverseCurve: Curves.fastOutSlowIn,
+        curve: Curves.easeOutCubic,
+        reverseCurve: Curves.easeInCubic,
       );
 
       return FadeTransition(
         opacity: opacityAnimation,
-        child: ScaleTransition(
-          scale: Tween<double>(
-            begin: 0.0,
-            end: 1.0,
-          ).animate(scaleAnimation),
+        child: SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(0, 0.028),
+            end: Offset.zero,
+          ).animate(offsetAnimation),
           child: routedChild,
         ),
       );
@@ -77,24 +78,25 @@ PageRouteBuilder<T> buildAppOverlayRoute<T>({
     reverseTransitionDuration: reverseDuration,
     pageBuilder: (context, animation, secondaryAnimation) => child,
     transitionsBuilder: (context, animation, secondaryAnimation, routedChild) {
+      if (MediaQuery.disableAnimationsOf(context)) return routedChild;
       final opacityAnimation = CurvedAnimation(
         parent: animation,
         curve: Curves.easeOut,
         reverseCurve: Curves.easeIn,
       );
-      final scaleAnimation = CurvedAnimation(
+      final offsetAnimation = CurvedAnimation(
         parent: animation,
-        curve: Curves.fastOutSlowIn,
-        reverseCurve: Curves.fastOutSlowIn,
+        curve: Curves.easeOutCubic,
+        reverseCurve: Curves.easeInCubic,
       );
 
       return FadeTransition(
         opacity: opacityAnimation,
-        child: ScaleTransition(
-          scale: Tween<double>(
-            begin: 0.0,
-            end: 1.0,
-          ).animate(scaleAnimation),
+        child: SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(0, 0.024),
+            end: Offset.zero,
+          ).animate(offsetAnimation),
           child: routedChild,
         ),
       );

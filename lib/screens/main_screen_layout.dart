@@ -108,10 +108,8 @@ extension _MainScreenLayout on _MainScreenState {
     return Stack(
       key: ValueKey<int>(_metricsEpoch),
       clipBehavior: Clip.none,
-      children: <int>{
-        ..._visitedPageIndices,
-        if (_isDataReady) _currentIndex,
-      }.map((i) {
+      children: <int>{..._visitedPageIndices, if (_isDataReady) _currentIndex}
+          .map((i) {
             final bool isActive = i == _currentIndex;
             return IgnorePointer(
               key: ValueKey<int>(i),
@@ -171,11 +169,11 @@ extension _MainScreenLayout on _MainScreenState {
       final selected = index == _currentIndex;
       final label = i18n.tr(item.labelKey);
       final inactive = cs.onSurfaceVariant.withValues(alpha: 0.6);
+      
       final isDark = Theme.of(context).brightness == Brightness.dark;
-      final asmrBlue = isDark
-          ? const Color(0xFF60A5FA)
-          : const Color(0xFF1D4ED8);
-      final activeColor = (index == 0) ? asmrBlue : cs.primary;
+      final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
+      final isAsmr = item.labelKey == 'ASMR.ONE';
+      final activeColor = (selected && isAsmr) ? asmrBlue : cs.primary;
 
       return Expanded(
         child: Semantics(
@@ -290,7 +288,6 @@ extension _MainScreenLayout on _MainScreenState {
   ) {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
     final isWindows =
         Platform.isWindows ||
         MediaQuery.orientationOf(context) == Orientation.landscape;
@@ -300,7 +297,9 @@ extension _MainScreenLayout on _MainScreenState {
 
     final double expandedWidth = isWindows ? 260 : 292;
     final double collapsedWidth = isWindows ? 80 : 92;
-    final double containerWidth = _isMenuCollapsed ? collapsedWidth : expandedWidth;
+    final double containerWidth = _isMenuCollapsed
+        ? collapsedWidth
+        : expandedWidth;
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 250),
@@ -358,20 +357,32 @@ extension _MainScreenLayout on _MainScreenState {
                     leading: isWindows
                         ? Container(
                             padding: const EdgeInsets.only(bottom: 8),
-                            alignment: _isMenuCollapsed ? Alignment.center : Alignment.centerLeft,
+                            alignment: _isMenuCollapsed
+                                ? Alignment.center
+                                : Alignment.centerLeft,
                             child: Padding(
-                              padding: EdgeInsets.only(left: _isMenuCollapsed ? 0 : 12),
+                              padding: EdgeInsets.only(
+                                left: _isMenuCollapsed ? 0 : 12,
+                              ),
                               child: IconButton(
-                                icon: Icon(_isMenuCollapsed ? Icons.menu_rounded : Icons.menu_open_rounded),
+                                icon: Icon(
+                                  _isMenuCollapsed
+                                      ? Icons.menu_rounded
+                                      : Icons.menu_open_rounded,
+                                ),
                                 onPressed: _toggleMenuCollapsed,
                               ),
                             ),
                           )
                         : Container(
                             padding: const EdgeInsets.only(bottom: 8),
-                            alignment: _isMenuCollapsed ? Alignment.center : Alignment.centerLeft,
+                            alignment: _isMenuCollapsed
+                                ? Alignment.center
+                                : Alignment.centerLeft,
                             child: Padding(
-                              padding: EdgeInsets.only(left: _isMenuCollapsed ? 0 : 6),
+                              padding: EdgeInsets.only(
+                                left: _isMenuCollapsed ? 0 : 6,
+                              ),
                               child: _isMenuCollapsed
                                   ? IconButton(
                                       icon: const Icon(Icons.menu_rounded),
@@ -384,7 +395,9 @@ extension _MainScreenLayout on _MainScreenState {
                                           height: 38,
                                           decoration: BoxDecoration(
                                             color: cs.primaryContainer,
-                                            borderRadius: BorderRadius.circular(12),
+                                            borderRadius: BorderRadius.circular(
+                                              12,
+                                            ),
                                           ),
                                           child: Icon(
                                             Icons.graphic_eq_rounded,
@@ -397,13 +410,18 @@ extension _MainScreenLayout on _MainScreenState {
                                             i18n.tr('asmr_player'),
                                             maxLines: 1,
                                             overflow: TextOverflow.ellipsis,
-                                            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                              fontWeight: FontWeight.w800,
-                                            ),
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .titleMedium
+                                                ?.copyWith(
+                                                  fontWeight: FontWeight.w800,
+                                                ),
                                           ),
                                         ),
                                         IconButton(
-                                          icon: const Icon(Icons.menu_open_rounded),
+                                          icon: const Icon(
+                                            Icons.menu_open_rounded,
+                                          ),
                                           onPressed: _toggleMenuCollapsed,
                                         ),
                                       ],
@@ -414,26 +432,29 @@ extension _MainScreenLayout on _MainScreenState {
                         .asMap()
                         .entries
                         .map((entry) {
-                      final item = entry.value;
-                      final isSelected = _currentIndex == entry.key;
-                      final isAsmr = isSelected && item.labelKey == 'asmr';
-                      return NavigationRailDestination(
-                        icon: Icon(item.icon),
-                        selectedIcon: Icon(
-                          item.selectedIcon,
-                          color: isAsmr ? asmrBlue : null,
-                        ),
-                        label: Text(
-                          _isMenuCollapsed ? '' : i18n.tr(item.labelKey),
-                          style: isSelected
-                              ? TextStyle(
-                                  color: isAsmr ? asmrBlue : cs.primary,
-                                  fontWeight: FontWeight.w700,
-                                )
-                              : null,
-                        ),
-                      );
-                    }).toList(),
+                          final item = entry.value;
+                          final isSelected = _currentIndex == entry.key;
+                          final isAsmr = isSelected && item.labelKey == 'ASMR.ONE';
+                          final isDark = Theme.of(context).brightness == Brightness.dark;
+                          final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
+                          return NavigationRailDestination(
+                            icon: Icon(item.icon),
+                            selectedIcon: Icon(
+                              item.selectedIcon,
+                              color: isAsmr ? asmrBlue : null,
+                            ),
+                            label: Text(
+                              _isMenuCollapsed ? '' : i18n.tr(item.labelKey),
+                              style: isSelected
+                                  ? TextStyle(
+                                      color: isAsmr ? asmrBlue : cs.primary,
+                                      fontWeight: FontWeight.w700,
+                                    )
+                                  : null,
+                            ),
+                          );
+                        })
+                        .toList(),
                   ),
                 );
 

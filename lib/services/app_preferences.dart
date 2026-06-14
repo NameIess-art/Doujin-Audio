@@ -7,6 +7,7 @@ import 'app_log_service.dart';
 typedef JsonValueReader<T> = T Function(Object? value);
 
 class AppPreferences {
+  static const onboardingCompletedKey = 'onboarding_completed_v1';
   static SharedPreferences? _instance;
   const AppPreferences._();
 
@@ -20,6 +21,18 @@ class AppPreferences {
 
   static String? getStringSync(String key) => _instance?.getString(key);
   static bool? getBoolSync(String key) => _instance?.getBool(key);
+
+  static bool shouldShowOnboardingSync() {
+    final prefs = _instance;
+    if (prefs == null) return false;
+    if (prefs.getBool(onboardingCompletedKey) == true) return false;
+    final existingKeys = prefs.getKeys()..remove(onboardingCompletedKey);
+    return existingKeys.isEmpty;
+  }
+
+  static Future<bool> completeOnboarding() {
+    return setBool(onboardingCompletedKey, true);
+  }
 
   static Future<String?> getString(String key) async {
     try {

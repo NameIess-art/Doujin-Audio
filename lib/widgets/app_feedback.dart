@@ -58,7 +58,7 @@ void showAppSnackBar(
   AppFeedbackTone tone = AppFeedbackTone.info,
   IconData? icon,
   Color? iconColor,
-  Duration duration = const Duration(milliseconds: 1100),
+  Duration? duration,
 }) {
   _showTopFeedback(
     context,
@@ -66,26 +66,11 @@ void showAppSnackBar(
     tone: tone,
     icon: icon,
     iconColor: iconColor,
-    duration: duration,
-  );
-}
-
-@Deprecated('Use showAppSnackBar instead. This alias will be removed.')
-void showAppToast(
-  BuildContext context,
-  String message, {
-  AppFeedbackTone tone = AppFeedbackTone.info,
-  IconData? icon,
-  Color? iconColor,
-  Duration duration = const Duration(milliseconds: 1100),
-}) {
-  showAppSnackBar(
-    context,
-    message,
-    tone: tone,
-    icon: icon,
-    iconColor: iconColor,
-    duration: duration,
+    duration:
+        duration ??
+        (tone == AppFeedbackTone.destructive
+            ? const Duration(seconds: 4)
+            : const Duration(seconds: 2)),
   );
 }
 

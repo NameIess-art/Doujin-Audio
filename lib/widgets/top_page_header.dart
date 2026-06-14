@@ -48,7 +48,11 @@ class TopPageHeader extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final blurEnabled = ref.watch(settingsStateProvider.select((s) => s.valueOrNull?.uiBlurEffectEnabled ?? true));
+    final blurEnabled = ref.watch(
+      settingsStateProvider.select(
+        (s) => s.valueOrNull?.uiBlurEffectEnabled ?? true,
+      ),
+    );
     final currentAlpha = blurEnabled ? (isDark ? 0.75 : 0.85) : 0.92;
     final i18n = context.watch<AppLanguageProvider>();
     final topPadding = useSafeAreaTop ? MediaQuery.paddingOf(context).top : 0.0;
@@ -79,11 +83,14 @@ class TopPageHeader extends ConsumerWidget {
                           forceMarquee: forceMarqueeTitle,
                         ),
                       )
-                    : Text(
-                        resolvedTitle,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: titleStyle,
+                    : Semantics(
+                        header: true,
+                        child: Text(
+                          resolvedTitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: titleStyle,
+                        ),
                       ),
               ),
               if (titleSuffix != null) ...[

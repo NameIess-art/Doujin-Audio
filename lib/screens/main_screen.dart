@@ -8,13 +8,13 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart' hide Consumer;
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../i18n/app_language_provider.dart';
 import '../providers/audio_provider.dart';
 import '../providers/audio_provider_riverpod.dart';
 import '../providers/subtitle_settings_provider.dart';
 import '../services/app_update_service.dart';
+import '../services/app_preferences.dart';
 import '../services/app_log_service.dart';
 import '../services/notifications_platform_service.dart';
 import '../services/permission_action_controller.dart';
@@ -125,10 +125,10 @@ class _MainScreenState extends ConsumerState<MainScreen>
       PlaylistTab(onTimerTap: _openTimerFromPlaylist),
       const SettingsTab(),
     ];
-    SharedPreferences.getInstance().then((prefs) {
+    AppPreferences.getBool('desktop_menu_collapsed').then((collapsed) {
       if (mounted) {
         setState(() {
-          _isMenuCollapsed = prefs.getBool('desktop_menu_collapsed') ?? false;
+          _isMenuCollapsed = collapsed ?? false;
         });
       }
     });
@@ -167,9 +167,9 @@ class _MainScreenState extends ConsumerState<MainScreen>
     setState(() {
       _isMenuCollapsed = !_isMenuCollapsed;
     });
-    SharedPreferences.getInstance().then((prefs) {
-      prefs.setBool('desktop_menu_collapsed', _isMenuCollapsed);
-    });
+    unawaited(
+      AppPreferences.setBool('desktop_menu_collapsed', _isMenuCollapsed),
+    );
   }
 
   Future<bool> _ensureInstallPermissionThenRun(
@@ -658,6 +658,9 @@ class _MainScreenState extends ConsumerState<MainScreen>
       if (_isDataReady) _visitedPageIndices.add(_currentIndex);
       _currentIndex = index;
     });
+    if (index == 0) {
+      unawaited(_showAsmrOnlineNoticeOnce());
+    }
 
     Timer(const Duration(milliseconds: 140), () {
       coordinator.endInteraction(_pageSwitchInteraction);
@@ -676,6 +679,19 @@ class _MainScreenState extends ConsumerState<MainScreen>
         },
       );
     });
+  }
+
+  Future<void> _showAsmrOnlineNoticeOnce() async {
+    const key = 'asmr_online_notice_seen_v1';
+    if (await AppPreferences.getBool(key) == true) return;
+    await AppPreferences.setBool(key, true);
+    if (!mounted) return;
+    showAppSnackBar(
+      context,
+      context.read<AppLanguageProvider>().tr('asmr_online_optional_notice'),
+      icon: Icons.cloud_outlined,
+      duration: const Duration(seconds: 4),
+    );
   }
 
   @override

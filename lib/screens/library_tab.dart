@@ -193,13 +193,11 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
 
   Future<void> _runLibraryPullRefresh() async {
     final i18n = context.read<AppLanguageProvider>();
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
     showAppSnackBar(
       context,
       i18n.tr('loading_dot'),
       icon: Icons.sync_rounded,
-      iconColor: asmrBlue,
+      iconColor: Theme.of(context).colorScheme.primary,
     );
     await _scheduleWatchedFoldersRefresh(silent: true, forceShowResult: true);
   }

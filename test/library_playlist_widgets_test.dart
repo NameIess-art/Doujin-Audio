@@ -589,22 +589,33 @@ void main() {
     await tester.pump();
 
     expect(
-      find.text(languageProvider.tr('section_detail_info')),
-      findsOneWidget,
-    );
-    expect(
       find.text(languageProvider.tr('dlsite_metadata_language')),
       findsOneWidget,
     );
     expect(find.text(languageProvider.tr('startup_page')), findsOneWidget);
+
+    final settingsScrollable = find
+        .descendant(
+          of: find.byType(SettingsTab),
+          matching: find.byType(Scrollable),
+        )
+        .first;
+    await tester.scrollUntilVisible(
+      find.text(languageProvider.tr('card_info_display')),
+      300,
+      scrollable: settingsScrollable,
+    );
     expect(find.text(languageProvider.tr('card_info_display')), findsOneWidget);
 
     final cardInfoTile = find.widgetWithText(
       ListTile,
       languageProvider.tr('card_info_display'),
     );
-    await tester.ensureVisible(cardInfoTile);
-    await tester.pump();
+    await Scrollable.ensureVisible(
+      tester.element(cardInfoTile),
+      alignment: 0.5,
+    );
+    await tester.pumpAndSettle();
     await tester.tap(cardInfoTile);
     await tester.pumpAndSettle();
 

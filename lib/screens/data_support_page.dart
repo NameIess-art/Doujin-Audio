@@ -12,6 +12,8 @@ import '../services/app_log_service.dart';
 import '../services/diagnostic_report_service.dart';
 import '../widgets/app_feedback.dart';
 import '../widgets/confirm_action_dialog.dart';
+import '../widgets/app_transitions.dart';
+import 'onboarding_page.dart';
 
 class DataSupportPage extends StatefulWidget {
   const DataSupportPage({super.key});
@@ -199,6 +201,16 @@ class _DataSupportPageState extends State<DataSupportPage> {
             subtitle: i18n.tr('export_diagnostics_subtitle'),
             icon: Icons.support_agent_rounded,
             onTap: _busy ? null : _exportDiagnostics,
+          ),
+          _ActionCard(
+            title: i18n.tr('privacy_summary_title'),
+            subtitle: i18n.tr('privacy_summary_local_body'),
+            icon: Icons.privacy_tip_outlined,
+            onTap: _busy
+                ? null
+                : () => Navigator.of(context).push(
+                    buildAppPageRoute<void>(child: const PrivacySummaryPage()),
+                  ),
           ),
         ],
       ),

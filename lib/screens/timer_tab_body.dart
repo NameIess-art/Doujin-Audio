@@ -57,6 +57,27 @@ extension _TimerTabBody on _TimerTabState {
     final showCompactOnly = widget.compactOnly;
     final showCompactDetail =
         showCompactOnly && _showCompactDetail && timerConfigured;
+    Future<TimeOfDay?> showAutoResumeTimePicker() {
+      return showTimePicker(
+        context: context,
+        initialTime: TimeOfDay(
+          hour: timerSlice.autoResumeHour,
+          minute: timerSlice.autoResumeMinute,
+        ),
+        helpText: i18n.tr('choose_auto_resume_time'),
+        builder: (ctx, child) {
+          final mediaQuery = MediaQuery.of(ctx);
+          return MediaQuery(
+            data: mediaQuery.copyWith(
+              alwaysUse24HourFormat: true,
+              gestureSettings: const DeviceGestureSettings(touchSlop: 4),
+            ),
+            child: child!,
+          );
+        },
+      );
+    }
+
     Future<void> pickAutoResumeTime() async {
       unawaited(
         AppInteractionFeedback.trigger(
@@ -64,18 +85,7 @@ extension _TimerTabBody on _TimerTabState {
           context: context,
         ),
       );
-      final picked = await showTimePicker(
-        context: context,
-        initialTime: TimeOfDay(
-          hour: timerSlice.autoResumeHour,
-          minute: timerSlice.autoResumeMinute,
-        ),
-        helpText: i18n.tr('choose_auto_resume_time'),
-        builder: (ctx, child) => MediaQuery(
-          data: MediaQuery.of(ctx).copyWith(alwaysUse24HourFormat: true),
-          child: child!,
-        ),
-      );
+      final picked = await showAutoResumeTimePicker();
       if (picked != null) {
         provider.setAutoResume(
           timerSlice.autoResumeEnabled,
@@ -503,22 +513,8 @@ extension _TimerTabBody on _TimerTabState {
                                       context: context,
                                     ),
                                   );
-                                  final picked = await showTimePicker(
-                                    context: context,
-                                    initialTime: TimeOfDay(
-                                      hour: timerSlice.autoResumeHour,
-                                      minute: timerSlice.autoResumeMinute,
-                                    ),
-                                    helpText: i18n.tr(
-                                      'choose_auto_resume_time',
-                                    ),
-                                    builder: (ctx, child) => MediaQuery(
-                                      data: MediaQuery.of(
-                                        ctx,
-                                      ).copyWith(alwaysUse24HourFormat: true),
-                                      child: child!,
-                                    ),
-                                  );
+                                  final picked =
+                                      await showAutoResumeTimePicker();
                                   if (picked != null) {
                                     provider.setAutoResume(
                                       timerSlice.autoResumeEnabled,

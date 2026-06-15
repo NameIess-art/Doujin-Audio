@@ -2169,7 +2169,7 @@ void main() {
           groupSubtitle: normalizedFolderPath,
           isSingle: false,
           fileSizeBytes: 3,
-          modifiedAt: await File(trackPath).lastModified(),
+          modifiedAt: (await File(trackPath).stat()).modified,
         );
         provider.addWatchedFolder(normalizedFolderPath, notify: false);
         provider.addTracks(<MusicTrack>[track], notify: false, persist: false);

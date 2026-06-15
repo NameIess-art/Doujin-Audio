@@ -107,8 +107,11 @@ jobs:
           sha256sum "$apk" > "$apk.sha256"
 
       - name: Verify Android release assets
+        env:
+          ANDROID_SIGNING_CERT_SHA256: ${{ secrets.ANDROID_SIGNING_CERT_SHA256 }}
         run: |
           set -euo pipefail
+          : "${ANDROID_SIGNING_CERT_SHA256:?ANDROID_SIGNING_CERT_SHA256 is required}"
           apk="NamelessAudio-android-arm64-${GITHUB_REF_NAME}.apk"
           test -s "$apk"
           test -s "$apk.sha256"
@@ -116,7 +119,13 @@ jobs:
           apksigner="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)"
           test -x "$apksigner"
           "$apksigner" verify --verbose --print-certs "$apk" | tee apk-signature.txt
-          ! grep -qi "Android Debug" apk-signature.txt
+          actual_cert_sha256="$(
+            sed -n 's/^Signer #1 certificate SHA-256 digest: //p' apk-signature.txt |
+              head -n 1 |
+              tr '[:upper:]' '[:lower:]'
+          )"
+          expected_cert_sha256="$(printf '%s' "$ANDROID_SIGNING_CERT_SHA256" | tr '[:upper:]' '[:lower:]')"
+          test "$actual_cert_sha256" = "$expected_cert_sha256"
 
       - name: Upload Android release assets
         env:

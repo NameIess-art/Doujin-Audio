@@ -241,7 +241,11 @@ void main() {
   });
 
   group('LibraryService', () {
-    MusicTrack track(String path, {required String groupKey}) {
+    MusicTrack track(
+      String path, {
+      required String groupKey,
+      DateTime? modifiedAt,
+    }) {
       return MusicTrack(
         path: path,
         displayName: path.split('/').last,
@@ -249,6 +253,7 @@ void main() {
         groupTitle: groupKey.split('/').last,
         groupSubtitle: groupKey,
         isSingle: false,
+        modifiedAt: modifiedAt,
       );
     }
 
@@ -355,6 +360,7 @@ void main() {
           track: track(
             '/library/root/Album/01.mp3',
             groupKey: '/library/root/Album',
+            modifiedAt: DateTime.fromMicrosecondsSinceEpoch(1000001),
           ),
           parentPath: '/library/root/Album',
           state: LibraryEntryState.active,
@@ -365,6 +371,21 @@ void main() {
         );
 
         expect(snapshot.entryNeedsRefresh(existingTrack), isFalse);
+        expect(
+          snapshot.entryNeedsRefresh(
+            LibraryEntry.track(
+              libraryPath: '/library/root',
+              track: track(
+                '/library/root/Album/01.mp3',
+                groupKey: '/library/root/Album',
+                modifiedAt: DateTime.fromMicrosecondsSinceEpoch(1000999),
+              ),
+              parentPath: '/library/root/Album',
+              state: LibraryEntryState.active,
+            ),
+          ),
+          isFalse,
+        );
 
         final renamed = LibraryEntry.track(
           libraryPath: '/library/root',

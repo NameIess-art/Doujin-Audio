@@ -101,7 +101,8 @@ ScanMergeIsolateResult processScannedTracksInIsolate(
         existing.isSingle != scanned.isSingle ||
         existing.isVideo != scanned.isVideo ||
         existing.fileSizeBytes != scanned.fileSizeBytes ||
-        existing.modifiedAt != scanned.modifiedAt ||
+        existing.modifiedAt?.millisecondsSinceEpoch !=
+            scanned.modifiedAt?.millisecondsSinceEpoch ||
         (existing.coverCachePath == null && scanned.coverCachePath != null) ||
         (existing.lyricsPath == null && scanned.lyricsPath != null) ||
         (existing.manualCoverPath == null && scanned.manualCoverPath != null) ||

@@ -60,6 +60,11 @@ add_subdirectory("runner")
 # them to the application.
 include(flutter/generated_plugins.cmake)
 
+if(TARGET permission_handler_windows_plugin)
+  target_compile_definitions(permission_handler_windows_plugin PRIVATE
+    "_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS")
+endif()
+
 set(FULL_LIBMPV_ARCHIVE_NAME "mpv-dev-x86_64-20260525-git-1ac687d.7z")
 set(FULL_LIBMPV_ARCHIVE "${CMAKE_BINARY_DIR}/${FULL_LIBMPV_ARCHIVE_NAME}")
 set(FULL_LIBMPV_SRC "${CMAKE_BINARY_DIR}/full_libmpv")

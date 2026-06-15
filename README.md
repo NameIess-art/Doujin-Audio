@@ -2,9 +2,9 @@
 
 Nameless Audio 是一款面向 ASMR、语音作品和大体量本地媒体库的跨平台播放器，使用 Flutter、Android 原生 Media3 / ExoPlayer 与 Windows libmpv 混合实现。
 
-当前版本：`0.10.0+1000`
+当前版本：`0.10.1+1001`
 
-最新发布页：[v0.10.0](https://github.com/NameIess-art/nameless-audio/releases/tag/v0.10.0)
+最新发布页：[v0.10.1](https://github.com/NameIess-art/nameless-audio/releases/tag/v0.10.1)
 
 [MIT License](LICENSE) · [隐私说明](PRIVACY.md) · [发行质量说明](docs/release-quality.md)
 
@@ -12,8 +12,8 @@ Nameless Audio 是一款面向 ASMR、语音作品和大体量本地媒体库的
 
 | 平台 | 发布资产 | 说明 |
 |---|---|---|
-| Android arm64-v8a | `NamelessAudio-android-arm64-v0.10.0.apk` | 适用于大多数 64 位 Android 手机 |
-| Windows x64 | `NamelessAudio-windows-x64-v0.10.0.zip` | 解压完整 ZIP 后运行 `nameless_audio.exe` |
+| Android arm64-v8a | `NamelessAudio-android-arm64-v0.10.1.apk` | 适用于大多数 64 位 Android 手机 |
+| Windows x64 | `NamelessAudio-windows-x64-v0.10.1.zip` | 解压完整 ZIP 后运行 `nameless_audio.exe` |
 
 Windows ZIP 包含应用运行所需的完整 Flutter 运行时、`libmpv-2.dll`、FFmpeg 和 FFprobe。不要只复制 EXE。
 
@@ -91,10 +91,10 @@ Windows ZIP 包含应用运行所需的完整 Flutter 运行时、`libmpv-2.dll`
 每个更新资产必须同时发布同名校验文件：
 
 ```text
-NamelessAudio-android-arm64-v0.10.0.apk
-NamelessAudio-android-arm64-v0.10.0.apk.sha256
-NamelessAudio-windows-x64-v0.10.0.zip
-NamelessAudio-windows-x64-v0.10.0.zip.sha256
+NamelessAudio-android-arm64-v0.10.1.apk
+NamelessAudio-android-arm64-v0.10.1.apk.sha256
+NamelessAudio-windows-x64-v0.10.1.zip
+NamelessAudio-windows-x64-v0.10.1.zip.sha256
 ```
 
 ## 支持格式
@@ -147,7 +147,7 @@ build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
 
 ```powershell
 flutter build windows --release
-Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath dist\NamelessAudio-windows-x64-v0.10.0.zip -Force
+Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath dist\NamelessAudio-windows-x64-v0.10.1.zip -Force
 ```
 
 ## 发布流程
@@ -160,17 +160,13 @@ Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath dist\
 4. 为两端资产生成 `.sha256` 并上传到同一个 GitHub Release。
 
 ```powershell
-dart run tool/verify_release.dart --tag v0.10.0
-git tag v0.10.0
-git push origin main v0.10.0
+dart run tool/verify_release.dart --tag v0.10.1
+git tag v0.10.1
+git push origin main v0.10.1
 ```
 
-## v0.10.0 重点变更
+## v0.10.1 重点变更
 
-- 新增并完善均衡器、播放速度、音效和时间段标签控制。
-- 重构 Windows 全局字幕悬浮窗，解决黑屏、崩溃、无法交互和重复开启失败。
-- 单独视频文件支持视频帧封面，并过滤纯黑、纯白与空白帧。
-- 修复 Android 熄屏播放中的音频焦点误暂停与短暂失焦恢复状态丢失。
-- 完善权限中心、备份恢复、诊断报告、设置样式和双端应用内自动更新。
+- 拦截并提示 Android 端因通过应用商店安装引起的签名不匹配导致的应用内更新失败。
 
 完整内容见 [release_notes.md](release_notes.md)。

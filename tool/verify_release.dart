@@ -1,8 +1,12 @@
 import 'dart:io';
 
 void main(List<String> args) {
+  final explicitTag = _argumentValue(args, '--tag');
   final tag =
-      _argumentValue(args, '--tag') ?? Platform.environment['GITHUB_REF_NAME'];
+      explicitTag ??
+      (Platform.environment['GITHUB_REF_TYPE'] == 'tag'
+          ? Platform.environment['GITHUB_REF_NAME']
+          : null);
   final pubspec = File('pubspec.yaml').readAsStringSync();
   final readme = File('README.md').readAsStringSync();
   final workflow = File('.github/workflows/flutter.yml').readAsStringSync();

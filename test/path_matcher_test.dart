@@ -65,4 +65,15 @@ void main() {
       isTrue,
     );
   });
+
+  test('Windows paths keep their semantics on every host platform', () {
+    const root = r'C:\Audio\Library';
+    const work = r'C:\Audio\Library\Work A';
+    const track = r'C:\Audio\Library\Work A\Disc 1\01.mp3';
+
+    expect(PathMatcher.normalize(track), track);
+    expect(PathMatcher.isWithinOrEqual(track, root), isTrue);
+    expect(PathMatcher.relativeWithin(track, work), 'Disc 1/01.mp3');
+    expect(PathMatcher.join(root, 'Work A'), work);
+  });
 }

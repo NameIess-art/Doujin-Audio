@@ -76,14 +76,46 @@ internal class UpdateMethodHandler(
     private fun checkSignatureMatch(apkFile: File): Boolean {
         try {
             val pm = activity.packageManager
-            val flags = android.content.pm.PackageManager.GET_SIGNATURES
+            
+            val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                android.content.pm.PackageManager.GET_SIGNING_CERTIFICATES
+            } else {
+                android.content.pm.PackageManager.GET_SIGNATURES
+            }
+            
             val installedInfo = pm.getPackageInfo(activity.packageName, flags)
             val apkInfo = pm.getPackageArchiveInfo(apkFile.absolutePath, flags)
 
-            val installedSigs = installedInfo?.signatures
-            val apkSigs = apkInfo?.signatures
+            val installedSigs = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                installedInfo.signingInfo?.apkContentsSigners ?: installedInfo.signatures
+            } else {
+                installedInfo.signatures
+            }
 
-            if (installedSigs == null || apkSigs == null) return true
+            val apkSigs = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                apkInfo?.signingInfo?.apkContentsSigners ?: apkInfo?.signatures
+            } else {
+                apkInfo?.signatures
+            }
+
+            if (installedSigs == null || apkSigs == null) {
+                val installerPackage = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    pm.getInstallSourceInfo(activity.packageName).installingPackageName
+                } else {
+                    pm.getInstallerPackageName(activity.packageName)
+                }
+                val appStores = listOf(
+                    "com.bbk.appstore", "com.xiaomi.market", "com.huawei.appmarket",
+                    "com.oppo.market", "com.heytap.market", "com.tencent.android.qqdownloader",
+                    "com.qihoo.appstore", "com.baidu.appsearch", "com.meizu.mstore",
+                    "com.wandoujia.phoenix2", "com.sec.android.app.samsungapps"
+                )
+                if (installerPackage != null && appStores.contains(installerPackage)) {
+                    return false
+                }
+                return true
+            }
+
             if (installedSigs.size != apkSigs.size) return false
 
             for (i in installedSigs.indices) {

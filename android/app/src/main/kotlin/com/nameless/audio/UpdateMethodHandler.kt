@@ -50,8 +50,9 @@ internal class UpdateMethodHandler(
             return installResult(false, false, "APK file does not exist.")
         }
 
-        if (!checkSignatureMatch(apkFile)) {
-            return installResult(false, false, "signature_mismatch")
+        val sigCheckResult = checkSignatureMatch(apkFile)
+        if (sigCheckResult != null) {
+            return installResult(false, false, sigCheckResult)
         }
 
         return try {
@@ -73,10 +74,9 @@ internal class UpdateMethodHandler(
     }
 
     @Suppress("DEPRECATION")
-    private fun checkSignatureMatch(apkFile: File): Boolean {
+    private fun checkSignatureMatch(apkFile: File): String? {
         try {
             val pm = activity.packageManager
-            
             val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                 android.content.pm.PackageManager.GET_SIGNING_CERTIFICATES
             } else {
@@ -84,7 +84,6 @@ internal class UpdateMethodHandler(
             }
             
             val installedInfo = pm.getPackageInfo(activity.packageName, flags)
-            val apkInfo = pm.getPackageArchiveInfo(apkFile.absolutePath, flags)
 
             val installedSigs = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                 installedInfo.signingInfo?.apkContentsSigners ?: installedInfo.signatures
@@ -92,40 +91,28 @@ internal class UpdateMethodHandler(
                 installedInfo.signatures
             }
 
-            val apkSigs = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                apkInfo?.signingInfo?.apkContentsSigners ?: apkInfo?.signatures
-            } else {
-                apkInfo?.signatures
+            if (installedSigs == null || installedSigs.isEmpty()) {
+                return "signature_exception: could not get installed signatures"
             }
 
-            if (installedSigs == null || apkSigs == null) {
-                val installerPackage = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                    pm.getInstallSourceInfo(activity.packageName).installingPackageName
-                } else {
-                    pm.getInstallerPackageName(activity.packageName)
-                }
-                val appStores = listOf(
-                    "com.bbk.appstore", "com.xiaomi.market", "com.huawei.appmarket",
-                    "com.oppo.market", "com.heytap.market", "com.tencent.android.qqdownloader",
-                    "com.qihoo.appstore", "com.baidu.appsearch", "com.meizu.mstore",
-                    "com.wandoujia.phoenix2", "com.sec.android.app.samsungapps"
-                )
-                if (installerPackage != null && appStores.contains(installerPackage)) {
-                    return false
-                }
-                return true
+            // The official GitHub Actions release keystore SHA-256 fingerprint
+            val officialSha256 = "ecc103f8035e874babc2df255d5f003b5eedb81e37a8154a0afd4a52b10088a2"
+            
+            val md = java.security.MessageDigest.getInstance("SHA-256")
+            val currentSha256 = installedSigs[0].toByteArray().let { bytes ->
+                md.digest(bytes).joinToString("") { "%02x".format(it) }
             }
 
-            if (installedSigs.size != apkSigs.size) return false
-
-            for (i in installedSigs.indices) {
-                if (!installedSigs[i].toByteArray().contentEquals(apkSigs[i].toByteArray())) {
-                    return false
-                }
+            if (currentSha256 != officialSha256) {
+                // If the currently installed app does not match the official signature, 
+                // it means it was installed from an app store or a custom build.
+                // It will conflict with the official GitHub update.
+                return "signature_mismatch"
             }
-            return true
+            
+            return null
         } catch (e: Exception) {
-            return true
+            return "signature_exception: ${e.message}"
         }
     }
 

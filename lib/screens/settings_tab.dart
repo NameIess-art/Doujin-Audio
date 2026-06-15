@@ -20,6 +20,7 @@ import '../widgets/confirm_action_dialog.dart';
 import '../widgets/mobile_overlay_inset.dart';
 import '../widgets/subtitle_window_visual.dart';
 import '../widgets/top_page_header.dart';
+import '../widgets/unified_dropdown.dart';
 import '../providers/subtitle_settings_provider.dart';
 import 'permission_status_page.dart';
 import 'data_support_page.dart';
@@ -216,33 +217,28 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                                 : null,
                             trailing: SizedBox(
                               width: 72,
-                              child: DropdownButtonHideUnderline(
-                                child: DropdownButton<AppLanguage>(
-                                  isExpanded: true,
-                                  value: i18n.language,
-                                  dropdownColor: cs.surfaceContainerHigh
-                                      .withValues(alpha: 1.0),
-                                  borderRadius: BorderRadius.circular(12),
-                                  onChanged: (value) {
-                                    if (value != null) {
-                                      i18n.setLanguage(value);
-                                    }
-                                  },
-                                  items: AppLanguage.values
-                                      .map(
-                                        (lang) => DropdownMenuItem<AppLanguage>(
-                                          value: lang,
-                                          child: Text(
-                                            i18n.languageName(lang),
-                                            overflow: TextOverflow.ellipsis,
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.w700,
-                                            ),
+                              child: UnifiedDropdownButton<AppLanguage>(
+                                isExpanded: true,
+                                value: i18n.language,
+                                onChanged: (value) {
+                                  if (value != null) {
+                                    i18n.setLanguage(value);
+                                  }
+                                },
+                                items: AppLanguage.values
+                                    .map(
+                                      (lang) => DropdownMenuItem<AppLanguage>(
+                                        value: lang,
+                                        child: Text(
+                                          i18n.languageName(lang),
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w700,
                                           ),
                                         ),
-                                      )
-                                      .toList(),
-                                ),
+                                      ),
+                                    )
+                                    .toList(),
                               ),
                             ),
                             contentPadding: const EdgeInsets.symmetric(
@@ -278,33 +274,26 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                                   color: cs.onPrimaryContainer,
                                 ),
                               ),
-                              trailing: DropdownButtonHideUnderline(
-                                child: DropdownButton<StartupPage>(
-                                  value: startupPage,
-                                  dropdownColor: cs.surfaceContainerHigh
-                                      .withValues(alpha: 1.0),
-                                  borderRadius: BorderRadius.circular(12),
-                                  onChanged: (value) {
-                                    if (value != null) {
-                                      audioProvider.setStartupPage(value);
-                                    }
-                                  },
-                                  items: StartupPage.values
-                                      .map(
-                                        (page) => DropdownMenuItem<StartupPage>(
-                                          value: page,
-                                          child: Text(
-                                            i18n.tr(
-                                              'startup_page_${page.name}',
-                                            ),
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.w700,
-                                            ),
+                              trailing: UnifiedDropdownButton<StartupPage>(
+                                value: startupPage,
+                                onChanged: (value) {
+                                  if (value != null) {
+                                    audioProvider.setStartupPage(value);
+                                  }
+                                },
+                                items: StartupPage.values
+                                    .map(
+                                      (page) => DropdownMenuItem<StartupPage>(
+                                        value: page,
+                                        child: Text(
+                                          i18n.tr('startup_page_${page.name}'),
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w700,
                                           ),
                                         ),
-                                      )
-                                      .toList(),
-                                ),
+                                      ),
+                                    )
+                                    .toList(),
                               ),
                               contentPadding: const EdgeInsets.symmetric(
                                 horizontal: 8,
@@ -340,33 +329,28 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                                   color: cs.onPrimaryContainer,
                                 ),
                               ),
-                              trailing: DropdownButtonHideUnderline(
-                                child: DropdownButton<AppLanguage>(
-                                  value: dlsiteLanguage,
-                                  dropdownColor: cs.surfaceContainerHigh
-                                      .withValues(alpha: 1.0),
-                                  borderRadius: BorderRadius.circular(12),
-                                  onChanged: (value) {
-                                    if (value != null) {
-                                      audioProvider.setDlsiteMetadataLanguage(
-                                        value,
-                                      );
-                                    }
-                                  },
-                                  items: AppLanguage.values
-                                      .map(
-                                        (lang) => DropdownMenuItem<AppLanguage>(
-                                          value: lang,
-                                          child: Text(
-                                            i18n.languageName(lang),
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.w700,
-                                            ),
+                              trailing: UnifiedDropdownButton<AppLanguage>(
+                                value: dlsiteLanguage,
+                                onChanged: (value) {
+                                  if (value != null) {
+                                    audioProvider.setDlsiteMetadataLanguage(
+                                      value,
+                                    );
+                                  }
+                                },
+                                items: AppLanguage.values
+                                    .map(
+                                      (lang) => DropdownMenuItem<AppLanguage>(
+                                        value: lang,
+                                        child: Text(
+                                          i18n.languageName(lang),
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w700,
                                           ),
                                         ),
-                                      )
-                                      .toList(),
-                                ),
+                                      ),
+                                    )
+                                    .toList(),
                               ),
                               contentPadding: const EdgeInsets.symmetric(
                                 horizontal: 8,
@@ -409,33 +393,28 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                                   color: cs.onSecondaryContainer,
                                 ),
                               ),
-                              trailing: DropdownButtonHideUnderline(
-                                child: DropdownButton<ThemeMode>(
-                                  value: themeMode,
-                                  dropdownColor: cs.surfaceContainerHigh
-                                      .withValues(alpha: 1.0),
-                                  borderRadius: BorderRadius.circular(12),
-                                  onChanged: (value) {
-                                    if (value != null) {
-                                      context
-                                          .read<ThemeProvider>()
-                                          .setThemeMode(value);
-                                    }
-                                  },
-                                  items: ThemeMode.values
-                                      .map(
-                                        (mode) => DropdownMenuItem<ThemeMode>(
-                                          value: mode,
-                                          child: Text(
-                                            modeLabels[mode]!,
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.w700,
-                                            ),
+                              trailing: UnifiedDropdownButton<ThemeMode>(
+                                value: themeMode,
+                                onChanged: (value) {
+                                  if (value != null) {
+                                    context.read<ThemeProvider>().setThemeMode(
+                                      value,
+                                    );
+                                  }
+                                },
+                                items: ThemeMode.values
+                                    .map(
+                                      (mode) => DropdownMenuItem<ThemeMode>(
+                                        value: mode,
+                                        child: Text(
+                                          modeLabels[mode]!,
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w700,
                                           ),
                                         ),
-                                      )
-                                      .toList(),
-                                ),
+                                      ),
+                                    )
+                                    .toList(),
                               ),
                               contentPadding: const EdgeInsets.symmetric(
                                 horizontal: 8,
@@ -832,38 +811,29 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                                     color: cs.onPrimaryContainer,
                                   ),
                                 ),
-                                trailing: DropdownButtonHideUnderline(
-                                  child: DropdownButton<int>(
-                                    value:
-                                        _cacheLimitOptions.contains(
-                                          maxCacheBytes,
-                                        )
-                                        ? maxCacheBytes
-                                        : AppCacheService.defaultMaxCacheBytes,
-                                    dropdownColor: cs.surfaceContainerHigh
-                                        .withValues(alpha: 1.0),
-                                    borderRadius: BorderRadius.circular(12),
-                                    onChanged: (value) {
-                                      if (value != null) {
-                                        audioProvider.setMaxCacheBytes(value);
-                                      }
-                                    },
-                                    items: _cacheLimitOptions
-                                        .map(
-                                          (value) => DropdownMenuItem<int>(
-                                            value: value,
-                                            child: Text(
-                                              AppCacheService.formatBytes(
-                                                value,
-                                              ),
-                                              style: const TextStyle(
-                                                fontWeight: FontWeight.w700,
-                                              ),
+                                trailing: UnifiedDropdownButton<int>(
+                                  value:
+                                      _cacheLimitOptions.contains(maxCacheBytes)
+                                      ? maxCacheBytes
+                                      : AppCacheService.defaultMaxCacheBytes,
+                                  onChanged: (value) {
+                                    if (value != null) {
+                                      audioProvider.setMaxCacheBytes(value);
+                                    }
+                                  },
+                                  items: _cacheLimitOptions
+                                      .map(
+                                        (value) => DropdownMenuItem<int>(
+                                          value: value,
+                                          child: Text(
+                                            AppCacheService.formatBytes(value),
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w700,
                                             ),
                                           ),
-                                        )
-                                        .toList(),
-                                  ),
+                                        ),
+                                      )
+                                      .toList(),
                                 ),
                                 contentPadding: const EdgeInsets.symmetric(
                                   horizontal: 8,

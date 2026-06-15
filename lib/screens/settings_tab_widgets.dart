@@ -338,32 +338,29 @@ class _SubtitleWindowSettingsSheet extends StatelessWidget {
                             borderRadius: BorderRadius.circular(12),
                           ),
                         ),
-                        child: DropdownButtonHideUnderline(
-                          child: DropdownButton<String>(
-                            value: settings.fontFamily,
-                            isDense: true,
-                            isExpanded: true,
-                            borderRadius: BorderRadius.circular(12),
-                            items: List.generate(_fontFamilies.length, (i) {
-                              final label = i == 0
-                                  ? i18n.tr('system_default')
-                                  : _fontFamilies[i];
-                              return DropdownMenuItem(
-                                value: _fontFamilies[i],
-                                child: Text(
-                                  label,
-                                  style: TextStyle(
-                                    fontFamily: _fontFamilies[i].isEmpty
-                                        ? null
-                                        : _fontFamilies[i],
-                                  ),
+                        child: UnifiedDropdownButton<String>(
+                          value: settings.fontFamily,
+                          isDense: true,
+                          isExpanded: true,
+                          items: List.generate(_fontFamilies.length, (i) {
+                            final label = i == 0
+                                ? i18n.tr('system_default')
+                                : _fontFamilies[i];
+                            return DropdownMenuItem(
+                              value: _fontFamilies[i],
+                              child: Text(
+                                label,
+                                style: TextStyle(
+                                  fontFamily: _fontFamilies[i].isEmpty
+                                      ? null
+                                      : _fontFamilies[i],
                                 ),
-                              );
-                            }),
-                            onChanged: (v) {
-                              if (v != null) notifier.setFontFamily(v);
-                            },
-                          ),
+                              ),
+                            );
+                          }),
+                          onChanged: (v) {
+                            if (v != null) notifier.setFontFamily(v);
+                          },
                         ),
                       ),
                       const SizedBox(height: 12),
@@ -406,31 +403,6 @@ class _SubtitleWindowSettingsSheet extends StatelessWidget {
                         onReset: () => notifier.setFontColor(null),
                       ),
                       const SizedBox(height: 24),
-
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              i18n.tr('background_blur'),
-                              style: labelStyle,
-                            ),
-                          ),
-                          Text(
-                            settings.backgroundBlur.toStringAsFixed(0),
-                            style: Theme.of(context).textTheme.bodySmall
-                                ?.copyWith(
-                                  color: cs.onSurfaceVariant,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                          ),
-                        ],
-                      ),
-                      Slider(
-                        value: settings.backgroundBlur,
-                        max: 50,
-                        divisions: 50,
-                        onChanged: (v) => notifier.setBackgroundBlur(v),
-                      ),
 
                       Row(
                         children: [

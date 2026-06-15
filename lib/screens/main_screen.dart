@@ -38,6 +38,14 @@ part 'main_screen_layout.dart';
 part 'main_screen_widgets.dart';
 part 'main_screen_timer_scrim.dart';
 
+@visibleForTesting
+bool shouldRunGlobalSubtitleOverlay({
+  required bool appInForeground,
+  required bool isWindows,
+}) {
+  return isWindows || !appInForeground;
+}
+
 class MainScreen extends ConsumerStatefulWidget {
   const MainScreen({super.key});
 
@@ -86,6 +94,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
   bool _appInForeground = true;
   bool _globalSubtitleOverlayRunning = false;
   bool _globalSubtitleOverlaySyncing = false;
+  bool _globalSubtitleOverlaySyncPending = false;
   Timer? _globalSubtitleOverlayTimer;
   String? _globalSubtitleOverlaySessionId;
   String? _globalSubtitleOverlayTrackPath;
@@ -140,6 +149,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
       if (!mounted) return;
       _rememberCurrentViewMetrics();
       final provider = ref.read(audioProviderFacadeProvider);
+      unawaited(_syncGlobalSubtitleOverlay());
       unawaited(_consumePendingNotificationSession());
       Future.delayed(const Duration(milliseconds: 750), () {
         if (!mounted) return;
@@ -492,7 +502,17 @@ class _MainScreenState extends ConsumerState<MainScreen>
   }
 
   Future<void> _syncGlobalSubtitleOverlay() async {
-    if (!mounted || _appInForeground || _globalSubtitleOverlaySyncing) return;
+    if (_globalSubtitleOverlaySyncing) {
+      _globalSubtitleOverlaySyncPending = true;
+      return;
+    }
+    if (!mounted ||
+        !shouldRunGlobalSubtitleOverlay(
+          appInForeground: _appInForeground,
+          isWindows: Platform.isWindows,
+        )) {
+      return;
+    }
     _globalSubtitleOverlaySyncing = true;
     try {
       final provider = ref.read(audioProviderFacadeProvider);
@@ -514,6 +534,10 @@ class _MainScreenState extends ConsumerState<MainScreen>
       _updateGlobalSubtitleOverlayForSession(session);
     } finally {
       _globalSubtitleOverlaySyncing = false;
+      if (_globalSubtitleOverlaySyncPending) {
+        _globalSubtitleOverlaySyncPending = false;
+        unawaited(_syncGlobalSubtitleOverlay());
+      }
     }
   }
 
@@ -542,7 +566,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
       backgroundOpacity: settings.backgroundOpacity,
       fontFamily: settings.fontFamily,
       borderDepth: settings.borderDepth,
-      backgroundBlur: settings.backgroundBlur,
     );
   }
 
@@ -559,7 +582,10 @@ class _MainScreenState extends ConsumerState<MainScreen>
 
   void _updateGlobalSubtitleOverlay() {
     if (!mounted) return;
-    if (_appInForeground) {
+    if (!shouldRunGlobalSubtitleOverlay(
+      appInForeground: _appInForeground,
+      isWindows: Platform.isWindows,
+    )) {
       unawaited(_stopGlobalSubtitleOverlay(immediate: true));
       return;
     }
@@ -584,7 +610,11 @@ class _MainScreenState extends ConsumerState<MainScreen>
       _lastGlobalSubtitleOverlayText = null;
       unawaited(
         provider.subtitleTrackForPath(session.currentTrackPath).then((_) {
-          if (mounted && !_appInForeground) {
+          if (mounted &&
+              shouldRunGlobalSubtitleOverlay(
+                appInForeground: _appInForeground,
+                isWindows: Platform.isWindows,
+              )) {
             _updateGlobalSubtitleOverlay();
           }
         }),
@@ -624,7 +654,11 @@ class _MainScreenState extends ConsumerState<MainScreen>
       return;
     }
     _appInForeground = true;
-    unawaited(_stopGlobalSubtitleOverlay(immediate: true));
+    if (Platform.isWindows) {
+      unawaited(_syncGlobalSubtitleOverlay());
+    } else {
+      unawaited(_stopGlobalSubtitleOverlay(immediate: true));
+    }
     unawaited(_consumePendingNotificationSession());
     final provider = ref.read(audioProviderFacadeProvider);
     unawaited(_permissionActionController.handleAppResumed());
@@ -700,6 +734,9 @@ class _MainScreenState extends ConsumerState<MainScreen>
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<SubtitleSettingsState>(subtitleSettingsProvider, (_, _) {
+      unawaited(_syncGlobalSubtitleOverlay());
+    });
     final i18n = context.watch<AppLanguageProvider>();
     final brightness = Theme.of(context).brightness;
     final overlayStyle = brightness == Brightness.dark

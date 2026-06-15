@@ -1086,7 +1086,7 @@ class _EqualizerPage extends StatelessWidget {
             unawaited(liveProvider.setSessionEqEnabled(liveSession.id, value));
           },
         ),
-        DropdownButtonFormField<String>(
+        UnifiedDropdownButtonFormField<String>(
           initialValue: selectedPreset,
           decoration: InputDecoration(
             labelText: i18n.tr('eq_preset'),
@@ -1314,8 +1314,11 @@ int playbackSpeedWheelIndexAfterDesktopScroll({
   required int currentIndex,
   required double scrollDeltaY,
   required int itemCount,
+  bool wheelLocked = false,
 }) {
-  if (itemCount <= 0 || scrollDeltaY.abs() < 0.01) return currentIndex;
+  if (wheelLocked || itemCount <= 0 || scrollDeltaY.abs() < 0.01) {
+    return currentIndex;
+  }
   final direction = scrollDeltaY > 0 ? 1 : -1;
   return (currentIndex + direction).clamp(0, itemCount - 1).toInt();
 }
@@ -1390,6 +1393,7 @@ class _SpeedWheelPageState extends State<_SpeedWheelPage> {
       currentIndex: baseIndex,
       scrollDeltaY: event.scrollDelta.dy,
       itemCount: _speeds.length,
+      wheelLocked: _isDesktopWheelLocked,
     );
     if (nextIndex == baseIndex) return;
     _pendingDesktopWheelIndex = nextIndex;

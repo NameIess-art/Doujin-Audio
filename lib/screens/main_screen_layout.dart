@@ -463,8 +463,9 @@ extension _MainScreenLayout on _MainScreenState {
                 );
 
                 Widget railLayout = rail;
-                final safeMinHeight = 420.0;
-                if (!isAndroidLandscape && constraints.maxHeight < safeMinHeight) {
+                const safeMinHeight = 420.0;
+                if (!isAndroidLandscape &&
+                    constraints.maxHeight < safeMinHeight) {
                   railLayout = SingleChildScrollView(
                     child: ConstrainedBox(
                       constraints: BoxConstraints(

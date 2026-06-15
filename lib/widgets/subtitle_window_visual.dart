@@ -1,5 +1,3 @@
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 
 import '../providers/subtitle_settings_provider.dart';
@@ -10,7 +8,6 @@ class SubtitleWindowVisual extends StatelessWidget {
     required this.settings,
     required this.text,
     required this.maxTextWidth,
-    this.enableBackdropBlur = true,
     this.padding = const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
     this.fallbackBackgroundColor,
   });
@@ -18,7 +15,6 @@ class SubtitleWindowVisual extends StatelessWidget {
   final SubtitleSettingsState settings;
   final String text;
   final double maxTextWidth;
-  final bool enableBackdropBlur;
   final EdgeInsetsGeometry padding;
   final Color? fallbackBackgroundColor;
 
@@ -32,7 +28,7 @@ class SubtitleWindowVisual extends StatelessWidget {
         ) ??
         fallbackSurface.withValues(alpha: settings.backgroundOpacity);
 
-    Widget container = Container(
+    return Container(
       constraints: const BoxConstraints(minHeight: 34),
       width: double.infinity,
       padding: padding,
@@ -73,20 +69,6 @@ class SubtitleWindowVisual extends StatelessWidget {
             ),
           ),
         ),
-      ),
-    );
-
-    if (!enableBackdropBlur) {
-      return container;
-    }
-
-    return ClipRect(
-      child: BackdropFilter(
-        filter: ImageFilter.blur(
-          sigmaX: settings.backgroundBlur,
-          sigmaY: settings.backgroundBlur,
-        ),
-        child: container,
       ),
     );
   }

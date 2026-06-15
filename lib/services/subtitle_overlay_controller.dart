@@ -1,22 +1,13 @@
 import 'dart:async';
-import 'dart:convert';
-import 'dart:io';
 
-import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:flutter/services.dart';
 
 import 'platform_channels.dart';
 
 class SubtitleOverlayController {
   static const _channel = MethodChannel(SubtitleOverlayChannel.name);
-  static WindowController? _windowsOverlayController;
-  static Map<String, Object?> _windowsStyleArgs = const {};
-  static String _windowsSubtitleText = '';
-  static bool? _windowsIsPlaying;
-  static final Set<Timer> _windowsPendingTimers = <Timer>{};
 
   static Future<bool> canDrawOverlays() async {
-    if (Platform.isWindows) return true;
     try {
       return await _channel.invokeMethod<bool>(
             SubtitleOverlayMethod.canDrawOverlays,
@@ -28,7 +19,6 @@ class SubtitleOverlayController {
   }
 
   static Future<bool> openOverlaySettings() async {
-    if (Platform.isWindows) return true;
     try {
       return await _channel.invokeMethod<bool>(
             SubtitleOverlayMethod.openOverlaySettings,
@@ -44,29 +34,6 @@ class SubtitleOverlayController {
   static Future<void> startOverlay() async {
     _stopTimer?.cancel();
     _stopTimer = null;
-    if (Platform.isWindows) {
-      if (_windowsOverlayController == null) {
-        final window = await WindowController.create(
-          WindowConfiguration(
-            hiddenAtLaunch: false,
-            arguments: jsonEncode({
-              'initialStyle': _windowsStyleArgs,
-              'initialSubtitle': _windowsSubtitleText,
-              if (_windowsIsPlaying != null)
-                'initialIsPlaying': _windowsIsPlaying,
-            }),
-          ),
-        );
-        _windowsOverlayController = window;
-        await _showWindowsOverlay(window);
-      }
-      final window = _windowsOverlayController;
-      if (window != null) {
-        _scheduleWindowsShow(window);
-        _scheduleWindowsStateReplay(window);
-      }
-      return;
-    }
     try {
       await _channel.invokeMethod(SubtitleOverlayMethod.startOverlay);
     } on PlatformException catch (_) {
@@ -77,7 +44,6 @@ class SubtitleOverlayController {
   static Future<void> stopOverlay({bool immediate = false}) async {
     _stopTimer?.cancel();
     _stopTimer = null;
-    _cancelWindowsPendingTimers();
     if (immediate) {
       await _doStop();
     } else {
@@ -90,13 +56,6 @@ class SubtitleOverlayController {
   static Future<void> _doStop() async {
     _stopTimer?.cancel();
     _stopTimer = null;
-    if (Platform.isWindows) {
-      if (_windowsOverlayController != null) {
-        await _windowsOverlayController!.hide();
-        _windowsOverlayController = null;
-      }
-      return;
-    }
     try {
       await _channel.invokeMethod(SubtitleOverlayMethod.stopOverlay);
     } on PlatformException catch (_) {
@@ -105,16 +64,6 @@ class SubtitleOverlayController {
   }
 
   static Future<void> updateSubtitle(String text) async {
-    if (Platform.isWindows) {
-      _windowsSubtitleText = text;
-      final window = _windowsOverlayController;
-      if (window != null) {
-        unawaited(
-          _invokeWindowsOverlay(window, 'updateSubtitle', {'text': text}),
-        );
-      }
-      return;
-    }
     try {
       await _channel.invokeMethod(SubtitleOverlayMethod.updateSubtitle, {
         'text': text,
@@ -125,18 +74,7 @@ class SubtitleOverlayController {
   }
 
   static Future<void> updatePlaybackState(bool isPlaying) async {
-    if (Platform.isWindows) {
-      _windowsIsPlaying = isPlaying;
-      final window = _windowsOverlayController;
-      if (window != null) {
-        unawaited(
-          _invokeWindowsOverlay(window, 'updatePlaybackState', {
-            'isPlaying': isPlaying,
-          }),
-        );
-      }
-      return;
-    }
+    // The Android overlay receives playback state through its service.
   }
 
   static Future<void> updateStyle({
@@ -146,7 +84,6 @@ class SubtitleOverlayController {
     double? backgroundOpacity,
     String? fontFamily,
     double? borderDepth,
-    double? backgroundBlur,
   }) async {
     final args = <String, Object?>{
       'fontSize': fontSize,
@@ -155,110 +92,11 @@ class SubtitleOverlayController {
       'backgroundOpacity': backgroundOpacity,
       'fontFamily': fontFamily,
       'borderDepth': borderDepth,
-      'backgroundBlur': backgroundBlur,
     }..removeWhere((_, value) => value == null);
-    if (Platform.isWindows) {
-      _windowsStyleArgs = args;
-      final window = _windowsOverlayController;
-      if (window != null) {
-        unawaited(_invokeWindowsOverlay(window, 'updateStyle', args));
-      }
-      return;
-    }
     try {
       await _channel.invokeMethod(SubtitleOverlayMethod.updateStyle, args);
     } on PlatformException catch (_) {
       // Style updates are best effort when the overlay is unavailable.
-    }
-  }
-
-  static Future<void> _replayWindowsState(WindowController window) async {
-    if (_windowsStyleArgs.isNotEmpty) {
-      await _invokeWindowsOverlay(window, 'updateStyle', _windowsStyleArgs);
-    }
-    await _invokeWindowsOverlay(window, 'updateSubtitle', {
-      'text': _windowsSubtitleText,
-    });
-    final isPlaying = _windowsIsPlaying;
-    if (isPlaying != null) {
-      await _invokeWindowsOverlay(window, 'updatePlaybackState', {
-        'isPlaying': isPlaying,
-      });
-    }
-  }
-
-  static void _scheduleWindowsStateReplay(WindowController window) {
-    unawaited(_replayWindowsState(window));
-    _scheduleWindowsTimer(
-      const Duration(milliseconds: 120),
-      () => _replayWindowsState(window),
-    );
-    _scheduleWindowsTimer(
-      const Duration(milliseconds: 350),
-      () => _replayWindowsState(window),
-    );
-  }
-
-  static Future<void> _showWindowsOverlay(WindowController window) async {
-    try {
-      await window.show();
-    } catch (_) {
-      // The detached overlay window may already be closed.
-    }
-  }
-
-  static void _scheduleWindowsShow(WindowController window) {
-    unawaited(_showWindowsOverlay(window));
-    _scheduleWindowsTimer(
-      const Duration(milliseconds: 120),
-      () => _showWindowsOverlay(window),
-    );
-    _scheduleWindowsTimer(
-      const Duration(milliseconds: 350),
-      () => _showWindowsOverlay(window),
-    );
-  }
-
-  static void _scheduleWindowsTimer(
-    Duration duration,
-    Future<void> Function() action,
-  ) {
-    late final Timer timer;
-    timer = Timer(duration, () {
-      _windowsPendingTimers.remove(timer);
-      unawaited(action());
-    });
-    _windowsPendingTimers.add(timer);
-  }
-
-  static void _cancelWindowsPendingTimers() {
-    for (final timer in _windowsPendingTimers) {
-      timer.cancel();
-    }
-    _windowsPendingTimers.clear();
-  }
-
-  static Future<void> _invokeWindowsOverlay(
-    WindowController window,
-    String method, [
-    Object? arguments,
-  ]) async {
-    try {
-      await window.invokeMethod(method, arguments);
-    } on PlatformException catch (_) {
-      // The detached overlay window may not expose this optional method.
-    } on MissingPluginException catch (_) {
-      // Desktop multi-window support is optional on unsupported platforms.
-    } catch (_) {
-      // Overlay synchronization is best effort during window teardown.
-    }
-  }
-
-  static void initMethodHandler(
-    Future<dynamic> Function(MethodCall call) handler,
-  ) {
-    if (Platform.isWindows) {
-      WindowController.fromWindowId('0').setWindowMethodHandler(handler);
     }
   }
 }

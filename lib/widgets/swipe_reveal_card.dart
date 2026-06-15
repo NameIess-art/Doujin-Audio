@@ -85,13 +85,17 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
       items.add(
         PopupMenuItem(
           height: 28,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
+          padding: const EdgeInsets.symmetric(horizontal: 16),
           value: widget.onTertiaryAction,
           child: Row(
             children: [
               Icon(widget.tertiaryActionIcon, size: 20, color: cs.onSurface),
               const SizedBox(width: 12),
-              Text(widget.tertiaryActionLabel ?? widget.tertiaryActionTooltip ?? ''),
+              Text(
+                widget.tertiaryActionLabel ??
+                    widget.tertiaryActionTooltip ??
+                    '',
+              ),
             ],
           ),
         ),
@@ -101,13 +105,17 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
       items.add(
         PopupMenuItem(
           height: 28,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
+          padding: const EdgeInsets.symmetric(horizontal: 16),
           value: widget.onSecondaryAction,
           child: Row(
             children: [
               Icon(widget.secondaryActionIcon, size: 20, color: cs.onSurface),
               const SizedBox(width: 12),
-              Text(widget.secondaryActionLabel ?? widget.secondaryActionTooltip ?? ''),
+              Text(
+                widget.secondaryActionLabel ??
+                    widget.secondaryActionTooltip ??
+                    '',
+              ),
             ],
           ),
         ),
@@ -116,7 +124,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
     items.add(
       PopupMenuItem(
         height: 28,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
+        padding: const EdgeInsets.symmetric(horizontal: 16),
         value: widget.onRemove,
         child: Row(
           children: [
@@ -140,7 +148,12 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
 
     showMenu<VoidCallback>(
       context: context,
-      position: RelativeRect.fromLTRB(position.dx, position.dy, position.dx, position.dy),
+      position: RelativeRect.fromLTRB(
+        position.dx,
+        position.dy,
+        position.dx,
+        position.dy,
+      ),
       items: items,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       elevation: 4,
@@ -296,363 +309,384 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
     return RepaintBoundary(
       child: TapRegion(
         onTapOutside: (_) => _closePane(),
-      child: Padding(
-        padding: widget.margin,
-        child: GestureDetector(
-          behavior: HitTestBehavior.translucent,
-          onHorizontalDragStart: AppPlatform.isWindows ? null : _handleHorizontalDragStart,
-          onHorizontalDragUpdate: AppPlatform.isWindows ? null : _handleHorizontalDragUpdate,
-          onHorizontalDragEnd: AppPlatform.isWindows ? null : _handleHorizontalDragEnd,
-          onSecondaryTapDown: AppPlatform.isWindows
-              ? (details) => _showWindowsContextMenu(context, details.globalPosition)
-              : null,
-          onSecondaryTap: AppPlatform.isWindows
-              ? null
-              : () {
-                  setState(() {
-                    _revealedWidth = _isOpen ? 0 : _actionWidth;
-                  });
-                },
-          onHorizontalDragCancel: AppPlatform.isWindows ? null : () {
-            _dragAccepted = false;
-            _dragRejected = false;
-          },
-          child: Stack(
-            children: [
-              Positioned.fill(
-                child: DecoratedBox(
-                  decoration: ShapeDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [paneStartColor, paneEndColor],
-                    ),
-                    shape: widget.shape,
-                  ),
-                  child: Stack(
-                    children: [
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: Padding(
-                          padding: EdgeInsets.only(
-                            left: 18,
-                            right: showVerticalActions
-                                ? _actionWidth + 26
-                                : _hasTertiaryAction
-                                ? 216
-                                : _hasSecondaryAction
-                                ? 158
-                                : 86,
-                          ),
-                          child: revealProgress == 0 ? const SizedBox.shrink() : AnimatedOpacity(
-                            opacity: 0.24 + (revealProgress * 0.76),
-                            duration: const Duration(milliseconds: 160),
-                            curve: Curves.easeOutCubic,
-                            child: LayoutBuilder(
-                              builder: (context, constraints) {
-                                final compact = constraints.maxHeight < 64;
-                                return Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 10,
-                                        vertical: 5,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: accentColor.withValues(
-                                          alpha: 0.12,
-                                        ),
-                                        borderRadius: BorderRadius.circular(
-                                          999,
-                                        ),
-                                        border: Border.all(
-                                          color: accentColor.withValues(
-                                            alpha: 0.18,
-                                          ),
-                                        ),
-                                      ),
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Icon(
-                                            Icons.swipe_left_rounded,
-                                            size: 14,
-                                            color: accentColor,
-                                          ),
-                                          const SizedBox(width: 4),
-                                          Text(
-                                            actionLabel,
-                                            style: Theme.of(context)
-                                                .textTheme
-                                                .labelMedium
-                                                ?.copyWith(
-                                                  color: accentColor,
-                                                  fontWeight: FontWeight.w800,
-                                                ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    if (!compact) ...[
-                                      const SizedBox(height: 8),
-                                      Text(
-                                        actionTooltip,
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .bodySmall
-                                            ?.copyWith(
-                                              color: accentContainerOnColor,
-                                              fontWeight: FontWeight.w600,
-                                            ),
-                                      ),
-                                    ],
-                                  ],
-                                );
-                              },
-                            ),
-                          ),
-                        ),
+        child: Padding(
+          padding: widget.margin,
+          child: GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onHorizontalDragStart: AppPlatform.isWindows
+                ? null
+                : _handleHorizontalDragStart,
+            onHorizontalDragUpdate: AppPlatform.isWindows
+                ? null
+                : _handleHorizontalDragUpdate,
+            onHorizontalDragEnd: AppPlatform.isWindows
+                ? null
+                : _handleHorizontalDragEnd,
+            onSecondaryTapDown: AppPlatform.isWindows
+                ? (details) =>
+                      _showWindowsContextMenu(context, details.globalPosition)
+                : null,
+            onSecondaryTap: AppPlatform.isWindows
+                ? null
+                : () {
+                    setState(() {
+                      _revealedWidth = _isOpen ? 0 : _actionWidth;
+                    });
+                  },
+            onHorizontalDragCancel: AppPlatform.isWindows
+                ? null
+                : () {
+                    _dragAccepted = false;
+                    _dragRejected = false;
+                  },
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: DecoratedBox(
+                    decoration: ShapeDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [paneStartColor, paneEndColor],
                       ),
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: Padding(
-                          padding: EdgeInsets.only(
-                            top: showVerticalActions ? 10 : 0,
-                            right: showVerticalActions ? 10 : 14,
-                            bottom: showVerticalActions ? 10 : 0,
-                          ),
-                          child: AnimatedScale(
-                            scale: 0.92 + (revealProgress * 0.08),
-                            duration: const Duration(milliseconds: 180),
-                            curve: Curves.easeOutBack,
-                            child: showVerticalActions
-                                ? SizedBox(
-                                    width: _actionWidth - 20,
+                      shape: widget.shape,
+                    ),
+                    child: Stack(
+                      children: [
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: Padding(
+                            padding: EdgeInsets.only(
+                              left: 18,
+                              right: showVerticalActions
+                                  ? _actionWidth + 26
+                                  : _hasTertiaryAction
+                                  ? 216
+                                  : _hasSecondaryAction
+                                  ? 158
+                                  : 86,
+                            ),
+                            child: revealProgress == 0
+                                ? const SizedBox.shrink()
+                                : AnimatedOpacity(
+                                    opacity: 0.24 + (revealProgress * 0.76),
+                                    duration: const Duration(milliseconds: 160),
+                                    curve: Curves.easeOutCubic,
                                     child: LayoutBuilder(
                                       builder: (context, constraints) {
-                                        final gap = _actionCount > 1
-                                            ? 6.0
-                                            : 0.0;
-                                        final availableHeight =
-                                            constraints.maxHeight;
-                                        final buttonSize =
-                                            ((availableHeight -
-                                                        gap *
-                                                            (_actionCount -
-                                                                1)) /
-                                                    _actionCount)
-                                                .clamp(34.0, 48.0);
+                                        final compact =
+                                            constraints.maxHeight < 64;
                                         return Column(
-                                          mainAxisAlignment:
-                                              MainAxisAlignment.center,
+                                          mainAxisSize: MainAxisSize.min,
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
                                           children: [
-                                            if (_hasTertiaryAction) ...[
-                                              _SwipeRevealActionButton(
-                                                onPressed: () {
-                                                  AppInteractionFeedback.trigger(
-                                                    AppInteractionFeedbackType
-                                                        .selection,
-                                                  );
-                                                  _closePane();
-                                                  widget.onTertiaryAction
-                                                      ?.call();
-                                                },
-                                                backgroundColor:
-                                                    cs.secondaryContainer,
-                                                foregroundColor:
-                                                    cs.onSecondaryContainer,
-                                                tooltip:
-                                                    widget
-                                                        .tertiaryActionTooltip ??
-                                                    widget.tertiaryActionLabel,
-                                                icon: widget.tertiaryActionIcon,
-                                                tonal: true,
-                                                size: buttonSize,
+                                            Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 10,
+                                                    vertical: 5,
+                                                  ),
+                                              decoration: BoxDecoration(
+                                                color: accentColor.withValues(
+                                                  alpha: 0.12,
+                                                ),
+                                                borderRadius:
+                                                    BorderRadius.circular(999),
+                                                border: Border.all(
+                                                  color: accentColor.withValues(
+                                                    alpha: 0.18,
+                                                  ),
+                                                ),
                                               ),
-                                              SizedBox(height: gap),
-                                            ],
-                                            if (_hasSecondaryAction) ...[
-                                              _SwipeRevealActionButton(
-                                                onPressed: () {
-                                                  AppInteractionFeedback.trigger(
-                                                    AppInteractionFeedbackType
-                                                        .selection,
-                                                  );
-                                                  _closePane();
-                                                  widget.onSecondaryAction
-                                                      ?.call();
-                                                },
-                                                backgroundColor:
-                                                    cs.primaryContainer,
-                                                foregroundColor:
-                                                    cs.onPrimaryContainer,
-                                                tooltip:
-                                                    widget
-                                                        .secondaryActionTooltip ??
-                                                    widget.secondaryActionLabel,
-                                                icon:
-                                                    widget.secondaryActionIcon,
-                                                tonal: true,
-                                                size: buttonSize,
+                                              child: Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  Icon(
+                                                    Icons.swipe_left_rounded,
+                                                    size: 14,
+                                                    color: accentColor,
+                                                  ),
+                                                  const SizedBox(width: 4),
+                                                  Text(
+                                                    actionLabel,
+                                                    style: Theme.of(context)
+                                                        .textTheme
+                                                        .labelMedium
+                                                        ?.copyWith(
+                                                          color: accentColor,
+                                                          fontWeight:
+                                                              FontWeight.w800,
+                                                        ),
+                                                  ),
+                                                ],
                                               ),
-                                              SizedBox(height: gap),
-                                            ],
-                                            _SwipeRevealActionButton(
-                                              onPressed: () {
-                                                AppInteractionFeedback.trigger(
-                                                  widget.destructive
-                                                      ? AppInteractionFeedbackType
-                                                            .destructive
-                                                      : AppInteractionFeedbackType
-                                                            .confirmation,
-                                                );
-                                                _closePane();
-                                                widget.onRemove();
-                                              },
-                                              backgroundColor: accentColor,
-                                              foregroundColor: accentOnColor,
-                                              tooltip:
-                                                  widget.primaryActionTooltip ??
-                                                  widget.removeTooltip,
-                                              icon: widget.primaryActionIcon,
-                                              tonal: !widget.destructive,
-                                              size: buttonSize,
                                             ),
+                                            if (!compact) ...[
+                                              const SizedBox(height: 8),
+                                              Text(
+                                                actionTooltip,
+                                                maxLines: 2,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: Theme.of(context)
+                                                    .textTheme
+                                                    .bodySmall
+                                                    ?.copyWith(
+                                                      color:
+                                                          accentContainerOnColor,
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                    ),
+                                              ),
+                                            ],
                                           ],
                                         );
                                       },
                                     ),
-                                  )
-                                : Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      if (_hasTertiaryAction) ...[
-                                        _SwipeRevealActionButton(
-                                          onPressed: () {
-                                            AppInteractionFeedback.trigger(
-                                              AppInteractionFeedbackType
-                                                  .selection,
-                                            );
-                                            _closePane();
-                                            widget.onTertiaryAction?.call();
-                                          },
-                                          backgroundColor:
-                                              cs.secondaryContainer,
-                                          foregroundColor:
-                                              cs.onSecondaryContainer,
-                                          tooltip:
-                                              widget.tertiaryActionTooltip ??
-                                              widget.tertiaryActionLabel,
-                                          icon: widget.tertiaryActionIcon,
-                                          tonal: true,
-                                        ),
-                                        const SizedBox(width: 8),
-                                      ],
-                                      if (_hasSecondaryAction) ...[
-                                        _SwipeRevealActionButton(
-                                          onPressed: () {
-                                            AppInteractionFeedback.trigger(
-                                              AppInteractionFeedbackType
-                                                  .selection,
-                                            );
-                                            _closePane();
-                                            widget.onSecondaryAction?.call();
-                                          },
-                                          backgroundColor: cs.primaryContainer,
-                                          foregroundColor:
-                                              cs.onPrimaryContainer,
-                                          tooltip:
-                                              widget.secondaryActionTooltip ??
-                                              widget.secondaryActionLabel,
-                                          icon: widget.secondaryActionIcon,
-                                          tonal: true,
-                                        ),
-                                        const SizedBox(width: 8),
-                                      ],
-                                      _SwipeRevealActionButton(
-                                        onPressed: () {
-                                          AppInteractionFeedback.trigger(
-                                            widget.destructive
-                                                ? AppInteractionFeedbackType
-                                                      .destructive
-                                                : AppInteractionFeedbackType
-                                                      .confirmation,
-                                          );
-                                          _closePane();
-                                          widget.onRemove();
-                                        },
-                                        backgroundColor: accentColor,
-                                        foregroundColor: accentOnColor,
-                                        tooltip:
-                                            widget.primaryActionTooltip ??
-                                            widget.removeTooltip,
-                                        icon: widget.primaryActionIcon,
-                                        tonal: !widget.destructive,
-                                      ),
-                                    ],
                                   ),
                           ),
                         ),
-                      ),
-                    ],
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: Padding(
+                            padding: EdgeInsets.only(
+                              top: showVerticalActions ? 10 : 0,
+                              right: showVerticalActions ? 10 : 14,
+                              bottom: showVerticalActions ? 10 : 0,
+                            ),
+                            child: AnimatedScale(
+                              scale: 0.92 + (revealProgress * 0.08),
+                              duration: const Duration(milliseconds: 180),
+                              curve: Curves.easeOutBack,
+                              child: showVerticalActions
+                                  ? SizedBox(
+                                      width: _actionWidth - 20,
+                                      child: LayoutBuilder(
+                                        builder: (context, constraints) {
+                                          final gap = _actionCount > 1
+                                              ? 6.0
+                                              : 0.0;
+                                          final availableHeight =
+                                              constraints.maxHeight;
+                                          final buttonSize =
+                                              ((availableHeight -
+                                                          gap *
+                                                              (_actionCount -
+                                                                  1)) /
+                                                      _actionCount)
+                                                  .clamp(34.0, 48.0);
+                                          return Column(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.center,
+                                            children: [
+                                              if (_hasTertiaryAction) ...[
+                                                _SwipeRevealActionButton(
+                                                  onPressed: () {
+                                                    AppInteractionFeedback.trigger(
+                                                      AppInteractionFeedbackType
+                                                          .selection,
+                                                    );
+                                                    _closePane();
+                                                    widget.onTertiaryAction
+                                                        ?.call();
+                                                  },
+                                                  backgroundColor:
+                                                      cs.secondaryContainer,
+                                                  foregroundColor:
+                                                      cs.onSecondaryContainer,
+                                                  tooltip:
+                                                      widget
+                                                          .tertiaryActionTooltip ??
+                                                      widget
+                                                          .tertiaryActionLabel,
+                                                  icon:
+                                                      widget.tertiaryActionIcon,
+                                                  tonal: true,
+                                                  size: buttonSize,
+                                                ),
+                                                SizedBox(height: gap),
+                                              ],
+                                              if (_hasSecondaryAction) ...[
+                                                _SwipeRevealActionButton(
+                                                  onPressed: () {
+                                                    AppInteractionFeedback.trigger(
+                                                      AppInteractionFeedbackType
+                                                          .selection,
+                                                    );
+                                                    _closePane();
+                                                    widget.onSecondaryAction
+                                                        ?.call();
+                                                  },
+                                                  backgroundColor:
+                                                      cs.primaryContainer,
+                                                  foregroundColor:
+                                                      cs.onPrimaryContainer,
+                                                  tooltip:
+                                                      widget
+                                                          .secondaryActionTooltip ??
+                                                      widget
+                                                          .secondaryActionLabel,
+                                                  icon: widget
+                                                      .secondaryActionIcon,
+                                                  tonal: true,
+                                                  size: buttonSize,
+                                                ),
+                                                SizedBox(height: gap),
+                                              ],
+                                              _SwipeRevealActionButton(
+                                                onPressed: () {
+                                                  AppInteractionFeedback.trigger(
+                                                    widget.destructive
+                                                        ? AppInteractionFeedbackType
+                                                              .destructive
+                                                        : AppInteractionFeedbackType
+                                                              .confirmation,
+                                                  );
+                                                  _closePane();
+                                                  widget.onRemove();
+                                                },
+                                                backgroundColor: accentColor,
+                                                foregroundColor: accentOnColor,
+                                                tooltip:
+                                                    widget
+                                                        .primaryActionTooltip ??
+                                                    widget.removeTooltip,
+                                                icon: widget.primaryActionIcon,
+                                                tonal: !widget.destructive,
+                                                size: buttonSize,
+                                              ),
+                                            ],
+                                          );
+                                        },
+                                      ),
+                                    )
+                                  : Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        if (_hasTertiaryAction) ...[
+                                          _SwipeRevealActionButton(
+                                            onPressed: () {
+                                              AppInteractionFeedback.trigger(
+                                                AppInteractionFeedbackType
+                                                    .selection,
+                                              );
+                                              _closePane();
+                                              widget.onTertiaryAction?.call();
+                                            },
+                                            backgroundColor:
+                                                cs.secondaryContainer,
+                                            foregroundColor:
+                                                cs.onSecondaryContainer,
+                                            tooltip:
+                                                widget.tertiaryActionTooltip ??
+                                                widget.tertiaryActionLabel,
+                                            icon: widget.tertiaryActionIcon,
+                                            tonal: true,
+                                          ),
+                                          const SizedBox(width: 8),
+                                        ],
+                                        if (_hasSecondaryAction) ...[
+                                          _SwipeRevealActionButton(
+                                            onPressed: () {
+                                              AppInteractionFeedback.trigger(
+                                                AppInteractionFeedbackType
+                                                    .selection,
+                                              );
+                                              _closePane();
+                                              widget.onSecondaryAction?.call();
+                                            },
+                                            backgroundColor:
+                                                cs.primaryContainer,
+                                            foregroundColor:
+                                                cs.onPrimaryContainer,
+                                            tooltip:
+                                                widget.secondaryActionTooltip ??
+                                                widget.secondaryActionLabel,
+                                            icon: widget.secondaryActionIcon,
+                                            tonal: true,
+                                          ),
+                                          const SizedBox(width: 8),
+                                        ],
+                                        _SwipeRevealActionButton(
+                                          onPressed: () {
+                                            AppInteractionFeedback.trigger(
+                                              widget.destructive
+                                                  ? AppInteractionFeedbackType
+                                                        .destructive
+                                                  : AppInteractionFeedbackType
+                                                        .confirmation,
+                                            );
+                                            _closePane();
+                                            widget.onRemove();
+                                          },
+                                          backgroundColor: accentColor,
+                                          foregroundColor: accentOnColor,
+                                          tooltip:
+                                              widget.primaryActionTooltip ??
+                                              widget.removeTooltip,
+                                          icon: widget.primaryActionIcon,
+                                          tonal: !widget.destructive,
+                                        ),
+                                      ],
+                                    ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-              ),
-              TweenAnimationBuilder<double>(
-                tween: Tween<double>(begin: 0, end: _revealedWidth),
-                duration: const Duration(milliseconds: 220),
-                curve: Curves.easeOutCubic,
-                builder: (context, value, child) {
-                  return Transform.translate(
-                    offset: Offset(-value, 0),
-                    child: child,
-                  );
-                },
-                child: Builder(
-                  builder: (context) {
-                    final content = DecoratedBox(
-                      decoration: ShapeDecoration(
-                        color: cs.surface,
-                        shape: widget.shape,
-                      ),
-                      child: IgnorePointer(
-                        ignoring: _isOpen,
-                        child: widget.child,
-                      ),
-                    );
-
-                    if (widget.shape is RoundedRectangleBorder) {
-                      return ClipRRect(
-                        borderRadius: (widget.shape as RoundedRectangleBorder)
-                            .borderRadius
-                            .resolve(Directionality.of(context)),
-                        child: content,
-                      );
-                    }
-
-                    return ClipPath(
-                      clipBehavior: Clip.hardEdge,
-                      clipper: ShapeBorderClipper(shape: widget.shape),
-                      child: content,
+                TweenAnimationBuilder<double>(
+                  tween: Tween<double>(begin: 0, end: _revealedWidth),
+                  duration: const Duration(milliseconds: 220),
+                  curve: Curves.easeOutCubic,
+                  builder: (context, value, child) {
+                    return Transform.translate(
+                      offset: Offset(-value, 0),
+                      child: child,
                     );
                   },
-                ),
-              ),
-              if (_isOpen)
-                Positioned.fill(
-                  right: _actionWidth,
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.translucent,
-                    onTap: _closePane,
+                  child: Builder(
+                    builder: (context) {
+                      final content = DecoratedBox(
+                        decoration: ShapeDecoration(
+                          color: cs.surface,
+                          shape: widget.shape,
+                        ),
+                        child: IgnorePointer(
+                          ignoring: _isOpen,
+                          child: widget.child,
+                        ),
+                      );
+
+                      if (widget.shape is RoundedRectangleBorder) {
+                        return ClipRRect(
+                          borderRadius: (widget.shape as RoundedRectangleBorder)
+                              .borderRadius
+                              .resolve(Directionality.of(context)),
+                          child: content,
+                        );
+                      }
+
+                      return ClipPath(
+                        clipBehavior: Clip.hardEdge,
+                        clipper: ShapeBorderClipper(shape: widget.shape),
+                        child: content,
+                      );
+                    },
                   ),
                 ),
-            ],
+                if (_isOpen)
+                  Positioned.fill(
+                    right: _actionWidth,
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.translucent,
+                      onTap: _closePane,
+                    ),
+                  ),
+              ],
+            ),
           ),
-        ),
         ),
       ),
     );

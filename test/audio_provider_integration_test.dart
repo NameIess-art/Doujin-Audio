@@ -2193,9 +2193,14 @@ void main() {
           silent: true,
         );
 
+        final refreshedTrack = provider.trackByPath(trackPath);
+        expect(
+          refreshedTrack,
+          same(track),
+          reason: 'before=${track.toJson()} after=${refreshedTrack?.toJson()}',
+        );
         expect(provider.libraryContentRevision, beforeRevision);
         expect(notificationCount, 0);
-        expect(provider.trackByPath(trackPath), isNotNull);
       },
     );
 

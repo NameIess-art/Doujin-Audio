@@ -220,7 +220,8 @@ class LibraryEntrySnapshot {
         existing.isSingle != nextEntry.isSingle ||
         existing.isVideo != nextEntry.isVideo ||
         existing.fileSizeBytes != nextEntry.fileSizeBytes ||
-        existing.modifiedAt != nextEntry.modifiedAt;
+        existing.modifiedAt?.millisecondsSinceEpoch !=
+            nextEntry.modifiedAt?.millisecondsSinceEpoch;
   }
 }
 

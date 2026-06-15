@@ -170,7 +170,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $ffmpegName = 'ffmpeg-N-124953-gd30dead35e-win64-gpl.zip'
-          $expectedSha256 = '1610cd7b4d691f0e70ea6f52b5dba0c9fa6207c62b6936ac9f0178f7527438'
+          $expectedSha256 = '1610cd7b4d691f0e70ea6f52b5dba0c9fa6207c62b6936ac9f0178f7526e046a'
           $zip = Join-Path $env:RUNNER_TEMP $ffmpegName
           $extract = Join-Path $env:RUNNER_TEMP 'ffmpeg'
           Invoke-WebRequest `

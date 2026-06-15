@@ -2,6 +2,12 @@ import 'package:path/path.dart' as path;
 
 abstract final class PathMatcher {
   static final RegExp _invalidPercentEscape = RegExp(r'%(?![0-9A-Fa-f]{2})');
+  static final RegExp _windowsAbsolutePath = RegExp(
+    r'^(?:[A-Za-z]:[\\/]|\\\\)',
+  );
+  static final path.Context _windowsContext = path.Context(
+    style: path.Style.windows,
+  );
 
   static bool isContentUri(String value) => value.startsWith('content://');
 
@@ -39,7 +45,7 @@ abstract final class PathMatcher {
     if (isContentUri(value) || isRemoteUri(value)) {
       return value.trimRightSlash();
     }
-    return path.normalize(value);
+    return _contextFor(value).normalize(value);
   }
 
   static bool equalsNormalized(String first, String second) {
@@ -54,7 +60,8 @@ abstract final class PathMatcher {
       }
       return normalize(first) == normalize(second);
     }
-    return path.equals(normalize(first), normalize(second));
+    final context = _contextFor(first, second);
+    return context.equals(context.normalize(first), context.normalize(second));
   }
 
   static bool containsEquivalent(Iterable<String> candidates, String value) {
@@ -82,8 +89,9 @@ abstract final class PathMatcher {
       return normalizedChild == normalizedParent ||
           normalizedChild.startsWith('$normalizedParent/');
     }
-    return path.equals(normalizedChild, normalizedParent) ||
-        path.isWithin(normalizedParent, normalizedChild);
+    final context = _contextFor(normalizedChild, normalizedParent);
+    return context.equals(normalizedChild, normalizedParent) ||
+        context.isWithin(normalizedParent, normalizedChild);
   }
 
   static bool isWithinOrEqualNormalized(
@@ -102,8 +110,9 @@ abstract final class PathMatcher {
       return normalizedChild == normalizedParent ||
           normalizedChild.startsWith('$normalizedParent/');
     }
-    return normalizedChild == normalizedParent ||
-        path.isWithin(normalizedParent, normalizedChild);
+    final context = _contextFor(normalizedChild, normalizedParent);
+    return context.equals(normalizedChild, normalizedParent) ||
+        context.isWithin(normalizedParent, normalizedChild);
   }
 
   static String? relativeWithin(String child, String parent) {
@@ -125,7 +134,10 @@ abstract final class PathMatcher {
       return childDoc.substring(parentDoc.length + 1);
     }
 
-    return path.relative(child, from: parent).replaceAll('\\', '/');
+    return _contextFor(
+      child,
+      parent,
+    ).relative(child, from: parent).replaceAll('\\', '/');
   }
 
   static String replaceWithinOrEqual(
@@ -148,8 +160,27 @@ abstract final class PathMatcher {
       return _replaceContentPrefix(value, oldParent, newParent);
     }
 
-    final relative = path.relative(value, from: oldParent);
-    return path.normalize(path.join(newParent, relative));
+    final context = _contextFor(value, oldParent, newParent);
+    final relative = context.relative(value, from: oldParent);
+    return context.normalize(context.join(newParent, relative));
+  }
+
+  static String join(String parent, String child) {
+    final context = _contextFor(parent);
+    return context.normalize(context.join(parent, child));
+  }
+
+  static path.Context _contextFor(
+    String first, [
+    String? second,
+    String? third,
+  ]) {
+    if (_windowsAbsolutePath.hasMatch(first) ||
+        (second != null && _windowsAbsolutePath.hasMatch(second)) ||
+        (third != null && _windowsAbsolutePath.hasMatch(third))) {
+      return _windowsContext;
+    }
+    return path.context;
   }
 
   static String? _documentPath(String value) {

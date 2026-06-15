@@ -40,7 +40,7 @@ String? _libraryWorkScopeFolderPath(String libraryRoot, String groupKey) {
     return '$normalizedRoot::$firstSegment';
   }
 
-  return path.normalize(path.join(normalizedRoot, firstSegment));
+  return PathMatcher.join(normalizedRoot, firstSegment);
 }
 
 String? _resolveCoverScopeFolderPath(

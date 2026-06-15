@@ -944,11 +944,15 @@ extension AudioProviderLibrary on AudioProvider {
         existing.isSingle != scanned.isSingle ||
         existing.isVideo != scanned.isVideo ||
         existing.fileSizeBytes != scanned.fileSizeBytes ||
-        existing.modifiedAt != scanned.modifiedAt ||
+        !_sameScanTimestamp(existing.modifiedAt, scanned.modifiedAt) ||
         existing.coverCachePath == null && scanned.coverCachePath != null ||
         existing.lyricsPath == null && scanned.lyricsPath != null ||
         existing.manualCoverPath == null && scanned.manualCoverPath != null ||
         existing.duration == Duration.zero && scanned.duration != Duration.zero;
+  }
+
+  bool _sameScanTimestamp(DateTime? first, DateTime? second) {
+    return first?.millisecondsSinceEpoch == second?.millisecondsSinceEpoch;
   }
 
   MusicTrack _mergeExistingTrackState(MusicTrack existing, MusicTrack scanned) {

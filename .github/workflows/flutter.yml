@@ -120,7 +120,7 @@ jobs:
           test -x "$apksigner"
           "$apksigner" verify --verbose --print-certs "$apk" | tee apk-signature.txt
           actual_cert_sha256="$(
-            sed -n 's/^Signer #1 certificate SHA-256 digest: //p' apk-signature.txt |
+            sed -n 's/^.*certificate SHA-256 digest: //p' apk-signature.txt |
               head -n 1 |
               tr '[:upper:]' '[:lower:]'
           )"

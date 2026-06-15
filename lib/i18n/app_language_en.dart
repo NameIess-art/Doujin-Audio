@@ -470,6 +470,8 @@ const Map<String, String> appLanguageEn = {
       'Installer opened. Follow the system prompts to finish updating.',
   'update_install_failed':
       'Could not open the installer. Please try again later.',
+  'update_signature_mismatch':
+      'App signature mismatch. If you installed from an app store, please update there. Otherwise, please uninstall and reinstall.',
   'install_permission_needed':
       'Please allow this app to install unknown apps first.',
   'install_permission_title': 'Allow update installs',

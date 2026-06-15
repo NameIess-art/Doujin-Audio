@@ -413,6 +413,7 @@ const Map<String, String> appLanguageZh = {
   'update_download_failed': '下载更新失败，请检查网络后重试。',
   'update_ready_install': '安装器已打开，请按提示完成更新。',
   'update_install_failed': '无法打开安装器，请稍后重试。',
+  'update_signature_mismatch': '应用签名不一致。这通常是因为当前应用从应用商店安装。请去应用商店更新，或卸载后重新安装。',
   'install_permission_needed': '请先允许本应用安装未知来源应用。',
   'install_permission_title': '允许安装更新',
   'install_permission_message': '为了继续下载并安装新版本，需要先允许本应用安装未知来源应用。现在前往系统设置开启吗？',

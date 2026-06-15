@@ -1,3 +1,18 @@
+# Nameless Audio v0.10.1
+
+## 稳定性与修复
+
+- 拦截并提示 Android 端因通过应用商店安装引起的签名不匹配导致的应用内更新失败。
+
+## 发布资产
+
+- `NamelessAudio-android-arm64-v0.10.1.apk`
+- `NamelessAudio-android-arm64-v0.10.1.apk.sha256`
+- `NamelessAudio-windows-x64-v0.10.1.zip`
+- `NamelessAudio-windows-x64-v0.10.1.zip.sha256`
+
+Windows ZIP 包含完整 Flutter 运行时、`libmpv-2.dll`、FFmpeg 和 FFprobe。Android 与 Windows 应用内更新均依赖同名 `.sha256` 文件完成下载校验。
+
 # Nameless Audio v0.10.0
 
 ## 新功能与体验
@@ -15,12 +30,3 @@
 - 修复 Windows 全局字幕悬浮窗首次显示异常、黑屏、无法交互、后续无法再次显示和开启时崩溃的问题。
 - 修复 Windows 播放速度滚轮一次跨越多个刻度、横屏控制台菜单缺少圆角、本地曲库滚动范围溢出等问题。
 - 完善 Windows ZIP 自动更新：校验 SHA-256、解压覆盖安装目录、必要时提权并自动重启。
-
-## 发布资产
-
-- `NamelessAudio-android-arm64-v0.10.0.apk`
-- `NamelessAudio-android-arm64-v0.10.0.apk.sha256`
-- `NamelessAudio-windows-x64-v0.10.0.zip`
-- `NamelessAudio-windows-x64-v0.10.0.zip.sha256`
-
-Windows ZIP 包含完整 Flutter 运行时、`libmpv-2.dll`、FFmpeg 和 FFprobe。Android 与 Windows 应用内更新均依赖同名 `.sha256` 文件完成下载校验。

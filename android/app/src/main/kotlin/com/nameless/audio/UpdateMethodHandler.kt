@@ -49,6 +49,11 @@ internal class UpdateMethodHandler(
         if (!apkFile.exists() || apkFile.length() <= 0) {
             return installResult(false, false, "APK file does not exist.")
         }
+
+        if (!checkSignatureMatch(apkFile)) {
+            return installResult(false, false, "signature_mismatch")
+        }
+
         return try {
             val uri = FileProvider.getUriForFile(
                 activity,
@@ -64,6 +69,31 @@ internal class UpdateMethodHandler(
             installResult(true, false, null)
         } catch (error: Exception) {
             installResult(false, false, error.message ?: "Cannot open installer.")
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun checkSignatureMatch(apkFile: File): Boolean {
+        try {
+            val pm = activity.packageManager
+            val flags = android.content.pm.PackageManager.GET_SIGNATURES
+            val installedInfo = pm.getPackageInfo(activity.packageName, flags)
+            val apkInfo = pm.getPackageArchiveInfo(apkFile.absolutePath, flags)
+
+            val installedSigs = installedInfo?.signatures
+            val apkSigs = apkInfo?.signatures
+
+            if (installedSigs == null || apkSigs == null) return true
+            if (installedSigs.size != apkSigs.size) return false
+
+            for (i in installedSigs.indices) {
+                if (!installedSigs[i].toByteArray().contentEquals(apkSigs[i].toByteArray())) {
+                    return false
+                }
+            }
+            return true
+        } catch (e: Exception) {
+            return true
         }
     }
 

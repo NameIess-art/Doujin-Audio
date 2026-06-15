@@ -1,11 +1,46 @@
 package com.nameless.audio
 
+import android.media.AudioManager
 import androidx.media3.common.Player
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class NativePlaybackFocusRecoveryPolicyTest {
+    @Test
+    fun `duckable focus loss keeps playback running`() {
+        assertFalse(
+            shouldPauseForAudioFocusChange(
+                AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK
+            )
+        )
+    }
+
+    @Test
+    fun `transient focus loss pauses until focus returns`() {
+        assertTrue(
+            shouldPauseForAudioFocusChange(AudioManager.AUDIOFOCUS_LOSS_TRANSIENT)
+        )
+    }
+
+    @Test
+    fun `keeps native transient focus pause pending through player callback`() {
+        assertTrue(
+            shouldPreservePendingAudioFocusResume(
+                playWhenReady = false,
+                focusLossMayResume = true,
+                alreadyPending = true
+            )
+        )
+        assertFalse(
+            shouldPreservePendingAudioFocusResume(
+                playWhenReady = true,
+                focusLossMayResume = true,
+                alreadyPending = true
+            )
+        )
+    }
+
     @Test
     fun `tracks transient audio focus loss pauses for auto resume`() {
         assertTrue(

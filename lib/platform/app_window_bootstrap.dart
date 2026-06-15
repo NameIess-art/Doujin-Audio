@@ -1,12 +1,9 @@
-import 'dart:convert';
 import 'dart:io';
 
-import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_acrylic/flutter_acrylic.dart';
 import 'package:window_manager/window_manager.dart';
 
-import '../windows/subtitle_overlay_window.dart';
 import 'app_platform.dart';
 
 class _MainWindowListener extends WindowListener {
@@ -18,48 +15,6 @@ class _MainWindowListener extends WindowListener {
 }
 
 abstract final class AppWindowBootstrap {
-  static bool isSubtitleOverlayWindowLaunch(List<String> args) {
-    return AppPlatform.isWindows &&
-        args.length >= 3 &&
-        args.first == 'multi_window';
-  }
-
-  static Future<bool> runSubtitleOverlayWindowIfNeeded(
-    List<String> args,
-  ) async {
-    if (!isSubtitleOverlayWindowLaunch(args)) return false;
-
-    final windowId = args[1];
-    final argument = args[2].isEmpty
-        ? const <String, dynamic>{}
-        : jsonDecode(args[2]) as Map<String, dynamic>;
-
-    await windowManager.ensureInitialized();
-    await Window.initialize();
-    await Window.setEffect(effect: WindowEffect.transparent, color: Colors.transparent);
-
-    const windowOptions = WindowOptions(
-      size: Size(800, 200),
-      center: true,
-      backgroundColor: Colors.transparent,
-      skipTaskbar: true,
-      titleBarStyle: TitleBarStyle.hidden,
-      alwaysOnTop: true,
-    );
-    windowManager.waitUntilReadyToShow(windowOptions, () async {
-      await windowManager.setAsFrameless();
-      await windowManager.show();
-    });
-
-    runApp(
-      SubtitleOverlayWindow(
-        windowController: WindowController.fromWindowId(windowId),
-        args: argument,
-      ),
-    );
-    return true;
-  }
-
   static Future<void> initializeMainWindow() async {
     if (!AppPlatform.isWindows && !Platform.isMacOS) return;
 

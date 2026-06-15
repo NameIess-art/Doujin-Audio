@@ -31,7 +31,7 @@ import 'services/app_database.dart';
 import 'widgets/global_shortcuts.dart';
 import 'widgets/app_error_view.dart';
 
-Future<void> main(List<String> args) async {
+Future<void> main() async {
   await runZonedGuarded<Future<void>>(() async {
     WidgetsFlutterBinding.ensureInitialized();
     await AppLogService.initialize();
@@ -47,13 +47,11 @@ Future<void> main(List<String> args) async {
         return AppErrorView(details: details);
       };
     }
-    await _runAudioPlayerApp(args);
+    await _runAudioPlayerApp();
   }, AppLogService.logZoneError);
 }
 
-Future<void> _runAudioPlayerApp(List<String> args) async {
-  if (await AppWindowBootstrap.runSubtitleOverlayWindowIfNeeded(args)) return;
-
+Future<void> _runAudioPlayerApp() async {
   AppDatabase.initializeForPlatform();
   await AppWindowBootstrap.initializeMainWindow();
 

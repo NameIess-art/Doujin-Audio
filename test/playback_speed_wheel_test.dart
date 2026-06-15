@@ -39,4 +39,19 @@ void main() {
       6,
     );
   });
+
+  test(
+    'desktop playback speed wheel ignores events from the same wheel tick',
+    () {
+      expect(
+        playbackSpeedWheelIndexAfterDesktopScroll(
+          currentIndex: 3,
+          scrollDeltaY: 120,
+          itemCount: 7,
+          wheelLocked: true,
+        ),
+        3,
+      );
+    },
+  );
 }

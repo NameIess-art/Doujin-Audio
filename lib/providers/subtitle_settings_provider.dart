@@ -16,7 +16,6 @@ class SubtitleSettingsState {
 
   final String fontFamily;
   final Color? fontColor;
-  final double backgroundBlur;
   final double backgroundOpacity;
   final Color? backgroundColor;
   final double borderDepth;
@@ -28,7 +27,6 @@ class SubtitleSettingsState {
     this.positions = const {},
     this.fontFamily = '',
     this.fontColor,
-    this.backgroundBlur = 12,
     this.backgroundOpacity = 0.2,
     this.backgroundColor,
     this.borderDepth = 0.5,
@@ -45,7 +43,6 @@ class SubtitleSettingsState {
     Map<String, double>? positions,
     String? fontFamily,
     Color? fontColor,
-    double? backgroundBlur,
     double? backgroundOpacity,
     Color? backgroundColor,
     double? borderDepth,
@@ -59,7 +56,6 @@ class SubtitleSettingsState {
       positions: positions ?? this.positions,
       fontFamily: fontFamily ?? this.fontFamily,
       fontColor: clearFontColor ? null : (fontColor ?? this.fontColor),
-      backgroundBlur: backgroundBlur ?? this.backgroundBlur,
       backgroundOpacity: backgroundOpacity ?? this.backgroundOpacity,
       backgroundColor: clearBackgroundColor
           ? null
@@ -117,9 +113,6 @@ class SubtitleSettingsNotifier extends StateNotifier<SubtitleSettingsState> {
       if (c != null) fontColor = Color(c);
     }
 
-    final blurStr = await AppPreferences.getString('subtitle_background_blur');
-    final backgroundBlur = double.tryParse(blurStr ?? '') ?? 12;
-
     Color? backgroundColor;
     final bgColorStr = await AppPreferences.getString(
       'subtitle_background_color',
@@ -143,7 +136,6 @@ class SubtitleSettingsNotifier extends StateNotifier<SubtitleSettingsState> {
       positions: positions,
       fontFamily: fontFamily,
       fontColor: fontColor,
-      backgroundBlur: backgroundBlur,
       backgroundOpacity: backgroundOpacity,
       backgroundColor: backgroundColor,
       borderDepth: borderDepth,
@@ -261,11 +253,6 @@ class SubtitleSettingsNotifier extends StateNotifier<SubtitleSettingsState> {
         color.toARGB32().toRadixString(16).padLeft(8, '0'),
       );
     }
-  }
-
-  void setBackgroundBlur(double blur) {
-    state = state.copyWith(backgroundBlur: blur);
-    AppPreferences.setString('subtitle_background_blur', blur.toString());
   }
 
   void setBackgroundOpacity(double opacity) {

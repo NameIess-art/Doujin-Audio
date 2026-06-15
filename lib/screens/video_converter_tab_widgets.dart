@@ -101,25 +101,22 @@ class _SelectField extends StatelessWidget {
         enabled: enabled,
         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<String>(
-          isExpanded: true,
-          value: value,
-          borderRadius: BorderRadius.circular(14),
-          menuMaxHeight: 320,
-          onChanged: enabled ? onChanged : null,
-          items: items
-              .map(
-                (item) => DropdownMenuItem<String>(
-                  value: item,
-                  child: Text(
-                    displayBuilder(item),
-                    style: const TextStyle(fontWeight: FontWeight.w700),
-                  ),
+      child: UnifiedDropdownButton<String>(
+        isExpanded: true,
+        value: value,
+        menuMaxHeight: 320,
+        onChanged: enabled ? onChanged : null,
+        items: items
+            .map(
+              (item) => DropdownMenuItem<String>(
+                value: item,
+                child: Text(
+                  displayBuilder(item),
+                  style: const TextStyle(fontWeight: FontWeight.w700),
                 ),
-              )
-              .toList(),
-        ),
+              ),
+            )
+            .toList(),
       ),
     );
   }

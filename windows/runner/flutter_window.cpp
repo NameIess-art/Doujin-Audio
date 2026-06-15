@@ -3,8 +3,6 @@
 #include <optional>
 
 #include "flutter/generated_plugin_registrant.h"
-#include "desktop_multi_window/desktop_multi_window_plugin.h"
-
 #include <flutter/method_channel.h>
 #include <flutter/standard_method_codec.h>
 #include <map>
@@ -31,12 +29,8 @@ bool FlutterWindow::OnCreate() {
     return false;
   }
   RegisterPlugins(flutter_controller_->engine());
-  DesktopMultiWindowSetWindowCreatedCallback([](void *controller) {
-    auto *flutter_view_controller =
-        reinterpret_cast<flutter::FlutterViewController *>(controller);
-    auto *registry = flutter_view_controller->engine();
-    RegisterPlugins(registry);
-  });
+  subtitle_overlay_window_ = std::make_unique<SubtitleOverlayWindow>(
+      flutter_controller_->engine()->messenger());
 
   // Register the update channel to provide the app version.
   flutter::MethodChannel<flutter::EncodableValue> update_channel(
@@ -76,6 +70,7 @@ bool FlutterWindow::OnCreate() {
 }
 
 void FlutterWindow::OnDestroy() {
+  subtitle_overlay_window_ = nullptr;
   if (flutter_controller_) {
     flutter_controller_ = nullptr;
   }

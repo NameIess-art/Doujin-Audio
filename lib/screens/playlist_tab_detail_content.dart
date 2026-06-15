@@ -502,7 +502,8 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
                     child: AnimatedOpacity(
                       opacity: _segmentPanelExpanded ? 1.0 : 0.0,
                       duration: const Duration(milliseconds: 180),
-                      child: ClipRect(
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(24),
                         child: BackdropFilter(
                           filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
                           child: Container(

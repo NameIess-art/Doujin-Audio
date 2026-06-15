@@ -202,18 +202,22 @@ class NativePlaybackService : MediaSessionService() {
             }
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
-                audioFocusHeld = false
-                transientAudioFocusLossActive = true
-                // Pause playing sessions so they can be properly resumed on
-                // AUDIOFOCUS_GAIN. Without this, ExoPlayer (handleAudioFocus=
-                // false) keeps playing but the system may mute audio output,
-                // and the sessions are never tracked for pending resume.
-                sessions.values.forEach { session ->
-                    val player = session.playerOrNull()
-                    if (player != null && (player.isPlaying || player.playWhenReady)) {
-                        pendingAudioFocusResumeSessionIds.add(session.sessionId)
-                        player.pause()
+                if (shouldPauseForAudioFocusChange(change)) {
+                    audioFocusHeld = false
+                    transientAudioFocusLossActive = true
+                    sessions.values.forEach { session ->
+                        val player = session.playerOrNull()
+                        if (player != null && (player.isPlaying || player.playWhenReady)) {
+                            pendingAudioFocusResumeSessionIds.add(session.sessionId)
+                            player.pause()
+                        }
                     }
+                } else {
+                    // The focus request explicitly opts into ducking instead
+                    // of pausing. Some vendor builds still dispatch this
+                    // callback; pausing here can leave playback waiting until
+                    // the screen wakes and focus is granted again.
+                    logInfo("audio_focus_duck_continue")
                 }
             }
             AudioManager.AUDIOFOCUS_GAIN -> {
@@ -904,6 +908,12 @@ class NativePlaybackService : MediaSessionService() {
         playWhenReady: Boolean,
         reason: Int
     ) {
+        val preservePendingTransientFocusResume =
+            shouldPreservePendingAudioFocusResume(
+                playWhenReady = playWhenReady,
+                focusLossMayResume = transientAudioFocusLossActive,
+                alreadyPending = pendingAudioFocusResumeSessionIds.contains(sessionId)
+            )
         if (
             shouldTrackTransientAudioFocusPause(
                 playWhenReady = playWhenReady,
@@ -913,7 +923,7 @@ class NativePlaybackService : MediaSessionService() {
             )
         ) {
             pendingAudioFocusResumeSessionIds.add(sessionId)
-        } else {
+        } else if (!preservePendingTransientFocusResume) {
             pendingAudioFocusResumeSessionIds.remove(sessionId)
         }
         logInfo(
@@ -1603,6 +1613,18 @@ internal fun shouldTrackTransientAudioFocusPause(
         reason == Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_FOCUS_LOSS &&
         focusLossMayResume &&
         !playbackSuspended
+}
+
+internal fun shouldPauseForAudioFocusChange(change: Int): Boolean {
+    return change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT
+}
+
+internal fun shouldPreservePendingAudioFocusResume(
+    playWhenReady: Boolean,
+    focusLossMayResume: Boolean,
+    alreadyPending: Boolean
+): Boolean {
+    return !playWhenReady && focusLossMayResume && alreadyPending
 }
 
 internal fun shouldResumePendingAudioFocusPause(

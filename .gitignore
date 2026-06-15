@@ -64,3 +64,4 @@ AGENTS.md
 
 # Analyzer output
 analyze_output.txt
+/debug_log*.txt

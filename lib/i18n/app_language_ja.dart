@@ -421,7 +421,6 @@ const Map<String, String> appLanguageJa = {
   'update_download_failed': '更新のダウンロードに失敗しました。ネットワークを確認してください。',
   'update_ready_install': 'インストーラーを開きました。画面の指示に従って更新してください。',
   'update_install_failed': 'インストーラーを開けませんでした。後でもう一度お試しください。',
-  'update_signature_mismatch': 'アプリの署名が一致しません。アプリストアからインストールした場合はストアで更新してください。それ以外の場合は再インストールしてください。',
   'install_permission_needed': 'このアプリから不明なアプリをインストールする許可を有効にしてください。',
   'install_permission_title': 'アップデートのインストールを許可',
   'install_permission_message':

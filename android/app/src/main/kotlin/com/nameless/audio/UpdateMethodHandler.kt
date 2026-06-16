@@ -50,11 +50,6 @@ internal class UpdateMethodHandler(
             return installResult(false, false, "APK file does not exist.")
         }
 
-        val sigCheckResult = checkSignatureMatch(apkFile)
-        if (sigCheckResult != null) {
-            return installResult(false, false, sigCheckResult)
-        }
-
         return try {
             val uri = FileProvider.getUriForFile(
                 activity,
@@ -70,49 +65,6 @@ internal class UpdateMethodHandler(
             installResult(true, false, null)
         } catch (error: Exception) {
             installResult(false, false, error.message ?: "Cannot open installer.")
-        }
-    }
-
-    @Suppress("DEPRECATION")
-    private fun checkSignatureMatch(apkFile: File): String? {
-        try {
-            val pm = activity.packageManager
-            val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                android.content.pm.PackageManager.GET_SIGNING_CERTIFICATES
-            } else {
-                android.content.pm.PackageManager.GET_SIGNATURES
-            }
-            
-            val installedInfo = pm.getPackageInfo(activity.packageName, flags)
-
-            val installedSigs = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                installedInfo.signingInfo?.apkContentsSigners ?: installedInfo.signatures
-            } else {
-                installedInfo.signatures
-            }
-
-            if (installedSigs == null || installedSigs.isEmpty()) {
-                return "signature_exception: could not get installed signatures"
-            }
-
-            // The official GitHub Actions release keystore SHA-256 fingerprint
-            val officialSha256 = "ecc103f8035e874babc2df255d5f003b5eedb81e37a8154a0afd4a52b10088a2"
-            
-            val md = java.security.MessageDigest.getInstance("SHA-256")
-            val currentSha256 = installedSigs[0].toByteArray().let { bytes ->
-                md.digest(bytes).joinToString("") { "%02x".format(it) }
-            }
-
-            if (currentSha256 != officialSha256) {
-                // If the currently installed app does not match the official signature, 
-                // it means it was installed from an app store or a custom build.
-                // It will conflict with the official GitHub update.
-                return "signature_mismatch"
-            }
-            
-            return null
-        } catch (e: Exception) {
-            return "signature_exception: ${e.message}"
         }
     }
 

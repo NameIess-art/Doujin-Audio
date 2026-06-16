@@ -1,3 +1,16 @@
+# Nameless Audio v0.10.3
+
+## 稳定性与修复
+
+- 修复 GitHub 应用内更新被错误拦截为“应用签名不一致”的问题。更新流程不再依赖应用内硬编码证书指纹，下载校验通过后直接交给 Android 系统安装器处理覆盖安装。
+
+## 发布资产
+
+- `NamelessAudio-android-arm64-v0.10.3.apk`
+- `NamelessAudio-android-arm64-v0.10.3.apk.sha256`
+- `NamelessAudio-windows-x64-v0.10.3.zip`
+- `NamelessAudio-windows-x64-v0.10.3.zip.sha256`
+
 # Nameless Audio v0.10.2
 
 ## 稳定性与修复
@@ -16,7 +29,7 @@
 
 ## 稳定性与修复
 
-- 拦截并提示 Android 端因通过应用商店安装引起的签名不匹配导致的应用内更新失败。
+- 拦截并提示 Android 端因当前安装包签名不匹配导致的应用内更新失败。
 
 ## 发布资产
 

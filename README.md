@@ -2,9 +2,9 @@
 
 Nameless Audio 是一款面向 ASMR、语音作品和大体量本地媒体库的跨平台播放器，使用 Flutter、Android 原生 Media3 / ExoPlayer 与 Windows libmpv 混合实现。
 
-当前版本：`0.10.3+1003`
+当前版本：`0.10.4+1004`
 
-最新发布页：[v0.10.3](https://github.com/NameIess-art/nameless-audio/releases/tag/v0.10.3)
+最新发布页：[v0.10.4](https://github.com/NameIess-art/nameless-audio/releases/tag/v0.10.4)
 
 [MIT License](LICENSE) · [隐私说明](PRIVACY.md) · [发行质量说明](docs/release-quality.md)
 
@@ -12,8 +12,8 @@ Nameless Audio 是一款面向 ASMR、语音作品和大体量本地媒体库的
 
 | 平台 | 发布资产 | 说明 |
 |---|---|---|
-| Android arm64-v8a | `NamelessAudio-android-arm64-v0.10.3.apk` | 适用于大多数 64 位 Android 手机 |
-| Windows x64 | `NamelessAudio-windows-x64-v0.10.3.zip` | 解压完整 ZIP 后运行 `nameless_audio.exe` |
+| Android arm64-v8a | `NamelessAudio-android-arm64-v0.10.4.apk` | 适用于大多数 64 位 Android 手机 |
+| Windows x64 | `NamelessAudio-windows-x64-v0.10.4.zip` | 解压完整 ZIP 后运行 `nameless_audio.exe` |
 
 Windows ZIP 包含应用运行所需的完整 Flutter 运行时、`libmpv-2.dll`、FFmpeg 和 FFprobe。不要只复制 EXE。
 
@@ -91,10 +91,10 @@ Windows ZIP 包含应用运行所需的完整 Flutter 运行时、`libmpv-2.dll`
 每个更新资产必须同时发布同名校验文件：
 
 ```text
-NamelessAudio-android-arm64-v0.10.3.apk
-NamelessAudio-android-arm64-v0.10.3.apk.sha256
-NamelessAudio-windows-x64-v0.10.3.zip
-NamelessAudio-windows-x64-v0.10.3.zip.sha256
+NamelessAudio-android-arm64-v0.10.4.apk
+NamelessAudio-android-arm64-v0.10.4.apk.sha256
+NamelessAudio-windows-x64-v0.10.4.zip
+NamelessAudio-windows-x64-v0.10.4.zip.sha256
 ```
 
 ## 支持格式
@@ -147,7 +147,7 @@ build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
 
 ```powershell
 flutter build windows --release
-Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath dist\NamelessAudio-windows-x64-v0.10.3.zip -Force
+Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath dist\NamelessAudio-windows-x64-v0.10.4.zip -Force
 ```
 
 ## 发布流程
@@ -160,14 +160,13 @@ Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath dist\
 4. 为两端资产生成 `.sha256` 并上传到同一个 GitHub Release。
 
 ```powershell
-dart run tool/verify_release.dart --tag v0.10.3
-git tag v0.10.3
-git push origin main v0.10.3
+dart run tool/verify_release.dart --tag v0.10.4
+git tag v0.10.4
+git push origin main v0.10.4
 ```
 
-## v0.10.3 重点变更
+## v0.10.4 重点变更
 
-- 修复 GitHub 应用内更新被错误拦截为“应用签名不一致”的问题。
-- 更新流程不再依赖应用内硬编码证书指纹，校验通过后交给 Android 系统安装器处理覆盖安装。
+- 修复通过应用内更新下载的包在 Android 上无法直接覆盖安装，抛出应用签名不一致的错误。
 
-完整内容见 [release_notes.md](release_notes.md)。
+完整内容见 [release_notes.md](release_notes.md).

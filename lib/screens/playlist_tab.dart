@@ -71,7 +71,6 @@ Future<String?> _coverFutureForTrack(
 PageRoute<void> buildSessionDetailRoute({required String sessionId}) {
   return buildAppOverlayRoute(
     child: SessionDetailPage(sessionId: sessionId),
-    beginOffset: const Offset(0, 1.0),
     reverseDuration: Duration.zero,
   );
 }

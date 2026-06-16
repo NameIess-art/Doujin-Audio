@@ -24,10 +24,51 @@ class SecondaryOverlayConfig {
 
 const kSecondaryOverlayConfig = SecondaryOverlayConfig();
 
+Widget buildCenterExpandTransition({
+  required BuildContext context,
+  required Animation<double> animation,
+  required Widget child,
+}) {
+  if (MediaQuery.disableAnimationsOf(context)) return child;
+  final curvedAnimation = CurvedAnimation(
+    parent: animation,
+    curve: Curves.fastOutSlowIn,
+    reverseCurve: Curves.easeInCubic,
+  );
+  final opacityAnimation = CurvedAnimation(
+    parent: animation,
+    curve: Curves.easeOut,
+    reverseCurve: Curves.easeIn,
+  );
+
+  return ScaleTransition(
+    scale: Tween<double>(begin: 0.0, end: 1.0).animate(curvedAnimation),
+    child: FadeTransition(opacity: opacityAnimation, child: child),
+  );
+}
+
+class CenterScalePageTransitionsBuilder extends PageTransitionsBuilder {
+  const CenterScalePageTransitionsBuilder();
+
+  @override
+  Widget buildTransitions<T>(
+    PageRoute<T> route,
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) {
+    return buildCenterExpandTransition(
+      context: context,
+      animation: animation,
+      child: child,
+    );
+  }
+}
+
 PageRouteBuilder<T> buildAppPageRoute<T>({
   required Widget child,
   RouteSettings? settings,
-  Offset beginOffset = const Offset(0, 0.032),
   Duration duration = const Duration(milliseconds: 240),
   Duration reverseDuration = const Duration(milliseconds: 200),
 }) {
@@ -37,27 +78,10 @@ PageRouteBuilder<T> buildAppPageRoute<T>({
     reverseTransitionDuration: reverseDuration,
     pageBuilder: (context, animation, secondaryAnimation) => child,
     transitionsBuilder: (context, animation, secondaryAnimation, routedChild) {
-      if (MediaQuery.disableAnimationsOf(context)) return routedChild;
-      final opacityAnimation = CurvedAnimation(
-        parent: animation,
-        curve: Curves.easeOut,
-        reverseCurve: Curves.easeIn,
-      );
-      final offsetAnimation = CurvedAnimation(
-        parent: animation,
-        curve: Curves.easeOutCubic,
-        reverseCurve: Curves.easeInCubic,
-      );
-
-      return FadeTransition(
-        opacity: opacityAnimation,
-        child: SlideTransition(
-          position: Tween<Offset>(
-            begin: const Offset(0, 0.028),
-            end: Offset.zero,
-          ).animate(offsetAnimation),
-          child: routedChild,
-        ),
+      return buildCenterExpandTransition(
+        context: context,
+        animation: animation,
+        child: routedChild,
       );
     },
   );
@@ -66,7 +90,6 @@ PageRouteBuilder<T> buildAppPageRoute<T>({
 PageRouteBuilder<T> buildAppOverlayRoute<T>({
   required Widget child,
   RouteSettings? settings,
-  Offset beginOffset = const Offset(0, 0.024),
   Duration duration = const Duration(milliseconds: 220),
   Duration reverseDuration = const Duration(milliseconds: 180),
 }) {
@@ -78,27 +101,10 @@ PageRouteBuilder<T> buildAppOverlayRoute<T>({
     reverseTransitionDuration: reverseDuration,
     pageBuilder: (context, animation, secondaryAnimation) => child,
     transitionsBuilder: (context, animation, secondaryAnimation, routedChild) {
-      if (MediaQuery.disableAnimationsOf(context)) return routedChild;
-      final opacityAnimation = CurvedAnimation(
-        parent: animation,
-        curve: Curves.easeOut,
-        reverseCurve: Curves.easeIn,
-      );
-      final offsetAnimation = CurvedAnimation(
-        parent: animation,
-        curve: Curves.easeOutCubic,
-        reverseCurve: Curves.easeInCubic,
-      );
-
-      return FadeTransition(
-        opacity: opacityAnimation,
-        child: SlideTransition(
-          position: Tween<Offset>(
-            begin: const Offset(0, 0.024),
-            end: Offset.zero,
-          ).animate(offsetAnimation),
-          child: routedChild,
-        ),
+      return buildCenterExpandTransition(
+        context: context,
+        animation: animation,
+        child: routedChild,
       );
     },
   );

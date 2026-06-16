@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../services/app_preferences.dart';
+import '../widgets/app_transitions.dart';
 
 class ThemeProvider with ChangeNotifier {
   static const _themeModeKey = 'themeMode';
@@ -328,32 +329,6 @@ class ThemeProvider with ChangeNotifier {
         crossAxisMargin: 4,
         mainAxisMargin: 4,
         radius: const Radius.circular(8),
-      ),
-    );
-  }
-}
-
-class CenterScalePageTransitionsBuilder extends PageTransitionsBuilder {
-  const CenterScalePageTransitionsBuilder();
-
-  @override
-  Widget buildTransitions<T>(
-    PageRoute<T> route,
-    BuildContext context,
-    Animation<double> animation,
-    Animation<double> secondaryAnimation,
-    Widget child,
-  ) {
-    return ScaleTransition(
-      scale: Tween<double>(begin: 0.0, end: 1.0).animate(
-        CurvedAnimation(parent: animation, curve: Curves.fastOutSlowIn),
-      ),
-      child: FadeTransition(
-        opacity: Tween<double>(
-          begin: 0.0,
-          end: 1.0,
-        ).animate(CurvedAnimation(parent: animation, curve: Curves.easeIn)),
-        child: child,
       ),
     );
   }

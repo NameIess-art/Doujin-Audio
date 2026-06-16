@@ -365,7 +365,7 @@ const Map<String, String> appLanguageZh = {
   'restore_backup_confirm': '恢复将替换当前曲库数据库和可迁移设置。失败时会自动回滚，是否继续？',
   'backup_exported': '备份已导出。',
   'backup_invalid': '备份无效、损坏或版本不受支持。',
-  'backup_restored_restart': '备份已恢复。请重新启动应用以载入恢复的数据。',
+  'backup_restored_restart': '备份已恢复，恢复的数据已载入。',
   'export_diagnostics': '导出诊断报告',
   'export_diagnostics_subtitle': '导出脱敏日志等诊断信息。',
   'diagnostics_exported': '诊断报告已导出。',

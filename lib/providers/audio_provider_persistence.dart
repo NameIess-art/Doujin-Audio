@@ -9,6 +9,141 @@ void _logAudioProviderPersistenceFailure(Object error, StackTrace stackTrace) {
 }
 
 extension AudioProviderPersistence on AudioProvider {
+  Future<void> reloadPersistedStateAfterBackupRestore() async {
+    if (_isDisposed) return;
+    await _resetRuntimeStateForPersistenceReload();
+    await _loadData();
+  }
+
+  Future<void> _resetRuntimeStateForPersistenceReload() async {
+    _isInitialized = false;
+    _cachedPrefs = null;
+
+    _saveSessionStateTimer?.cancel();
+    _saveSessionStateTimer = null;
+    _saveSessionOrderTimer?.cancel();
+    _saveSessionOrderTimer = null;
+    _scanProgressNotifyTimer?.cancel();
+    _scanProgressNotifyTimer = null;
+    _deferredWarmupTimer?.cancel();
+    _deferredWarmupTimer = null;
+    _notificationProgressRefreshTimer?.cancel();
+    _notificationProgressRefreshTimer = null;
+    _unifiedNotificationSyncTimer?.cancel();
+    _unifiedNotificationSyncTimer = null;
+    _notificationActionRefreshTimer?.cancel();
+    _notificationStateService.notificationActionRefreshTimer = null;
+    _notificationActionGuardTimeout?.cancel();
+    _notificationStateService.notificationActionGuardTimeout = null;
+
+    _countdownTimer?.cancel();
+    _countdownTimer = null;
+    _autoResumeTimer?.cancel();
+    _autoResumeTimer = null;
+
+    final removedSessions = _sessions.values.toList(growable: false);
+    _sessions.clear();
+    _sessionOrder.clear();
+    _markActiveSessionsDirty();
+    for (final session in removedSessions) {
+      session.isPlaybackStarting = false;
+      session.dispose();
+    }
+    try {
+      await _nativePlaybackRepository.clearAll();
+    } catch (error, stackTrace) {
+      _logAudioProviderPersistenceFailure(error, stackTrace);
+    }
+
+    _deferredVolumeReloadSessionIds.clear();
+    _retargetedPathAliases.clear();
+    _timeSegmentLoopsBySessionId.clear();
+    _timeSegmentLoopBoundSessionIds.clear();
+    _timeSegmentLoopSeekPendingSessionIds.clear();
+
+    _library.clear();
+    _libraryByPath.clear();
+    _libraryIndexByPath.clear();
+    _tracksByGroup.clear();
+    _sortedLibraryTracks = const <MusicTrack>[];
+    _sortedLibraryTrackPaths = const <String>[];
+    _groupOrder.clear();
+    _groupOrderSet.clear();
+    _libraryNodeOrder.clear();
+    _watchedFolders.clear();
+    _watchedLibraries.clear();
+    _excludedLibraryFolders.clear();
+    _excludedLibraryTracks.clear();
+    _libraryService.libraryEntriesByLibrary.clear();
+    _isScanning = false;
+    _isBackgroundScanning = false;
+    _scanCurrentFolder = '';
+    _scanFoundCount = 0;
+    _scanDuplicateCount = 0;
+    _scanFailureCount = 0;
+    _cachedLibraryTree = const <LibraryNode>[];
+    _libraryTreeBuildFuture = null;
+    _libraryTreeBuildRevision = -1;
+    _cachedLibraryLeafFolderCount = 0;
+    _libraryBatchDepth = 0;
+    _libraryBatchChanged = false;
+    _libraryBatchChangedGroupOrder = false;
+    _libraryBatchPersistTracks.clear();
+    _libraryBatchPersistEntriesByKey.clear();
+    _markLibraryStructureDirty();
+
+    _resetTimerRuntimeState();
+    _timerDraftMode = TimerMode.manual;
+    _timerDraftDuration = const Duration(minutes: 30);
+    _autoResumeEnabled = false;
+    _autoResumeHour = 7;
+    _autoResumeMinute = 0;
+
+    _converterFormat = 'mp3';
+    _converterBitrate = '320k';
+    _multiThreadPlaybackEnabled = false;
+    _notificationsEnabled = true;
+    _showPlaybackCard = true;
+    _startupPage = StartupPage.library;
+    _autoPlayAddedSessions = true;
+    _autoCheckUpdates = false;
+    _settingsRepository.recordPlaybackProgress = true;
+    _settingsRepository.blurPlayerBackgroundEnabled = true;
+    _settingsRepository.uiBlurEffectEnabled = true;
+    _dlsiteMetadataLanguage = AppLanguage.ja;
+    _settingsRepository.cardInfoFields = CardInfoField.defaults;
+    _settingsRepository.cardPositionsLocked = false;
+    _settingsRepository.customEqPresets = const <EqPreset>[];
+    _maxCacheBytes = AppCacheService.defaultMaxCacheBytes;
+
+    _notificationFocusSessionId = null;
+    _unifiedNotificationSyncKey = null;
+    _unifiedNotificationSyncInFlight = false;
+    _unifiedNotificationSyncPending = false;
+    _queuedNotificationRefreshSessionId = null;
+    _notificationsDismissedWhilePaused = false;
+    _notificationStateService.notificationActionRefreshPending = false;
+    _keepAliveSyncDeferred = false;
+    _subtitleTrackFutures.clear();
+    _subtitleTracks.clear();
+    _subtitleTrackResultFutures.clear();
+    _notificationSubtitleTexts.clear();
+    _notificationSubtitleTrackPaths.clear();
+    _clearResolvedCoverPaths();
+    _audioLibraryCategorySnapshot = null;
+    _audioLibraryCategorySnapshotFuture = null;
+    _audioLibraryCategoryFutureStructureRevision = -1;
+    _audioLibraryCategoryFutureDetailRevision = -1;
+
+    try {
+      await _clearUnifiedPlaybackNotificationsOnPlatform();
+    } catch (error, stackTrace) {
+      _logAudioProviderPersistenceFailure(error, stackTrace);
+    }
+    _syncKeepCpuAwake();
+    _notifyListeners();
+  }
+
   Future<void> _loadLibrary() async {
     try {
       final db = _audioDatabaseRepository;

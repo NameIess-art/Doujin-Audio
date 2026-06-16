@@ -615,6 +615,105 @@ void main() {
         expect(secondSession.audioEffects.skipSilenceEnabled, isTrue);
       },
     );
+
+    test(
+      'reload after backup restore replaces stale library and sessions',
+      () async {
+        const oldTrack = MusicTrack(
+          path: 'https://example.com/old.mp3',
+          displayName: 'old',
+          groupKey: 'old',
+          groupTitle: 'Old',
+          groupSubtitle: 'Old',
+          isSingle: false,
+        );
+        const restoredSessionId = 'backup_restored_session';
+        const restoredTrack = MusicTrack(
+          path: 'https://example.com/restored-after-backup.mp3',
+          displayName: 'restored',
+          groupKey: 'restored',
+          groupTitle: 'Restored',
+          groupSubtitle: 'Restored',
+          isSingle: false,
+        );
+
+        final preparedPaths = <String>[];
+        var clearAllCalls = 0;
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+              switch (call.method) {
+                case NativePlaybackMethod.prepareSession:
+                  final args = call.arguments as Map<Object?, Object?>;
+                  preparedPaths.add(args['path'] as String);
+                  return <String, Object?>{'ok': true, 'value': null};
+                case NativePlaybackMethod.clearAll:
+                  clearAllCalls++;
+                  return <String, Object?>{'ok': true, 'value': null};
+                case NativePlaybackMethod.setForegroundEnabled:
+                  return <String, Object?>{'ok': true, 'value': null};
+                case NativePlaybackMethod.snapshot:
+                  return <String, Object?>{
+                    'ok': true,
+                    'value': <String, Object?>{'sessions': <Object?>[]},
+                  };
+                default:
+                  return <String, Object?>{'ok': true, 'value': null};
+              }
+            });
+
+        provider.addTracks(
+          <MusicTrack>[oldTrack],
+          notify: false,
+          persist: false,
+        );
+        await provider.spawnSession(oldTrack, autoPlay: false);
+        await provider.setAutoPlayAddedSessions(false);
+
+        final databaseRepository = AudioDatabaseRepository(
+          database: AppDatabase.test(db),
+        );
+        await databaseRepository.saveAllTracks(<MusicTrack>[restoredTrack]);
+        await databaseRepository.saveAllSessions(<PersistedSession>[
+          const PersistedSession(
+            id: restoredSessionId,
+            trackPath: 'https://example.com/restored-after-backup.mp3',
+            loopModeIndex: 1,
+            volume: 1.0,
+            positionMs: 0,
+            durationMs: 0,
+            customQueueTracks: null,
+            channelSwapEnabled: false,
+            sortOrder: 0,
+            createdAtMs: 1,
+          ),
+        ]);
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.remove('playback_settings_v1');
+        await prefs.setString(
+          'session_order_v1',
+          json.encode(<String>[restoredSessionId]),
+        );
+        await prefs.setString(
+          'watched_folders_v1',
+          json.encode(<String>['restored']),
+        );
+
+        await provider.reloadPersistedStateAfterBackupRestore();
+
+        expect(clearAllCalls, greaterThanOrEqualTo(1));
+        expect(provider.trackByPath(oldTrack.path), isNull);
+        expect(provider.trackByPath(restoredTrack.path), isNotNull);
+        expect(provider.watchedFolders, <String>['restored']);
+        expect(provider.autoPlayAddedSessions, isTrue);
+        expect(provider.activeSessions, hasLength(1));
+        expect(provider.activeSessions.single.id, restoredSessionId);
+        expect(
+          provider.activeSessions.single.currentTrackPath,
+          restoredTrack.path,
+        );
+        expect(preparedPaths, contains(restoredTrack.path));
+      },
+    );
   });
 
   group('settings persistence', () {

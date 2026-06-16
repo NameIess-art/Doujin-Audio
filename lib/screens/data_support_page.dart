@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 
 import '../i18n/app_language_provider.dart';
+import '../providers/audio_provider.dart';
 import '../services/app_backup_service.dart';
 import '../services/app_log_service.dart';
 import '../services/diagnostic_report_service.dart';
@@ -104,11 +105,15 @@ class _DataSupportPageState extends State<DataSupportPage> {
         );
         return;
       }
+      await context
+          .read<AudioProvider>()
+          .reloadPersistedStateAfterBackupRestore();
+      if (!mounted) return;
       showAppSnackBar(
         context,
         i18n.tr('backup_restored_restart'),
         tone: AppFeedbackTone.success,
-        icon: Icons.restart_alt_rounded,
+        icon: Icons.check_circle_outline_rounded,
         duration: const Duration(seconds: 4),
       );
     });

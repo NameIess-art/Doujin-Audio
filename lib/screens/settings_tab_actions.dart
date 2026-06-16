@@ -34,15 +34,6 @@ extension _SettingsTabActions on _SettingsTabState {
         return;
       }
       if (!result.ok) {
-        if (result.message == 'signature_mismatch') {
-          showAppSnackBar(
-            context,
-            i18n.tr('update_signature_mismatch'),
-            tone: AppFeedbackTone.destructive,
-            icon: Icons.error_outline_rounded,
-          );
-          return;
-        }
         showAppSnackBar(
           context,
           result.message ?? i18n.tr('update_install_failed'),

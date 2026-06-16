@@ -1,3 +1,17 @@
+# Nameless Audio v0.10.2
+
+## 稳定性与修复
+
+- 恢复备份后会重新加载持久化播放和曲库状态，避免重新导入文件、文件夹或曲库后才能播放音频。
+- 改进 Android 部署和发布签名流程，减少签名或安装来源不一致导致的新版本安装失败。
+
+## 发布资产
+
+- `NamelessAudio-android-arm64-v0.10.2.apk`
+- `NamelessAudio-android-arm64-v0.10.2.apk.sha256`
+- `NamelessAudio-windows-x64-v0.10.2.zip`
+- `NamelessAudio-windows-x64-v0.10.2.zip.sha256`
+
 # Nameless Audio v0.10.1
 
 ## 稳定性与修复

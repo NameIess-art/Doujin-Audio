@@ -19,6 +19,10 @@ For repeatable local release deployment, run
 `powershell -ExecutionPolicy Bypass -File tool/setup_local_release_signing.ps1`
 once. It creates a persistent, Git-ignored local signing identity and does not
 replace the official GitHub Release signing key.
+When that local signing identity exists, local debug APKs use it too, so debug
+and release deployments can update each other on the same device. The release
+deployment script also raises the temporary Android `versionCode` above the
+currently installed app when needed, without changing `pubspec.yaml`.
 The sqlite3 native-assets hook uses each platform's system SQLite library
 (`winsqlite3` on Windows and `sqlite` on Android), so builds do not depend on
 downloading a GitHub-hosted sqlite3 binary.
@@ -26,6 +30,9 @@ Devices carrying a legacy debug-signed release require a one-time migration.
 After exporting a `.nalbackup`, run `script\deploy_arm64.bat --replace-signature`;
 or run `tool/deploy_android_release.ps1 -ReplaceSignature`. The flag explicitly
 allows uninstalling the old package and its local data.
+Running `script\deploy_arm64.bat` without arguments also prompts for the same
+one-time migration when it detects a signature mismatch; type `REPLACE` only
+after exporting a backup.
 Tag workflows create temporary signing files from GitHub Secrets and publish
 arm64 APK/Windows ZIP assets together with SHA-256 checksum files.
 CI also proves that release signing validation fails when `key.properties` is

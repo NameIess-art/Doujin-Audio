@@ -1,3 +1,16 @@
+# Nameless Audio v0.10.4
+
+## 稳定性与修复
+
+- 修复通过应用内更新下载的包在 Android 上无法直接覆盖安装，抛出应用签名不一致的错误。
+
+## 发布资产
+
+- `NamelessAudio-android-arm64-v0.10.4.apk`
+- `NamelessAudio-android-arm64-v0.10.4.apk.sha256`
+- `NamelessAudio-windows-x64-v0.10.4.zip`
+- `NamelessAudio-windows-x64-v0.10.4.zip.sha256`
+
 # Nameless Audio v0.10.3
 
 ## 稳定性与修复

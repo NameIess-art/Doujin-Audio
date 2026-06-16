@@ -370,7 +370,7 @@ const Map<String, String> appLanguageJa = {
       '復元すると現在の曲庫データベースと移行可能な設定が置き換わります。失敗時は自動的に元に戻します。続行しますか？',
   'backup_exported': 'バックアップを出力しました。',
   'backup_invalid': 'バックアップが無効、破損、または未対応です。',
-  'backup_restored_restart': 'バックアップを復元しました。復元データを読み込むにはアプリを再起動してください。',
+  'backup_restored_restart': 'バックアップを復元し、データを読み込みました。',
   'export_diagnostics': '診断レポートを出力',
   'export_diagnostics_subtitle': '診断レポートを出力します。',
   'diagnostics_exported': '診断レポートを出力しました。',

@@ -409,8 +409,7 @@ const Map<String, String> appLanguageEn = {
       'Restoring replaces the current library database and portable settings. Failures are rolled back automatically. Continue?',
   'backup_exported': 'Backup exported.',
   'backup_invalid': 'The backup is invalid, damaged, or unsupported.',
-  'backup_restored_restart':
-      'Backup restored. Restart the app to load the restored data.',
+  'backup_restored_restart': 'Backup restored and loaded.',
   'export_diagnostics': 'Export diagnostics',
   'export_diagnostics_subtitle': 'Export sanitized diagnostic info.',
   'diagnostics_exported': 'Diagnostic report exported.',

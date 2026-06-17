@@ -15,6 +15,10 @@ import java.util.Calendar
 class PlaybackTimerAlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
         val action = intent?.action ?: return
+        PlaybackTimerAlarmScheduler.logInfo(
+            context,
+            "receiver_on_receive action=$action"
+        )
         val generation = intent.getIntExtra(
             PlaybackTimerAlarmScheduler.extraGeneration,
             Int.MIN_VALUE
@@ -34,6 +38,7 @@ object PlaybackTimerAlarmScheduler {
     const val actionAutoResume = "com.nameless.audio.action.AUTO_RESUME"
     const val extraGeneration = "generation"
 
+    private const val logTag = "PlaybackTimerAlarm"
     private const val timerRequestCode = 32001
     private const val autoResumeRequestCode = 32002
     private const val maxServiceDeliveryAttempts = 40
@@ -69,6 +74,13 @@ object PlaybackTimerAlarmScheduler {
         pausedSessionIds: List<String>,
         generation: Int
     ) {
+        logInfo(
+            context,
+            "sync timerMode=$timerModeIndex durationMs=$durationMs " +
+                "waiting=$waitingForPlayback timerEndsAt=$timerEndsAtWallClockMs " +
+                "autoResumeEnabled=$autoResumeEnabled autoResumeAt=$autoResumeAtMs " +
+                "pausedSessionCount=${pausedSessionIds.size} generation=$generation"
+        )
         val runtimeState = StoredPlaybackTimerRuntimeState(
             timerModeIndex = timerModeIndex,
             durationMs = durationMs,
@@ -199,9 +211,15 @@ object PlaybackTimerAlarmScheduler {
             generation != null &&
             runtimeState.generation != generation
         ) {
+            logInfo(
+                context,
+                "execute_skip_stale_generation action=$action expected=${runtimeState.generation} " +
+                    "actual=$generation"
+            )
             finishDelivery(pendingResult, deliveryWakeLock)
             return
         }
+        logInfo(context, "execute_now action=$action generation=$generation")
         deliverToService(
             context = context,
             action = action,
@@ -226,9 +244,11 @@ object PlaybackTimerAlarmScheduler {
         )
         if (service == null) {
             if (attempt >= maxServiceDeliveryAttempts) {
+                logInfo(context, "deliver_to_service_give_up action=$action attempt=$attempt")
                 finishDelivery(pendingResult, deliveryWakeLock)
                 return
             }
+            logInfo(context, "deliver_to_service_retry action=$action attempt=$attempt")
             mainHandler.postDelayed(
                 {
                     deliverToService(
@@ -246,6 +266,7 @@ object PlaybackTimerAlarmScheduler {
         }
 
         try {
+            logInfo(context, "deliver_to_service_execute action=$action")
             when (action) {
                 actionTimerExpired -> executeTimerExpired(context, service, runtimeState)
                 actionAutoResume -> executeAutoResume(context, service, runtimeState)
@@ -286,6 +307,11 @@ object PlaybackTimerAlarmScheduler {
                 NativePlaybackStateStore.loadTimerCandidateSessionIds(context)
             }
         NativePlaybackStateStore.storePausedSessionIds(context, pausedSessionIds)
+        logInfo(
+            context,
+            "timer_expired pausedSessionCount=${pausedSessionIds.size} " +
+                "autoResumeEnabled=${runtimeState?.autoResumeEnabled == true}"
+        )
         val nextAutoResumeAtMs = if ((runtimeState?.autoResumeEnabled == true) &&
             pausedSessionIds.isNotEmpty()
         ) {
@@ -341,7 +367,14 @@ object PlaybackTimerAlarmScheduler {
                     NativePlaybackStateStore.loadTimerCandidateSessionIds(context)
                 }
         if (pausedSessionIds.isNotEmpty()) {
-            service.resumeSessionsForTimer(pausedSessionIds)
+            val resumedSessionIds = service.resumeSessionsForTimer(pausedSessionIds)
+            logInfo(
+                context,
+                "auto_resume requestedSessionCount=${pausedSessionIds.size} " +
+                    "resumedSessionCount=${resumedSessionIds.size}"
+            )
+        } else {
+            logInfo(context, "auto_resume_skip no_paused_sessions")
         }
         NativePlaybackStateStore.clearPausedSessionIds(context)
         NativePlaybackStateStore.clearTimerCandidateSessionIds(context)
@@ -371,6 +404,11 @@ object PlaybackTimerAlarmScheduler {
         val triggerRtcMs = System.currentTimeMillis() + (safeTriggerAtMs - SystemClock.elapsedRealtime())
 
         try {
+            logInfo(
+                context,
+                "schedule_elapsed_alarm action=$action triggerElapsed=$safeTriggerAtMs " +
+                    "triggerRtc=$triggerRtcMs generation=$generation"
+            )
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                 alarmManager.setAlarmClock(
                     AlarmManager.AlarmClockInfo(triggerRtcMs, pendingIntent),
@@ -389,7 +427,8 @@ object PlaybackTimerAlarmScheduler {
                     pendingIntent
                 )
             }
-        } catch (_: SecurityException) {
+        } catch (error: SecurityException) {
+            logWarn(context, "schedule_elapsed_alarm_exact_denied action=$action", error)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 alarmManager.setAndAllowWhileIdle(
                     AlarmManager.ELAPSED_REALTIME_WAKEUP,
@@ -425,6 +464,11 @@ object PlaybackTimerAlarmScheduler {
         val safeTriggerAtMs = triggerAtWallClockMs.coerceAtLeast(System.currentTimeMillis() + 250L)
 
         try {
+            logInfo(
+                context,
+                "schedule_rtc_alarm action=$action triggerAt=$safeTriggerAtMs " +
+                    "generation=$generation"
+            )
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                 alarmManager.setAlarmClock(
                     AlarmManager.AlarmClockInfo(safeTriggerAtMs, pendingIntent),
@@ -443,7 +487,8 @@ object PlaybackTimerAlarmScheduler {
                     pendingIntent
                 )
             }
-        } catch (_: SecurityException) {
+        } catch (error: SecurityException) {
+            logWarn(context, "schedule_rtc_alarm_exact_denied action=$action", error)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 alarmManager.setAndAllowWhileIdle(
                     AlarmManager.RTC_WAKEUP,
@@ -467,6 +512,7 @@ object PlaybackTimerAlarmScheduler {
     ) {
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager
             ?: return
+        logInfo(context, "cancel_alarm action=$action requestCode=$requestCode")
         val pendingIntent = pendingIntent(
             context = context,
             action = action,
@@ -487,9 +533,18 @@ object PlaybackTimerAlarmScheduler {
         val intent = Intent(context, PlaybackTimerAlarmReceiver::class.java).apply {
             this.action = action
             `package` = context.packageName
+            addFlags(Intent.FLAG_RECEIVER_FOREGROUND)
             putExtra(extraGeneration, generation)
         }
         return PendingIntent.getBroadcast(context, requestCode, intent, flags)
+    }
+
+    fun logInfo(context: Context, message: String) {
+        AppFileLogger.info(context.applicationContext, logTag, message)
+    }
+
+    private fun logWarn(context: Context, message: String, error: Throwable) {
+        AppFileLogger.warn(context.applicationContext, logTag, message, error)
     }
 
     private fun elapsedTriggerFromWallClock(triggerAtWallClockMs: Long): Long {

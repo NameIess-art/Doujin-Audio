@@ -512,9 +512,9 @@ class AsmrTrackFile {
     Map<String, Object?>? remoteMetadata,
   }) {
     final playbackUrls = <String>[
-      lowQualityUrl?.trim() ?? '',
       streamUrl?.trim() ?? '',
       downloadUrl?.trim() ?? '',
+      lowQualityUrl?.trim() ?? '',
     ].where((url) => url.isNotEmpty).toSet().toList(growable: false);
     final playbackUrl = playbackUrls.isEmpty ? '' : playbackUrls.first;
     final metadata = Map<String, Object?>.from(

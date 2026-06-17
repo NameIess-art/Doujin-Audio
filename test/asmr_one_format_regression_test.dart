@@ -24,10 +24,10 @@ void main() {
 
     final track = node.toMusicTrack(remoteMetadataKind: 'asmr.one');
 
-    expect(track.path, 'https://example.com/low.m4a');
+    expect(track.path, 'https://example.com/high.m4a');
     expect(track.remoteMetadata?['playbackUrls'], <String>[
-      'https://example.com/low.m4a',
       'https://example.com/high.m4a',
+      'https://example.com/low.m4a',
     ]);
   });
 

@@ -102,7 +102,7 @@ class _FloatingGlassPanel extends ConsumerWidget {
         (s) => s.valueOrNull?.uiBlurEffectEnabled ?? true,
       ),
     );
-    final currentAlpha = blurEnabled ? (isDark ? 0.72 : 0.80) : 0.92;
+    final currentAlpha = blurEnabled ? (isDark ? 0.72 : 0.80) : 0.95;
 
     Widget buildPanel() => DecoratedBox(
       decoration: BoxDecoration(

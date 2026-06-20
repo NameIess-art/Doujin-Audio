@@ -53,7 +53,7 @@ class TopPageHeader extends ConsumerWidget {
         (s) => s.valueOrNull?.uiBlurEffectEnabled ?? true,
       ),
     );
-    final currentAlpha = blurEnabled ? (isDark ? 0.75 : 0.85) : 0.92;
+    final currentAlpha = blurEnabled ? (isDark ? 0.75 : 0.85) : 0.95;
     final i18n = context.watch<AppLanguageProvider>();
     final topPadding = useSafeAreaTop ? MediaQuery.paddingOf(context).top : 0.0;
     final resolvedTitle = isLoading ? i18n.tr('loading_dot') : title;

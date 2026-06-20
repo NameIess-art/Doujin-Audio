@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'scroll_activity_gate.dart';
@@ -10,6 +11,7 @@ class MarqueeText extends StatefulWidget {
   final double scrollSpeed;
   final double edgePadding;
   final bool forceMarquee;
+  final bool allowAndroidMarquee;
 
   const MarqueeText({
     super.key,
@@ -19,6 +21,7 @@ class MarqueeText extends StatefulWidget {
     this.scrollSpeed = 30.0,
     this.edgePadding = 8.0,
     this.forceMarquee = false,
+    this.allowAndroidMarquee = false,
   });
 
   @override
@@ -37,6 +40,10 @@ class _MarqueeTextState extends State<MarqueeText> {
     super.initState();
     _scrollController = ScrollController();
     _isMounted = true;
+    if (defaultTargetPlatform == TargetPlatform.android &&
+        !widget.allowAndroidMarquee) {
+      return;
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _startScrolling();
     });
@@ -131,6 +138,15 @@ class _MarqueeTextState extends State<MarqueeText> {
 
   @override
   Widget build(BuildContext context) {
+    if (defaultTargetPlatform == TargetPlatform.android &&
+        !widget.allowAndroidMarquee) {
+      return Text(
+        widget.text,
+        style: widget.style,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      );
+    }
     _isScrolling = ScrollActivityGate.isScrollingOf(context);
     _tickerEnabled = TickerMode.valuesOf(context).enabled;
     if (_isScrolling && _scrollController.hasClients) {

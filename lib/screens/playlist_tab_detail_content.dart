@@ -396,6 +396,7 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
               Expanded(
                 child: MarqueeText(
                   text: folderName,
+                  allowAndroidMarquee: true,
                   style: Theme.of(context).textTheme.labelLarge?.copyWith(
                     color: cs.onSurface.withValues(alpha: 0.8),
                     fontWeight: FontWeight.w700,
@@ -419,6 +420,7 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
             child: MarqueeText(
               text: displayName,
               pauseDuration: const Duration(seconds: 1),
+              allowAndroidMarquee: true,
               style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                 color: cs.onSurface,
                 fontWeight: FontWeight.w900,

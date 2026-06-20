@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart' show ProviderScope;
 import 'package:flutter_test/flutter_test.dart';
@@ -18,6 +19,19 @@ Widget _buildApp(Widget child) {
   );
 }
 
+Future<void> _withPlatform(
+  TargetPlatform platform,
+  Future<void> Function() body,
+) async {
+  final previousPlatform = debugDefaultTargetPlatformOverride;
+  debugDefaultTargetPlatformOverride = platform;
+  try {
+    await body();
+  } finally {
+    debugDefaultTargetPlatformOverride = previousPlatform;
+  }
+}
+
 void main() {
   testWidgets('top page header can render marquee title', (tester) async {
     await tester.pumpWidget(
@@ -36,19 +50,57 @@ void main() {
   });
 
   testWidgets('marquee text forwards custom edge padding', (tester) async {
-    await tester.pumpWidget(
-      _buildApp(
-        const SizedBox(
-          width: 120,
-          child: MarqueeText(text: 'long text', edgePadding: 3),
+    await _withPlatform(TargetPlatform.windows, () async {
+      await tester.pumpWidget(
+        _buildApp(
+          const SizedBox(
+            width: 120,
+            child: MarqueeText(text: 'long text', edgePadding: 3),
+          ),
         ),
-      ),
-    );
+      );
 
-    final scrollView = tester.widget<SingleChildScrollView>(
-      find.byType(SingleChildScrollView),
-    );
-    expect(scrollView.padding, const EdgeInsets.symmetric(horizontal: 3));
+      final scrollView = tester.widget<SingleChildScrollView>(
+        find.byType(SingleChildScrollView),
+      );
+      expect(scrollView.padding, const EdgeInsets.symmetric(horizontal: 3));
+    });
+  });
+
+  testWidgets('android marquee text renders static text', (tester) async {
+    await _withPlatform(TargetPlatform.android, () async {
+      await tester.pumpWidget(
+        _buildApp(
+          const SizedBox(
+            width: 120,
+            child: MarqueeText(text: 'long text', edgePadding: 3),
+          ),
+        ),
+      );
+
+      expect(find.byType(SingleChildScrollView), findsNothing);
+      final text = tester.widget<Text>(find.text('long text'));
+      expect(text.maxLines, 1);
+      expect(text.overflow, TextOverflow.ellipsis);
+    });
+  });
+
+  testWidgets('android marquee can be allowed explicitly', (tester) async {
+    await _withPlatform(TargetPlatform.android, () async {
+      await tester.pumpWidget(
+        _buildApp(
+          const SizedBox(
+            width: 40,
+            child: MarqueeText(
+              text: 'A very long text that should scroll',
+              allowAndroidMarquee: true,
+            ),
+          ),
+        ),
+      );
+
+      expect(find.byType(SingleChildScrollView), findsOneWidget);
+    });
   });
 
   testWidgets('library detail label uses tighter marquee padding', (
@@ -144,54 +196,59 @@ void main() {
   testWidgets('marquee resumes after vertical scrolling becomes idle', (
     tester,
   ) async {
-    const marqueeKey = ValueKey('resuming_marquee');
-    await tester.pumpWidget(
-      _buildApp(
-        const ScrollActivityGate(
-          idleDelay: Duration(milliseconds: 10),
-          child: SizedBox(
-            width: 80,
-            height: 20,
-            child: MarqueeText(
-              key: marqueeKey,
-              text: 'A very long information value that must scroll',
-              pauseDuration: Duration(milliseconds: 1),
-              scrollSpeed: 100,
+    await _withPlatform(TargetPlatform.windows, () async {
+      const marqueeKey = ValueKey('resuming_marquee');
+      await tester.pumpWidget(
+        _buildApp(
+          const ScrollActivityGate(
+            idleDelay: Duration(milliseconds: 10),
+            child: SizedBox(
+              width: 80,
+              height: 20,
+              child: MarqueeText(
+                key: marqueeKey,
+                text: 'A very long information value that must scroll',
+                pauseDuration: Duration(milliseconds: 1),
+                scrollSpeed: 100,
+              ),
             ),
           ),
         ),
-      ),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 2));
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 2));
 
-    final element = tester.element(find.byKey(marqueeKey));
-    final metrics = FixedScrollMetrics(
-      minScrollExtent: 0,
-      maxScrollExtent: 100,
-      pixels: 0,
-      viewportDimension: 100,
-      axisDirection: AxisDirection.down,
-      devicePixelRatio: 1,
-    );
-    ScrollStartNotification(
-      metrics: metrics,
-      context: element,
-    ).dispatch(element);
-    await tester.pump();
-    expect(find.byType(SingleChildScrollView), findsOneWidget);
+      final element = tester.element(find.byKey(marqueeKey));
+      final metrics = FixedScrollMetrics(
+        minScrollExtent: 0,
+        maxScrollExtent: 100,
+        pixels: 0,
+        viewportDimension: 100,
+        axisDirection: AxisDirection.down,
+        devicePixelRatio: 1,
+      );
+      ScrollStartNotification(
+        metrics: metrics,
+        context: element,
+      ).dispatch(element);
+      await tester.pump();
+      expect(find.byType(SingleChildScrollView), findsOneWidget);
 
-    ScrollEndNotification(metrics: metrics, context: element).dispatch(element);
-    await tester.pump(const Duration(milliseconds: 12));
-    await tester.pump();
-    expect(find.byType(SingleChildScrollView), findsOneWidget);
+      ScrollEndNotification(
+        metrics: metrics,
+        context: element,
+      ).dispatch(element);
+      await tester.pump(const Duration(milliseconds: 12));
+      await tester.pump();
+      expect(find.byType(SingleChildScrollView), findsOneWidget);
 
-    for (var i = 0; i < 8; i++) {
-      await tester.pump(const Duration(milliseconds: 50));
-    }
-    final scrollView = tester.widget<SingleChildScrollView>(
-      find.byType(SingleChildScrollView),
-    );
-    expect(scrollView.controller!.offset, greaterThan(0));
+      for (var i = 0; i < 8; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+      final scrollView = tester.widget<SingleChildScrollView>(
+        find.byType(SingleChildScrollView),
+      );
+      expect(scrollView.controller!.offset, greaterThan(0));
+    });
   });
 }

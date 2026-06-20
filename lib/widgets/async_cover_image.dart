@@ -433,8 +433,8 @@ class RetryingNetworkImage extends StatelessWidget {
     return RetryingImage(
       retryKey: trimmedUrl,
       imageProviderBuilder: () => ResizeImage.resizeIfNeeded(
-        kCoverImageCacheSize,
-        null,
+        cacheWidth ?? kCoverImageCacheSize,
+        cacheHeight,
         NetworkImage(trimmedUrl),
       ),
       fallbackBuilder: fallbackBuilder,
@@ -612,5 +612,9 @@ ImageProvider<Object> resizeFileImageIfNeeded({
   int? cacheHeight,
 }) {
   final provider = FileImage(File(path));
-  return ResizeImage.resizeIfNeeded(kCoverImageCacheSize, null, provider);
+  return ResizeImage.resizeIfNeeded(
+    cacheWidth ?? kCoverImageCacheSize,
+    cacheHeight,
+    provider,
+  );
 }

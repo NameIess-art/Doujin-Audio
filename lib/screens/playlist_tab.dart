@@ -69,10 +69,77 @@ Future<String?> _coverFutureForTrack(
 }
 
 PageRoute<void> buildSessionDetailRoute({required String sessionId}) {
-  return buildAppOverlayRoute(
-    child: SessionDetailPage(sessionId: sessionId),
-    reverseDuration: Duration.zero,
-  );
+  return _SessionDetailRoute(sessionId: sessionId);
+}
+
+class _SessionDetailRoute extends PageRoute<void> {
+  _SessionDetailRoute({required this.sessionId}) {
+    _revealBehindNotifier.addListener(_handleRevealBehindChanged);
+  }
+
+  final String sessionId;
+  final ValueNotifier<bool> _revealBehindNotifier = ValueNotifier<bool>(false);
+
+  void _handleRevealBehindChanged() {
+    if (overlayEntries.isNotEmpty) {
+      overlayEntries.first.opaque = opaque;
+    }
+    changedInternalState();
+  }
+
+  @override
+  bool get opaque => !_revealBehindNotifier.value;
+
+  @override
+  Color? get barrierColor => Colors.transparent;
+
+  @override
+  bool get barrierDismissible => false;
+
+  @override
+  String? get barrierLabel => null;
+
+  @override
+  bool get maintainState => true;
+
+  @override
+  Duration get transitionDuration => const Duration(milliseconds: 220);
+
+  @override
+  Duration get reverseTransitionDuration => Duration.zero;
+
+  @override
+  Widget buildPage(
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+  ) {
+    return SessionDetailPage(
+      sessionId: sessionId,
+      revealBehindNotifier: _revealBehindNotifier,
+    );
+  }
+
+  @override
+  Widget buildTransitions(
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) {
+    return buildCenterExpandTransition(
+      context: context,
+      animation: animation,
+      child: child,
+    );
+  }
+
+  @override
+  void dispose() {
+    _revealBehindNotifier.removeListener(_handleRevealBehindChanged);
+    _revealBehindNotifier.dispose();
+    super.dispose();
+  }
 }
 
 class PlaylistTab extends ConsumerStatefulWidget {

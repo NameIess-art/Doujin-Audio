@@ -86,26 +86,3 @@ PageRouteBuilder<T> buildAppPageRoute<T>({
     },
   );
 }
-
-PageRouteBuilder<T> buildAppOverlayRoute<T>({
-  required Widget child,
-  RouteSettings? settings,
-  Duration duration = const Duration(milliseconds: 220),
-  Duration reverseDuration = const Duration(milliseconds: 180),
-}) {
-  return PageRouteBuilder<T>(
-    settings: settings,
-    opaque: false,
-    barrierColor: Colors.transparent,
-    transitionDuration: duration,
-    reverseTransitionDuration: reverseDuration,
-    pageBuilder: (context, animation, secondaryAnimation) => child,
-    transitionsBuilder: (context, animation, secondaryAnimation, routedChild) {
-      return buildCenterExpandTransition(
-        context: context,
-        animation: animation,
-        child: routedChild,
-      );
-    },
-  );
-}

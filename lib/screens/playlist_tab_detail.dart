@@ -1,9 +1,17 @@
 part of 'playlist_tab.dart';
 
+const int _kSessionDetailBackgroundCacheWidth = 240;
+const double _kSessionDetailBackgroundBlurSigma = 32;
+
 class SessionDetailPage extends ConsumerStatefulWidget {
-  const SessionDetailPage({super.key, required this.sessionId});
+  const SessionDetailPage({
+    super.key,
+    required this.sessionId,
+    required this.revealBehindNotifier,
+  });
 
   final String sessionId;
+  final ValueNotifier<bool> revealBehindNotifier;
 
   @override
   ConsumerState<SessionDetailPage> createState() => _SessionDetailPageState();
@@ -44,14 +52,24 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
         .animate(
           CurvedAnimation(parent: _slideController, curve: Curves.easeOutCubic),
         );
+    _dismissController.addListener(_syncRevealBehind);
   }
 
   @override
   void dispose() {
+    _dismissController.removeListener(_syncRevealBehind);
+    widget.revealBehindNotifier.value = false;
     _segmentPanelExpandedNotifier.dispose();
     _dismissController.dispose();
     _slideController.dispose();
     super.dispose();
+  }
+
+  void _syncRevealBehind() {
+    final shouldReveal = _dismissController.value > 0.001;
+    if (widget.revealBehindNotifier.value != shouldReveal) {
+      widget.revealBehindNotifier.value = shouldReveal;
+    }
   }
 
   Future<void> _precacheImageProvider(
@@ -341,13 +359,10 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
               MediaQuery.sizeOf(context).height * dismissProgress;
           final enterOffset =
               (1 - enterProgress) * MediaQuery.sizeOf(context).height;
-          final backdropCurve =
-              dismissProgress; // Use linear for backdrop to avoid sudden changes
-          final backdropProgress = (enterProgress * (1 - backdropCurve)).clamp(
-            0.0,
-            1.0,
-          );
-          final detailOpacity = ((1 - dismissProgress) / 0.75).clamp(0.0, 1.0);
+          final revealProgress = (dismissProgress * 3).clamp(0.0, 1.0);
+          final backdropProgress = (enterProgress * pow(1 - revealProgress, 2))
+              .clamp(0.0, 1.0);
+          final detailOpacity = (1 - dismissProgress).clamp(0.0, 1.0);
 
           return Stack(
             fit: StackFit.expand,
@@ -474,6 +489,11 @@ class _SessionDetailBackdrop extends StatelessWidget {
     return Stack(
       fit: StackFit.expand,
       children: [
+        DecoratedBox(
+          decoration: BoxDecoration(
+            color: cs.surface.withValues(alpha: progress.clamp(0.0, 1.0)),
+          ),
+        ),
         if (gradientAlpha > 0)
           DecoratedBox(
             decoration: BoxDecoration(
@@ -790,17 +810,15 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                       );
                     },
                     child: ImageFiltered(
-                      imageFilter: ImageFilter.blur(sigmaX: 64, sigmaY: 64),
+                      imageFilter: ImageFilter.blur(
+                        sigmaX: _kSessionDetailBackgroundBlurSigma,
+                        sigmaY: _kSessionDetailBackgroundBlurSigma,
+                      ),
                       child: track?.remoteCoverUrl?.trim().isNotEmpty == true
                           ? RetryingNetworkImage(
                               url: track!.remoteCoverUrl!.trim(),
                               fit: BoxFit.cover,
-                              cacheWidth:
-                                  (MediaQuery.sizeOf(context).width *
-                                          MediaQuery.devicePixelRatioOf(
-                                            context,
-                                          ))
-                                      .round(),
+                              cacheWidth: _kSessionDetailBackgroundCacheWidth,
                               color: cs.surface.withValues(alpha: 0.45),
                               colorBlendMode: BlendMode.darken,
                               loadingBuilder:
@@ -836,13 +854,10 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                                 showIcon: false,
                               ),
                               imageBuilder: (context, coverPath) {
-                                final mediaSize = MediaQuery.sizeOf(context);
-                                final dpr = MediaQuery.devicePixelRatioOf(
-                                  context,
-                                );
                                 return RetryingFileImage(
                                   path: coverPath,
-                                  cacheWidth: (mediaSize.width * dpr).round(),
+                                  cacheWidth:
+                                      _kSessionDetailBackgroundCacheWidth,
                                   fit: BoxFit.cover,
                                   color: cs.surface.withValues(alpha: 0.45),
                                   colorBlendMode: BlendMode.darken,

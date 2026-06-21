@@ -640,43 +640,47 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
           constraints: BoxConstraints(
             maxHeight: MediaQuery.sizeOf(ctx).height * 0.58,
           ),
-          child: ListView(
-            shrinkWrap: true,
+          child: ListView.builder(
             padding: const EdgeInsets.fromLTRB(16, 4, 12, 24),
             cacheExtent: 480,
             keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-            children: [
-              _QueueSheetHeader(count: tracks.length),
-              const SizedBox(height: 6),
-              for (final node in tree)
-                _QueueTreeNodeTile(
-                  node: node,
-                  onTrackTap: (node) {
-                    AppInteractionFeedback.trigger(
-                      AppInteractionFeedbackType.tap,
-                      context: ctx,
+            itemCount: tree.length + 1,
+            itemBuilder: (context, index) {
+              if (index == 0) {
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: _QueueSheetHeader(count: tracks.length),
+                );
+              }
+              final node = tree[index - 1];
+              return _QueueTreeNodeTile(
+                node: node,
+                onTrackTap: (node) {
+                  AppInteractionFeedback.trigger(
+                    AppInteractionFeedbackType.tap,
+                    context: ctx,
+                  );
+                  Navigator.of(ctx).pop();
+                  if (widget.session.isPlaybackQueue) {
+                    widget.provider.switchSessionQueueTrack(
+                      widget.session.id,
+                      node.queueIndex,
                     );
-                    Navigator.of(ctx).pop();
-                    if (widget.session.isPlaybackQueue) {
-                      widget.provider.switchSessionQueueTrack(
-                        widget.session.id,
-                        node.queueIndex,
-                      );
-                    } else {
-                      widget.provider.switchSessionTrack(
-                        widget.session.id,
-                        node.track!.path,
-                      );
-                    }
-                    showAppSnackBar(
-                      context,
-                      i18n.tr('switch_audio'),
-                      tone: AppFeedbackTone.success,
-                      icon: Icons.queue_music_rounded,
+                  } else {
+                    widget.provider.switchSessionTrack(
+                      widget.session.id,
+                      node.track!.path,
                     );
-                  },
-                ),
-            ],
+                  }
+                  showAppSnackBar(
+                    context,
+                    i18n.tr('switch_audio'),
+                    tone: AppFeedbackTone.success,
+                    icon: Icons.queue_music_rounded,
+                  );
+                },
+              );
+            },
           ),
         );
       },

@@ -111,9 +111,7 @@ class LibraryManagementPage extends ConsumerWidget {
                       overflow: TextOverflow.ellipsis,
                     ),
                     onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) =>
-                            LibraryEditPage(libraryPath: libraryPath),
+                      buildAppPageRoute<void>(child: LibraryEditPage(libraryPath: libraryPath),
                       ),
                     ),
                     trailing: IconButton(
@@ -136,10 +134,10 @@ class LibraryManagementPage extends ConsumerWidget {
             child: TopPageHeader(
               icon: Icons.edit_note_rounded,
               title: i18n.tr('edit_library'),
-              trailing: IconButton(
+              leading: IconButton(
                 tooltip: i18n.tr('close'),
                 onPressed: () => Navigator.of(context).maybePop(),
-                icon: const Icon(Icons.close_rounded),
+                icon: const Icon(Icons.arrow_back_rounded),
               ),
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
               bottomSpacing: 16,
@@ -520,24 +518,15 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage>
                   fontWeight: FontWeight.w700,
                 ),
               ),
-              trailing: SizedBox(
-                width: 96,
-                height: 44,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    IconButton(
-                      tooltip: i18n.tr('remove_library'),
-                      onPressed: () => _confirmRemoveLibrary(context),
-                      icon: Icon(Icons.delete_outline_rounded, color: cs.error),
-                    ),
-                    IconButton(
-                      tooltip: i18n.tr('close'),
-                      onPressed: () => Navigator.of(context).maybePop(),
-                      icon: const Icon(Icons.close_rounded),
-                    ),
-                  ],
-                ),
+              leading: IconButton(
+                tooltip: i18n.tr('close'),
+                onPressed: () => Navigator.of(context).maybePop(),
+                icon: const Icon(Icons.arrow_back_rounded),
+              ),
+              trailing: IconButton(
+                tooltip: i18n.tr('remove_library'),
+                onPressed: () => _confirmRemoveLibrary(context),
+                icon: Icon(Icons.delete_outline_rounded, color: cs.error),
               ),
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
               bottomSpacing: 16,

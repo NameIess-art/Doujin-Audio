@@ -10,6 +10,7 @@ import '../services/path_display.dart';
 import '../widgets/app_feedback.dart';
 import '../widgets/async_cover_image.dart';
 import 'dlsite_metadata_review_page.dart';
+import '../widgets/app_transitions.dart';
 
 const _multiValueSeparator = '\uFF0C';
 
@@ -230,13 +231,12 @@ class _AudioDetailSheetState extends State<AudioDetailSheet> {
       return;
     }
     final scope = await Navigator.of(context).push<_AudioDetailFetchScope>(
-      MaterialPageRoute(builder: (_) => const _AudioDetailFetchScopePage()),
+      buildAppPageRoute(child: const _AudioDetailFetchScopePage()),
     );
     if (scope == null || !mounted) return;
 
     final result = await Navigator.of(context).push<DlsiteMetadataReviewResult>(
-      MaterialPageRoute(
-        builder: (_) => DlsiteMetadataReviewPage(
+      buildAppPageRoute(child: DlsiteMetadataReviewPage(
           detail: detail,
           rjCode: query.rjCode,
           searchTitles: query.searchTitles,

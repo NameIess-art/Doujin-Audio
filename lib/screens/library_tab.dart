@@ -36,10 +36,12 @@ import '../widgets/swipe_reveal_card.dart';
 import '../widgets/top_page_header.dart';
 import '../widgets/unified_popup_menu.dart';
 import '../widgets/glass_refresh_indicator.dart';
+import '../widgets/shimmer_loading.dart';
 import 'audio_detail_sheet.dart';
 import 'dlsite_metadata_batch_page.dart';
 import 'screen_view_models.dart';
 import 'video_converter_tab.dart';
+import '../widgets/app_transitions.dart';
 
 part 'library_tab_ui_helpers.dart';
 part 'library_tab_empty_scan.dart';
@@ -154,20 +156,20 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     if (!mounted) return;
     await Navigator.of(
       context,
-    ).push(MaterialPageRoute<void>(builder: (_) => const VideoConverterTab()));
+    ).push(buildAppPageRoute<void>(child: const VideoConverterTab()));
   }
 
   Future<void> _openLibraryManagementPage() async {
     if (!mounted) return;
     await Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => const LibraryManagementPage()),
+      buildAppPageRoute<void>(child: const LibraryManagementPage()),
     );
   }
 
   Future<void> _openBatchMetadataPage() async {
     if (!mounted) return;
     await Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => const DlsiteMetadataBatchPage()),
+      buildAppPageRoute<void>(child: const DlsiteMetadataBatchPage()),
     );
   }
 
@@ -602,7 +604,52 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                 showScrollbar: isWindows,
                 scrollbarMainAxisMargin: isWindows ? 8 : 0,
                 child: !listState.isInitialized
-                    ? const SizedBox.shrink()
+                    ? ShimmerLoader(
+                        child: ListView.builder(
+                          physics: const NeverScrollableScrollPhysics(),
+                          padding: EdgeInsets.fromLTRB(
+                            16,
+                            listTopPadding,
+                            16,
+                            listBottomPadding,
+                          ),
+                          itemCount: 15,
+                          itemBuilder: (context, index) {
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 12),
+                              child: Row(
+                                children: [
+                                  const ShimmerContainer(
+                                    width: 48,
+                                    height: 48,
+                                    borderRadius: 8,
+                                  ),
+                                  const SizedBox(width: 16),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        const ShimmerContainer(
+                                          width: double.infinity,
+                                          height: 16,
+                                        ),
+                                        const SizedBox(height: 8),
+                                        ShimmerContainer(
+                                          width:
+                                              MediaQuery.sizeOf(context).width *
+                                              0.4,
+                                          height: 12,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                      )
                     : _categoryType == AudioLibraryCategoryType.all &&
                           tree.isEmpty
                     ? refreshableEmptyBody()

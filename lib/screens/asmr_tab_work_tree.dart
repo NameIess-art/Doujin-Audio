@@ -53,8 +53,7 @@ class _AsmrWorkTreeCardState extends State<_AsmrWorkTreeCard> {
 
   Future<void> _openDownloadPage(BuildContext context) async {
     await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => AsmrDownloadPage(work: widget.work),
+      buildAppPageRoute<void>(child: AsmrDownloadPage(work: widget.work),
       ),
     );
   }
@@ -241,8 +240,8 @@ class _AsmrTrackTreeNode extends StatefulWidget {
 }
 
 class _AsmrTrackTreeNodeState extends State<_AsmrTrackTreeNode> {
-  static const double _childFolderTileHeight = 62;
-  static const double _childFolderTitleBlockHeight = 50;
+  static const double _childFolderTileHeight = 44;
+  static const double _childFolderTitleBlockHeight = 36;
   final ExpansibleController _expansionController = ExpansibleController();
   bool _expanded = false;
 
@@ -356,7 +355,7 @@ class _AsmrTrackTreeNodeState extends State<_AsmrTrackTreeNode> {
           children: [
             for (final child in visibleChildren)
               Padding(
-                padding: const EdgeInsets.only(top: 2),
+                padding: EdgeInsets.zero,
                 child: _AsmrTrackTreeNode(
                   work: widget.work,
                   node: child,
@@ -415,9 +414,9 @@ class _AsmrTrackLeafRow extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
     return SizedBox(
-      height: 48,
+      height: 38,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(6, 4, 6, 4),
+        padding: const EdgeInsets.symmetric(horizontal: 6),
         child: Row(
           children: [
             Icon(

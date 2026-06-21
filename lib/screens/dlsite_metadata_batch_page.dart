@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../i18n/app_language_provider.dart';
 import '../providers/audio_provider.dart';
 import 'dlsite_metadata_review_page.dart';
+import '../widgets/app_transitions.dart';
 
 enum _BatchMetadataScope { anyMissing, noMetadata, hasRjCode, all, specific }
 
@@ -66,8 +67,7 @@ class _DlsiteMetadataBatchPageState extends State<DlsiteMetadataBatchPage> {
 
   Future<void> _pickSpecific() async {
     final result = await Navigator.of(context).push<List<AudioLibraryCategoryEntry>>(
-      MaterialPageRoute(
-        builder: (_) => DlsiteMetadataWorkPickerPage(
+      buildAppPageRoute(child: DlsiteMetadataWorkPickerPage(
           entries: _entries,
           initialSelection: _specificEntries,
         ),
@@ -130,8 +130,7 @@ class _DlsiteMetadataBatchPageState extends State<DlsiteMetadataBatchPage> {
       }
       final result = await Navigator.of(context)
           .push<DlsiteMetadataReviewResult>(
-            MaterialPageRoute(
-              builder: (_) => DlsiteMetadataReviewPage(
+            buildAppPageRoute(child: DlsiteMetadataReviewPage(
                 detail: entry.detail,
                 rjCode: query.rjCode,
                 searchTitles: query.searchTitles,
@@ -402,7 +401,7 @@ class _DlsiteMetadataWorkPickerPageState
       appBar: AppBar(
         title: TextField(
           controller: _searchController,
-          autofocus: true,
+          autofocus: false,
           decoration: InputDecoration(
             hintText: i18n.tr('batch_metadata_picker_search'),
             border: InputBorder.none,

@@ -48,8 +48,8 @@ class _FolderNodeWidget extends ConsumerStatefulWidget {
 class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
   static const double _rootFolderTileHeight =
       LibraryLikeCardMetrics.rootTileHeight;
-  static const double _childFolderTileHeight = 62;
-  static const double _childFolderTitleBlockHeight = 50;
+  static const double _childFolderTileHeight = 44;
+  static const double _childFolderTitleBlockHeight = 36;
 
   final ExpansibleController _expansionController = ExpansibleController();
   late bool _expanded = widget.initiallyExpanded;
@@ -258,7 +258,7 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
         children: widget.folder.children
             .map(
               (childNode) => Padding(
-                padding: EdgeInsets.only(top: isRootFolder ? 6 : 2),
+                padding: EdgeInsets.zero,
                 child: RepaintBoundary(
                   child: _LibraryTreeItem(
                     key: ValueKey(childNode.path),
@@ -421,7 +421,7 @@ class _TrackNodeWidget extends ConsumerWidget {
                   ),
                 )
               : Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 10, 6, 10),
+                  padding: const EdgeInsets.fromLTRB(12, 4, 6, 4),
                   child: Row(
                     children: [
                       Expanded(
@@ -462,15 +462,15 @@ class _TrackNodeWidget extends ConsumerWidget {
     }
 
     return SwipeRevealCard(
-      margin: const EdgeInsets.only(bottom: 2),
+      margin: EdgeInsets.zero,
       shape: cardShape,
       actionLabel: i18n.tr('remove'),
       removeTooltip: i18n.tr('remove_audio'),
       onRemove: () => _removeTrack(context, provider, track),
       child: SizedBox(
-        height: 48,
+        height: 38,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(6, 4, 6, 4),
+          padding: const EdgeInsets.symmetric(horizontal: 6),
           child: Row(
             children: [
               Icon(

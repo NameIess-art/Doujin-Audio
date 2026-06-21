@@ -30,21 +30,13 @@ Widget buildCenterExpandTransition({
   required Widget child,
 }) {
   if (MediaQuery.disableAnimationsOf(context)) return child;
-  final curvedAnimation = CurvedAnimation(
-    parent: animation,
-    curve: Curves.fastOutSlowIn,
-    reverseCurve: Curves.easeInCubic,
-  );
   final opacityAnimation = CurvedAnimation(
     parent: animation,
     curve: Curves.easeOut,
     reverseCurve: Curves.easeIn,
   );
 
-  return ScaleTransition(
-    scale: Tween<double>(begin: 0.0, end: 1.0).animate(curvedAnimation),
-    child: FadeTransition(opacity: opacityAnimation, child: child),
-  );
+  return FadeTransition(opacity: opacityAnimation, child: child);
 }
 
 class CenterScalePageTransitionsBuilder extends PageTransitionsBuilder {
@@ -69,8 +61,8 @@ class CenterScalePageTransitionsBuilder extends PageTransitionsBuilder {
 PageRouteBuilder<T> buildAppPageRoute<T>({
   required Widget child,
   RouteSettings? settings,
-  Duration duration = const Duration(milliseconds: 240),
-  Duration reverseDuration = const Duration(milliseconds: 200),
+  Duration duration = Duration.zero,
+  Duration reverseDuration = Duration.zero,
 }) {
   return PageRouteBuilder<T>(
     settings: settings,

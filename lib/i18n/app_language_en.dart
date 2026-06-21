@@ -132,8 +132,7 @@ const Map<String, String> appLanguageEn = {
   'asmr_language_zh': 'Chinese',
   'asmr_language_ja': 'Japanese',
   'asmr_language_en': 'English',
-  'asmr_search_hint':
-      'Search titles, tags, voice actors, circles, RJ numbers; separate terms with "," or "/"',
+  'asmr_search_hint': 'Search works...',
   'asmr_empty_category': 'No content in this category yet.',
   'asmr_load_more_hint': 'Pull up to load more',
   'asmr_add_to_playlist': 'Add to playlist',
@@ -370,7 +369,7 @@ const Map<String, String> appLanguageEn = {
   'show_playback_card_subtitle': 'Show playback card at the bottom.',
   'section_detail_info': 'Details',
   'card_info_display': 'Card info display',
-  'card_info_display_subtitle': 'Selected {count} / {max}; up to five items.',
+  'card_info_display_subtitle': 'Selected {count} / {max}',
   'card_info_none': 'No detail fields',
   'card_info_release_date': 'Release',
   'card_info_sales_count': 'Sales',

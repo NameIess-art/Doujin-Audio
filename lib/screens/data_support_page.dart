@@ -57,7 +57,14 @@ class _DataSupportPageState extends State<DataSupportPage> {
         bytes: await backup.readAsBytes(),
         lockParentWindow: true,
       );
-      if (savedPath != null && mounted) _showSuccess('backup_exported');
+      if (savedPath != null && mounted) {
+        _showSuccess(
+          'backup_exported',
+          titleKey: 'operation_completed',
+          detail: savedPath,
+          duration: const Duration(seconds: 5),
+        );
+      }
     });
   }
 
@@ -99,9 +106,13 @@ class _DataSupportPageState extends State<DataSupportPage> {
       if (!result.isValid) {
         showAppSnackBar(
           context,
-          i18n.tr('backup_invalid'),
+          i18n.tr('backup_invalid_next_step'),
           tone: AppFeedbackTone.destructive,
+          title: i18n.tr('backup_invalid'),
           icon: Icons.error_outline_rounded,
+          actionLabel: i18n.tr('export_diagnostics'),
+          onAction: _exportDiagnostics,
+          duration: const Duration(seconds: 6),
         );
         return;
       }
@@ -111,8 +122,9 @@ class _DataSupportPageState extends State<DataSupportPage> {
       if (!mounted) return;
       showAppSnackBar(
         context,
-        i18n.tr('backup_restored_restart'),
+        i18n.tr('backup_restored_loaded'),
         tone: AppFeedbackTone.success,
+        title: i18n.tr('operation_completed'),
         icon: Icons.check_circle_outline_rounded,
         duration: const Duration(seconds: 4),
       );
@@ -136,7 +148,14 @@ class _DataSupportPageState extends State<DataSupportPage> {
         bytes: await report.readAsBytes(),
         lockParentWindow: true,
       );
-      if (savedPath != null && mounted) _showSuccess('diagnostics_exported');
+      if (savedPath != null && mounted) {
+        _showSuccess(
+          'diagnostics_exported',
+          titleKey: 'operation_completed',
+          detail: savedPath,
+          duration: const Duration(seconds: 5),
+        );
+      }
     });
   }
 
@@ -154,21 +173,37 @@ class _DataSupportPageState extends State<DataSupportPage> {
       if (!mounted) return;
       showAppSnackBar(
         context,
-        context.read<AppLanguageProvider>().tr('operation_failed_retry'),
+        context.read<AppLanguageProvider>().tr(
+          'operation_failed_diagnostics_hint',
+        ),
         tone: AppFeedbackTone.destructive,
+        title: context.read<AppLanguageProvider>().tr('operation_failed'),
         icon: Icons.error_outline_rounded,
+        actionLabel: context.read<AppLanguageProvider>().tr(
+          'export_diagnostics',
+        ),
+        onAction: _exportDiagnostics,
+        duration: const Duration(seconds: 6),
       );
     } finally {
       if (mounted) setState(() => _busy = false);
     }
   }
 
-  void _showSuccess(String key) {
+  void _showSuccess(
+    String key, {
+    String? titleKey,
+    String? detail,
+    Duration? duration,
+  }) {
+    final i18n = context.read<AppLanguageProvider>();
     showAppSnackBar(
       context,
-      context.read<AppLanguageProvider>().tr(key),
+      detail == null ? i18n.tr(key) : i18n.tr(key, {'path': detail}),
       tone: AppFeedbackTone.success,
+      title: titleKey == null ? null : i18n.tr(titleKey),
       icon: Icons.check_circle_outline_rounded,
+      duration: duration,
     );
   }
 

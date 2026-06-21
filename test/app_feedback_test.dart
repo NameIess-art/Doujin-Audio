@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/widgets/app_feedback.dart';
@@ -53,5 +54,46 @@ void main() {
     await AppInteractionFeedback.continuous(10);
 
     expect(calls, hasLength(2));
+  });
+
+  testWidgets('top feedback action invokes callback and dismisses surface', (
+    tester,
+  ) async {
+    var actionCount = 0;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => TextButton(
+              onPressed: () {
+                showAppSnackBar(
+                  context,
+                  'Check the folder and retry.',
+                  tone: AppFeedbackTone.destructive,
+                  title: 'Import failed',
+                  actionLabel: 'Retry',
+                  onAction: () => actionCount++,
+                  duration: const Duration(seconds: 10),
+                );
+              },
+              child: const Text('Show'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Show'));
+    await tester.pump();
+
+    expect(find.text('Import failed'), findsOneWidget);
+    expect(find.text('Retry'), findsOneWidget);
+
+    await tester.tap(find.text('Retry'));
+    await tester.pump();
+
+    expect(actionCount, 1);
+    expect(find.text('Import failed'), findsNothing);
   });
 }

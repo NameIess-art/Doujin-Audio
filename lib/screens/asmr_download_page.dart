@@ -224,10 +224,14 @@ class _AsmrDownloadPageState extends State<AsmrDownloadPage> {
       if (!mounted) return;
       showAppSnackBar(
         context,
-        i18n.tr('asmr_download_failed', {'error': error}),
+        i18n.tr('asmr_download_failed_next_step'),
         tone: AppFeedbackTone.destructive,
+        title: i18n.tr('asmr_download_failed', {'error': error}),
         icon: Icons.error_outline_rounded,
         iconColor: asmrBlue,
+        actionLabel: i18n.tr('retry'),
+        onAction: () => unawaited(_startDownload()),
+        duration: const Duration(seconds: 6),
       );
     } finally {
       if (mounted) {

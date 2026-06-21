@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/i18n/app_language_provider.dart';
 import 'package:nameless_audio/screens/permission_status_page.dart';
+import 'package:nameless_audio/services/permission_status_service.dart';
 import 'package:provider/provider.dart';
 
 void main() {
@@ -12,7 +13,20 @@ void main() {
     await tester.pumpWidget(
       ChangeNotifierProvider.value(
         value: language,
-        child: const MaterialApp(home: PermissionStatusPage()),
+        child: MaterialApp(
+          home: PermissionStatusPage(
+            statusService: _FakePermissionStatusService(
+              const PermissionStatusSnapshot(
+                notificationsEnabled: false,
+                backgroundRunAllowed: false,
+                exactAlarmsAllowed: true,
+                manageFilesAllowed: false,
+                overlayAllowed: true,
+                updateInstallsAllowed: false,
+              ),
+            ),
+          ),
+        ),
       ),
     );
     await tester.pumpAndSettle();
@@ -23,5 +37,24 @@ void main() {
       findsOneWidget,
     );
     expect(find.text(language.tr('permission_group_advanced')), findsOneWidget);
+    expect(find.text(language.tr('permission_state_authorized')), findsWidgets);
+    expect(
+      find.text(language.tr('permission_state_unauthorized')),
+      findsWidgets,
+    );
+    expect(find.text(language.tr('permission_state_restricted')), findsWidgets);
+    expect(
+      find.text(language.tr('permission_state_recommended')),
+      findsWidgets,
+    );
   });
+}
+
+class _FakePermissionStatusService extends PermissionStatusService {
+  _FakePermissionStatusService(this.snapshot) : super(isAndroidOverride: false);
+
+  final PermissionStatusSnapshot snapshot;
+
+  @override
+  Future<PermissionStatusSnapshot> load() async => snapshot;
 }

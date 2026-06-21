@@ -435,11 +435,17 @@ const Map<String, String> appLanguageJa = {
   'update_download_failed': '更新のダウンロードに失敗しました。ネットワークを確認してください。',
   'update_download_failed_next_step':
       'ダウンロードまたは SHA-256 検証が完了しませんでした。再試行するか、GitHub Release ページを開いて手動でダウンロードしてください。',
-  'update_download_verified_title': '更新を検証しました',
-  'update_download_verified_message':
-      'バージョン {version} をダウンロードし、SHA-256 検証を完了しました。ファイル: {path}',
+  'update_install_preparing_title': '更新を準備しています',
+  'update_install_preparing_message':
+      'バージョン {version} をダウンロードし、SHA-256 検証を完了しました。更新を完了するため、アプリが自動で終了して再起動する場合があります。ファイル: {path}',
   'update_ready_install': 'インストーラーを開きました。画面の指示に従って更新してください。',
-  'update_install_failed': 'インストーラーを開けませんでした。後でもう一度お試しください。',
+  'update_windows_ready_install': '更新プログラムの準備ができました。アプリを終了して再起動し、更新を完了します。',
+  'update_install_failed': '更新のインストールを続行できませんでした。',
+  'update_install_failed_next_step':
+      '後でもう一度お試しください。まだ失敗する場合は更新ログを確認するか、GitHub Release ページから手動でインストールしてください。',
+  'update_install_failed_with_detail':
+      '後でもう一度お試しください。まだ失敗する場合は更新ログを確認してください。詳細: {detail}',
+  'open_update_log': 'ログを表示',
   'install_permission_needed': 'このアプリから不明なアプリをインストールする許可を有効にしてください。',
   'install_permission_title': 'アップデートのインストールを許可',
   'install_permission_message':

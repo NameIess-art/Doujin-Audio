@@ -420,6 +420,26 @@ class AppUpdateService {
     );
   }
 
+  static String get windowsUpdateLogPath =>
+      path.join(Directory.systemTemp.path, 'nameless_audio_windows_update.log');
+
+  static Future<bool> openWindowsUpdateLog() async {
+    if (!Platform.isWindows) return false;
+    try {
+      final logFile = File(windowsUpdateLogPath);
+      if (!await logFile.exists()) return false;
+      await Process.start('notepad.exe', [logFile.path]);
+      return true;
+    } catch (error, stackTrace) {
+      AppLogService.warning(
+        'open_windows_update_log_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      return false;
+    }
+  }
+
   static Map<String, dynamic>? _selectUpdateAsset(
     List<Map<String, dynamic>> assets,
   ) {
@@ -593,7 +613,7 @@ class AppUpdateService {
       }
       await Future<void>.delayed(const Duration(milliseconds: 100));
     }
-    return 'Windows updater did not become ready in time.';
+    return 'Windows updater did not become ready in time. Log: $windowsUpdateLogPath';
   }
 
   static String _windowsPowerShellExecutable() {
@@ -828,6 +848,7 @@ try {
   if (-not (Test-UpdateTargetWritable)) {
     if (-not $Elevated) {
       Start-ElevatedUpdater
+      Set-Content -LiteralPath $ReadyPath -Value 'ready' -Encoding ASCII
       Write-UpdateLog 'elevated updater started'
       exit 0
     }

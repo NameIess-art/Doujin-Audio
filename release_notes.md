@@ -1,3 +1,18 @@
+# Nameless Audio v0.11.2
+
+## Windows 自动更新
+
+- 修复 Windows 自动更新在下载并通过 SHA-256 校验后没有继续关闭应用、切换安装目录并重启的问题。
+- 更新器进入管理员权限分支后会及时把 ready 状态回传给应用，避免界面停留在“已下载/已校验”但没有后续动作。
+- 下载校验后的反馈改为“正在准备安装”，并在安装失败时显示下一步操作和 Windows 更新日志入口，方便定位 PowerShell、权限或目录写入问题。
+
+## 发布资产
+
+- `NamelessAudio-android-arm64-v0.11.2.apk`
+- `NamelessAudio-android-arm64-v0.11.2.apk.sha256`
+- `NamelessAudio-windows-x64-v0.11.2.zip`
+- `NamelessAudio-windows-x64-v0.11.2.zip.sha256`
+
 # Nameless Audio v0.11.1
 
 ## Windows 自动更新

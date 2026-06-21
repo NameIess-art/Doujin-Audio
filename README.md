@@ -2,9 +2,9 @@
 
 Nameless Audio 是一款面向 ASMR、语音作品和大体量本地媒体库的跨平台播放器，使用 Flutter、Android 原生 Media3 / ExoPlayer 与 Windows libmpv 混合实现。
 
-当前版本：`0.11.1+1101`
+当前版本：`0.11.2+1102`
 
-最新发布页：[v0.11.1](https://github.com/NameIess-art/nameless-audio/releases/tag/v0.11.1)
+最新发布页：[v0.11.2](https://github.com/NameIess-art/nameless-audio/releases/tag/v0.11.2)
 
 [MIT License](LICENSE) · [隐私说明](PRIVACY.md) · [发行质量说明](docs/release-quality.md)
 
@@ -12,8 +12,8 @@ Nameless Audio 是一款面向 ASMR、语音作品和大体量本地媒体库的
 
 | 平台 | 发布资产 | 说明 |
 |---|---|---|
-| Android arm64-v8a | `NamelessAudio-android-arm64-v0.11.1.apk` | 适用于大多数 64 位 Android 手机 |
-| Windows x64 | `NamelessAudio-windows-x64-v0.11.1.zip` | 解压完整 ZIP 后运行 `nameless_audio.exe` |
+| Android arm64-v8a | `NamelessAudio-android-arm64-v0.11.2.apk` | 适用于大多数 64 位 Android 手机 |
+| Windows x64 | `NamelessAudio-windows-x64-v0.11.2.zip` | 解压完整 ZIP 后运行 `nameless_audio.exe` |
 
 Windows ZIP 包含应用运行所需的完整 Flutter 运行时、`libmpv-2.dll`、FFmpeg 和 FFprobe。不要只复制 EXE。
 
@@ -91,10 +91,10 @@ Windows ZIP 包含应用运行所需的完整 Flutter 运行时、`libmpv-2.dll`
 每个更新资产必须同时发布同名校验文件：
 
 ```text
-NamelessAudio-android-arm64-v0.11.1.apk
-NamelessAudio-android-arm64-v0.11.1.apk.sha256
-NamelessAudio-windows-x64-v0.11.1.zip
-NamelessAudio-windows-x64-v0.11.1.zip.sha256
+NamelessAudio-android-arm64-v0.11.2.apk
+NamelessAudio-android-arm64-v0.11.2.apk.sha256
+NamelessAudio-windows-x64-v0.11.2.zip
+NamelessAudio-windows-x64-v0.11.2.zip.sha256
 ```
 
 ## 支持格式
@@ -147,7 +147,7 @@ build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
 
 ```powershell
 flutter build windows --release
-Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath dist\NamelessAudio-windows-x64-v0.11.1.zip -Force
+Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath dist\NamelessAudio-windows-x64-v0.11.2.zip -Force
 ```
 
 ## 发布流程
@@ -160,10 +160,16 @@ Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath dist\
 4. 为两端资产生成 `.sha256` 并上传到同一个 GitHub Release。
 
 ```powershell
-dart run tool/verify_release.dart --tag v0.11.1
-git tag v0.11.1
-git push origin main v0.11.1
+dart run tool/verify_release.dart --tag v0.11.2
+git tag v0.11.2
+git push origin main v0.11.2
 ```
+
+## v0.11.2 重点变更
+
+- 修复 Windows 自动更新在下载并校验完成后没有继续接管安装的问题。
+- Windows 更新器进入管理员权限分支后会及时通知应用关闭，让独立更新脚本继续完成目录切换和重启。
+- 更新反馈从“更新已校验”改为“正在准备安装”，失败时会显示下一步操作和更新日志入口。
 
 ## v0.11.1 重点变更
 

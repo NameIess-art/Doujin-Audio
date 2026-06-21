@@ -487,13 +487,19 @@ const Map<String, String> appLanguageEn = {
       'Update download failed. Please check your network and try again.',
   'update_download_failed_next_step':
       'The download or SHA-256 verification did not finish. Retry, or open the GitHub Release page to download manually.',
-  'update_download_verified_title': 'Update verified',
-  'update_download_verified_message':
-      'Version {version} was downloaded and SHA-256 verified. File: {path}',
+  'update_install_preparing_title': 'Preparing update',
+  'update_install_preparing_message':
+      'Version {version} was downloaded and SHA-256 verified. The app may close and restart automatically to finish updating. File: {path}',
   'update_ready_install':
       'Installer opened. Follow the system prompts to finish updating.',
-  'update_install_failed':
-      'Could not open the installer. Please try again later.',
+  'update_windows_ready_install':
+      'Updater is ready. The app will close and restart to finish updating.',
+  'update_install_failed': 'Could not continue installing the update.',
+  'update_install_failed_next_step':
+      'Retry later. If it still fails, check the update log or open the GitHub Release page to install manually.',
+  'update_install_failed_with_detail':
+      'Retry later. If it still fails, check the update log. Detail: {detail}',
+  'open_update_log': 'View log',
   'install_permission_needed':
       'Please allow this app to install unknown apps first.',
   'install_permission_title': 'Allow update installs',

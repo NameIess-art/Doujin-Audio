@@ -2,9 +2,9 @@
 
 Nameless Audio 是一款面向 ASMR、语音作品和大体量本地媒体库的跨平台播放器，使用 Flutter、Android 原生 Media3 / ExoPlayer 与 Windows libmpv 混合实现。
 
-当前版本：`0.10.4+1004`
+当前版本：`0.11.0+1100`
 
-最新发布页：[v0.10.4](https://github.com/NameIess-art/nameless-audio/releases/tag/v0.10.4)
+最新发布页：[v0.11.0](https://github.com/NameIess-art/nameless-audio/releases/tag/v0.11.0)
 
 [MIT License](LICENSE) · [隐私说明](PRIVACY.md) · [发行质量说明](docs/release-quality.md)
 
@@ -12,8 +12,8 @@ Nameless Audio 是一款面向 ASMR、语音作品和大体量本地媒体库的
 
 | 平台 | 发布资产 | 说明 |
 |---|---|---|
-| Android arm64-v8a | `NamelessAudio-android-arm64-v0.10.4.apk` | 适用于大多数 64 位 Android 手机 |
-| Windows x64 | `NamelessAudio-windows-x64-v0.10.4.zip` | 解压完整 ZIP 后运行 `nameless_audio.exe` |
+| Android arm64-v8a | `NamelessAudio-android-arm64-v0.11.0.apk` | 适用于大多数 64 位 Android 手机 |
+| Windows x64 | `NamelessAudio-windows-x64-v0.11.0.zip` | 解压完整 ZIP 后运行 `nameless_audio.exe` |
 
 Windows ZIP 包含应用运行所需的完整 Flutter 运行时、`libmpv-2.dll`、FFmpeg 和 FFprobe。不要只复制 EXE。
 
@@ -91,10 +91,10 @@ Windows ZIP 包含应用运行所需的完整 Flutter 运行时、`libmpv-2.dll`
 每个更新资产必须同时发布同名校验文件：
 
 ```text
-NamelessAudio-android-arm64-v0.10.4.apk
-NamelessAudio-android-arm64-v0.10.4.apk.sha256
-NamelessAudio-windows-x64-v0.10.4.zip
-NamelessAudio-windows-x64-v0.10.4.zip.sha256
+NamelessAudio-android-arm64-v0.11.0.apk
+NamelessAudio-android-arm64-v0.11.0.apk.sha256
+NamelessAudio-windows-x64-v0.11.0.zip
+NamelessAudio-windows-x64-v0.11.0.zip.sha256
 ```
 
 ## 支持格式
@@ -147,7 +147,7 @@ build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
 
 ```powershell
 flutter build windows --release
-Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath dist\NamelessAudio-windows-x64-v0.10.4.zip -Force
+Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath dist\NamelessAudio-windows-x64-v0.11.0.zip -Force
 ```
 
 ## 发布流程
@@ -160,13 +160,17 @@ Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath dist\
 4. 为两端资产生成 `.sha256` 并上传到同一个 GitHub Release。
 
 ```powershell
-dart run tool/verify_release.dart --tag v0.10.4
-git tag v0.10.4
-git push origin main v0.10.4
+dart run tool/verify_release.dart --tag v0.11.0
+git tag v0.11.0
+git push origin main v0.11.0
 ```
 
-## v0.10.4 重点变更
+## v0.11.0 重点变更
 
-- 修复通过应用内更新下载的包在 Android 上无法直接覆盖安装，抛出应用签名不一致的错误。
+- 优化播放详细页下滑与系统级交互响应，减少重 UI 对通知栏下拉、后台切换等操作的影响。
+- 统一 ASMR.ONE、本地音频库和播放列表的作品卡片节奏，优化封面、标题、信息栏、标签行和底部留白。
+- Android 列表文字保持静态以降低动画负载，Windows 保留必要的焦点跑马灯体验。
+- 完善导入、扫描、元数据、下载、更新、备份和权限相关失败反馈，提供更明确的下一步操作。
+- 建立体验质量基线测试与文档规范，覆盖卡片回归、文档编码、动效可访问性和手动性能验收流程。
 
 完整内容见 [release_notes.md](release_notes.md).

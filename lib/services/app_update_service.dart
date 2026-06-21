@@ -700,9 +700,9 @@ function Wait-AppExit {
   throw 'The application did not exit in time for the update.'
 }
 
-function Test-InstallDirWritable {
+function Test-DirectoryWritable([string]$Directory) {
   try {
-    $probe = Join-Path $InstallDir ('.nameless_audio_update_write_test_' + [Guid]::NewGuid().ToString('N') + '.tmp')
+    $probe = Join-Path $Directory ('.nameless_audio_update_write_test_' + [Guid]::NewGuid().ToString('N') + '.tmp')
     Set-Content -LiteralPath $probe -Value 'test' -Encoding UTF8
     Remove-Item -LiteralPath $probe -Force
     return $true
@@ -711,8 +711,13 @@ function Test-InstallDirWritable {
   }
 }
 
+function Test-UpdateTargetWritable {
+  $parent = Split-Path -Parent $InstallDir
+  return (Test-DirectoryWritable $InstallDir) -and (Test-DirectoryWritable $parent)
+}
+
 function Quote-Argument([string]$Value) {
-  return '"' + ($Value -replace '"', '\"') + '"'
+  return "'" + ($Value -replace "'", "''") + "'"
 }
 
 function Start-ElevatedUpdater {
@@ -720,14 +725,8 @@ function Start-ElevatedUpdater {
   if (-not (Test-Path -LiteralPath $powerShell)) {
     $powerShell = 'powershell.exe'
   }
-  $args = @(
-    '-WindowStyle',
-    'Hidden',
-    '-NoProfile',
-    '-ExecutionPolicy',
-    'Bypass',
-    '-STA',
-    '-File',
+  $command = @(
+    '&',
     (Quote-Argument $PSCommandPath),
     (Quote-Argument $ZipPath),
     (Quote-Argument $InstallDir),
@@ -736,8 +735,16 @@ function Start-ElevatedUpdater {
     (Quote-Argument $ReadyPath),
     '-Elevated'
   ) -join ' '
+  $encodedCommand = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command))
+  $args = @(
+    '-WindowStyle', 'Hidden',
+    '-NoProfile',
+    '-ExecutionPolicy', 'Bypass',
+    '-STA',
+    '-EncodedCommand', $encodedCommand
+  )
   Write-UpdateLog 'requesting elevated updater'
-  Start-Process -FilePath $powerShell -ArgumentList $args -Verb RunAs -WorkingDirectory $InstallDir
+  Start-Process -FilePath $powerShell -ArgumentList $args -Verb RunAs -WorkingDirectory $env:TEMP
 }
 
 function Show-Failure([string]$Message) {
@@ -751,6 +758,53 @@ function Show-Failure([string]$Message) {
     ) | Out-Null
   } catch {
     Start-Process -FilePath 'notepad.exe' -ArgumentList (Quote-Argument $logPath) -ErrorAction SilentlyContinue
+  }
+}
+
+function Invoke-RobocopyMirror([string]$Source, [string]$Destination) {
+  if (-not (Test-Path -LiteralPath $Destination)) {
+    New-Item -ItemType Directory -Force -Path $Destination | Out-Null
+  }
+  Write-UpdateLog "mirroring $Source to $Destination"
+  & robocopy $Source $Destination /MIR /COPY:DAT /R:15 /W:1 /NFL /NDL /NP | Out-Null
+  $robocopyExitCode = $LASTEXITCODE
+  Write-UpdateLog "robocopy exit code=$robocopyExitCode"
+  if ($robocopyExitCode -ge 8) {
+    throw "File copy failed with robocopy exit code $robocopyExitCode."
+  }
+}
+
+function Install-WithDirectorySwap([string]$PayloadDir) {
+  $installParent = Split-Path -Parent $InstallDir
+  $installName = Split-Path -Leaf $InstallDir
+  $stamp = Get-Date -Format 'yyyyMMddHHmmss'
+  $newDir = Join-Path $installParent ($installName + '.new_' + $stamp)
+  $backupDir = Join-Path $installParent ($installName + '.old_' + $stamp)
+
+  try {
+    Invoke-RobocopyMirror $PayloadDir $newDir
+    Write-UpdateLog "renaming current install dir to backup: $backupDir"
+    Rename-Item -LiteralPath $InstallDir -NewName (Split-Path -Leaf $backupDir)
+    Write-UpdateLog "activating new install dir: $InstallDir"
+    Rename-Item -LiteralPath $newDir -NewName $installName
+    if (-not (Test-Path -LiteralPath $ExePath)) {
+      throw "Updated executable is missing: $ExePath"
+    }
+    return $backupDir
+  } catch {
+    Write-UpdateLog ("directory swap failed: " + $_.Exception.Message)
+    if ((Test-Path -LiteralPath $backupDir) -and -not (Test-Path -LiteralPath $InstallDir)) {
+      try {
+        Rename-Item -LiteralPath $backupDir -NewName $installName
+        Write-UpdateLog 'restored backup install directory'
+      } catch {
+        Write-UpdateLog ("failed to restore backup install directory: " + $_.Exception.Message)
+      }
+    }
+    if (Test-Path -LiteralPath $newDir) {
+      Remove-Item -LiteralPath $newDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    throw
   }
 }
 
@@ -771,33 +825,38 @@ try {
   }
   $payloadDir = $payloadExe.Directory.FullName
 
-  if (-not (Test-InstallDirWritable)) {
+  if (-not (Test-UpdateTargetWritable)) {
     if (-not $Elevated) {
       Start-ElevatedUpdater
       Write-UpdateLog 'elevated updater started'
       exit 0
     }
-    throw "Cannot write to install directory: $InstallDir"
+    throw "Cannot write to install directory or parent directory: $InstallDir"
   }
 
   Set-Content -LiteralPath $ReadyPath -Value 'ready' -Encoding ASCII
   Write-UpdateLog 'payload verified; waiting for application exit'
   Wait-AppExit
 
-  Write-UpdateLog "copying $payloadDir to $InstallDir with robocopy"
-  & robocopy $payloadDir $InstallDir /E /COPY:DAT /R:15 /W:1 /NFL /NDL /NP | Out-Null
-  $robocopyExitCode = $LASTEXITCODE
-  Write-UpdateLog "robocopy exit code=$robocopyExitCode"
-  if ($robocopyExitCode -ge 8) {
-    throw "File copy failed with robocopy exit code $robocopyExitCode."
+  $backupDir = $null
+  try {
+    Write-UpdateLog 'installing by directory swap'
+    $backupDir = Install-WithDirectorySwap $payloadDir
+  } catch {
+    Write-UpdateLog ("directory swap unavailable; falling back to in-place mirror: " + $_.Exception.Message)
+    Invoke-RobocopyMirror $payloadDir $InstallDir
+    if (-not (Test-Path -LiteralPath $ExePath)) {
+      throw "Updated executable is missing: $ExePath"
+    }
   }
 
-  if (-not (Test-Path -LiteralPath $ExePath)) {
-    throw "Updated executable is missing: $ExePath"
-  }
   Write-UpdateLog "restarting $ExePath"
   Start-Process -FilePath $ExePath -WorkingDirectory $InstallDir
+  if ($null -ne $backupDir -and (Test-Path -LiteralPath $backupDir)) {
+    Remove-Item -LiteralPath $backupDir -Recurse -Force -ErrorAction SilentlyContinue
+  }
   Write-UpdateLog 'update complete'
+  exit 0
 } catch {
   Write-UpdateLog ("update failed: " + $_.Exception.Message)
   Set-Content -LiteralPath $ReadyPath -Value ("error:" + $_.Exception.Message) -Encoding UTF8 -ErrorAction SilentlyContinue

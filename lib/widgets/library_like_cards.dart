@@ -324,8 +324,8 @@ class LibraryLikeDetailInfoLine extends StatelessWidget {
       ],
     );
 
-    return SizedBox(
-      height: lineCount * _libraryLikeInfoLineHeight,
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: _libraryLikeInfoLineHeight),
       child: content,
     );
   }
@@ -348,33 +348,32 @@ class _LibraryLikeMultiLineInfoText extends StatelessWidget {
   Widget build(BuildContext context) {
     if (lines == 2 && enableMarquee) {
       final splitLines = _splitLibraryLikeName(text);
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          LibraryLikeMarqueeLine(
-            text: splitLines.$1,
-            style: style,
-            enableMarquee: enableMarquee,
-          ),
-          LibraryLikeMarqueeLine(
-            text: splitLines.$2,
-            style: style,
-            enableMarquee: enableMarquee,
-          ),
-        ],
-      );
+      if (splitLines.$2.isNotEmpty) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            LibraryLikeMarqueeLine(
+              text: splitLines.$1,
+              style: style,
+              enableMarquee: enableMarquee,
+            ),
+            LibraryLikeMarqueeLine(
+              text: splitLines.$2,
+              style: style,
+              enableMarquee: enableMarquee,
+            ),
+          ],
+        );
+      }
     }
 
-    return SizedBox(
-      height: lines * _libraryLikeInfoLineHeight,
-      child: Text(
-        text,
-        maxLines: lines,
-        softWrap: true,
-        overflow: TextOverflow.ellipsis,
-        style: style,
-        strutStyle: _libraryLikeFixedLineStrut(style),
-      ),
+    return Text(
+      text,
+      maxLines: lines,
+      softWrap: true,
+      overflow: TextOverflow.ellipsis,
+      style: style,
+      strutStyle: _libraryLikeFixedLineStrut(style),
     );
   }
 }

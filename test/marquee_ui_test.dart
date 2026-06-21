@@ -130,6 +130,31 @@ void main() {
     expect(marquee.edgePadding, 2);
   });
 
+  testWidgets('library detail multiline text does not reserve blank rows', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _buildApp(
+        const Material(
+          child: SizedBox(
+            width: 220,
+            child: LibraryLikeDetailInfoLine(
+              label: 'Tags',
+              text: 'ASMR',
+              style: TextStyle(fontSize: 10),
+              loading: false,
+              lines: 4,
+              enableMarquee: false,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final size = tester.getSize(find.byType(LibraryLikeDetailInfoLine));
+    expect(size.height, lessThan(24));
+  });
+
   testWidgets('search hint marquee can fill available width', (tester) async {
     final hint = appLanguageJa['asmr_search_hint']!;
 

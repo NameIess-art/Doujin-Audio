@@ -653,7 +653,7 @@ void main() {
       find.text(
         languageProvider.tr('card_info_display_subtitle', {
           'count': '4',
-          'max': '5',
+          'max': '6',
         }),
       ),
       findsOneWidget,
@@ -667,20 +667,30 @@ void main() {
     );
     await tester.pump();
 
-    expect(audioProvider.cardInfoFields, hasLength(CardInfoField.maxSelected));
+    expect(audioProvider.cardInfoFields, hasLength(5));
     final salesTile = tester.widget<CheckboxListTile>(
       find.widgetWithText(
         CheckboxListTile,
         languageProvider.tr('audio_detail_sales_count'),
       ),
     );
+    expect(salesTile.onChanged, isNotNull);
+
+    await tester.tap(
+      find.widgetWithText(
+        CheckboxListTile,
+        languageProvider.tr('audio_detail_sales_count'),
+      ),
+    );
+    await tester.pump();
+
+    expect(audioProvider.cardInfoFields, hasLength(CardInfoField.maxSelected));
     final ratingTile = tester.widget<CheckboxListTile>(
       find.widgetWithText(
         CheckboxListTile,
         languageProvider.tr('audio_detail_rating'),
       ),
     );
-    expect(salesTile.onChanged, isNull);
     expect(ratingTile.onChanged, isNull);
   });
 

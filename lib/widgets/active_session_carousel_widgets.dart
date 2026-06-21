@@ -568,8 +568,7 @@ class _ActiveSessionCover extends ConsumerWidget {
             ? RetryingNetworkImage(
                 url: track!.remoteCoverUrl!.trim(),
                 fit: BoxFit.cover,
-                cacheWidth: (58 * MediaQuery.devicePixelRatioOf(context))
-                    .round(),
+                cacheWidth: coverCacheWidthForDisplay(context, 58),
                 loadingBuilder: (context, child, loadingProgress) =>
                     loadingProgress == null
                     ? child
@@ -594,10 +593,9 @@ class _ActiveSessionCover extends ConsumerWidget {
                   color: cs.primary,
                 ),
                 imageBuilder: (context, coverPath) {
-                  final dpr = MediaQuery.devicePixelRatioOf(context);
                   return RetryingFileImage(
                     path: coverPath,
-                    cacheWidth: (58 * dpr).round(),
+                    cacheWidth: coverCacheWidthForDisplay(context, 58),
                     fit: BoxFit.cover,
                     fallbackBuilder: (_) => fallback(),
                   );

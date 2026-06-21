@@ -5,8 +5,12 @@ import 'package:flutter/material.dart';
 import 'app_feedback.dart';
 import 'marquee_text.dart';
 
+const _libraryLikeInfoLineHeight = 16.0;
+
 class LibraryLikeInfoLineData {
   const LibraryLikeInfoLineData(this.label, this.text, {this.lines = 1});
+
+  static const int maxLines = 6;
 
   final String label;
   final String text;
@@ -69,6 +73,8 @@ class LibraryLikeFeaturedCardContent extends StatelessWidget {
         const infoBlockHeight = 96.0;
         const titleBlockHeight = 38.0;
         const coverWidth = infoBlockHeight * 1.25;
+        const maxInfoRows = LibraryLikeInfoLineData.maxLines;
+        final visibleLines = lines.take(maxInfoRows).toList(growable: false);
         return SizedBox(
           height: 140,
           child: Column(
@@ -83,22 +89,16 @@ class LibraryLikeFeaturedCardContent extends StatelessWidget {
                       height: infoBlockHeight,
                       child: Column(
                         children: [
-                          for (
-                            var index = 0;
-                            index < lines.length;
-                            index++
-                          ) ...[
-                            if (index > 0) const SizedBox(height: 4),
+                          for (final line in visibleLines)
                             LibraryLikeDetailInfoLine(
-                              label: lines[index].label,
-                              text: lines[index].text,
+                              label: line.label,
+                              text: line.text,
                               style: infoStyle,
                               loading: false,
-                              lines: lines[index].lines,
+                              lines: line.lines,
                               accentColor: accentColor,
                               enableMarquee: enableMarquee,
                             ),
-                          ],
                         ],
                       ),
                     ),
@@ -264,15 +264,17 @@ class LibraryLikeDetailInfoLine extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final lineCount = lines.clamp(1, 2);
+    final lineCount = lines.clamp(1, LibraryLikeInfoLineData.maxLines);
     final labelStyle = style.copyWith(
       color: accentColor ?? cs.primary,
       fontWeight: FontWeight.w800,
     );
+    final fixedLabelStyle = _libraryLikeFixedLineStyle(labelStyle);
+    final fixedStyle = _libraryLikeFixedLineStyle(style);
     final labelWidget = enableMarquee && label.characters.length > 3
         ? MarqueeText(
             text: label,
-            style: labelStyle,
+            style: fixedLabelStyle,
             scrollSpeed: 18,
             edgePadding: 2,
           )
@@ -280,12 +282,18 @@ class LibraryLikeDetailInfoLine extends StatelessWidget {
             label,
             maxLines: 1,
             overflow: TextOverflow.clip,
-            style: labelStyle,
+            style: fixedLabelStyle,
           );
     final content = Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SizedBox(width: 28, child: SizedBox(height: 16, child: labelWidget)),
+        SizedBox(
+          width: 28,
+          child: SizedBox(
+            height: _libraryLikeInfoLineHeight,
+            child: labelWidget,
+          ),
+        ),
         const SizedBox(width: 5),
         Expanded(
           child: loading
@@ -297,26 +305,94 @@ class LibraryLikeDetailInfoLine extends StatelessWidget {
                     color: accentColor ?? cs.primary,
                   ),
                 )
-              : lineCount == 2
-              ? LibraryLikeTwoLineMarqueeText(
+              : lineCount > 1
+              ? _LibraryLikeMultiLineInfoText(
                   text: text,
-                  style: style,
+                  style: fixedStyle,
+                  lines: lineCount,
                   enableMarquee: enableMarquee,
                 )
               : enableMarquee
-              ? MarqueeText(text: text, style: style, scrollSpeed: 24)
+              ? MarqueeText(text: text, style: fixedStyle, scrollSpeed: 24)
               : Text(
                   text,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: style,
+                  style: fixedStyle,
                 ),
         ),
       ],
     );
 
-    return SizedBox(height: lineCount == 2 ? 36 : 16, child: content);
+    return SizedBox(
+      height: lineCount * _libraryLikeInfoLineHeight,
+      child: content,
+    );
   }
+}
+
+class _LibraryLikeMultiLineInfoText extends StatelessWidget {
+  const _LibraryLikeMultiLineInfoText({
+    required this.text,
+    required this.style,
+    required this.lines,
+    required this.enableMarquee,
+  });
+
+  final String text;
+  final TextStyle style;
+  final int lines;
+  final bool enableMarquee;
+
+  @override
+  Widget build(BuildContext context) {
+    if (lines == 2 && enableMarquee) {
+      final splitLines = _splitLibraryLikeName(text);
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          LibraryLikeMarqueeLine(
+            text: splitLines.$1,
+            style: style,
+            enableMarquee: enableMarquee,
+          ),
+          LibraryLikeMarqueeLine(
+            text: splitLines.$2,
+            style: style,
+            enableMarquee: enableMarquee,
+          ),
+        ],
+      );
+    }
+
+    return SizedBox(
+      height: lines * _libraryLikeInfoLineHeight,
+      child: Text(
+        text,
+        maxLines: lines,
+        softWrap: true,
+        overflow: TextOverflow.ellipsis,
+        style: style,
+        strutStyle: _libraryLikeFixedLineStrut(style),
+      ),
+    );
+  }
+}
+
+TextStyle _libraryLikeFixedLineStyle(TextStyle style) {
+  final fontSize = style.fontSize;
+  if (fontSize == null || fontSize <= 0) return style;
+  return style.copyWith(height: _libraryLikeInfoLineHeight / fontSize);
+}
+
+StrutStyle? _libraryLikeFixedLineStrut(TextStyle style) {
+  final fontSize = style.fontSize;
+  if (fontSize == null || fontSize <= 0) return null;
+  return StrutStyle(
+    fontSize: fontSize,
+    height: _libraryLikeInfoLineHeight / fontSize,
+    forceStrutHeight: true,
+  );
 }
 
 class LibraryLikeMarqueeLine extends StatelessWidget {

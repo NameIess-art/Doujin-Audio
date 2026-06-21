@@ -254,6 +254,9 @@ class _BootstrapOverlayState extends State<_BootstrapOverlay>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
   late final Animation<double> _logoScale;
+  late final Animation<double> _logoOpacity;
+  late final Animation<double> _textOpacity;
+  late final Animation<Offset> _textSlide;
   late final Animation<double> _opacity;
   late final Animation<double> _blur;
   bool _disableAnimations = false;
@@ -262,50 +265,79 @@ class _BootstrapOverlayState extends State<_BootstrapOverlay>
   @override
   void initState() {
     super.initState();
-    // Total duration 1.5s: 0.75s grow + 0.75s fade
+    // Total duration 1600ms: 0.8s entrance (0.0->0.5) + 0.8s exit (0.5->1.0)
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1500),
+      duration: const Duration(milliseconds: 1600),
     );
 
     _logoScale = TweenSequence<double>([
       TweenSequenceItem(
-        tween: Tween<double>(
-          begin: 0.0,
-          end: 1.0,
-        ).chain(CurveTween(curve: Curves.easeOutBack)),
-        weight: 50, // 0.75s
+        tween: Tween<double>(begin: 0.4, end: 1.0)
+            .chain(CurveTween(curve: Curves.easeOutBack)),
+        weight: 35, // 0.0 - 0.35
       ),
+      TweenSequenceItem(tween: ConstantTween<double>(1.0), weight: 15), // 0.35 - 0.50
       TweenSequenceItem(
-        tween: ConstantTween<double>(1.0),
-        weight: 50, // 0.75s
+        tween: Tween<double>(begin: 1.0, end: 0.85)
+            .chain(CurveTween(curve: Curves.easeInCubic)),
+        weight: 50, // 0.50 - 1.0
       ),
     ]).animate(_controller);
 
-    _opacity = TweenSequence<double>([
+    _logoOpacity = TweenSequence<double>([
       TweenSequenceItem(
-        tween: ConstantTween<double>(1.0),
-        weight: 50, // Stay solid during grow
+        tween: Tween<double>(begin: 0.0, end: 1.0)
+            .chain(CurveTween(curve: Curves.easeOutCubic)),
+        weight: 25, // 0.0 - 0.25
       ),
+      TweenSequenceItem(tween: ConstantTween<double>(1.0), weight: 25), // 0.25 - 0.50
       TweenSequenceItem(
-        tween: Tween<double>(
-          begin: 1.0,
-          end: 0.0,
-        ).chain(CurveTween(curve: Curves.easeInCubic)),
+        tween: Tween<double>(begin: 1.0, end: 0.0)
+            .chain(CurveTween(curve: Curves.easeInCubic)),
+        weight: 50, // 0.50 - 1.0
+      ),
+    ]).animate(_controller);
+
+    _textOpacity = TweenSequence<double>([
+      TweenSequenceItem(tween: ConstantTween<double>(0.0), weight: 15), // Wait 0.0 - 0.15
+      TweenSequenceItem(
+        tween: Tween<double>(begin: 0.0, end: 1.0)
+            .chain(CurveTween(curve: Curves.easeOutCubic)),
+        weight: 25, // 0.15 - 0.40
+      ),
+      TweenSequenceItem(tween: ConstantTween<double>(1.0), weight: 10), // 0.40 - 0.50
+      TweenSequenceItem(
+        tween: Tween<double>(begin: 1.0, end: 0.0)
+            .chain(CurveTween(curve: Curves.easeInCubic)),
+        weight: 50, // 0.50 - 1.0
+      ),
+    ]).animate(_controller);
+
+    _textSlide = TweenSequence<Offset>([
+      TweenSequenceItem(tween: ConstantTween<Offset>(const Offset(0, 0.4)), weight: 15),
+      TweenSequenceItem(
+        tween: Tween<Offset>(begin: const Offset(0, 0.4), end: Offset.zero)
+            .chain(CurveTween(curve: Curves.easeOutCubic)),
+        weight: 25,
+      ),
+      TweenSequenceItem(tween: ConstantTween<Offset>(Offset.zero), weight: 60),
+    ]).animate(_controller);
+
+    _opacity = TweenSequence<double>([
+      TweenSequenceItem(tween: ConstantTween<double>(1.0), weight: 50),
+      TweenSequenceItem(
+        tween: Tween<double>(begin: 1.0, end: 0.0)
+            .chain(CurveTween(curve: Curves.easeInCubic)),
         weight: 50, // Fade during shrink
       ),
     ]).animate(_controller);
 
     _blur = TweenSequence<double>([
+      TweenSequenceItem(tween: ConstantTween<double>(0.0), weight: 50), // No blur during grow
       TweenSequenceItem(
-        tween: ConstantTween<double>(0.0),
-        weight: 50, // No blur during grow
-      ),
-      TweenSequenceItem(
-        tween: Tween<double>(
-          begin: 0.0,
-          end: 25.0,
-        ).chain(CurveTween(curve: Curves.easeInQuint)),
+        tween: Tween<double>(begin: 0.0, end: 25.0)
+            .chain(CurveTween(curve: Curves.easeInQuint)),
         weight: 50, // Blur during shrink
       ),
     ]).animate(_controller);
@@ -408,51 +440,60 @@ class _BootstrapOverlayState extends State<_BootstrapOverlay>
             ),
             // Logo
             Center(
-              child: ScaleTransition(
-                scale: _logoScale,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 100,
-                      height: 100,
-                      decoration: BoxDecoration(
-                        color: cs.primary,
-                        borderRadius: BorderRadius.circular(28),
-                        boxShadow: [
-                          BoxShadow(
-                            color: cs.primary.withValues(alpha: 0.3),
-                            blurRadius: 24,
-                            offset: const Offset(0, 8),
-                          ),
-                        ],
-                        gradient: LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [
-                            cs.primary,
-                            cs.primary.withValues(alpha: 0.8),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Opacity(
+                    opacity: _logoOpacity.value.clamp(0.0, 1.0),
+                    child: ScaleTransition(
+                      scale: _logoScale,
+                      child: Container(
+                        width: 100,
+                        height: 100,
+                        decoration: BoxDecoration(
+                          color: cs.primary,
+                          borderRadius: BorderRadius.circular(28),
+                          boxShadow: [
+                            BoxShadow(
+                              color: cs.primary.withValues(alpha: 0.3),
+                              blurRadius: 24,
+                              offset: const Offset(0, 8),
+                            ),
                           ],
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              cs.primary,
+                              cs.primary.withValues(alpha: 0.8),
+                            ],
+                          ),
+                        ),
+                        child: const Icon(
+                          Icons.graphic_eq_rounded,
+                          color: Colors.white,
+                          size: 52,
                         ),
                       ),
-                      child: const Icon(
-                        Icons.graphic_eq_rounded,
-                        color: Colors.white,
-                        size: 52,
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  SlideTransition(
+                    position: _textSlide,
+                    child: Opacity(
+                      opacity: _textOpacity.value.clamp(0.0, 1.0),
+                      child: Text(
+                        'Nameless Audio',
+                        style: Theme.of(context).textTheme.headlineSmall
+                            ?.copyWith(
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: -0.5,
+                              color: cs.onSurface,
+                            ),
                       ),
                     ),
-                    const SizedBox(height: 24),
-                    Text(
-                      'Nameless Audio',
-                      style: Theme.of(context).textTheme.headlineSmall
-                          ?.copyWith(
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: -0.5,
-                            color: cs.onSurface,
-                          ),
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           ],

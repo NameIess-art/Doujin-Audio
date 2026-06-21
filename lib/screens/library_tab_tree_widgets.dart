@@ -565,10 +565,9 @@ class _LibraryCoverThumbnail extends ConsumerWidget {
                 color: Theme.of(context).colorScheme.primary,
               ),
               imageBuilder: (context, coverPath) {
-                final dpr = MediaQuery.devicePixelRatioOf(context);
                 return RetryingFileImage(
                   path: coverPath,
-                  cacheWidth: (width * dpr).round(),
+                  cacheWidth: coverCacheWidthForDisplay(context, width),
                   fit: BoxFit.cover,
                   fallbackBuilder: (_) => fallback(),
                 );
@@ -628,10 +627,9 @@ class _LibraryTrackCoverThumbnail extends ConsumerWidget {
               color: Theme.of(context).colorScheme.primary,
             ),
             imageBuilder: (context, coverPath) {
-              final dpr = MediaQuery.devicePixelRatioOf(context);
               return RetryingFileImage(
                 path: coverPath,
-                cacheWidth: (width * dpr).round(),
+                cacheWidth: coverCacheWidthForDisplay(context, width),
                 fit: BoxFit.cover,
                 fallbackBuilder: (_) => fallback(),
               );
@@ -857,7 +855,7 @@ _AudioDetailInfoLineData _tagsDetailInfoLine(
   return _AudioDetailInfoLineData(
     i18n.tr('library_category_tags'),
     text,
-    lines: selectedFieldCount >= CardInfoField.maxSelected ? 1 : 2,
+    lines: CardInfoField.tagLineCountForSelection(selectedFieldCount),
   );
 }
 

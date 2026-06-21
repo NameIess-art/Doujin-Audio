@@ -1,3 +1,19 @@
+# Nameless Audio v0.11.1
+
+## Windows 自动更新
+
+- Windows 自动更新改为优先使用目录切换安装：先把新版本复制到同级新目录，主程序退出后备份旧目录，再把新目录切换为正式安装目录。
+- 目录切换失败时会回退到原地镜像覆盖，降低旧文件残留和半更新状态的风险。
+- 提权更新器改用 PowerShell `EncodedCommand` 启动，减少路径空格、引号和特殊字符导致的参数解析失败。
+- 更新脚本会在新版启动后清理旧目录备份，并保留失败日志用于排查。
+
+## 发布资产
+
+- `NamelessAudio-android-arm64-v0.11.1.apk`
+- `NamelessAudio-android-arm64-v0.11.1.apk.sha256`
+- `NamelessAudio-windows-x64-v0.11.1.zip`
+- `NamelessAudio-windows-x64-v0.11.1.zip.sha256`
+
 # Nameless Audio v0.11.0
 
 ## 体验与性能

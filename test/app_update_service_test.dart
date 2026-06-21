@@ -6,6 +6,7 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/services/app_update_service.dart';
+import 'package:path/path.dart' as path;
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -148,6 +149,9 @@ void main() {
       final exe = File(
         '${installDir.path}${Platform.pathSeparator}nameless_audio.exe',
       )..writeAsStringSync('old');
+      final staleFile = File(
+        '${installDir.path}${Platform.pathSeparator}stale.txt',
+      )..writeAsStringSync('old file');
       final payloadExe = File(r'C:\Windows\System32\where.exe');
       expect(payloadExe.existsSync(), isTrue);
       final payloadBytes = await payloadExe.readAsBytes();
@@ -186,6 +190,13 @@ void main() {
       expect(result.exitCode, 0, reason: result.stderr.toString());
       expect(await ready.readAsString(), contains('ready'));
       expect(await exe.length(), payloadBytes.length);
+      expect(staleFile.existsSync(), isFalse);
+      expect(
+        tempDir.listSync().whereType<Directory>().where(
+          (entry) => path.basename(entry.path).startsWith('install.'),
+        ),
+        isEmpty,
+      );
     },
     skip: !Platform.isWindows,
     timeout: const Timeout(Duration(minutes: 2)),

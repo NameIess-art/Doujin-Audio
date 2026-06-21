@@ -55,27 +55,33 @@ void main() {
     expect(_detail(rjCode: '').hasNoMetadata, isFalse);
   });
 
-  test(
-    'card info fields default to current metadata and cap at five items',
-    () {
-      expect(CardInfoField.defaults, const <CardInfoField>[
-        CardInfoField.rjCode,
-        CardInfoField.voiceActors,
-        CardInfoField.circleName,
-        CardInfoField.tags,
-      ]);
+  test('card info fields default to current metadata and cap at six items', () {
+    expect(CardInfoField.defaults, const <CardInfoField>[
+      CardInfoField.rjCode,
+      CardInfoField.voiceActors,
+      CardInfoField.circleName,
+      CardInfoField.tags,
+    ]);
 
-      final normalized = CardInfoField.normalize(CardInfoField.values);
-      expect(normalized, hasLength(CardInfoField.maxSelected));
-      expect(normalized, const <CardInfoField>[
-        CardInfoField.rjCode,
-        CardInfoField.voiceActors,
-        CardInfoField.circleName,
-        CardInfoField.tags,
-        CardInfoField.releaseDate,
-      ]);
-    },
-  );
+    final normalized = CardInfoField.normalize(CardInfoField.values);
+    expect(normalized, hasLength(CardInfoField.maxSelected));
+    expect(normalized, const <CardInfoField>[
+      CardInfoField.rjCode,
+      CardInfoField.voiceActors,
+      CardInfoField.circleName,
+      CardInfoField.tags,
+      CardInfoField.releaseDate,
+      CardInfoField.salesCount,
+    ]);
+  });
+
+  test('card info tag rows fill the remaining six-line card budget', () {
+    expect(CardInfoField.tagLineCountForSelection(1), 6);
+    expect(CardInfoField.tagLineCountForSelection(3), 4);
+    expect(CardInfoField.tagLineCountForSelection(4), 3);
+    expect(CardInfoField.tagLineCountForSelection(5), 2);
+    expect(CardInfoField.tagLineCountForSelection(6), 1);
+  });
 
   test('DLsite query prefers an RJ code over title candidates', () {
     final query = DlsiteMetadataQuery.fromDetail(

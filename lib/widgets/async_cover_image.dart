@@ -8,6 +8,30 @@ import 'scroll_activity_gate.dart';
 
 const int kCoverImageCacheSize = 600;
 
+int coverCacheWidthForDisplay(
+  BuildContext context,
+  double logicalWidth, {
+  double desktopScale = 2.0,
+  double maxDesktopDpr = 3.0,
+  double? maxMobileDpr,
+}) {
+  final platform = Theme.of(context).platform;
+  final isDesktop =
+      platform == TargetPlatform.windows ||
+      platform == TargetPlatform.macOS ||
+      platform == TargetPlatform.linux;
+  var effectiveDpr = MediaQuery.devicePixelRatioOf(context);
+  if (isDesktop) {
+    effectiveDpr = (effectiveDpr * desktopScale)
+        .clamp(1.0, maxDesktopDpr)
+        .toDouble();
+  } else if (maxMobileDpr != null) {
+    effectiveDpr = effectiveDpr.clamp(1.0, maxMobileDpr).toDouble();
+  }
+  final cacheWidth = (logicalWidth * effectiveDpr).round();
+  return cacheWidth < 1 ? 1 : cacheWidth;
+}
+
 class PulsingPlaceholder extends StatelessWidget {
   const PulsingPlaceholder({super.key, required this.child, this.borderRadius});
 

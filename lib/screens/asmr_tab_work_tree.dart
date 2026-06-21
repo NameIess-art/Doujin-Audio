@@ -517,7 +517,7 @@ List<LibraryLikeInfoLineData> _workInfoLines(
             LibraryLikeInfoLineData(
               i18n.tr('asmr_tags_label'),
               work.tags.join('、'),
-              lines: fields.length >= CardInfoField.maxSelected ? 1 : 2,
+              lines: CardInfoField.tagLineCountForSelection(fields.length),
             ),
           );
         }

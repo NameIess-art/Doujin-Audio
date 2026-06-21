@@ -27,13 +27,11 @@ class _AsmrWorkCover extends StatelessWidget {
             : RetryingNetworkImage(
                 url: url,
                 fit: BoxFit.cover,
-                filterQuality: FilterQuality.low,
-                cacheWidth:
-                    (width *
-                            MediaQuery.devicePixelRatioOf(
-                              context,
-                            ).clamp(1.0, 1.5))
-                        .round(),
+                cacheWidth: coverCacheWidthForDisplay(
+                  context,
+                  width,
+                  maxMobileDpr: 1.5,
+                ),
                 loadingBuilder: (context, child, loadingProgress) {
                   if (loadingProgress == null) {
                     return child;

@@ -7,7 +7,8 @@ enum CardInfoField {
   salesCount,
   rating;
 
-  static const int maxSelected = 5;
+  static const int maxSelected = 6;
+  static const int maxDisplayRows = 6;
 
   static const List<CardInfoField> defaults = <CardInfoField>[
     rjCode,
@@ -32,6 +33,10 @@ enum CardInfoField {
       if (result.length >= maxSelected) break;
     }
     return List<CardInfoField>.unmodifiable(result);
+  }
+
+  static int tagLineCountForSelection(int selectedFieldCount) {
+    return (maxDisplayRows - selectedFieldCount + 1).clamp(1, maxDisplayRows);
   }
 
   static List<CardInfoField> decode(Object? value) {

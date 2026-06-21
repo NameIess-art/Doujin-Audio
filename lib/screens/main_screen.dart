@@ -285,27 +285,49 @@ class _MainScreenState extends ConsumerState<MainScreen>
         stackTrace: stackTrace,
       );
       if (!mounted) return;
-      await showDialog<void>(
+      final retry = await showDialog<bool>(
         context: context,
         builder: (dialogContext) => AlertDialog(
           title: Text(i18n.tr('update_download_failed')),
+          content: Text(i18n.tr('update_download_failed_next_step')),
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
+              onPressed: () => Navigator.of(dialogContext).pop(false),
               child: Text(i18n.tr('close')),
             ),
-            FilledButton(
+            TextButton(
               onPressed: () {
-                Navigator.of(dialogContext).pop();
+                Navigator.of(dialogContext).pop(false);
                 unawaited(AppUpdateService.openReleasePage(info.releaseUrl));
               },
               child: Text(i18n.tr('open_release_page')),
             ),
+            FilledButton.icon(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              icon: const Icon(Icons.refresh_rounded),
+              label: Text(i18n.tr('retry')),
+            ),
           ],
         ),
       );
+      if (retry == true && mounted) {
+        unawaited(_downloadAndInstallUpdate(info));
+      }
       return;
     }
+
+    if (!mounted) return;
+    showAppSnackBar(
+      context,
+      i18n.tr('update_download_verified_message', {
+        'version': info.latestVersionName,
+        'path': updateFile.path,
+      }),
+      tone: AppFeedbackTone.success,
+      title: i18n.tr('update_download_verified_title'),
+      icon: Icons.verified_rounded,
+      duration: const Duration(seconds: 5),
+    );
 
     try {
       final result = await AppUpdateService.installUpdate(updateFile);

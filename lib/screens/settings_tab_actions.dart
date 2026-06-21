@@ -110,9 +110,13 @@ extension _SettingsTabActions on _SettingsTabState {
       if (!context.mounted) return;
       showAppSnackBar(
         context,
-        i18n.tr('update_check_failed'),
+        i18n.tr('update_check_failed_next_step'),
         tone: AppFeedbackTone.destructive,
+        title: i18n.tr('update_check_failed'),
         icon: Icons.cloud_off_rounded,
+        actionLabel: i18n.tr('retry'),
+        onAction: () => unawaited(_checkForUpdates(context)),
+        duration: const Duration(seconds: 6),
       );
       return;
     } finally {
@@ -212,25 +216,38 @@ extension _SettingsTabActions on _SettingsTabState {
         stackTrace: stackTrace,
       );
       if (!context.mounted) return;
-      await showDialog<void>(
+      final retry = await showDialog<bool>(
         context: context,
         builder: (dialogContext) => AlertDialog(
           title: Text(i18n.tr('update_download_failed')),
+          content: Text(i18n.tr('update_download_failed_next_step')),
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
+              onPressed: () => Navigator.of(dialogContext).pop(false),
               child: Text(i18n.tr('close')),
             ),
-            FilledButton(
+            TextButton(
               onPressed: () {
-                Navigator.of(dialogContext).pop();
+                Navigator.of(dialogContext).pop(false);
                 unawaited(AppUpdateService.openReleasePage(info.releaseUrl));
               },
               child: Text(i18n.tr('open_release_page')),
             ),
+            FilledButton.icon(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              icon: const Icon(Icons.refresh_rounded),
+              label: Text(i18n.tr('retry')),
+            ),
           ],
         ),
       );
+      if (retry == true && context.mounted) {
+        Future<void>.delayed(Duration.zero, () {
+          if (context.mounted) {
+            unawaited(_downloadAndInstallUpdate(context, info));
+          }
+        });
+      }
       return;
     } finally {
       if (mounted) {
@@ -239,6 +256,17 @@ extension _SettingsTabActions on _SettingsTabState {
     }
 
     if (!context.mounted) return;
+    showAppSnackBar(
+      context,
+      i18n.tr('update_download_verified_message', {
+        'version': info.latestVersionName,
+        'path': updateFile.path,
+      }),
+      tone: AppFeedbackTone.success,
+      title: i18n.tr('update_download_verified_title'),
+      icon: Icons.verified_rounded,
+      duration: const Duration(seconds: 5),
+    );
     await _installDownloadedUpdate(context, updateFile);
   }
 }

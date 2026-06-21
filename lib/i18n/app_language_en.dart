@@ -84,6 +84,10 @@ const Map<String, String> appLanguageEn = {
   'need_storage_permission_import_audio':
       'Storage permission is required to import audio.',
   'import_audio_failed': 'Import failed. Please try again.',
+  'import_failed_next_step':
+      'Check that the selected file or folder is still accessible, then try again.',
+  'scan_failed_next_step':
+      'Check storage permission and whether the source folder still exists, then retry.',
   'refresh_done_added': 'Refresh complete: {count} new tracks added.',
   'refresh_done_no_new': 'No new audio found.',
   'asmr_refresh_done_updated': 'Category content updated.',
@@ -179,6 +183,8 @@ const Map<String, String> appLanguageEn = {
   'asmr_download_completed_with_failures':
       'Download completed, but some files failed',
   'asmr_download_failed': 'Download failed: {error}',
+  'asmr_download_failed_next_step':
+      'Check the destination folder and network connection, then retry.',
   'asmr_download_starting': 'Downloading',
   'asmr_download_confirm': 'Confirm download',
   'asmr_download_task_title': 'Download tasks',
@@ -384,6 +390,10 @@ const Map<String, String> appLanguageEn = {
   'permission_center_subtitle': 'Manage optional app permissions.',
   'permission_enabled': 'Enabled',
   'permission_not_enabled': 'Not enabled',
+  'permission_state_authorized': 'Authorized',
+  'permission_state_unauthorized': 'Not allowed',
+  'permission_state_restricted': 'Limited',
+  'permission_state_recommended': 'Suggested',
   'system_settings_open_failed':
       'Could not open system settings. Adjust this app manually from system app settings.',
   'permission_notification_description':
@@ -407,13 +417,21 @@ const Map<String, String> appLanguageEn = {
       'Validate a backup before restoring its database and settings.',
   'restore_backup_confirm':
       'Restoring replaces the current library database and portable settings. Failures are rolled back automatically. Continue?',
-  'backup_exported': 'Backup exported.',
+  'operation_completed': 'Completed',
+  'operation_failed': 'Operation failed',
+  'backup_exported': 'Backup exported to {path}',
   'backup_invalid': 'The backup is invalid, damaged, or unsupported.',
+  'backup_invalid_next_step':
+      'Choose another backup, or export diagnostics if this keeps happening.',
   'backup_restored_restart': 'Backup restored and loaded.',
+  'backup_restored_loaded':
+      'The restored database and settings have been loaded.',
   'export_diagnostics': 'Export diagnostics',
   'export_diagnostics_subtitle': 'Export sanitized diagnostic info.',
-  'diagnostics_exported': 'Diagnostic report exported.',
+  'diagnostics_exported': 'Diagnostic report exported to {path}',
   'operation_failed_retry': 'Operation failed. Please try again.',
+  'operation_failed_diagnostics_hint':
+      'Try again, or export diagnostics if the problem repeats.',
   'section_danger_zone': 'Other',
   'allow_background_run': 'Allow background run',
   'allow_background_run_subtitle': 'Prevent system restrictions in background.',
@@ -463,8 +481,15 @@ const Map<String, String> appLanguageEn = {
   'downloading_update': 'Downloading update: {percent}%',
   'no_updates_available': 'You are already on the latest version.',
   'update_check_failed': 'Update check failed. Please try again later.',
+  'update_check_failed_next_step':
+      'Check your network connection or GitHub access, then retry.',
   'update_download_failed':
       'Update download failed. Please check your network and try again.',
+  'update_download_failed_next_step':
+      'The download or SHA-256 verification did not finish. Retry, or open the GitHub Release page to download manually.',
+  'update_download_verified_title': 'Update verified',
+  'update_download_verified_message':
+      'Version {version} was downloaded and SHA-256 verified. File: {path}',
   'update_ready_install':
       'Installer opened. Follow the system prompts to finish updating.',
   'update_install_failed':

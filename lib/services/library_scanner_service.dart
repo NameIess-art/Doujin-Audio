@@ -1031,9 +1031,8 @@ class LibraryScannerService {
       );
       await _prefillRjDetailForFolder(provider, normalizedFolderPath);
       provider.setScanning(false);
-
-      showSnack(i18n.tr('import_done_added', {'count': added}));
     }
+    showSnack(i18n.tr('import_done_added', {'count': added}));
   }
 
   Future<void> addLibrary({
@@ -1113,14 +1112,13 @@ class LibraryScannerService {
     } finally {
       await provider.endLibraryBatch();
       provider.setScanning(false);
-
-      showSnack(
-        i18n.tr('import_library_done', {
-          'count': added,
-          'folderCount': importTargets.length,
-        }),
-      );
     }
+    showSnack(
+      i18n.tr('import_library_done', {
+        'count': added,
+        'folderCount': importTargets.length,
+      }),
+    );
   }
 
   Future<void> addFiles({

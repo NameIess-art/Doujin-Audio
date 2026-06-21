@@ -15,6 +15,7 @@ import '../i18n/app_language_provider.dart';
 import '../providers/audio_provider.dart';
 import '../providers/audio_provider_riverpod.dart';
 import '../services/audio_state_services.dart';
+import '../services/app_log_service.dart';
 import '../services/file_cache_platform_gateway.dart';
 import '../services/media_file_support.dart';
 import '../services/natural_sort.dart';
@@ -180,15 +181,31 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
       showAppSnackBar(context, i18n.tr('scanning_title'));
       return;
     }
-    await _scanner.refreshWatchedFolders(
-      provider: provider,
-      i18n: i18n,
-      showSnack: (msg) {
-        if (mounted) showAppSnackBar(context, msg);
-      },
-      silent: silent,
-      forceShowResult: forceShowResult,
-    );
+    try {
+      await _scanner.refreshWatchedFolders(
+        provider: provider,
+        i18n: i18n,
+        showSnack: (msg) {
+          if (mounted) showAppSnackBar(context, msg);
+        },
+        silent: silent,
+        forceShowResult: forceShowResult,
+      );
+    } catch (error, stackTrace) {
+      AppLogService.error(
+        'library_refresh_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      if (!mounted || (silent && !forceShowResult)) return;
+      _showLibraryFailure(
+        messageKey: 'scan_failed_next_step',
+        retry: () => _scheduleWatchedFoldersRefresh(
+          silent: silent,
+          forceShowResult: forceShowResult,
+        ),
+      );
+    }
   }
 
   Future<void> _runLibraryPullRefresh({bool showSnackbar = false}) async {
@@ -204,39 +221,74 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     await _scheduleWatchedFoldersRefresh(silent: true, forceShowResult: true);
   }
 
-  Future<void> _addFolder() async {
+  Future<void> _runLibraryImportAction({
+    required String logEvent,
+    required Future<void> Function({
+      required AudioProvider provider,
+      required AppLanguageProvider i18n,
+      required void Function(String) showSnack,
+    })
+    action,
+    required Future<void> Function() retry,
+  }) async {
     final i18n = context.read<AppLanguageProvider>();
     final provider = context.read<AudioProvider>();
-    await _scanner.addFolder(
-      provider: provider,
-      i18n: i18n,
-      showSnack: (msg) {
-        if (mounted) showAppSnackBar(context, msg);
-      },
+    try {
+      await action(
+        provider: provider,
+        i18n: i18n,
+        showSnack: (msg) {
+          if (mounted) showAppSnackBar(context, msg);
+        },
+      );
+    } catch (error, stackTrace) {
+      AppLogService.error(logEvent, error: error, stackTrace: stackTrace);
+      if (!mounted) return;
+      _showLibraryFailure(
+        messageKey: 'import_failed_next_step',
+        retry: _addFolder,
+      );
+    }
+  }
+
+  Future<void> _addFolder() {
+    return _runLibraryImportAction(
+      logEvent: 'library_import_folder_failed',
+      action: _scanner.addFolder,
+      retry: _addFolder,
     );
   }
 
   Future<void> _addLibrary() async {
-    final i18n = context.read<AppLanguageProvider>();
-    final provider = context.read<AudioProvider>();
-    await _scanner.addLibrary(
-      provider: provider,
-      i18n: i18n,
-      showSnack: (msg) {
-        if (mounted) showAppSnackBar(context, msg);
-      },
+    return _runLibraryImportAction(
+      logEvent: 'library_import_library_failed',
+      action: _scanner.addLibrary,
+      retry: _addLibrary,
     );
   }
 
   Future<void> _addFiles() async {
+    return _runLibraryImportAction(
+      logEvent: 'library_import_files_failed',
+      action: _scanner.addFiles,
+      retry: _addFiles,
+    );
+  }
+
+  void _showLibraryFailure({
+    required String messageKey,
+    required Future<void> Function() retry,
+  }) {
     final i18n = context.read<AppLanguageProvider>();
-    final provider = context.read<AudioProvider>();
-    await _scanner.addFiles(
-      provider: provider,
-      i18n: i18n,
-      showSnack: (msg) {
-        if (mounted) showAppSnackBar(context, msg);
-      },
+    showAppSnackBar(
+      context,
+      i18n.tr(messageKey),
+      tone: AppFeedbackTone.destructive,
+      title: i18n.tr('operation_failed'),
+      icon: Icons.error_outline_rounded,
+      actionLabel: i18n.tr('retry'),
+      onAction: () => unawaited(retry()),
+      duration: const Duration(seconds: 6),
     );
   }
 
@@ -710,7 +762,9 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                       if (isWindows)
                         IconButton(
                           onPressed: canPullRefresh
-                              ? () => unawaited(_runLibraryPullRefresh(showSnackbar: true))
+                              ? () => unawaited(
+                                  _runLibraryPullRefresh(showSnackbar: true),
+                                )
                               : null,
                           icon: const Icon(Icons.refresh_rounded),
                           tooltip: i18n.tr('refresh_watched_folder'),

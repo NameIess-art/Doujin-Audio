@@ -8,6 +8,7 @@ enum AppInteractionFeedbackType { tap, selection, confirmation, destructive }
 
 OverlayEntry? _activeFeedbackEntry;
 Timer? _activeFeedbackTimer;
+VoidCallback? _activeFeedbackRemove;
 
 abstract final class AppInteractionFeedback {
   static DateTime? _lastContinuousFeedbackAt;
@@ -56,14 +57,18 @@ void showAppSnackBar(
   BuildContext context,
   String message, {
   AppFeedbackTone tone = AppFeedbackTone.info,
+  String? title,
   IconData? icon,
   Color? iconColor,
   Duration? duration,
+  String? actionLabel,
+  VoidCallback? onAction,
 }) {
   _showTopFeedback(
     context,
     message,
     tone: tone,
+    title: title,
     icon: icon,
     iconColor: iconColor,
     duration:
@@ -71,6 +76,8 @@ void showAppSnackBar(
         (tone == AppFeedbackTone.destructive
             ? const Duration(seconds: 4)
             : const Duration(seconds: 2)),
+    actionLabel: actionLabel,
+    onAction: onAction,
   );
 }
 
@@ -78,20 +85,38 @@ void _showTopFeedback(
   BuildContext context,
   String message, {
   required AppFeedbackTone tone,
+  String? title,
   IconData? icon,
   Color? iconColor,
   required Duration duration,
+  String? actionLabel,
+  VoidCallback? onAction,
 }) {
   final overlay = Overlay.of(context, rootOverlay: true);
   final resolvedIcon = icon ?? _defaultIconForTone(tone);
+  final hasAction =
+      actionLabel != null && actionLabel.trim().isNotEmpty && onAction != null;
   unawaited(
     AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection),
   );
 
   _activeFeedbackTimer?.cancel();
-  _activeFeedbackEntry?.remove();
+  _activeFeedbackRemove?.call();
 
   late final OverlayEntry entry;
+  var removed = false;
+  void removeEntry() {
+    if (removed) return;
+    removed = true;
+    if (_activeFeedbackEntry == entry) {
+      _activeFeedbackEntry = null;
+    }
+    if (_activeFeedbackRemove == removeEntry) {
+      _activeFeedbackRemove = null;
+    }
+    entry.remove();
+  }
+
   entry = OverlayEntry(
     builder: (overlayContext) {
       final topInset = MediaQuery.of(overlayContext).padding.top + 10;
@@ -102,13 +127,9 @@ void _showTopFeedback(
         right: 16,
         child: _FeedbackAnimationWrapper(
           duration: duration,
-          onRemove: () {
-            if (_activeFeedbackEntry == entry) {
-              _activeFeedbackEntry = null;
-            }
-            entry.remove();
-          },
+          onRemove: removeEntry,
           child: IgnorePointer(
+            ignoring: !hasAction,
             child: Material(
               color: Colors.transparent,
               child: Center(
@@ -118,7 +139,17 @@ void _showTopFeedback(
                     tone: tone,
                     icon: resolvedIcon,
                     iconColor: iconColor,
+                    title: title,
                     message: message,
+                    trailing: hasAction
+                        ? TextButton(
+                            onPressed: () {
+                              removeEntry();
+                              onAction();
+                            },
+                            child: Text(actionLabel),
+                          )
+                        : null,
                   ),
                 ),
               ),
@@ -131,6 +162,7 @@ void _showTopFeedback(
 
   overlay.insert(entry);
   _activeFeedbackEntry = entry;
+  _activeFeedbackRemove = removeEntry;
 }
 
 class _FeedbackAnimationWrapper extends StatefulWidget {
@@ -154,6 +186,7 @@ class _FeedbackAnimationWrapperState extends State<_FeedbackAnimationWrapper>
   late final AnimationController _controller;
   late final Animation<double> _opacity;
   late final Animation<Offset> _offset;
+  Timer? _dismissTimer;
 
   @override
   void initState() {
@@ -171,20 +204,20 @@ class _FeedbackAnimationWrapperState extends State<_FeedbackAnimationWrapper>
     _controller.forward();
 
     final stayDuration = widget.duration - const Duration(milliseconds: 250);
-    Future.delayed(
+    _dismissTimer = Timer(
       stayDuration > Duration.zero ? stayDuration : Duration.zero,
       () {
-        if (mounted) {
-          _controller.reverse().then((_) {
-            if (mounted) widget.onRemove();
-          });
-        }
+        if (!mounted) return;
+        _controller.reverse().then((_) {
+          if (mounted) widget.onRemove();
+        });
       },
     );
   }
 
   @override
   void dispose() {
+    _dismissTimer?.cancel();
     _controller.dispose();
     super.dispose();
   }

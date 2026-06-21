@@ -426,11 +426,16 @@ const Map<String, String> appLanguageZh = {
   'update_download_failed': '下载更新失败，请检查网络后重试。',
   'update_download_failed_next_step':
       '更新下载或 SHA-256 校验未完成。你可以重试，或打开 GitHub Release 页面手动下载。',
-  'update_download_verified_title': '更新已校验',
-  'update_download_verified_message':
-      '版本 {version} 已下载并通过 SHA-256 校验。文件：{path}',
+  'update_install_preparing_title': '正在准备安装',
+  'update_install_preparing_message':
+      '版本 {version} 已下载并通过 SHA-256 校验。应用可能会自动关闭并重启以完成更新。文件：{path}',
   'update_ready_install': '安装器已打开，请按提示完成更新。',
-  'update_install_failed': '无法打开安装器，请稍后重试。',
+  'update_windows_ready_install': '更新器已准备就绪，应用将关闭并重启完成更新。',
+  'update_install_failed': '无法继续安装更新',
+  'update_install_failed_next_step':
+      '请稍后重试；如果仍失败，请查看更新日志，或打开 GitHub Release 页面手动安装。',
+  'update_install_failed_with_detail': '请稍后重试；如果仍失败，请查看更新日志。详情：{detail}',
+  'open_update_log': '查看日志',
   'install_permission_needed': '请先允许本应用安装未知来源应用。',
   'install_permission_title': '允许安装更新',
   'install_permission_message': '为了继续下载并安装新版本，需要先允许本应用安装未知来源应用。现在前往系统设置开启吗？',

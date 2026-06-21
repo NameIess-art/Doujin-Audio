@@ -319,16 +319,22 @@ class _MainScreenState extends ConsumerState<MainScreen>
     if (!mounted) return;
     showAppSnackBar(
       context,
-      i18n.tr('update_download_verified_message', {
+      i18n.tr('update_install_preparing_message', {
         'version': info.latestVersionName,
         'path': updateFile.path,
       }),
-      tone: AppFeedbackTone.success,
-      title: i18n.tr('update_download_verified_title'),
-      icon: Icons.verified_rounded,
-      duration: const Duration(seconds: 5),
+      tone: AppFeedbackTone.warning,
+      title: i18n.tr('update_install_preparing_title'),
+      icon: Icons.system_update_alt_rounded,
+      duration: const Duration(seconds: 8),
     );
 
+    await _installDownloadedUpdate(updateFile);
+  }
+
+  Future<void> _installDownloadedUpdate(File updateFile) async {
+    if (!mounted) return;
+    final i18n = context.read<AppLanguageProvider>();
     try {
       final result = await AppUpdateService.installUpdate(updateFile);
       if (!mounted) return;
@@ -340,17 +346,28 @@ class _MainScreenState extends ConsumerState<MainScreen>
         return;
       }
       if (!result.ok) {
+        final detail = result.message?.trim();
         showAppSnackBar(
           context,
-          result.message ?? i18n.tr('update_install_failed'),
+          detail != null && detail.isNotEmpty
+              ? i18n.tr('update_install_failed_with_detail', {'detail': detail})
+              : i18n.tr('update_install_failed_next_step'),
           tone: AppFeedbackTone.destructive,
+          title: i18n.tr('update_install_failed'),
           icon: Icons.error_outline_rounded,
+          duration: const Duration(seconds: 8),
+          actionLabel: Platform.isWindows ? i18n.tr('open_update_log') : null,
+          onAction: Platform.isWindows
+              ? () => unawaited(AppUpdateService.openWindowsUpdateLog())
+              : null,
         );
         return;
       }
       showAppSnackBar(
         context,
-        i18n.tr('update_ready_install'),
+        Platform.isWindows
+            ? i18n.tr('update_windows_ready_install')
+            : i18n.tr('update_ready_install'),
         tone: AppFeedbackTone.success,
         icon: Icons.install_mobile_rounded,
       );
@@ -358,41 +375,15 @@ class _MainScreenState extends ConsumerState<MainScreen>
       if (!mounted) return;
       showAppSnackBar(
         context,
-        i18n.tr('update_install_failed'),
+        i18n.tr('update_install_failed_next_step'),
         tone: AppFeedbackTone.destructive,
+        title: i18n.tr('update_install_failed'),
         icon: Icons.error_outline_rounded,
-      );
-    }
-  }
-
-  Future<void> _installDownloadedUpdate(File updateFile) async {
-    if (!mounted) return;
-    final i18n = context.read<AppLanguageProvider>();
-    try {
-      final result = await AppUpdateService.installUpdate(updateFile);
-      if (!mounted) return;
-      if (!result.ok) {
-        showAppSnackBar(
-          context,
-          result.message ?? i18n.tr('update_install_failed'),
-          tone: AppFeedbackTone.destructive,
-          icon: Icons.error_outline_rounded,
-        );
-        return;
-      }
-      showAppSnackBar(
-        context,
-        i18n.tr('update_ready_install'),
-        tone: AppFeedbackTone.success,
-        icon: Icons.install_mobile_rounded,
-      );
-    } catch (_) {
-      if (!mounted) return;
-      showAppSnackBar(
-        context,
-        i18n.tr('update_install_failed'),
-        tone: AppFeedbackTone.destructive,
-        icon: Icons.error_outline_rounded,
+        duration: const Duration(seconds: 8),
+        actionLabel: Platform.isWindows ? i18n.tr('open_update_log') : null,
+        onAction: Platform.isWindows
+            ? () => unawaited(AppUpdateService.openWindowsUpdateLog())
+            : null,
       );
     }
   }

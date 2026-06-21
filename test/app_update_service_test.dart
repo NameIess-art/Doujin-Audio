@@ -137,6 +137,13 @@ void main() {
       script.indexOf("Set-Content -LiteralPath \$ReadyPath -Value 'ready'"),
       lessThan(script.lastIndexOf('Wait-AppExit')),
     );
+    expect(
+      script,
+      contains(
+        "Start-ElevatedUpdater\n"
+        "      Set-Content -LiteralPath \$ReadyPath -Value 'ready'",
+      ),
+    );
     expect(script, contains(r'Start-Process -FilePath $ExePath'));
   });
 

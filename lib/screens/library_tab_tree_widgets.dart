@@ -46,7 +46,7 @@ class _FolderNodeWidget extends ConsumerStatefulWidget {
 }
 
 class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
-  static const double _rootFolderTileHeight = 160;
+  static const double _rootFolderTileHeight = 148;
   static const double _childFolderTileHeight = 62;
   static const double _childFolderTitleBlockHeight = 50;
 

@@ -11,7 +11,7 @@ class _AsmrWorkTreeCard extends StatefulWidget {
 }
 
 class _AsmrWorkTreeCardState extends State<_AsmrWorkTreeCard> {
-  static const double _rootTileHeight = 160;
+  static const double _rootTileHeight = 148;
   final ExpansibleController _expansionController = ExpansibleController();
   bool _expanded = false;
 

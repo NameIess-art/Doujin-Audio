@@ -79,6 +79,18 @@ flutter test test/permission_status_service_test.dart test/theme_provider_test.d
 flutter test test/accessibility_motion_test.dart test/i18n_language_tables_test.dart
 ```
 
+Experience quality checks have focused UI and documentation baselines:
+
+```bash
+flutter test test/experience_quality_widgets_test.dart test/marquee_ui_test.dart test/library_playlist_widgets_test.dart
+flutter test test/document_encoding_test.dart test/accessibility_motion_test.dart test/i18n_language_tables_test.dart
+```
+
+Use these when changing list cards, settings groups, empty/error states,
+feedback copy, permissions, update/backup result flows, or documentation
+encoding. The manual performance process remains observational and is recorded
+in [`docs/release-quality.md`](release-quality.md).
+
 Run the Android device integration smoke test and use the release-candidate
 matrix and performance baseline process in
 [`docs/release-quality.md`](release-quality.md) before publishing a tag.

@@ -49,11 +49,19 @@ median of at least three runs. Initially these are observational. Once stable,
 fail release review when a metric regresses by more than 20% without an
 approved explanation.
 
+Use the same device, build mode, app version, data set, and network condition
+for a comparison series. Prefer profile builds for Flutter frame analysis and
+release candidates for final install/update checks. Record the median, app
+version, device model, Android/Windows version, and any unusual notes.
+
 | Metric | Measurement |
 |---|---|
 | Cold startup | Launch to first interactive frame |
 | First library frame | Startup to populated/empty library state |
 | Long-list scrolling | Flutter DevTools frame times and jank count |
+| Player detail drag | Drag down to reveal the previous page while playback continues |
+| System interaction | Notification shade pull-down and background/foreground switch responsiveness |
+| Cover loading | Time to stable visible covers in ASMR.ONE and local library lists |
 | Large-library scan | Scan duration, peak memory, discovered track count |
 
 A regression over 20% blocks release unless the release notes record the

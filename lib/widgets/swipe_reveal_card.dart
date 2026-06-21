@@ -280,12 +280,18 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final revealProgress = (_revealedWidth / _actionWidth).clamp(0.0, 1.0);
-    final paneStartColor = widget.destructive
-        ? cs.errorContainer.withValues(alpha: 0.94)
-        : cs.primaryContainer.withValues(alpha: 0.94);
-    final paneEndColor = widget.destructive
-        ? cs.errorContainer.withValues(alpha: 0.82)
-        : cs.secondaryContainer.withValues(alpha: 0.82);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final brightnessFactor = isDark ? 0.15 : 0.3;
+    final paneStartColor = Color.lerp(
+      widget.destructive ? cs.errorContainer : cs.primaryContainer,
+      Colors.white,
+      brightnessFactor,
+    )!;
+    final paneEndColor = Color.lerp(
+      widget.destructive ? cs.errorContainer : cs.secondaryContainer,
+      Colors.white,
+      brightnessFactor,
+    )!;
     final accentColor = widget.destructive ? cs.error : cs.primary;
     final accentOnColor = widget.destructive ? cs.onError : cs.onPrimary;
     final accentContainerOnColor = widget.destructive
@@ -341,8 +347,9 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                   },
             child: Stack(
               children: [
-                Positioned.fill(
-                  child: DecoratedBox(
+                if (!AppPlatform.isWindows)
+                  Positioned.fill(
+                    child: DecoratedBox(
                     decoration: ShapeDecoration(
                       gradient: LinearGradient(
                         begin: Alignment.topLeft,

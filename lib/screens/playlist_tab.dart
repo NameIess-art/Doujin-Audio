@@ -128,11 +128,7 @@ class _SessionDetailRoute extends PageRoute<void> {
     Animation<double> secondaryAnimation,
     Widget child,
   ) {
-    return buildCenterExpandTransition(
-      context: context,
-      animation: animation,
-      child: child,
-    );
+    return child;
   }
 
   @override

@@ -461,9 +461,7 @@ class PlaybackQueueEditPage extends ConsumerWidget {
                     Icons.queue_music_rounded,
                     i18n.tr('edit_queue_audio'),
                     () => Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) =>
-                            PlaybackQueueAudioEditPage(sessionId: sessionId),
+                      buildAppPageRoute<void>(child: PlaybackQueueAudioEditPage(sessionId: sessionId),
                       ),
                     ),
                   ),

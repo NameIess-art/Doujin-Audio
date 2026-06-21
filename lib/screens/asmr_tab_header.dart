@@ -33,8 +33,7 @@ class _AsmrDownloadProgressButton extends StatelessWidget {
               elevation: 0,
               onPressed: () {
                 Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => const AsmrDownloadTaskPage(),
+                  buildAppPageRoute<void>(child: const AsmrDownloadTaskPage(),
                   ),
                 );
               },

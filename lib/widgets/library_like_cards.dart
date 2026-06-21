@@ -7,6 +7,20 @@ import 'marquee_text.dart';
 
 const _libraryLikeInfoLineHeight = 16.0;
 
+class LibraryLikeCardMetrics {
+  const LibraryLikeCardMetrics._();
+
+  static const double rootTileHeight = 148;
+  static const double contentHeight = 140;
+  static const double infoBlockHeight = 96;
+  static const double titleBlockHeight = 38;
+  static const double coverAspectRatio = 1.25;
+  static const double coverRadius = 12;
+  static const double cardRadius = 14;
+  static const double actionButtonSize = 40;
+  static const EdgeInsets rootTilePadding = EdgeInsets.fromLTRB(12, 2, 12, 2);
+}
+
 class LibraryLikeInfoLineData {
   const LibraryLikeInfoLineData(this.label, this.text, {this.lines = 1});
 
@@ -70,13 +84,14 @@ class LibraryLikeFeaturedCardContent extends StatelessWidget {
 
     return LayoutBuilder(
       builder: (context, _) {
-        const infoBlockHeight = 96.0;
-        const titleBlockHeight = 38.0;
-        const coverWidth = infoBlockHeight * 1.25;
+        const infoBlockHeight = LibraryLikeCardMetrics.infoBlockHeight;
+        const titleBlockHeight = LibraryLikeCardMetrics.titleBlockHeight;
+        const coverWidth =
+            infoBlockHeight * LibraryLikeCardMetrics.coverAspectRatio;
         const maxInfoRows = LibraryLikeInfoLineData.maxLines;
         final visibleLines = lines.take(maxInfoRows).toList(growable: false);
         return SizedBox(
-          height: 140,
+          height: LibraryLikeCardMetrics.contentHeight,
           child: Column(
             children: [
               Row(
@@ -131,8 +146,14 @@ class LibraryLikeFeaturedCardContent extends StatelessWidget {
                       tooltip: playTooltip,
                       style: IconButton.styleFrom(
                         foregroundColor: accentColor ?? cs.primary,
-                        minimumSize: const Size(40, 44),
-                        maximumSize: const Size(40, 44),
+                        minimumSize: const Size(
+                          LibraryLikeCardMetrics.actionButtonSize,
+                          44,
+                        ),
+                        maximumSize: const Size(
+                          LibraryLikeCardMetrics.actionButtonSize,
+                          44,
+                        ),
                         padding: EdgeInsets.zero,
                         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       ),

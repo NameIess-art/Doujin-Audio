@@ -11,7 +11,7 @@ class _AsmrWorkTreeCard extends StatefulWidget {
 }
 
 class _AsmrWorkTreeCardState extends State<_AsmrWorkTreeCard> {
-  static const double _rootTileHeight = 148;
+  static const double _rootTileHeight = LibraryLikeCardMetrics.rootTileHeight;
   final ExpansibleController _expansionController = ExpansibleController();
   bool _expanded = false;
 
@@ -74,7 +74,7 @@ class _AsmrWorkTreeCardState extends State<_AsmrWorkTreeCard> {
     final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
     final cardShape = RoundedRectangleBorder(
       side: BorderSide(color: cs.outlineVariant),
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(LibraryLikeCardMetrics.cardRadius),
     );
 
     return SwipeRevealCard(
@@ -130,13 +130,17 @@ class _AsmrWorkTreeCardState extends State<_AsmrWorkTreeCard> {
               }
             },
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(
+                LibraryLikeCardMetrics.cardRadius,
+              ),
             ),
             collapsedShape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(
+                LibraryLikeCardMetrics.cardRadius,
+              ),
             ),
             showTrailingIcon: false,
-            tilePadding: const EdgeInsets.fromLTRB(12, 2, 12, 2),
+            tilePadding: LibraryLikeCardMetrics.rootTilePadding,
             childrenPadding: const EdgeInsets.fromLTRB(12, 0, 0, 0),
             title: _AsmrRootCardContent(
               work: widget.work,
@@ -215,6 +219,7 @@ class _AsmrRootCardContent extends StatelessWidget {
       showExpandIndicator: true,
       playTooltip: i18n.tr('asmr_add_to_playlist'),
       accentColor: asmrBlue,
+      enableMarquee: false,
       enableTitleMarquee: false,
     );
   }

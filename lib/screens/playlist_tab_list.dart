@@ -313,7 +313,7 @@ class _SessionListCardState extends ConsumerState<_SessionListCard> {
     final activeColor = isAsmrOne ? asmrBlue : localPlayRose;
 
     final cardShape = RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(LibraryLikeCardMetrics.cardRadius),
       side: BorderSide(
         color: isPlaying
             ? activeColor.withValues(alpha: isDark ? 0.34 : 0.28)
@@ -343,7 +343,9 @@ class _SessionListCardState extends ConsumerState<_SessionListCard> {
               duration: const Duration(milliseconds: 180),
               curve: Curves.easeOutCubic,
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(14),
+                borderRadius: BorderRadius.circular(
+                  LibraryLikeCardMetrics.cardRadius,
+                ),
                 gradient: LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,

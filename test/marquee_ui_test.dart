@@ -218,6 +218,40 @@ void main() {
     );
   });
 
+  testWidgets('library-like card can disable list info marquee', (
+    tester,
+  ) async {
+    const title = 'Static list title';
+    const info = 'A very long information value that should stay static';
+    await tester.pumpWidget(
+      _buildApp(
+        SizedBox(
+          width: 260,
+          child: LibraryLikeFeaturedCardContent(
+            title: title,
+            lines: const [LibraryLikeInfoLineData('Info', info)],
+            coverBuilder: (_) => const SizedBox(width: 120),
+            onPlay: () {},
+            playTooltip: 'Play',
+            enableMarquee: false,
+            enableTitleMarquee: false,
+          ),
+        ),
+      ),
+    );
+
+    expect(
+      find.byWidgetPredicate(
+        (widget) => widget is MarqueeText && widget.text == info,
+      ),
+      findsNothing,
+    );
+    final staticInfo = tester.widget<Text>(
+      find.byWidgetPredicate((widget) => widget is Text && widget.data == info),
+    );
+    expect(staticInfo.overflow, TextOverflow.ellipsis);
+  });
+
   testWidgets('marquee resumes after vertical scrolling becomes idle', (
     tester,
   ) async {

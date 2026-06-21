@@ -46,7 +46,8 @@ class _FolderNodeWidget extends ConsumerStatefulWidget {
 }
 
 class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
-  static const double _rootFolderTileHeight = 148;
+  static const double _rootFolderTileHeight =
+      LibraryLikeCardMetrics.rootTileHeight;
   static const double _childFolderTileHeight = 62;
   static const double _childFolderTitleBlockHeight = 50;
 
@@ -125,7 +126,7 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
     final hasChildren = widget.folder.children.isNotEmpty;
     final cardShape = RoundedRectangleBorder(
       side: BorderSide(color: cs.outlineVariant),
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(LibraryLikeCardMetrics.cardRadius),
     );
     final rootDetail = isRootFolder
         ? categorySnapshot?.detailFor(
@@ -149,18 +150,23 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
           });
         },
         shape: isRootFolder
-            ? RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))
+            ? RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(
+                  LibraryLikeCardMetrics.cardRadius,
+                ),
+              )
             : const RoundedRectangleBorder(),
         collapsedShape: isRootFolder
-            ? RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))
+            ? RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(
+                  LibraryLikeCardMetrics.cardRadius,
+                ),
+              )
             : const RoundedRectangleBorder(),
         showTrailingIcon: !isRootFolder,
-        tilePadding: EdgeInsets.fromLTRB(
-          isRootFolder ? 12 : 6,
-          2,
-          isRootFolder ? 12 : 4,
-          2,
-        ),
+        tilePadding: isRootFolder
+            ? LibraryLikeCardMetrics.rootTilePadding
+            : const EdgeInsets.fromLTRB(6, 2, 4, 2),
         childrenPadding: EdgeInsets.fromLTRB(isRootFolder ? 12 : 16, 0, 0, 0),
         title: isRootFolder
             ? _RootFolderCardContent(
@@ -547,7 +553,9 @@ class _LibraryCoverThumbnail extends ConsumerWidget {
       child: Padding(
         padding: EdgeInsets.zero,
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(
+            LibraryLikeCardMetrics.coverRadius,
+          ),
           child: Hero(
             tag: 'cover_$folderPath',
             placeholderBuilder: (context, heroSize, child) => child,
@@ -610,7 +618,7 @@ class _LibraryTrackCoverThumbnail extends ConsumerWidget {
       width: width,
       height: height,
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(LibraryLikeCardMetrics.coverRadius),
         child: Hero(
           tag: 'cover_${track.path}',
           placeholderBuilder: (context, heroSize, child) => child,
@@ -708,6 +716,7 @@ class _LibraryFeaturedCardContent extends StatelessWidget {
       expanded: expanded,
       showExpandIndicator: showExpandIndicator,
       playTooltip: i18n.tr('play'),
+      enableMarquee: false,
       enableTitleMarquee: false,
     );
   }
@@ -733,6 +742,7 @@ class _SingleAudioFileCardContent extends StatelessWidget {
     return LibraryLikeSingleAudioCardContent(
       title: title,
       lines: _audioDetailInfoLines(i18n, detail, detailLoading, fields),
+      enableMarquee: false,
       enableTitleMarquee: false,
     );
   }

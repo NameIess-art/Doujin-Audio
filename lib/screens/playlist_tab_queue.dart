@@ -41,7 +41,7 @@ class _PlaybackQueueCardState extends State<_PlaybackQueueCard> {
         ? null
         : tracks[session.currentQueueIndex.clamp(0, tracks.length - 1)];
     final shape = RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(LibraryLikeCardMetrics.cardRadius),
       side: BorderSide(
         color: isPlaying
             ? activeColor.withValues(alpha: isDark ? 0.34 : 0.28)

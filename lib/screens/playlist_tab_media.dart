@@ -162,7 +162,7 @@ class _SessionCoverThumbnail extends ConsumerWidget {
       height: 72,
       child: Material(
         type: MaterialType.transparency,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(LibraryLikeCardMetrics.coverRadius),
         clipBehavior: Clip.antiAlias,
         child: track?.remoteCoverUrl?.trim().isNotEmpty == true
             ? RetryingNetworkImage(

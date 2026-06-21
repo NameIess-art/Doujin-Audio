@@ -13,7 +13,7 @@ class _AsmrWorkCover extends StatelessWidget {
     final url = this.url.trim();
     return ClipRRect(
       clipBehavior: Clip.hardEdge,
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(LibraryLikeCardMetrics.coverRadius),
       child: SizedBox(
         width: width,
         height: height,

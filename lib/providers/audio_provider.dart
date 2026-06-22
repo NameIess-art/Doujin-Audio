@@ -10,7 +10,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:path/path.dart' as path;
-import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../i18n/app_language_provider.dart';
@@ -29,6 +28,8 @@ import '../models/time_segment_label.dart';
 import '../platform/app_platform.dart';
 import '../services/app_cache_service.dart';
 import '../services/app_log_service.dart';
+import '../services/audio_detail_cache_service.dart';
+import '../services/cover_artwork_cache_service.dart';
 import '../services/audio_database_repository.dart';
 import '../services/audio_detail_repository.dart';
 import '../services/audio_state_services.dart';
@@ -36,6 +37,7 @@ import '../services/app_database.dart';
 import '../services/asmr_metadata_service.dart';
 import '../services/dlsite_metadata_service.dart';
 import '../services/file_cache_platform_gateway.dart';
+import '../services/library_snapshot_cache_service.dart';
 import '../services/library_organizer.dart';
 import '../services/media_file_support.dart';
 import '../services/native_result.dart';
@@ -44,8 +46,6 @@ import '../services/playback_queue_resolver.dart';
 import '../services/power_platform_service.dart';
 import '../services/timer_runtime_calculator.dart';
 import '../services/warmup_scheduler.dart';
-import '../services/ui_interaction_coordinator.dart';
-import '../services/windows_ffmpeg_service.dart';
 
 export '../models/library_node.dart';
 export '../models/library_entry.dart';
@@ -104,14 +104,6 @@ const _kConverterSettingsKey = 'converter_settings_v1';
 const _kPlaybackSettingsKey = 'playback_settings_v1';
 
 class AudioProvider with ChangeNotifier {
-  static const Set<String> _supportedImageExtensions = {
-    '.jpg',
-    '.jpeg',
-    '.png',
-    '.webp',
-    '.bmp',
-    '.gif',
-  };
   static const Duration _notificationProgressRefreshInterval = Duration(
     milliseconds: 750,
   );
@@ -125,13 +117,15 @@ class AudioProvider with ChangeNotifier {
       FileCachePlatformGateway.instance;
   final PlaybackNotificationService _notificationService;
   final AudioDatabaseRepository _audioDatabaseRepository;
-  final AudioDetailRepository _audioDetailRepository;
+  final AudioDetailCacheService _audioDetailCacheService;
   final DlsiteMetadataService _dlsiteMetadataService;
   final AsmrMetadataService _asmrMetadataService;
   final NativePlaybackRepository _nativePlaybackRepository;
   final PlaybackCommandRunner _playbackCommandRunner;
   final PowerPlatformService _powerPlatformService;
   final LibraryService _libraryService;
+  final LibrarySnapshotCacheService _librarySnapshotCacheService;
+  late final CoverArtworkCacheService _coverArtworkCacheService;
   final PlaybackSessionService _playbackService;
   final TimerService _timerService;
   final NotificationCoordinatorService _notificationStateService;
@@ -234,12 +228,6 @@ class AudioProvider with ChangeNotifier {
     null,
   );
   ValueListenable<String?> get carouselSnapListenable => _carouselSnapNotifier;
-  AudioLibraryCategorySnapshot? _audioLibraryCategorySnapshot;
-  Future<AudioLibraryCategorySnapshot>? _audioLibraryCategorySnapshotFuture;
-  int _audioLibraryCategoryFutureStructureRevision = -1;
-  int _audioLibraryCategoryFutureDetailRevision = -1;
-  int _audioDetailRevision = 0;
-  int _audioLibraryCategorySnapshotRevision = 0;
   bool _notifyListenersQueued = false;
   bool _isDisposed = false;
   bool _nativeRuntimeStarted = false;
@@ -301,30 +289,6 @@ class AudioProvider with ChangeNotifier {
       _libraryService.scanDuplicateCount = value;
   int get _scanFailureCount => _libraryService.scanFailureCount;
   set _scanFailureCount(int value) => _libraryService.scanFailureCount = value;
-  bool get _libraryTreeDirty => _libraryService.libraryTreeDirty;
-  set _libraryTreeDirty(bool value) => _libraryService.libraryTreeDirty = value;
-  List<LibraryNode> get _cachedLibraryTree => _libraryService.cachedLibraryTree;
-  set _cachedLibraryTree(List<LibraryNode> value) {
-    _libraryService.cachedLibraryTree = value;
-  }
-
-  Future<LibraryTreeSnapshot>? get _libraryTreeBuildFuture =>
-      _libraryService.libraryTreeBuildFuture;
-  set _libraryTreeBuildFuture(Future<LibraryTreeSnapshot>? value) {
-    _libraryService.libraryTreeBuildFuture = value;
-  }
-
-  int get _libraryTreeBuildRevision => _libraryService.libraryTreeBuildRevision;
-  set _libraryTreeBuildRevision(int value) {
-    _libraryService.libraryTreeBuildRevision = value;
-  }
-
-  int get _cachedLibraryLeafFolderCount =>
-      _libraryService.cachedLibraryLeafFolderCount;
-  set _cachedLibraryLeafFolderCount(int value) {
-    _libraryService.cachedLibraryLeafFolderCount = value;
-  }
-
   int get _libraryBatchDepth => _libraryService.libraryBatchDepth;
   set _libraryBatchDepth(int value) =>
       _libraryService.libraryBatchDepth = value;
@@ -375,20 +339,6 @@ class AudioProvider with ChangeNotifier {
       _notificationStateService.notificationSubtitleTexts;
   Map<String, String> get _notificationSubtitleTrackPaths =>
       _notificationStateService.notificationSubtitleTrackPaths;
-  Map<String, Future<String?>> get _coverPathFutures =>
-      _notificationStateService.coverPathFutures;
-  Map<String, String?> get _resolvedCoverPaths =>
-      _notificationStateService.resolvedCoverPaths;
-  Map<String, Future<String?>> get _resolvedCoverPathFutures =>
-      _notificationStateService.resolvedCoverPathFutures;
-  Map<String, Future<String?>> get _notificationCoverPathFutures =>
-      _notificationStateService.notificationCoverPathFutures;
-  Map<String, String?> get _resolvedNotificationCoverPaths =>
-      _notificationStateService.resolvedNotificationCoverPaths;
-  Map<String, Future<String?>> get _resolvedNotificationCoverPathFutures =>
-      _notificationStateService.resolvedNotificationCoverPathFutures;
-  Set<String> get _notificationCoverSearchMisses =>
-      _notificationStateService.notificationCoverSearchMisses;
   String? get _notificationFocusSessionId =>
       _notificationStateService.notificationFocusSessionId;
   set _notificationFocusSessionId(String? value) {
@@ -582,12 +532,15 @@ class AudioProvider with ChangeNotifier {
     required PlaybackNotificationService notificationService,
     AudioDatabaseRepository? audioDatabaseRepository,
     AudioDetailRepository? audioDetailRepository,
+    AudioDetailCacheService? audioDetailCacheService,
+    CoverArtworkCacheService? coverArtworkCacheService,
     DlsiteMetadataService? dlsiteMetadataService,
     AsmrMetadataService? asmrMetadataService,
     NativePlaybackRepository? nativePlaybackRepository,
     PlaybackCommandRunner playbackCommandRunner = const PlaybackCommandRunner(),
     PowerPlatformService? powerPlatformService,
     LibraryService? libraryService,
+    LibrarySnapshotCacheService? librarySnapshotCacheService,
     PlaybackSessionService? playbackService,
     TimerService? timerService,
     NotificationCoordinatorService? notificationStateService,
@@ -596,21 +549,34 @@ class AudioProvider with ChangeNotifier {
   }) {
     final resolvedAudioDatabaseRepository =
         audioDatabaseRepository ?? AudioDatabaseRepository();
+    final resolvedAudioDetailCacheService =
+        audioDetailCacheService ??
+        AudioDetailCacheService(
+          repository:
+              audioDetailRepository ??
+              AudioDetailRepository(
+                databaseRepository: resolvedAudioDatabaseRepository,
+              ),
+        );
+    final resolvedLibraryService = libraryService ?? LibraryService();
     return AudioProvider._(
       notificationService: notificationService,
       audioDatabaseRepository: resolvedAudioDatabaseRepository,
-      audioDetailRepository:
-          audioDetailRepository ??
-          AudioDetailRepository(
-            databaseRepository: resolvedAudioDatabaseRepository,
-          ),
+      audioDetailCacheService: resolvedAudioDetailCacheService,
       dlsiteMetadataService: dlsiteMetadataService ?? DlsiteMetadataService(),
       asmrMetadataService: asmrMetadataService ?? AsmrMetadataService(),
       nativePlaybackRepository:
           nativePlaybackRepository ?? NativePlaybackRepository(),
       playbackCommandRunner: playbackCommandRunner,
       powerPlatformService: powerPlatformService ?? PowerPlatformService(),
-      libraryService: libraryService ?? LibraryService(),
+      libraryService: resolvedLibraryService,
+      librarySnapshotCacheService:
+          librarySnapshotCacheService ??
+          LibrarySnapshotCacheService(
+            libraryService: resolvedLibraryService,
+            detailCacheService: resolvedAudioDetailCacheService,
+          ),
+      coverArtworkCacheService: coverArtworkCacheService,
       playbackService: playbackService ?? PlaybackSessionService(),
       timerService: timerService ?? TimerService(),
       notificationStateService:
@@ -626,12 +592,15 @@ class AudioProvider with ChangeNotifier {
     required PlaybackNotificationService notificationService,
     AudioDatabaseRepository? audioDatabaseRepository,
     AudioDetailRepository? audioDetailRepository,
+    AudioDetailCacheService? audioDetailCacheService,
+    CoverArtworkCacheService? coverArtworkCacheService,
     DlsiteMetadataService? dlsiteMetadataService,
     AsmrMetadataService? asmrMetadataService,
     NativePlaybackRepository? nativePlaybackRepository,
     PlaybackCommandRunner playbackCommandRunner = const PlaybackCommandRunner(),
     PowerPlatformService? powerPlatformService,
     LibraryService? libraryService,
+    LibrarySnapshotCacheService? librarySnapshotCacheService,
     PlaybackSessionService? playbackService,
     TimerService? timerService,
     NotificationCoordinatorService? notificationStateService,
@@ -640,21 +609,34 @@ class AudioProvider with ChangeNotifier {
   }) {
     final resolvedAudioDatabaseRepository =
         audioDatabaseRepository ?? AudioDatabaseRepository();
+    final resolvedAudioDetailCacheService =
+        audioDetailCacheService ??
+        AudioDetailCacheService(
+          repository:
+              audioDetailRepository ??
+              AudioDetailRepository(
+                databaseRepository: resolvedAudioDatabaseRepository,
+              ),
+        );
+    final resolvedLibraryService = libraryService ?? LibraryService();
     return AudioProvider._(
       notificationService: notificationService,
       audioDatabaseRepository: resolvedAudioDatabaseRepository,
-      audioDetailRepository:
-          audioDetailRepository ??
-          AudioDetailRepository(
-            databaseRepository: resolvedAudioDatabaseRepository,
-          ),
+      audioDetailCacheService: resolvedAudioDetailCacheService,
       dlsiteMetadataService: dlsiteMetadataService ?? DlsiteMetadataService(),
       asmrMetadataService: asmrMetadataService ?? AsmrMetadataService(),
       nativePlaybackRepository:
           nativePlaybackRepository ?? NativePlaybackRepository(),
       playbackCommandRunner: playbackCommandRunner,
       powerPlatformService: powerPlatformService ?? PowerPlatformService(),
-      libraryService: libraryService ?? LibraryService(),
+      libraryService: resolvedLibraryService,
+      librarySnapshotCacheService:
+          librarySnapshotCacheService ??
+          LibrarySnapshotCacheService(
+            libraryService: resolvedLibraryService,
+            detailCacheService: resolvedAudioDetailCacheService,
+          ),
+      coverArtworkCacheService: coverArtworkCacheService,
       playbackService: playbackService ?? PlaybackSessionService(),
       timerService: timerService ?? TimerService(),
       notificationStateService:
@@ -668,13 +650,15 @@ class AudioProvider with ChangeNotifier {
   AudioProvider._({
     required PlaybackNotificationService notificationService,
     required AudioDatabaseRepository audioDatabaseRepository,
-    required AudioDetailRepository audioDetailRepository,
+    required AudioDetailCacheService audioDetailCacheService,
     required DlsiteMetadataService dlsiteMetadataService,
     required AsmrMetadataService asmrMetadataService,
     required NativePlaybackRepository nativePlaybackRepository,
     required PlaybackCommandRunner playbackCommandRunner,
     required PowerPlatformService powerPlatformService,
     required LibraryService libraryService,
+    required LibrarySnapshotCacheService librarySnapshotCacheService,
+    required CoverArtworkCacheService? coverArtworkCacheService,
     required PlaybackSessionService playbackService,
     required TimerService timerService,
     required NotificationCoordinatorService notificationStateService,
@@ -683,18 +667,29 @@ class AudioProvider with ChangeNotifier {
     required bool startNativeRuntime,
   }) : _notificationService = notificationService,
        _audioDatabaseRepository = audioDatabaseRepository,
-       _audioDetailRepository = audioDetailRepository,
+       _audioDetailCacheService = audioDetailCacheService,
        _dlsiteMetadataService = dlsiteMetadataService,
        _asmrMetadataService = asmrMetadataService,
        _nativePlaybackRepository = nativePlaybackRepository,
        _playbackCommandRunner = playbackCommandRunner,
        _powerPlatformService = powerPlatformService,
        _libraryService = libraryService,
+       _librarySnapshotCacheService = librarySnapshotCacheService,
        _playbackService = playbackService,
        _timerService = timerService,
        _notificationStateService = notificationStateService,
        _settingsRepository = settingsRepository,
        _skipDisposePersistence = skipDisposePersistence {
+    _coverArtworkCacheService =
+        coverArtworkCacheService ??
+        CoverArtworkCacheService(
+          libraryService: _libraryService,
+          isActiveCoverKey: _isActiveCoverKey,
+          onActiveCoverChanged: () {
+            _syncNotificationState();
+            _notifyNotificationChanged();
+          },
+        );
     _initializeControllers();
     if (startNativeRuntime) {
       _startNativeRuntime();
@@ -874,8 +869,9 @@ class AudioProvider with ChangeNotifier {
   void _syncLibraryStateSlice() {
     _libraryService.syncSlice(
       isInitialized: _isInitialized,
-      detailRevision: _audioDetailRevision,
-      categorySnapshotRevision: _audioLibraryCategorySnapshotRevision,
+      detailRevision: _audioDetailCacheService.revision,
+      categorySnapshotRevision:
+          _librarySnapshotCacheService.categorySnapshotRevision,
     );
   }
 
@@ -885,7 +881,7 @@ class AudioProvider with ChangeNotifier {
       playingSessionCount: playingSessionCount,
       focusedSessionId: _notificationFocusSessionId,
       multiThreadPlaybackEnabled: _multiThreadPlaybackEnabled,
-      coverGeneration: _coverGeneration,
+      coverGeneration: _coverArtworkCacheService.generation,
       isInitialized: _isInitialized,
     );
   }
@@ -904,80 +900,17 @@ class AudioProvider with ChangeNotifier {
     );
   }
 
-  int _coverGeneration = 0;
-  final Map<String, String?> _manualCoverByScopeCache = <String, String?>{};
-  final Map<String, List<String>> _discoveredImagesByScopeCache =
-      <String, List<String>>{};
-
-  int get coverGeneration => _coverGeneration;
-
-  void _rebuildManualCoverByScopeCache() {
-    _manualCoverByScopeCache.clear();
-    for (final track in _library) {
-      final manualCoverPath = track.manualCoverPath;
-      if (manualCoverPath == null || manualCoverPath.isEmpty) {
-        continue;
-      }
-      final scope = _notificationCoverSearchKey(track);
-      if (scope == null || scope.isEmpty) {
-        continue;
-      }
-      _manualCoverByScopeCache[scope] = manualCoverPath;
-    }
-  }
+  int get coverGeneration => _coverArtworkCacheService.generation;
 
   void _clearResolvedCoverPaths() {
-    _coverGeneration++;
-    _coverPathFutures.clear();
-    _resolvedCoverPaths.clear();
-    _resolvedCoverPathFutures.clear();
-    _notificationCoverPathFutures.clear();
-    _resolvedNotificationCoverPaths.clear();
-    _resolvedNotificationCoverPathFutures.clear();
-    _notificationCoverSearchMisses.clear();
-    _manualCoverByScopeCache.clear();
-    _discoveredImagesByScopeCache.clear();
+    _coverArtworkCacheService.invalidateAll();
   }
 
   void _invalidateResolvedCoverScope(String? scope) {
-    if (scope == null || scope.isEmpty) {
-      _clearResolvedCoverPaths();
-      return;
-    }
-    final normalizedScope = PathMatcher.normalize(scope);
-    _coverGeneration++;
-    _coverPathFutures.remove(normalizedScope);
-    _resolvedCoverPaths.remove(normalizedScope);
-    _resolvedCoverPathFutures.remove(normalizedScope);
-    _notificationCoverPathFutures.remove(normalizedScope);
-    _resolvedNotificationCoverPaths.remove(normalizedScope);
-    _resolvedNotificationCoverPathFutures.remove(normalizedScope);
-    _notificationCoverSearchMisses.remove(normalizedScope);
-    _manualCoverByScopeCache.remove(normalizedScope);
-    _discoveredImagesByScopeCache.remove(normalizedScope);
+    _coverArtworkCacheService.invalidateFolder(scope);
   }
 
   void _invalidateResolvedCoverScopes(Iterable<String?> scopes) {
-    final normalizedScopes = scopes
-        .whereType<String>()
-        .map(PathMatcher.normalize)
-        .where((scope) => scope.isNotEmpty)
-        .toSet();
-    if (normalizedScopes.isEmpty) {
-      _clearResolvedCoverPaths();
-      return;
-    }
-    _coverGeneration++;
-    for (final scope in normalizedScopes) {
-      _coverPathFutures.remove(scope);
-      _resolvedCoverPaths.remove(scope);
-      _resolvedCoverPathFutures.remove(scope);
-      _notificationCoverPathFutures.remove(scope);
-      _resolvedNotificationCoverPaths.remove(scope);
-      _resolvedNotificationCoverPathFutures.remove(scope);
-      _notificationCoverSearchMisses.remove(scope);
-      _manualCoverByScopeCache.remove(scope);
-      _discoveredImagesByScopeCache.remove(scope);
-    }
+    _coverArtworkCacheService.invalidateFolders(scopes);
   }
 }

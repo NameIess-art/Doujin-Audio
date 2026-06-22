@@ -117,9 +117,7 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
   Widget build(BuildContext context) {
     final i18n = context.watch<AppLanguageProvider>();
     final provider = ref.read(audioProviderFacadeProvider);
-    ref.watch(
-      libraryUiProvider.select((state) => state.categorySnapshotRevision),
-    );
+    ref.watch(libraryCategoryRevisionProvider);
     final categorySnapshot = provider.audioLibraryCategorySnapshotSync;
     final cs = Theme.of(context).colorScheme;
     final isRootFolder = widget.folder.depth == 0;
@@ -344,21 +342,13 @@ class _TrackNodeWidget extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final i18n = context.watch<AppLanguageProvider>();
     final provider = ref.read(audioProviderFacadeProvider);
-    ref.watch(
-      libraryUiProvider.select((state) => state.categorySnapshotRevision),
-    );
+    ref.watch(libraryCategoryRevisionProvider);
     final categorySnapshot = provider.audioLibraryCategorySnapshotSync;
     final cs = Theme.of(context).colorScheme;
     final track = trackNode.track;
-    final isAlreadyPlaying = ref.watch(
-      playbackStateProvider.select(
-        (value) =>
-            value.valueOrNull?.activeSessions.any(
-              (session) => session.currentTrackPath == track.path,
-            ) ??
-            false,
-      ),
-    );
+    final isAlreadyPlaying = ref
+        .watch(activeTrackPathsProvider)
+        .contains(track.path);
     final cardShape = RoundedRectangleBorder(
       side: track.isSingle
           ? BorderSide(color: cs.outlineVariant)
@@ -462,7 +452,6 @@ class _TrackNodeWidget extends ConsumerWidget {
     }
 
     return SwipeRevealCard(
-      margin: EdgeInsets.zero,
       shape: cardShape,
       actionLabel: i18n.tr('remove'),
       removeTooltip: i18n.tr('remove_audio'),
@@ -522,30 +511,48 @@ class _TrackNodeWidget extends ConsumerWidget {
   }
 }
 
-class _LibraryCoverThumbnail extends ConsumerWidget {
+class _LibraryCoverThumbnail extends ConsumerStatefulWidget {
   const _LibraryCoverThumbnail({required this.folderPath, this.width = 82});
 
   final String folderPath;
   final double width;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    ref.watch(
-      playbackStateProvider.select(
-        (value) => value.valueOrNull?.coverGeneration ?? 0,
-      ),
-    );
+  ConsumerState<_LibraryCoverThumbnail> createState() =>
+      _LibraryCoverThumbnailState();
+}
+
+class _LibraryCoverThumbnailState
+    extends ConsumerState<_LibraryCoverThumbnail> {
+  Future<String?>? _coverPathFuture;
+  String? _lastFolderPath;
+  int _lastCoverGeneration = -1;
+
+  Future<String?> _coverFutureFor(AudioProvider provider, int coverGeneration) {
+    if (_lastFolderPath != widget.folderPath ||
+        _lastCoverGeneration != coverGeneration) {
+      _lastFolderPath = widget.folderPath;
+      _lastCoverGeneration = coverGeneration;
+      _coverPathFuture = provider.coverPathFutureForFolder(widget.folderPath);
+    }
+    return _coverPathFuture!;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final coverGeneration = ref.watch(coverGenerationProvider);
     final provider = ref.read(audioProviderFacadeProvider);
-    final coverPathFuture = provider.coverPathFutureForFolder(folderPath);
+    final coverPathFuture = _coverFutureFor(provider, coverGeneration);
     Widget fallback({bool hideIcon = false}) {
       return CoverFallbackArtwork(
-        seed: folderPath,
+        seed: widget.folderPath,
         showIcon: !hideIcon,
         compact: true,
         iconSize: 28,
       );
     }
 
+    final width = widget.width;
     final height = width * 0.8;
     return SizedBox(
       width: width,
@@ -557,13 +564,15 @@ class _LibraryCoverThumbnail extends ConsumerWidget {
             LibraryLikeCardMetrics.coverRadius,
           ),
           child: Hero(
-            tag: 'cover_$folderPath',
+            tag: 'cover_${widget.folderPath}',
             placeholderBuilder: (context, heroSize, child) => child,
             child: AsyncCoverImage(
               future: coverPathFuture,
-              initialPath: provider.resolvedCoverPathForFolder(folderPath),
+              initialPath: provider.resolvedCoverPathForFolder(
+                widget.folderPath,
+              ),
               retryFutureBuilder: () =>
-                  provider.coverPathFutureForFolder(folderPath),
+                  provider.coverPathFutureForFolder(widget.folderPath),
               duration: Duration.zero,
               fallbackBuilder: (_) => fallback(),
               loadingBuilder: (_) => CoverLoadingArtwork(
@@ -588,21 +597,39 @@ class _LibraryCoverThumbnail extends ConsumerWidget {
   }
 }
 
-class _LibraryTrackCoverThumbnail extends ConsumerWidget {
+class _LibraryTrackCoverThumbnail extends ConsumerStatefulWidget {
   const _LibraryTrackCoverThumbnail({required this.track, this.width = 82});
 
   final MusicTrack track;
   final double width;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    ref.watch(
-      playbackStateProvider.select(
-        (value) => value.valueOrNull?.coverGeneration ?? 0,
-      ),
-    );
+  ConsumerState<_LibraryTrackCoverThumbnail> createState() =>
+      _LibraryTrackCoverThumbnailState();
+}
+
+class _LibraryTrackCoverThumbnailState
+    extends ConsumerState<_LibraryTrackCoverThumbnail> {
+  Future<String?>? _coverPathFuture;
+  String? _lastTrackPath;
+  int _lastCoverGeneration = -1;
+
+  Future<String?> _coverFutureFor(AudioProvider provider, int coverGeneration) {
+    if (_lastTrackPath != widget.track.path ||
+        _lastCoverGeneration != coverGeneration) {
+      _lastTrackPath = widget.track.path;
+      _lastCoverGeneration = coverGeneration;
+      _coverPathFuture = provider.coverPathFutureForTrack(widget.track);
+    }
+    return _coverPathFuture!;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final coverGeneration = ref.watch(coverGenerationProvider);
     final provider = ref.read(audioProviderFacadeProvider);
-    final coverPathFuture = provider.coverPathFutureForTrack(track);
+    final coverPathFuture = _coverFutureFor(provider, coverGeneration);
+    final track = widget.track;
 
     Widget fallback({bool hideIcon = false}) {
       return CoverFallbackArtwork(
@@ -613,6 +640,7 @@ class _LibraryTrackCoverThumbnail extends ConsumerWidget {
       );
     }
 
+    final width = widget.width;
     final height = width * 0.8;
     return SizedBox(
       width: width,

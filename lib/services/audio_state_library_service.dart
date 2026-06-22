@@ -31,12 +31,7 @@ class LibraryService {
   int scanFoundCount = 0;
   int scanDuplicateCount = 0;
   int scanFailureCount = 0;
-  bool libraryTreeDirty = true;
-  List<LibraryNode> cachedLibraryTree = const <LibraryNode>[];
-  Future<LibraryTreeSnapshot>? libraryTreeBuildFuture;
-  int libraryTreeBuildRevision = -1;
   int contentRevision = 0;
-  int cachedLibraryLeafFolderCount = 0;
   int libraryBatchDepth = 0;
   bool libraryBatchChanged = false;
   bool libraryBatchChangedGroupOrder = false;
@@ -50,7 +45,6 @@ class LibraryService {
   );
 
   void markStructureChanged() {
-    libraryTreeDirty = true;
     if (libraryBatchDepth > 0) {
       libraryBatchChanged = true;
       return;

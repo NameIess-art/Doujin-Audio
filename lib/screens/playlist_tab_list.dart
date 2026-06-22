@@ -263,19 +263,19 @@ class _SessionListCardState extends ConsumerState<_SessionListCard> {
     final cs = Theme.of(context).colorScheme;
     final session = widget.session;
     final provider = widget.provider;
-    final uiState = ref.watch(sessionDetailUiProvider(widget.session.id));
-    final coverGeneration = uiState.coverGeneration;
-    final detailState = uiState.detail;
-    final trackPath = detailState?.trackPath ?? session.currentTrackPath;
+    final uiState = ref.watch(playlistSessionCardUiProvider(widget.session.id));
+    final int coverGeneration =
+        uiState?.coverGeneration ?? ref.watch(coverGenerationProvider);
+    final trackPath = uiState?.trackPath ?? session.currentTrackPath;
     final sessionView = (
       track: provider.trackByPath(trackPath),
       trackPath: trackPath,
-      loopMode: detailState?.loopMode ?? session.loopMode,
-      isLoading: detailState?.isLoading ?? session.isLoading,
-      isPlaying: detailState?.isPlaying ?? session.state.playing,
+      loopMode: uiState?.loopMode ?? session.loopMode,
+      isLoading: uiState?.isLoading ?? session.isLoading,
+      isPlaying: uiState?.isPlaying ?? session.state.playing,
       channelSwapEnabled:
-          detailState?.channelSwapEnabled ?? session.channelSwapEnabled,
-      playbackError: session.playbackError,
+          uiState?.channelSwapEnabled ?? session.channelSwapEnabled,
+      playbackError: uiState?.playbackError ?? session.playbackError,
     );
     if (_lastTrackPath != trackPath ||
         _lastCoverGeneration != coverGeneration) {

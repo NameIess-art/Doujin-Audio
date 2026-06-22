@@ -233,4 +233,47 @@ void main() {
     expect(updated?.speed, 1.5);
     expect(updated?.audioEffects.skipSilenceEnabled, isTrue);
   });
+
+  test('playlist session card state ignores unrelated sessions', () {
+    final focused = session(
+      id: 'focused',
+      path: '/tracks/focused.mp3',
+      playing: true,
+    );
+    final other = session(id: 'other', path: '/tracks/other.mp3');
+    addTearDown(focused.dispose);
+    addTearDown(other.dispose);
+
+    final original = playlistSessionCardStateFromPlaybackState(
+      PlaybackStateSliceData(activeSessions: [focused, other]),
+      'focused',
+    );
+    other.volume = 0.25;
+    final unchanged = playlistSessionCardStateFromPlaybackState(
+      PlaybackStateSliceData(activeSessions: [focused, other]),
+      'focused',
+    );
+    focused.loopMode = SessionLoopMode.folderSequential;
+    final changed = playlistSessionCardStateFromPlaybackState(
+      PlaybackStateSliceData(activeSessions: [focused, other]),
+      'focused',
+    );
+
+    expect(unchanged, original);
+    expect(changed, isNot(original));
+    expect(changed?.loopMode, SessionLoopMode.folderSequential);
+  });
+
+  test('active track paths compare by set contents', () {
+    const first = ActiveTrackPaths({'/tracks/a.mp3', '/tracks/b.mp3'});
+    const sameOrderChanged = ActiveTrackPaths({
+      '/tracks/b.mp3',
+      '/tracks/a.mp3',
+    });
+    const different = ActiveTrackPaths({'/tracks/a.mp3'});
+
+    expect(first, sameOrderChanged);
+    expect(first, isNot(different));
+    expect(first.contains('/tracks/b.mp3'), isTrue);
+  });
 }

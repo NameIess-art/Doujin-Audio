@@ -161,16 +161,16 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
 
   Future<void> _openLibraryManagementPage() async {
     if (!mounted) return;
-    await Navigator.of(context).push(
-      buildAppPageRoute<void>(child: const LibraryManagementPage()),
-    );
+    await Navigator.of(
+      context,
+    ).push(buildAppPageRoute<void>(child: const LibraryManagementPage()));
   }
 
   Future<void> _openBatchMetadataPage() async {
     if (!mounted) return;
-    await Navigator.of(context).push(
-      buildAppPageRoute<void>(child: const DlsiteMetadataBatchPage()),
-    );
+    await Navigator.of(
+      context,
+    ).push(buildAppPageRoute<void>(child: const DlsiteMetadataBatchPage()));
   }
 
   Future<void> _scheduleWatchedFoldersRefresh({
@@ -389,13 +389,13 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     super.build(context);
     final i18n = context.watch<AppLanguageProvider>();
     final provider = ref.read(audioProviderFacadeProvider);
-    final libraryUiState = ref.watch(libraryUiProvider);
+    final libraryHeaderState = ref.watch(libraryHeaderUiProvider);
+    final listState = ref.watch(libraryListUiProvider);
+    final detailRevision = ref.watch(libraryDetailRevisionProvider);
+    ref.watch(libraryCategoryRevisionProvider);
     final settingsState =
         ref.watch(settingsStateProvider).valueOrNull ?? const SettingsState();
     final cardPositionsLocked = settingsState.cardPositionsLocked;
-    final detailRevision = libraryUiState.detailRevision;
-    final libraryHeaderState = libraryUiState.header;
-    final listState = libraryUiState.list;
     _ensureCategorySnapshot(
       provider: provider,
       structureRevision: listState.structureRevision,
@@ -619,11 +619,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                               padding: const EdgeInsets.only(bottom: 12),
                               child: Row(
                                 children: [
-                                  const ShimmerContainer(
-                                    width: 48,
-                                    height: 48,
-                                    borderRadius: 8,
-                                  ),
+                                  const ShimmerContainer(width: 48, height: 48),
                                   const SizedBox(width: 16),
                                   Expanded(
                                     child: Column(

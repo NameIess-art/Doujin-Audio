@@ -59,20 +59,19 @@ extension AudioProviderAudioDetails on AudioProvider {
   }
 
   Future<AudioDetailLoadResult> loadAudioDetail(AudioDetailTarget target) {
-    return _audioDetailRepository.load(target);
+    return _audioDetailCacheService.load(target);
   }
 
   Future<AudioDetailSaveResult> saveAudioDetail(AudioDetail detail) async {
-    final result = await _audioDetailRepository.save(detail);
-    _markAudioDetailDataChanged();
-    _applyAudioDetailToCategorySnapshot(result.detail);
+    final result = await _audioDetailCacheService.save(detail);
+    _librarySnapshotCacheService.markDetailChanged(result.detail);
     _notifyListeners();
     return result;
   }
 
   Future<void> deleteAudioDetail(AudioDetailTarget target) async {
-    await _audioDetailRepository.delete(target);
-    _markAudioDetailDataChanged();
+    await _audioDetailCacheService.delete(target);
+    _librarySnapshotCacheService.markDetailChanged();
     _notifyListeners();
   }
 
@@ -80,13 +79,12 @@ extension AudioProviderAudioDetails on AudioProvider {
     AudioDetailTarget target,
     String text,
   ) async {
-    final result = await _audioDetailRepository.prefillRjCodeFromText(
+    final result = await _audioDetailCacheService.prefillRjCodeFromText(
       target,
       text,
     );
     if (result != null) {
-      _markAudioDetailDataChanged();
-      _applyAudioDetailToCategorySnapshot(result.detail);
+      _librarySnapshotCacheService.markDetailChanged(result.detail);
       _notifyListeners();
     }
     return result;
@@ -586,6 +584,7 @@ extension AudioProviderAudioDetails on AudioProvider {
       for (final entry in retargetedEntries) entry.path: entry,
     };
     _libraryService.markStructureChanged();
+    _librarySnapshotCacheService.markStructureChanged();
     return retargetedEntries;
   }
 
@@ -687,7 +686,7 @@ extension AudioProviderAudioDetails on AudioProvider {
       updatedTracks.add(updatedTrack);
     }
     if (updatedTracks.isEmpty) return;
-    _clearResolvedCoverPaths();
+    _invalidateResolvedCoverScope(targetPath);
     _markActiveSessionsDirty();
     await _audioDatabaseRepository.upsertTracks(updatedTracks);
     _syncNotificationState();

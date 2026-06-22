@@ -8,6 +8,25 @@ import 'package:nameless_audio/models/playback_session.dart';
 import 'package:nameless_audio/services/audio_state_services.dart';
 
 void main() {
+  group('AudioStateSlice', () {
+    test('update skips equal states', () async {
+      final slice = AudioStateSlice<int>(1);
+      addTearDown(slice.dispose);
+
+      final values = <int>[];
+      final subscription = slice.stream.listen(values.add);
+      addTearDown(subscription.cancel);
+
+      await Future<void>.delayed(Duration.zero);
+      slice.update(1);
+      slice.update(2);
+      slice.update(2);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(values, <int>[1, 2]);
+    });
+  });
+
   group('SettingsRepository', () {
     test('syncSlice publishes settings without AudioProvider', () {
       final repository = SettingsRepository();

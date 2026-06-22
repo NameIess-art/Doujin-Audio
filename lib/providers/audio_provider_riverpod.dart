@@ -90,75 +90,123 @@ final notificationStateProvider = StreamProvider<NotificationState>((ref) {
   return ref.watch(notificationCoordinatorServiceProvider).slice.stream;
 });
 
-final libraryUiProvider = Provider<LibraryUiState>((ref) {
-  final libraryState = ref.watch(
-    libraryStateProvider.select((value) {
-      final state = value.valueOrNull ?? const LibraryState();
-      final showForegroundScan =
-          state.isScanning && !state.isBackgroundScanning;
-      return LibraryState(
-        libraryTrackCount: state.libraryTrackCount,
-        watchedFolderCount: state.watchedFolderCount,
-        watchedLibraryCount: state.watchedLibraryCount,
-        isScanning: showForegroundScan,
-        scanCurrentFolder: showForegroundScan ? state.scanCurrentFolder : '',
-        scanFoundCount: showForegroundScan ? state.scanFoundCount : 0,
-        scanDuplicateCount: showForegroundScan ? state.scanDuplicateCount : 0,
-        scanFailureCount: showForegroundScan ? state.scanFailureCount : 0,
-        structureRevision: state.structureRevision,
-        contentRevision: state.contentRevision,
-        detailRevision: state.detailRevision,
-        categorySnapshotRevision: state.categorySnapshotRevision,
-        isInitialized: state.isInitialized,
-      );
-    }),
+final libraryHeaderUiProvider = Provider<LibraryHeaderState>((ref) {
+  final serviceState = ref.watch(libraryServiceProvider).slice.state;
+  final state = ref.watch(libraryStateProvider).valueOrNull ?? serviceState;
+  final libraryState = LibraryState(
+    libraryTrackCount: state.libraryTrackCount,
+    watchedFolderCount: state.watchedFolderCount,
+    watchedLibraryCount: state.watchedLibraryCount,
+    isInitialized: state.isInitialized,
+  );
+  return libraryHeaderStateFromSlice(libraryState);
+});
+
+final libraryListUiProvider = Provider<LibraryListState>((ref) {
+  final serviceState = ref.watch(libraryServiceProvider).slice.state;
+  final state = ref.watch(libraryStateProvider).valueOrNull ?? serviceState;
+  final showForegroundScan = state.isScanning && !state.isBackgroundScanning;
+  final libraryState = LibraryState(
+    watchedFolderCount: state.watchedFolderCount,
+    watchedLibraryCount: state.watchedLibraryCount,
+    isScanning: showForegroundScan,
+    isBackgroundScanning: state.isBackgroundScanning,
+    scanCurrentFolder: showForegroundScan ? state.scanCurrentFolder : '',
+    scanFoundCount: showForegroundScan ? state.scanFoundCount : 0,
+    scanDuplicateCount: showForegroundScan ? state.scanDuplicateCount : 0,
+    scanFailureCount: showForegroundScan ? state.scanFailureCount : 0,
+    structureRevision: state.structureRevision,
+    contentRevision: state.contentRevision,
+    isInitialized: state.isInitialized,
   );
   final provider = ref.watch(audioProviderFacadeProvider);
-  final header = libraryHeaderStateFromSlice(libraryState);
-  return LibraryUiState(
-    header: header,
-    list: LibraryListState(
-      rawTree: provider.libraryTree,
-      watchedFolders: provider.watchedFolders,
-      watchedLibraries: provider.watchedLibraries,
-      watchedFolderCount: libraryState.watchedFolderCount,
-      watchedLibraryCount: libraryState.watchedLibraryCount,
-      isScanning: libraryState.isScanning,
-      isBackgroundScanning: libraryState.isBackgroundScanning,
-      scanCurrentFolder: libraryState.scanCurrentFolder,
-      scanFoundCount: libraryState.scanFoundCount,
-      scanDuplicateCount: libraryState.scanDuplicateCount,
-      scanFailureCount: libraryState.scanFailureCount,
-      structureRevision: libraryState.contentRevision,
-      isInitialized: libraryState.isInitialized,
-    ),
-    detailRevision: libraryState.detailRevision,
-    categorySnapshotRevision: libraryState.categorySnapshotRevision,
+  return LibraryListState(
+    rawTree: provider.libraryTree,
+    watchedFolders: provider.watchedFolders,
+    watchedLibraries: provider.watchedLibraries,
+    watchedFolderCount: libraryState.watchedFolderCount,
+    watchedLibraryCount: libraryState.watchedLibraryCount,
+    isScanning: libraryState.isScanning,
+    isBackgroundScanning: libraryState.isBackgroundScanning,
+    scanCurrentFolder: libraryState.scanCurrentFolder,
+    scanFoundCount: libraryState.scanFoundCount,
+    scanDuplicateCount: libraryState.scanDuplicateCount,
+    scanFailureCount: libraryState.scanFailureCount,
+    structureRevision: libraryState.contentRevision,
+    isInitialized: libraryState.isInitialized,
   );
 });
 
-final playlistUiProvider = Provider<PlaylistUiState>((ref) {
+final libraryDetailRevisionProvider = Provider<int>((ref) {
+  final serviceState = ref.watch(libraryServiceProvider).slice.state;
+  return ref.watch(libraryStateProvider).valueOrNull?.detailRevision ??
+      serviceState.detailRevision;
+});
+
+final libraryCategoryRevisionProvider = Provider<int>((ref) {
+  final serviceState = ref.watch(libraryServiceProvider).slice.state;
+  return ref
+          .watch(libraryStateProvider)
+          .valueOrNull
+          ?.categorySnapshotRevision ??
+      serviceState.categorySnapshotRevision;
+});
+
+final playlistHeaderUiProvider = Provider<PlaylistHeaderState>((ref) {
   final playbackState =
       ref.watch(playbackStateProvider).valueOrNull ??
-      const PlaybackStateSliceData();
+      ref.watch(playbackSessionServiceProvider).slice.state;
   final timerState =
-      ref.watch(timerStateProvider).valueOrNull ?? const TimerStateSliceData();
-  return PlaylistUiState(
-    header: playlistHeaderStateFromSlices(playbackState, timerState),
-    list: PlaylistListState(
-      sessions: playbackState.activeSessions,
-      isInitialized: playbackState.isInitialized,
-    ),
-    coverGeneration: playbackState.coverGeneration,
+      ref.watch(timerStateProvider).valueOrNull ??
+      ref.watch(timerServiceProvider).slice.state;
+  return playlistHeaderStateFromSlices(playbackState, timerState);
+});
+
+final playlistListUiProvider = Provider<PlaylistListState>((ref) {
+  final playbackState =
+      ref.watch(playbackStateProvider).valueOrNull ??
+      ref.watch(playbackSessionServiceProvider).slice.state;
+  return PlaylistListState(
+    sessions: playbackState.activeSessions,
+    isInitialized: playbackState.isInitialized,
   );
 });
+
+final coverGenerationProvider = Provider<int>((ref) {
+  return ref.watch(playbackStateProvider).valueOrNull?.coverGeneration ??
+      ref.watch(playbackSessionServiceProvider).slice.state.coverGeneration;
+});
+
+final activeTrackPathsProvider = Provider<ActiveTrackPaths>((ref) {
+  final playbackState =
+      ref.watch(playbackStateProvider).valueOrNull ??
+      ref.watch(playbackSessionServiceProvider).slice.state;
+  return ActiveTrackPaths(
+    playbackState.activeSessions
+        .map((session) => session.currentTrackPath)
+        .where((path) => path.isNotEmpty)
+        .toSet(),
+  );
+});
+
+final playlistSessionCardUiProvider =
+    Provider.family<PlaylistSessionCardState?, String>((ref, sessionId) {
+      final playbackState =
+          ref.watch(playbackStateProvider).valueOrNull ??
+          ref.watch(playbackSessionServiceProvider).slice.state;
+      return playlistSessionCardStateFromPlaybackState(
+        playbackState,
+        sessionId,
+      );
+    });
 
 final mainOverlayUiProvider = Provider<MainOverlayUiState>((ref) {
   final playbackState =
       ref.watch(playbackStateProvider).valueOrNull ??
-      const PlaybackStateSliceData();
+      ref.watch(playbackSessionServiceProvider).slice.state;
   final settingsState =
-      ref.watch(settingsStateProvider).valueOrNull ?? const SettingsState();
+      ref.watch(settingsStateProvider).valueOrNull ??
+      ref.watch(settingsRepositoryProvider).slice.state;
   ref.watch(subtitleSettingsProvider);
   final overlaySessions = overlaySessionsFromPlaybackState(playbackState);
   final visibleSessions = settingsState.showPlaybackCard
@@ -180,7 +228,7 @@ final sessionDetailUiProvider = Provider.family<SessionDetailUiState, String>((
 ) {
   final playbackState =
       ref.watch(playbackStateProvider).valueOrNull ??
-      const PlaybackStateSliceData();
+      ref.watch(playbackSessionServiceProvider).slice.state;
   return SessionDetailUiState(
     sessionOrder: sessionOrderStateFromPlaybackState(playbackState),
     detail: sessionDetailViewStateFromPlaybackState(playbackState, sessionId),

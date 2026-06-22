@@ -74,7 +74,7 @@ class LibraryManagementPage extends ConsumerWidget {
     final i18n = context.watch<AppLanguageProvider>();
     final cs = Theme.of(context).colorScheme;
     final libraries = ref.watch(
-      libraryUiProvider.select((state) => state.list.watchedLibraries),
+      libraryListUiProvider.select((state) => state.watchedLibraries),
     );
     return Scaffold(
       backgroundColor: cs.surface,
@@ -111,7 +111,8 @@ class LibraryManagementPage extends ConsumerWidget {
                       overflow: TextOverflow.ellipsis,
                     ),
                     onTap: () => Navigator.of(context).push(
-                      buildAppPageRoute<void>(child: LibraryEditPage(libraryPath: libraryPath),
+                      buildAppPageRoute<void>(
+                        child: LibraryEditPage(libraryPath: libraryPath),
                       ),
                     ),
                     trailing: IconButton(

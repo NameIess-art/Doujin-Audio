@@ -4,39 +4,12 @@ extension AudioProviderLibraryCovers on AudioProvider {
   /// Recursively scans for all images in the root folder containing the given track.
   Future<List<String>> discoverImagesInRoot(String trackPath) async {
     final track = trackByPath(trackPath);
-    final scopeFolder = _resolveCoverScopeFolderPath(
-      this,
-      track,
-      trackPath: trackPath,
-    );
-    if (scopeFolder == null || scopeFolder.isEmpty) return [];
-
-    if (PathMatcher.isContentUri(scopeFolder) ||
-        PathMatcher.isContentUri(trackPath)) {
-      return _discoverContentImages(
-        trackPath: trackPath,
-        groupKey: track?.groupKey,
-        rootFolder: scopeFolder,
-      );
-    }
-
-    return _discoverFileSystemImages(scopeFolder);
+    return _coverArtworkCacheService.discoverImagesInRoot(trackPath, track);
   }
 
   /// Recursively scans for all images in the given folder.
   Future<List<String>> discoverImagesInFolder(String folderPath) async {
-    if (folderPath.trim().isEmpty) return [];
-    final normalizedFolder = PathMatcher.normalize(folderPath);
-    if (normalizedFolder.isEmpty) return [];
-
-    if (PathMatcher.isContentUri(normalizedFolder)) {
-      return _discoverContentImages(
-        trackPath: normalizedFolder,
-        rootFolder: normalizedFolder,
-      );
-    }
-
-    return _discoverFileSystemImages(normalizedFolder);
+    return _coverArtworkCacheService.discoverImagesInFolder(folderPath);
   }
 
   /// Sets a manual cover image for a track and persists it.
@@ -45,7 +18,6 @@ extension AudioProviderLibraryCovers on AudioProvider {
     if (targetTrack == null) return;
 
     final scopeFolder = _resolveCoverScopeFolderPath(
-      this,
       targetTrack,
       trackPath: trackPath,
     );
@@ -97,57 +69,5 @@ extension AudioProviderLibraryCovers on AudioProvider {
 
   Future<void> setFolderManualCover(String folderPath, String imagePath) {
     return _setFolderManualCover(folderPath, imagePath);
-  }
-
-  Future<List<String>> _discoverContentImages({
-    required String trackPath,
-    required String rootFolder,
-    String? groupKey,
-  }) async {
-    try {
-      return AudioProvider._fileCacheGateway.discoverRootImages(
-        path: trackPath,
-        groupKey: groupKey,
-        rootFolder: rootFolder,
-      );
-    } on MissingPluginException {
-      return [];
-    } catch (e) {
-      debugPrint('Error discovering content images in root $rootFolder: $e');
-      return [];
-    }
-  }
-
-  Future<List<String>> _discoverFileSystemImages(String folderPath) async {
-    final normalizedScope = PathMatcher.normalize(folderPath);
-    final cached = _discoveredImagesByScopeCache[normalizedScope];
-    if (cached != null) {
-      return cached;
-    }
-
-    final images = <String>[];
-    try {
-      final dir = Directory(folderPath);
-      if (!await dir.exists()) return [];
-
-      await for (final entity in dir.list(
-        recursive: true,
-        followLinks: false,
-      )) {
-        if (entity is! File) continue;
-        final ext = path.extension(entity.path).toLowerCase();
-        if (!AudioProvider._supportedImageExtensions.contains(ext)) {
-          continue;
-        }
-        images.add(entity.path);
-      }
-    } catch (e) {
-      debugPrint('Error discovering images in root $folderPath: $e');
-    }
-
-    images.sort((a, b) => a.compareTo(b));
-    final snapshot = List<String>.unmodifiable(images);
-    _discoveredImagesByScopeCache[normalizedScope] = snapshot;
-    return snapshot;
   }
 }

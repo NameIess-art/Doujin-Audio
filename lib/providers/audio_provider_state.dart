@@ -41,7 +41,7 @@ extension AudioProviderState on AudioProvider {
   List<EqPreset> get customEqPresets =>
       List<EqPreset>.unmodifiable(_settingsRepository.customEqPresets);
   int get maxCacheBytes => _maxCacheBytes;
-  int get audioDetailRevision => _audioDetailRevision;
+  int get audioDetailRevision => _audioDetailCacheService.revision;
 
   List<MusicTrack> get library => UnmodifiableListView(_library);
   int get libraryTrackCount => _library.length;
@@ -49,25 +49,10 @@ extension AudioProviderState on AudioProvider {
   List<String> get watchedLibraries => UnmodifiableListView(_watchedLibraries);
   int get watchedFolderCount => _watchedFolders.length;
   int get watchedLibraryCount => _watchedLibraries.length;
-  List<LibraryNode> get libraryTree {
-    if (_libraryTreeDirty) {
-      if (_cachedLibraryTree.isEmpty && _library.isNotEmpty) {
-        final snapshot = _buildLibraryTreeSnapshot();
-        _cachedLibraryTree = snapshot.tree;
-        _cachedLibraryLeafFolderCount = snapshot.leafFolderCount;
-        _libraryTreeDirty = false;
-      } else {
-        _scheduleLibraryTreeSnapshot();
-      }
-    }
-    return _cachedLibraryTree;
-  }
+  List<LibraryNode> get libraryTree => _librarySnapshotCacheService.treeSync;
 
   int get libraryLeafFolderCount {
-    if (_libraryTreeDirty) {
-      final _ = libraryTree;
-    }
-    return _cachedLibraryLeafFolderCount;
+    return _librarySnapshotCacheService.leafFolderCount;
   }
 
   int get playingSessionCount => _playbackService.playingSessionCount;
@@ -136,8 +121,8 @@ extension AudioProviderCoreState on AudioProvider {
   }
 
   void _markLibraryStructureDirty() {
-    _libraryTreeDirty = true;
     _libraryService.markStructureChanged();
+    _librarySnapshotCacheService.markStructureChanged();
   }
 
   void _rebuildLibraryIndexes() {

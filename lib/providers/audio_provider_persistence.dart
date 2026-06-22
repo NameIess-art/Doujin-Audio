@@ -81,10 +81,7 @@ extension AudioProviderPersistence on AudioProvider {
     _scanFoundCount = 0;
     _scanDuplicateCount = 0;
     _scanFailureCount = 0;
-    _cachedLibraryTree = const <LibraryNode>[];
-    _libraryTreeBuildFuture = null;
-    _libraryTreeBuildRevision = -1;
-    _cachedLibraryLeafFolderCount = 0;
+    _librarySnapshotCacheService.clear();
     _libraryBatchDepth = 0;
     _libraryBatchChanged = false;
     _libraryBatchChangedGroupOrder = false;
@@ -130,10 +127,6 @@ extension AudioProviderPersistence on AudioProvider {
     _notificationSubtitleTexts.clear();
     _notificationSubtitleTrackPaths.clear();
     _clearResolvedCoverPaths();
-    _audioLibraryCategorySnapshot = null;
-    _audioLibraryCategorySnapshotFuture = null;
-    _audioLibraryCategoryFutureStructureRevision = -1;
-    _audioLibraryCategoryFutureDetailRevision = -1;
 
     try {
       await _clearUnifiedPlaybackNotificationsOnPlatform();

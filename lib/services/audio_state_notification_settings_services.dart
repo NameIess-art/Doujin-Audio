@@ -8,18 +8,6 @@ class NotificationCoordinatorService {
       <String, Future<SubtitleTrack?>>{};
   final Map<String, String?> notificationSubtitleTexts = <String, String?>{};
   final Map<String, String> notificationSubtitleTrackPaths = <String, String>{};
-  final Map<String, Future<String?>> coverPathFutures =
-      <String, Future<String?>>{};
-  final Map<String, String?> resolvedCoverPaths = <String, String?>{};
-  final Map<String, Future<String?>> resolvedCoverPathFutures =
-      <String, Future<String?>>{};
-  final Map<String, Future<String?>> notificationCoverPathFutures =
-      <String, Future<String?>>{};
-  final Map<String, String?> resolvedNotificationCoverPaths =
-      <String, String?>{};
-  final Map<String, Future<String?>> resolvedNotificationCoverPathFutures =
-      <String, Future<String?>>{};
-  final Set<String> notificationCoverSearchMisses = <String>{};
   String? notificationFocusSessionId;
   String? unifiedNotificationSyncKey;
   Timer? notificationProgressRefreshTimer;

@@ -2,8 +2,10 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart' show ProviderScope;
+import 'package:flutter_riverpod/flutter_riverpod.dart'
+    show ProviderContainer, ProviderScope;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:just_audio/just_audio.dart';
 import 'package:nameless_audio/i18n/app_language_provider.dart';
 import 'package:nameless_audio/providers/audio_provider.dart';
 import 'package:nameless_audio/providers/audio_provider_riverpod.dart';
@@ -133,6 +135,50 @@ class _FakeAsmrMetadataService extends AsmrMetadataService {
 }
 
 void main() {
+  test('active track path provider exposes current session paths', () {
+    final playbackService = PlaybackSessionService();
+    addTearDown(playbackService.dispose);
+    final active = PlaybackSession(
+      id: 'active',
+      currentTrackPath: '/tracks/active.mp3',
+      loopMode: SessionLoopMode.single,
+      nonSingleLoopMode: SessionLoopMode.single,
+      volume: 1,
+      createdAt: DateTime(2026),
+      state: PlayerState(false, ProcessingState.ready),
+    );
+    final empty = PlaybackSession(
+      id: 'empty',
+      currentTrackPath: '',
+      loopMode: SessionLoopMode.single,
+      nonSingleLoopMode: SessionLoopMode.single,
+      volume: 1,
+      createdAt: DateTime(2026),
+      state: PlayerState(false, ProcessingState.ready),
+    );
+    addTearDown(active.dispose);
+    addTearDown(empty.dispose);
+    playbackService.syncSlice(
+      activeSessions: [active, empty],
+      playingSessionCount: 0,
+      focusedSessionId: null,
+      multiThreadPlaybackEnabled: false,
+      coverGeneration: 0,
+      isInitialized: true,
+    );
+    final container = ProviderContainer(
+      overrides: [
+        playbackSessionServiceProvider.overrideWithValue(playbackService),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    final paths = container.read(activeTrackPathsProvider);
+
+    expect(paths.contains('/tracks/active.mp3'), isTrue);
+    expect(paths.contains(''), isFalse);
+  });
+
   TestWidgetsFlutterBinding.ensureInitialized();
   SharedPreferences.setMockInitialValues(const <String, Object>{});
 
@@ -475,6 +521,7 @@ void main() {
     expect(find.text('root'), findsOneWidget);
     expect(find.text('standalone'), findsNothing);
     expect(find.text('child'), findsNothing);
+    await tester.pump(const Duration(milliseconds: 200));
   });
 
   testWidgets('playlist more menu toggles fixed card positions', (

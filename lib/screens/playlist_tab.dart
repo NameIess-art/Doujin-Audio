@@ -251,9 +251,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     super.build(context);
     final i18n = context.watch<AppLanguageProvider>();
     final provider = ref.read(audioProviderFacadeProvider);
-    final listState = ref.watch(
-      playlistUiProvider.select((state) => state.list),
-    );
+    final listState = ref.watch(playlistListUiProvider);
     final settingsState =
         ref.watch(settingsStateProvider).valueOrNull ?? const SettingsState();
     final cardPositionsLocked = settingsState.cardPositionsLocked;
@@ -424,9 +422,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
             right: 0,
             child: Consumer(
               builder: (context, ref, child) {
-                final headerState = ref.watch(
-                  playlistUiProvider.select((state) => state.header),
-                );
+                final headerState = ref.watch(playlistHeaderUiProvider);
                 final sessionSummary =
                     '${i18n.tr('sessions_count', {'count': headerState.sessionCount})} · '
                     '${i18n.tr('playing_count', {'count': headerState.playingCount})}';

@@ -1320,60 +1320,6 @@ extension AudioProviderLibrary on AudioProvider {
 
   List<LibraryNode> buildLibraryTree() => libraryTree;
 
-  LibraryTreeSnapshot _buildLibraryTreeSnapshot() {
-    return _libraryOrganizer.buildTree(
-      tracks: _library,
-      watchedFolders: _watchedFolders,
-      nodeOrder: _libraryNodeOrder,
-    );
-  }
-
-  void _scheduleLibraryTreeSnapshot() {
-    final revision = _libraryService.structureRevision;
-    if (_libraryTreeBuildFuture != null &&
-        _libraryTreeBuildRevision == revision) {
-      return;
-    }
-    final payload = _LibraryTreeBuildPayload(
-      tracks: List<MusicTrack>.unmodifiable(_library),
-      watchedFolders: List<String>.unmodifiable(_watchedFolders),
-      nodeOrder: List<String>.unmodifiable(_libraryNodeOrder),
-    );
-    final future = compute(_buildLibraryTreeFromPayload, payload);
-    _libraryTreeBuildFuture = future;
-    _libraryTreeBuildRevision = revision;
-    unawaited(
-      future
-          .then((snapshot) {
-            if (_libraryService.structureRevision != revision) return;
-            void commit() {
-              if (_libraryService.structureRevision != revision) return;
-              _cachedLibraryTree = snapshot.tree;
-              _cachedLibraryLeafFolderCount = snapshot.leafFolderCount;
-              _libraryTreeDirty = false;
-              _syncLibraryStateSlice();
-              _notifyPresentationListeners();
-            }
-
-            final coordinator = UiInteractionCoordinator.instance;
-            if (coordinator.isInteracting) {
-              coordinator.scheduleCommit(
-                key: 'library_tree_snapshot',
-                priority: 0,
-                commit: commit,
-              );
-            } else {
-              commit();
-            }
-          })
-          .whenComplete(() {
-            if (identical(_libraryTreeBuildFuture, future)) {
-              _libraryTreeBuildFuture = null;
-            }
-          }),
-    );
-  }
-
   MusicTrack? trackByPath(String trackPath) {
     final resolvedPath = _resolveRetargetedPath(trackPath);
     final libraryTrack = _libraryService.trackByPath(resolvedPath);
@@ -1464,7 +1410,7 @@ extension AudioProviderLibrary on AudioProvider {
   String? workRootForTrack(String trackPath) {
     final track = trackByPath(trackPath);
     if (track == null || PathMatcher.isRemoteUri(track.path)) return null;
-    return _resolveCoverScopeFolderPath(this, track, trackPath: trackPath);
+    return _resolveCoverScopeFolderPath(track, trackPath: trackPath);
   }
 
   String getRootFolderPath(String trackPath) {
@@ -1496,26 +1442,4 @@ extension AudioProviderLibrary on AudioProvider {
     }
     return '';
   }
-}
-
-class _LibraryTreeBuildPayload {
-  const _LibraryTreeBuildPayload({
-    required this.tracks,
-    required this.watchedFolders,
-    required this.nodeOrder,
-  });
-
-  final List<MusicTrack> tracks;
-  final List<String> watchedFolders;
-  final List<String> nodeOrder;
-}
-
-LibraryTreeSnapshot _buildLibraryTreeFromPayload(
-  _LibraryTreeBuildPayload payload,
-) {
-  return const LibraryOrganizer().buildTree(
-    tracks: payload.tracks,
-    watchedFolders: payload.watchedFolders,
-    nodeOrder: payload.nodeOrder,
-  );
 }

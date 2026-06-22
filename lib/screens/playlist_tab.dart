@@ -58,7 +58,9 @@ Future<String?> _coverFutureForTrack(
   MusicTrack? track, {
   bool cachedOnly = false,
 }) {
-  if (track == null || (track.isSingle && !track.isVideo)) {
+  final remoteCoverUrl = track?.remoteCoverUrl?.trim();
+  final hasRemoteCover = remoteCoverUrl != null && remoteCoverUrl.isNotEmpty;
+  if (track == null || (track.isSingle && !track.isVideo && !hasRemoteCover)) {
     return Future<String?>.value();
   }
   if (cachedOnly) {

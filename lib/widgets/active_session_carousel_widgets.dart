@@ -564,43 +564,27 @@ class _ActiveSessionCover extends ConsumerWidget {
         type: MaterialType.transparency,
         borderRadius: BorderRadius.circular(14),
         clipBehavior: Clip.antiAlias,
-        child: track?.remoteCoverUrl?.trim().isNotEmpty == true
-            ? RetryingNetworkImage(
-                url: track!.remoteCoverUrl!.trim(),
-                fit: BoxFit.cover,
-                cacheWidth: coverCacheWidthForDisplay(context, 58),
-                loadingBuilder: (context, child, loadingProgress) =>
-                    loadingProgress == null
-                    ? child
-                    : CoverLoadingArtwork(
-                        placeholder: fallback(hideIcon: true),
-                        size: 28,
-                        strokeWidth: 2.6,
-                        color: cs.primary,
-                      ),
-                fallbackBuilder: (_) => fallback(),
-              )
-            : AsyncCoverImage(
-                future: coverPathFuture,
-                initialPath: provider.resolvedCoverPathForTrack(track),
-                retryFutureBuilder: () =>
-                    _sessionCoverFutureForTrack(provider, track),
-                fallbackBuilder: (_) => fallback(),
-                loadingBuilder: (_) => CoverLoadingArtwork(
-                  placeholder: fallback(hideIcon: true),
-                  size: 28,
-                  strokeWidth: 2.6,
-                  color: cs.primary,
-                ),
-                imageBuilder: (context, coverPath) {
-                  return RetryingFileImage(
-                    path: coverPath,
-                    cacheWidth: coverCacheWidthForDisplay(context, 58),
-                    fit: BoxFit.cover,
-                    fallbackBuilder: (_) => fallback(),
-                  );
-                },
-              ),
+        child: AsyncCoverImage(
+          future: coverPathFuture,
+          initialPath: provider.resolvedCoverPathForTrack(track),
+          retryFutureBuilder: () =>
+              _sessionCoverFutureForTrack(provider, track),
+          fallbackBuilder: (_) => fallback(),
+          loadingBuilder: (_) => CoverLoadingArtwork(
+            placeholder: fallback(hideIcon: true),
+            size: 28,
+            strokeWidth: 2.6,
+            color: cs.primary,
+          ),
+          imageBuilder: (context, coverPath) {
+            return RetryingFileImage(
+              path: coverPath,
+              cacheWidth: coverCacheWidthForDisplay(context, 58),
+              fit: BoxFit.cover,
+              fallbackBuilder: (_) => fallback(),
+            );
+          },
+        ),
       ),
     );
   }

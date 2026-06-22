@@ -60,9 +60,9 @@ class _AsmrWorkCover extends StatelessWidget {
 
 String _asmrWorkListCoverUrl(AsmrWork work) {
   for (final url in <String>[
-    work.thumbnailUrl,
     work.mainCoverUrl,
     work.coverUrl,
+    work.thumbnailUrl,
   ]) {
     final trimmed = url.trim();
     if (trimmed.isNotEmpty) {

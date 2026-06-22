@@ -266,14 +266,6 @@ class _QueueTrackCoverState extends State<_QueueTrackCover> {
   @override
   Widget build(BuildContext context) {
     final track = widget.track;
-    final remoteUrl = track.remoteCoverUrl?.trim();
-    if (remoteUrl?.isNotEmpty == true) {
-      return RetryingNetworkImage(
-        url: remoteUrl!,
-        fit: BoxFit.cover,
-        fallbackBuilder: (_) => CoverFallbackArtwork(seed: track.displayName),
-      );
-    }
     final initialPath =
         track.manualCoverPath ??
         track.coverCachePath ??

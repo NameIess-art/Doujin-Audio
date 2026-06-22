@@ -120,18 +120,6 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
       if (!mounted) return;
       unawaited(
         Future<void>(() async {
-          final remoteCoverUrl = track?.remoteCoverUrl?.trim();
-          if (remoteCoverUrl != null && remoteCoverUrl.isNotEmpty) {
-            try {
-              await _precacheImageProvider(
-                NetworkImage(remoteCoverUrl),
-                imageConfiguration,
-              );
-            } catch (_) {
-              // Cover precaching is optional; the UI has a visual fallback.
-            }
-            return;
-          }
           final coverPath = await coverPathFuture;
           if (!mounted || coverPath == null || coverPath.isEmpty) {
             return;
@@ -182,18 +170,6 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
         if (!mounted) return;
         unawaited(
           Future<void>(() async {
-            final remoteCoverUrl = track?.remoteCoverUrl?.trim();
-            if (remoteCoverUrl != null && remoteCoverUrl.isNotEmpty) {
-              try {
-                await _precacheImageProvider(
-                  NetworkImage(remoteCoverUrl),
-                  imageConfiguration,
-                );
-              } catch (_) {
-                // Cover precaching is optional; the UI has a visual fallback.
-              }
-              return;
-            }
             final coverPath = await future;
             if (!mounted || coverPath == null || coverPath.isEmpty) return;
             try {
@@ -814,62 +790,32 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                         sigmaX: _kSessionDetailBackgroundBlurSigma,
                         sigmaY: _kSessionDetailBackgroundBlurSigma,
                       ),
-                      child: track?.remoteCoverUrl?.trim().isNotEmpty == true
-                          ? RetryingNetworkImage(
-                              url: track!.remoteCoverUrl!.trim(),
-                              fit: BoxFit.cover,
-                              cacheWidth: _kSessionDetailBackgroundCacheWidth,
-                              color: cs.surface.withValues(alpha: 0.45),
-                              colorBlendMode: BlendMode.darken,
-                              loadingBuilder:
-                                  (context, child, loadingProgress) =>
-                                      loadingProgress == null
-                                      ? child
-                                      : CoverLoadingArtwork(
-                                          placeholder: CoverFallbackArtwork(
-                                            seed: track.displayName,
-                                            showIcon: false,
-                                          ),
-                                          size: 36,
-                                          strokeWidth: 3,
-                                          color: cs.primary,
-                                        ),
-                              fallbackBuilder: (_) => CoverFallbackArtwork(
-                                seed: track.displayName,
-                                showIcon: false,
-                              ),
-                            )
-                          : AsyncCoverImage(
-                              duration: Duration.zero,
-                              future: coverPathFuture,
-                              initialPath: provider.resolvedCoverPathForTrack(
-                                track,
-                              ),
-                              retryFutureBuilder: () =>
-                                  _coverFutureForTrack(provider, track),
-                              fallbackBuilder: (_) => CoverFallbackArtwork(
-                                seed:
-                                    track?.displayName ??
-                                    session.currentTrackPath,
-                                showIcon: false,
-                              ),
-                              imageBuilder: (context, coverPath) {
-                                return RetryingFileImage(
-                                  path: coverPath,
-                                  cacheWidth:
-                                      _kSessionDetailBackgroundCacheWidth,
-                                  fit: BoxFit.cover,
-                                  color: cs.surface.withValues(alpha: 0.45),
-                                  colorBlendMode: BlendMode.darken,
-                                  fallbackBuilder: (_) => CoverFallbackArtwork(
-                                    seed:
-                                        track?.displayName ??
-                                        session.currentTrackPath,
-                                    showIcon: false,
-                                  ),
-                                );
-                              },
+                      child: AsyncCoverImage(
+                        duration: Duration.zero,
+                        future: coverPathFuture,
+                        initialPath: provider.resolvedCoverPathForTrack(track),
+                        retryFutureBuilder: () =>
+                            _coverFutureForTrack(provider, track),
+                        fallbackBuilder: (_) => CoverFallbackArtwork(
+                          seed: track?.displayName ?? session.currentTrackPath,
+                          showIcon: false,
+                        ),
+                        imageBuilder: (context, coverPath) {
+                          return RetryingFileImage(
+                            path: coverPath,
+                            cacheWidth: _kSessionDetailBackgroundCacheWidth,
+                            fit: BoxFit.cover,
+                            color: cs.surface.withValues(alpha: 0.45),
+                            colorBlendMode: BlendMode.darken,
+                            fallbackBuilder: (_) => CoverFallbackArtwork(
+                              seed:
+                                  track?.displayName ??
+                                  session.currentTrackPath,
+                              showIcon: false,
                             ),
+                          );
+                        },
+                      ),
                     ),
                   ),
                 ),

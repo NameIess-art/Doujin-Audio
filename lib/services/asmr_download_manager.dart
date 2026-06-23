@@ -40,6 +40,7 @@ class AsmrDownloadTaskSnapshot {
     this.error,
     this.fileDownloadedBytes = const {},
     this.fileTotalBytes = const {},
+    this.selectedRoots = const [],
   });
 
   final AsmrWork work;
@@ -59,6 +60,7 @@ class AsmrDownloadTaskSnapshot {
   final String? error;
   final Map<String, int> fileDownloadedBytes;
   final Map<String, int> fileTotalBytes;
+  final List<AsmrTrackFile> selectedRoots;
 
   String get workRootPath {
     if (PathMatcher.isContentUri(destinationRoot)) {
@@ -100,6 +102,7 @@ class AsmrDownloadTaskSnapshot {
     String? error,
     Map<String, int>? fileDownloadedBytes,
     Map<String, int>? fileTotalBytes,
+    List<AsmrTrackFile>? selectedRoots,
   }) {
     return AsmrDownloadTaskSnapshot(
       work: work,
@@ -119,6 +122,7 @@ class AsmrDownloadTaskSnapshot {
       error: error ?? this.error,
       fileDownloadedBytes: fileDownloadedBytes ?? this.fileDownloadedBytes,
       fileTotalBytes: fileTotalBytes ?? this.fileTotalBytes,
+      selectedRoots: selectedRoots ?? this.selectedRoots,
     );
   }
 }

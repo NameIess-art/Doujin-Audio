@@ -9,6 +9,7 @@ import '../services/asmr_download_manager.dart';
 import '../services/asmr_download_selection.dart';
 import '../services/asmr_library_controller.dart';
 import '../widgets/app_feedback.dart';
+import '../widgets/top_page_header.dart';
 import 'asmr_download_details_page.dart';
 
 class AsmrDownloadPage extends StatefulWidget {
@@ -360,18 +361,41 @@ class AsmrDownloadTaskPage extends StatelessWidget {
     final manager = context.watch<AsmrDownloadManager>();
     final tasks = manager.tasks;
     final i18n = context.watch<AppLanguageProvider>();
+    final headerHeight = MediaQuery.paddingOf(context).top + 56;
+    
     return Scaffold(
-      appBar: AppBar(title: Text(i18n.tr('asmr_download_task_title'))),
-      body: tasks.isEmpty
-          ? Center(child: Text(i18n.tr('asmr_download_no_tasks')))
-          : ListView.builder(
-              padding: const EdgeInsets.all(16),
+      body: Stack(
+        children: [
+          if (tasks.isEmpty)
+            Center(
+              child: Text(
+                i18n.tr('asmr_download_no_tasks'),
+                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+            )
+          else
+            ListView.builder(
+              padding: EdgeInsets.fromLTRB(16, headerHeight + 16, 16, MediaQuery.paddingOf(context).bottom + 16),
+              physics: const BouncingScrollPhysics(),
               itemCount: tasks.length,
               itemBuilder: (context, index) {
                 final task = tasks[index];
                 return _TaskCard(task: task);
               },
             ),
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: TopPageHeader(
+              leading: const BackButton(),
+              title: i18n.tr('asmr_download_task_title'),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -391,6 +415,11 @@ class _TaskCard extends StatelessWidget {
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       clipBehavior: Clip.antiAlias,
+      elevation: 0,
+      color: cs.surfaceContainerHigh,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
       child: InkWell(
         onTap: () {
           Navigator.of(context).push(
@@ -400,7 +429,7 @@ class _TaskCard extends StatelessWidget {
           );
         },
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -411,37 +440,63 @@ class _TaskCard extends StatelessWidget {
                     child: Text(
                       task.work.title,
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w800,
+                            fontWeight: FontWeight.w700,
+                            height: 1.3,
                           ),
                     ),
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.cancel_rounded),
-                    color: cs.error,
-                    onPressed: () {
-                      context.read<AsmrDownloadManager>().cancelTask(task.work.id);
-                      showAppSnackBar(
-                        context,
-                        i18n.tr('asmr_download_cancelled_and_cleared'),
-                        tone: AppFeedbackTone.warning,
-                        icon: Icons.delete_sweep_rounded,
-                        iconColor: asmrBlue,
-                      );
-                    },
+                  const SizedBox(width: 8),
+                  SizedBox(
+                    width: 32,
+                    height: 32,
+                    child: IconButton(
+                      padding: EdgeInsets.zero,
+                      icon: const Icon(Icons.cancel_rounded),
+                      iconSize: 22,
+                      color: cs.error.withValues(alpha: 0.8),
+                      tooltip: i18n.tr('cancel'),
+                      onPressed: () {
+                        context.read<AsmrDownloadManager>().cancelTask(task.work.id);
+                        showAppSnackBar(
+                          context,
+                          i18n.tr('asmr_download_cancelled_and_cleared'),
+                          tone: AppFeedbackTone.warning,
+                          icon: Icons.delete_sweep_rounded,
+                          iconColor: asmrBlue,
+                        );
+                      },
+                    ),
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
-              LinearProgressIndicator(
-                value: task.progress,
-                color: asmrBlue,
+              const SizedBox(height: 12),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: LinearProgressIndicator(
+                  value: task.progress,
+                  minHeight: 6,
+                  color: asmrBlue,
+                  backgroundColor: asmrBlue.withValues(alpha: 0.2),
+                ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 12),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(_statusText(i18n, task.status)),
-                  Text('${_formatBytes(task.downloadedBytes)} / ${_formatBytes(task.totalBytes)}'),
+                  Text(
+                    _statusText(i18n, task.status),
+                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      color: cs.onSurfaceVariant,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  Text(
+                    '${_formatBytes(task.downloadedBytes)} / ${_formatBytes(task.totalBytes)}',
+                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      color: cs.onSurfaceVariant,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ],
               ),
             ],

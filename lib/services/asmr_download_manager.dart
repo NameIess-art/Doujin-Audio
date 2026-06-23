@@ -481,6 +481,7 @@ class AsmrDownloadManager extends ChangeNotifier {
       message: 'queued',
       fileTotalBytes: fileTotalBytes,
       fileDownloadedBytes: {},
+      selectedRoots: selectedRoots,
     );
 
     _queue.add(workId);

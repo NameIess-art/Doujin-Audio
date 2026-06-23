@@ -152,81 +152,85 @@ class _ActiveSessionCard extends ConsumerWidget {
     MusicTrack? currentTrack,
     String displayName,
   ) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(10, 4, 8, 2),
-          child: Row(
-            children: [
-              _ActiveSessionCover(
-                sessionId: session.id,
-                track: currentTrack,
-                coverPathFuture: coverPathFuture,
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _ActiveSessionTitleSubtitle(
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(10, 5, 8, 5),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          _ActiveSessionCover(
+            sessionId: session.id,
+            track: currentTrack,
+            coverPathFuture: coverPathFuture,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _ActiveSessionTitleSubtitle(
                   key: ValueKey('${session.id}:${view.trackPath}'),
                   session: session,
                   provider: provider,
                   displayName: displayName,
                   playbackError: view.error,
                 ),
+                _ActiveSessionProgressStrip(session: session),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _ActiveSessionPlayPauseButton(
+                isPlaying: isPlaying,
+                isLoading: view.loading,
+                enabled: view.trackPath.isNotEmpty && !view.loading,
+                onPressed: () {
+                  AppInteractionFeedback.trigger(
+                    AppInteractionFeedbackType.confirmation,
+                  );
+                  provider.toggleSessionPlayPause(session.id);
+                },
               ),
-              const SizedBox(width: 8),
-              Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _ActiveSessionPlayPauseButton(
-                    isPlaying: isPlaying,
-                    isLoading: view.loading,
-                    enabled: view.trackPath.isNotEmpty && !view.loading,
-                    onPressed: () {
-                      AppInteractionFeedback.trigger(
-                        AppInteractionFeedbackType.confirmation,
-                      );
-                      provider.toggleSessionPlayPause(session.id);
-                    },
-                  ),
-                  Consumer(
-                    builder: (context, ref, child) {
-                      final settings = ref.watch(subtitleSettingsProvider);
-                      final showSub = settings.isGlobalEnabled(session.id);
-                      if (!showSub && !view.channelSwapEnabled) {
-                        return const SizedBox.shrink();
-                      }
-                      return Padding(
-                        padding: const EdgeInsets.only(top: 1),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if (showSub)
-                              Icon(
-                                Icons.subtitles_rounded,
-                                size: 10,
-                                color: cs.primary,
-                              ),
-                            if (showSub && view.channelSwapEnabled)
-                              const SizedBox(width: 2),
-                            if (view.channelSwapEnabled)
-                              Icon(
-                                Icons.swap_horiz_rounded,
-                                size: 10,
-                                color: cs.primary,
-                              ),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
-                ],
+              Consumer(
+                builder: (context, ref, child) {
+                  final settings = ref.watch(subtitleSettingsProvider);
+                  final showSub = settings.isGlobalEnabled(session.id);
+                  if (!showSub && !view.channelSwapEnabled) {
+                    return const SizedBox.shrink();
+                  }
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 1),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (showSub)
+                          Icon(
+                            Icons.subtitles_rounded,
+                            size: 10,
+                            color: cs.primary,
+                          ),
+                        if (showSub && view.channelSwapEnabled)
+                          const SizedBox(width: 2),
+                        if (view.channelSwapEnabled)
+                          Icon(
+                            Icons.swap_horiz_rounded,
+                            size: 10,
+                            color: cs.primary,
+                          ),
+                      ],
+                    ),
+                  );
+                },
               ),
             ],
           ),
-        ),
-        _ActiveSessionProgressStrip(session: session),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -497,16 +501,13 @@ class _ActiveSessionProgressStripState
           return const SizedBox(height: 3);
         }
         final fraction = pos.inMilliseconds / dur.inMilliseconds;
-        return Center(
-          child: FractionallySizedBox(
-            widthFactor: 0.8,
-            child: Padding(
-              padding: const EdgeInsets.only(bottom: 2),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(3),
-                child: SizedBox(
-                  height: 4,
-                  child: LayoutBuilder(
+        return Padding(
+          padding: const EdgeInsets.only(top: 8, right: 32),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(3),
+            child: SizedBox(
+              height: 3,
+              child: LayoutBuilder(
                     builder: (context, constraints) {
                       final barWidth = constraints.maxWidth;
                       final fillWidth = (barWidth * fraction.clamp(0.0, 1.0))
@@ -548,11 +549,9 @@ class _ActiveSessionProgressStripState
                   ),
                 ),
               ),
-            ),
-          ),
+            );
+          },
         );
-      },
-    );
   }
 }
 
@@ -582,11 +581,11 @@ class _ActiveSessionCover extends ConsumerWidget {
     }
 
     return SizedBox(
-      width: 58,
-      height: 58,
+      width: 64,
+      height: 64,
       child: Material(
         type: MaterialType.transparency,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(16),
         clipBehavior: Clip.antiAlias,
         child: AsyncCoverImage(
           future: coverPathFuture,
@@ -603,7 +602,7 @@ class _ActiveSessionCover extends ConsumerWidget {
           imageBuilder: (context, coverPath) {
             return RetryingFileImage(
               path: coverPath,
-              cacheWidth: coverCacheWidthForDisplay(context, 58),
+              cacheWidth: coverCacheWidthForDisplay(context, 64),
               fit: BoxFit.cover,
               fallbackBuilder: (_) => fallback(),
             );

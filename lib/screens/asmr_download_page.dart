@@ -9,6 +9,7 @@ import '../services/asmr_download_manager.dart';
 import '../services/asmr_download_selection.dart';
 import '../services/asmr_library_controller.dart';
 import '../widgets/app_feedback.dart';
+import 'asmr_download_details_page.dart';
 
 class AsmrDownloadPage extends StatefulWidget {
   const AsmrDownloadPage({super.key, required this.work});
@@ -208,18 +209,8 @@ class _AsmrDownloadPageState extends State<AsmrDownloadPage> {
         conflictPolicy: conflictPolicy,
       );
       if (!mounted) return;
-      final task = downloadManager.currentTask;
-      if (task != null && task.status == AsmrDownloadTaskStatus.completed) {
-        unawaited(Navigator.of(context).maybePop());
-      } else if (task != null && task.failedFiles > 0) {
-        showAppSnackBar(
-          context,
-          i18n.tr('asmr_download_completed_with_failures'),
-          tone: AppFeedbackTone.warning,
-          icon: Icons.error_outline_rounded,
-          iconColor: asmrBlue,
-        );
-      }
+      if (!mounted) return;
+      unawaited(Navigator.of(context).maybePop());
     } catch (error) {
       if (!mounted) return;
       showAppSnackBar(
@@ -365,127 +356,99 @@ class AsmrDownloadTaskPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final shell = context
-        .select<AsmrDownloadManager, AsmrDownloadTaskShellViewState>(
-          (manager) => manager.taskShellViewState,
-        );
+    final manager = context.watch<AsmrDownloadManager>();
+    final tasks = manager.tasks;
     final i18n = context.watch<AppLanguageProvider>();
     return Scaffold(
       appBar: AppBar(title: Text(i18n.tr('asmr_download_task_title'))),
-      bottomNavigationBar: !shell.isActive
-          ? null
-          : SafeArea(
-              minimum: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-              child: FilledButton.icon(
-                onPressed: () => unawaited(
-                  _cancelTask(context, context.read<AsmrDownloadManager>()),
-                ),
-                icon: const Icon(Icons.cancel_rounded),
-                style: FilledButton.styleFrom(
-                  backgroundColor: Theme.of(context).colorScheme.error,
-                  foregroundColor: Theme.of(context).colorScheme.onError,
-                  minimumSize: const Size.fromHeight(52),
-                ),
-                label: Text(i18n.tr('asmr_download_cancel_and_clear')),
-              ),
-            ),
-      body: !shell.hasTask
+      body: tasks.isEmpty
           ? Center(child: Text(i18n.tr('asmr_download_no_tasks')))
-          : const _DownloadTaskDetails(),
+          : ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: tasks.length,
+              itemBuilder: (context, index) {
+                final task = tasks[index];
+                return _TaskCard(task: task);
+              },
+            ),
     );
   }
 }
 
-class _DownloadTaskDetails extends StatelessWidget {
-  const _DownloadTaskDetails();
+class _TaskCard extends StatelessWidget {
+  const _TaskCard({required this.task});
+
+  final AsmrDownloadTaskSnapshot task;
 
   @override
   Widget build(BuildContext context) {
-    final header = context
-        .select<AsmrDownloadManager, AsmrDownloadTaskHeaderViewState?>(
-          (manager) => manager.taskHeaderViewState,
-        );
-    final progress = context
-        .select<AsmrDownloadManager, AsmrDownloadTaskProgressViewState?>(
-          (manager) => manager.taskProgressViewState,
-        );
-    final destination = context.select<AsmrDownloadManager, String>(
-      (manager) => manager.currentTask?.displayDestinationPath ?? '',
-    );
-    final i18n = context.watch<AppLanguageProvider>();
+    final cs = Theme.of(context).colorScheme;
+    final i18n = context.read<AppLanguageProvider>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
-    if (header == null || progress == null) {
-      return Center(child: Text(i18n.tr('asmr_download_no_tasks')));
-    }
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        _TaskInfoCard(
-          title: header.title,
-          subtitle: _taskSubtitleFromHeader(i18n, header),
-        ),
-        const SizedBox(height: 12),
-        LinearProgressIndicator(value: progress.progress, color: asmrBlue),
-        const SizedBox(height: 12),
-        _TaskInfoRow(
-          label: i18n.tr('asmr_download_status'),
-          value: _statusText(i18n, progress.status),
-        ),
-        _TaskInfoRow(
-          label: i18n.tr('asmr_download_destination'),
-          value: destination,
-        ),
-        _TaskInfoRow(
-          label: i18n.tr('asmr_download_progress'),
-          value: '${progress.completedFiles}/${progress.totalFiles}',
-        ),
-        _TaskInfoRow(
-          label: i18n.tr('asmr_download_skipped'),
-          value: '${progress.skippedFiles}',
-        ),
-        _TaskInfoRow(
-          label: i18n.tr('asmr_download_failed_count'),
-          value: '${progress.failedFiles}',
-        ),
-        _TaskInfoRow(
-          label: i18n.tr('asmr_download_downloaded'),
-          value: _formatBytes(progress.downloadedBytes),
-        ),
-        _TaskInfoRow(
-          label: i18n.tr('asmr_download_total_size'),
-          value: _formatBytes(progress.totalBytes),
-        ),
-        if (header.error != null) ...[
-          const SizedBox(height: 12),
-          Text(
-            header.error!,
-            style: TextStyle(color: Theme.of(context).colorScheme.error),
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () {
+          Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => AsmrDownloadDetailsPage(workId: task.work.id),
+            ),
+          );
+        },
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Text(
+                      task.work.title,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w800,
+                          ),
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.cancel_rounded),
+                    color: cs.error,
+                    onPressed: () {
+                      context.read<AsmrDownloadManager>().cancelTask(task.work.id);
+                      showAppSnackBar(
+                        context,
+                        i18n.tr('asmr_download_cancelled_and_cleared'),
+                        tone: AppFeedbackTone.warning,
+                        icon: Icons.delete_sweep_rounded,
+                        iconColor: asmrBlue,
+                      );
+                    },
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              LinearProgressIndicator(
+                value: task.progress,
+                color: asmrBlue,
+              ),
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(_statusText(i18n, task.status)),
+                  Text('${_formatBytes(task.downloadedBytes)} / ${_formatBytes(task.totalBytes)}'),
+                ],
+              ),
+            ],
           ),
-        ],
-      ],
+        ),
+      ),
     );
   }
-}
-
-Future<void> _cancelTask(
-  BuildContext context,
-  AsmrDownloadManager manager,
-) async {
-  await manager.cancelCurrentDownload();
-  if (!context.mounted) {
-    return;
-  }
-  final isDark = Theme.of(context).brightness == Brightness.dark;
-  final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
-  final i18n = context.read<AppLanguageProvider>();
-  showAppSnackBar(
-    context,
-    i18n.tr('asmr_download_cancelled_and_cleared'),
-    tone: AppFeedbackTone.warning,
-    icon: Icons.delete_sweep_rounded,
-    iconColor: asmrBlue,
-  );
 }
 
 class _DownloadSummaryCard extends StatelessWidget {
@@ -737,78 +700,7 @@ class _CompactNodeCheckbox extends StatelessWidget {
   }
 }
 
-class _TaskInfoCard extends StatelessWidget {
-  const _TaskInfoCard({required this.title, required this.subtitle});
 
-  final String title;
-  final String subtitle;
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: cs.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: cs.outlineVariant),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: Theme.of(
-              context,
-            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            subtitle,
-            style: Theme.of(
-              context,
-            ).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _TaskInfoRow extends StatelessWidget {
-  const _TaskInfoRow({required this.label, required this.value});
-
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 72,
-            child: Text(
-              label,
-              style: Theme.of(
-                context,
-              ).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w700),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              value.isEmpty ? '--' : value,
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
 
 String _statusText(AppLanguageProvider i18n, AsmrDownloadTaskStatus status) {
   switch (status) {
@@ -825,42 +717,7 @@ String _statusText(AppLanguageProvider i18n, AsmrDownloadTaskStatus status) {
   }
 }
 
-String _taskSubtitleFromHeader(
-  AppLanguageProvider i18n,
-  AsmrDownloadTaskHeaderViewState task,
-) {
-  final currentItemPath = task.currentItemPath;
-  final isActive =
-      task.status == AsmrDownloadTaskStatus.preparing ||
-      task.status == AsmrDownloadTaskStatus.downloading;
-  if (isActive &&
-      currentItemPath != null &&
-      currentItemPath.trim().isNotEmpty) {
-    return currentItemPath;
-  }
-  if (task.failedFiles > 0 &&
-      task.status == AsmrDownloadTaskStatus.failed &&
-      task.completedFiles > 0) {
-    return i18n.tr('asmr_download_completed_with_failures');
-  }
-  final error = task.error;
-  if (error != null && error.trim().isNotEmpty) {
-    return i18n.tr('asmr_download_failed', {'error': error});
-  }
-  return switch (task.status) {
-    AsmrDownloadTaskStatus.preparing => i18n.tr(
-      'asmr_download_status_preparing',
-    ),
-    AsmrDownloadTaskStatus.downloading => i18n.tr(
-      'asmr_download_status_downloading',
-    ),
-    AsmrDownloadTaskStatus.completed => i18n.tr(
-      'asmr_download_status_completed',
-    ),
-    AsmrDownloadTaskStatus.failed => i18n.tr('asmr_download_status_failed'),
-    AsmrDownloadTaskStatus.idle => i18n.tr('asmr_download_waiting'),
-  };
-}
+
 
 String _formatFileSize(int bytes) {
   if (bytes <= 0) return '0 B';

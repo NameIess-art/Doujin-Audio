@@ -68,9 +68,9 @@ void main() {
     'download progress notifications are throttled but completion is immediate',
     () async {
       final manager = AsmrDownloadManager();
-      final notifications = <AsmrDownloadTaskProgressViewState?>[];
+      final notifications = <AsmrDownloadTaskSnapshot?>[];
       manager.addListener(() {
-        notifications.add(manager.taskProgressViewState);
+        notifications.add(manager.getTask(1));
       });
 
       final startedAt = DateTime(2026);

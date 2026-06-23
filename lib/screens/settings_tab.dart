@@ -844,11 +844,14 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                           ),
                           trailing: Icon(
                             Icons.chevron_right_rounded,
+                            size: 20,
                             color: cs.onSurfaceVariant,
                           ),
                           contentPadding: const EdgeInsets.symmetric(
                             horizontal: 8,
-                            vertical: 2,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
                           ),
                         ),
                         if (!Platform.isWindows) ...[
@@ -966,14 +969,14 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                             ),
                             trailing: Icon(
                               Icons.chevron_right_rounded,
+                              size: 20,
                               color: cs.onSurfaceVariant,
-                            ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
                             ),
                             contentPadding: const EdgeInsets.symmetric(
                               horizontal: 8,
-                              vertical: 2,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
                             ),
                           ),
                         ],

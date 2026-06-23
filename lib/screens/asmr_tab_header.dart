@@ -1,9 +1,7 @@
 part of 'asmr_tab.dart';
 
-class _AsmrDownloadProgressButton extends StatelessWidget {
-  const _AsmrDownloadProgressButton({required this.bottomInset});
-
-  final double bottomInset;
+class _AsmrDownloadProgressInlineButton extends StatelessWidget {
+  const _AsmrDownloadProgressInlineButton();
 
   @override
   Widget build(BuildContext context) {
@@ -11,55 +9,35 @@ class _AsmrDownloadProgressButton extends StatelessWidget {
         .select<AsmrDownloadManager, AsmrDownloadButtonViewState>(
           (manager) => manager.buttonViewState,
         );
-    return Positioned(
-      right: 16,
-      bottom: bottomInset + 18,
-      child: IgnorePointer(
-        ignoring: !state.visible,
-        child: AnimatedOpacity(
-          opacity: state.visible ? 1 : 0,
-          duration: const Duration(milliseconds: 180),
-          curve: Curves.easeOutCubic,
-          child: AnimatedScale(
-            scale: state.visible ? 1 : 0.92,
-            duration: const Duration(milliseconds: 180),
-            curve: Curves.easeOutCubic,
-            child: FloatingActionButton.small(
-              heroTag: 'asmr-one-download-progress',
-              backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
-              foregroundColor: Theme.of(
-                context,
-              ).colorScheme.onSecondaryContainer,
-              elevation: 0,
-              onPressed: () {
-                Navigator.of(context).push(
-                  buildAppPageRoute<void>(child: const AsmrDownloadTaskPage(),
-                  ),
-                );
-              },
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  const Icon(Icons.downloading_rounded),
-                  if (state.progress != null)
-                    SizedBox(
-                      width: 34,
-                      height: 34,
-                      child: CircularProgressIndicator(
-                        value: state.progress,
-                        strokeWidth: 2.4,
-                        color: Theme.of(context)
-                            .colorScheme
-                            .onSecondaryContainer
-                            .withValues(alpha: 0.78),
-                      ),
-                    ),
-                ],
+    if (!state.visible) {
+      return const SizedBox.shrink();
+    }
+    return IconButton(
+      icon: Stack(
+        alignment: Alignment.center,
+        children: [
+          const Icon(Icons.downloading_rounded),
+          if (state.progress != null)
+            SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(
+                value: state.progress,
+                strokeWidth: 2,
+                color: Theme.of(context)
+                    .colorScheme
+                    .onSurfaceVariant
+                    .withValues(alpha: 0.78),
               ),
             ),
-          ),
-        ),
+        ],
       ),
+      tooltip: 'Downloads',
+      onPressed: () {
+        Navigator.of(context).push(
+          buildAppPageRoute<void>(child: const AsmrDownloadTaskPage()),
+        );
+      },
     );
   }
 }

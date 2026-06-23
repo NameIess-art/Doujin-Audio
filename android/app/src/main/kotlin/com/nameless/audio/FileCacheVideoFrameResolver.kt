@@ -12,7 +12,8 @@ internal class FileCacheVideoFrameResolver(
     private val context: Context,
     private val cacheDir: File,
     private val touchCacheFile: (File) -> Unit,
-    private val enforceApplicationCacheLimit: () -> Unit
+    private val enforceApplicationCacheLimit: () -> Unit,
+    private val resolveFilePath: (String) -> String?
 ) {
     fun resolve(trackPath: String, modifiedAtMs: Long?): String? {
         val coverCacheDir = File(cacheDir, "nameless_audio_covers")
@@ -40,7 +41,16 @@ internal class FileCacheVideoFrameResolver(
         try {
             retriever = MediaMetadataRetriever()
             if (trackPath.startsWith("content://")) {
-                retriever.setDataSource(context, Uri.parse(trackPath))
+                try {
+                    retriever.setDataSource(context, Uri.parse(trackPath))
+                } catch (e: Exception) {
+                    val filePath = resolveFilePath(trackPath)
+                    if (filePath != null) {
+                        retriever.setDataSource(filePath)
+                    } else {
+                        throw e
+                    }
+                }
             } else {
                 retriever.setDataSource(trackPath)
             }

@@ -40,7 +40,8 @@ internal class FileCacheOperations(
             context = context,
             cacheDir = cacheDir,
             touchCacheFile = ::touchCacheFile,
-            enforceApplicationCacheLimit = { enforceApplicationCacheLimit() }
+            enforceApplicationCacheLimit = { enforceApplicationCacheLimit() },
+            resolveFilePath = ::contentUriToFilePath
         )
     }
     val defaultMaxApplicationCacheBytes: Long = ApplicationCachePolicy.DEFAULT_MAX_BYTES
@@ -383,9 +384,18 @@ internal class FileCacheOperations(
          * by parsing the document ID (e.g. "primary:Music/MyFolder").
          * Returns null if the URI cannot be resolved to a file path.
          */
-        private fun contentUriToFilePath(contentUri: String): String? {
+        internal fun contentUriToFilePath(contentUri: String): String? {
             val trimmed = contentUri.trim()
             if (!trimmed.startsWith("content://")) return null
+
+            val syntheticIndex = trimmed.indexOf("::")
+            if (syntheticIndex >= 0) {
+                val base = trimmed.substring(0, syntheticIndex)
+                val relative = trimmed.substring(syntheticIndex + 2).trim('/')
+                val basePath = contentUriToFilePath(base) ?: return null
+                return if (relative.isEmpty()) basePath else java.io.File(basePath, relative).absolutePath
+            }
+
             val uri = Uri.parse(trimmed)
             val documentId = try {
                 if (DocumentsContract.isDocumentUri(context, uri)) {
@@ -1513,12 +1523,32 @@ internal class FileCacheOperations(
             rootFolder: String?
         ): List<String> {
             if (!rootFolder.isNullOrBlank() && rootFolder.startsWith("content://")) {
-                val root = resolveDocumentFileForFolderPath(rootFolder) ?: return emptyList()
-                val candidates = collectImageDocumentsRecursively(root)
-                if (candidates.isEmpty()) return emptyList()
-                return candidates.mapNotNull { candidate ->
-                    cacheDocumentCover(candidate.file, "$trackPath|${candidate.sortPath}")
+                val root = resolveDocumentFileForFolderPath(rootFolder)
+                if (root != null && root.exists() && root.canRead()) {
+                    val candidates = collectImageDocumentsRecursively(root)
+                    if (candidates.isNotEmpty()) {
+                        return candidates.mapNotNull { candidate ->
+                            cacheDocumentCover(candidate.file, "$trackPath|${candidate.sortPath}")
+                        }
+                    }
                 }
+                
+                val filePath = contentUriToFilePath(rootFolder)
+                if (filePath != null) {
+                    val dir = java.io.File(filePath)
+                    if (dir.exists() && dir.isDirectory) {
+                        val candidates = dir.walkTopDown().filter {
+                            it.isFile && isSupportedImageEntry(it.name, null)
+                        }.toList()
+                        if (candidates.isNotEmpty()) {
+                            return candidates.mapNotNull { f ->
+                                val relativePath = f.absolutePath.removePrefix(dir.absolutePath).trim('/')
+                                cacheFileAsCover(f, "$trackPath|${relativePath.ifEmpty { f.name }}")
+                            }
+                        }
+                    }
+                }
+                return emptyList()
             }
 
             val rootUriString = when {

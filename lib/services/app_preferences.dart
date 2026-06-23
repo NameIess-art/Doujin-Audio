@@ -143,13 +143,17 @@ class AppPreferences {
 
   static bool _isSensitiveKey(String key) {
     final normalized = key.toLowerCase();
+    
+    // User requested to include ASMR.ONE credentials in the data backup.
+    if (normalized == 'asmr_one_name_v1' || normalized == 'asmr_one_pass_v1') {
+      return false;
+    }
+
     return normalized.contains('token') ||
         normalized.contains('password') ||
         normalized.contains('passwd') ||
         normalized.contains('credential') ||
         normalized.contains('authorization') ||
-        normalized == 'asmr_one_name_v1' ||
-        normalized == 'asmr_one_pass_v1' ||
         normalized == 'asmr_auth_secure_storage_migrated_v2';
   }
 

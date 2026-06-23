@@ -90,6 +90,7 @@ class NativePlaybackService : MediaSessionService() {
     }
 
     private val sessions = linkedMapOf<String, NativePlaybackSession>()
+    private val fileCacheOperations by lazy { FileCacheOperations(applicationContext) }
     private val stateListeners = ConcurrentHashMap<String, (Map<String, Any?>) -> Unit>()
     private val mainHandler = Handler(Looper.getMainLooper())
     private val playbackWakeLock by lazy {
@@ -878,7 +879,8 @@ class NativePlaybackService : MediaSessionService() {
             sessionId = sessionId,
             createPlayer = playerFactory::create,
             evictPlayersIfNeeded = ::evictPlayersIfNeeded,
-            logWarn = { message, session, error -> logWarn(message, session, error) }
+            logWarn = { message, session, error -> logWarn(message, session, error) },
+            resolveUriToPath = { uri -> fileCacheOperations.contentUriToFilePath(uri) }
         )
     }
 

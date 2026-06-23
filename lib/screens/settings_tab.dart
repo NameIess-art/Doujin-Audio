@@ -834,12 +834,12 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                             width: 38,
                             height: 38,
                             decoration: BoxDecoration(
-                              color: cs.primaryContainer,
+                              color: cs.secondaryContainer,
                               borderRadius: BorderRadius.circular(10),
                             ),
                             child: Icon(
                               Icons.health_and_safety_rounded,
-                              color: cs.onPrimaryContainer,
+                              color: cs.onSecondaryContainer,
                             ),
                           ),
                           trailing: Icon(

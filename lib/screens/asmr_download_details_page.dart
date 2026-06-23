@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../models/asmr_models.dart';
 import '../services/asmr_download_manager.dart';
+import '../widgets/top_page_header.dart';
 
 class AsmrDownloadDetailsPage extends StatelessWidget {
   const AsmrDownloadDetailsPage({super.key, required this.workId});
@@ -13,23 +14,38 @@ class AsmrDownloadDetailsPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final manager = context.watch<AsmrDownloadManager>();
     final task = manager.getTask(workId);
+    final headerHeight = MediaQuery.paddingOf(context).top + 56;
 
     if (task == null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Download Details')),
-        body: const Center(child: Text('Task not found')),
+        body: const Stack(
+          children: [
+            Center(child: Text('Task not found')),
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: TopPageHeader(
+                leading: BackButton(),
+                title: 'Download Details',
+              ),
+            ),
+          ],
+        ),
       );
     }
 
     final tracks = task.selectedRoots;
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(task.work.title),
-      ),
-      body: tracks.isEmpty
-          ? const Center(child: Text('No files selected'))
-          : ListView.builder(
+      body: Stack(
+        children: [
+          if (tracks.isEmpty)
+            const Center(child: Text('No files selected'))
+          else
+            ListView.builder(
+              padding: EdgeInsets.fromLTRB(0, headerHeight + 16, 0, MediaQuery.paddingOf(context).bottom + 16),
+              physics: const BouncingScrollPhysics(),
               itemCount: tracks.length,
               itemBuilder: (context, index) {
                 return _AsmrDownloadDetailsNodeTile(
@@ -39,6 +55,18 @@ class AsmrDownloadDetailsPage extends StatelessWidget {
                 );
               },
             ),
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: TopPageHeader(
+              leading: const BackButton(),
+              title: task.work.title,
+              marqueeTitle: true,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -72,6 +100,8 @@ class _AsmrDownloadDetailsNodeTileState
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
     final indent = widget.depth * 24.0;
     const fileRowHeight = 56.0;
 
@@ -88,13 +118,14 @@ class _AsmrDownloadDetailsNodeTileState
           title: Text(
             widget.node.title,
             style: Theme.of(context).textTheme.titleSmall?.copyWith(
-              fontWeight: FontWeight.w600,
+              fontWeight: FontWeight.w700,
+              color: _expanded ? asmrBlue : null,
             ),
           ),
           leading: Icon(
             _expanded ? Icons.folder_open_rounded : Icons.folder_rounded,
-            color: cs.onSurfaceVariant,
-            size: 20,
+            color: _expanded ? asmrBlue : cs.onSurfaceVariant,
+            size: 22,
           ),
           children: hasChildren
               ? [
@@ -110,12 +141,12 @@ class _AsmrDownloadDetailsNodeTileState
                     padding: EdgeInsetsDirectional.only(
                       start: indent + 24 + 40,
                       end: 8,
-                      bottom: 4,
+                      bottom: 8,
                     ),
                     child: Text(
                       'Empty folder',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: cs.onSurfaceVariant,
+                        color: cs.onSurfaceVariant.withValues(alpha: 0.7),
                       ),
                     ),
                   ),
@@ -131,18 +162,28 @@ class _AsmrDownloadDetailsNodeTileState
       progress = (downloaded / total).clamp(0.0, 1.0);
     }
 
-    return SizedBox(
-      height: fileRowHeight + 16,
-      child: Padding(
-        padding: EdgeInsetsDirectional.only(start: indent + 16 + 24, end: 16, top: 4, bottom: 4),
+    return Padding(
+      padding: EdgeInsetsDirectional.only(
+        start: indent + 16 + 24,
+        end: 16,
+        top: 6,
+        bottom: 6,
+      ),
+      child: Container(
+        height: fileRowHeight + 12,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: cs.surfaceContainerHigh.withValues(alpha: 0.5),
+          borderRadius: BorderRadius.circular(12),
+        ),
         child: Row(
           children: [
             Icon(
               _fileIconFor(widget.node),
-              size: 20,
-              color: cs.onSurfaceVariant.withValues(alpha: 0.7),
+              size: 22,
+              color: cs.onSurfaceVariant.withValues(alpha: 0.8),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 14),
             Expanded(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -153,19 +194,21 @@ class _AsmrDownloadDetailsNodeTileState
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      fontWeight: FontWeight.w500,
+                      fontWeight: FontWeight.w600,
                       fontSize: 13,
                     ),
                   ),
-                  const SizedBox(height: 6),
+                  const SizedBox(height: 8),
                   Row(
                     children: [
                       Expanded(
                         child: ClipRRect(
-                          borderRadius: BorderRadius.circular(2),
+                          borderRadius: BorderRadius.circular(4),
                           child: LinearProgressIndicator(
                             value: progress,
                             minHeight: 4,
+                            color: asmrBlue,
+                            backgroundColor: asmrBlue.withValues(alpha: 0.2),
                           ),
                         ),
                       ),

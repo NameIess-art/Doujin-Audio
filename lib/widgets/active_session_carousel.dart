@@ -59,11 +59,14 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
   late final ValueListenable<String?> _carouselSnapListenable;
   final ValueNotifier<double> _pageNotifier = ValueNotifier<double>(0);
   String? _lastCarouselSnapSessionId;
+  BottomNavigationStyle? _lastStyle;
 
   @override
   void initState() {
     super.initState();
-    _pageController = PageController(viewportFraction: 0.90);
+    final initialStyle = ref.read(settingsStateProvider).valueOrNull?.bottomNavigationStyle ?? BottomNavigationStyle.capsule;
+    _lastStyle = initialStyle;
+    _pageController = PageController(viewportFraction: initialStyle == BottomNavigationStyle.bar ? 1.0 : 0.90);
     _pageController.addListener(_handlePageTick);
     final AudioProvider provider =
         widget.provider ?? ref.read(audioProviderFacadeProvider);
@@ -146,6 +149,19 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
 
   @override
   Widget build(BuildContext context) {
+    final style = ref.watch(settingsStateProvider.select((s) => s.valueOrNull?.bottomNavigationStyle ?? BottomNavigationStyle.capsule));
+    if (_lastStyle != style) {
+      _lastStyle = style;
+      final oldPage = _pageController.hasClients ? _pageController.page ?? 0.0 : 0.0;
+      _pageController.dispose();
+      _pageController = PageController(
+        initialPage: oldPage.round(),
+        viewportFraction: style == BottomNavigationStyle.bar ? 1.0 : 0.90,
+      );
+      _pageController.addListener(_handlePageTick);
+    }
+    final isBar = style == BottomNavigationStyle.bar;
+
     final playbackState =
         ref.watch(playbackStateProvider).valueOrNull ??
         const PlaybackStateSliceData();
@@ -159,7 +175,7 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
     _ensureValidPage(sessions.length);
 
     return SizedBox(
-      height: 88,
+      height: isBar ? 74 : 88,
       child: Listener(
         onPointerSignal: (signal) {
           if (signal is PointerScrollEvent && sessions.length > 1) {
@@ -196,6 +212,7 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
             return _ActiveSessionPageTransform(
               pageListenable: _pageNotifier,
               index: index,
+              isBar: isBar,
               child: RepaintBoundary(
                 child: _ActiveSessionCard(
                   session: session,
@@ -218,11 +235,13 @@ class _ActiveSessionPageTransform extends StatelessWidget {
     required this.pageListenable,
     required this.index,
     required this.child,
+    required this.isBar,
   });
 
   final ValueListenable<double> pageListenable;
   final int index;
   final Widget child;
+  final bool isBar;
 
   @override
   Widget build(BuildContext context) {
@@ -232,11 +251,11 @@ class _ActiveSessionPageTransform extends StatelessWidget {
       builder: (context, child) {
         final pageDelta = index - pageListenable.value;
         final selectedness = (1 - pageDelta.abs()).clamp(0.0, 1.0);
-        final scale = lerpDouble(0.972, 1.0, selectedness) ?? 1.0;
-        final translateY = lerpDouble(4, 0, selectedness) ?? 0;
+        final scale = isBar ? 1.0 : (lerpDouble(0.972, 1.0, selectedness) ?? 1.0);
+        final translateY = isBar ? 0.0 : (lerpDouble(4, 0, selectedness) ?? 0);
 
         return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 2),
+          padding: EdgeInsets.symmetric(horizontal: isBar ? 0 : 2),
           child: Transform.translate(
             offset: Offset(0, translateY),
             child: Transform.scale(scale: scale, child: child),

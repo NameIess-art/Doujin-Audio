@@ -307,9 +307,11 @@ extension _MainScreenLayout on _MainScreenState {
     );
     final currentAlpha = blurEnabled ? (isDark ? 0.80 : 0.86) : 1.0;
 
+    final bgColor = isDark ? cs.surfaceBright : cs.surfaceContainerHigh;
+
     Widget buildBar() => DecoratedBox(
       decoration: BoxDecoration(
-        color: cs.surface.withValues(alpha: currentAlpha),
+        color: bgColor.withValues(alpha: currentAlpha),
         border: Border(
           top: BorderSide(
             color: cs.outlineVariant.withValues(alpha: 0.55),
@@ -336,21 +338,15 @@ extension _MainScreenLayout on _MainScreenState {
           mainAxisSize: MainAxisSize.min,
           children: [
             if (overlaySessions.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 430),
-                  child: ActiveSessionCarousel(
-                    sessions: overlaySessions,
-                    provider: ref.read(audioProviderFacadeProvider),
-                    i18n: i18n,
-                    onOpenSession: (sessionId) {
-                      Navigator.of(
-                        context,
-                      ).push(buildSessionDetailRoute(sessionId: sessionId));
-                    },
-                  ),
-                ),
+              ActiveSessionCarousel(
+                sessions: overlaySessions,
+                provider: ref.read(audioProviderFacadeProvider),
+                i18n: i18n,
+                onOpenSession: (sessionId) {
+                  Navigator.of(
+                    context,
+                  ).push(buildSessionDetailRoute(sessionId: sessionId));
+                },
               ),
             if (!tinyMode)
               ClipRect(

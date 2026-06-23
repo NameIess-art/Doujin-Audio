@@ -18,7 +18,14 @@ class _ActiveSessionCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    const cardRadius = 20.0;
+    
+    final style = ref.watch(
+      settingsStateProvider.select(
+        (s) => s.valueOrNull?.bottomNavigationStyle ?? BottomNavigationStyle.capsule,
+      ),
+    );
+    final isBar = style == BottomNavigationStyle.bar;
+    final cardRadius = isBar ? 0.0 : 20.0;
 
     final view = ref.watch(
       playbackStateProvider.select((value) {
@@ -65,10 +72,16 @@ class _ActiveSessionCard extends ConsumerWidget {
             color: (isDark ? cs.surfaceBright : cs.surfaceContainerHigh)
                 .withValues(alpha: currentAlpha),
             borderRadius: BorderRadius.circular(cardRadius),
-            border: Border.all(
-              color: cs.outlineVariant.withValues(alpha: isDark ? 0.24 : 0.42),
-            ),
-            boxShadow: isTinyWindow
+            border: isBar
+                ? Border(
+                    top: BorderSide(
+                      color: cs.outlineVariant.withValues(alpha: isDark ? 0.24 : 0.42),
+                    ),
+                  )
+                : Border.all(
+                    color: cs.outlineVariant.withValues(alpha: isDark ? 0.24 : 0.42),
+                  ),
+            boxShadow: (isTinyWindow || isBar)
                 ? null
                 : [
                     BoxShadow(

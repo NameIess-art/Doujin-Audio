@@ -968,6 +968,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
             icon: Icons.settings_rounded,
             title: i18n.tr('settings'),
             padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+            collapseController: _scrollController,
             bottomSpacing: 16,
           ),
         ),

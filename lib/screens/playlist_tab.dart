@@ -435,6 +435,8 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                   subtitleFontSize: 11,
                   fitSubtitleToWidth: true,
                   collapseController: _scrollController,
+                  floatingReveal: true,
+                  floatingRevealDistance: 56,
                   trailing: SizedBox(
                     height: 44,
                     child: Row(

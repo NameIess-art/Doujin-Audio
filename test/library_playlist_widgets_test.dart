@@ -242,6 +242,85 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('top page header expands after reverse scroll away from top', (
+    WidgetTester tester,
+  ) async {
+    final notificationService = PlaybackNotificationService();
+    final audioDatabaseRepository = AudioDatabaseRepository();
+    final nativePlaybackRepository = NativePlaybackRepository();
+    const playbackCommandRunner = PlaybackCommandRunner();
+    final libraryService = LibraryService();
+    final playbackService = PlaybackSessionService();
+    final timerService = TimerService();
+    final notificationCoordinatorService = NotificationCoordinatorService();
+    final settingsRepository = SettingsRepository();
+    final languageProvider = AppLanguageProvider();
+    final audioProvider = AudioProvider.test(
+      notificationService: notificationService,
+      audioDatabaseRepository: audioDatabaseRepository,
+      nativePlaybackRepository: nativePlaybackRepository,
+      libraryService: libraryService,
+      playbackService: playbackService,
+      timerService: timerService,
+      notificationStateService: notificationCoordinatorService,
+      settingsRepository: settingsRepository,
+    );
+    final controller = ScrollController();
+
+    addTearDown(audioProvider.dispose);
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      _buildTestApp(
+        audioProvider: audioProvider,
+        audioDatabaseRepository: audioDatabaseRepository,
+        nativePlaybackRepository: nativePlaybackRepository,
+        playbackCommandRunner: playbackCommandRunner,
+        libraryService: libraryService,
+        playbackService: playbackService,
+        timerService: timerService,
+        notificationCoordinatorService: notificationCoordinatorService,
+        settingsRepository: settingsRepository,
+        languageProvider: languageProvider,
+        child: Stack(
+          children: [
+            ListView.builder(
+              controller: controller,
+              itemCount: 80,
+              itemBuilder: (context, index) => const SizedBox(height: 48),
+            ),
+            TopPageHeader(
+              title: 'Library',
+              subtitle: '198 audio',
+              collapseController: controller,
+              collapseDistance: 56,
+              floatingReveal: true,
+              floatingRevealDistance: 40,
+            ),
+          ],
+        ),
+      ),
+    );
+    await tester.pump();
+
+    controller.jumpTo(120);
+    await tester.pump();
+    final collapsedHeight = tester.getSize(find.byType(TopPageHeader)).height;
+
+    controller.jumpTo(104);
+    await tester.pump();
+    final beforeThresholdHeight = tester
+        .getSize(find.byType(TopPageHeader))
+        .height;
+
+    controller.jumpTo(80);
+    await tester.pump();
+    final revealedHeight = tester.getSize(find.byType(TopPageHeader)).height;
+
+    expect(beforeThresholdHeight, collapsedHeight);
+    expect(revealedHeight, greaterThan(collapsedHeight));
+  });
+
   testWidgets('library tab search filters results and shows empty state copy', (
     WidgetTester tester,
   ) async {

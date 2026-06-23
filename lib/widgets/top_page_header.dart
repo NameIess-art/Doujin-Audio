@@ -8,7 +8,7 @@ import '../i18n/app_language_provider.dart';
 import '../providers/audio_provider_riverpod.dart';
 import 'marquee_text.dart';
 
-class TopPageHeader extends ConsumerWidget {
+class TopPageHeader extends ConsumerStatefulWidget {
   const TopPageHeader({
     super.key,
     this.icon,
@@ -29,6 +29,9 @@ class TopPageHeader extends ConsumerWidget {
     this.forceMarqueeTitle = false,
     this.collapseController,
     this.collapseDistance = 76,
+    this.floatingReveal = false,
+    this.floatingRevealDistance = 64,
+    this.floatingRevealTriggerDistance = 62,
     this.collapsedPadding = const EdgeInsets.fromLTRB(16, 4, 12, 0),
     this.collapsedBottomSpacing = 6,
   });
@@ -51,11 +54,105 @@ class TopPageHeader extends ConsumerWidget {
   final bool forceMarqueeTitle;
   final ScrollController? collapseController;
   final double collapseDistance;
+  final bool floatingReveal;
+  final double floatingRevealDistance;
+  final double floatingRevealTriggerDistance;
   final EdgeInsetsGeometry collapsedPadding;
   final double collapsedBottomSpacing;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<TopPageHeader> createState() => _TopPageHeaderState();
+}
+
+class _TopPageHeaderState extends ConsumerState<TopPageHeader> {
+  double _floatingReveal = 0;
+  double _floatingRevealPendingDistance = 0;
+  double? _lastOffset;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.collapseController?.addListener(_handleScrollChanged);
+  }
+
+  @override
+  void didUpdateWidget(covariant TopPageHeader oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.collapseController != widget.collapseController) {
+      oldWidget.collapseController?.removeListener(_handleScrollChanged);
+      widget.collapseController?.addListener(_handleScrollChanged);
+      _lastOffset = null;
+      _floatingReveal = 0;
+      _floatingRevealPendingDistance = 0;
+    }
+    if (!widget.floatingReveal && _floatingReveal != 0) {
+      _floatingReveal = 0;
+      _floatingRevealPendingDistance = 0;
+      _lastOffset = null;
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.collapseController?.removeListener(_handleScrollChanged);
+    super.dispose();
+  }
+
+  void _handleScrollChanged() {
+    if (!widget.floatingReveal || widget.floatingRevealDistance <= 0) {
+      _lastOffset = null;
+      _floatingRevealPendingDistance = 0;
+      return;
+    }
+    final controller = widget.collapseController;
+    if (controller == null || controller.positions.length != 1) {
+      _lastOffset = null;
+      _floatingRevealPendingDistance = 0;
+      return;
+    }
+
+    final offset = controller.positions.single.pixels;
+    final lastOffset = _lastOffset;
+    _lastOffset = offset;
+    if (lastOffset == null) return;
+
+    final delta = offset - lastOffset;
+    if (delta == 0) return;
+
+    double nextReveal;
+    if (delta < 0) {
+      var revealDistance = -delta;
+      if (_floatingReveal == 0 &&
+          _floatingRevealPendingDistance <
+              widget.floatingRevealTriggerDistance) {
+        final remainingTrigger =
+            widget.floatingRevealTriggerDistance -
+            _floatingRevealPendingDistance;
+        if (revealDistance <= remainingTrigger) {
+          _floatingRevealPendingDistance += revealDistance;
+          return;
+        }
+        _floatingRevealPendingDistance = widget.floatingRevealTriggerDistance;
+        revealDistance -= remainingTrigger;
+      }
+      nextReveal =
+          (_floatingReveal + revealDistance / widget.floatingRevealDistance)
+              .clamp(0.0, 1.0);
+    } else {
+      _floatingRevealPendingDistance = 0;
+      nextReveal = (_floatingReveal - delta / widget.floatingRevealDistance)
+          .clamp(0.0, 1.0);
+      if (nextReveal == 0) {
+        _floatingRevealPendingDistance = 0;
+      }
+    }
+
+    if (nextReveal == _floatingReveal) return;
+    setState(() => _floatingReveal = nextReveal);
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final blurEnabled = ref.watch(
@@ -65,8 +162,12 @@ class TopPageHeader extends ConsumerWidget {
     );
     final currentAlpha = blurEnabled ? (isDark ? 0.82 : 0.88) : 0.95;
     final i18n = context.watch<AppLanguageProvider>();
-    final topPadding = useSafeAreaTop ? MediaQuery.paddingOf(context).top : 0.0;
-    final resolvedTitle = isLoading ? i18n.tr('loading_dot') : title;
+    final topPadding = widget.useSafeAreaTop
+        ? MediaQuery.paddingOf(context).top
+        : 0.0;
+    final resolvedTitle = widget.isLoading
+        ? i18n.tr('loading_dot')
+        : widget.title;
 
     Widget buildHeaderContent(double collapseT) {
       final expandedTitleStyle = Theme.of(context).textTheme.headlineMedium
@@ -79,13 +180,13 @@ class TopPageHeader extends ConsumerWidget {
       final titleHeight =
           (titleStyle?.fontSize ?? 28) * (titleStyle?.height ?? 1.2);
       final resolvedPadding = EdgeInsetsGeometry.lerp(
-        padding,
-        collapsedPadding,
+        widget.padding,
+        widget.collapsedPadding,
         collapseT,
       )!;
       final resolvedBottomSpacing = dart_ui.lerpDouble(
-        bottomSpacing,
-        collapsedBottomSpacing,
+        widget.bottomSpacing,
+        widget.collapsedBottomSpacing,
         collapseT,
       )!;
       final subtitleFactor = 1 - collapseT;
@@ -98,9 +199,12 @@ class TopPageHeader extends ConsumerWidget {
           children: [
             Row(
               children: [
-                if (leading != null) ...[leading!, const SizedBox(width: 8)],
+                if (widget.leading != null) ...[
+                  widget.leading!,
+                  const SizedBox(width: 8),
+                ],
                 Expanded(
-                  child: marqueeTitle
+                  child: widget.marqueeTitle
                       ? SizedBox(
                           height: titleHeight,
                           child: MarqueeText(
@@ -108,7 +212,7 @@ class TopPageHeader extends ConsumerWidget {
                             style: titleStyle,
                             scrollSpeed: 24,
                             edgePadding: 2,
-                            forceMarquee: forceMarqueeTitle,
+                            forceMarquee: widget.forceMarqueeTitle,
                           ),
                         )
                       : Semantics(
@@ -121,11 +225,11 @@ class TopPageHeader extends ConsumerWidget {
                           ),
                         ),
                 ),
-                if (titleSuffix != null) ...[
+                if (widget.titleSuffix != null) ...[
                   const SizedBox(width: 8),
-                  titleSuffix!,
+                  widget.titleSuffix!,
                 ],
-                if (trailing != null) ...[
+                if (widget.trailing != null) ...[
                   SizedBox(width: 12 * trailingFactor),
                   ClipRect(
                     child: Align(
@@ -138,7 +242,7 @@ class TopPageHeader extends ConsumerWidget {
                           ignoring: trailingFactor < 0.05,
                           child: ExcludeSemantics(
                             excluding: trailingFactor < 0.05,
-                            child: trailing!,
+                            child: widget.trailing!,
                           ),
                         ),
                       ),
@@ -147,7 +251,7 @@ class TopPageHeader extends ConsumerWidget {
                 ],
               ],
             ),
-            if (subtitle != null)
+            if (widget.subtitle != null)
               ClipRect(
                 child: Align(
                   heightFactor: subtitleFactor,
@@ -160,27 +264,27 @@ class TopPageHeader extends ConsumerWidget {
                         builder: (context, constraints) {
                           final style = Theme.of(context).textTheme.bodySmall
                               ?.copyWith(
-                                fontSize: subtitleFontSize ?? 11,
+                                fontSize: widget.subtitleFontSize ?? 11,
                                 height: 1.16,
                                 color: cs.onSurfaceVariant,
                                 fontWeight: FontWeight.w600,
                               );
                           final text = Text(
-                            subtitle!,
-                            maxLines: subtitleMaxLines,
+                            widget.subtitle!,
+                            maxLines: widget.subtitleMaxLines,
                             softWrap: false,
                             overflow: TextOverflow.ellipsis,
                             style: style,
                           );
-                          if (!fitSubtitleToWidth) return text;
+                          if (!widget.fitSubtitleToWidth) return text;
                           return SizedBox(
                             width: constraints.maxWidth,
-                            height: (subtitleFontSize ?? 11) * 1.18,
+                            height: (widget.subtitleFontSize ?? 11) * 1.18,
                             child: FittedBox(
                               fit: BoxFit.scaleDown,
                               alignment: Alignment.centerLeft,
                               child: Text(
-                                subtitle!,
+                                widget.subtitle!,
                                 maxLines: 1,
                                 softWrap: false,
                                 style: style,
@@ -200,13 +304,17 @@ class TopPageHeader extends ConsumerWidget {
     }
 
     double collapseProgress() {
-      final controller = collapseController;
+      final controller = widget.collapseController;
       if (controller == null || !controller.hasClients) return 0;
-      if (collapseDistance <= 0) return 1;
+      if (widget.collapseDistance <= 0) return 1;
       final offset = controller.positions.length == 1
           ? controller.positions.single.pixels
           : 0.0;
-      return (offset / collapseDistance).clamp(0.0, 1.0);
+      final absoluteProgress = (offset / widget.collapseDistance).clamp(
+        0.0,
+        1.0,
+      );
+      return absoluteProgress * (1 - _floatingReveal);
     }
 
     Widget headerContainer = Container(
@@ -221,13 +329,13 @@ class TopPageHeader extends ConsumerWidget {
         ),
       ),
       child: AnimatedBuilder(
-        animation: collapseController ?? kAlwaysDismissedAnimation,
+        animation: widget.collapseController ?? kAlwaysDismissedAnimation,
         builder: (context, _) {
           final collapseT = collapseProgress();
           return Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [buildHeaderContent(collapseT), ?additionalChild],
+            children: [buildHeaderContent(collapseT), ?widget.additionalChild],
           );
         },
       ),

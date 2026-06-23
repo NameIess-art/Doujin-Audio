@@ -798,6 +798,8 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                 fitSubtitleToWidth: true,
                 collapseController: _scrollController,
                 collapseDistance: headerControlsFullHeight,
+                floatingReveal: true,
+                floatingRevealDistance: 56,
                 trailing: SizedBox(
                   width: 104 + (isWindows ? 52 : 0),
                   height: 44,

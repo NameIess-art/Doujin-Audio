@@ -88,9 +88,14 @@ class _AsmrCollapsingHeaderControls extends StatelessWidget {
         return SizedBox(
           height: height - hidden,
           child: ClipRect(
-            child: Transform.translate(
-              offset: Offset(0, -hidden),
-              child: child,
+            child: OverflowBox(
+              maxHeight: height,
+              minHeight: height,
+              alignment: Alignment.topCenter,
+              child: Transform.translate(
+                offset: Offset(0, -hidden),
+                child: child,
+              ),
             ),
           ),
         );

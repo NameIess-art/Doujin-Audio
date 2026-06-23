@@ -1471,18 +1471,20 @@ internal class FileCacheOperations(
         private fun findPreferredCoverViaFile(folderPath: String, cacheKey: String): String? {
             val dir = java.io.File(folderPath)
             if (!dir.exists() || !dir.isDirectory) return null
-            val files = dir.listFiles() ?: return null
-            val imageExtensions = setOf("jpg", "jpeg", "png", "webp")
-            val preferredNames = listOf("cover", "folder", "front", "album", "artwork", "poster")
-            // Preferred names first, then any image.
-            val preferred = files.firstOrNull { f ->
-                val ext = f.extension.lowercase(Locale.US)
-                if (!imageExtensions.contains(ext)) return@firstOrNull false
-                val stem = f.nameWithoutExtension.lowercase(Locale.US)
-                preferredNames.any { stem == it || stem.startsWith(it) }
-            } ?: files.firstOrNull { f ->
-                imageExtensions.contains(f.extension.lowercase(Locale.US))
-            } ?: return null
+            
+            val images = dir.walkTopDown().filter {
+                it.isFile && isSupportedImageEntry(it.name, null)
+            }.toList()
+            if (images.isEmpty()) return null
+            
+            val preferred = images.sortedWith { left, right ->
+                val leftName = normalizeDisplayName(left.name)
+                val rightName = normalizeDisplayName(right.name)
+                val priority = compareCoverNames(leftName, rightName)
+                if (priority != 0) priority else left.absolutePath.lowercase(Locale.US)
+                    .compareTo(right.absolutePath.lowercase(Locale.US))
+            }.firstOrNull() ?: return null
+            
             return cacheFileAsCover(preferred, cacheKey)
         }
 

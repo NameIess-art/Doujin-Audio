@@ -156,7 +156,7 @@ class _ActiveSessionCard extends ConsumerWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(10, 6, 8, 4),
+          padding: const EdgeInsets.fromLTRB(10, 4, 8, 2),
           child: Row(
             children: [
               _ActiveSessionCover(

@@ -125,15 +125,27 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
   }
 
   void _openPermissionCenter() {
-    Navigator.of(
-      context,
-    ).push(buildAppPageRoute<void>(child: const PermissionStatusPage()));
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (_) => const PermissionStatusPage(),
+    );
   }
 
   void _openDataAndSupport() {
-    Navigator.of(
-      context,
-    ).push(buildAppPageRoute<void>(child: const DataSupportPage()));
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (_) => const DataSupportPage(),
+    );
   }
 
   void _showSubtitleWindowSettings(BuildContext context) {

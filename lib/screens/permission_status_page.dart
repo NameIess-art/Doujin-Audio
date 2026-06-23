@@ -96,8 +96,16 @@ class _PermissionStatusPageState extends State<PermissionStatusPage>
   @override
   Widget build(BuildContext context) {
     final i18n = context.watch<AppLanguageProvider>();
-    return Scaffold(
-      appBar: AppBar(title: Text(i18n.tr('permission_center'))),
+    return SizedBox(
+      height: MediaQuery.sizeOf(context).height * 0.75,
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        appBar: AppBar(
+          title: Text(i18n.tr('permission_center')),
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          automaticallyImplyLeading: false,
+        ),
       body: FutureBuilder<PermissionStatusSnapshot>(
         future: _snapshot,
         builder: (context, snapshot) {
@@ -201,7 +209,7 @@ class _PermissionStatusPageState extends State<PermissionStatusPage>
           );
         },
       ),
-    );
+    ));
   }
 }
 

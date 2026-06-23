@@ -210,8 +210,16 @@ class _DataSupportPageState extends State<DataSupportPage> {
   @override
   Widget build(BuildContext context) {
     final i18n = context.watch<AppLanguageProvider>();
-    return Scaffold(
-      appBar: AppBar(title: Text(i18n.tr('data_and_support'))),
+    return SizedBox(
+      height: MediaQuery.sizeOf(context).height * 0.75,
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        appBar: AppBar(
+          title: Text(i18n.tr('data_and_support')),
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          automaticallyImplyLeading: false,
+        ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
         children: [
@@ -254,7 +262,7 @@ class _DataSupportPageState extends State<DataSupportPage> {
           ),
         ],
       ),
-    );
+    ));
   }
 }
 

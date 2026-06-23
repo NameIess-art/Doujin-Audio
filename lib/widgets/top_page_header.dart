@@ -27,6 +27,10 @@ class TopPageHeader extends ConsumerWidget {
     this.isLoading = false,
     this.marqueeTitle = false,
     this.forceMarqueeTitle = false,
+    this.collapseController,
+    this.collapseDistance = 76,
+    this.collapsedPadding = const EdgeInsets.fromLTRB(16, 4, 12, 0),
+    this.collapsedBottomSpacing = 6,
   });
 
   final IconData? icon;
@@ -45,6 +49,10 @@ class TopPageHeader extends ConsumerWidget {
   final bool isLoading;
   final bool marqueeTitle;
   final bool forceMarqueeTitle;
+  final ScrollController? collapseController;
+  final double collapseDistance;
+  final EdgeInsetsGeometry collapsedPadding;
+  final double collapsedBottomSpacing;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -59,89 +67,147 @@ class TopPageHeader extends ConsumerWidget {
     final i18n = context.watch<AppLanguageProvider>();
     final topPadding = useSafeAreaTop ? MediaQuery.paddingOf(context).top : 0.0;
     final resolvedTitle = isLoading ? i18n.tr('loading_dot') : title;
-    final titleStyle = Theme.of(context).textTheme.headlineMedium?.copyWith(
-      fontWeight: FontWeight.w800,
-      letterSpacing: 0,
-    );
-    final titleHeight =
-        (titleStyle?.fontSize ?? 28) * (titleStyle?.height ?? 1.2);
 
-    final headerContent = Padding(
-      padding: padding,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              if (leading != null) ...[leading!, const SizedBox(width: 8)],
-              Expanded(
-                child: marqueeTitle
-                    ? SizedBox(
-                        height: titleHeight,
-                        child: MarqueeText(
-                          text: resolvedTitle,
-                          style: titleStyle,
-                          scrollSpeed: 24,
-                          edgePadding: 2,
-                          forceMarquee: forceMarqueeTitle,
+    Widget buildHeaderContent(double collapseT) {
+      final expandedTitleStyle = Theme.of(context).textTheme.headlineMedium
+          ?.copyWith(fontWeight: FontWeight.w800, letterSpacing: 0);
+      final collapsedTitleStyle = Theme.of(context).textTheme.titleMedium
+          ?.copyWith(fontWeight: FontWeight.w800, letterSpacing: 0);
+      final titleStyle =
+          TextStyle.lerp(expandedTitleStyle, collapsedTitleStyle, collapseT) ??
+          expandedTitleStyle;
+      final titleHeight =
+          (titleStyle?.fontSize ?? 28) * (titleStyle?.height ?? 1.2);
+      final resolvedPadding = EdgeInsetsGeometry.lerp(
+        padding,
+        collapsedPadding,
+        collapseT,
+      )!;
+      final resolvedBottomSpacing = dart_ui.lerpDouble(
+        bottomSpacing,
+        collapsedBottomSpacing,
+        collapseT,
+      )!;
+      final subtitleFactor = 1 - collapseT;
+      final trailingFactor = 1 - collapseT;
+
+      return Padding(
+        padding: resolvedPadding,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                if (leading != null) ...[leading!, const SizedBox(width: 8)],
+                Expanded(
+                  child: marqueeTitle
+                      ? SizedBox(
+                          height: titleHeight,
+                          child: MarqueeText(
+                            text: resolvedTitle,
+                            style: titleStyle,
+                            scrollSpeed: 24,
+                            edgePadding: 2,
+                            forceMarquee: forceMarqueeTitle,
+                          ),
+                        )
+                      : Semantics(
+                          header: true,
+                          child: Text(
+                            resolvedTitle,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: titleStyle,
+                          ),
                         ),
-                      )
-                    : Semantics(
-                        header: true,
-                        child: Text(
-                          resolvedTitle,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: titleStyle,
+                ),
+                if (titleSuffix != null) ...[
+                  const SizedBox(width: 8),
+                  titleSuffix!,
+                ],
+                if (trailing != null) ...[
+                  SizedBox(width: 12 * trailingFactor),
+                  ClipRect(
+                    child: Align(
+                      widthFactor: trailingFactor,
+                      heightFactor: trailingFactor,
+                      alignment: Alignment.centerRight,
+                      child: Opacity(
+                        opacity: trailingFactor,
+                        child: IgnorePointer(
+                          ignoring: trailingFactor < 0.05,
+                          child: ExcludeSemantics(
+                            excluding: trailingFactor < 0.05,
+                            child: trailing!,
+                          ),
                         ),
                       ),
-              ),
-              if (titleSuffix != null) ...[
-                const SizedBox(width: 8),
-                titleSuffix!,
-              ],
-              if (trailing != null) ...[const SizedBox(width: 12), trailing!],
-            ],
-          ),
-          if (subtitle != null) ...[
-            const SizedBox(height: 4),
-            LayoutBuilder(
-              builder: (context, constraints) {
-                final style = Theme.of(context).textTheme.bodySmall?.copyWith(
-                  fontSize: subtitleFontSize ?? 11,
-                  height: 1.16,
-                  color: cs.onSurfaceVariant,
-                  fontWeight: FontWeight.w600,
-                );
-                final text = Text(
-                  subtitle!,
-                  maxLines: subtitleMaxLines,
-                  softWrap: false,
-                  overflow: TextOverflow.ellipsis,
-                  style: style,
-                );
-                if (!fitSubtitleToWidth) return text;
-                return SizedBox(
-                  width: constraints.maxWidth,
-                  height: (subtitleFontSize ?? 11) * 1.18,
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      subtitle!,
-                      maxLines: 1,
-                      softWrap: false,
-                      style: style,
                     ),
                   ),
-                );
-              },
+                ],
+              ],
             ),
+            if (subtitle != null)
+              ClipRect(
+                child: Align(
+                  heightFactor: subtitleFactor,
+                  alignment: Alignment.topLeft,
+                  child: Opacity(
+                    opacity: subtitleFactor,
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: LayoutBuilder(
+                        builder: (context, constraints) {
+                          final style = Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                fontSize: subtitleFontSize ?? 11,
+                                height: 1.16,
+                                color: cs.onSurfaceVariant,
+                                fontWeight: FontWeight.w600,
+                              );
+                          final text = Text(
+                            subtitle!,
+                            maxLines: subtitleMaxLines,
+                            softWrap: false,
+                            overflow: TextOverflow.ellipsis,
+                            style: style,
+                          );
+                          if (!fitSubtitleToWidth) return text;
+                          return SizedBox(
+                            width: constraints.maxWidth,
+                            height: (subtitleFontSize ?? 11) * 1.18,
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: Alignment.centerLeft,
+                              child: Text(
+                                subtitle!,
+                                maxLines: 1,
+                                softWrap: false,
+                                style: style,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            SizedBox(height: resolvedBottomSpacing),
           ],
-          SizedBox(height: bottomSpacing),
-        ],
-      ),
-    );
+        ),
+      );
+    }
+
+    double collapseProgress() {
+      final controller = collapseController;
+      if (controller == null || !controller.hasClients) return 0;
+      if (collapseDistance <= 0) return 1;
+      final offset = controller.positions.length == 1
+          ? controller.positions.single.pixels
+          : 0.0;
+      return (offset / collapseDistance).clamp(0.0, 1.0);
+    }
 
     Widget headerContainer = Container(
       padding: EdgeInsets.only(top: topPadding),
@@ -154,10 +220,16 @@ class TopPageHeader extends ConsumerWidget {
           ),
         ),
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [headerContent, ?additionalChild],
+      child: AnimatedBuilder(
+        animation: collapseController ?? kAlwaysDismissedAnimation,
+        builder: (context, _) {
+          final collapseT = collapseProgress();
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [buildHeaderContent(collapseT), ?additionalChild],
+          );
+        },
       ),
     );
 

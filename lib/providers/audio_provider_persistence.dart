@@ -13,6 +13,9 @@ extension AudioProviderPersistence on AudioProvider {
     if (_isDisposed) return;
     await _resetRuntimeStateForPersistenceReload();
     await _loadData();
+    _clearResolvedCoverPaths();
+    scheduleUiWarmup(currentPageIndex: 0, immediate: true);
+    _notifyListeners();
   }
 
   Future<void> _resetRuntimeStateForPersistenceReload() async {

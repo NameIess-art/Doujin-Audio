@@ -16,7 +16,7 @@ import 'path_matcher.dart';
 class AppDatabase {
   AppDatabase._();
 
-  static const int schemaVersion = 16;
+  static const int schemaVersion = 17;
   static const String fileName = 'audio_player.db';
 
   @visibleForTesting
@@ -46,7 +46,7 @@ class AppDatabase {
       version: schemaVersion,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
-      onOpen: _ensurePlaybackQueueColumns,
+      onOpen: _ensureCompatibilityColumns,
     );
     return db;
   }
@@ -84,6 +84,9 @@ class AppDatabase {
         cover_cache_path TEXT,
         lyrics_path TEXT,
         manual_cover_path TEXT,
+        remote_cover_url TEXT,
+        remote_metadata_kind TEXT,
+        remote_metadata_json TEXT,
         duration_ms INTEGER NOT NULL DEFAULT 0,
         scan_generation INTEGER NOT NULL DEFAULT 0
       )
@@ -246,10 +249,13 @@ class AppDatabase {
         'INTEGER NOT NULL DEFAULT 0',
       );
     }
+    if (oldVersion < 17) {
+      await _addRemoteTrackMetadataColumns(db);
+    }
     await _createTrackIndexes(db);
   }
 
-  static Future<void> _ensurePlaybackQueueColumns(Database db) async {
+  static Future<void> _ensureCompatibilityColumns(Database db) async {
     await _addColumnIfMissing(db, 'sessions', 'playback_queue_json', 'TEXT');
     await _addColumnIfMissing(
       db,
@@ -257,6 +263,7 @@ class AppDatabase {
       'current_queue_index',
       'INTEGER NOT NULL DEFAULT 0',
     );
+    await _addRemoteTrackMetadataColumns(db);
   }
 
   @visibleForTesting
@@ -272,6 +279,12 @@ class AppDatabase {
     final exists = columns.any((row) => row['name'] == column);
     if (exists) return;
     await db.execute('ALTER TABLE $table ADD COLUMN $column $definition');
+  }
+
+  static Future<void> _addRemoteTrackMetadataColumns(Database db) async {
+    await _addColumnIfMissing(db, 'tracks', 'remote_cover_url', 'TEXT');
+    await _addColumnIfMissing(db, 'tracks', 'remote_metadata_kind', 'TEXT');
+    await _addColumnIfMissing(db, 'tracks', 'remote_metadata_json', 'TEXT');
   }
 
   static Future<void> _createTrackIndexes(Database db) async {
@@ -747,6 +760,9 @@ class AppDatabase {
     'cover_cache_path': t.coverCachePath,
     'lyrics_path': t.lyricsPath,
     'manual_cover_path': t.manualCoverPath,
+    'remote_cover_url': t.remoteCoverUrl,
+    'remote_metadata_kind': t.remoteMetadataKind,
+    'remote_metadata_json': _encodeJsonMap(t.remoteMetadata),
     'duration_ms': t.duration.inMilliseconds,
     'scan_generation': scanGeneration ?? 0,
   };
@@ -771,6 +787,9 @@ class AppDatabase {
     coverCachePath: row['cover_cache_path'] as String?,
     lyricsPath: row['lyrics_path'] as String?,
     manualCoverPath: row['manual_cover_path'] as String?,
+    remoteCoverUrl: row['remote_cover_url'] as String?,
+    remoteMetadataKind: row['remote_metadata_kind'] as String?,
+    remoteMetadata: _decodeJsonMap(row['remote_metadata_json']),
     duration: Duration(
       milliseconds: (row['duration_ms'] as num?)?.toInt() ?? 0,
     ),
@@ -876,6 +895,22 @@ List<String> _decodeTags(Object? value) {
     );
   } catch (_) {
     return const <String>[];
+  }
+}
+
+String? _encodeJsonMap(Map<String, Object?>? value) {
+  if (value == null || value.isEmpty) return null;
+  return json.encode(value);
+}
+
+Map<String, Object?>? _decodeJsonMap(Object? value) {
+  if (value is! String || value.isEmpty) return null;
+  try {
+    final raw = json.decode(value);
+    if (raw is! Map) return null;
+    return raw.cast<String, Object?>();
+  } catch (_) {
+    return null;
   }
 }
 

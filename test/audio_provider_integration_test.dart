@@ -8,6 +8,8 @@ import 'package:nameless_audio/i18n/app_language_provider.dart';
 import 'package:nameless_audio/providers/audio_provider.dart';
 import 'package:nameless_audio/services/app_database.dart';
 import 'package:nameless_audio/services/audio_database_repository.dart';
+import 'package:nameless_audio/services/audio_state_services.dart';
+import 'package:nameless_audio/services/cover_artwork_cache_service.dart';
 import 'package:nameless_audio/services/library_scanner_service.dart';
 import 'package:nameless_audio/services/native_playback_bridge.dart';
 import 'package:nameless_audio/services/path_matcher.dart';
@@ -698,9 +700,14 @@ void main() {
           json.encode(<String>['restored']),
         );
 
+        final coverGenerationBeforeReload = provider.coverGeneration;
         await provider.reloadPersistedStateAfterBackupRestore();
 
         expect(clearAllCalls, greaterThanOrEqualTo(1));
+        expect(
+          provider.coverGeneration,
+          greaterThan(coverGenerationBeforeReload),
+        );
         expect(provider.trackByPath(oldTrack.path), isNull);
         expect(provider.trackByPath(restoredTrack.path), isNotNull);
         expect(provider.watchedFolders, <String>['restored']);
@@ -914,6 +921,15 @@ void main() {
   group('custom queue session restore', () {
     test('restores ASMR custom queues and exposes sibling tracks', () async {
       const sessionId = 'asmr_session';
+      final coverFile = File(
+        '${Directory.systemTemp.path}${Platform.pathSeparator}'
+        'restored_asmr_cover_${DateTime.now().microsecondsSinceEpoch}.jpg',
+      );
+      addTearDown(() async {
+        if (await coverFile.exists()) await coverFile.delete();
+      });
+      await coverFile.writeAsBytes(<int>[0xff, 0xd8, 0xff, 0xd9]);
+      const coverUrl = 'https://example.com/cover.jpg';
       const firstTrack = MusicTrack(
         path: 'https://example.com/asmr/01.mp3',
         displayName: '01',
@@ -921,7 +937,7 @@ void main() {
         groupTitle: 'ASMR Work',
         groupSubtitle: 'RJ000001',
         isSingle: false,
-        remoteCoverUrl: 'https://example.com/cover.jpg',
+        remoteCoverUrl: coverUrl,
         remoteMetadataKind: 'asmr.one',
         remoteMetadata: <String, Object?>{
           'trackRelativePath': '01_mp3/01.mp3',
@@ -936,7 +952,7 @@ void main() {
         groupTitle: 'ASMR Work',
         groupSubtitle: 'RJ000001',
         isSingle: false,
-        remoteCoverUrl: 'https://example.com/cover.jpg',
+        remoteCoverUrl: coverUrl,
         remoteMetadataKind: 'asmr.one',
         remoteMetadata: <String, Object?>{'trackRelativePath': '01_mp3/02.mp3'},
       );
@@ -981,6 +997,10 @@ void main() {
       final restoredProvider = AudioProvider(
         notificationService: notificationService,
         audioDatabaseRepository: restoredRepository,
+        coverArtworkCacheService: _RecordingCoverArtworkCacheService(
+          expectedRemoteCoverUrl: coverUrl,
+          coverPath: coverFile.path,
+        ),
       );
 
       for (var i = 0; i < 100; i++) {
@@ -1002,6 +1022,13 @@ void main() {
         'https://example.com/asmr/01.mp3',
         'https://example.com/asmr/02.mp3',
       ]);
+      final restoredTrack = restoredProvider.trackByPath(
+        'https://example.com/asmr/01.mp3',
+      );
+      final coverPath = await restoredProvider.coverPathFutureForTrack(
+        restoredTrack,
+      );
+      expect(coverPath, coverFile.path);
 
       await Future<void>.delayed(const Duration(milliseconds: 200));
       restoredProvider.dispose();
@@ -2744,6 +2771,21 @@ void main() {
       expect(provider.hasLibraryExclusions(folder.path), isFalse);
     });
   });
+}
+
+class _RecordingCoverArtworkCacheService extends CoverArtworkCacheService {
+  _RecordingCoverArtworkCacheService({
+    required this.expectedRemoteCoverUrl,
+    required this.coverPath,
+  }) : super(libraryService: LibraryService());
+
+  final String expectedRemoteCoverUrl;
+  final String coverPath;
+
+  @override
+  Future<String?> futureForTrack(MusicTrack? track, {String? trackPath}) async {
+    return track?.remoteCoverUrl == expectedRemoteCoverUrl ? coverPath : null;
+  }
 }
 
 class _CountingAudioDatabaseRepository extends AudioDatabaseRepository {

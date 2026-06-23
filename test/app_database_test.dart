@@ -48,6 +48,12 @@ void main() {
           tags: <String>['asmr', 'sleep'],
           coverCachePath: '/cache/cover.jpg',
           lyricsPath: '/lyrics/a.lrc',
+          remoteCoverUrl: 'https://example.com/a-cover.jpg',
+          remoteMetadataKind: 'asmr.one',
+          remoteMetadata: const <String, Object?>{
+            'trackRelativePath': 'disc1/a.mp3',
+            'playbackUrls': <String>['https://example.com/a.mp3'],
+          },
         ),
         const MusicTrack(
           path: 'content://media/external/audio/media/42',
@@ -88,6 +94,12 @@ void main() {
       tags: const <String>['focus'],
       coverCachePath: '/cache/meta.png',
       lyricsPath: '/lyrics/meta.srt',
+      remoteCoverUrl: 'https://example.com/meta-cover.jpg',
+      remoteMetadataKind: 'asmr.one',
+      remoteMetadata: const <String, Object?>{
+        'workId': 123,
+        'trackRelativePath': 'meta.flac',
+      },
     );
 
     await appDatabase.insertTracks([track]);
@@ -192,6 +204,16 @@ void main() {
     expect(indexNames, contains('idx_tracks_last_played_at'));
     expect(indexNames, contains('idx_tracks_favorite'));
     expect(indexNames, contains('idx_tracks_scan_generation'));
+
+    final columns = await db.rawQuery('PRAGMA table_info(tracks)');
+    final columnNames = columns
+        .map((row) => row['name'] as String?)
+        .whereType<String>()
+        .toSet();
+
+    expect(columnNames, contains('remote_cover_url'));
+    expect(columnNames, contains('remote_metadata_kind'));
+    expect(columnNames, contains('remote_metadata_json'));
   });
 
   test('sessions persist custom queue tracks', () async {
@@ -202,6 +224,7 @@ void main() {
       groupTitle: 'ASMR Work',
       groupSubtitle: 'RJ000001',
       isSingle: false,
+      remoteCoverUrl: 'https://example.com/cover.jpg',
       remoteMetadataKind: 'asmr.one',
       remoteMetadata: <String, Object?>{
         'trackRelativePath': '01_mp3/track.mp3',

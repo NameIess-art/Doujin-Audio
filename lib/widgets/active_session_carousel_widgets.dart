@@ -502,7 +502,7 @@ class _ActiveSessionProgressStripState
         }
         final fraction = pos.inMilliseconds / dur.inMilliseconds;
         return Padding(
-          padding: const EdgeInsets.only(top: 8, right: 32),
+          padding: const EdgeInsets.only(top: 8),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(3),
             child: SizedBox(

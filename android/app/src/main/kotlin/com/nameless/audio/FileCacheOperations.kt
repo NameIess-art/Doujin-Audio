@@ -3,6 +3,7 @@ package com.nameless.audio
 import android.content.Context
 import android.content.ContentUris
 import android.content.Intent
+import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
@@ -1389,7 +1390,11 @@ internal class FileCacheOperations(
             rootFolder: String?
         ): String? {
             if (!trackPath.startsWith("content://")) {
-                return null
+                if (!rootFolder.isNullOrBlank() && !rootFolder.startsWith("content://")) {
+                    val folderCover = findPreferredCoverViaFile(rootFolder, trackPath)
+                    if (folderCover != null) return folderCover
+                }
+                return cacheEmbeddedCover(trackPath, trackPath)
             }
 
             if (!rootFolder.isNullOrBlank() && rootFolder.startsWith("content://")) {
@@ -1509,6 +1514,44 @@ internal class FileCacheOperations(
                 outputFile.absolutePath
             } catch (_: Exception) {
                 null
+            }
+        }
+
+        private fun cacheEmbeddedCover(trackPath: String, cacheKey: String): String? {
+            val trackFile = java.io.File(trackPath)
+            if (!trackFile.exists() || !trackFile.isFile) return null
+
+            val coverCacheDir = java.io.File(cacheDir, "nameless_audio_covers")
+            if (!coverCacheDir.exists()) coverCacheDir.mkdirs()
+            val outputFile = java.io.File(
+                coverCacheDir,
+                "cover_${kotlin.math.abs(cacheKey.hashCode())}.image"
+            )
+            if (outputFile.exists() && outputFile.length() > 0) {
+                touchCacheFile(outputFile)
+                return outputFile.absolutePath
+            }
+
+            var retriever: MediaMetadataRetriever? = null
+            return try {
+                retriever = MediaMetadataRetriever()
+                retriever.setDataSource(trackPath)
+                val embeddedCover = retriever.embeddedPicture ?: return null
+                if (embeddedCover.isEmpty()) return null
+                outputFile.writeBytes(embeddedCover)
+                touchCacheFile(outputFile)
+                enforceApplicationCacheLimit()
+                outputFile.absolutePath
+            } catch (_: Exception) {
+                if (outputFile.exists()) {
+                    outputFile.delete()
+                }
+                null
+            } finally {
+                try {
+                    retriever?.release()
+                } catch (_: Exception) {
+                }
             }
         }
 

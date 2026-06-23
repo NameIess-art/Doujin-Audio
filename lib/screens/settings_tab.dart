@@ -12,6 +12,7 @@ import '../providers/audio_provider_riverpod.dart';
 import '../services/app_cache_service.dart';
 import '../services/app_log_service.dart';
 import '../services/app_update_service.dart';
+import '../services/audio_state_services.dart';
 import '../services/permission_action_controller.dart';
 import '../theme/theme_provider.dart';
 import '../widgets/app_feedback.dart';
@@ -416,6 +417,77 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                                     )
                                     .toList(),
                               ),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                            );
+                          },
+                        ),
+                        Consumer(
+                          builder: (context, ref, _) {
+                            final style = ref.watch(
+                              settingsStateProvider.select(
+                                (s) =>
+                                    s.valueOrNull?.bottomNavigationStyle ??
+                                    BottomNavigationStyle.capsule,
+                              ),
+                            );
+                            final styleLabels = <BottomNavigationStyle, String>{
+                              BottomNavigationStyle.capsule: i18n.tr(
+                                'bottom_navigation_style_capsule',
+                              ),
+                              BottomNavigationStyle.bar: i18n.tr(
+                                'bottom_navigation_style_bar',
+                              ),
+                            };
+                            return ListTile(
+                              title: Text(i18n.tr('bottom_navigation_style')),
+                              subtitle: Text(
+                                i18n.tr('bottom_navigation_style_subtitle'),
+                                style: descStyle,
+                              ),
+                              leading: Container(
+                                width: 38,
+                                height: 38,
+                                decoration: BoxDecoration(
+                                  color: cs.secondaryContainer,
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Icon(
+                                  Icons.space_bar_rounded,
+                                  color: cs.onSecondaryContainer,
+                                ),
+                              ),
+                              trailing:
+                                  UnifiedDropdownButton<BottomNavigationStyle>(
+                                    value: style,
+                                    onChanged: (value) {
+                                      if (value != null) {
+                                        audioProvider.setBottomNavigationStyle(
+                                          value,
+                                        );
+                                      }
+                                    },
+                                    items: BottomNavigationStyle.values
+                                        .map(
+                                          (value) =>
+                                              DropdownMenuItem<
+                                                BottomNavigationStyle
+                                              >(
+                                                value: value,
+                                                child: Text(
+                                                  styleLabels[value]!,
+                                                  style: const TextStyle(
+                                                    fontWeight: FontWeight.w700,
+                                                  ),
+                                                ),
+                                              ),
+                                        )
+                                        .toList(),
+                                  ),
                               contentPadding: const EdgeInsets.symmetric(
                                 horizontal: 8,
                               ),

@@ -39,6 +39,7 @@ void main() {
         ..notificationsEnabled = false
         ..showPlaybackCard = false
         ..startupPage = StartupPage.asmrOne
+        ..bottomNavigationStyle = BottomNavigationStyle.bar
         ..autoPlayAddedSessions = false
         ..autoCheckUpdates = true
         ..dlsiteMetadataLanguage = AppLanguage.en
@@ -66,6 +67,11 @@ void main() {
               (state) => state.startupPage,
               'startup page',
               StartupPage.asmrOne,
+            )
+            .having(
+              (state) => state.bottomNavigationStyle,
+              'bottom navigation',
+              BottomNavigationStyle.bar,
             )
             .having(
               (state) => state.autoPlayAddedSessions,

@@ -239,8 +239,17 @@ extension _MainScreenLayout on _MainScreenState {
     BuildContext context, {
     required AppLanguageProvider i18n,
     required List<PlaybackSession> overlaySessions,
+    required BottomNavigationStyle style,
     bool tinyMode = false,
   }) {
+    if (style == BottomNavigationStyle.bar) {
+      return _buildMobileBottomNavigationBar(
+        context,
+        i18n: i18n,
+        overlaySessions: overlaySessions,
+        tinyMode: tinyMode,
+      );
+    }
     return SafeArea(
       key: _bottomDockKey,
       top: false,
@@ -278,6 +287,81 @@ extension _MainScreenLayout on _MainScreenState {
                 ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMobileBottomNavigationBar(
+    BuildContext context, {
+    required AppLanguageProvider i18n,
+    required List<PlaybackSession> overlaySessions,
+    bool tinyMode = false,
+  }) {
+    final cs = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final blurEnabled = ref.watch(
+      settingsStateProvider.select(
+        (s) => s.valueOrNull?.uiBlurEffectEnabled ?? true,
+      ),
+    );
+    final currentAlpha = blurEnabled ? (isDark ? 0.80 : 0.86) : 1.0;
+
+    Widget buildBar() => DecoratedBox(
+      decoration: BoxDecoration(
+        color: cs.surface.withValues(alpha: currentAlpha),
+        border: Border(
+          top: BorderSide(
+            color: cs.outlineVariant.withValues(alpha: 0.55),
+            width: 0.5,
+          ),
+        ),
+      ),
+      child: SizedBox(
+        height: 58,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(8, 4, 8, 2),
+          child: _buildBottomBar(context),
+        ),
+      ),
+    );
+
+    return SafeArea(
+      key: _bottomDockKey,
+      top: false,
+      child: Align(
+        alignment: Alignment.bottomCenter,
+        child: Column(
+          key: _dockContentKey,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (overlaySessions.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 430),
+                  child: ActiveSessionCarousel(
+                    sessions: overlaySessions,
+                    provider: ref.read(audioProviderFacadeProvider),
+                    i18n: i18n,
+                    onOpenSession: (sessionId) {
+                      Navigator.of(
+                        context,
+                      ).push(buildSessionDetailRoute(sessionId: sessionId));
+                    },
+                  ),
+                ),
+              ),
+            if (!tinyMode)
+              ClipRect(
+                child: blurEnabled
+                    ? BackdropFilter(
+                        filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+                        child: buildBar(),
+                      )
+                    : buildBar(),
+              ),
+          ],
         ),
       ),
     );

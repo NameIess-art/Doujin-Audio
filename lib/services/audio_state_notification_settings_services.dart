@@ -206,6 +206,7 @@ class SettingsRepository {
   bool blurPlayerBackgroundEnabled = true;
   bool uiBlurEffectEnabled = true;
   StartupPage startupPage = StartupPage.library;
+  BottomNavigationStyle bottomNavigationStyle = BottomNavigationStyle.capsule;
   final AudioStateSlice<SettingsState> slice = AudioStateSlice<SettingsState>(
     const SettingsState(),
   );
@@ -229,6 +230,7 @@ class SettingsRepository {
         blurPlayerBackgroundEnabled: blurPlayerBackgroundEnabled,
         uiBlurEffectEnabled: uiBlurEffectEnabled,
         startupPage: startupPage,
+        bottomNavigationStyle: bottomNavigationStyle,
       ),
     );
   }

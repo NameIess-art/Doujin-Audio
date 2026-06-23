@@ -102,6 +102,7 @@ extension AudioProviderPersistence on AudioProvider {
     _notificationsEnabled = true;
     _showPlaybackCard = true;
     _startupPage = StartupPage.library;
+    _bottomNavigationStyle = BottomNavigationStyle.capsule;
     _autoPlayAddedSessions = true;
     _autoCheckUpdates = false;
     _settingsRepository.recordPlaybackProgress = true;
@@ -314,6 +315,9 @@ extension AudioProviderPersistence on AudioProvider {
       _notificationsEnabled = map['notificationsEnabled'] as bool? ?? true;
       _showPlaybackCard = map['showPlaybackCard'] as bool? ?? true;
       _startupPage = _decodeStartupPage(map['startupPage']);
+      _bottomNavigationStyle = _decodeBottomNavigationStyle(
+        map['bottomNavigationStyle'],
+      );
       _autoPlayAddedSessions = map['autoPlayAddedSessions'] as bool? ?? true;
       _autoCheckUpdates = map['autoCheckUpdates'] as bool? ?? false;
       _settingsRepository.recordPlaybackProgress =
@@ -350,6 +354,7 @@ extension AudioProviderPersistence on AudioProvider {
         'notificationsEnabled': _notificationsEnabled,
         'showPlaybackCard': _showPlaybackCard,
         'startupPage': _startupPage.name,
+        'bottomNavigationStyle': _bottomNavigationStyle.name,
         'autoPlayAddedSessions': _autoPlayAddedSessions,
         'autoCheckUpdates': _autoCheckUpdates,
         'recordPlaybackProgress': _settingsRepository.recordPlaybackProgress,
@@ -385,6 +390,14 @@ extension AudioProviderPersistence on AudioProvider {
     return StartupPage.values.firstWhere(
       (page) => page.name == value,
       orElse: () => StartupPage.library,
+    );
+  }
+
+  BottomNavigationStyle _decodeBottomNavigationStyle(Object? value) {
+    if (value is! String) return BottomNavigationStyle.capsule;
+    return BottomNavigationStyle.values.firstWhere(
+      (style) => style.name == value,
+      orElse: () => BottomNavigationStyle.capsule,
     );
   }
 
@@ -637,6 +650,13 @@ extension AudioProviderPersistence on AudioProvider {
   Future<void> setStartupPage(StartupPage page) async {
     if (_startupPage == page) return;
     _startupPage = page;
+    _notifySettingsChanged();
+    unawaited(_savePlaybackSettings());
+  }
+
+  Future<void> setBottomNavigationStyle(BottomNavigationStyle style) async {
+    if (_bottomNavigationStyle == style) return;
+    _bottomNavigationStyle = style;
     _notifySettingsChanged();
     unawaited(_savePlaybackSettings());
   }

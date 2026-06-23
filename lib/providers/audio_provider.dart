@@ -436,6 +436,10 @@ class AudioProvider with ChangeNotifier {
   StartupPage get _startupPage => _settingsRepository.startupPage;
   set _startupPage(StartupPage value) =>
       _settingsRepository.startupPage = value;
+  BottomNavigationStyle get _bottomNavigationStyle =>
+      _settingsRepository.bottomNavigationStyle;
+  set _bottomNavigationStyle(BottomNavigationStyle value) =>
+      _settingsRepository.bottomNavigationStyle = value;
   bool get _autoPlayAddedSessions => _settingsRepository.autoPlayAddedSessions;
   set _autoPlayAddedSessions(bool value) {
     _settingsRepository.autoPlayAddedSessions = value;

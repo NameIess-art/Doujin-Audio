@@ -355,6 +355,10 @@ const Map<String, String> appLanguageEn = {
   'theme_system': 'System',
   'theme_light': 'Light',
   'theme_dark': 'Dark',
+  'bottom_navigation_style': 'Bottom menu bar',
+  'bottom_navigation_style_subtitle': 'Choose the bottom navigation style.',
+  'bottom_navigation_style_capsule': 'Capsule appearance',
+  'bottom_navigation_style_bar': 'Standard bottom bar',
   'blur_player_background': 'Blur Player Background',
   'blur_player_background_subtitle':
       'Use blurred cover as background on player page.',

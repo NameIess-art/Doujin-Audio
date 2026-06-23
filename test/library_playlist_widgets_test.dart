@@ -313,7 +313,7 @@ void main() {
         .getSize(find.byType(TopPageHeader))
         .height;
 
-    controller.jumpTo(80);
+    controller.jumpTo(40);
     await tester.pump();
     final revealedHeight = tester.getSize(find.byType(TopPageHeader)).height;
 
@@ -811,6 +811,27 @@ void main() {
           matching: find.byType(Scrollable),
         )
         .first;
+    await tester.scrollUntilVisible(
+      find.text(languageProvider.tr('bottom_navigation_style')),
+      120,
+      scrollable: settingsScrollable,
+    );
+    expect(
+      find.text(languageProvider.tr('bottom_navigation_style')),
+      findsOneWidget,
+    );
+
+    await tester.tap(
+      find.text(languageProvider.tr('bottom_navigation_style_capsule')).first,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.text(languageProvider.tr('bottom_navigation_style_bar')).last,
+    );
+    await tester.pumpAndSettle();
+
+    expect(audioProvider.bottomNavigationStyle, BottomNavigationStyle.bar);
+
     await tester.scrollUntilVisible(
       find.text(languageProvider.tr('card_info_display')),
       300,

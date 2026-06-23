@@ -395,16 +395,27 @@ class _ActiveSessionTitleSubtitleState
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        LibraryLikeTwoLineMarqueeText(
-          text: widget.displayName,
-          style:
-              Theme.of(context).textTheme.titleSmall?.copyWith(
-                fontWeight: FontWeight.w800,
-                fontSize: 14,
-                height: 1.08,
-              ) ??
-              const TextStyle(),
-        ),
+        Theme.of(context).platform == TargetPlatform.android
+            ? Text(
+                widget.displayName,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 14,
+                      height: 1.08,
+                    ) ??
+                    const TextStyle(),
+              )
+            : LibraryLikeMarqueeLine(
+                text: widget.displayName,
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 14,
+                      height: 1.08,
+                    ) ??
+                    const TextStyle(),
+              ),
         if (secondaryText != null) ...[
           const SizedBox(height: 2),
           Text(

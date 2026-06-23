@@ -147,42 +147,39 @@ class _AsmrWorkTreeCardState extends State<_AsmrWorkTreeCard> {
               hasChildren: (visibleTree?.isNotEmpty ?? false) || isTreeLoading,
               onPlay: () => unawaited(_playWork(context)),
             ),
-            children: _expanded
-                ? [
-                    if (isTreeLoading && visibleTree == null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 8, bottom: 12),
-                        child: Center(
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2.2,
-                            color: asmrBlue,
-                          ),
+            children: [
+              if (isTreeLoading && visibleTree == null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8, bottom: 12),
+                  child: Center(
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.2,
+                      color: asmrBlue,
+                    ),
+                  ),
+                )
+              else if (visibleTree == null || visibleTree.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4, bottom: 12),
+                  child: Text(
+                    i18n.tr('asmr_empty_track_tree'),
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: cs.onSurfaceVariant,
+                          fontWeight: FontWeight.w600,
                         ),
-                      )
-                    else if (visibleTree == null || visibleTree.isEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 4, bottom: 12),
-                        child: Text(
-                          i18n.tr('asmr_empty_track_tree'),
-                          style: Theme.of(context).textTheme.bodySmall
-                              ?.copyWith(
-                                color: cs.onSurfaceVariant,
-                                fontWeight: FontWeight.w600,
-                              ),
-                        ),
-                      )
-                    else
-                      for (final node in visibleTree)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 6),
-                          child: _AsmrTrackTreeNode(
-                            work: widget.work,
-                            node: node,
-                            searchQuery: widget.searchQuery,
-                          ),
-                        ),
-                  ]
-                : const <Widget>[],
+                  ),
+                )
+              else
+                for (final node in visibleTree)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: _AsmrTrackTreeNode(
+                      work: widget.work,
+                      node: node,
+                      searchQuery: widget.searchQuery,
+                    ),
+                  ),
+            ],
           ),
         ),
       ),
@@ -251,11 +248,9 @@ class _AsmrTrackTreeNodeState extends State<_AsmrTrackTreeNode> {
       final hasVisibleChildren = widget.node.children.any(
         (child) => child.hasBrowsableContent,
       );
-      final visibleChildren = _expanded
-          ? widget.node.children
-                .where((child) => child.hasBrowsableContent)
-                .toList(growable: false)
-          : const <AsmrTrackFile>[];
+      final visibleChildren = widget.node.children
+          .where((child) => child.hasBrowsableContent)
+          .toList(growable: false);
       final cs = Theme.of(context).colorScheme;
       final isDark = Theme.of(context).brightness == Brightness.dark;
       final asmrBlue = isDark

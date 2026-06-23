@@ -48,7 +48,8 @@ internal class NativePlaybackSession(
     val sessionId: String,
     private val createPlayer: (String, Array<AudioProcessor>) -> ExoPlayer,
     private val evictPlayersIfNeeded: () -> Unit,
-    private val logWarn: (String, NativePlaybackSession, RuntimeException) -> Unit
+    private val logWarn: (String, NativePlaybackSession, RuntimeException) -> Unit,
+    private val resolveUriToPath: ((String) -> String?)? = null
 ) {
     private val channelMappingAudioProcessor = ChannelMappingAudioProcessor()
     private val volumeBalanceAudioProcessor = VolumeBalanceAudioProcessor()
@@ -588,9 +589,19 @@ internal class NativePlaybackSession(
         if (!descriptor.artUri.isNullOrBlank()) {
             metadataBuilder.setArtworkUri(Uri.parse(descriptor.artUri))
         }
+        var finalUri = descriptor.uri
+        if (finalUri.startsWith("content://")) {
+            val path = resolveUriToPath?.invoke(finalUri)
+            if (path != null) {
+                val file = java.io.File(path)
+                if (file.exists() && file.canRead()) {
+                    finalUri = Uri.fromFile(file).toString()
+                }
+            }
+        }
         return MediaItem.Builder()
             .setMediaId(descriptor.path)
-            .setUri(Uri.parse(descriptor.uri))
+            .setUri(Uri.parse(finalUri))
             .setMediaMetadata(metadataBuilder.build())
             .build()
     }

@@ -31,7 +31,7 @@ class TopPageHeader extends ConsumerStatefulWidget {
     this.collapseDistance = 76,
     this.floatingReveal = false,
     this.floatingRevealDistance = 64,
-    this.floatingRevealTriggerDistance = 62,
+    this.floatingRevealTriggerDistance = 124,
     this.collapsedPadding = const EdgeInsets.fromLTRB(16, 4, 12, 0),
     this.collapsedBottomSpacing = 6,
   });

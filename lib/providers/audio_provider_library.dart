@@ -948,6 +948,10 @@ extension AudioProviderLibrary on AudioProvider {
         existing.coverCachePath == null && scanned.coverCachePath != null ||
         existing.lyricsPath == null && scanned.lyricsPath != null ||
         existing.manualCoverPath == null && scanned.manualCoverPath != null ||
+        existing.remoteCoverUrl == null && scanned.remoteCoverUrl != null ||
+        existing.remoteMetadataKind == null &&
+            scanned.remoteMetadataKind != null ||
+        existing.remoteMetadata == null && scanned.remoteMetadata != null ||
         existing.duration == Duration.zero && scanned.duration != Duration.zero;
   }
 
@@ -974,6 +978,10 @@ extension AudioProviderLibrary on AudioProvider {
       coverCachePath: existing.coverCachePath ?? scanned.coverCachePath,
       lyricsPath: existing.lyricsPath ?? scanned.lyricsPath,
       manualCoverPath: existing.manualCoverPath ?? scanned.manualCoverPath,
+      remoteCoverUrl: existing.remoteCoverUrl ?? scanned.remoteCoverUrl,
+      remoteMetadataKind:
+          existing.remoteMetadataKind ?? scanned.remoteMetadataKind,
+      remoteMetadata: existing.remoteMetadata ?? scanned.remoteMetadata,
       duration: existing.duration == Duration.zero
           ? scanned.duration
           : existing.duration,

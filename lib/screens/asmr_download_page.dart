@@ -143,7 +143,8 @@ class _AsmrDownloadPageState extends State<AsmrDownloadPage> {
     final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
     final downloadManager = context.read<AsmrDownloadManager>();
     final i18n = context.read<AppLanguageProvider>();
-    if (downloadManager.hasLiveTask) {
+    final task = downloadManager.getTask(widget.work.id);
+    if (task != null && task.status != AsmrDownloadTaskStatus.completed && task.status != AsmrDownloadTaskStatus.failed) {
       showAppSnackBar(
         context,
         i18n.tr('asmr_download_task_running'),

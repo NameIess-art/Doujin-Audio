@@ -663,32 +663,31 @@ class _AsmrTabState extends State<AsmrTab>
             }),
             subtitleFontSize: 11,
             fitSubtitleToWidth: true,
-            trailing: SizedBox(
-              width: isWindows ? 104 : 52,
-              height: 44,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  if (isWindows)
-                    IconButton(
-                      onPressed: globalState.initialized
-                          ? () => unawaited(
-                              _refreshCategoryWithFeedback(
-                                currentCategory,
-                                showSnackbar: true,
-                              ),
-                            )
-                          : null,
-                      icon: const Icon(Icons.refresh_rounded),
-                      tooltip: 'Refresh',
-                    ),
-                  _AsmrMoreMenuButton(
-                    onAccount: _showAccountDialog,
-                    onCategories: _showCategoryDialog,
-                    onLanguage: _showLanguageDialog,
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                if (isWindows)
+                  IconButton(
+                    onPressed: globalState.initialized
+                        ? () => unawaited(
+                            _refreshCategoryWithFeedback(
+                              currentCategory,
+                              showSnackbar: true,
+                            ),
+                          )
+                        : null,
+                    icon: const Icon(Icons.refresh_rounded),
+                    tooltip: 'Refresh',
                   ),
-                ],
-              ),
+                if (hasDownloadManager)
+                  const _AsmrDownloadProgressInlineButton(),
+                _AsmrMoreMenuButton(
+                  onAccount: _showAccountDialog,
+                  onCategories: _showCategoryDialog,
+                  onLanguage: _showLanguageDialog,
+                ),
+              ],
             ),
             isLoading: !globalState.initialized,
             collapseController: currentScrollController,
@@ -700,8 +699,6 @@ class _AsmrTabState extends State<AsmrTab>
             additionalChild: collapsingHeaderControls(),
           ),
         ),
-        if (hasDownloadManager)
-          _AsmrDownloadProgressButton(bottomInset: bottomInset),
       ],
     );
   }

@@ -1030,7 +1030,9 @@ internal class FileCacheOperations(
             trackPath: String,
             groupKey: String?
         ): HashMap<String, String>? {
-            if (!trackPath.startsWith("content://")) return null
+            if (!trackPath.startsWith("content://")) {
+                return resolveTrackSubtitleViaFile(trackPath)
+            }
             val rootUriString = when {
                 !groupKey.isNullOrBlank() && groupKey.contains("::") ->
                     groupKey.substringBefore("::")
@@ -1104,13 +1106,21 @@ internal class FileCacheOperations(
                     }
                 }
             } catch (_: Exception) {
-                return null
+                // Proceed to fallback
             }
 
             val best = candidates
                 .filter { it.first < 10 }
                 .sortedWith(compareBy<Triple<Int, String, Uri>> { it.first }.thenBy { it.second })
-                .firstOrNull() ?: return null
+                .firstOrNull()
+                
+            if (best == null) {
+                val filePath = contentUriToFilePath(trackPath)
+                if (filePath != null) {
+                    return resolveTrackSubtitleViaFile(filePath)
+                }
+                return null
+            }
             val subtitleUri = best.third
             val subtitleName = best.second
             val text = readDocumentText(subtitleUri) ?: return null
@@ -1118,6 +1128,51 @@ internal class FileCacheOperations(
             if (extension.isBlank()) return null
             return hashMapOf(
                 "sourcePath" to subtitleUri.toString(),
+                "extension" to extension,
+                "text" to text
+            )
+        }
+
+        private fun resolveTrackSubtitleViaFile(trackPath: String): HashMap<String, String>? {
+            val file = java.io.File(trackPath)
+            if (!file.exists() || !file.isFile) return null
+            val dir = file.parentFile ?: return null
+            if (!dir.exists() || !dir.isDirectory) return null
+
+            val audioStem = normalizeSubtitleMatchStem(file.name)
+            val candidates = mutableListOf<Triple<Int, String, java.io.File>>()
+
+            val siblings = dir.listFiles() ?: return null
+            for (sibling in siblings) {
+                if (!sibling.isFile) continue
+                if (!isSupportedSubtitleEntry(sibling.name, null)) continue
+                val stem = normalizeSubtitleMatchStem(sibling.name)
+                val rank = when {
+                    stem == audioStem -> 0
+                    stem.startsWith("$audioStem.") -> 1
+                    stem.startsWith("${audioStem}_") -> 2
+                    stem.startsWith("$audioStem ") -> 3
+                    else -> 10
+                }
+                candidates.add(Triple(rank, sibling.name.lowercase(Locale.US), sibling))
+            }
+
+            val best = candidates
+                .filter { it.first < 10 }
+                .sortedWith(compareBy<Triple<Int, String, java.io.File>> { it.first }.thenBy { it.second })
+                .firstOrNull() ?: return null
+
+            val subtitleFile = best.third
+            val subtitleName = best.second
+            val text = try {
+                subtitleFile.readText(StandardCharsets.UTF_8)
+            } catch (_: Exception) {
+                return null
+            }
+            val extension = subtitleName.substringAfterLast('.', "")
+            if (extension.isBlank()) return null
+            return hashMapOf(
+                "sourcePath" to subtitleFile.absolutePath,
                 "extension" to extension,
                 "text" to text
             )

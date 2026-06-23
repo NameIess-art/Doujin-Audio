@@ -16,6 +16,7 @@ import '../providers/subtitle_settings_provider.dart';
 import '../services/app_update_service.dart';
 import '../services/app_preferences.dart';
 import '../services/app_log_service.dart';
+import '../services/audio_state_services.dart';
 import '../services/notifications_platform_service.dart';
 import '../services/permission_action_controller.dart';
 import '../services/power_platform_service.dart';
@@ -779,6 +780,13 @@ class _MainScreenState extends ConsumerState<MainScreen>
         (value) => value.valueOrNull?.startupPage ?? StartupPage.library,
       ),
     );
+    final bottomNavigationStyle = ref.watch(
+      settingsStateProvider.select(
+        (value) =>
+            value.valueOrNull?.bottomNavigationStyle ??
+            BottomNavigationStyle.capsule,
+      ),
+    );
     final autoCheckUpdates = ref.watch(
       settingsStateProvider.select(
         (value) => value.valueOrNull?.autoCheckUpdates ?? false,
@@ -876,6 +884,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
                               context,
                               i18n: i18n,
                               overlaySessions: visibleSessions,
+                              style: bottomNavigationStyle,
                               tinyMode: isTinyWindow,
                             ),
                           ],

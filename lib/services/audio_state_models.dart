@@ -337,6 +337,8 @@ class TimerStateSliceData {
 
 enum StartupPage { asmrOne, library, playlist }
 
+enum BottomNavigationStyle { capsule, bar }
+
 @immutable
 class SettingsState {
   const SettingsState({
@@ -356,6 +358,7 @@ class SettingsState {
     this.blurPlayerBackgroundEnabled = true,
     this.uiBlurEffectEnabled = true,
     this.startupPage = StartupPage.library,
+    this.bottomNavigationStyle = BottomNavigationStyle.capsule,
   });
 
   final String converterFormat;
@@ -374,6 +377,7 @@ class SettingsState {
   final bool blurPlayerBackgroundEnabled;
   final bool uiBlurEffectEnabled;
   final StartupPage startupPage;
+  final BottomNavigationStyle bottomNavigationStyle;
 
   @override
   bool operator ==(Object other) {
@@ -393,7 +397,8 @@ class SettingsState {
         other.recordPlaybackProgress == recordPlaybackProgress &&
         other.blurPlayerBackgroundEnabled == blurPlayerBackgroundEnabled &&
         other.uiBlurEffectEnabled == uiBlurEffectEnabled &&
-        other.startupPage == startupPage;
+        other.startupPage == startupPage &&
+        other.bottomNavigationStyle == bottomNavigationStyle;
   }
 
   @override
@@ -414,6 +419,7 @@ class SettingsState {
     blurPlayerBackgroundEnabled,
     uiBlurEffectEnabled,
     startupPage,
+    bottomNavigationStyle,
   );
 }
 

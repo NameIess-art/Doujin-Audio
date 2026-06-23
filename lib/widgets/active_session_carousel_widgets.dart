@@ -52,7 +52,7 @@ class _ActiveSessionCard extends ConsumerWidget {
         (s) => s.valueOrNull?.uiBlurEffectEnabled ?? true,
       ),
     );
-    final currentAlpha = blurEnabled ? (isDark ? 0.80 : 0.86) : 0.95;
+    final currentAlpha = blurEnabled ? (isDark ? 0.80 : 0.86) : 1.0;
 
     Widget buildCardBody() => Material(
       color: Colors.transparent,

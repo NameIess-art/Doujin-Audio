@@ -160,7 +160,7 @@ class _TopPageHeaderState extends ConsumerState<TopPageHeader> {
         (s) => s.valueOrNull?.uiBlurEffectEnabled ?? true,
       ),
     );
-    final currentAlpha = blurEnabled ? (isDark ? 0.82 : 0.88) : 0.95;
+    final currentAlpha = blurEnabled ? (isDark ? 0.82 : 0.88) : 1.0;
     final i18n = context.watch<AppLanguageProvider>();
     final topPadding = widget.useSafeAreaTop
         ? MediaQuery.paddingOf(context).top

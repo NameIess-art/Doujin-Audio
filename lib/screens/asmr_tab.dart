@@ -663,10 +663,12 @@ class _AsmrTabState extends State<AsmrTab>
             }),
             subtitleFontSize: 11,
             fitSubtitleToWidth: true,
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
+            trailing: SizedBox(
+              height: 44,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
                 if (isWindows)
                   IconButton(
                     onPressed: globalState.initialized
@@ -688,6 +690,7 @@ class _AsmrTabState extends State<AsmrTab>
                   onLanguage: _showLanguageDialog,
                 ),
               ],
+            ),
             ),
             isLoading: !globalState.initialized,
             collapseController: currentScrollController,

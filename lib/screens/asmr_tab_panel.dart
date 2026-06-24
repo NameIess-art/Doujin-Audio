@@ -159,7 +159,6 @@ class _AsmrPanelCard extends StatelessWidget {
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(28),
           color: cs.surfaceContainerLow.withValues(alpha: 0.96),
-          border: Border.all(color: cs.primary.withValues(alpha: 0.45)),
           boxShadow: [
             BoxShadow(
               color: cs.shadow.withValues(alpha: 0.22),

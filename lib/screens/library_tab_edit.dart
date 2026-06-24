@@ -116,13 +116,15 @@ class LibraryManagementPage extends ConsumerWidget {
                       ),
                     ),
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 4,
+                        vertical: 8,
+                      ),
                       child: ListTile(
                         title: Text(
                           _displaySourceName(libraryPath),
-                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w700,
-                          ),
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(fontWeight: FontWeight.w700),
                         ),
                         subtitle: Padding(
                           padding: const EdgeInsets.only(top: 4),
@@ -130,9 +132,8 @@ class LibraryManagementPage extends ConsumerWidget {
                             PathDisplay.displayPathFor(libraryPath),
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              color: cs.onSurfaceVariant,
-                            ),
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(color: cs.onSurfaceVariant),
                           ),
                         ),
                         trailing: IconButton(
@@ -142,7 +143,10 @@ class LibraryManagementPage extends ConsumerWidget {
                             ref,
                             libraryPath,
                           ),
-                          icon: Icon(Icons.delete_outline_rounded, color: cs.error.withValues(alpha: 0.8)),
+                          icon: Icon(
+                            Icons.delete_outline_rounded,
+                            color: cs.error.withValues(alpha: 0.8),
+                          ),
                         ),
                       ),
                     ),
@@ -422,30 +426,42 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage>
     final i18n = context.watch<AppLanguageProvider>();
     final libraryService = ref.read(libraryServiceProvider);
     final cs = Theme.of(context).colorScheme;
-    final excludedTracks = libraryService
-        .excludedTracksForLibrary(widget.libraryPath)
-        .where(_trackExistsInDiskSnapshot)
-        .toList(growable: false);
-    final excludedFolders = libraryService
-        .excludedFoldersForLibrary(widget.libraryPath)
-        .map(_folderPathForLibraryChild)
-        .where(_folderExistsInDiskSnapshot)
-        .toList(growable: false);
-    final persistedEntries = libraryService
-        .libraryEntriesForLibrary(widget.libraryPath)
-        .where(_libraryEntryExistsInDiskSnapshot)
-        .toList(growable: false);
-    final childFolders = libraryService
-        .childFoldersForLibrary(widget.libraryPath)
-        .map(_folderPathForLibraryChild)
-        .where(_folderExistsInDiskSnapshot)
-        .toList(growable: false);
-    final folderStructureSnapshots = _folderStructureSnapshots.entries
-        .where((entry) => _folderExistsInDiskSnapshot(entry.key))
-        .map((entry) => entry.value)
-        .toList(growable: false);
+    final localSnapshotPending =
+        !PathMatcher.isContentUri(widget.libraryPath) && !_diskSnapshotLoaded;
+    final excludedTracks = localSnapshotPending
+        ? const <String>[]
+        : libraryService
+              .excludedTracksForLibrary(widget.libraryPath)
+              .where(_trackExistsInDiskSnapshot)
+              .toList(growable: false);
+    final excludedFolders = localSnapshotPending
+        ? const <String>[]
+        : libraryService
+              .excludedFoldersForLibrary(widget.libraryPath)
+              .map(_folderPathForLibraryChild)
+              .where(_folderExistsInDiskSnapshot)
+              .toList(growable: false);
+    final persistedEntries = localSnapshotPending
+        ? const <LibraryEntry>[]
+        : libraryService
+              .libraryEntriesForLibrary(widget.libraryPath)
+              .where(_libraryEntryExistsInDiskSnapshot)
+              .toList(growable: false);
+    final childFolders = localSnapshotPending
+        ? const <String>[]
+        : libraryService
+              .childFoldersForLibrary(widget.libraryPath)
+              .map(_folderPathForLibraryChild)
+              .where(_folderExistsInDiskSnapshot)
+              .toList(growable: false);
+    final folderStructureSnapshots = localSnapshotPending
+        ? const <_LibraryEditFolderTreeNode>[]
+        : _folderStructureSnapshots.entries
+              .where((entry) => _folderExistsInDiskSnapshot(entry.key))
+              .map((entry) => entry.value)
+              .toList(growable: false);
     final cacheKey = Object.hash(
-      _libraryTrackPathsHash(libraryService),
+      localSnapshotPending ? 0 : _libraryTrackPathsHash(libraryService),
       Object.hashAll(_diskAudioFilePaths),
       _folderStructureSnapshotRevision,
       Object.hashAll(childFolders),
@@ -492,12 +508,24 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage>
               16,
               24,
             ),
-            itemCount: isEmpty ? 2 : editTree.length + 1,
+            itemCount: localSnapshotPending || isEmpty
+                ? 2
+                : editTree.length + 1,
             itemBuilder: (context, index) {
               if (index == 0) {
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 12),
                   child: _buildSearchBar(i18n),
+                );
+              }
+              if (localSnapshotPending) {
+                return Padding(
+                  padding: const EdgeInsets.only(top: 96),
+                  child: Center(
+                    child: CircularProgressIndicator(
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                  ),
                 );
               }
               if (isEmpty) {
@@ -1264,9 +1292,7 @@ class _LibraryEditFolderTreeTileState
       color: muted
           ? cs.surfaceContainerHighest.withValues(alpha: 0.46)
           : cs.surfaceContainerHigh,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: content,
     );
   }
@@ -1296,14 +1322,14 @@ class _LibraryEditTrackTile extends ConsumerWidget {
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
       child: ListTile(
         dense: true,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(10),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         tileColor: cs.surfaceContainerHigh.withValues(alpha: 0.4),
         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
         leading: Icon(
           viewState.muted ? Icons.music_off_rounded : Icons.music_note_rounded,
-          color: viewState.muted ? cs.onSurfaceVariant : cs.primary.withValues(alpha: 0.8),
+          color: viewState.muted
+              ? cs.onSurfaceVariant
+              : cs.primary.withValues(alpha: 0.8),
           size: 20,
         ),
         title: Text(
@@ -1319,24 +1345,29 @@ class _LibraryEditTrackTile extends ConsumerWidget {
         subtitle: viewState.muted
             ? Text(
                 i18n.tr('excluded'),
-                style: TextStyle(color: cs.onSurfaceVariant.withValues(alpha: 0.8), fontSize: 11),
+                style: TextStyle(
+                  color: cs.onSurfaceVariant.withValues(alpha: 0.8),
+                  fontSize: 11,
+                ),
               )
             : null,
         trailing: TextButton(
-        style: viewState.muted ? _libraryMutedButtonStyle(cs) : null,
-        onPressed: viewState.inheritedExcluded
-            ? null
-            : () {
-                provider.setLibraryTrackExcluded(
-                  libraryPath,
-                  trackPath,
-                  !viewState.explicitExcluded,
-                );
-              },
-        child: Text(
-          viewState.explicitExcluded ? i18n.tr('restore') : i18n.tr('exclude'),
+          style: viewState.muted ? _libraryMutedButtonStyle(cs) : null,
+          onPressed: viewState.inheritedExcluded
+              ? null
+              : () {
+                  provider.setLibraryTrackExcluded(
+                    libraryPath,
+                    trackPath,
+                    !viewState.explicitExcluded,
+                  );
+                },
+          child: Text(
+            viewState.explicitExcluded
+                ? i18n.tr('restore')
+                : i18n.tr('exclude'),
+          ),
         ),
-      ),
       ),
     );
   }

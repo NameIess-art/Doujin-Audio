@@ -7,6 +7,7 @@ import '../i18n/app_language_provider.dart';
 import '../providers/audio_provider.dart';
 import 'dlsite_metadata_review_page.dart';
 import '../widgets/app_transitions.dart';
+import '../widgets/top_page_header.dart';
 
 enum _BatchMetadataScope { anyMissing, noMetadata, hasRjCode, all, specific }
 
@@ -177,38 +178,51 @@ class _DlsiteMetadataBatchPageState extends State<DlsiteMetadataBatchPage> {
   Widget build(BuildContext context) {
     final i18n = context.watch<AppLanguageProvider>();
     return Scaffold(
-      appBar: AppBar(title: Text(i18n.tr('batch_metadata'))),
-      body: SafeArea(
-        child: _loading
-            ? const Center(child: CircularProgressIndicator())
-            : _error != null
-            ? _BatchMetadataErrorView(onRetry: _load)
-            : _summary != null
-            ? _BatchMetadataSummaryView(
-                summary: _summary!,
-                onDone: () => Navigator.of(context).maybePop(),
-              )
-            : _BatchMetadataSetupView(
-                scope: _scope,
-                allCount: _entries.length,
-                noMetadataCount: _noMetadataEntries.length,
-                anyMissingCount: _anyMissingEntries.length,
-                hasRjCodeCount: _hasRjCodeEntries.length,
-                specificCount: _specificEntries.length,
-                running: _running,
-                currentIndex: _currentIndex,
-                activeTotal: _activeTotal,
-                onScopeChanged: (scope) {
-                  setState(() {
-                    _scope = scope;
-                  });
-                  if (scope == _BatchMetadataScope.specific && _specificEntries.isEmpty) {
-                    _pickSpecific();
-                  }
-                },
-                onPickSpecific: _pickSpecific,
-                onStart: _run,
-              ),
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: _loading
+                ? const Center(child: CircularProgressIndicator())
+                : _error != null
+                    ? _BatchMetadataErrorView(onRetry: _load)
+                    : _summary != null
+                        ? _BatchMetadataSummaryView(
+                            summary: _summary!,
+                            onDone: () => Navigator.of(context).maybePop(),
+                          )
+                        : _BatchMetadataSetupView(
+                            scope: _scope,
+                            allCount: _entries.length,
+                            noMetadataCount: _noMetadataEntries.length,
+                            anyMissingCount: _anyMissingEntries.length,
+                            hasRjCodeCount: _hasRjCodeEntries.length,
+                            specificCount: _specificEntries.length,
+                            running: _running,
+                            currentIndex: _currentIndex,
+                            activeTotal: _activeTotal,
+                            onScopeChanged: (scope) {
+                              setState(() {
+                                _scope = scope;
+                              });
+                              if (scope == _BatchMetadataScope.specific &&
+                                  _specificEntries.isEmpty) {
+                                _pickSpecific();
+                              }
+                            },
+                            onPickSpecific: _pickSpecific,
+                            onStart: _run,
+                          ),
+          ),
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: TopPageHeader(
+              title: i18n.tr('batch_metadata'),
+              leading: const BackButton(),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -278,59 +292,86 @@ class _BatchMetadataSetupView extends StatelessWidget {
       );
     }
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 20, 16, 24),
+      padding: const EdgeInsets.fromLTRB(16, 76, 16, 24),
       children: [
         Text(
           i18n.tr('batch_metadata_hint'),
-          style: Theme.of(context).textTheme.bodyMedium,
-        ),
-        const SizedBox(height: 16),
-        RadioGroup<_BatchMetadataScope>(
-          key: const ValueKey('batch_metadata_scope_group'),
-          groupValue: scope,
-          onChanged: (value) {
-            if (value != null) onScopeChanged(value);
-          },
-          child: Column(
-            children: [
-              RadioListTile<_BatchMetadataScope>(
-                value: _BatchMetadataScope.anyMissing,
-                title: Text(
-                  '${i18n.tr('batch_metadata_any_missing')} ($anyMissingCount)',
-                ),
-              ),
-              RadioListTile<_BatchMetadataScope>(
-                value: _BatchMetadataScope.noMetadata,
-                title: Text(
-                  '${i18n.tr('batch_metadata_no_metadata')} ($noMetadataCount)',
-                ),
-              ),
-              RadioListTile<_BatchMetadataScope>(
-                value: _BatchMetadataScope.hasRjCode,
-                title: Text(
-                  '${i18n.tr('batch_metadata_has_rj_code')} ($hasRjCodeCount)',
-                ),
-              ),
-              RadioListTile<_BatchMetadataScope>(
-                value: _BatchMetadataScope.specific,
-                title: Text('${i18n.tr('batch_metadata_specific')} ($specificCount)'),
-                secondary: scope == _BatchMetadataScope.specific ? IconButton(
-                  icon: const Icon(Icons.edit),
-                  onPressed: onPickSpecific,
-                ) : null,
-              ),
-              RadioListTile<_BatchMetadataScope>(
-                value: _BatchMetadataScope.all,
-                title: Text('${i18n.tr('batch_metadata_all')} ($allCount)'),
-              ),
-            ],
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+            height: 1.4,
           ),
         ),
         const SizedBox(height: 16),
+        Card(
+          elevation: 0,
+          margin: EdgeInsets.zero,
+          color: Theme.of(context).colorScheme.surfaceContainerHigh,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: RadioGroup<_BatchMetadataScope>(
+            key: const ValueKey('batch_metadata_scope_group'),
+            groupValue: scope,
+            onChanged: (value) {
+              if (value != null) onScopeChanged(value);
+            },
+            child: Column(
+              children: [
+                RadioListTile<_BatchMetadataScope>(
+                  value: _BatchMetadataScope.anyMissing,
+                  title: Text(
+                    '${i18n.tr('batch_metadata_any_missing')} ($anyMissingCount)',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                ),
+                RadioListTile<_BatchMetadataScope>(
+                  value: _BatchMetadataScope.noMetadata,
+                  title: Text(
+                    '${i18n.tr('batch_metadata_no_metadata')} ($noMetadataCount)',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                ),
+                RadioListTile<_BatchMetadataScope>(
+                  value: _BatchMetadataScope.hasRjCode,
+                  title: Text(
+                    '${i18n.tr('batch_metadata_has_rj_code')} ($hasRjCodeCount)',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                ),
+                RadioListTile<_BatchMetadataScope>(
+                  value: _BatchMetadataScope.specific,
+                  title: Text(
+                    '${i18n.tr('batch_metadata_specific')} ($specificCount)',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  secondary: scope == _BatchMetadataScope.specific
+                      ? IconButton(
+                          icon: const Icon(Icons.edit_rounded),
+                          onPressed: onPickSpecific,
+                        )
+                      : null,
+                ),
+                RadioListTile<_BatchMetadataScope>(
+                  value: _BatchMetadataScope.all,
+                  title: Text(
+                    '${i18n.tr('batch_metadata_all')} ($allCount)',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 24),
         FilledButton.icon(
           onPressed: onStart,
           icon: const Icon(Icons.play_arrow_rounded),
           label: Text(i18n.tr('batch_metadata_start')),
+          style: FilledButton.styleFrom(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            textStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+          ),
         ),
       ],
     );
@@ -399,19 +440,31 @@ class _DlsiteMetadataWorkPickerPageState
 
     return Scaffold(
       appBar: AppBar(
-        title: TextField(
-          controller: _searchController,
-          autofocus: false,
-          decoration: InputDecoration(
-            hintText: i18n.tr('batch_metadata_picker_search'),
-            border: InputBorder.none,
-            hintStyle: TextStyle(color: cs.onSurfaceVariant),
+        titleSpacing: 0,
+        title: Container(
+          height: 42,
+          margin: const EdgeInsets.only(right: 16),
+          decoration: BoxDecoration(
+            color: cs.surfaceContainerHigh,
+            borderRadius: BorderRadius.circular(21),
           ),
-          onChanged: (val) {
-            setState(() {
-              _searchQuery = val;
-            });
-          },
+          child: TextField(
+            controller: _searchController,
+            autofocus: false,
+            style: const TextStyle(fontSize: 14),
+            decoration: InputDecoration(
+              hintText: i18n.tr('batch_metadata_picker_search'),
+              border: InputBorder.none,
+              hintStyle: TextStyle(color: cs.onSurfaceVariant),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              isDense: true,
+            ),
+            onChanged: (val) {
+              setState(() {
+                _searchQuery = val;
+              });
+            },
+          ),
         ),
         actions: [
           if (_searchQuery.isNotEmpty)
@@ -478,7 +531,7 @@ class _BatchMetadataSummaryView extends StatelessWidget {
   Widget build(BuildContext context) {
     final i18n = context.watch<AppLanguageProvider>();
     return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 28, 20, 24),
+      padding: const EdgeInsets.fromLTRB(16, 76, 16, 24),
       children: [
         Text(
           i18n.tr('batch_metadata_summary'),
@@ -508,13 +561,14 @@ class _BatchMetadataErrorView extends StatelessWidget {
     final i18n = context.watch<AppLanguageProvider>();
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.only(top: 76, left: 24, right: 24, bottom: 24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
               i18n.tr('batch_metadata_load_failed'),
               textAlign: TextAlign.center,
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
             ),
             const SizedBox(height: 16),
             FilledButton.icon(

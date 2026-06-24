@@ -91,50 +91,6 @@ class _AsmrDownloadPageState extends State<AsmrDownloadPage> {
     setState(() {});
   }
 
-  Future<AsmrDownloadConflictPolicy?> _chooseConflictPolicy() {
-    return showDialog<AsmrDownloadConflictPolicy?>(
-      context: context,
-      builder: (dialogContext) {
-        final i18n = dialogContext.read<AppLanguageProvider>();
-        final isDark = Theme.of(dialogContext).brightness == Brightness.dark;
-        final asmrBlue = isDark
-            ? const Color(0xFF60A5FA)
-            : const Color(0xFF1D4ED8);
-        final onAsmrBlue = isDark
-            ? const Color(0xFF0F172A)
-            : const Color(0xFFFFFFFF);
-        return AlertDialog(
-          title: Text(i18n.tr('asmr_download_conflict_title')),
-          content: Text(i18n.tr('asmr_download_conflict_message')),
-          actions: [
-            TextButton(
-              style: TextButton.styleFrom(foregroundColor: asmrBlue),
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: Text(i18n.tr('cancel')),
-            ),
-            TextButton(
-              style: TextButton.styleFrom(foregroundColor: asmrBlue),
-              onPressed: () => Navigator.of(
-                dialogContext,
-              ).pop(AsmrDownloadConflictPolicy.skip),
-              child: Text(i18n.tr('asmr_download_conflict_skip')),
-            ),
-            FilledButton(
-              style: FilledButton.styleFrom(
-                backgroundColor: asmrBlue,
-                foregroundColor: onAsmrBlue,
-              ),
-              onPressed: () => Navigator.of(
-                dialogContext,
-              ).pop(AsmrDownloadConflictPolicy.overwrite),
-              child: Text(i18n.tr('asmr_download_conflict_overwrite')),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
   Future<void> _startDownload() async {
     final selection = _selection;
     if (selection == null) return;
@@ -145,7 +101,9 @@ class _AsmrDownloadPageState extends State<AsmrDownloadPage> {
     final downloadManager = context.read<AsmrDownloadManager>();
     final i18n = context.read<AppLanguageProvider>();
     final task = downloadManager.getTask(widget.work.id);
-    if (task != null && task.status != AsmrDownloadTaskStatus.completed && task.status != AsmrDownloadTaskStatus.failed) {
+    if (task != null &&
+        task.status != AsmrDownloadTaskStatus.completed &&
+        task.status != AsmrDownloadTaskStatus.failed) {
       showAppSnackBar(
         context,
         i18n.tr('asmr_download_task_running'),
@@ -195,11 +153,6 @@ class _AsmrDownloadPageState extends State<AsmrDownloadPage> {
       }
     }
 
-    final conflictPolicy = await _chooseConflictPolicy();
-    if (!mounted || conflictPolicy == null) {
-      return;
-    }
-
     setState(() {
       _starting = true;
     });
@@ -208,7 +161,7 @@ class _AsmrDownloadPageState extends State<AsmrDownloadPage> {
         work: widget.work,
         selectedRoots: selectedRoots,
         destinationRoot: destination,
-        conflictPolicy: conflictPolicy,
+        conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
       );
       if (!mounted) return;
       if (!mounted) return;
@@ -362,7 +315,7 @@ class AsmrDownloadTaskPage extends StatelessWidget {
     final tasks = manager.tasks;
     final i18n = context.watch<AppLanguageProvider>();
     final headerHeight = MediaQuery.paddingOf(context).top + 56;
-    
+
     return Scaffold(
       body: Stack(
         children: [
@@ -377,7 +330,12 @@ class AsmrDownloadTaskPage extends StatelessWidget {
             )
           else
             ListView.builder(
-              padding: EdgeInsets.fromLTRB(16, headerHeight + 16, 16, MediaQuery.paddingOf(context).bottom + 16),
+              padding: EdgeInsets.fromLTRB(
+                16,
+                headerHeight + 16,
+                16,
+                MediaQuery.paddingOf(context).bottom + 16,
+              ),
               physics: const BouncingScrollPhysics(),
               itemCount: tasks.length,
               itemBuilder: (context, index) {
@@ -417,9 +375,7 @@ class _TaskCard extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       elevation: 0,
       color: cs.surfaceContainerHigh,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: InkWell(
         onTap: () {
           Navigator.of(context).push(
@@ -440,9 +396,9 @@ class _TaskCard extends StatelessWidget {
                     child: Text(
                       task.work.title,
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w700,
-                            height: 1.3,
-                          ),
+                        fontWeight: FontWeight.w700,
+                        height: 1.3,
+                      ),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -455,8 +411,11 @@ class _TaskCard extends StatelessWidget {
                       iconSize: 22,
                       color: cs.error.withValues(alpha: 0.8),
                       tooltip: i18n.tr('cancel'),
-                      onPressed: () {
-                        context.read<AsmrDownloadManager>().cancelTask(task.work.id);
+                      onPressed: () async {
+                        await context.read<AsmrDownloadManager>().cancelTask(
+                          task.work.id,
+                        );
+                        if (!context.mounted) return;
                         showAppSnackBar(
                           context,
                           i18n.tr('asmr_download_cancelled_and_cleared'),
@@ -756,8 +715,6 @@ class _CompactNodeCheckbox extends StatelessWidget {
   }
 }
 
-
-
 String _statusText(AppLanguageProvider i18n, AsmrDownloadTaskStatus status) {
   switch (status) {
     case AsmrDownloadTaskStatus.preparing:
@@ -772,8 +729,6 @@ String _statusText(AppLanguageProvider i18n, AsmrDownloadTaskStatus status) {
       return i18n.tr('asmr_download_status_idle');
   }
 }
-
-
 
 String _formatFileSize(int bytes) {
   if (bytes <= 0) return '0 B';

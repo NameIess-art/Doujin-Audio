@@ -272,6 +272,8 @@ class AsmrDownloadManager extends ChangeNotifier {
 
   final Map<int, bool> _cancelRequested = {};
   final Map<int, Completer<void>> _downloadCompletions = {};
+  final Map<int, HttpClient> _activeHttpClients = {};
+  final Map<int, String> _cancelCleanupRoots = {};
 
   static const int _maxConcurrentDownloads = 3;
 
@@ -406,13 +408,12 @@ class AsmrDownloadManager extends ChangeNotifier {
 
     if (_activeTasks.contains(workId)) {
       _cancelRequested[workId] = true;
-      _tasks[workId] = task.copyWith(message: 'canceling');
+      _cancelCleanupRoots[workId] = task.workRootPath;
+      _activeHttpClients[workId]?.close(force: true);
+      await _deleteDownloadRoot(task.workRootPath);
+      _tasks.remove(workId);
       _notifyTaskChanged();
-
-      final completion = _downloadCompletions[workId];
-      if (completion != null && !completion.isCompleted) {
-        await completion.future;
-      }
+      return;
     }
 
     await _deleteDownloadRoot(task.workRootPath);
@@ -441,8 +442,12 @@ class AsmrDownloadManager extends ChangeNotifier {
     await initialize();
 
     final workId = work.id;
-    if (_tasks.containsKey(workId)) {
-      return; // Already downloading or queued
+    final existingTask = _tasks[workId];
+    if (existingTask != null) {
+      if (existingTask.isActive || _queue.contains(workId)) {
+        return; // Already downloading or queued
+      }
+      _tasks.remove(workId);
     }
 
     final workFolderName = _buildWorkFolderName(work);
@@ -453,7 +458,6 @@ class AsmrDownloadManager extends ChangeNotifier {
     ).convert(backup.toBackupJson());
     final backupBytes = utf8.encode(backupJson).length;
     final plannedFiles = _collectPlannedFiles(selectedRoots);
-    final plannedFolders = _collectPlannedFolders(selectedRoots);
     final totalFiles = plannedFiles.length + 1;
     final totalBytes = plannedFiles.fold<int>(backupBytes, (sum, item) {
       return sum + item.size;
@@ -521,7 +525,9 @@ class AsmrDownloadManager extends ChangeNotifier {
     final conflictPolicy = taskSnapshot.conflictPolicy;
 
     final backup = _buildBackupDetail(work, workRootPath);
-    final backupJson = const JsonEncoder.withIndent('  ').convert(backup.toBackupJson());
+    final backupJson = const JsonEncoder.withIndent(
+      '  ',
+    ).convert(backup.toBackupJson());
     final backupBytes = utf8.encode(backupJson).length;
 
     try {
@@ -550,11 +556,14 @@ class AsmrDownloadManager extends ChangeNotifier {
       var failed = 0;
       var downloadedBytes = backupBytes;
 
-      final fileDownloadedBytes = Map<String, int>.from(_tasks[workId]!.fileDownloadedBytes);
+      final fileDownloadedBytes = Map<String, int>.from(
+        _tasks[workId]!.fileDownloadedBytes,
+      );
       final fileTotalBytes = _tasks[workId]!.fileTotalBytes;
 
       // Ensure folders
-      for (final relativePath in fileTotalBytes.keys.map((p) => path.dirname(p)).toSet()) {
+      for (final relativePath
+          in fileTotalBytes.keys.map((p) => path.dirname(p)).toSet()) {
         if (relativePath == '.') continue;
         _throwIfCancelled(workId);
         await _ensureFolderPath(
@@ -607,30 +616,43 @@ class AsmrDownloadManager extends ChangeNotifier {
         completedFiles: completed,
         skippedFiles: skipped,
         failedFiles: failed,
-        downloadedBytes: backupBytes + plannedFiles.fold<int>(0, (sum, item) => sum + item.size),
+        downloadedBytes:
+            backupBytes +
+            plannedFiles.fold<int>(0, (sum, item) => sum + item.size),
         message: failed > 0 ? 'completed_with_failures' : 'completed',
       );
       _notifyTaskChanged();
     } on _DownloadCancelled {
-      _tasks[workId] = _tasks[workId]?.copyWith(
-        status: AsmrDownloadTaskStatus.failed,
-        message: 'cancelled',
-      ) ?? _tasks[workId]!;
-      _notifyTaskChanged();
+      final currentTask = _tasks[workId];
+      if (currentTask != null) {
+        _tasks[workId] = currentTask.copyWith(
+          status: AsmrDownloadTaskStatus.failed,
+          message: 'cancelled',
+        );
+        _notifyTaskChanged();
+      }
     } catch (error, stackTrace) {
       AppLogService.error(
         'asmr_download_failed',
         error: error,
         stackTrace: stackTrace,
       );
-      _tasks[workId] = _tasks[workId]?.copyWith(
-        status: AsmrDownloadTaskStatus.failed,
-        error: error.toString(),
-        message: 'failed',
-      ) ?? _tasks[workId]!;
-      _notifyTaskChanged();
+      final currentTask = _tasks[workId];
+      if (currentTask != null) {
+        _tasks[workId] = currentTask.copyWith(
+          status: AsmrDownloadTaskStatus.failed,
+          error: error.toString(),
+          message: 'failed',
+        );
+        _notifyTaskChanged();
+      }
     } finally {
       _plannedFilesMap.remove(workId);
+      final cleanupRoot = _cancelCleanupRoots.remove(workId);
+      if (cleanupRoot != null) {
+        await _deleteDownloadRoot(cleanupRoot);
+      }
+      _cancelRequested.remove(workId);
       final completion = _downloadCompletions.remove(workId);
       if (completion != null && !completion.isCompleted) {
         completion.complete();
@@ -639,6 +661,7 @@ class AsmrDownloadManager extends ChangeNotifier {
       _processQueue();
     }
   }
+
   List<_PlannedDownloadFile> _collectPlannedFiles(List<AsmrTrackFile> roots) {
     final result = <_PlannedDownloadFile>[];
     for (final root in roots) {
@@ -672,30 +695,6 @@ class AsmrDownloadManager extends ChangeNotifier {
         size: node.size,
       ),
     );
-  }
-
-  List<_PlannedFolder> _collectPlannedFolders(List<AsmrTrackFile> roots) {
-    final result = <_PlannedFolder>[];
-    for (final root in roots) {
-      _collectPlannedFoldersRecursively(root, result);
-    }
-    return result;
-  }
-
-  void _collectPlannedFoldersRecursively(
-    AsmrTrackFile node,
-    List<_PlannedFolder> result,
-  ) {
-    if (!node.isFolder) {
-      return;
-    }
-    if (node.children.isEmpty) {
-      result.add(_PlannedFolder(relativePath: node.relativePath));
-      return;
-    }
-    for (final child in node.children) {
-      _collectPlannedFoldersRecursively(child, result);
-    }
   }
 
   Future<_WriteResult> _downloadItem(
@@ -781,6 +780,7 @@ class AsmrDownloadManager extends ChangeNotifier {
     }
 
     final client = HttpClient();
+    _activeHttpClients[workId] = client;
     var received = 0;
     try {
       _throwIfCancelled(workId);
@@ -803,7 +803,9 @@ class AsmrDownloadManager extends ChangeNotifier {
 
           final task = _tasks[workId];
           if (task != null) {
-            final updatedFileDownloadedBytes = Map<String, int>.from(task.fileDownloadedBytes);
+            final updatedFileDownloadedBytes = Map<String, int>.from(
+              task.fileDownloadedBytes,
+            );
             updatedFileDownloadedBytes[item.relativePath] = received;
             _tasks[workId] = task.copyWith(
               downloadedBytes: task.downloadedBytes + chunk.length,
@@ -836,6 +838,9 @@ class AsmrDownloadManager extends ChangeNotifier {
         bytesDownloaded: received,
       );
     } finally {
+      if (identical(_activeHttpClients[workId], client)) {
+        _activeHttpClients.remove(workId);
+      }
       client.close(force: true);
     }
   }
@@ -973,7 +978,7 @@ class AsmrDownloadManager extends ChangeNotifier {
     final elapsed = _lastProgressNotifyAt == null
         ? _progressNotifyMinInterval
         : now.difference(_lastProgressNotifyAt!);
-    
+
     int totalDownloadedBytes = 0;
     for (final task in _tasks.values) {
       if (task.status == AsmrDownloadTaskStatus.downloading) {
@@ -1011,6 +1016,11 @@ class AsmrDownloadManager extends ChangeNotifier {
   @override
   void dispose() {
     _deferredProgressNotifyTimer?.cancel();
+    for (final client in _activeHttpClients.values) {
+      client.close(force: true);
+    }
+    _activeHttpClients.clear();
+    _cancelCleanupRoots.clear();
     super.dispose();
   }
 
@@ -1048,12 +1058,6 @@ class _PlannedDownloadFile {
   final String url;
   final String relativePath;
   final int size;
-}
-
-class _PlannedFolder {
-  const _PlannedFolder({required this.relativePath});
-
-  final String relativePath;
 }
 
 class _WriteResult {

@@ -15,10 +15,11 @@ class AsmrDownloadDetailsPage extends StatelessWidget {
     final manager = context.watch<AsmrDownloadManager>();
     final task = manager.getTask(workId);
     final headerHeight = MediaQuery.paddingOf(context).top + 56;
+    final cs = Theme.of(context).colorScheme;
 
     if (task == null) {
-      return Scaffold(
-        body: const Stack(
+      return const Scaffold(
+        body: Stack(
           children: [
             Center(child: Text('Task not found')),
             Positioned(
@@ -40,34 +41,85 @@ class AsmrDownloadDetailsPage extends StatelessWidget {
     return Scaffold(
       body: Stack(
         children: [
-          if (tracks.isEmpty)
-            const Center(child: Text('No files selected'))
-          else
-            ListView.builder(
-              padding: EdgeInsets.fromLTRB(0, headerHeight + 16, 0, MediaQuery.paddingOf(context).bottom + 16),
-              physics: const BouncingScrollPhysics(),
-              itemCount: tracks.length,
-              itemBuilder: (context, index) {
-                return _AsmrDownloadDetailsNodeTile(
-                  node: tracks[index],
-                  depth: 0,
-                  task: task,
-                );
-              },
-            ),
-          Positioned(
+          CustomScrollView(
+            physics: const BouncingScrollPhysics(),
+            slivers: [
+              SliverPadding(
+                padding: EdgeInsets.fromLTRB(16, headerHeight + 16, 16, 16),
+                sliver: SliverToBoxAdapter(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        task.work.title,
+                        style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          height: 1.3,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Icon(Icons.sd_storage_rounded, size: 16, color: cs.onSurfaceVariant),
+                          const SizedBox(width: 6),
+                          Text(
+                            '${_formatBytes(task.downloadedBytes)} / ${_formatBytes(task.totalBytes)}',
+                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              color: cs.onSurfaceVariant,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              if (tracks.isEmpty)
+                const SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: Center(child: Text('No files selected')),
+                )
+              else
+                SliverPadding(
+                  padding: EdgeInsets.only(bottom: MediaQuery.paddingOf(context).bottom + 16),
+                  sliver: SliverList.builder(
+                    itemCount: tracks.length,
+                    itemBuilder: (context, index) {
+                      return _AsmrDownloadDetailsNodeTile(
+                        node: tracks[index],
+                        depth: 0,
+                        task: task,
+                      );
+                    },
+                  ),
+                ),
+            ],
+          ),
+          const Positioned(
             top: 0,
             left: 0,
             right: 0,
             child: TopPageHeader(
-              leading: const BackButton(),
-              title: task.work.title,
-              marqueeTitle: true,
+              leading: BackButton(),
+              title: '',
             ),
           ),
         ],
       ),
     );
+  }
+
+  String _formatBytes(int bytes) {
+    if (bytes <= 0) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    var value = bytes.toDouble();
+    var unitIndex = 0;
+    while (value >= 1024 && unitIndex < units.length - 1) {
+      value /= 1024;
+      unitIndex++;
+    }
+    return '${value.toStringAsFixed(value >= 10 ? 0 : 1)} ${units[unitIndex]}';
   }
 }
 
@@ -102,8 +154,8 @@ class _AsmrDownloadDetailsNodeTileState
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
-    final indent = widget.depth * 24.0;
-    const fileRowHeight = 56.0;
+    final indent = widget.depth * 16.0;
+    const fileRowHeight = 44.0;
 
     if (widget.node.isFolder) {
       final hasChildren = widget.node.children.isNotEmpty;
@@ -115,6 +167,8 @@ class _AsmrDownloadDetailsNodeTileState
           tilePadding: EdgeInsetsDirectional.only(start: indent + 16, end: 16),
           childrenPadding: EdgeInsets.zero,
           minTileHeight: fileRowHeight,
+          iconColor: asmrBlue,
+          collapsedIconColor: cs.onSurfaceVariant,
           title: Text(
             widget.node.title,
             style: Theme.of(context).textTheme.titleSmall?.copyWith(
@@ -139,7 +193,7 @@ class _AsmrDownloadDetailsNodeTileState
               : [
                   Padding(
                     padding: EdgeInsetsDirectional.only(
-                      start: indent + 24 + 40,
+                      start: indent + 16 + 40,
                       end: 8,
                       bottom: 8,
                     ),
@@ -166,24 +220,23 @@ class _AsmrDownloadDetailsNodeTileState
       padding: EdgeInsetsDirectional.only(
         start: indent + 16 + 24,
         end: 16,
-        top: 6,
-        bottom: 6,
+        top: 4,
+        bottom: 4,
       ),
       child: Container(
-        height: fileRowHeight + 12,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
           color: cs.surfaceContainerHigh.withValues(alpha: 0.5),
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(10),
         ),
         child: Row(
           children: [
             Icon(
               _fileIconFor(widget.node),
-              size: 22,
+              size: 20,
               color: cs.onSurfaceVariant.withValues(alpha: 0.8),
             ),
-            const SizedBox(width: 14),
+            const SizedBox(width: 12),
             Expanded(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -195,10 +248,10 @@ class _AsmrDownloadDetailsNodeTileState
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       fontWeight: FontWeight.w600,
-                      fontSize: 13,
+                      fontSize: 12,
                     ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 6),
                   Row(
                     children: [
                       Expanded(
@@ -218,6 +271,7 @@ class _AsmrDownloadDetailsNodeTileState
                         style: Theme.of(context).textTheme.labelSmall?.copyWith(
                           color: cs.onSurfaceVariant,
                           fontWeight: FontWeight.w600,
+                          fontSize: 10,
                         ),
                       ),
                     ],

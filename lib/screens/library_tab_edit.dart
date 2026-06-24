@@ -102,27 +102,49 @@ class LibraryManagementPage extends ConsumerWidget {
               itemBuilder: (context, index) {
                 final libraryPath = libraries[index];
                 return Card(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  child: ListTile(
-                    title: Text(_displaySourceName(libraryPath)),
-                    subtitle: Text(
-                      PathDisplay.displayPathFor(libraryPath),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                  margin: const EdgeInsets.only(bottom: 12),
+                  elevation: 0,
+                  color: cs.surfaceContainerHigh,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: InkWell(
                     onTap: () => Navigator.of(context).push(
                       buildAppPageRoute<void>(
                         child: LibraryEditPage(libraryPath: libraryPath),
                       ),
                     ),
-                    trailing: IconButton(
-                      tooltip: i18n.tr('remove_library'),
-                      onPressed: () => _confirmRemoveWatchedLibrary(
-                        context,
-                        ref,
-                        libraryPath,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                      child: ListTile(
+                        title: Text(
+                          _displaySourceName(libraryPath),
+                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        subtitle: Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Text(
+                            PathDisplay.displayPathFor(libraryPath),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              color: cs.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                        trailing: IconButton(
+                          tooltip: i18n.tr('remove_library'),
+                          onPressed: () => _confirmRemoveWatchedLibrary(
+                            context,
+                            ref,
+                            libraryPath,
+                          ),
+                          icon: Icon(Icons.delete_outline_rounded, color: cs.error.withValues(alpha: 0.8)),
+                        ),
                       ),
-                      icon: Icon(Icons.delete_outline_rounded, color: cs.error),
                     ),
                   ),
                 );
@@ -1146,8 +1168,10 @@ class _LibraryEditFolderTreeTileState
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
           style: Theme.of(context).textTheme.titleSmall?.copyWith(
-            color: muted ? cs.onSurfaceVariant : cs.onSurface,
-            fontWeight: isRootFolder ? FontWeight.w900 : FontWeight.w800,
+            color: muted
+                ? cs.onSurfaceVariant
+                : (_expanded ? cs.primary : cs.onSurface),
+            fontWeight: isRootFolder ? FontWeight.w800 : FontWeight.w700,
           ),
         ),
         subtitle: Text(
@@ -1202,7 +1226,9 @@ class _LibraryEditFolderTreeTileState
                   curve: Curves.easeOutCubic,
                   child: Icon(
                     Icons.expand_more_rounded,
-                    color: cs.onSurfaceVariant,
+                    color: muted
+                        ? cs.onSurfaceVariant
+                        : (_expanded ? cs.primary : cs.onSurfaceVariant),
                     size: 20,
                   ),
                 ),
@@ -1226,24 +1252,20 @@ class _LibraryEditFolderTreeTileState
 
     if (!isRootFolder) {
       return Padding(
-        padding: const EdgeInsets.only(left: 12, bottom: 2),
+        padding: const EdgeInsets.only(left: 12, bottom: 4),
         child: content,
       );
     }
 
     return Card(
-      margin: const EdgeInsets.only(bottom: 8),
+      margin: const EdgeInsets.only(bottom: 12),
       clipBehavior: Clip.antiAlias,
+      elevation: 0,
       color: muted
           ? cs.surfaceContainerHighest.withValues(alpha: 0.46)
-          : cs.surfaceContainerLow,
+          : cs.surfaceContainerHigh,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(18),
-        side: BorderSide(
-          color: muted
-              ? cs.outlineVariant.withValues(alpha: 0.48)
-              : cs.outlineVariant,
-        ),
+        borderRadius: BorderRadius.circular(16),
       ),
       child: content,
     );
@@ -1270,24 +1292,37 @@ class _LibraryEditTrackTile extends ConsumerWidget {
     final provider = ref.read(audioProviderFacadeProvider);
     final cs = Theme.of(context).colorScheme;
 
-    return ListTile(
-      dense: true,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 6),
-      leading: Icon(
-        viewState.muted ? Icons.music_off_rounded : Icons.music_note_rounded,
-        color: viewState.muted ? cs.onSurfaceVariant : cs.primary,
-      ),
-      title: Text(
-        viewState.title,
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          color: viewState.muted ? cs.onSurfaceVariant : cs.onSurface,
-          fontWeight: FontWeight.w700,
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+      child: ListTile(
+        dense: true,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
         ),
-      ),
-      subtitle: viewState.muted ? Text(i18n.tr('excluded')) : null,
-      trailing: TextButton(
+        tileColor: cs.surfaceContainerHigh.withValues(alpha: 0.4),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+        leading: Icon(
+          viewState.muted ? Icons.music_off_rounded : Icons.music_note_rounded,
+          color: viewState.muted ? cs.onSurfaceVariant : cs.primary.withValues(alpha: 0.8),
+          size: 20,
+        ),
+        title: Text(
+          viewState.title,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: viewState.muted ? cs.onSurfaceVariant : cs.onSurface,
+            fontWeight: FontWeight.w600,
+            fontSize: 13,
+          ),
+        ),
+        subtitle: viewState.muted
+            ? Text(
+                i18n.tr('excluded'),
+                style: TextStyle(color: cs.onSurfaceVariant.withValues(alpha: 0.8), fontSize: 11),
+              )
+            : null,
+        trailing: TextButton(
         style: viewState.muted ? _libraryMutedButtonStyle(cs) : null,
         onPressed: viewState.inheritedExcluded
             ? null
@@ -1301,6 +1336,7 @@ class _LibraryEditTrackTile extends ConsumerWidget {
         child: Text(
           viewState.explicitExcluded ? i18n.tr('restore') : i18n.tr('exclude'),
         ),
+      ),
       ),
     );
   }

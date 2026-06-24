@@ -257,32 +257,51 @@ class _PermissionTile extends StatelessWidget {
     final statusColor = _permissionStateColor(cs, state);
     final statusLabel = _permissionStateLabel(i18n, state);
     return Card(
-      margin: const EdgeInsets.only(bottom: 10),
+      elevation: 0,
+      color: cs.surfaceContainerHigh.withValues(alpha: 0.6),
+      margin: const EdgeInsets.only(bottom: 12),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide.none,
+      ),
+      clipBehavior: Clip.antiAlias,
       child: ListTile(
         onTap: onTap,
         minTileHeight: 82,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
         leading: Container(
-          width: 40,
-          height: 40,
+          width: 42,
+          height: 42,
           decoration: BoxDecoration(
             color: statusColor.withValues(alpha: 0.14),
             borderRadius: BorderRadius.circular(12),
           ),
-          child: Icon(icon, color: statusColor, size: 20),
+          child: Icon(icon, color: statusColor, size: 22),
         ),
-        title: Text(title),
+        title: Text(
+          title,
+          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+            fontWeight: FontWeight.w700,
+            fontSize: 15,
+          ),
+        ),
         subtitle: Padding(
           padding: const EdgeInsets.only(top: 4),
-          child: Text(description),
+          child: Text(
+            description,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: cs.onSurfaceVariant,
+              height: 1.3,
+            ),
+          ),
         ),
         trailing: Semantics(
           label: statusLabel,
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
               color: statusColor.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(999),
-              border: Border.all(color: statusColor.withValues(alpha: 0.28)),
             ),
             child: Text(
               statusLabel,

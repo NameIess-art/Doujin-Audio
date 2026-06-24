@@ -189,84 +189,106 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
           ListView(
             padding: EdgeInsets.fromLTRB(16, topTotalHeight + 4, 16, 24),
             children: [
-              _PathPickerCard(
-                icon: Icons.video_library_rounded,
-                title: i18n.tr('source_video_file'),
-                placeholder: i18n.tr('tap_select_video_file'),
-                value: _selectedVideoPath,
-                onTap: _isConverting ? null : _pickVideoFile,
-              ),
-              const SizedBox(height: 12),
-              _PathPickerCard(
-                icon: Icons.create_new_folder_rounded,
-                title: i18n.tr('output_directory'),
-                placeholder: i18n.tr('tap_select_output_dir'),
-                value: _outputDirectoryPath,
-                onTap: _isConverting ? null : _pickOutputDirectory,
-              ),
-              const SizedBox(height: 12),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(2, 4, 2, 0),
+              Card(
+                margin: EdgeInsets.zero,
+                elevation: 0,
+                color: Theme.of(context).colorScheme.surfaceContainerHigh,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                clipBehavior: Clip.antiAlias,
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.tune_rounded,
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          i18n.tr('transcode_defaults'),
-                          style: Theme.of(context).textTheme.titleMedium
-                              ?.copyWith(fontWeight: FontWeight.w800),
-                        ),
-                      ],
+                    _PathPickerCard(
+                      icon: Icons.video_library_rounded,
+                      title: i18n.tr('source_video_file'),
+                      placeholder: i18n.tr('tap_select_video_file'),
+                      value: _selectedVideoPath,
+                      onTap: _isConverting ? null : _pickVideoFile,
                     ),
-                    const SizedBox(height: 14),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _SelectField(
-                            label: i18n.tr('format'),
-                            value: selectedFormat,
-                            items: AudioProvider.converterFormats,
-                            displayBuilder: (item) => item.toUpperCase(),
-                            onChanged: (value) {
-                              if (value != null) {
-                                provider.setConverterSettings(format: value);
-                              }
-                            },
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: _SelectField(
-                            label: i18n.tr('bitrate'),
-                            value: selectedBitrate,
-                            items: AudioProvider.converterBitrates,
-                            displayBuilder: (item) => item,
-                            enabled: bitrateEnabled,
-                            onChanged: (value) {
-                              if (value != null) {
-                                provider.setConverterSettings(bitrate: value);
-                              }
-                            },
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      bitrateEnabled
-                          ? i18n.tr('bitrate_used')
-                          : i18n.tr('bitrate_not_used', {
-                              'format': selectedFormat.toUpperCase(),
-                            }),
-                      style: descStyle,
+                    Divider(height: 1, color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.4)),
+                    _PathPickerCard(
+                      icon: Icons.create_new_folder_rounded,
+                      title: i18n.tr('output_directory'),
+                      placeholder: i18n.tr('tap_select_output_dir'),
+                      value: _outputDirectoryPath,
+                      onTap: _isConverting ? null : _pickOutputDirectory,
                     ),
                   ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              Card(
+                margin: EdgeInsets.zero,
+                elevation: 0,
+                color: Theme.of(context).colorScheme.surfaceContainerHigh,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.tune_rounded,
+                            color: Theme.of(context).colorScheme.primary,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            i18n.tr('transcode_defaults'),
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(fontWeight: FontWeight.w700, fontSize: 15),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _SelectField(
+                              label: i18n.tr('format'),
+                              value: selectedFormat,
+                              items: AudioProvider.converterFormats,
+                              displayBuilder: (item) => item.toUpperCase(),
+                              onChanged: (value) {
+                                if (value != null) {
+                                  provider.setConverterSettings(format: value);
+                                }
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _SelectField(
+                              label: i18n.tr('bitrate'),
+                              value: selectedBitrate,
+                              items: AudioProvider.converterBitrates,
+                              displayBuilder: (item) => item,
+                              enabled: bitrateEnabled,
+                              onChanged: (value) {
+                                if (value != null) {
+                                  provider.setConverterSettings(bitrate: value);
+                                }
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        bitrateEnabled
+                            ? i18n.tr('bitrate_used')
+                            : i18n.tr('bitrate_not_used', {
+                                'format': selectedFormat.toUpperCase(),
+                              }),
+                        style: descStyle,
+                      ),
+                    ],
+                  ),
                 ),
               ),
               const SizedBox.shrink(),
@@ -298,6 +320,7 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
               ),
               const SizedBox(height: 16),
               if (_isConverting || _progress > 0) ...[
+                const SizedBox(height: 16),
                 TweenAnimationBuilder<double>(
                   duration: const Duration(milliseconds: 250),
                   curve: Curves.easeInOut,
@@ -310,25 +333,20 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
                         ? null
                         : value,
                     minHeight: 8,
-                    borderRadius: BorderRadius.circular(4),
+                    borderRadius: BorderRadius.circular(8),
                   ),
                 ),
-                const SizedBox(height: 14),
               ],
-              if (_statusMessage.isNotEmpty)
+              if (_statusMessage.isNotEmpty) ...[
+                const SizedBox(height: 16),
                 Container(
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 10,
+                    horizontal: 16,
+                    vertical: 14,
                   ),
                   decoration: BoxDecoration(
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: Theme.of(context).colorScheme.outlineVariant,
-                    ),
+                    color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
+                    borderRadius: BorderRadius.circular(16),
                   ),
                   child: Text(
                     _statusMessage,
@@ -342,7 +360,8 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
                     ),
                   ),
                 ),
-              const SizedBox(height: 16),
+              ],
+              const SizedBox(height: 24),
               if (_isConverting)
                 FilledButton.icon(
                   onPressed: _cancelConversion,
@@ -351,6 +370,8 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
                   style: FilledButton.styleFrom(
                     backgroundColor: Theme.of(context).colorScheme.error,
                     foregroundColor: Theme.of(context).colorScheme.onError,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    textStyle: const TextStyle(fontWeight: FontWeight.bold),
                   ),
                 )
               else
@@ -361,6 +382,10 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
                       : null,
                   icon: const Icon(Icons.transform_rounded),
                   label: Text(i18n.tr('start_conversion')),
+                  style: FilledButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    textStyle: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
                 ),
             ],
           ),

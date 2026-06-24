@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -172,6 +173,7 @@ void main() {
         destinationRoot: tempDir.path,
         conflictPolicy: AsmrDownloadConflictPolicy.skip,
       );
+      await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
 
       final backupPath =
           '${tempDir.path}${Platform.pathSeparator}RJ123456 - Work'
@@ -193,6 +195,93 @@ void main() {
       }
     }
   });
+
+  test(
+    'canceling an active download removes task and downloaded files',
+    () async {
+      final tempDir = await Directory.systemTemp.createTemp(
+        'asmr_download_cancel_',
+      );
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      unawaited(
+        server.forEach((request) async {
+          request.response.statusCode = HttpStatus.ok;
+          request.response.headers.contentLength = 1024 * 1024;
+          final chunk = List<int>.filled(16 * 1024, 7);
+          try {
+            for (var i = 0; i < 64; i++) {
+              request.response.add(chunk);
+              await request.response.flush();
+              await Future<void>.delayed(const Duration(milliseconds: 10));
+            }
+          } catch (_) {
+            // The downloader closes the socket when cancellation is requested.
+          } finally {
+            await request.response.close().catchError((_) {});
+          }
+        }),
+      );
+      final manager = AsmrDownloadManager();
+      try {
+        await manager.startDownload(
+          work: _work(),
+          selectedRoots: <AsmrTrackFile>[
+            _file(
+              downloadUrl:
+                  'http://${server.address.host}:${server.port}/track.mp3',
+              size: 1024 * 1024,
+            ),
+          ],
+          destinationRoot: tempDir.path,
+          conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+        );
+
+        await _waitForLiveTask(manager);
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+        await manager.cancelTask(1).timeout(const Duration(seconds: 5));
+
+        expect(manager.getTask(1), isNull);
+        expect(
+          await Directory(
+            '${tempDir.path}${Platform.pathSeparator}RJ123456 - Work',
+          ).exists(),
+          isFalse,
+        );
+      } finally {
+        manager.dispose();
+        await server.close(force: true);
+        if (await tempDir.exists()) {
+          await tempDir.delete(recursive: true);
+        }
+      }
+    },
+  );
+}
+
+Future<void> _waitForLiveTask(AsmrDownloadManager manager) async {
+  final deadline = DateTime.now().add(const Duration(seconds: 5));
+  while (DateTime.now().isBefore(deadline)) {
+    if (manager.hasLiveTask) return;
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+  }
+  fail('Timed out waiting for a live download task');
+}
+
+Future<void> _waitForTaskStatus(
+  AsmrDownloadManager manager,
+  int workId,
+  AsmrDownloadTaskStatus status,
+) async {
+  final deadline = DateTime.now().add(const Duration(seconds: 5));
+  while (DateTime.now().isBefore(deadline)) {
+    final task = manager.getTask(workId);
+    if (task?.status == status) return;
+    if (task?.status == AsmrDownloadTaskStatus.failed) {
+      fail('Download task failed: ${task?.error ?? task?.message}');
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+  }
+  fail('Timed out waiting for task $workId to reach $status');
 }
 
 AsmrWork _work({DateTime? releaseDate, int dlCount = 0, double rating = 0}) {
@@ -214,5 +303,23 @@ AsmrWork _work({DateTime? releaseDate, int dlCount = 0, double rating = 0}) {
     rating: rating,
     voiceActors: const <String>[],
     tags: const <String>[],
+  );
+}
+
+AsmrTrackFile _file({required String downloadUrl, int size = 1}) {
+  return AsmrTrackFile(
+    hash: 'track',
+    title: 'Track.mp3',
+    type: 'audio',
+    streamUrl: null,
+    downloadUrl: downloadUrl,
+    lowQualityUrl: null,
+    duration: Duration.zero,
+    size: size,
+    children: const <AsmrTrackFile>[],
+    workId: 1,
+    workTitle: 'Work',
+    sourceId: 'RJ123456',
+    relativePath: 'Track.mp3',
   );
 }

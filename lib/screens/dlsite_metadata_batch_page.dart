@@ -291,8 +291,12 @@ class _BatchMetadataSetupView extends StatelessWidget {
         ),
       );
     }
+    
+    final topPadding = MediaQuery.paddingOf(context).top;
+    final topTotalHeight = 82 + topPadding;
+    
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 76, 16, 24),
+      padding: EdgeInsets.fromLTRB(16, topTotalHeight + 4, 16, 24),
       children: [
         Text(
           i18n.tr('batch_metadata_hint'),
@@ -530,8 +534,11 @@ class _BatchMetadataSummaryView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final i18n = context.watch<AppLanguageProvider>();
+    final topPadding = MediaQuery.paddingOf(context).top;
+    final topTotalHeight = 82 + topPadding;
+    
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 76, 16, 24),
+      padding: EdgeInsets.fromLTRB(16, topTotalHeight + 4, 16, 24),
       children: [
         Text(
           i18n.tr('batch_metadata_summary'),
@@ -559,9 +566,12 @@ class _BatchMetadataErrorView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final i18n = context.watch<AppLanguageProvider>();
+    final topPadding = MediaQuery.paddingOf(context).top;
+    final topTotalHeight = 82 + topPadding;
+
     return Center(
       child: Padding(
-        padding: const EdgeInsets.only(top: 76, left: 24, right: 24, bottom: 24),
+        padding: EdgeInsets.only(top: topTotalHeight + 4, left: 24, right: 24, bottom: 24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [

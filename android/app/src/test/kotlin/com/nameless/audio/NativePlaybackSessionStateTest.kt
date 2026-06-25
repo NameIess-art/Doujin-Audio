@@ -49,6 +49,12 @@ class NativePlaybackSessionStateTest {
     }
 
     @Test
+    fun `skip silence only targets near digital silence`() {
+        assertEquals(900_000L, STRICT_SKIP_SILENCE_MIN_DURATION_US)
+        assertEquals(4.toShort(), STRICT_SKIP_SILENCE_THRESHOLD_LEVEL)
+    }
+
+    @Test
     fun `volume balance processor stays out of default playback path`() {
         val stereo16Bit = AudioProcessor.AudioFormat(48000, 2, C.ENCODING_PCM_16BIT)
 

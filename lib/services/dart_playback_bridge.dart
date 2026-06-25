@@ -38,7 +38,7 @@ const List<int> _windowsEqBandFrequencies = <int>[
   16000,
 ];
 const String _windowsSkipSilenceFilter =
-    '$_skipSilenceAudioFilterLabel:lavfi=[silenceremove=stop_periods=-1:stop_duration=0.9:stop_threshold=-60dB]';
+    '$_skipSilenceAudioFilterLabel:lavfi=[silenceremove=stop_periods=-1:stop_duration=0.9:stop_threshold=-80dB:detection=peak]';
 const String _windowsNoiseReductionFilter =
     '$_noiseReductionAudioFilterLabel:lavfi=[afftdn=nr=6:nf=-55]';
 const String _windowsVolumeNormalizationFilter =

@@ -1088,6 +1088,7 @@ class _EqualizerPage extends StatelessWidget {
         ),
         UnifiedDropdownButtonFormField<String>(
           initialValue: selectedPreset,
+          alignment: AlignmentDirectional.centerStart,
           decoration: InputDecoration(
             labelText: i18n.tr('eq_preset'),
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),

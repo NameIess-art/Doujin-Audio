@@ -27,6 +27,7 @@ class SwipeRevealCard extends StatefulWidget {
     this.tertiaryActionIcon = Icons.download_rounded,
     this.destructive = true,
     this.verticalActions = false,
+    this.color,
   });
 
   final Widget child;
@@ -48,6 +49,7 @@ class SwipeRevealCard extends StatefulWidget {
   final IconData tertiaryActionIcon;
   final bool destructive;
   final bool verticalActions;
+  final Color? color;
 
   @override
   State<SwipeRevealCard> createState() => _SwipeRevealCardState();
@@ -697,7 +699,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                     builder: (context) {
                       final content = DecoratedBox(
                         decoration: ShapeDecoration(
-                          color: cs.surface,
+                          color: widget.color ?? cs.surface,
                           shape: widget.shape,
                         ),
                         child: Stack(

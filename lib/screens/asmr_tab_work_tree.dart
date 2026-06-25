@@ -409,50 +409,53 @@ class _AsmrTrackLeafRow extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
-    return SizedBox(
-      height: 38,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 6),
-        child: Row(
-          children: [
-            Icon(
-              Icons.audio_file_rounded,
-              size: 16,
-              color: cs.onSurfaceVariant.withValues(alpha: 0.6),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                node.displayTitle,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 13,
-                  color: cs.onSurface,
+    return ColoredBox(
+      color: cs.surfaceContainerLow,
+      child: SizedBox(
+        height: 38,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+          child: Row(
+            children: [
+              Icon(
+                Icons.audio_file_rounded,
+                size: 16,
+                color: cs.onSurfaceVariant.withValues(alpha: 0.6),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  node.displayTitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                    color: cs.onSurface,
+                  ),
                 ),
               ),
-            ),
-            Text(
-              _formatDuration(node.duration),
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                color: cs.onSurfaceVariant,
-                fontWeight: FontWeight.w700,
+              Text(
+                _formatDuration(node.duration),
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: cs.onSurfaceVariant,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
-            ),
-            const SizedBox(width: 8),
-            IconButton(
-              onPressed: () => unawaited(_playTrack(context)),
-              style: IconButton.styleFrom(
-                foregroundColor: asmrBlue,
-                minimumSize: const Size(36, 36),
-                maximumSize: const Size(36, 36),
-                padding: EdgeInsets.zero,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              const SizedBox(width: 8),
+              IconButton(
+                onPressed: () => unawaited(_playTrack(context)),
+                style: IconButton.styleFrom(
+                  foregroundColor: asmrBlue,
+                  minimumSize: const Size(36, 36),
+                  maximumSize: const Size(36, 36),
+                  padding: EdgeInsets.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                icon: const Icon(Icons.add_circle_rounded, size: 22),
               ),
-              icon: const Icon(Icons.add_circle_rounded, size: 22),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

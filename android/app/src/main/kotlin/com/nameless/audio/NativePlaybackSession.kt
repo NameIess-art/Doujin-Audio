@@ -13,6 +13,7 @@ import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.audio.ChannelMappingAudioProcessor
+import androidx.media3.exoplayer.audio.SilenceSkippingAudioProcessor
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -43,6 +44,8 @@ internal const val VOLUME_NORMALIZATION_MBC_RATIO = 2.0f
 internal const val VOLUME_NORMALIZATION_MBC_THRESHOLD_DB = -12f
 internal const val VOLUME_NORMALIZATION_LIMITER_THRESHOLD_DB = -2f
 internal const val VOLUME_NORMALIZATION_OUTPUT_GAIN_DB = 0f
+internal const val STRICT_SKIP_SILENCE_MIN_DURATION_US = 900_000L
+internal const val STRICT_SKIP_SILENCE_THRESHOLD_LEVEL: Short = 4
 
 internal class NativePlaybackSession(
     val sessionId: String,
@@ -51,6 +54,13 @@ internal class NativePlaybackSession(
     private val logWarn: (String, NativePlaybackSession, RuntimeException) -> Unit,
     private val resolveUriToPath: ((String) -> String?)? = null
 ) {
+    private val strictSilenceSkippingAudioProcessor = SilenceSkippingAudioProcessor(
+        STRICT_SKIP_SILENCE_MIN_DURATION_US,
+        0f,
+        0L,
+        0,
+        STRICT_SKIP_SILENCE_THRESHOLD_LEVEL
+    )
     private val channelMappingAudioProcessor = ChannelMappingAudioProcessor()
     private val volumeBalanceAudioProcessor = VolumeBalanceAudioProcessor()
     private var loudnessEnhancer: LoudnessEnhancer? = null
@@ -232,6 +242,7 @@ internal class NativePlaybackSession(
 
     fun applyAudioEffects(effects: NativeAudioEffects) {
         val previousPanningActive = isPanningActive()
+        val previousSkipSilenceEnabled = skipSilenceEnabled
         channelSwapEnabled = effects.channelSwapEnabled
         skipSilenceEnabled = effects.skipSilenceEnabled
         noiseReductionEnabled = effects.noiseReductionEnabled
@@ -244,7 +255,10 @@ internal class NativePlaybackSession(
         applyChannelMap()
         playerOrNull()?.let { player ->
             applyAudioEffectsToPlayer(player)
-            if (previousPanningActive != isPanningActive()) {
+            if (
+                previousPanningActive != isPanningActive() ||
+                previousSkipSilenceEnabled != skipSilenceEnabled
+            ) {
                 reprepareCurrentMediaItem()
             }
         }
@@ -262,14 +276,20 @@ internal class NativePlaybackSession(
     }
 
     private fun applyAudioEffectsToPlayer(player: ExoPlayer) {
-        player.setSkipSilenceEnabled(skipSilenceEnabled)
+        player.setSkipSilenceEnabled(false)
+        strictSilenceSkippingAudioProcessor.setEnabled(skipSilenceEnabled)
         syncEqualizer(player.audioSessionId)
         syncDynamicsProcessing(player.audioSessionId)
     }
 
     private fun audioProcessors(): Array<AudioProcessor> {
         volumeBalanceAudioProcessor.panning = panning
-        return arrayOf(channelMappingAudioProcessor, volumeBalanceAudioProcessor)
+        strictSilenceSkippingAudioProcessor.setEnabled(skipSilenceEnabled)
+        return arrayOf(
+            strictSilenceSkippingAudioProcessor,
+            channelMappingAudioProcessor,
+            volumeBalanceAudioProcessor
+        )
     }
 
     private fun isPanningActive(): Boolean = kotlin.math.abs(panning) >= 0.001f

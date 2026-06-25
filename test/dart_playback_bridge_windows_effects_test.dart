@@ -38,7 +38,8 @@ void main() {
         (filter) =>
             filter.contains('silenceremove') &&
             filter.contains('stop_duration=0.9') &&
-            filter.contains('stop_threshold=-60dB'),
+            filter.contains('stop_threshold=-80dB') &&
+            filter.contains('detection=peak'),
       ),
       isTrue,
     );

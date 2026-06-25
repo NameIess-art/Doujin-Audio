@@ -7,6 +7,7 @@ import 'package:path/path.dart' as path;
 import '../i18n/app_language_provider.dart';
 import '../models/card_info_field.dart';
 import '../models/audio_effects.dart';
+import '../models/asmr_download.dart';
 import '../models/library_node.dart';
 import '../models/library_entry.dart';
 import '../models/music_track.dart';

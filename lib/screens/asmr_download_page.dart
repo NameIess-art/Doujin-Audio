@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../i18n/app_language_provider.dart';
 import '../models/asmr_models.dart';
+import '../providers/audio_provider.dart';
 import '../services/asmr_download_manager.dart';
 import '../services/asmr_download_selection.dart';
 import '../services/asmr_library_controller.dart';
@@ -38,15 +39,16 @@ class _AsmrDownloadPageState extends State<AsmrDownloadPage> {
   Future<void> _bootstrap() async {
     final libraryController = context.read<AsmrLibraryController>();
     final downloadManager = context.read<AsmrDownloadManager>();
+    final audioProvider = context.read<AudioProvider>();
     final tree = await libraryController.ensureTrackTree(widget.work);
     await downloadManager.initialize();
-    final savedDestination = downloadManager.defaultDestinationRoot;
+    final savedDestination = audioProvider.asmrDownloadDestinationRoot;
     final destinationMissing =
         savedDestination != null &&
         savedDestination.trim().isNotEmpty &&
         !await downloadManager.destinationExists(savedDestination);
     if (destinationMissing) {
-      await downloadManager.clearDefaultDestination();
+      await audioProvider.setAsmrDownloadDestinationRoot(null);
     }
     if (!mounted) return;
     setState(() {
@@ -72,6 +74,7 @@ class _AsmrDownloadPageState extends State<AsmrDownloadPage> {
 
   Future<void> _chooseDestination() async {
     final downloadManager = context.read<AsmrDownloadManager>();
+    final audioProvider = context.read<AudioProvider>();
     final i18n = context.read<AppLanguageProvider>();
     final folder = await downloadManager.pickDestinationFolder(
       dialogTitle: i18n.tr('asmr_download_choose_path'),
@@ -79,7 +82,7 @@ class _AsmrDownloadPageState extends State<AsmrDownloadPage> {
     if (!mounted || folder == null || folder.trim().isEmpty) {
       return;
     }
-    await downloadManager.saveDefaultDestination(folder);
+    await audioProvider.setAsmrDownloadDestinationRoot(folder);
     if (!mounted) return;
     setState(() {
       _destinationRoot = folder.trim();
@@ -99,6 +102,7 @@ class _AsmrDownloadPageState extends State<AsmrDownloadPage> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
     final downloadManager = context.read<AsmrDownloadManager>();
+    final audioProvider = context.read<AudioProvider>();
     final i18n = context.read<AppLanguageProvider>();
     final task = downloadManager.getTask(widget.work.id);
     if (task != null &&
@@ -134,7 +138,7 @@ class _AsmrDownloadPageState extends State<AsmrDownloadPage> {
       }
     }
     if (!await downloadManager.destinationExists(destination)) {
-      await downloadManager.clearDefaultDestination();
+      await audioProvider.setAsmrDownloadDestinationRoot(null);
       if (!mounted) return;
       setState(() {
         _destinationRoot = null;
@@ -161,7 +165,7 @@ class _AsmrDownloadPageState extends State<AsmrDownloadPage> {
         work: widget.work,
         selectedRoots: selectedRoots,
         destinationRoot: destination,
-        conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+        conflictPolicy: audioProvider.asmrDownloadConflictPolicy,
       );
       if (!mounted) return;
       if (!mounted) return;

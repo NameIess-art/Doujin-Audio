@@ -280,11 +280,13 @@ class ActiveTrackPaths {
 String buildSessionCoverPrecacheKey({
   required String sessionId,
   required String trackPath,
-  required int cacheWidth,
-  required int cacheHeight,
+  required int? cacheWidth,
+  required int? cacheHeight,
   required int coverGeneration,
 }) {
-  return '$sessionId|$trackPath|$cacheWidth|$cacheHeight|$coverGeneration';
+  final widthKey = cacheWidth?.toString() ?? 'native';
+  final heightKey = cacheHeight?.toString() ?? 'native';
+  return '$sessionId|$trackPath|$widthKey|$heightKey|$coverGeneration';
 }
 
 PlaylistHeaderState playlistHeaderStateFromSlices(

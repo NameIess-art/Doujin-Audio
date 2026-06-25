@@ -339,6 +339,8 @@ enum StartupPage { asmrOne, library, playlist }
 
 enum BottomNavigationStyle { capsule, bar }
 
+enum CoverImageResolution { memorySaver, balanced, high, original }
+
 @immutable
 class SettingsState {
   const SettingsState({
@@ -359,6 +361,9 @@ class SettingsState {
     this.uiBlurEffectEnabled = true,
     this.startupPage = StartupPage.library,
     this.bottomNavigationStyle = BottomNavigationStyle.capsule,
+    this.coverImageResolution = CoverImageResolution.balanced,
+    this.asmrDownloadDestinationRoot,
+    this.asmrDownloadConflictPolicy = AsmrDownloadConflictPolicy.overwrite,
   });
 
   final String converterFormat;
@@ -378,6 +383,9 @@ class SettingsState {
   final bool uiBlurEffectEnabled;
   final StartupPage startupPage;
   final BottomNavigationStyle bottomNavigationStyle;
+  final CoverImageResolution coverImageResolution;
+  final String? asmrDownloadDestinationRoot;
+  final AsmrDownloadConflictPolicy asmrDownloadConflictPolicy;
 
   @override
   bool operator ==(Object other) {
@@ -398,7 +406,10 @@ class SettingsState {
         other.blurPlayerBackgroundEnabled == blurPlayerBackgroundEnabled &&
         other.uiBlurEffectEnabled == uiBlurEffectEnabled &&
         other.startupPage == startupPage &&
-        other.bottomNavigationStyle == bottomNavigationStyle;
+        other.bottomNavigationStyle == bottomNavigationStyle &&
+        other.coverImageResolution == coverImageResolution &&
+        other.asmrDownloadDestinationRoot == asmrDownloadDestinationRoot &&
+        other.asmrDownloadConflictPolicy == asmrDownloadConflictPolicy;
   }
 
   @override
@@ -420,6 +431,9 @@ class SettingsState {
     uiBlurEffectEnabled,
     startupPage,
     bottomNavigationStyle,
+    coverImageResolution,
+    asmrDownloadDestinationRoot,
+    asmrDownloadConflictPolicy,
   );
 }
 

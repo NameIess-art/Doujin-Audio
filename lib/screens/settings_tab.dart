@@ -9,14 +9,15 @@ import 'package:provider/provider.dart' hide Consumer;
 import '../i18n/app_language_provider.dart';
 import '../providers/audio_provider.dart';
 import '../providers/audio_provider_riverpod.dart';
+import '../services/asmr_download_manager.dart';
 import '../services/app_cache_service.dart';
 import '../services/app_log_service.dart';
 import '../services/app_update_service.dart';
 import '../services/audio_state_services.dart';
+import '../services/path_display.dart';
 import '../services/permission_action_controller.dart';
 import '../theme/theme_provider.dart';
 import '../widgets/app_feedback.dart';
-import '../widgets/app_transitions.dart';
 import '../widgets/confirm_action_dialog.dart';
 import '../widgets/mobile_overlay_inset.dart';
 import '../widgets/subtitle_window_visual.dart';
@@ -172,6 +173,19 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
     );
   }
 
+  Future<void> _chooseAsmrDownloadDestination() async {
+    final i18n = context.read<AppLanguageProvider>();
+    final folder = await context
+        .read<AsmrDownloadManager>()
+        .pickDestinationFolder(
+          dialogTitle: i18n.tr('asmr_download_choose_path'),
+        );
+    if (!mounted || folder == null || folder.trim().isEmpty) return;
+    await ref
+        .read(audioProviderFacadeProvider)
+        .setAsmrDownloadDestinationRoot(folder);
+  }
+
   @override
   Widget build(BuildContext context) {
     super.build(context);
@@ -184,6 +198,12 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
       height: 1.25,
       color: cs.onSurfaceVariant,
     );
+    final coverResolutionLabels = <CoverImageResolution, String>{
+      CoverImageResolution.memorySaver: i18n.tr('cover_image_resolution_300'),
+      CoverImageResolution.balanced: i18n.tr('cover_image_resolution_600'),
+      CoverImageResolution.high: i18n.tr('cover_image_resolution_900'),
+      CoverImageResolution.original: i18n.tr('cover_image_resolution_original'),
+    };
 
     return Stack(
       children: [
@@ -437,6 +457,56 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                               ),
                             );
                           },
+                        ),
+                        ListTile(
+                          title: Text(i18n.tr('cover_image_resolution')),
+                          subtitle: Text(
+                            i18n.tr('cover_image_resolution_subtitle'),
+                            style: descStyle,
+                          ),
+                          leading: Container(
+                            width: 38,
+                            height: 38,
+                            decoration: BoxDecoration(
+                              color: cs.secondaryContainer,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Icon(
+                              Icons.photo_size_select_large_rounded,
+                              color: cs.onSecondaryContainer,
+                            ),
+                          ),
+                          trailing: UnifiedDropdownButton<CoverImageResolution>(
+                            value: context
+                                .select<AudioProvider, CoverImageResolution>(
+                                  (provider) => provider.coverImageResolution,
+                                ),
+                            onChanged: (value) {
+                              if (value != null) {
+                                audioProvider.setCoverImageResolution(value);
+                              }
+                            },
+                            items: CoverImageResolution.values
+                                .map(
+                                  (value) =>
+                                      DropdownMenuItem<CoverImageResolution>(
+                                        value: value,
+                                        child: Text(
+                                          coverResolutionLabels[value]!,
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                      ),
+                                )
+                                .toList(),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
                         ),
                         Consumer(
                           builder: (context, ref, _) {
@@ -826,6 +896,141 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                               ),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(14),
+                              ),
+                            );
+                          },
+                        ),
+                      ],
+                    ),
+                    _SectionHeader(title: i18n.tr('section_asmr_download')),
+                    _SettingsGroupCard(
+                      children: [
+                        Consumer(
+                          builder: (context, ref, _) {
+                            final destinationRoot = ref.watch(
+                              settingsStateProvider.select(
+                                (s) =>
+                                    s.valueOrNull?.asmrDownloadDestinationRoot,
+                              ),
+                            );
+                            return ListTile(
+                              onTap: _chooseAsmrDownloadDestination,
+                              title: Text(
+                                i18n.tr('asmr_download_path_setting'),
+                              ),
+                              subtitle: Text(
+                                destinationRoot == null ||
+                                        destinationRoot.trim().isEmpty
+                                    ? i18n.tr('asmr_download_path_not_set')
+                                    : PathDisplay.displayPathFor(
+                                        destinationRoot,
+                                      ),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: descStyle,
+                              ),
+                              leading: Container(
+                                width: 38,
+                                height: 38,
+                                decoration: BoxDecoration(
+                                  color: cs.tertiaryContainer,
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Icon(
+                                  Icons.folder_rounded,
+                                  color: cs.onTertiaryContainer,
+                                ),
+                              ),
+                              trailing: IconButton.filledTonal(
+                                onPressed: _chooseAsmrDownloadDestination,
+                                tooltip: i18n.tr('asmr_download_choose_path'),
+                                icon: const Icon(
+                                  Icons.drive_folder_upload_rounded,
+                                  size: 20,
+                                ),
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                            );
+                          },
+                        ),
+                        Consumer(
+                          builder: (context, ref, _) {
+                            final conflictPolicy = ref.watch(
+                              settingsStateProvider.select(
+                                (s) =>
+                                    s.valueOrNull?.asmrDownloadConflictPolicy ??
+                                    AsmrDownloadConflictPolicy.overwrite,
+                              ),
+                            );
+                            final conflictLabels =
+                                <AsmrDownloadConflictPolicy, String>{
+                                  AsmrDownloadConflictPolicy.overwrite: i18n.tr(
+                                    'asmr_download_conflict_overwrite',
+                                  ),
+                                  AsmrDownloadConflictPolicy.skip: i18n.tr(
+                                    'asmr_download_conflict_skip',
+                                  ),
+                                };
+                            return ListTile(
+                              title: Text(
+                                i18n.tr('asmr_download_conflict_setting'),
+                              ),
+                              subtitle: Text(
+                                i18n.tr(
+                                  'asmr_download_conflict_setting_subtitle',
+                                ),
+                                style: descStyle,
+                              ),
+                              leading: Container(
+                                width: 38,
+                                height: 38,
+                                decoration: BoxDecoration(
+                                  color: cs.tertiaryContainer,
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Icon(
+                                  Icons.rule_folder_rounded,
+                                  color: cs.onTertiaryContainer,
+                                ),
+                              ),
+                              trailing:
+                                  UnifiedDropdownButton<
+                                    AsmrDownloadConflictPolicy
+                                  >(
+                                    value: conflictPolicy,
+                                    onChanged: (value) {
+                                      if (value != null) {
+                                        audioProvider
+                                            .setAsmrDownloadConflictPolicy(
+                                              value,
+                                            );
+                                      }
+                                    },
+                                    items: AsmrDownloadConflictPolicy.values
+                                        .map(
+                                          (value) =>
+                                              DropdownMenuItem<
+                                                AsmrDownloadConflictPolicy
+                                              >(
+                                                value: value,
+                                                child: Text(
+                                                  conflictLabels[value]!,
+                                                  style: const TextStyle(
+                                                    fontWeight: FontWeight.w700,
+                                                  ),
+                                                ),
+                                              ),
+                                        )
+                                        .toList(),
+                                  ),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 2,
                               ),
                             );
                           },

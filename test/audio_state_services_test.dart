@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:nameless_audio/models/asmr_download.dart';
 import 'package:nameless_audio/i18n/app_language_provider.dart';
 import 'package:nameless_audio/models/library_entry.dart';
 import 'package:nameless_audio/models/music_track.dart';
@@ -44,6 +45,8 @@ void main() {
         ..autoCheckUpdates = true
         ..dlsiteMetadataLanguage = AppLanguage.en
         ..cardPositionsLocked = true
+        ..asmrDownloadDestinationRoot = '/downloads/asmr'
+        ..asmrDownloadConflictPolicy = AsmrDownloadConflictPolicy.skip
         ..maxCacheBytes = 500 * 1024 * 1024;
       repository.syncSlice();
 
@@ -90,10 +93,36 @@ void main() {
             )
             .having((state) => state.cardPositionsLocked, 'fixed cards', isTrue)
             .having(
+              (state) => state.asmrDownloadDestinationRoot,
+              'asmr destination',
+              '/downloads/asmr',
+            )
+            .having(
+              (state) => state.asmrDownloadConflictPolicy,
+              'asmr conflict policy',
+              AsmrDownloadConflictPolicy.skip,
+            )
+            .having(
               (state) => state.maxCacheBytes,
               'max cache',
               500 * 1024 * 1024,
             ),
+      );
+    });
+
+    test('ASMR.ONE download conflict policy defaults to overwrite', () {
+      const state = SettingsState();
+      final repository = SettingsRepository();
+      addTearDown(repository.dispose);
+
+      expect(
+        state.asmrDownloadConflictPolicy,
+        AsmrDownloadConflictPolicy.overwrite,
+      );
+      repository.syncSlice();
+      expect(
+        repository.slice.state.asmrDownloadConflictPolicy,
+        AsmrDownloadConflictPolicy.overwrite,
       );
     });
   });

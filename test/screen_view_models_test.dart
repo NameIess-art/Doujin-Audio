@@ -166,9 +166,18 @@ void main() {
       cacheHeight: 640,
       coverGeneration: 4,
     );
+    final nativeSize = buildSessionCoverPrecacheKey(
+      sessionId: 's1',
+      trackPath: '/tracks/a.mp3',
+      cacheWidth: null,
+      cacheHeight: null,
+      coverGeneration: 4,
+    );
 
     expect(first, same);
     expect(nextTrack, isNot(first));
+    expect(nativeSize, contains('|native|native|'));
+    expect(nativeSize, isNot(first));
   });
 
   test('overlay state keeps one visible session in single-thread playback', () {

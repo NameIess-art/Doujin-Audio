@@ -111,6 +111,10 @@ extension AudioProviderPersistence on AudioProvider {
     _settingsRepository.recordPlaybackProgress = true;
     _settingsRepository.blurPlayerBackgroundEnabled = true;
     _settingsRepository.uiBlurEffectEnabled = true;
+    _settingsRepository.coverImageResolution = CoverImageResolution.balanced;
+    _settingsRepository.asmrDownloadDestinationRoot = null;
+    _settingsRepository.asmrDownloadConflictPolicy =
+        AsmrDownloadConflictPolicy.overwrite;
     _dlsiteMetadataLanguage = AppLanguage.ja;
     _settingsRepository.cardInfoFields = CardInfoField.defaults;
     _settingsRepository.cardPositionsLocked = false;
@@ -329,6 +333,23 @@ extension AudioProviderPersistence on AudioProvider {
           map['blurPlayerBackgroundEnabled'] as bool? ?? true;
       _settingsRepository.uiBlurEffectEnabled =
           map['uiBlurEffectEnabled'] as bool? ?? true;
+      _settingsRepository.coverImageResolution = _decodeCoverImageResolution(
+        map['coverImageResolution'],
+      );
+      _settingsRepository.asmrDownloadDestinationRoot =
+          _decodeOptionalTrimmedString(map['asmrDownloadDestinationRoot']) ??
+          _decodeOptionalTrimmedString(
+            await AppPreferences.getString(
+              AsmrDownloadManager.legacyDefaultDestinationKey,
+            ),
+          );
+      if (_settingsRepository.asmrDownloadDestinationRoot != null) {
+        await AppPreferences.remove(
+          AsmrDownloadManager.legacyDefaultDestinationKey,
+        );
+      }
+      _settingsRepository.asmrDownloadConflictPolicy =
+          _decodeAsmrDownloadConflictPolicy(map['asmrDownloadConflictPolicy']);
       _dlsiteMetadataLanguage = _decodeDlsiteMetadataLanguage(
         map['dlsiteMetadataLanguage'],
       );
@@ -364,6 +385,11 @@ extension AudioProviderPersistence on AudioProvider {
         'blurPlayerBackgroundEnabled':
             _settingsRepository.blurPlayerBackgroundEnabled,
         'uiBlurEffectEnabled': _settingsRepository.uiBlurEffectEnabled,
+        'coverImageResolution': _settingsRepository.coverImageResolution.name,
+        'asmrDownloadDestinationRoot':
+            _settingsRepository.asmrDownloadDestinationRoot,
+        'asmrDownloadConflictPolicy':
+            _settingsRepository.asmrDownloadConflictPolicy.name,
         'dlsiteMetadataLanguage': _dlsiteMetadataLanguage.name,
         'cardInfoFields': _settingsRepository.cardInfoFields
             .map((field) => field.name)
@@ -386,6 +412,28 @@ extension AudioProviderPersistence on AudioProvider {
       if (language.name == value) return language;
     }
     return AppLanguage.ja;
+  }
+
+  CoverImageResolution _decodeCoverImageResolution(Object? value) {
+    if (value is! String) return CoverImageResolution.balanced;
+    for (final resolution in CoverImageResolution.values) {
+      if (resolution.name == value) return resolution;
+    }
+    return CoverImageResolution.balanced;
+  }
+
+  AsmrDownloadConflictPolicy _decodeAsmrDownloadConflictPolicy(Object? value) {
+    if (value is! String) return AsmrDownloadConflictPolicy.overwrite;
+    for (final policy in AsmrDownloadConflictPolicy.values) {
+      if (policy.name == value) return policy;
+    }
+    return AsmrDownloadConflictPolicy.overwrite;
+  }
+
+  String? _decodeOptionalTrimmedString(Object? value) {
+    if (value is! String) return null;
+    final trimmed = value.trim();
+    return trimmed.isEmpty ? null : trimmed;
   }
 
   StartupPage _decodeStartupPage(Object? value) {
@@ -674,6 +722,31 @@ extension AudioProviderPersistence on AudioProvider {
   Future<void> setUiBlurEffectEnabled(bool enabled) async {
     if (_settingsRepository.uiBlurEffectEnabled == enabled) return;
     _settingsRepository.uiBlurEffectEnabled = enabled;
+    _notifySettingsChanged();
+    unawaited(_savePlaybackSettings());
+  }
+
+  Future<void> setCoverImageResolution(CoverImageResolution resolution) async {
+    if (_settingsRepository.coverImageResolution == resolution) return;
+    _settingsRepository.coverImageResolution = resolution;
+    _notifySettingsChanged();
+    unawaited(_savePlaybackSettings());
+  }
+
+  Future<void> setAsmrDownloadDestinationRoot(String? destinationRoot) async {
+    final normalized = destinationRoot?.trim();
+    final next = normalized == null || normalized.isEmpty ? null : normalized;
+    if (_settingsRepository.asmrDownloadDestinationRoot == next) return;
+    _settingsRepository.asmrDownloadDestinationRoot = next;
+    _notifySettingsChanged();
+    unawaited(_savePlaybackSettings());
+  }
+
+  Future<void> setAsmrDownloadConflictPolicy(
+    AsmrDownloadConflictPolicy policy,
+  ) async {
+    if (_settingsRepository.asmrDownloadConflictPolicy == policy) return;
+    _settingsRepository.asmrDownloadConflictPolicy = policy;
     _notifySettingsChanged();
     unawaited(_savePlaybackSettings());
   }

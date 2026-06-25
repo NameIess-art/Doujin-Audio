@@ -1,6 +1,5 @@
 part of 'playlist_tab.dart';
 
-const int _kSessionDetailBackgroundCacheWidth = 240;
 const double _kSessionDetailBackgroundBlurSigma = 32;
 
 class SessionDetailPage extends ConsumerStatefulWidget {
@@ -97,17 +96,16 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
     return completer.future;
   }
 
-  void _primeCoverArtwork(MusicTrack? track, Future<String?> coverPathFuture) {
-    final mediaSize = MediaQuery.sizeOf(context);
-    final heroHeight = min(250.0, max(180.0, mediaSize.height * 0.28));
-    final dpr = MediaQuery.devicePixelRatioOf(context);
-    final cacheWidth = (mediaSize.width * dpr).round();
-    final cacheHeight = (heroHeight * dpr).round();
+  void _primeCoverArtwork(
+    MusicTrack? track,
+    Future<String?> coverPathFuture,
+    int? coverCacheWidth,
+  ) {
     final precacheKey = buildSessionCoverPrecacheKey(
       sessionId: _currentSessionId,
       trackPath: _lastTrackPath ?? '',
-      cacheWidth: cacheWidth,
-      cacheHeight: cacheHeight,
+      cacheWidth: coverCacheWidth,
+      cacheHeight: null,
       coverGeneration: _lastCoverGeneration,
     );
     if (_lastPrecachingCoverKey == precacheKey) {
@@ -127,7 +125,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
           try {
             await _precacheImageProvider(
               ResizeImage.resizeIfNeeded(
-                kCoverImageCacheSize,
+                coverCacheWidth,
                 null,
                 FileImage(File(coverPath)),
               ),
@@ -144,12 +142,11 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
   void _primeAdjacentCoverArtworks(
     AudioProvider provider,
     int coverGeneration,
+    int? coverCacheWidth,
   ) {
     final sessions = provider.activeSessions;
     final currentIndex = sessions.indexWhere((s) => s.id == _currentSessionId);
     if (currentIndex < 0) return;
-    final dpr = MediaQuery.devicePixelRatioOf(context);
-    final cacheWidth = (96 * dpr).round();
     final imageConfiguration = createLocalImageConfiguration(context);
 
     for (final index in <int>[currentIndex - 1, currentIndex + 1]) {
@@ -159,8 +156,8 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
       final precacheKey = buildSessionCoverPrecacheKey(
         sessionId: session.id,
         trackPath: trackPath,
-        cacheWidth: cacheWidth,
-        cacheHeight: cacheWidth,
+        cacheWidth: coverCacheWidth,
+        cacheHeight: null,
         coverGeneration: coverGeneration,
       );
       if (!_primedAdjacentCoverKeys.add(precacheKey)) continue;
@@ -175,7 +172,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
             try {
               await _precacheImageProvider(
                 ResizeImage.resizeIfNeeded(
-                  kCoverImageCacheSize,
+                  coverCacheWidth,
                   null,
                   FileImage(File(coverPath)),
                 ),
@@ -285,6 +282,15 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
     final sessionOrderState = uiState.sessionOrder;
     final detailState = uiState.detail;
     final session = provider.sessionById(_currentSessionId);
+    final coverCacheWidth = coverCacheWidthForResolution(
+      ref.watch(
+        settingsStateProvider.select(
+          (s) =>
+              s.valueOrNull?.coverImageResolution ??
+              CoverImageResolution.balanced,
+        ),
+      ),
+    );
 
     if (session == null || detailState == null) {
       final fallbackSessionId = sessionOrderState.sessionIds.isEmpty
@@ -312,8 +318,8 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
     }
     final coverPathFuture = _coverPathFuture!;
     final detailTrack = provider.trackByPath(detailState.trackPath);
-    _primeCoverArtwork(detailTrack, coverPathFuture);
-    _primeAdjacentCoverArtworks(provider, currentCoverGen);
+    _primeCoverArtwork(detailTrack, coverPathFuture, coverCacheWidth);
+    _primeAdjacentCoverArtworks(provider, currentCoverGen, coverCacheWidth);
     final routeAnimation = ModalRoute.of(context)?.animation;
     final animatedListenable = routeAnimation == null
         ? _dismissController
@@ -692,6 +698,15 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
 
     final cs = Theme.of(context).colorScheme;
     final track = provider.trackByPath(session.currentTrackPath);
+    final coverCacheWidth = coverCacheWidthForResolution(
+      ref.watch(
+        settingsStateProvider.select(
+          (s) =>
+              s.valueOrNull?.coverImageResolution ??
+              CoverImageResolution.balanced,
+        ),
+      ),
+    );
     final blurEnabled = ref.watch(
       settingsStateProvider.select(
         (s) => s.valueOrNull?.blurPlayerBackgroundEnabled ?? true,
@@ -803,7 +818,8 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                         imageBuilder: (context, coverPath) {
                           return RetryingFileImage(
                             path: coverPath,
-                            cacheWidth: _kSessionDetailBackgroundCacheWidth,
+                            cacheWidth: coverCacheWidth,
+                            useDefaultCacheWidth: coverCacheWidth != null,
                             fit: BoxFit.cover,
                             color: cs.surface.withValues(alpha: 0.45),
                             colorBlendMode: BlendMode.darken,

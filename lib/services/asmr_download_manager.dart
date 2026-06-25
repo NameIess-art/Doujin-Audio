@@ -9,15 +9,13 @@ import 'package:path_provider/path_provider.dart';
 import 'package:flutter/services.dart';
 
 import '../models/audio_detail.dart';
+import '../models/asmr_download.dart';
 import '../models/asmr_models.dart';
 import 'app_cache_service.dart';
 import 'app_log_service.dart';
-import 'app_preferences.dart';
 import 'file_cache_platform_gateway.dart';
 import 'path_display.dart';
 import 'path_matcher.dart';
-
-enum AsmrDownloadConflictPolicy { skip, overwrite }
 
 enum AsmrDownloadTaskStatus { idle, preparing, downloading, completed, failed }
 
@@ -257,7 +255,7 @@ class AsmrDownloadManager extends ChangeNotifier {
   AsmrDownloadManager({FileCachePlatformGateway? fileCacheGateway})
     : _fileCacheGateway = fileCacheGateway ?? FileCachePlatformGateway.instance;
 
-  static const String _defaultDestinationKey =
+  static const String legacyDefaultDestinationKey =
       'asmr_download_default_destination_v1';
   static const Duration _progressNotifyMinInterval = Duration(
     milliseconds: 120,
@@ -277,7 +275,6 @@ class AsmrDownloadManager extends ChangeNotifier {
 
   static const int _maxConcurrentDownloads = 3;
 
-  String? _defaultDestinationRoot;
   bool _initialized = false;
   Timer? _deferredProgressNotifyTimer;
   DateTime? _lastProgressNotifyAt;
@@ -286,8 +283,6 @@ class AsmrDownloadManager extends ChangeNotifier {
   List<AsmrDownloadTaskSnapshot> get tasks => _tasks.values.toList();
   AsmrDownloadTaskSnapshot? getTask(int workId) => _tasks[workId];
   bool get hasLiveTask => _activeTasks.isNotEmpty || _queue.isNotEmpty;
-
-  String? get defaultDestinationRoot => _defaultDestinationRoot;
 
   AsmrDownloadButtonViewState get buttonViewState {
     if (_tasks.isEmpty) {
@@ -331,12 +326,6 @@ class AsmrDownloadManager extends ChangeNotifier {
 
   Future<void> initialize() async {
     if (_initialized) return;
-    _defaultDestinationRoot = (await AppPreferences.getString(
-      _defaultDestinationKey,
-    ))?.trim();
-    if (_defaultDestinationRoot?.isEmpty ?? true) {
-      _defaultDestinationRoot = null;
-    }
     _initialized = true;
     _notifyTaskChanged();
   }
@@ -364,20 +353,6 @@ class AsmrDownloadManager extends ChangeNotifier {
       }
     }
     return null;
-  }
-
-  Future<void> saveDefaultDestination(String folderPath) async {
-    final normalized = folderPath.trim();
-    if (normalized.isEmpty) return;
-    _defaultDestinationRoot = normalized;
-    await AppPreferences.setString(_defaultDestinationKey, normalized);
-    _notifyTaskChanged();
-  }
-
-  Future<void> clearDefaultDestination() async {
-    _defaultDestinationRoot = null;
-    await AppPreferences.remove(_defaultDestinationKey);
-    _notifyTaskChanged();
   }
 
   Future<bool> destinationExists(String folderPath) async {

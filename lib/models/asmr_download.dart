@@ -1,0 +1,1 @@
+enum AsmrDownloadConflictPolicy { skip, overwrite }

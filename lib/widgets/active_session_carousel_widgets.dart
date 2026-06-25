@@ -18,10 +18,12 @@ class _ActiveSessionCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    
+
     final style = ref.watch(
       settingsStateProvider.select(
-        (s) => s.valueOrNull?.bottomNavigationStyle ?? BottomNavigationStyle.capsule,
+        (s) =>
+            s.valueOrNull?.bottomNavigationStyle ??
+            BottomNavigationStyle.capsule,
       ),
     );
     final isBar = style == BottomNavigationStyle.bar;
@@ -75,11 +77,15 @@ class _ActiveSessionCard extends ConsumerWidget {
             border: isBar
                 ? Border(
                     top: BorderSide(
-                      color: cs.outlineVariant.withValues(alpha: isDark ? 0.24 : 0.42),
+                      color: cs.outlineVariant.withValues(
+                        alpha: isDark ? 0.24 : 0.42,
+                      ),
                     ),
                   )
                 : Border.all(
-                    color: cs.outlineVariant.withValues(alpha: isDark ? 0.24 : 0.42),
+                    color: cs.outlineVariant.withValues(
+                      alpha: isDark ? 0.24 : 0.42,
+                    ),
                   ),
             boxShadow: (isTinyWindow || isBar)
                 ? null
@@ -404,7 +410,8 @@ class _ActiveSessionTitleSubtitleState
                 widget.displayName,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                style:
+                    Theme.of(context).textTheme.titleSmall?.copyWith(
                       fontWeight: FontWeight.w800,
                       fontSize: 14,
                       height: 1.08,
@@ -413,7 +420,8 @@ class _ActiveSessionTitleSubtitleState
               )
             : LibraryLikeMarqueeLine(
                 text: widget.displayName,
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                style:
+                    Theme.of(context).textTheme.titleSmall?.copyWith(
                       fontWeight: FontWeight.w800,
                       fontSize: 14,
                       height: 1.08,
@@ -508,50 +516,50 @@ class _ActiveSessionProgressStripState
             child: SizedBox(
               height: 3,
               child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      final barWidth = constraints.maxWidth;
-                      final fillWidth = (barWidth * fraction.clamp(0.0, 1.0))
-                          .roundToDouble();
-                      return Stack(
-                        children: [
-                          Positioned.fill(
-                            child: DecoratedBox(
-                              decoration: BoxDecoration(
-                                color: cs.surfaceContainerHighest.withValues(
-                                  alpha: 0.6,
-                                ),
-                              ),
+                builder: (context, constraints) {
+                  final barWidth = constraints.maxWidth;
+                  final fillWidth = (barWidth * fraction.clamp(0.0, 1.0))
+                      .roundToDouble();
+                  return Stack(
+                    children: [
+                      Positioned.fill(
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: cs.surfaceContainerHighest.withValues(
+                              alpha: 0.6,
                             ),
                           ),
-                          Positioned(
-                            left: 0,
-                            top: 0,
-                            bottom: 0,
-                            width: fillWidth,
-                            child: DecoratedBox(
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  colors: [
-                                    cs.primary,
-                                    cs.primary.withValues(alpha: 0.82),
-                                  ],
-                                ),
-                                borderRadius: const BorderRadius.only(
-                                  topRight: Radius.circular(3),
-                                  bottomRight: Radius.circular(3),
-                                ),
-                              ),
+                        ),
+                      ),
+                      Positioned(
+                        left: 0,
+                        top: 0,
+                        bottom: 0,
+                        width: fillWidth,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [
+                                cs.primary,
+                                cs.primary.withValues(alpha: 0.82),
+                              ],
+                            ),
+                            borderRadius: const BorderRadius.only(
+                              topRight: Radius.circular(3),
+                              bottomRight: Radius.circular(3),
                             ),
                           ),
-                        ],
-                      );
-                    },
-                  ),
-                ),
+                        ),
+                      ),
+                    ],
+                  );
+                },
               ),
-            );
-          },
+            ),
+          ),
         );
+      },
+    );
   }
 }
 
@@ -570,6 +578,15 @@ class _ActiveSessionCover extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final provider = ref.read(audioProviderFacadeProvider);
     final cs = Theme.of(context).colorScheme;
+    final coverCacheWidth = coverCacheWidthForResolution(
+      ref.watch(
+        settingsStateProvider.select(
+          (s) =>
+              s.valueOrNull?.coverImageResolution ??
+              CoverImageResolution.balanced,
+        ),
+      ),
+    );
 
     Widget fallback({bool hideIcon = false}) {
       return CoverFallbackArtwork(
@@ -602,7 +619,8 @@ class _ActiveSessionCover extends ConsumerWidget {
           imageBuilder: (context, coverPath) {
             return RetryingFileImage(
               path: coverPath,
-              cacheWidth: coverCacheWidthForDisplay(context, 64),
+              cacheWidth: coverCacheWidth,
+              useDefaultCacheWidth: coverCacheWidth != null,
               fit: BoxFit.cover,
               fallbackBuilder: (_) => fallback(),
             );

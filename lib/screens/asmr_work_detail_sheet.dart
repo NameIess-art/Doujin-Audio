@@ -6,7 +6,9 @@ import 'package:provider/provider.dart';
 
 import '../i18n/app_language_provider.dart';
 import '../models/asmr_models.dart';
+import '../providers/audio_provider.dart';
 import '../services/asmr_library_controller.dart';
+import '../services/audio_state_services.dart';
 import '../widgets/app_feedback.dart';
 import '../widgets/async_cover_image.dart';
 
@@ -216,6 +218,11 @@ class _AsmrDetailHero extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
     final i18n = context.watch<AppLanguageProvider>();
+    final coverCacheWidth = coverCacheWidthForResolution(
+      context.select<AudioProvider, CoverImageResolution>(
+        (provider) => provider.coverImageResolution,
+      ),
+    );
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -229,9 +236,8 @@ class _AsmrDetailHero extends StatelessWidget {
                   ? work.mainCoverUrl
                   : work.coverUrl,
               fit: BoxFit.cover,
-              cacheWidth:
-                  (110 * MediaQuery.devicePixelRatioOf(context).clamp(1.0, 1.5))
-                      .round(),
+              cacheWidth: coverCacheWidth,
+              useDefaultCacheWidth: coverCacheWidth != null,
               loadingBuilder: (context, child, loadingProgress) =>
                   loadingProgress == null
                   ? child

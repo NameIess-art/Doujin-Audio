@@ -17,7 +17,15 @@ class _SessionHeroArtwork extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final provider = ref.read(audioProviderFacadeProvider);
     final cs = Theme.of(context).colorScheme;
-    final dpr = MediaQuery.devicePixelRatioOf(context);
+    final coverCacheWidth = coverCacheWidthForResolution(
+      ref.watch(
+        settingsStateProvider.select(
+          (s) =>
+              s.valueOrNull?.coverImageResolution ??
+              CoverImageResolution.balanced,
+        ),
+      ),
+    );
 
     Widget fallback({bool hideIcon = false}) {
       return CoverFallbackArtwork(
@@ -30,7 +38,6 @@ class _SessionHeroArtwork extends ConsumerWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final displayWidth = constraints.maxWidth;
-        final cacheW = (displayWidth * dpr).round();
 
         return ConstrainedBox(
           constraints: BoxConstraints(maxHeight: height),
@@ -80,8 +87,8 @@ class _SessionHeroArtwork extends ConsumerWidget {
                       return RepaintBoundary(
                         child: RetryingFileImage(
                           path: coverPath,
-                          cacheWidth: (cacheW * dpr.clamp(1.0, 1.5) / dpr)
-                              .round(),
+                          cacheWidth: coverCacheWidth,
+                          useDefaultCacheWidth: coverCacheWidth != null,
                           fit: BoxFit.cover,
                           fallbackBuilder: (_) => fallback(),
                         ),
@@ -120,6 +127,9 @@ class _SessionCoverThumbnail extends ConsumerWidget {
     required this.coverPathFuture,
   });
 
+  static const double _width = 96;
+  static const double _height = 72;
+
   final String sessionId;
   final MusicTrack? track;
   final Future<String?> coverPathFuture;
@@ -128,6 +138,15 @@ class _SessionCoverThumbnail extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final provider = ref.read(audioProviderFacadeProvider);
     final cs = Theme.of(context).colorScheme;
+    final coverCacheWidth = coverCacheWidthForResolution(
+      ref.watch(
+        settingsStateProvider.select(
+          (s) =>
+              s.valueOrNull?.coverImageResolution ??
+              CoverImageResolution.balanced,
+        ),
+      ),
+    );
 
     Widget fallback({bool hideIcon = false}) {
       return CoverFallbackArtwork(
@@ -139,8 +158,8 @@ class _SessionCoverThumbnail extends ConsumerWidget {
     }
 
     return SizedBox(
-      width: 96,
-      height: 72,
+      width: _width,
+      height: _height,
       child: Material(
         type: MaterialType.transparency,
         borderRadius: BorderRadius.circular(LibraryLikeCardMetrics.coverRadius),
@@ -156,10 +175,10 @@ class _SessionCoverThumbnail extends ConsumerWidget {
             color: cs.onPrimaryContainer.withValues(alpha: 0.75),
           ),
           imageBuilder: (context, coverPath) {
-            final dpr = MediaQuery.devicePixelRatioOf(context);
             return RetryingFileImage(
               path: coverPath,
-              cacheWidth: (96 * dpr.clamp(1.0, 1.5)).round(),
+              cacheWidth: coverCacheWidth,
+              useDefaultCacheWidth: coverCacheWidth != null,
               fit: BoxFit.cover,
               fallbackBuilder: (_) => fallback(),
             );

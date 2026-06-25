@@ -11,6 +11,11 @@ class _AsmrWorkCover extends StatelessWidget {
     final width = this.width;
     final height = width * 0.8;
     final url = this.url.trim();
+    final coverCacheWidth = coverCacheWidthForResolution(
+      context.select<AudioProvider, CoverImageResolution>(
+        (provider) => provider.coverImageResolution,
+      ),
+    );
     return ClipRRect(
       clipBehavior: Clip.hardEdge,
       borderRadius: BorderRadius.circular(LibraryLikeCardMetrics.coverRadius),
@@ -27,11 +32,8 @@ class _AsmrWorkCover extends StatelessWidget {
             : RetryingNetworkImage(
                 url: url,
                 fit: BoxFit.cover,
-                cacheWidth: coverCacheWidthForDisplay(
-                  context,
-                  width,
-                  maxMobileDpr: 1.5,
-                ),
+                cacheWidth: coverCacheWidth,
+                useDefaultCacheWidth: coverCacheWidth != null,
                 loadingBuilder: (context, child, loadingProgress) {
                   if (loadingProgress == null) {
                     return child;

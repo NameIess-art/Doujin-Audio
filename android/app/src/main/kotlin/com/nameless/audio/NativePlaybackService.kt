@@ -501,6 +501,7 @@ class NativePlaybackService : MediaSessionService() {
         pendingAudioFocusResumeSessionIds.remove(sessionId)
         notificationsDismissed = false
         playbackSuspended = false
+        session.applyFadeMultiplier(1f)
         focusSession(sessionId)
         session.ensurePlayer().play()
         evictPlayersIfNeeded()
@@ -571,6 +572,7 @@ class NativePlaybackService : MediaSessionService() {
         if (player.playWhenReady) {
             player.pause()
         } else {
+            session.applyFadeMultiplier(1f)
             player.play()
         }
         evictPlayersIfNeeded()
@@ -823,7 +825,10 @@ class NativePlaybackService : MediaSessionService() {
         transientAudioFocusLossActive = false
         pausedSessionIds.forEach { sessionId ->
             pendingAudioFocusResumeSessionIds.remove(sessionId)
-            sessions[sessionId]?.playerOrNull()?.pause()
+            sessions[sessionId]?.let { session ->
+                session.playerOrNull()?.pause()
+                session.applyFadeMultiplier(1f)
+            }
         }
         publishAllSessionStates()
         persistSessionStateNow()
@@ -840,6 +845,7 @@ class NativePlaybackService : MediaSessionService() {
         sessionIds.forEach { sessionId ->
             pendingAudioFocusResumeSessionIds.remove(sessionId)
             val session = sessions[sessionId] ?: return@forEach
+            session.applyFadeMultiplier(1f)
             focusSession(sessionId)
             session.ensurePlayer().play()
             resumedSessionIds += sessionId

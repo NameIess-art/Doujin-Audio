@@ -120,10 +120,13 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
     ref.watch(libraryCategoryRevisionProvider);
     final categorySnapshot = provider.audioLibraryCategorySnapshotSync;
     final cs = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final isRootFolder = widget.folder.depth == 0;
     final hasChildren = widget.folder.children.isNotEmpty;
     final cardShape = RoundedRectangleBorder(
-      side: BorderSide(color: cs.outlineVariant),
+      side: BorderSide(
+        color: cs.outlineVariant.withValues(alpha: isDark ? 0.26 : 0.42),
+      ),
       borderRadius: BorderRadius.circular(LibraryLikeCardMetrics.cardRadius),
     );
     final rootDetail = isRootFolder
@@ -295,7 +298,7 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
         margin: EdgeInsets.zero,
         clipBehavior: Clip.antiAlias,
         shape: cardShape,
-        color: cs.surface,
+        color: cs.surfaceContainerLow,
         child: content,
       ),
     );
@@ -345,13 +348,16 @@ class _TrackNodeWidget extends ConsumerWidget {
     ref.watch(libraryCategoryRevisionProvider);
     final categorySnapshot = provider.audioLibraryCategorySnapshotSync;
     final cs = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final track = trackNode.track;
     final isAlreadyPlaying = ref
         .watch(activeTrackPathsProvider)
         .contains(track.path);
     final cardShape = RoundedRectangleBorder(
       side: track.isSingle
-          ? BorderSide(color: cs.outlineVariant)
+          ? BorderSide(
+              color: cs.outlineVariant.withValues(alpha: isDark ? 0.26 : 0.42),
+            )
           : BorderSide.none,
       borderRadius: BorderRadius.circular(14),
     );
@@ -385,9 +391,9 @@ class _TrackNodeWidget extends ConsumerWidget {
           color: (isAlreadyPlaying && !track.isVideo)
               ? Color.alphaBlend(
                   cs.primaryContainer.withValues(alpha: 0.40),
-                  cs.surface,
+                  cs.surfaceContainerLow,
                 )
-              : cs.surface,
+              : cs.surfaceContainerLow,
           child: track.isVideo
               ? ListTile(
                   contentPadding: const EdgeInsets.fromLTRB(12, 2, 12, 2),

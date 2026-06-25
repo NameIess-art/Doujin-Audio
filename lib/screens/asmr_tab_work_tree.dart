@@ -52,10 +52,9 @@ class _AsmrWorkTreeCardState extends State<_AsmrWorkTreeCard> {
   }
 
   Future<void> _openDownloadPage(BuildContext context) async {
-    await Navigator.of(context).push(
-      buildAppPageRoute<void>(child: AsmrDownloadPage(work: widget.work),
-      ),
-    );
+    await Navigator.of(
+      context,
+    ).push(buildAppPageRoute<void>(child: AsmrDownloadPage(work: widget.work)));
   }
 
   @override
@@ -72,7 +71,9 @@ class _AsmrWorkTreeCardState extends State<_AsmrWorkTreeCard> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
     final cardShape = RoundedRectangleBorder(
-      side: BorderSide(color: cs.outlineVariant),
+      side: BorderSide(
+        color: cs.outlineVariant.withValues(alpha: isDark ? 0.26 : 0.42),
+      ),
       borderRadius: BorderRadius.circular(LibraryLikeCardMetrics.cardRadius),
     );
 
@@ -107,7 +108,7 @@ class _AsmrWorkTreeCardState extends State<_AsmrWorkTreeCard> {
         margin: EdgeInsets.zero,
         clipBehavior: Clip.hardEdge,
         shape: cardShape,
-        color: cs.surface,
+        color: cs.surfaceContainerLow,
         child: Theme(
           data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
           child: ExpansionTile(
@@ -164,9 +165,9 @@ class _AsmrWorkTreeCardState extends State<_AsmrWorkTreeCard> {
                   child: Text(
                     i18n.tr('asmr_empty_track_tree'),
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: cs.onSurfaceVariant,
-                          fontWeight: FontWeight.w600,
-                        ),
+                      color: cs.onSurfaceVariant,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 )
               else

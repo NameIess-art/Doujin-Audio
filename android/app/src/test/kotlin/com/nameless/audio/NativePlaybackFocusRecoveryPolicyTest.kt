@@ -113,4 +113,54 @@ class NativePlaybackFocusRecoveryPolicyTest {
             )
         )
     }
+
+    @Test
+    fun `attempts sticky restore whenever service has no sessions and restore not yet attempted`() {
+        assertTrue(
+            shouldAttemptStickyPlaybackRestore(
+                hasSessions = false,
+                attemptedStickyPlaybackRestore = false
+            )
+        )
+        assertFalse(
+            shouldAttemptStickyPlaybackRestore(
+                hasSessions = true,
+                attemptedStickyPlaybackRestore = false
+            )
+        )
+        assertFalse(
+            shouldAttemptStickyPlaybackRestore(
+                hasSessions = false,
+                attemptedStickyPlaybackRestore = true
+            )
+        )
+    }
+
+    @Test
+    fun `keeps intended playback alive unless ended or failed`() {
+        assertTrue(
+            shouldKeepAliveForIntendedPlayback(
+                playbackState = Player.STATE_READY,
+                hasPlayerError = false
+            )
+        )
+        assertTrue(
+            shouldRecoverIntendedPlayback(
+                playbackState = Player.STATE_IDLE,
+                hasPlayerError = false
+            )
+        )
+        assertFalse(
+            shouldKeepAliveForIntendedPlayback(
+                playbackState = Player.STATE_ENDED,
+                hasPlayerError = false
+            )
+        )
+        assertFalse(
+            shouldRecoverIntendedPlayback(
+                playbackState = Player.STATE_READY,
+                hasPlayerError = true
+            )
+        )
+    }
 }

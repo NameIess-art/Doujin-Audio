@@ -222,6 +222,7 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage>
   Set<String> _diskAudioFilePathSet = const <String>{};
   Set<String> _diskLiveFolderPaths = const <String>{};
   bool _diskSnapshotLoaded = false;
+  bool _initialLoadPending = true;
   Timer? _searchDebounceTimer;
   String _searchQuery = '';
   final Map<String, _LibraryEditFolderTreeNode> _folderStructureSnapshots =
@@ -248,13 +249,19 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage>
 
   Future<void> _loadDiskLibrarySnapshot() async {
     if (PathMatcher.isContentUri(widget.libraryPath)) {
-      if (await _loadNativeLibrarySnapshot()) return;
+      if (await _loadNativeLibrarySnapshot()) {
+        if (mounted && _initialLoadPending) {
+          setState(() => _initialLoadPending = false);
+        }
+        return;
+      }
       if (!mounted) return;
       setState(() {
         _diskAudioFilePaths = const <String>[];
         _diskAudioFilePathSet = const <String>{};
         _diskLiveFolderPaths = const <String>{};
         _diskSnapshotLoaded = false;
+        _initialLoadPending = false;
       });
       return;
     }
@@ -276,6 +283,7 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage>
         _diskAudioFilePathSet = const <String>{};
         _diskLiveFolderPaths = const <String>{};
         _diskSnapshotLoaded = true;
+        _initialLoadPending = false;
       });
       return;
     }
@@ -335,6 +343,7 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage>
       _diskAudioFilePathSet = audioFiles;
       _diskLiveFolderPaths = liveFolderPaths;
       _diskSnapshotLoaded = true;
+      _initialLoadPending = false;
     });
   }
 
@@ -412,6 +421,7 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage>
       _diskAudioFilePathSet = audioFiles;
       _diskLiveFolderPaths = liveFolderPaths;
       _diskSnapshotLoaded = true;
+      _initialLoadPending = false;
     });
     return true;
   }
@@ -426,8 +436,7 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage>
     final i18n = context.watch<AppLanguageProvider>();
     final libraryService = ref.read(libraryServiceProvider);
     final cs = Theme.of(context).colorScheme;
-    final localSnapshotPending =
-        !PathMatcher.isContentUri(widget.libraryPath) && !_diskSnapshotLoaded;
+    final localSnapshotPending = _initialLoadPending;
     final excludedTracks = localSnapshotPending
         ? const <String>[]
         : libraryService

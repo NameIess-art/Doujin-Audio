@@ -266,6 +266,11 @@ class _QueueTrackCoverState extends State<_QueueTrackCover> {
   @override
   Widget build(BuildContext context) {
     final track = widget.track;
+    final coverCacheWidth = coverCacheWidthForResolution(
+      context.select<AudioProvider, CoverImageResolution>(
+        (provider) => provider.coverImageResolution,
+      ),
+    );
     final initialPath =
         track.manualCoverPath ??
         track.coverCachePath ??
@@ -277,6 +282,8 @@ class _QueueTrackCoverState extends State<_QueueTrackCover> {
       imageBuilder: (context, path) => RetryingFileImage(
         path: path,
         fit: BoxFit.cover,
+        cacheWidth: coverCacheWidth,
+        useDefaultCacheWidth: coverCacheWidth != null,
         fallbackBuilder: (_) => CoverFallbackArtwork(seed: track.displayName),
       ),
       fallbackBuilder: (_) => CoverFallbackArtwork(seed: track.displayName),
@@ -453,7 +460,8 @@ class PlaybackQueueEditPage extends ConsumerWidget {
                     Icons.queue_music_rounded,
                     i18n.tr('edit_queue_audio'),
                     () => Navigator.of(context).push(
-                      buildAppPageRoute<void>(child: PlaybackQueueAudioEditPage(sessionId: sessionId),
+                      buildAppPageRoute<void>(
+                        child: PlaybackQueueAudioEditPage(sessionId: sessionId),
                       ),
                     ),
                   ),

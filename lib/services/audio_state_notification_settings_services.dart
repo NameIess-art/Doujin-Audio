@@ -207,6 +207,10 @@ class SettingsRepository {
   bool uiBlurEffectEnabled = true;
   StartupPage startupPage = StartupPage.library;
   BottomNavigationStyle bottomNavigationStyle = BottomNavigationStyle.capsule;
+  CoverImageResolution coverImageResolution = CoverImageResolution.balanced;
+  String? asmrDownloadDestinationRoot;
+  AsmrDownloadConflictPolicy asmrDownloadConflictPolicy =
+      AsmrDownloadConflictPolicy.overwrite;
   final AudioStateSlice<SettingsState> slice = AudioStateSlice<SettingsState>(
     const SettingsState(),
   );
@@ -231,6 +235,9 @@ class SettingsRepository {
         uiBlurEffectEnabled: uiBlurEffectEnabled,
         startupPage: startupPage,
         bottomNavigationStyle: bottomNavigationStyle,
+        coverImageResolution: coverImageResolution,
+        asmrDownloadDestinationRoot: asmrDownloadDestinationRoot,
+        asmrDownloadConflictPolicy: asmrDownloadConflictPolicy,
       ),
     );
   }

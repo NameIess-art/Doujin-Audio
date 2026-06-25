@@ -33,6 +33,12 @@ extension AudioProviderState on AudioProvider {
   bool get showPlaybackCard => _showPlaybackCard;
   StartupPage get startupPage => _startupPage;
   BottomNavigationStyle get bottomNavigationStyle => _bottomNavigationStyle;
+  CoverImageResolution get coverImageResolution =>
+      _settingsRepository.coverImageResolution;
+  String? get asmrDownloadDestinationRoot =>
+      _settingsRepository.asmrDownloadDestinationRoot;
+  AsmrDownloadConflictPolicy get asmrDownloadConflictPolicy =>
+      _settingsRepository.asmrDownloadConflictPolicy;
   bool get autoPlayAddedSessions => _autoPlayAddedSessions;
   bool get recordPlaybackProgress => _settingsRepository.recordPlaybackProgress;
   AppLanguage get dlsiteMetadataLanguage => _dlsiteMetadataLanguage;

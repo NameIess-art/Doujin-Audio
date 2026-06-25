@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../platform/app_platform.dart';
@@ -58,6 +60,10 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
   static const double _rejectSlopeRatio = 1.35;
   static const double _minOpenVelocity = 560;
   static const double _minOpenDistance = 44;
+  static const double _windowsContextMenuItemHeight = 42;
+  static const EdgeInsets _windowsContextMenuItemPadding = EdgeInsets.symmetric(
+    horizontal: 18,
+  );
 
   double _revealedWidth = 0;
   double _dragStartRevealedWidth = 0;
@@ -65,6 +71,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
   double _dragDy = 0;
   bool _dragAccepted = false;
   bool _dragRejected = false;
+  bool _contextMenuOpen = false;
 
   bool get _hasSecondaryAction => widget.onSecondaryAction != null;
   bool get _hasTertiaryAction => widget.onTertiaryAction != null;
@@ -77,15 +84,19 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
       : 72;
   bool get _isOpen => _revealedWidth > (_actionWidth * 0.5);
 
-  void _showWindowsContextMenu(BuildContext context, Offset position) {
+  Future<void> _showWindowsContextMenu(
+    BuildContext context,
+    Offset position,
+  ) async {
+    if (_contextMenuOpen) return;
     final cs = Theme.of(context).colorScheme;
     final items = <PopupMenuEntry<VoidCallback>>[];
 
     if (_hasTertiaryAction) {
       items.add(
         PopupMenuItem(
-          height: 28,
-          padding: const EdgeInsets.symmetric(horizontal: 16),
+          height: _windowsContextMenuItemHeight,
+          padding: _windowsContextMenuItemPadding,
           value: widget.onTertiaryAction,
           child: Row(
             children: [
@@ -104,8 +115,8 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
     if (_hasSecondaryAction) {
       items.add(
         PopupMenuItem(
-          height: 28,
-          padding: const EdgeInsets.symmetric(horizontal: 16),
+          height: _windowsContextMenuItemHeight,
+          padding: _windowsContextMenuItemPadding,
           value: widget.onSecondaryAction,
           child: Row(
             children: [
@@ -123,8 +134,8 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
     }
     items.add(
       PopupMenuItem(
-        height: 28,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
+        height: _windowsContextMenuItemHeight,
+        padding: _windowsContextMenuItemPadding,
         value: widget.onRemove,
         child: Row(
           children: [
@@ -146,31 +157,45 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
       ),
     );
 
-    showMenu<VoidCallback>(
-      context: context,
-      position: RelativeRect.fromLTRB(
-        position.dx,
-        position.dy,
-        position.dx,
-        position.dy,
-      ),
-      items: items,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      elevation: 4,
-    ).then((action) {
-      if (action != null) {
-        if (action == widget.onRemove) {
-          AppInteractionFeedback.trigger(
-            widget.destructive
-                ? AppInteractionFeedbackType.destructive
-                : AppInteractionFeedbackType.confirmation,
-          );
-        } else {
-          AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
-        }
-        action();
-      }
+    setState(() {
+      _contextMenuOpen = true;
     });
+    VoidCallback? action;
+    try {
+      action = await showMenu<VoidCallback>(
+        context: context,
+        position: RelativeRect.fromLTRB(
+          position.dx,
+          position.dy,
+          position.dx,
+          position.dy,
+        ),
+        items: items,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        elevation: 4,
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _contextMenuOpen = false;
+        });
+      }
+    }
+    if (action == null) return;
+    if (action == widget.onRemove) {
+      unawaited(
+        AppInteractionFeedback.trigger(
+          widget.destructive
+              ? AppInteractionFeedbackType.destructive
+              : AppInteractionFeedbackType.confirmation,
+        ),
+      );
+    } else {
+      unawaited(
+        AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection),
+      );
+    }
+    action();
   }
 
   @override
@@ -328,9 +353,12 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
             onHorizontalDragEnd: AppPlatform.isWindows
                 ? null
                 : _handleHorizontalDragEnd,
-            onSecondaryTapDown: AppPlatform.isWindows
-                ? (details) =>
-                      _showWindowsContextMenu(context, details.globalPosition)
+            onSecondaryTapUp: AppPlatform.isWindows
+                ? (details) {
+                    unawaited(
+                      _showWindowsContextMenu(context, details.globalPosition),
+                    );
+                  }
                 : null,
             onSecondaryTap: AppPlatform.isWindows
                 ? null
@@ -350,299 +378,311 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                 if (!AppPlatform.isWindows)
                   Positioned.fill(
                     child: DecoratedBox(
-                    decoration: ShapeDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [paneStartColor, paneEndColor],
-                      ),
-                      shape: widget.shape,
-                    ),
-                    child: Stack(
-                      children: [
-                        Align(
-                          alignment: Alignment.centerLeft,
-                          child: Padding(
-                            padding: EdgeInsets.only(
-                              left: 18,
-                              right: showVerticalActions
-                                  ? _actionWidth + 26
-                                  : _hasTertiaryAction
-                                  ? 216
-                                  : _hasSecondaryAction
-                                  ? 158
-                                  : 86,
-                            ),
-                            child: revealProgress == 0
-                                ? const SizedBox.shrink()
-                                : AnimatedOpacity(
-                                    opacity: 0.24 + (revealProgress * 0.76),
-                                    duration: const Duration(milliseconds: 160),
-                                    curve: Curves.easeOutCubic,
-                                    child: LayoutBuilder(
-                                      builder: (context, constraints) {
-                                        final compact =
-                                            constraints.maxHeight < 64;
-                                        return Column(
-                                          mainAxisSize: MainAxisSize.min,
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Container(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                    horizontal: 10,
-                                                    vertical: 5,
-                                                  ),
-                                              decoration: BoxDecoration(
-                                                color: accentColor.withValues(
-                                                  alpha: 0.12,
-                                                ),
-                                                borderRadius:
-                                                    BorderRadius.circular(999),
-                                                border: Border.all(
-                                                  color: accentColor.withValues(
-                                                    alpha: 0.18,
-                                                  ),
-                                                ),
-                                              ),
-                                              child: Row(
-                                                mainAxisSize: MainAxisSize.min,
-                                                children: [
-                                                  Icon(
-                                                    Icons.swipe_left_rounded,
-                                                    size: 14,
-                                                    color: accentColor,
-                                                  ),
-                                                  const SizedBox(width: 4),
-                                                  Text(
-                                                    actionLabel,
-                                                    style: Theme.of(context)
-                                                        .textTheme
-                                                        .labelMedium
-                                                        ?.copyWith(
-                                                          color: accentColor,
-                                                          fontWeight:
-                                                              FontWeight.w800,
-                                                        ),
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                            if (!compact) ...[
-                                              const SizedBox(height: 8),
-                                              Text(
-                                                actionTooltip,
-                                                maxLines: 2,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: Theme.of(context)
-                                                    .textTheme
-                                                    .bodySmall
-                                                    ?.copyWith(
-                                                      color:
-                                                          accentContainerOnColor,
-                                                      fontWeight:
-                                                          FontWeight.w600,
-                                                    ),
-                                              ),
-                                            ],
-                                          ],
-                                        );
-                                      },
-                                    ),
-                                  ),
-                          ),
+                      decoration: ShapeDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [paneStartColor, paneEndColor],
                         ),
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: Padding(
-                            padding: EdgeInsets.only(
-                              top: showVerticalActions ? 10 : 0,
-                              right: showVerticalActions ? 10 : 14,
-                              bottom: showVerticalActions ? 10 : 0,
-                            ),
-                            child: AnimatedScale(
-                              scale: 0.92 + (revealProgress * 0.08),
-                              duration: const Duration(milliseconds: 180),
-                              curve: Curves.easeOutBack,
-                              child: showVerticalActions
-                                  ? SizedBox(
-                                      width: _actionWidth - 20,
+                        shape: widget.shape,
+                      ),
+                      child: Stack(
+                        children: [
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: Padding(
+                              padding: EdgeInsets.only(
+                                left: 18,
+                                right: showVerticalActions
+                                    ? _actionWidth + 26
+                                    : _hasTertiaryAction
+                                    ? 216
+                                    : _hasSecondaryAction
+                                    ? 158
+                                    : 86,
+                              ),
+                              child: revealProgress == 0
+                                  ? const SizedBox.shrink()
+                                  : AnimatedOpacity(
+                                      opacity: 0.24 + (revealProgress * 0.76),
+                                      duration: const Duration(
+                                        milliseconds: 160,
+                                      ),
+                                      curve: Curves.easeOutCubic,
                                       child: LayoutBuilder(
                                         builder: (context, constraints) {
-                                          final gap = _actionCount > 1
-                                              ? 6.0
-                                              : 0.0;
-                                          final availableHeight =
-                                              constraints.maxHeight;
-                                          final buttonSize =
-                                              ((availableHeight -
-                                                          gap *
-                                                              (_actionCount -
-                                                                  1)) /
-                                                      _actionCount)
-                                                  .clamp(34.0, 48.0);
+                                          final compact =
+                                              constraints.maxHeight < 64;
                                           return Column(
-                                            mainAxisAlignment:
-                                                MainAxisAlignment.center,
+                                            mainAxisSize: MainAxisSize.min,
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
                                             children: [
-                                              if (_hasTertiaryAction) ...[
-                                                _SwipeRevealActionButton(
-                                                  onPressed: () {
-                                                    AppInteractionFeedback.trigger(
-                                                      AppInteractionFeedbackType
-                                                          .selection,
-                                                    );
-                                                    _closePane();
-                                                    widget.onTertiaryAction
-                                                        ?.call();
-                                                  },
-                                                  backgroundColor:
-                                                      cs.secondaryContainer,
-                                                  foregroundColor:
-                                                      cs.onSecondaryContainer,
-                                                  tooltip:
-                                                      widget
-                                                          .tertiaryActionTooltip ??
-                                                      widget
-                                                          .tertiaryActionLabel,
-                                                  icon:
-                                                      widget.tertiaryActionIcon,
-                                                  tonal: true,
-                                                  size: buttonSize,
+                                              Container(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 10,
+                                                      vertical: 5,
+                                                    ),
+                                                decoration: BoxDecoration(
+                                                  color: accentColor.withValues(
+                                                    alpha: 0.12,
+                                                  ),
+                                                  borderRadius:
+                                                      BorderRadius.circular(
+                                                        999,
+                                                      ),
+                                                  border: Border.all(
+                                                    color: accentColor
+                                                        .withValues(
+                                                          alpha: 0.18,
+                                                        ),
+                                                  ),
                                                 ),
-                                                SizedBox(height: gap),
-                                              ],
-                                              if (_hasSecondaryAction) ...[
-                                                _SwipeRevealActionButton(
-                                                  onPressed: () {
-                                                    AppInteractionFeedback.trigger(
-                                                      AppInteractionFeedbackType
-                                                          .selection,
-                                                    );
-                                                    _closePane();
-                                                    widget.onSecondaryAction
-                                                        ?.call();
-                                                  },
-                                                  backgroundColor:
-                                                      cs.primaryContainer,
-                                                  foregroundColor:
-                                                      cs.onPrimaryContainer,
-                                                  tooltip:
-                                                      widget
-                                                          .secondaryActionTooltip ??
-                                                      widget
-                                                          .secondaryActionLabel,
-                                                  icon: widget
-                                                      .secondaryActionIcon,
-                                                  tonal: true,
-                                                  size: buttonSize,
+                                                child: Row(
+                                                  mainAxisSize:
+                                                      MainAxisSize.min,
+                                                  children: [
+                                                    Icon(
+                                                      Icons.swipe_left_rounded,
+                                                      size: 14,
+                                                      color: accentColor,
+                                                    ),
+                                                    const SizedBox(width: 4),
+                                                    Text(
+                                                      actionLabel,
+                                                      style: Theme.of(context)
+                                                          .textTheme
+                                                          .labelMedium
+                                                          ?.copyWith(
+                                                            color: accentColor,
+                                                            fontWeight:
+                                                                FontWeight.w800,
+                                                          ),
+                                                    ),
+                                                  ],
                                                 ),
-                                                SizedBox(height: gap),
-                                              ],
-                                              _SwipeRevealActionButton(
-                                                onPressed: () {
-                                                  AppInteractionFeedback.trigger(
-                                                    widget.destructive
-                                                        ? AppInteractionFeedbackType
-                                                              .destructive
-                                                        : AppInteractionFeedbackType
-                                                              .confirmation,
-                                                  );
-                                                  _closePane();
-                                                  widget.onRemove();
-                                                },
-                                                backgroundColor: accentColor,
-                                                foregroundColor: accentOnColor,
-                                                tooltip:
-                                                    widget
-                                                        .primaryActionTooltip ??
-                                                    widget.removeTooltip,
-                                                icon: widget.primaryActionIcon,
-                                                tonal: !widget.destructive,
-                                                size: buttonSize,
                                               ),
+                                              if (!compact) ...[
+                                                const SizedBox(height: 8),
+                                                Text(
+                                                  actionTooltip,
+                                                  maxLines: 2,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: Theme.of(context)
+                                                      .textTheme
+                                                      .bodySmall
+                                                      ?.copyWith(
+                                                        color:
+                                                            accentContainerOnColor,
+                                                        fontWeight:
+                                                            FontWeight.w600,
+                                                      ),
+                                                ),
+                                              ],
                                             ],
                                           );
                                         },
                                       ),
-                                    )
-                                  : Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        if (_hasTertiaryAction) ...[
-                                          _SwipeRevealActionButton(
-                                            onPressed: () {
-                                              AppInteractionFeedback.trigger(
-                                                AppInteractionFeedbackType
-                                                    .selection,
-                                              );
-                                              _closePane();
-                                              widget.onTertiaryAction?.call();
-                                            },
-                                            backgroundColor:
-                                                cs.secondaryContainer,
-                                            foregroundColor:
-                                                cs.onSecondaryContainer,
-                                            tooltip:
-                                                widget.tertiaryActionTooltip ??
-                                                widget.tertiaryActionLabel,
-                                            icon: widget.tertiaryActionIcon,
-                                            tonal: true,
-                                          ),
-                                          const SizedBox(width: 8),
-                                        ],
-                                        if (_hasSecondaryAction) ...[
-                                          _SwipeRevealActionButton(
-                                            onPressed: () {
-                                              AppInteractionFeedback.trigger(
-                                                AppInteractionFeedbackType
-                                                    .selection,
-                                              );
-                                              _closePane();
-                                              widget.onSecondaryAction?.call();
-                                            },
-                                            backgroundColor:
-                                                cs.primaryContainer,
-                                            foregroundColor:
-                                                cs.onPrimaryContainer,
-                                            tooltip:
-                                                widget.secondaryActionTooltip ??
-                                                widget.secondaryActionLabel,
-                                            icon: widget.secondaryActionIcon,
-                                            tonal: true,
-                                          ),
-                                          const SizedBox(width: 8),
-                                        ],
-                                        _SwipeRevealActionButton(
-                                          onPressed: () {
-                                            AppInteractionFeedback.trigger(
-                                              widget.destructive
-                                                  ? AppInteractionFeedbackType
-                                                        .destructive
-                                                  : AppInteractionFeedbackType
-                                                        .confirmation,
-                                            );
-                                            _closePane();
-                                            widget.onRemove();
-                                          },
-                                          backgroundColor: accentColor,
-                                          foregroundColor: accentOnColor,
-                                          tooltip:
-                                              widget.primaryActionTooltip ??
-                                              widget.removeTooltip,
-                                          icon: widget.primaryActionIcon,
-                                          tonal: !widget.destructive,
-                                        ),
-                                      ],
                                     ),
                             ),
                           ),
-                        ),
-                      ],
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: Padding(
+                              padding: EdgeInsets.only(
+                                top: showVerticalActions ? 10 : 0,
+                                right: showVerticalActions ? 10 : 14,
+                                bottom: showVerticalActions ? 10 : 0,
+                              ),
+                              child: AnimatedScale(
+                                scale: 0.92 + (revealProgress * 0.08),
+                                duration: const Duration(milliseconds: 180),
+                                curve: Curves.easeOutBack,
+                                child: showVerticalActions
+                                    ? SizedBox(
+                                        width: _actionWidth - 20,
+                                        child: LayoutBuilder(
+                                          builder: (context, constraints) {
+                                            final gap = _actionCount > 1
+                                                ? 6.0
+                                                : 0.0;
+                                            final availableHeight =
+                                                constraints.maxHeight;
+                                            final buttonSize =
+                                                ((availableHeight -
+                                                            gap *
+                                                                (_actionCount -
+                                                                    1)) /
+                                                        _actionCount)
+                                                    .clamp(34.0, 48.0);
+                                            return Column(
+                                              mainAxisAlignment:
+                                                  MainAxisAlignment.center,
+                                              children: [
+                                                if (_hasTertiaryAction) ...[
+                                                  _SwipeRevealActionButton(
+                                                    onPressed: () {
+                                                      AppInteractionFeedback.trigger(
+                                                        AppInteractionFeedbackType
+                                                            .selection,
+                                                      );
+                                                      _closePane();
+                                                      widget.onTertiaryAction
+                                                          ?.call();
+                                                    },
+                                                    backgroundColor:
+                                                        cs.secondaryContainer,
+                                                    foregroundColor:
+                                                        cs.onSecondaryContainer,
+                                                    tooltip:
+                                                        widget
+                                                            .tertiaryActionTooltip ??
+                                                        widget
+                                                            .tertiaryActionLabel,
+                                                    icon: widget
+                                                        .tertiaryActionIcon,
+                                                    tonal: true,
+                                                    size: buttonSize,
+                                                  ),
+                                                  SizedBox(height: gap),
+                                                ],
+                                                if (_hasSecondaryAction) ...[
+                                                  _SwipeRevealActionButton(
+                                                    onPressed: () {
+                                                      AppInteractionFeedback.trigger(
+                                                        AppInteractionFeedbackType
+                                                            .selection,
+                                                      );
+                                                      _closePane();
+                                                      widget.onSecondaryAction
+                                                          ?.call();
+                                                    },
+                                                    backgroundColor:
+                                                        cs.primaryContainer,
+                                                    foregroundColor:
+                                                        cs.onPrimaryContainer,
+                                                    tooltip:
+                                                        widget
+                                                            .secondaryActionTooltip ??
+                                                        widget
+                                                            .secondaryActionLabel,
+                                                    icon: widget
+                                                        .secondaryActionIcon,
+                                                    tonal: true,
+                                                    size: buttonSize,
+                                                  ),
+                                                  SizedBox(height: gap),
+                                                ],
+                                                _SwipeRevealActionButton(
+                                                  onPressed: () {
+                                                    AppInteractionFeedback.trigger(
+                                                      widget.destructive
+                                                          ? AppInteractionFeedbackType
+                                                                .destructive
+                                                          : AppInteractionFeedbackType
+                                                                .confirmation,
+                                                    );
+                                                    _closePane();
+                                                    widget.onRemove();
+                                                  },
+                                                  backgroundColor: accentColor,
+                                                  foregroundColor:
+                                                      accentOnColor,
+                                                  tooltip:
+                                                      widget
+                                                          .primaryActionTooltip ??
+                                                      widget.removeTooltip,
+                                                  icon:
+                                                      widget.primaryActionIcon,
+                                                  tonal: !widget.destructive,
+                                                  size: buttonSize,
+                                                ),
+                                              ],
+                                            );
+                                          },
+                                        ),
+                                      )
+                                    : Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          if (_hasTertiaryAction) ...[
+                                            _SwipeRevealActionButton(
+                                              onPressed: () {
+                                                AppInteractionFeedback.trigger(
+                                                  AppInteractionFeedbackType
+                                                      .selection,
+                                                );
+                                                _closePane();
+                                                widget.onTertiaryAction?.call();
+                                              },
+                                              backgroundColor:
+                                                  cs.secondaryContainer,
+                                              foregroundColor:
+                                                  cs.onSecondaryContainer,
+                                              tooltip:
+                                                  widget
+                                                      .tertiaryActionTooltip ??
+                                                  widget.tertiaryActionLabel,
+                                              icon: widget.tertiaryActionIcon,
+                                              tonal: true,
+                                            ),
+                                            const SizedBox(width: 8),
+                                          ],
+                                          if (_hasSecondaryAction) ...[
+                                            _SwipeRevealActionButton(
+                                              onPressed: () {
+                                                AppInteractionFeedback.trigger(
+                                                  AppInteractionFeedbackType
+                                                      .selection,
+                                                );
+                                                _closePane();
+                                                widget.onSecondaryAction
+                                                    ?.call();
+                                              },
+                                              backgroundColor:
+                                                  cs.primaryContainer,
+                                              foregroundColor:
+                                                  cs.onPrimaryContainer,
+                                              tooltip:
+                                                  widget
+                                                      .secondaryActionTooltip ??
+                                                  widget.secondaryActionLabel,
+                                              icon: widget.secondaryActionIcon,
+                                              tonal: true,
+                                            ),
+                                            const SizedBox(width: 8),
+                                          ],
+                                          _SwipeRevealActionButton(
+                                            onPressed: () {
+                                              AppInteractionFeedback.trigger(
+                                                widget.destructive
+                                                    ? AppInteractionFeedbackType
+                                                          .destructive
+                                                    : AppInteractionFeedbackType
+                                                          .confirmation,
+                                              );
+                                              _closePane();
+                                              widget.onRemove();
+                                            },
+                                            backgroundColor: accentColor,
+                                            foregroundColor: accentOnColor,
+                                            tooltip:
+                                                widget.primaryActionTooltip ??
+                                                widget.removeTooltip,
+                                            icon: widget.primaryActionIcon,
+                                            tonal: !widget.destructive,
+                                          ),
+                                        ],
+                                      ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ),
                 TweenAnimationBuilder<double>(
                   tween: Tween<double>(begin: 0, end: _revealedWidth),
                   duration: const Duration(milliseconds: 220),
@@ -660,9 +700,34 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                           color: cs.surface,
                           shape: widget.shape,
                         ),
-                        child: IgnorePointer(
-                          ignoring: _isOpen,
-                          child: widget.child,
+                        child: Stack(
+                          children: [
+                            IgnorePointer(
+                              ignoring: _isOpen,
+                              child: widget.child,
+                            ),
+                            if (_contextMenuOpen)
+                              Positioned.fill(
+                                child: IgnorePointer(
+                                  child: DecoratedBox(
+                                    decoration: ShapeDecoration(
+                                      color: cs.primaryContainer.withValues(
+                                        alpha: isDark ? 0.18 : 0.22,
+                                      ),
+                                      shape: widget.shape,
+                                      shadows: [
+                                        BoxShadow(
+                                          color: cs.primary.withValues(
+                                            alpha: isDark ? 0.16 : 0.10,
+                                          ),
+                                          blurRadius: 18,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
                         ),
                       );
 

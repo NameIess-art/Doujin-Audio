@@ -10,6 +10,7 @@ import '../models/asmr_models.dart';
 import '../providers/audio_provider.dart';
 import '../services/asmr_download_manager.dart';
 import '../services/asmr_library_controller.dart';
+import '../services/audio_state_services.dart';
 import '../services/search_query_utils.dart';
 import '../services/ui_interaction_coordinator.dart';
 import '../widgets/app_feedback.dart';
@@ -690,7 +691,7 @@ class _AsmrTabState extends State<AsmrTab>
                   onLanguage: _showLanguageDialog,
                 ),
               ],
-            ),
+              ),
             ),
             isLoading: !globalState.initialized,
             collapseController: currentScrollController,

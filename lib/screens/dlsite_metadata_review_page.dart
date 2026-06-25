@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../i18n/app_language_provider.dart';
 import '../providers/audio_provider.dart';
+import '../services/audio_state_services.dart';
 import '../widgets/app_feedback.dart';
 import '../widgets/async_cover_image.dart';
 
@@ -197,6 +198,11 @@ class _DlsiteMetadataReviewPageState extends State<DlsiteMetadataReviewPage> {
     final coverUrl = widget.detail.target.isLibraryRootFolder
         ? metadata?.coverUrl
         : null;
+    final coverCacheWidth = coverCacheWidthForResolution(
+      context.select<AudioProvider, CoverImageResolution>(
+        (provider) => provider.coverImageResolution,
+      ),
+    );
 
     return Scaffold(
       appBar: AppBar(
@@ -252,12 +258,11 @@ class _DlsiteMetadataReviewPageState extends State<DlsiteMetadataReviewPage> {
                       borderRadius: BorderRadius.circular(14),
                       child: AspectRatio(
                         aspectRatio: 4 / 3,
-                        child: Image.network(
-                          coverUrl,
+                        child: RetryingNetworkImage(
+                          url: coverUrl,
                           fit: BoxFit.cover,
-                          cacheWidth:
-                              (400 * MediaQuery.devicePixelRatioOf(context))
-                                  .round(),
+                          cacheWidth: coverCacheWidth,
+                          useDefaultCacheWidth: coverCacheWidth != null,
                           loadingBuilder: (context, child, loadingProgress) =>
                               loadingProgress == null
                               ? child
@@ -270,7 +275,7 @@ class _DlsiteMetadataReviewPageState extends State<DlsiteMetadataReviewPage> {
                                   strokeWidth: 3,
                                   color: cs.primary,
                                 ),
-                          errorBuilder: (_, _, _) => CoverFallbackArtwork(
+                          fallbackBuilder: (_) => CoverFallbackArtwork(
                             seed: coverUrl,
                             icon: Icons.image_not_supported_rounded,
                             iconSize: 48,

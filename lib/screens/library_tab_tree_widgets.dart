@@ -547,6 +547,15 @@ class _LibraryCoverThumbnailState
   @override
   Widget build(BuildContext context) {
     final coverGeneration = ref.watch(coverGenerationProvider);
+    final coverCacheWidth = coverCacheWidthForResolution(
+      ref.watch(
+        settingsStateProvider.select(
+          (s) =>
+              s.valueOrNull?.coverImageResolution ??
+              CoverImageResolution.balanced,
+        ),
+      ),
+    );
     final provider = ref.read(audioProviderFacadeProvider);
     final coverPathFuture = _coverFutureFor(provider, coverGeneration);
     Widget fallback({bool hideIcon = false}) {
@@ -590,7 +599,8 @@ class _LibraryCoverThumbnailState
               imageBuilder: (context, coverPath) {
                 return RetryingFileImage(
                   path: coverPath,
-                  cacheWidth: coverCacheWidthForDisplay(context, width),
+                  cacheWidth: coverCacheWidth,
+                  useDefaultCacheWidth: coverCacheWidth != null,
                   fit: BoxFit.cover,
                   fallbackBuilder: (_) => fallback(),
                 );
@@ -633,6 +643,15 @@ class _LibraryTrackCoverThumbnailState
   @override
   Widget build(BuildContext context) {
     final coverGeneration = ref.watch(coverGenerationProvider);
+    final coverCacheWidth = coverCacheWidthForResolution(
+      ref.watch(
+        settingsStateProvider.select(
+          (s) =>
+              s.valueOrNull?.coverImageResolution ??
+              CoverImageResolution.balanced,
+        ),
+      ),
+    );
     final provider = ref.read(audioProviderFacadeProvider);
     final coverPathFuture = _coverFutureFor(provider, coverGeneration);
     final track = widget.track;
@@ -671,7 +690,8 @@ class _LibraryTrackCoverThumbnailState
             imageBuilder: (context, coverPath) {
               return RetryingFileImage(
                 path: coverPath,
-                cacheWidth: coverCacheWidthForDisplay(context, width),
+                cacheWidth: coverCacheWidth,
+                useDefaultCacheWidth: coverCacheWidth != null,
                 fit: BoxFit.cover,
                 fallbackBuilder: (_) => fallback(),
               );

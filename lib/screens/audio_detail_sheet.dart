@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 
 import '../i18n/app_language_provider.dart';
 import '../providers/audio_provider.dart';
+import '../services/audio_state_services.dart';
 import '../services/path_display.dart';
 import '../widgets/app_feedback.dart';
 import '../widgets/async_cover_image.dart';
@@ -236,7 +237,8 @@ class _AudioDetailSheetState extends State<AudioDetailSheet> {
     if (scope == null || !mounted) return;
 
     final result = await Navigator.of(context).push<DlsiteMetadataReviewResult>(
-      buildAppPageRoute(child: DlsiteMetadataReviewPage(
+      buildAppPageRoute(
+        child: DlsiteMetadataReviewPage(
           detail: detail,
           rjCode: query.rjCode,
           searchTitles: query.searchTitles,
@@ -603,6 +605,11 @@ class _FolderCoverSelectorState extends State<_FolderCoverSelector> {
     if (_error != null || _images.isEmpty || _pageController == null) {
       return const SizedBox.shrink();
     }
+    final coverCacheWidth = coverCacheWidthForResolution(
+      context.select<AudioProvider, CoverImageResolution>(
+        (provider) => provider.coverImageResolution,
+      ),
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -626,9 +633,8 @@ class _FolderCoverSelectorState extends State<_FolderCoverSelector> {
                       return RetryingFileImage(
                         path: _images[index],
                         fit: BoxFit.cover,
-                        cacheWidth:
-                            (140 * MediaQuery.devicePixelRatioOf(context))
-                                .round(),
+                        cacheWidth: coverCacheWidth,
+                        useDefaultCacheWidth: coverCacheWidth != null,
                         fallbackBuilder: (_) => CoverFallbackArtwork(
                           seed: _images[index],
                           icon: Icons.image_not_supported_rounded,

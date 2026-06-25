@@ -3,33 +3,23 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import '../services/audio_state_services.dart';
 import '../services/ui_interaction_coordinator.dart';
 import 'scroll_activity_gate.dart';
 
 const int kCoverImageCacheSize = 600;
 
-int coverCacheWidthForDisplay(
-  BuildContext context,
-  double logicalWidth, {
-  double desktopScale = 2.0,
-  double maxDesktopDpr = 3.0,
-  double? maxMobileDpr,
-}) {
-  final platform = Theme.of(context).platform;
-  final isDesktop =
-      platform == TargetPlatform.windows ||
-      platform == TargetPlatform.macOS ||
-      platform == TargetPlatform.linux;
-  var effectiveDpr = MediaQuery.devicePixelRatioOf(context);
-  if (isDesktop) {
-    effectiveDpr = (effectiveDpr * desktopScale)
-        .clamp(1.0, maxDesktopDpr)
-        .toDouble();
-  } else if (maxMobileDpr != null) {
-    effectiveDpr = effectiveDpr.clamp(1.0, maxMobileDpr).toDouble();
+int? coverCacheWidthForResolution(CoverImageResolution resolution) {
+  switch (resolution) {
+    case CoverImageResolution.memorySaver:
+      return 300;
+    case CoverImageResolution.balanced:
+      return 600;
+    case CoverImageResolution.high:
+      return 900;
+    case CoverImageResolution.original:
+      return null;
   }
-  final cacheWidth = (logicalWidth * effectiveDpr).round();
-  return cacheWidth < 1 ? 1 : cacheWidth;
 }
 
 class PulsingPlaceholder extends StatelessWidget {
@@ -428,6 +418,7 @@ class RetryingNetworkImage extends StatelessWidget {
     this.cacheHeight,
     this.color,
     this.colorBlendMode,
+    this.useDefaultCacheWidth = true,
     this.filterQuality = FilterQuality.medium,
     this.gaplessPlayback = true,
     this.retryDelay = const Duration(seconds: 2),
@@ -443,6 +434,7 @@ class RetryingNetworkImage extends StatelessWidget {
   final int? cacheHeight;
   final Color? color;
   final BlendMode? colorBlendMode;
+  final bool useDefaultCacheWidth;
   final FilterQuality filterQuality;
   final bool gaplessPlayback;
   final Duration retryDelay;
@@ -457,7 +449,7 @@ class RetryingNetworkImage extends StatelessWidget {
     return RetryingImage(
       retryKey: trimmedUrl,
       imageProviderBuilder: () => ResizeImage.resizeIfNeeded(
-        cacheWidth ?? kCoverImageCacheSize,
+        cacheWidth ?? (useDefaultCacheWidth ? kCoverImageCacheSize : null),
         cacheHeight,
         NetworkImage(trimmedUrl),
       ),
@@ -487,6 +479,7 @@ class RetryingFileImage extends StatelessWidget {
     this.cacheHeight,
     this.color,
     this.colorBlendMode,
+    this.useDefaultCacheWidth = true,
     this.filterQuality = FilterQuality.medium,
     this.gaplessPlayback = true,
     this.retryDelay = const Duration(seconds: 2),
@@ -502,6 +495,7 @@ class RetryingFileImage extends StatelessWidget {
   final int? cacheHeight;
   final Color? color;
   final BlendMode? colorBlendMode;
+  final bool useDefaultCacheWidth;
   final FilterQuality filterQuality;
   final bool gaplessPlayback;
   final Duration retryDelay;
@@ -518,6 +512,7 @@ class RetryingFileImage extends StatelessWidget {
         path: path,
         cacheWidth: cacheWidth,
         cacheHeight: cacheHeight,
+        useDefaultCacheWidth: useDefaultCacheWidth,
       ),
       fallbackBuilder: fallbackBuilder,
       loadingBuilder: loadingBuilder,
@@ -634,10 +629,11 @@ ImageProvider<Object> resizeFileImageIfNeeded({
   required String path,
   int? cacheWidth,
   int? cacheHeight,
+  bool useDefaultCacheWidth = true,
 }) {
   final provider = FileImage(File(path));
   return ResizeImage.resizeIfNeeded(
-    cacheWidth ?? kCoverImageCacheSize,
+    cacheWidth ?? (useDefaultCacheWidth ? kCoverImageCacheSize : null),
     cacheHeight,
     provider,
   );

@@ -15,6 +15,7 @@ import android.os.Looper
 import android.os.PowerManager
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
+import androidx.media3.common.C
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
@@ -136,7 +137,7 @@ class NativePlaybackService : MediaSessionService() {
                 }
 
                 override fun onAudioSessionIdChanged(sessionId: String, audioSessionId: Int) {
-                    sessions[sessionId]?.onAudioSessionIdChanged(audioSessionId)
+                    publishSessionState(sessionId)
                 }
             }
         )
@@ -1654,14 +1655,7 @@ class NativePlaybackService : MediaSessionService() {
 
     private fun publishSessionState(sessionId: String) {
         val session = sessions[sessionId] ?: return
-        val snapshot = session.snapshot()
-        for (listener in stateListeners.values) {
-            try {
-                listener(snapshot)
-            } catch (_: Exception) {
-                // Prevent one broken listener from crashing the service.
-            }
-        }
+        publishNativePlaybackSessionState(session, stateListeners.values)
     }
 
     private fun publishAllSessionStates() {

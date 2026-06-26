@@ -53,7 +53,7 @@ internal class NativePlaybackSession(
     private val evictPlayersIfNeeded: () -> Unit,
     private val logWarn: (String, NativePlaybackSession, RuntimeException) -> Unit,
     private val resolveUriToPath: ((String) -> String?)? = null
-) {
+) : NativePlaybackSessionSnapshotSource {
     private val strictSilenceSkippingAudioProcessor = SilenceSkippingAudioProcessor(
         STRICT_SKIP_SILENCE_MIN_DURATION_US,
         0f,
@@ -496,7 +496,7 @@ internal class NativePlaybackSession(
         )
     }
 
-    fun snapshot(): Map<String, Any?> {
+    override fun snapshot(): Map<String, Any?> {
         val p = _player
         if (p != null) {
             lastPositionMs = p.currentPosition.coerceAtLeast(0L)
@@ -530,6 +530,14 @@ internal class NativePlaybackSession(
             "queueIndex" to (p?.currentMediaItemIndex ?: currentQueueIndexFor(queue)).coerceAtLeast(0),
             "error" to p?.playerError?.message
         )
+    }
+
+    override fun currentAudioSessionId(): Int {
+        return playerOrNull()?.audioSessionId ?: C.AUDIO_SESSION_ID_UNSET
+    }
+
+    override fun syncAudioSessionState(audioSessionId: Int) {
+        onAudioSessionIdChanged(audioSessionId)
     }
 
     fun storedSnapshot(): StoredNativePlaybackSession {
@@ -767,6 +775,30 @@ internal class NativePlaybackSession(
             )
         } catch (_: RuntimeException) {
             mapOf("supported" to false)
+        }
+    }
+}
+
+internal interface NativePlaybackSessionSnapshotSource {
+    fun currentAudioSessionId(): Int
+    fun syncAudioSessionState(audioSessionId: Int)
+    fun snapshot(): Map<String, Any?>
+}
+
+internal fun publishNativePlaybackSessionState(
+    session: NativePlaybackSessionSnapshotSource,
+    listeners: Collection<(Map<String, Any?>) -> Unit>
+) {
+    val audioSessionId = session.currentAudioSessionId()
+    if (audioSessionId != C.AUDIO_SESSION_ID_UNSET) {
+        session.syncAudioSessionState(audioSessionId)
+    }
+    val snapshot = session.snapshot()
+    for (listener in listeners) {
+        try {
+            listener(snapshot)
+        } catch (_: Exception) {
+            // Prevent one broken listener from crashing the service.
         }
     }
 }

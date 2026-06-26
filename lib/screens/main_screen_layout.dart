@@ -242,16 +242,44 @@ extension _MainScreenLayout on _MainScreenState {
     required BottomNavigationStyle style,
     bool tinyMode = false,
   }) {
-    if (style == BottomNavigationStyle.bar) {
-      return _buildMobileBottomNavigationBar(
-        context,
-        i18n: i18n,
-        overlaySessions: overlaySessions,
-        tinyMode: tinyMode,
-      );
-    }
+    final isBar = style == BottomNavigationStyle.bar;
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 300),
+      switchInCurve: Curves.easeOutCubic,
+      switchOutCurve: Curves.easeInCubic,
+      transitionBuilder: (child, animation) {
+        return FadeTransition(opacity: animation, child: child);
+      },
+      child: isBar
+          ? _buildMobileBottomNavigationBar(
+              context,
+              key: const ValueKey('bar'),
+              i18n: i18n,
+              overlaySessions: overlaySessions,
+              tinyMode: tinyMode,
+              isCurrent: isBar,
+            )
+          : _buildMobileBottomCapsule(
+              context,
+              key: const ValueKey('capsule'),
+              i18n: i18n,
+              overlaySessions: overlaySessions,
+              tinyMode: tinyMode,
+              isCurrent: !isBar,
+            ),
+    );
+  }
+
+  Widget _buildMobileBottomCapsule(
+    BuildContext context, {
+    Key? key,
+    required AppLanguageProvider i18n,
+    required List<PlaybackSession> overlaySessions,
+    bool tinyMode = false,
+    bool isCurrent = true,
+  }) {
     return SafeArea(
-      key: _bottomDockKey,
+      key: key,
       top: false,
       minimum: const EdgeInsets.fromLTRB(12, 0, 12, 6),
       child: Align(
@@ -259,7 +287,7 @@ extension _MainScreenLayout on _MainScreenState {
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 430),
           child: Column(
-            key: _dockContentKey,
+            key: isCurrent ? _dockContentKey : null,
             mainAxisSize: MainAxisSize.min,
             children: [
               if (overlaySessions.isNotEmpty)
@@ -294,9 +322,11 @@ extension _MainScreenLayout on _MainScreenState {
 
   Widget _buildMobileBottomNavigationBar(
     BuildContext context, {
+    Key? key,
     required AppLanguageProvider i18n,
     required List<PlaybackSession> overlaySessions,
     bool tinyMode = false,
+    bool isCurrent = true,
   }) {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -329,12 +359,12 @@ extension _MainScreenLayout on _MainScreenState {
     );
 
     return SafeArea(
-      key: _bottomDockKey,
+      key: key,
       top: false,
       child: Align(
         alignment: Alignment.bottomCenter,
         child: Column(
-          key: _dockContentKey,
+          key: isCurrent ? _dockContentKey : null,
           mainAxisSize: MainAxisSize.min,
           children: [
             if (overlaySessions.isNotEmpty)

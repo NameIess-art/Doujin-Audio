@@ -328,145 +328,183 @@ class _SubtitleWindowSettingsSheet extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(i18n.tr('font_setting'), style: labelStyle),
-                      const SizedBox(height: 6),
-                      InputDecorator(
-                        decoration: InputDecoration(
-                          isDense: true,
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 10,
-                          ),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        child: UnifiedDropdownButton<String>(
-                          value: settings.fontFamily,
-                          isDense: true,
-                          isExpanded: true,
-                          items: List.generate(_fontFamilies.length, (i) {
-                            final label = i == 0
-                                ? i18n.tr('system_default')
-                                : _fontFamilies[i];
-                            return DropdownMenuItem(
-                              value: _fontFamilies[i],
-                              child: Text(
-                                label,
-                                style: TextStyle(
-                                  fontFamily: _fontFamilies[i].isEmpty
-                                      ? null
-                                      : _fontFamilies[i],
-                                ),
-                              ),
-                            );
-                          }),
-                          onChanged: (v) {
-                            if (v != null) notifier.setFontFamily(v);
-                          },
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-
-                      Row(
+                      _SettingsGroupCard(
                         children: [
-                          Expanded(
-                            child: Text(
-                              i18n.tr('font_size'),
-                              style: labelStyle,
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(i18n.tr('font_setting'), style: labelStyle),
+                                const SizedBox(height: 8),
+                                InputDecorator(
+                                  decoration: InputDecoration(
+                                    isDense: true,
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 10,
+                                    ),
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                  ),
+                                  child: UnifiedDropdownButton<String>(
+                                    value: settings.fontFamily,
+                                    isDense: true,
+                                    isExpanded: true,
+                                    alignment: AlignmentDirectional.centerStart,
+                                    items: List.generate(_fontFamilies.length, (i) {
+                                      final label = i == 0
+                                          ? i18n.tr('system_default')
+                                          : _fontFamilies[i];
+                                      return DropdownMenuItem(
+                                        value: _fontFamilies[i],
+                                        child: Text(
+                                          label,
+                                          style: TextStyle(
+                                            fontFamily: _fontFamilies[i].isEmpty
+                                                ? null
+                                                : _fontFamilies[i],
+                                          ),
+                                        ),
+                                      );
+                                    }),
+                                    onChanged: (v) {
+                                      if (v != null) notifier.setFontFamily(v);
+                                    },
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                          Text(
-                            settings.fontSize.toStringAsFixed(0),
-                            style: Theme.of(context).textTheme.bodySmall
-                                ?.copyWith(
-                                  color: cs.onSurfaceVariant,
-                                  fontWeight: FontWeight.w700,
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        i18n.tr('font_size'),
+                                        style: labelStyle,
+                                      ),
+                                    ),
+                                    Text(
+                                      settings.fontSize.toStringAsFixed(0),
+                                      style: Theme.of(context).textTheme.bodySmall
+                                          ?.copyWith(
+                                            color: cs.onSurfaceVariant,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                    ),
+                                  ],
                                 ),
+                                Slider(
+                                  value: settings.fontSize,
+                                  min: 12,
+                                  max: 32,
+                                  divisions: 20,
+                                  onChanged: (v) => notifier.setFontSize(v),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+                            child: _buildRgbSliders(
+                              label: i18n.tr('font_color'),
+                              resetTooltip: i18n.tr('reset_to_default'),
+                              currentColor: currentFontColor,
+                              defaultColor: const Color(0xFFFFFFFF),
+                              cs: cs,
+                              labelStyle: labelStyle,
+                              onChanged: (c) => notifier.setFontColor(c),
+                              onReset: () => notifier.setFontColor(null),
+                            ),
                           ),
                         ],
                       ),
-                      Slider(
-                        value: settings.fontSize,
-                        min: 12,
-                        max: 32,
-                        divisions: 20,
-                        onChanged: (v) => notifier.setFontSize(v),
-                      ),
                       const SizedBox(height: 24),
-
-                      _buildRgbSliders(
-                        label: i18n.tr('font_color'),
-                        resetTooltip: i18n.tr('reset_to_default'),
-                        currentColor: currentFontColor,
-                        defaultColor: const Color(0xFFFFFFFF),
-                        cs: cs,
-                        labelStyle: labelStyle,
-                        onChanged: (c) => notifier.setFontColor(c),
-                        onReset: () => notifier.setFontColor(null),
-                      ),
-                      const SizedBox(height: 24),
-
-                      Row(
+                      _SettingsGroupCard(
                         children: [
-                          Expanded(
-                            child: Text(
-                              i18n.tr('background_transparency'),
-                              style: labelStyle,
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        i18n.tr('background_transparency'),
+                                        style: labelStyle,
+                                      ),
+                                    ),
+                                    Text(
+                                      '${((1.0 - settings.backgroundOpacity) * 100).toStringAsFixed(0)}%',
+                                      style: Theme.of(context).textTheme.bodySmall
+                                          ?.copyWith(
+                                            color: cs.onSurfaceVariant,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                    ),
+                                  ],
+                                ),
+                                Slider(
+                                  value: 1.0 - settings.backgroundOpacity,
+                                  divisions: 100,
+                                  onChanged: (v) =>
+                                      notifier.setBackgroundOpacity(1.0 - v),
+                                ),
+                              ],
                             ),
                           ),
-                          Text(
-                            '${((1.0 - settings.backgroundOpacity) * 100).toStringAsFixed(0)}%',
-                            style: Theme.of(context).textTheme.bodySmall
-                                ?.copyWith(
-                                  color: cs.onSurfaceVariant,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                          ),
-                        ],
-                      ),
-                      Slider(
-                        value: 1.0 - settings.backgroundOpacity,
-                        divisions: 100,
-                        onChanged: (v) =>
-                            notifier.setBackgroundOpacity(1.0 - v),
-                      ),
-                      const SizedBox(height: 4),
-
-                      _buildRgbSliders(
-                        label: i18n.tr('background_color'),
-                        resetTooltip: i18n.tr('reset_to_default'),
-                        currentColor: currentBgColor,
-                        defaultColor: const Color(0xFF000000),
-                        cs: cs,
-                        labelStyle: labelStyle,
-                        onChanged: (c) => notifier.setBackgroundColor(c),
-                        onReset: () => notifier.setBackgroundColor(null),
-                      ),
-                      const SizedBox(height: 24),
-
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              i18n.tr('border_depth'),
-                              style: labelStyle,
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                            child: _buildRgbSliders(
+                              label: i18n.tr('background_color'),
+                              resetTooltip: i18n.tr('reset_to_default'),
+                              currentColor: currentBgColor,
+                              defaultColor: const Color(0xFF000000),
+                              cs: cs,
+                              labelStyle: labelStyle,
+                              onChanged: (c) => notifier.setBackgroundColor(c),
+                              onReset: () => notifier.setBackgroundColor(null),
                             ),
                           ),
-                          Text(
-                            (settings.borderDepth * 100).toStringAsFixed(0),
-                            style: Theme.of(context).textTheme.bodySmall
-                                ?.copyWith(
-                                  color: cs.onSurfaceVariant,
-                                  fontWeight: FontWeight.w700,
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        i18n.tr('border_depth'),
+                                        style: labelStyle,
+                                      ),
+                                    ),
+                                    Text(
+                                      (settings.borderDepth * 100).toStringAsFixed(0),
+                                      style: Theme.of(context).textTheme.bodySmall
+                                          ?.copyWith(
+                                            color: cs.onSurfaceVariant,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                    ),
+                                  ],
                                 ),
+                                Slider(
+                                  value: settings.borderDepth,
+                                  divisions: 100,
+                                  onChanged: (v) => notifier.setBorderDepth(v),
+                                ),
+                              ],
+                            ),
                           ),
                         ],
-                      ),
-                      Slider(
-                        value: settings.borderDepth,
-                        divisions: 100,
-                        onChanged: (v) => notifier.setBorderDepth(v),
                       ),
                     ],
                   ),

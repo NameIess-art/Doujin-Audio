@@ -4,6 +4,7 @@ import androidx.media3.common.C
 import androidx.media3.common.Player
 import androidx.media3.common.audio.AudioProcessor
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Assert.assertNull
 import org.junit.Test
 
@@ -63,5 +64,54 @@ class NativePlaybackSessionStateTest {
         assertEquals(false, shouldProcessVolumeBalance(0f))
         assertEquals(false, shouldProcessVolumeBalance(0.0005f))
         assertEquals(true, shouldProcessVolumeBalance(0.5f))
+    }
+
+    @Test
+    fun `publishing session state retries audio session sync before snapshot`() {
+        val events = mutableListOf<String>()
+        val session = object : NativePlaybackSessionSnapshotSource {
+            override fun currentAudioSessionId(): Int = 42
+
+            override fun syncAudioSessionState(audioSessionId: Int) {
+                events += "sync:$audioSessionId"
+            }
+
+            override fun snapshot(): Map<String, Any?> {
+                events += "snapshot"
+                return mapOf("sessionId" to "session")
+            }
+        }
+
+        publishNativePlaybackSessionState(
+            session,
+            listOf { snapshot: Map<String, Any?> ->
+                events += "listener:${snapshot["sessionId"]}"
+            }
+        )
+
+        assertEquals(listOf("sync:42", "snapshot", "listener:session"), events)
+    }
+
+    @Test
+    fun `publishing session state still emits snapshot when listener fails`() {
+        val session = object : NativePlaybackSessionSnapshotSource {
+            override fun currentAudioSessionId(): Int = C.AUDIO_SESSION_ID_UNSET
+
+            override fun syncAudioSessionState(audioSessionId: Int) = Unit
+
+            override fun snapshot(): Map<String, Any?> = mapOf("sessionId" to "session")
+        }
+
+        var reached = false
+        publishNativePlaybackSessionState(
+            session,
+            listOf { _: Map<String, Any?> -> throw RuntimeException("boom") }
+        )
+        publishNativePlaybackSessionState(
+            session,
+            listOf { _: Map<String, Any?> -> reached = true }
+        )
+
+        assertTrue(reached)
     }
 }

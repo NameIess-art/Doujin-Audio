@@ -517,21 +517,21 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                                     BottomNavigationStyle.capsule,
                               ),
                             );
-                            final styleLabels = <BottomNavigationStyle, String>{
-                              BottomNavigationStyle.capsule: i18n.tr(
-                                'bottom_navigation_style_capsule',
-                              ),
-                              BottomNavigationStyle.bar: i18n.tr(
-                                'bottom_navigation_style_bar',
-                              ),
-                            };
-                            return ListTile(
+                            return SwitchListTile(
+                              value: style == BottomNavigationStyle.capsule,
+                              onChanged: (value) {
+                                audioProvider.setBottomNavigationStyle(
+                                  value
+                                      ? BottomNavigationStyle.capsule
+                                      : BottomNavigationStyle.bar,
+                                );
+                              },
                               title: Text(i18n.tr('bottom_navigation_style')),
                               subtitle: Text(
                                 i18n.tr('bottom_navigation_style_subtitle'),
                                 style: descStyle,
                               ),
-                              leading: Container(
+                              secondary: Container(
                                 width: 38,
                                 height: 38,
                                 decoration: BoxDecoration(
@@ -543,33 +543,6 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                                   color: cs.onSecondaryContainer,
                                 ),
                               ),
-                              trailing:
-                                  UnifiedDropdownButton<BottomNavigationStyle>(
-                                    value: style,
-                                    onChanged: (value) {
-                                      if (value != null) {
-                                        audioProvider.setBottomNavigationStyle(
-                                          value,
-                                        );
-                                      }
-                                    },
-                                    items: BottomNavigationStyle.values
-                                        .map(
-                                          (value) =>
-                                              DropdownMenuItem<
-                                                BottomNavigationStyle
-                                              >(
-                                                value: value,
-                                                child: Text(
-                                                  styleLabels[value]!,
-                                                  style: const TextStyle(
-                                                    fontWeight: FontWeight.w700,
-                                                  ),
-                                                ),
-                                              ),
-                                        )
-                                        .toList(),
-                                  ),
                               contentPadding: const EdgeInsets.symmetric(
                                 horizontal: 8,
                               ),

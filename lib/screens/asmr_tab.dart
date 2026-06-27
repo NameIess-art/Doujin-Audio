@@ -191,6 +191,7 @@ class _AsmrTabState extends State<AsmrTab>
     final coordinator = UiInteractionCoordinator.instance;
     if (_tabController.indexIsChanging) {
       coordinator.beginInteraction(_tabSwitchInteraction);
+      setState(() {});
       return;
     }
     if (_lastHandledTabIndex == _tabController.index) return;
@@ -616,23 +617,42 @@ class _AsmrTabState extends State<AsmrTab>
       clipBehavior: Clip.none,
       children: [
         globalState.initialized
-            ? TabBarView(
-                controller: _tabController,
-                physics: const NeverScrollableScrollPhysics(),
+            ? Stack(
+                fit: StackFit.expand,
+                clipBehavior: Clip.none,
                 children: [
-                  for (final category in _categories)
-                    TickerMode(
-                      enabled: category == currentCategory,
-                      child: _AsmrCategoryList(
-                        key: ValueKey(category),
-                        category: category,
-                        scrollController: _scrollControllers[category]!,
-                        searchQuery: _searchQuery,
-                        topInset: headerContentHeight,
-                        bottomInset: bottomInset,
-                        onRefresh: () => _refreshCategoryWithFeedback(category),
-                      ),
-                    ),
+                  for (int i = 0; i < _categories.length; i++)
+                    (() {
+                      final category = _categories[i];
+                      final isActive = category == currentCategory;
+                      return IgnorePointer(
+                        ignoring: !isActive,
+                        child: AnimatedOpacity(
+                          key: ValueKey<String>('asmr_category_fade_$i'),
+                          opacity: isActive ? 1.0 : 0.0,
+                          duration: const Duration(milliseconds: 120),
+                          curve: Curves.easeOutCubic,
+                          child: TickerMode(
+                            enabled: isActive,
+                            child: ExcludeFocus(
+                              excluding: !isActive,
+                              child: ExcludeSemantics(
+                                excluding: !isActive,
+                                child: _AsmrCategoryList(
+                                  key: ValueKey(category),
+                                  category: category,
+                                  scrollController: _scrollControllers[category]!,
+                                  searchQuery: _searchQuery,
+                                  topInset: headerContentHeight,
+                                  bottomInset: bottomInset,
+                                  onRefresh: () => _refreshCategoryWithFeedback(category),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    })(),
                 ],
               )
             : ShimmerLoader(

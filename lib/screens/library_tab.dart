@@ -497,7 +497,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
       if (_effectiveSearchQuery.isNotEmpty) {
         return ListView(
           physics: const AlwaysScrollableScrollPhysics(
-            parent: ClampingScrollPhysics(),
+            parent: BouncingScrollPhysics(),
           ),
           padding: EdgeInsets.fromLTRB(
             16,
@@ -535,8 +535,10 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         bottomInset: relativeBottom,
         topInset: relativeTop,
         physics: canPullRefresh
-            ? kTopPullRefreshScrollPhysics
-            : const ClampingScrollPhysics(),
+            ? const AlwaysScrollableScrollPhysics(
+                parent: BouncingScrollPhysics(),
+              )
+            : const BouncingScrollPhysics(),
       );
     }
 
@@ -649,7 +651,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                       cacheExtent: listCacheExtent,
                       clipBehavior: Clip.none,
                       physics: const AlwaysScrollableScrollPhysics(
-                        parent: ClampingScrollPhysics(),
+                        parent: BouncingScrollPhysics(),
                       ),
                       keyboardDismissBehavior:
                           ScrollViewKeyboardDismissBehavior.onDrag,
@@ -685,7 +687,9 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                           ),
                           cacheExtent: listCacheExtent,
                           physics: canPullRefresh
-                              ? kTopPullRefreshScrollPhysics
+                              ? const AlwaysScrollableScrollPhysics(
+                                  parent: BouncingScrollPhysics(),
+                                )
                               : null,
                           buildDefaultDragHandles: false,
                           keyboardDismissBehavior:

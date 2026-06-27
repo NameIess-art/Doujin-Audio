@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:ui' as dart_ui;
 
 import 'package:flutter/material.dart';
@@ -306,6 +307,7 @@ class _TopPageHeaderState extends ConsumerState<TopPageHeader> {
     }
 
     double collapseProgress() {
+      if (Platform.isWindows) return 0.0;
       final controller = widget.collapseController;
       if (controller == null || !controller.hasClients) return 0;
       if (widget.collapseDistance <= 0) return 1;

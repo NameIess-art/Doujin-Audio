@@ -417,7 +417,7 @@ class _TrackNodeWidget extends ConsumerWidget {
                   ),
                 )
               : Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 4, 6, 4),
+                  padding: const EdgeInsets.fromLTRB(12, 12, 6, 12),
                   child: Row(
                     children: [
                       Expanded(

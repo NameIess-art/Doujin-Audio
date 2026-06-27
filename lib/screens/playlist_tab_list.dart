@@ -290,7 +290,9 @@ class _SessionListCardState extends ConsumerState<_SessionListCard> {
     final displayName =
         track?.displayName ??
         path.basenameWithoutExtension(sessionView.trackPath);
-    final rootFolderName = provider.getRootFolderName(sessionView.trackPath);
+    final rootFolderName = track?.remoteMetadataKind == 'asmr.one'
+        ? ''
+        : provider.getRootFolderName(sessionView.trackPath);
     final folderName = rootFolderName.isNotEmpty
         ? rootFolderName
         : (track != null && !track.isSingle)

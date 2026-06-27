@@ -618,6 +618,7 @@ class _AsmrTabState extends State<AsmrTab>
         globalState.initialized
             ? TabBarView(
                 controller: _tabController,
+                physics: const NeverScrollableScrollPhysics(),
                 children: [
                   for (final category in _categories)
                     TickerMode(

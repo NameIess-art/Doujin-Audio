@@ -14,6 +14,7 @@ import '../providers/audio_provider_riverpod.dart';
 import '../providers/subtitle_settings_provider.dart';
 import '../services/audio_state_services.dart';
 import '../services/subtitle_parser.dart';
+import '../services/ui_interaction_coordinator.dart';
 import '../screens/playlist_tab.dart';
 import 'app_feedback.dart';
 import 'async_cover_image.dart';
@@ -64,9 +65,13 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
   @override
   void initState() {
     super.initState();
-    final initialStyle = ref.read(settingsStateProvider).valueOrNull?.bottomNavigationStyle ?? BottomNavigationStyle.capsule;
+    final initialStyle =
+        ref.read(settingsStateProvider).valueOrNull?.bottomNavigationStyle ??
+        BottomNavigationStyle.capsule;
     _lastStyle = initialStyle;
-    _pageController = PageController(viewportFraction: initialStyle == BottomNavigationStyle.bar ? 1.0 : 0.90);
+    _pageController = PageController(
+      viewportFraction: initialStyle == BottomNavigationStyle.bar ? 1.0 : 0.90,
+    );
     _pageController.addListener(_handlePageTick);
     final AudioProvider provider =
         widget.provider ?? ref.read(audioProviderFacadeProvider);
@@ -149,10 +154,18 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
 
   @override
   Widget build(BuildContext context) {
-    final style = ref.watch(settingsStateProvider.select((s) => s.valueOrNull?.bottomNavigationStyle ?? BottomNavigationStyle.capsule));
+    final style = ref.watch(
+      settingsStateProvider.select(
+        (s) =>
+            s.valueOrNull?.bottomNavigationStyle ??
+            BottomNavigationStyle.capsule,
+      ),
+    );
     if (_lastStyle != style) {
       _lastStyle = style;
-      final oldPage = _pageController.hasClients ? _pageController.page ?? 0.0 : 0.0;
+      final oldPage = _pageController.hasClients
+          ? _pageController.page ?? 0.0
+          : 0.0;
       _pageController.dispose();
       _pageController = PageController(
         initialPage: oldPage.round(),
@@ -251,7 +264,9 @@ class _ActiveSessionPageTransform extends StatelessWidget {
       builder: (context, child) {
         final pageDelta = index - pageListenable.value;
         final selectedness = (1 - pageDelta.abs()).clamp(0.0, 1.0);
-        final scale = isBar ? 1.0 : (lerpDouble(0.972, 1.0, selectedness) ?? 1.0);
+        final scale = isBar
+            ? 1.0
+            : (lerpDouble(0.972, 1.0, selectedness) ?? 1.0);
         final translateY = isBar ? 0.0 : (lerpDouble(4, 0, selectedness) ?? 0);
 
         return Padding(

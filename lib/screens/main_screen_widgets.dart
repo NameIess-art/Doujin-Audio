@@ -102,12 +102,13 @@ class _FloatingGlassPanel extends ConsumerWidget {
         (s) => s.valueOrNull?.uiBlurEffectEnabled ?? true,
       ),
     );
-    final currentAlpha = blurEnabled ? (isDark ? 0.80 : 0.86) : 1.0;
 
-    Widget buildPanel() => DecoratedBox(
+    Widget buildPanel(bool useBlur) => DecoratedBox(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(radius),
-        color: bgColor.withValues(alpha: currentAlpha),
+        color: bgColor.withValues(
+          alpha: useBlur ? (isDark ? 0.80 : 0.86) : 1.0,
+        ),
         border: Border.all(
           color: cs.outlineVariant.withValues(alpha: isDark ? 0.24 : 0.42),
         ),
@@ -154,14 +155,21 @@ class _FloatingGlassPanel extends ConsumerWidget {
       ),
     );
 
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(radius),
-      child: blurEnabled
-          ? BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-              child: buildPanel(),
-            )
-          : buildPanel(),
+    final interactionCoordinator = UiInteractionCoordinator.instance;
+    return AnimatedBuilder(
+      animation: interactionCoordinator,
+      builder: (context, _) {
+        final useBlur = blurEnabled && !interactionCoordinator.isInteracting;
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(radius),
+          child: useBlur
+              ? BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+                  child: buildPanel(useBlur),
+                )
+              : buildPanel(useBlur),
+        );
+      },
     );
   }
 }

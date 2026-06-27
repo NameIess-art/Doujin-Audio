@@ -49,6 +49,7 @@ import '../services/native_playback_repository.dart';
 import '../services/playback_queue_resolver.dart';
 import '../services/power_platform_service.dart';
 import '../services/timer_runtime_calculator.dart';
+import '../services/ui_interaction_coordinator.dart';
 import '../services/warmup_scheduler.dart';
 
 export '../models/library_node.dart';

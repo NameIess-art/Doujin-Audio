@@ -335,13 +335,13 @@ extension _MainScreenLayout on _MainScreenState {
         (s) => s.valueOrNull?.uiBlurEffectEnabled ?? true,
       ),
     );
-    final currentAlpha = blurEnabled ? (isDark ? 0.80 : 0.86) : 1.0;
-
     final bgColor = isDark ? cs.surfaceBright : cs.surfaceContainerHigh;
 
-    Widget buildBar() => DecoratedBox(
+    Widget buildBar(bool useBlur) => DecoratedBox(
       decoration: BoxDecoration(
-        color: bgColor.withValues(alpha: currentAlpha),
+        color: bgColor.withValues(
+          alpha: useBlur ? (isDark ? 0.80 : 0.86) : 1.0,
+        ),
         border: Border(
           top: BorderSide(
             color: cs.outlineVariant.withValues(alpha: 0.55),
@@ -358,38 +358,45 @@ extension _MainScreenLayout on _MainScreenState {
       ),
     );
 
-    return SafeArea(
-      key: key,
-      top: false,
-      child: Align(
-        alignment: Alignment.bottomCenter,
-        child: Column(
-          key: isCurrent ? _dockContentKey : null,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (overlaySessions.isNotEmpty)
-              ActiveSessionCarousel(
-                sessions: overlaySessions,
-                provider: ref.read(audioProviderFacadeProvider),
-                i18n: i18n,
-                onOpenSession: (sessionId) {
-                  Navigator.of(
-                    context,
-                  ).push(buildSessionDetailRoute(sessionId: sessionId));
-                },
-              ),
-            if (!tinyMode)
-              ClipRect(
-                child: blurEnabled
-                    ? BackdropFilter(
-                        filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-                        child: buildBar(),
-                      )
-                    : buildBar(),
-              ),
-          ],
-        ),
-      ),
+    final interactionCoordinator = UiInteractionCoordinator.instance;
+    return AnimatedBuilder(
+      animation: interactionCoordinator,
+      builder: (context, _) {
+        final useBlur = blurEnabled && !interactionCoordinator.isInteracting;
+        return SafeArea(
+          key: key,
+          top: false,
+          child: Align(
+            alignment: Alignment.bottomCenter,
+            child: Column(
+              key: isCurrent ? _dockContentKey : null,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (overlaySessions.isNotEmpty)
+                  ActiveSessionCarousel(
+                    sessions: overlaySessions,
+                    provider: ref.read(audioProviderFacadeProvider),
+                    i18n: i18n,
+                    onOpenSession: (sessionId) {
+                      Navigator.of(
+                        context,
+                      ).push(buildSessionDetailRoute(sessionId: sessionId));
+                    },
+                  ),
+                if (!tinyMode)
+                  ClipRect(
+                    child: useBlur
+                        ? BackdropFilter(
+                            filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+                            child: buildBar(useBlur),
+                          )
+                        : buildBar(useBlur),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 

@@ -24,7 +24,6 @@ class _PathPickerCard extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Icon(icon, color: cs.primary),
             const SizedBox(width: 16),
@@ -53,7 +52,10 @@ class _PathPickerCard extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 8),
-            Icon(Icons.folder_open_rounded, color: cs.primary.withValues(alpha: 0.8)),
+            Icon(
+              Icons.folder_open_rounded,
+              color: cs.primary.withValues(alpha: 0.8),
+            ),
           ],
         ),
       ),

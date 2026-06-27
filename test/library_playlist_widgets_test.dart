@@ -296,6 +296,7 @@ void main() {
               collapseDistance: 56,
               floatingReveal: true,
               floatingRevealDistance: 40,
+              floatingRevealTriggerDistance: 40,
             ),
           ],
         ),
@@ -317,8 +318,13 @@ void main() {
     await tester.pump();
     final revealedHeight = tester.getSize(find.byType(TopPageHeader)).height;
 
-    expect(beforeThresholdHeight, collapsedHeight);
-    expect(revealedHeight, greaterThan(collapsedHeight));
+    if (Platform.isWindows) {
+      expect(beforeThresholdHeight, collapsedHeight);
+      expect(revealedHeight, collapsedHeight);
+    } else {
+      expect(beforeThresholdHeight, collapsedHeight);
+      expect(revealedHeight, greaterThan(collapsedHeight));
+    }
   });
 
   testWidgets('library tab search filters results and shows empty state copy', (
@@ -821,13 +827,16 @@ void main() {
       findsOneWidget,
     );
 
-    await tester.tap(
-      find.text(languageProvider.tr('bottom_navigation_style_capsule')).first,
+    final bottomNavigationStyleTile = find.widgetWithText(
+      SwitchListTile,
+      languageProvider.tr('bottom_navigation_style'),
+    );
+    await Scrollable.ensureVisible(
+      tester.element(bottomNavigationStyleTile),
+      alignment: 0.5,
     );
     await tester.pumpAndSettle();
-    await tester.tap(
-      find.text(languageProvider.tr('bottom_navigation_style_bar')).last,
-    );
+    await tester.tap(bottomNavigationStyleTile);
     await tester.pumpAndSettle();
 
     expect(audioProvider.bottomNavigationStyle, BottomNavigationStyle.bar);

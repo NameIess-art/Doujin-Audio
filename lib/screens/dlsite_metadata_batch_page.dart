@@ -67,13 +67,15 @@ class _DlsiteMetadataBatchPageState extends State<DlsiteMetadataBatchPage> {
   }
 
   Future<void> _pickSpecific() async {
-    final result = await Navigator.of(context).push<List<AudioLibraryCategoryEntry>>(
-      buildAppPageRoute(child: DlsiteMetadataWorkPickerPage(
-          entries: _entries,
-          initialSelection: _specificEntries,
-        ),
-      ),
-    );
+    final result = await Navigator.of(context)
+        .push<List<AudioLibraryCategoryEntry>>(
+          buildAppPageRoute(
+            child: DlsiteMetadataWorkPickerPage(
+              entries: _entries,
+              initialSelection: _specificEntries,
+            ),
+          ),
+        );
     if (result != null) {
       setState(() {
         _specificEntries = result;
@@ -131,7 +133,8 @@ class _DlsiteMetadataBatchPageState extends State<DlsiteMetadataBatchPage> {
       }
       final result = await Navigator.of(context)
           .push<DlsiteMetadataReviewResult>(
-            buildAppPageRoute(child: DlsiteMetadataReviewPage(
+            buildAppPageRoute(
+              child: DlsiteMetadataReviewPage(
                 detail: entry.detail,
                 rjCode: query.rjCode,
                 searchTitles: query.searchTitles,
@@ -184,34 +187,34 @@ class _DlsiteMetadataBatchPageState extends State<DlsiteMetadataBatchPage> {
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
                 : _error != null
-                    ? _BatchMetadataErrorView(onRetry: _load)
-                    : _summary != null
-                        ? _BatchMetadataSummaryView(
-                            summary: _summary!,
-                            onDone: () => Navigator.of(context).maybePop(),
-                          )
-                        : _BatchMetadataSetupView(
-                            scope: _scope,
-                            allCount: _entries.length,
-                            noMetadataCount: _noMetadataEntries.length,
-                            anyMissingCount: _anyMissingEntries.length,
-                            hasRjCodeCount: _hasRjCodeEntries.length,
-                            specificCount: _specificEntries.length,
-                            running: _running,
-                            currentIndex: _currentIndex,
-                            activeTotal: _activeTotal,
-                            onScopeChanged: (scope) {
-                              setState(() {
-                                _scope = scope;
-                              });
-                              if (scope == _BatchMetadataScope.specific &&
-                                  _specificEntries.isEmpty) {
-                                _pickSpecific();
-                              }
-                            },
-                            onPickSpecific: _pickSpecific,
-                            onStart: _run,
-                          ),
+                ? _BatchMetadataErrorView(onRetry: _load)
+                : _summary != null
+                ? _BatchMetadataSummaryView(
+                    summary: _summary!,
+                    onDone: () => Navigator.of(context).maybePop(),
+                  )
+                : _BatchMetadataSetupView(
+                    scope: _scope,
+                    allCount: _entries.length,
+                    noMetadataCount: _noMetadataEntries.length,
+                    anyMissingCount: _anyMissingEntries.length,
+                    hasRjCodeCount: _hasRjCodeEntries.length,
+                    specificCount: _specificEntries.length,
+                    running: _running,
+                    currentIndex: _currentIndex,
+                    activeTotal: _activeTotal,
+                    onScopeChanged: (scope) {
+                      setState(() {
+                        _scope = scope;
+                      });
+                      if (scope == _BatchMetadataScope.specific &&
+                          _specificEntries.isEmpty) {
+                        _pickSpecific();
+                      }
+                    },
+                    onPickSpecific: _pickSpecific,
+                    onStart: _run,
+                  ),
           ),
           Positioned(
             top: 0,
@@ -291,10 +294,10 @@ class _BatchMetadataSetupView extends StatelessWidget {
         ),
       );
     }
-    
+
     final topPadding = MediaQuery.paddingOf(context).top;
     final topTotalHeight = 82 + topPadding;
-    
+
     return ListView(
       padding: EdgeInsets.fromLTRB(16, topTotalHeight + 4, 16, 24),
       children: [
@@ -374,7 +377,10 @@ class _BatchMetadataSetupView extends StatelessWidget {
           label: Text(i18n.tr('batch_metadata_start')),
           style: FilledButton.styleFrom(
             padding: const EdgeInsets.symmetric(vertical: 16),
-            textStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+            textStyle: const TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 15,
+            ),
           ),
         ),
       ],
@@ -406,7 +412,9 @@ class _DlsiteMetadataWorkPickerPageState
   @override
   void initState() {
     super.initState();
-    _selectedIds = widget.initialSelection.map((e) => AudioLibraryCategorySnapshot.targetKey(e.target)).toSet();
+    _selectedIds = widget.initialSelection
+        .map((e) => AudioLibraryCategorySnapshot.targetKey(e.target))
+        .toSet();
     _searchController = TextEditingController();
   }
 
@@ -429,11 +437,15 @@ class _DlsiteMetadataWorkPickerPageState
   List<AudioLibraryCategoryEntry> get _filteredEntries {
     if (_searchQuery.trim().isEmpty) return widget.entries;
     final query = _searchQuery.trim().toLowerCase();
-    return widget.entries.where((e) {
-      final title = (e.detail.workTitle.isNotEmpty ? e.detail.workTitle : e.title).toLowerCase();
-      final rjCode = e.detail.rjCode.toLowerCase();
-      return title.contains(query) || rjCode.contains(query);
-    }).toList(growable: false);
+    return widget.entries
+        .where((e) {
+          final title =
+              (e.detail.workTitle.isNotEmpty ? e.detail.workTitle : e.title)
+                  .toLowerCase();
+          final rjCode = e.detail.rjCode.toLowerCase();
+          return title.contains(query) || rjCode.contains(query);
+        })
+        .toList(growable: false);
   }
 
   @override
@@ -454,13 +466,15 @@ class _DlsiteMetadataWorkPickerPageState
           ),
           child: TextField(
             controller: _searchController,
-            autofocus: false,
             style: const TextStyle(fontSize: 14),
             decoration: InputDecoration(
               hintText: i18n.tr('batch_metadata_picker_search'),
               border: InputBorder.none,
               hintStyle: TextStyle(color: cs.onSurfaceVariant),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 12,
+              ),
               isDense: true,
             ),
             onChanged: (val) {
@@ -493,7 +507,9 @@ class _DlsiteMetadataWorkPickerPageState
             value: selected,
             onChanged: (val) => _toggleSelection(id, val),
             title: Text(
-              entry.detail.workTitle.isNotEmpty ? entry.detail.workTitle : entry.title,
+              entry.detail.workTitle.isNotEmpty
+                  ? entry.detail.workTitle
+                  : entry.title,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
@@ -506,21 +522,22 @@ class _DlsiteMetadataWorkPickerPageState
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () {
           final result = widget.entries
-              .where((e) => _selectedIds.contains(AudioLibraryCategorySnapshot.targetKey(e.target)))
+              .where(
+                (e) => _selectedIds.contains(
+                  AudioLibraryCategorySnapshot.targetKey(e.target),
+                ),
+              )
               .toList(growable: false);
           Navigator.of(context).pop(result);
         },
         icon: const Icon(Icons.check),
         label: Text(
-          i18n.tr('batch_metadata_picker_done', {
-            'count': _selectedIds.length,
-          }),
+          i18n.tr('batch_metadata_picker_done', {'count': _selectedIds.length}),
         ),
       ),
     );
   }
 }
-
 
 class _BatchMetadataSummaryView extends StatelessWidget {
   const _BatchMetadataSummaryView({
@@ -536,7 +553,7 @@ class _BatchMetadataSummaryView extends StatelessWidget {
     final i18n = context.watch<AppLanguageProvider>();
     final topPadding = MediaQuery.paddingOf(context).top;
     final topTotalHeight = 82 + topPadding;
-    
+
     return ListView(
       padding: EdgeInsets.fromLTRB(16, topTotalHeight + 4, 16, 24),
       children: [
@@ -571,7 +588,12 @@ class _BatchMetadataErrorView extends StatelessWidget {
 
     return Center(
       child: Padding(
-        padding: EdgeInsets.only(top: topTotalHeight + 4, left: 24, right: 24, bottom: 24),
+        padding: EdgeInsets.only(
+          top: topTotalHeight + 4,
+          left: 24,
+          right: 24,
+          bottom: 24,
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [

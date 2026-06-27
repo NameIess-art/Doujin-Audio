@@ -2,9 +2,9 @@
 
 Nameless Audio 是一款面向 ASMR、语音作品和大体量本地媒体库的跨平台播放器，使用 Flutter、Android 原生 Media3 / ExoPlayer 与 Windows libmpv 混合实现。
 
-当前版本：`0.11.2+1102`
+当前版本：`0.12.0+1200`
 
-最新发布页：[v0.11.2](https://github.com/NameIess-art/nameless-audio/releases/tag/v0.11.2)
+最新发布页：[v0.12.0](https://github.com/NameIess-art/nameless-audio/releases/tag/v0.12.0)
 
 [MIT License](LICENSE) · [隐私说明](PRIVACY.md) · [发行质量说明](docs/release-quality.md)
 
@@ -12,8 +12,8 @@ Nameless Audio 是一款面向 ASMR、语音作品和大体量本地媒体库的
 
 | 平台 | 发布资产 | 说明 |
 |---|---|---|
-| Android arm64-v8a | `NamelessAudio-android-arm64-v0.11.2.apk` | 适用于大多数 64 位 Android 手机 |
-| Windows x64 | `NamelessAudio-windows-x64-v0.11.2.zip` | 解压完整 ZIP 后运行 `nameless_audio.exe` |
+| Android arm64-v8a | `NamelessAudio-android-arm64-v0.12.0.apk` | 适用于大多数 64 位 Android 手机 |
+| Windows x64 | `NamelessAudio-windows-x64-v0.12.0.zip` | 解压完整 ZIP 后运行 `nameless_audio.exe` |
 
 Windows ZIP 包含应用运行所需的完整 Flutter 运行时、`libmpv-2.dll`、FFmpeg 和 FFprobe。不要只复制 EXE。
 
@@ -51,6 +51,7 @@ Windows ZIP 包含应用运行所需的完整 Flutter 运行时、`libmpv-2.dll`
 
 - 浏览、搜索、登录、收藏、历史、分类和个性化推荐。
 - 在线读取作品文件树，将单文件或文件夹加入播放会话。
+- 可选“ASMR.ONE播放后缓存”，播放过的 ASMR.ONE 音频会进入应用缓存，循环播放时减少重新加载和网络请求。
 - 选择作品文件或目录下载到本地，保留目录结构并生成 `nameless-audio.json` 元数据。
 - 按 RJ 号、文件名或作品标题读取 DLsite 元数据，支持多站点和 HTML 回退解析。
 - 支持批量元数据匹配、确认写入、详情备份和数据库恢复。
@@ -76,7 +77,7 @@ Windows ZIP 包含应用运行所需的完整 Flutter 运行时、`libmpv-2.dll`
 - 权限与后台运行中心集中检查通知、后台运行、精确定时、悬浮窗、文件管理和安装更新权限。
 - 支持 `.nalbackup` 数据备份、验证、恢复与失败回滚。
 - 支持导出脱敏诊断 ZIP；日志会清理凭据、授权头和 URL 查询参数。
-- 缓存管理支持封面、视频帧、更新包和下载临时文件，并可设置缓存上限。
+- 缓存管理支持封面、ASMR.ONE 播放缓存、视频帧、更新包和下载临时文件，并可设置缓存上限。
 - 支持减少动态效果、键盘/横竖屏恢复、Windows 自定义标题栏与桌面窗口适配。
 
 ## 应用内自动更新
@@ -91,10 +92,10 @@ Windows ZIP 包含应用运行所需的完整 Flutter 运行时、`libmpv-2.dll`
 每个更新资产必须同时发布同名校验文件：
 
 ```text
-NamelessAudio-android-arm64-v0.11.2.apk
-NamelessAudio-android-arm64-v0.11.2.apk.sha256
-NamelessAudio-windows-x64-v0.11.2.zip
-NamelessAudio-windows-x64-v0.11.2.zip.sha256
+NamelessAudio-android-arm64-v0.12.0.apk
+NamelessAudio-android-arm64-v0.12.0.apk.sha256
+NamelessAudio-windows-x64-v0.12.0.zip
+NamelessAudio-windows-x64-v0.12.0.zip.sha256
 ```
 
 ## 支持格式
@@ -147,7 +148,7 @@ build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
 
 ```powershell
 flutter build windows --release
-Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath dist\NamelessAudio-windows-x64-v0.11.2.zip -Force
+Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath dist\NamelessAudio-windows-x64-v0.12.0.zip -Force
 ```
 
 ## 发布流程
@@ -160,10 +161,18 @@ Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath dist\
 4. 为两端资产生成 `.sha256` 并上传到同一个 GitHub Release。
 
 ```powershell
-dart run tool/verify_release.dart --tag v0.11.2
-git tag v0.11.2
-git push origin main v0.11.2
+dart run tool/verify_release.dart --tag v0.12.0
+git tag v0.12.0
+git push origin main v0.12.0
 ```
+
+## v0.12.0 重点变更
+
+- 新增“ASMR.ONE播放后缓存”设置，开启后 ASMR.ONE 页面播放过的音频会进入应用缓存，循环播放时减少重新加载和网络请求。
+- 修复缓存命中后播放列表标题显示为缓存哈希、封面无法加载的问题，缓存路径会继续映射回原 ASMR.ONE 音频元数据。
+- 调整通知栏会话展开/收起行为，子会话默认收起，展开后保留封面和图标按钮样式。
+- 优化 ASMR 下载、设置页、底部导航、顶部标题栏和播放列表卡片的布局一致性。
+- 改进静音跳过、字幕偏好、封面查找和服务恢复后的播放意图恢复。
 
 ## v0.11.2 重点变更
 

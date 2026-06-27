@@ -220,49 +220,52 @@ class _DataSupportPageState extends State<DataSupportPage> {
           elevation: 0,
           automaticallyImplyLeading: false,
         ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
-        children: [
-          Text(
-            i18n.tr('data_and_support_subtitle'),
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
+        body: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+          children: [
+            Text(
+              i18n.tr('data_and_support_subtitle'),
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
             ),
-          ),
-          const SizedBox(height: 16),
-          if (_busy) const LinearProgressIndicator(),
-          const SizedBox(height: 8),
-          _ActionCard(
-            title: i18n.tr('export_backup'),
-            subtitle: i18n.tr('export_backup_subtitle'),
-            icon: Icons.archive_outlined,
-            onTap: _busy ? null : _exportBackup,
-          ),
-          _ActionCard(
-            title: i18n.tr('restore_backup'),
-            subtitle: i18n.tr('restore_backup_subtitle'),
-            icon: Icons.restore_rounded,
-            onTap: _busy ? null : _restoreBackup,
-          ),
-          _ActionCard(
-            title: i18n.tr('export_diagnostics'),
-            subtitle: i18n.tr('export_diagnostics_subtitle'),
-            icon: Icons.support_agent_rounded,
-            onTap: _busy ? null : _exportDiagnostics,
-          ),
-          _ActionCard(
-            title: i18n.tr('privacy_summary_title'),
-            subtitle: i18n.tr('privacy_summary_local_body'),
-            icon: Icons.privacy_tip_outlined,
-            onTap: _busy
-                ? null
-                : () => Navigator.of(context).push(
-                    buildAppPageRoute<void>(child: const PrivacySummaryPage()),
-                  ),
-          ),
-        ],
+            const SizedBox(height: 16),
+            if (_busy) const LinearProgressIndicator(),
+            const SizedBox(height: 8),
+            _ActionCard(
+              title: i18n.tr('export_backup'),
+              subtitle: i18n.tr('export_backup_subtitle'),
+              icon: Icons.archive_outlined,
+              onTap: _busy ? null : _exportBackup,
+            ),
+            _ActionCard(
+              title: i18n.tr('restore_backup'),
+              subtitle: i18n.tr('restore_backup_subtitle'),
+              icon: Icons.restore_rounded,
+              onTap: _busy ? null : _restoreBackup,
+            ),
+            _ActionCard(
+              title: i18n.tr('export_diagnostics'),
+              subtitle: i18n.tr('export_diagnostics_subtitle'),
+              icon: Icons.support_agent_rounded,
+              onTap: _busy ? null : _exportDiagnostics,
+            ),
+            _ActionCard(
+              title: i18n.tr('privacy_summary_title'),
+              subtitle: i18n.tr('privacy_summary_local_body'),
+              icon: Icons.privacy_tip_outlined,
+              onTap: _busy
+                  ? null
+                  : () => Navigator.of(context).push(
+                      buildAppPageRoute<void>(
+                        child: const PrivacySummaryPage(),
+                      ),
+                    ),
+            ),
+          ],
+        ),
       ),
-    ));
+    );
   }
 }
 
@@ -286,10 +289,7 @@ class _ActionCard extends StatelessWidget {
       elevation: 0,
       color: cs.surfaceContainerHigh.withValues(alpha: 0.6),
       margin: const EdgeInsets.only(bottom: 12),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide.none,
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       clipBehavior: Clip.antiAlias,
       child: ListTile(
         minTileHeight: 76,

@@ -199,7 +199,6 @@ class _TopPageHeaderState extends ConsumerState<TopPageHeader> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 SizedBox(height: 44 * trailingFactor),
                 if (widget.leading != null) ...[

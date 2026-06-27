@@ -1,9 +1,13 @@
+val useAliyunMavenMirrors = System.getenv("GITHUB_ACTIONS") != "true"
+
 allprojects {
     repositories {
         google()
         mavenCentral()
-        maven { url = uri("https://maven.aliyun.com/repository/google") }
-        maven { url = uri("https://maven.aliyun.com/repository/public") }
+        if (useAliyunMavenMirrors) {
+            maven { url = uri("https://maven.aliyun.com/repository/google") }
+            maven { url = uri("https://maven.aliyun.com/repository/public") }
+        }
     }
 }
 

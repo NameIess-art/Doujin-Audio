@@ -444,15 +444,17 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
                   )
                 : const SizedBox.shrink(),
           ),
-          _ProgressBar(
-            key: ValueKey(session.id),
-            session: session,
-            provider: provider,
-            timeSegmentLabels: _segmentLabels,
-            selectedSegmentId: _segmentPanelExpanded
-                ? _selectedSegmentId
-                : null,
-            onManualSeek: _handleSegmentManualSeek,
+          RepaintBoundary(
+            child: _ProgressBar(
+              key: ValueKey(session.id),
+              session: session,
+              provider: provider,
+              timeSegmentLabels: _segmentLabels,
+              selectedSegmentId: _segmentPanelExpanded
+                  ? _selectedSegmentId
+                  : null,
+              onManualSeek: _handleSegmentManualSeek,
+            ),
           ),
           _PlaybackControlPanel(
             key: ValueKey(

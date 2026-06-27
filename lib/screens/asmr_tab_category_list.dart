@@ -26,6 +26,7 @@ class _AsmrCategoryListState extends State<_AsmrCategoryList>
     with AutomaticKeepAliveClientMixin {
   final GlobalKey<GlassRefreshIndicatorState> _refreshIndicatorKey =
       GlobalKey<GlassRefreshIndicatorState>();
+  bool _refreshTriggeredInCurrentScroll = false;
 
   @override
   bool get wantKeepAlive => true;
@@ -67,8 +68,26 @@ class _AsmrCategoryListState extends State<_AsmrCategoryList>
               right: 4,
             ),
           ),
-          child: GlassRefreshIndicator(
-            key: _refreshIndicatorKey,
+          child: NotificationListener<ScrollNotification>(
+            onNotification: (notification) {
+              if (notification is ScrollUpdateNotification &&
+                  notification.dragDetails != null &&
+                  notification.metrics.pixels < -68 &&
+                  !_refreshTriggeredInCurrentScroll) {
+                _refreshTriggeredInCurrentScroll = true;
+                unawaited(
+                  AppInteractionFeedback.trigger(
+                    AppInteractionFeedbackType.confirmation,
+                  ),
+                );
+                _refreshIndicatorKey.currentState?.show();
+              } else if (notification is ScrollEndNotification) {
+                _refreshTriggeredInCurrentScroll = false;
+              }
+              return false;
+            },
+            child: GlassRefreshIndicator(
+              key: _refreshIndicatorKey,
             color: asmrBlue,
             backgroundColor: Theme.of(
               context,
@@ -166,6 +185,7 @@ class _AsmrCategoryListState extends State<_AsmrCategoryList>
             ),
           ),
         ),
+      ),
       ),
     );
   }

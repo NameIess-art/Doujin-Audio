@@ -89,6 +89,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   final Set<String> _selectedVoiceActorTerms = <String>{};
   final Set<String> _selectedCircleTerms = <String>{};
 
+  bool _refreshTriggeredInCurrentScroll = false;
   bool _isReordering = false;
 
   final GlobalKey<GlassRefreshIndicatorState> _refreshIndicatorKey =
@@ -561,7 +562,28 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     }
 
     return ScrollActivityGate(
-      child: Stack(
+      child: NotificationListener<ScrollNotification>(
+        onNotification: (notification) {
+          if (notification is ScrollUpdateNotification &&
+              notification.dragDetails != null &&
+              notification.metrics.pixels < -68 &&
+              !_refreshTriggeredInCurrentScroll &&
+              canPullRefresh &&
+              !listState.isScanning &&
+              _effectiveSearchQuery.isEmpty) {
+            _refreshTriggeredInCurrentScroll = true;
+            unawaited(
+              AppInteractionFeedback.trigger(
+                AppInteractionFeedbackType.confirmation,
+              ),
+            );
+            _refreshIndicatorKey.currentState?.show();
+          } else if (notification is ScrollEndNotification) {
+            _refreshTriggeredInCurrentScroll = false;
+          }
+          return false;
+        },
+        child: Stack(
         clipBehavior: Clip.none,
         children: [
           // Viewport restricted to content area so drag-to-reorder auto-scroll
@@ -879,6 +901,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
             ),
           ),
         ],
+      ),
       ),
     );
   }

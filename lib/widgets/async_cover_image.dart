@@ -467,6 +467,72 @@ class RetryingNetworkImage extends StatelessWidget {
   }
 }
 
+class AsyncRemoteCoverImage extends StatelessWidget {
+  const AsyncRemoteCoverImage({
+    super.key,
+    required this.url,
+    required this.future,
+    this.initialPath,
+    required this.fallbackBuilder,
+    this.retryFutureBuilder,
+    this.loadingBuilder,
+    this.fit,
+    this.alignment = Alignment.center,
+    this.cacheWidth,
+    this.cacheHeight,
+    this.color,
+    this.colorBlendMode,
+    this.useDefaultCacheWidth = true,
+    this.filterQuality = FilterQuality.medium,
+    this.duration = const Duration(milliseconds: 600),
+  });
+
+  final String url;
+  final Future<String?> future;
+  final String? initialPath;
+  final WidgetBuilder fallbackBuilder;
+  final Future<String?> Function()? retryFutureBuilder;
+  final WidgetBuilder? loadingBuilder;
+  final BoxFit? fit;
+  final AlignmentGeometry alignment;
+  final int? cacheWidth;
+  final int? cacheHeight;
+  final Color? color;
+  final BlendMode? colorBlendMode;
+  final bool useDefaultCacheWidth;
+  final FilterQuality filterQuality;
+  final Duration duration;
+
+  @override
+  Widget build(BuildContext context) {
+    if (url.trim().isEmpty) {
+      return fallbackBuilder(context);
+    }
+    return AsyncCoverImage(
+      future: future,
+      initialPath: initialPath,
+      retryFutureBuilder: retryFutureBuilder,
+      loadingBuilder: loadingBuilder,
+      fallbackBuilder: fallbackBuilder,
+      duration: duration,
+      imageBuilder: (context, coverPath) {
+        return RetryingFileImage(
+          path: coverPath,
+          fit: fit,
+          alignment: alignment,
+          cacheWidth: cacheWidth,
+          cacheHeight: cacheHeight,
+          color: color,
+          colorBlendMode: colorBlendMode,
+          useDefaultCacheWidth: useDefaultCacheWidth,
+          filterQuality: filterQuality,
+          fallbackBuilder: fallbackBuilder,
+        );
+      },
+    );
+  }
+}
+
 class RetryingFileImage extends StatelessWidget {
   const RetryingFileImage({
     super.key,

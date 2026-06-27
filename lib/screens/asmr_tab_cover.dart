@@ -16,6 +16,7 @@ class _AsmrWorkCover extends StatelessWidget {
         (provider) => provider.coverImageResolution,
       ),
     );
+    final provider = context.read<AudioProvider>();
     return ClipRRect(
       clipBehavior: Clip.hardEdge,
       borderRadius: BorderRadius.circular(LibraryLikeCardMetrics.coverRadius),
@@ -29,25 +30,24 @@ class _AsmrWorkCover extends StatelessWidget {
                 icon: Icons.graphic_eq_rounded,
                 iconSize: 28,
               )
-            : RetryingNetworkImage(
+            : AsyncRemoteCoverImage(
                 url: url,
+                future: provider.coverPathFutureForRemoteCover(url),
+                initialPath: provider.resolvedCoverPathForRemoteCover(url),
+                retryFutureBuilder: () =>
+                    provider.coverPathFutureForRemoteCover(url),
                 fit: BoxFit.cover,
                 cacheWidth: coverCacheWidth,
                 useDefaultCacheWidth: coverCacheWidth != null,
-                loadingBuilder: (context, child, loadingProgress) {
-                  if (loadingProgress == null) {
-                    return child;
-                  }
-                  return CoverLoadingArtwork(
-                    placeholder: CoverFallbackArtwork(
-                      seed: url,
-                      showIcon: false,
-                      compact: true,
-                    ),
-                    size: 36,
-                    strokeWidth: 3,
-                  );
-                },
+                loadingBuilder: (_) => CoverLoadingArtwork(
+                  placeholder: CoverFallbackArtwork(
+                    seed: url,
+                    showIcon: false,
+                    compact: true,
+                  ),
+                  size: 36,
+                  strokeWidth: 3,
+                ),
                 fallbackBuilder: (_) => CoverFallbackArtwork(
                   seed: url,
                   compact: true,
@@ -61,17 +61,7 @@ class _AsmrWorkCover extends StatelessWidget {
 }
 
 String _asmrWorkListCoverUrl(AsmrWork work) {
-  for (final url in <String>[
-    work.mainCoverUrl,
-    work.coverUrl,
-    work.thumbnailUrl,
-  ]) {
-    final trimmed = url.trim();
-    if (trimmed.isNotEmpty) {
-      return trimmed;
-    }
-  }
-  return '';
+  return work.preferredCoverUrl;
 }
 
 class _AsmrWorkSkeletonCard extends StatelessWidget {

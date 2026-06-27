@@ -55,6 +55,73 @@ void main() {
     expect(restored.isFavorite, isTrue);
   });
 
+  test(
+    'ASMR work preferred cover uses main cover then cover then thumbnail',
+    () {
+      const withMain = AsmrWork(
+        id: 1,
+        title: 'Work',
+        circleName: 'Circle',
+        sourceId: 'RJ1',
+        sourceType: 'DLSITE',
+        sourceUrl: 'https://example.com/work',
+        coverUrl: 'https://example.com/cover.jpg',
+        thumbnailUrl: 'https://example.com/thumb.jpg',
+        mainCoverUrl: ' https://example.com/main.jpg ',
+        releaseDate: null,
+        createDate: null,
+        duration: Duration.zero,
+        dlCount: 0,
+        reviewCount: 0,
+        rating: 0,
+        voiceActors: <String>[],
+        tags: <String>[],
+      );
+      const withCover = AsmrWork(
+        id: 2,
+        title: 'Work',
+        circleName: 'Circle',
+        sourceId: 'RJ2',
+        sourceType: 'DLSITE',
+        sourceUrl: 'https://example.com/work',
+        coverUrl: ' https://example.com/cover.jpg ',
+        thumbnailUrl: 'https://example.com/thumb.jpg',
+        mainCoverUrl: '',
+        releaseDate: null,
+        createDate: null,
+        duration: Duration.zero,
+        dlCount: 0,
+        reviewCount: 0,
+        rating: 0,
+        voiceActors: <String>[],
+        tags: <String>[],
+      );
+      const withThumb = AsmrWork(
+        id: 3,
+        title: 'Work',
+        circleName: 'Circle',
+        sourceId: 'RJ3',
+        sourceType: 'DLSITE',
+        sourceUrl: 'https://example.com/work',
+        coverUrl: '',
+        thumbnailUrl: ' https://example.com/thumb.jpg ',
+        mainCoverUrl: '',
+        releaseDate: null,
+        createDate: null,
+        duration: Duration.zero,
+        dlCount: 0,
+        reviewCount: 0,
+        rating: 0,
+        voiceActors: <String>[],
+        tags: <String>[],
+      );
+
+      expect(withMain.preferredCoverUrl, 'https://example.com/main.jpg');
+      expect(withCover.preferredCoverUrl, 'https://example.com/cover.jpg');
+      expect(withThumb.preferredCoverUrl, 'https://example.com/thumb.jpg');
+    },
+  );
+
   test('ASMR playable tracks inherit matched subtitle metadata', () {
     const work = AsmrWork(
       id: 416816,
@@ -128,6 +195,7 @@ void main() {
 
     expect(tracks, hasLength(1));
     expect(tracks.single.remoteMetadataKind, 'asmr.one');
+    expect(tracks.single.remoteCoverUrl, 'https://example.com/main.jpg');
     expect(
       tracks.single.remoteMetadata?['subtitleUrl'],
       'http://127.0.0.1/subtitle',

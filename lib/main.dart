@@ -159,6 +159,26 @@ class AppOrientationPolicy {
   final List<DeviceOrientation> allowedOrientations;
 }
 
+class _StretchOverscrollBehavior extends MaterialScrollBehavior {
+  const _StretchOverscrollBehavior();
+
+  @override
+  Widget buildOverscrollIndicator(
+    BuildContext context,
+    Widget child,
+    ScrollableDetails details,
+  ) {
+    if (details.direction == AxisDirection.left ||
+        details.direction == AxisDirection.right) {
+      return child;
+    }
+    return StretchingOverscrollIndicator(
+      axisDirection: details.direction,
+      child: child,
+    );
+  }
+}
+
 class MusicPlayerApp extends StatelessWidget {
   const MusicPlayerApp({super.key});
 
@@ -181,9 +201,9 @@ class MusicPlayerApp extends StatelessWidget {
           theme: themeProvider.lightTheme,
           darkTheme: themeProvider.darkTheme,
           themeMode: themeProvider.themeMode,
-          scrollBehavior: const MaterialScrollBehavior().copyWith(
+          scrollBehavior: const _StretchOverscrollBehavior().copyWith(
             scrollbars: AppPlatform.showsDesktopScrollbars,
-            physics: const BouncingScrollPhysics(
+            physics: const ClampingScrollPhysics(
               parent: AlwaysScrollableScrollPhysics(),
             ),
           ),

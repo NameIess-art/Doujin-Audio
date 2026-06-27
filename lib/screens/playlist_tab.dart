@@ -349,7 +349,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                               child: cardPositionsLocked
                                   ? ListView.builder(
                                       controller: _scrollController,
-                                      physics: const BouncingScrollPhysics(),
+                                      physics: const ClampingScrollPhysics(),
                                       padding: const EdgeInsets.fromLTRB(
                                         16,
                                         topPadding,
@@ -366,7 +366,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                                     )
                                   : ReorderableListView.builder(
                                       scrollController: _scrollController,
-                                      physics: const BouncingScrollPhysics(),
+                                      physics: const ClampingScrollPhysics(),
                                       padding: const EdgeInsets.fromLTRB(
                                         16,
                                         topPadding,

@@ -53,7 +53,7 @@ class _LibraryEmptyState extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     return ListView(
       padding: EdgeInsets.fromLTRB(24, topInset, 24, bottomInset),
-      physics: physics ?? const BouncingScrollPhysics(),
+      physics: physics ?? const ClampingScrollPhysics(),
       children: [
         const SizedBox(height: 20),
         Container(

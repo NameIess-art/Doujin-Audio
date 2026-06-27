@@ -247,6 +247,13 @@ class AsmrWork {
   final bool isFavorite;
 
   String get rjCode => sourceId.trim();
+  String get preferredCoverUrl {
+    for (final url in <String>[mainCoverUrl, coverUrl, thumbnailUrl]) {
+      final trimmed = url.trim();
+      if (trimmed.isNotEmpty) return trimmed;
+    }
+    return '';
+  }
 
   AsmrWork copyWith({bool? isFavorite}) {
     return AsmrWork(

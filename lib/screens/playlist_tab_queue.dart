@@ -271,14 +271,10 @@ class _QueueTrackCoverState extends State<_QueueTrackCover> {
         (provider) => provider.coverImageResolution,
       ),
     );
-    final initialPath =
-        track.manualCoverPath ??
-        track.coverCachePath ??
-        widget.provider.resolvedCoverPathForTrack(track);
     return AsyncCoverImage(
       duration: Duration.zero,
       future: _coverFuture,
-      initialPath: initialPath,
+      initialPath: widget.provider.resolvedCoverPathForTrack(track),
       imageBuilder: (context, path) => RetryingFileImage(
         path: path,
         fit: BoxFit.cover,

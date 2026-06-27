@@ -66,7 +66,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
   late final List<Widget> _pages;
   final Set<int> _visitedPageIndices = <int>{};
   final Object _pageSwitchInteraction = Object();
-  final GlobalKey _bottomDockKey = GlobalKey();
   final GlobalKey _dockContentKey = GlobalKey();
 
   bool _notificationPermissionCheckDone = false;

@@ -49,8 +49,8 @@ void main() {
       findsNothing,
     );
 
-    await tester.tap(find.text(harness.language.tr('nav_settings')).last);
-    await tester.pumpAndSettle();
+    await _tapSettingsDestination(tester);
+    await _pumpMainScreenAnimations(tester);
 
     final pageFades = <AnimatedOpacity>[
       tester.widget(find.byKey(const ValueKey<String>('main_page_fade_1'))),
@@ -109,9 +109,9 @@ void main() {
   testWidgets('app shell handles keyboard and dynamic portrait sizes', (
     tester,
   ) async {
-    final harness = await _pumpAppShell(tester);
-    await tester.tap(find.text(harness.language.tr('nav_settings')).last);
-    await tester.pumpAndSettle();
+    await _pumpAppShell(tester);
+    await _tapSettingsDestination(tester);
+    await _pumpMainScreenAnimations(tester);
 
     Stack mainPageStack() => tester
         .widgetList<Stack>(find.byType(Stack))
@@ -131,7 +131,7 @@ void main() {
     expect(tester.takeException(), isNull);
 
     tester.view.physicalSize = const Size(1080, 2400);
-    await tester.pumpAndSettle();
+    await _pumpMainScreenAnimations(tester);
     expect(tester.takeException(), isNull);
   });
 }
@@ -211,6 +211,25 @@ Future<_AppShellHarness> _pumpAppShell(
       ),
     ),
   );
-  await tester.pumpAndSettle();
+  await _pumpMainScreenAnimations(tester, startup: true);
   return _AppShellHarness(language: languageProvider);
+}
+
+Future<void> _pumpMainScreenAnimations(
+  WidgetTester tester, {
+  bool startup = false,
+}) async {
+  await tester.pump();
+  if (startup) {
+    await tester.pump(const Duration(milliseconds: 900));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 900));
+  } else {
+    await tester.pump(const Duration(milliseconds: 180));
+  }
+  await tester.pump();
+}
+
+Future<void> _tapSettingsDestination(WidgetTester tester) async {
+  await tester.tap(find.byIcon(Icons.tune_outlined).last);
 }

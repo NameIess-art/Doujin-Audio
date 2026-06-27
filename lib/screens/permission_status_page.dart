@@ -106,110 +106,123 @@ class _PermissionStatusPageState extends State<PermissionStatusPage>
           elevation: 0,
           automaticallyImplyLeading: false,
         ),
-      body: FutureBuilder<PermissionStatusSnapshot>(
-        future: _snapshot,
-        builder: (context, snapshot) {
-          final status = snapshot.data;
-          if (status == null) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          return RefreshIndicator(
-            onRefresh: () async => _refresh(),
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
-              children: [
-                Text(
-                  i18n.tr('permission_center_subtitle'),
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+        body: FutureBuilder<PermissionStatusSnapshot>(
+          future: _snapshot,
+          builder: (context, snapshot) {
+            final status = snapshot.data;
+            if (status == null) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            return RefreshIndicator(
+              onRefresh: () async => _refresh(),
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+                children: [
+                  Text(
+                    i18n.tr('permission_center_subtitle'),
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 16),
-                _PermissionSection(title: i18n.tr('permission_group_playback')),
-                _PermissionTile(
-                  title: i18n.tr('notification_permission_status'),
-                  description: i18n.tr('permission_notification_description'),
-                  icon: Icons.notifications_rounded,
-                  enabled: status.notificationsEnabled,
-                  disabledState: _PermissionUiState.restricted,
-                  onTap: () => _open(
+                  const SizedBox(height: 16),
+                  _PermissionSection(
+                    title: i18n.tr('permission_group_playback'),
+                  ),
+                  _PermissionTile(
                     title: i18n.tr('notification_permission_status'),
                     description: i18n.tr('permission_notification_description'),
-                    action: _notificationsService.openNotificationSettings,
+                    icon: Icons.notifications_rounded,
+                    enabled: status.notificationsEnabled,
+                    disabledState: _PermissionUiState.restricted,
+                    onTap: () => _open(
+                      title: i18n.tr('notification_permission_status'),
+                      description: i18n.tr(
+                        'permission_notification_description',
+                      ),
+                      action: _notificationsService.openNotificationSettings,
+                    ),
                   ),
-                ),
-                _PermissionTile(
-                  title: i18n.tr('allow_background_run'),
-                  description: i18n.tr('permission_background_description'),
-                  icon: Icons.battery_saver_rounded,
-                  enabled: status.backgroundRunAllowed,
-                  disabledState: _PermissionUiState.recommended,
-                  onTap: () => _open(
+                  _PermissionTile(
                     title: i18n.tr('allow_background_run'),
                     description: i18n.tr('permission_background_description'),
-                    action: _powerService.openBackgroundRunSettings,
+                    icon: Icons.battery_saver_rounded,
+                    enabled: status.backgroundRunAllowed,
+                    disabledState: _PermissionUiState.recommended,
+                    onTap: () => _open(
+                      title: i18n.tr('allow_background_run'),
+                      description: i18n.tr('permission_background_description'),
+                      action: _powerService.openBackgroundRunSettings,
+                    ),
                   ),
-                ),
-                _PermissionSection(
-                  title: i18n.tr('permission_group_reliability'),
-                ),
-                _PermissionTile(
-                  title: i18n.tr('exact_alarm_permission_status'),
-                  description: i18n.tr('permission_exact_alarm_description'),
-                  icon: Icons.alarm_on_rounded,
-                  enabled: status.exactAlarmsAllowed,
-                  disabledState: _PermissionUiState.recommended,
-                  onTap: () => _open(
+                  _PermissionSection(
+                    title: i18n.tr('permission_group_reliability'),
+                  ),
+                  _PermissionTile(
                     title: i18n.tr('exact_alarm_permission_status'),
                     description: i18n.tr('permission_exact_alarm_description'),
-                    action: _powerService.openExactAlarmSettings,
+                    icon: Icons.alarm_on_rounded,
+                    enabled: status.exactAlarmsAllowed,
+                    disabledState: _PermissionUiState.recommended,
+                    onTap: () => _open(
+                      title: i18n.tr('exact_alarm_permission_status'),
+                      description: i18n.tr(
+                        'permission_exact_alarm_description',
+                      ),
+                      action: _powerService.openExactAlarmSettings,
+                    ),
                   ),
-                ),
-                _PermissionSection(title: i18n.tr('permission_group_advanced')),
-                _PermissionTile(
-                  title: i18n.tr('manage_files_permission_title'),
-                  description: i18n.tr('permission_manage_files_description'),
-                  icon: Icons.folder_open_rounded,
-                  enabled: status.manageFilesAllowed,
-                  disabledState: _PermissionUiState.unauthorized,
-                  onTap: () => _open(
+                  _PermissionSection(
+                    title: i18n.tr('permission_group_advanced'),
+                  ),
+                  _PermissionTile(
                     title: i18n.tr('manage_files_permission_title'),
                     description: i18n.tr('permission_manage_files_description'),
-                    action: _powerService.openManageAllFilesAccessSettings,
+                    icon: Icons.folder_open_rounded,
+                    enabled: status.manageFilesAllowed,
+                    disabledState: _PermissionUiState.unauthorized,
+                    onTap: () => _open(
+                      title: i18n.tr('manage_files_permission_title'),
+                      description: i18n.tr(
+                        'permission_manage_files_description',
+                      ),
+                      action: _powerService.openManageAllFilesAccessSettings,
+                    ),
                   ),
-                ),
-                _PermissionTile(
-                  title: i18n.tr('overlay_permission_title'),
-                  description: i18n.tr('permission_overlay_description'),
-                  icon: Icons.subtitles_rounded,
-                  enabled: status.overlayAllowed,
-                  disabledState: _PermissionUiState.unauthorized,
-                  onTap: () => _open(
+                  _PermissionTile(
                     title: i18n.tr('overlay_permission_title'),
                     description: i18n.tr('permission_overlay_description'),
-                    action: SubtitleOverlayController.openOverlaySettings,
+                    icon: Icons.subtitles_rounded,
+                    enabled: status.overlayAllowed,
+                    disabledState: _PermissionUiState.unauthorized,
+                    onTap: () => _open(
+                      title: i18n.tr('overlay_permission_title'),
+                      description: i18n.tr('permission_overlay_description'),
+                      action: SubtitleOverlayController.openOverlaySettings,
+                    ),
                   ),
-                ),
-                _PermissionTile(
-                  title: i18n.tr('install_permission_title'),
-                  description: i18n.tr('permission_update_install_description'),
-                  icon: Icons.install_mobile_rounded,
-                  enabled: status.updateInstallsAllowed,
-                  disabledState: _PermissionUiState.unauthorized,
-                  onTap: () => _open(
+                  _PermissionTile(
                     title: i18n.tr('install_permission_title'),
                     description: i18n.tr(
                       'permission_update_install_description',
                     ),
-                    action: AppUpdateService.openInstallPermissionSettings,
+                    icon: Icons.install_mobile_rounded,
+                    enabled: status.updateInstallsAllowed,
+                    disabledState: _PermissionUiState.unauthorized,
+                    onTap: () => _open(
+                      title: i18n.tr('install_permission_title'),
+                      description: i18n.tr(
+                        'permission_update_install_description',
+                      ),
+                      action: AppUpdateService.openInstallPermissionSettings,
+                    ),
                   ),
-                ),
-              ],
-            ),
-          );
-        },
+                ],
+              ),
+            );
+          },
+        ),
       ),
-    ));
+    );
   }
 }
 
@@ -260,10 +273,7 @@ class _PermissionTile extends StatelessWidget {
       elevation: 0,
       color: cs.surfaceContainerHigh.withValues(alpha: 0.6),
       margin: const EdgeInsets.only(bottom: 12),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide.none,
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       clipBehavior: Clip.antiAlias,
       child: ListTile(
         onTap: onTap,

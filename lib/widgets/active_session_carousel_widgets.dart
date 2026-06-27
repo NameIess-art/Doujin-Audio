@@ -161,7 +161,6 @@ class _ActiveSessionCard extends ConsumerWidget {
     return Padding(
       padding: const EdgeInsets.fromLTRB(10, 5, 8, 5),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           _ActiveSessionCover(
             sessionId: session.id,

@@ -39,34 +39,6 @@ const Duration _kIndicatorScaleDuration = Duration(milliseconds: 200);
 /// Used by [RefreshIndicator.onRefresh].
 typedef RefreshCallback = Future<void> Function();
 
-class TopPullRefreshScrollPhysics extends BouncingScrollPhysics {
-  const TopPullRefreshScrollPhysics({super.parent});
-
-  @override
-  TopPullRefreshScrollPhysics applyTo(ScrollPhysics? ancestor) {
-    return TopPullRefreshScrollPhysics(parent: buildParent(ancestor));
-  }
-
-  @override
-  double applyBoundaryConditions(ScrollMetrics position, double value) {
-    if (value < position.minScrollExtent ||
-        position.pixels < position.minScrollExtent) {
-      return 0.0;
-    }
-    if (value > position.pixels &&
-        position.pixels >= position.maxScrollExtent) {
-      return value - position.pixels;
-    }
-    if (position.pixels < position.maxScrollExtent &&
-        position.maxScrollExtent < value) {
-      return value - position.maxScrollExtent;
-    }
-    return 0.0;
-  }
-}
-
-const ScrollPhysics kTopPullRefreshScrollPhysics =
-    AlwaysScrollableScrollPhysics(parent: TopPullRefreshScrollPhysics());
 
 /// Indicates current status of Material `RefreshIndicator`.
 enum GlassGlassRefreshIndicatorStatus {

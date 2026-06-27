@@ -88,7 +88,9 @@ class _AsmrCategoryListState extends State<_AsmrCategoryList>
             child: ListView.builder(
               controller: widget.scrollController,
               cacheExtent: 520,
-              physics: kTopPullRefreshScrollPhysics,
+              physics: const AlwaysScrollableScrollPhysics(
+                parent: BouncingScrollPhysics(),
+              ),
               padding: EdgeInsets.fromLTRB(
                 16,
                 widget.topInset,

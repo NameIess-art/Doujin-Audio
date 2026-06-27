@@ -130,8 +130,10 @@ extension _LibraryTabCategoryView on _LibraryTabState {
           cacheExtent: cacheExtent,
           clipBehavior: Clip.none,
           physics: canPullRefresh
-              ? kTopPullRefreshScrollPhysics
-              : const ClampingScrollPhysics(),
+              ? const AlwaysScrollableScrollPhysics(
+                  parent: BouncingScrollPhysics(),
+                )
+              : const BouncingScrollPhysics(),
           keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
           itemCount: itemCount,
           itemBuilder: (context, index) {

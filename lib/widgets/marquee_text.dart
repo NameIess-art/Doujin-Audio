@@ -2,7 +2,30 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+
 import 'scroll_activity_gate.dart';
+
+class MarqueePauseScope extends InheritedWidget {
+  const MarqueePauseScope({
+    super.key,
+    required this.isPaused,
+    required super.child,
+  });
+
+  final bool isPaused;
+
+  static bool isPausedOf(BuildContext context) {
+    return context
+            .dependOnInheritedWidgetOfExactType<MarqueePauseScope>()
+            ?.isPaused ??
+        false;
+  }
+
+  @override
+  bool updateShouldNotify(MarqueePauseScope oldWidget) {
+    return isPaused != oldWidget.isPaused;
+  }
+}
 
 class MarqueeText extends StatefulWidget {
   final String text;
@@ -147,7 +170,8 @@ class _MarqueeTextState extends State<MarqueeText> {
         overflow: TextOverflow.ellipsis,
       );
     }
-    _isScrolling = ScrollActivityGate.isScrollingOf(context);
+    _isScrolling = ScrollActivityGate.isScrollingOf(context) ||
+        MarqueePauseScope.isPausedOf(context);
     _tickerEnabled = TickerMode.valuesOf(context).enabled;
     if (_isScrolling && _scrollController.hasClients) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -187,27 +211,29 @@ class _MarqueeTextState extends State<MarqueeText> {
           );
         }
 
-        return ShaderMask(
-          shaderCallback: (Rect bounds) {
-            return LinearGradient(
-              colors: [
-                cs.surface.withValues(alpha: 0.0),
-                cs.surface,
-                cs.surface,
-                cs.surface.withValues(alpha: 0.0),
-              ],
-              stops: const [0.0, 0.05, 0.95, 1.0],
-            ).createShader(bounds);
-          },
-          blendMode: BlendMode.dstIn,
-          child: NotificationListener<ScrollNotification>(
-            onNotification: (_) => true,
-            child: SingleChildScrollView(
-              controller: _scrollController,
-              scrollDirection: Axis.horizontal,
-              physics: const NeverScrollableScrollPhysics(),
-              padding: EdgeInsets.symmetric(horizontal: widget.edgePadding),
-              child: Text(displayText, style: widget.style),
+        return RepaintBoundary(
+          child: ShaderMask(
+            shaderCallback: (Rect bounds) {
+              return LinearGradient(
+                colors: [
+                  cs.surface.withValues(alpha: 0.0),
+                  cs.surface,
+                  cs.surface,
+                  cs.surface.withValues(alpha: 0.0),
+                ],
+                stops: const [0.0, 0.05, 0.95, 1.0],
+              ).createShader(bounds);
+            },
+            blendMode: BlendMode.dstIn,
+            child: NotificationListener<ScrollNotification>(
+              onNotification: (_) => true,
+              child: SingleChildScrollView(
+                controller: _scrollController,
+                scrollDirection: Axis.horizontal,
+                physics: const NeverScrollableScrollPhysics(),
+                padding: EdgeInsets.symmetric(horizontal: widget.edgePadding),
+                child: Text(displayText, style: widget.style),
+              ),
             ),
           ),
         );

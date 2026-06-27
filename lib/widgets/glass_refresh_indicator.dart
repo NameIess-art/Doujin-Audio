@@ -15,6 +15,10 @@ import 'package:flutter/material.dart';
 
 import 'app_feedback.dart';
 
+// The over-scroll distance that moves the indicator to its maximum
+// displacement, as a percentage of the scrollable's container extent.
+const double _kDragContainerExtentPercentage = 0.25;
+
 // How much the scroll's drag gesture can overshoot the RefreshIndicator's
 // displacement; max displacement = _kDragSizeFactorLimit * displacement.
 const double _kDragSizeFactorLimit = 1.5;
@@ -382,14 +386,10 @@ class GlassRefreshIndicatorState extends State<GlassRefreshIndicator>
   void initState() {
     super.initState();
     _positionController = AnimationController(vsync: this);
-    _positionFactor = _positionController.drive(
-      _kDragSizeFactorLimitTween.chain(CurveTween(curve: Curves.easeIn)),
-    );
+    _positionFactor = _positionController.drive(_kDragSizeFactorLimitTween);
 
     // The "value" of the circular progress indicator during a drag.
-    _value = _positionController.drive(
-      _threeQuarterTween.chain(CurveTween(curve: Curves.easeIn)),
-    );
+    _value = _positionController.drive(_threeQuarterTween);
 
     _scaleController = AnimationController(vsync: this);
     _scaleFactor = _scaleController.drive(_oneToZeroTween);
@@ -567,7 +567,8 @@ class GlassRefreshIndicatorState extends State<GlassRefreshIndicator>
       _status == GlassGlassRefreshIndicatorStatus.drag ||
           _status == GlassGlassRefreshIndicatorStatus.armed,
     );
-    double newValue = _dragOffset! / (widget.displacement * 3.0);
+    double newValue =
+        _dragOffset! / (containerExtent * _kDragContainerExtentPercentage);
     if (_status == GlassGlassRefreshIndicatorStatus.armed) {
       newValue = math.max(newValue, 1.0 / _kDragSizeFactorLimit);
     }
@@ -587,9 +588,6 @@ class GlassRefreshIndicatorState extends State<GlassRefreshIndicator>
     if (_status == GlassGlassRefreshIndicatorStatus.drag &&
         currentAlpha == effectiveAlpha) {
       _status = GlassGlassRefreshIndicatorStatus.armed;
-      unawaited(
-        AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection),
-      );
       widget.onStatusChange?.call(_status);
     }
   }

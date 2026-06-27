@@ -498,8 +498,9 @@ class _ActiveSessionProgressStripState
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    return StreamBuilder<Duration>(
-      stream: widget.session.positionStream,
+    return RepaintBoundary(
+      child: StreamBuilder<Duration>(
+        stream: widget.session.positionStream,
       initialData: widget.session.position,
       builder: (context, posSnapshot) {
         final pos = posSnapshot.data ?? widget.session.position;
@@ -558,7 +559,7 @@ class _ActiveSessionProgressStripState
           ),
         );
       },
-    );
+    ));
   }
 }
 

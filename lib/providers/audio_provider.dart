@@ -37,6 +37,7 @@ import '../services/audio_state_services.dart';
 import '../services/app_database.dart';
 import '../services/asmr_download_manager.dart';
 import '../services/asmr_metadata_service.dart';
+import '../services/asmr_playback_cache_service.dart';
 import '../services/app_preferences.dart';
 import '../services/dlsite_metadata_service.dart';
 import '../services/file_cache_platform_gateway.dart';
@@ -124,6 +125,7 @@ class AudioProvider with ChangeNotifier {
   final AudioDetailCacheService _audioDetailCacheService;
   final DlsiteMetadataService _dlsiteMetadataService;
   final AsmrMetadataService _asmrMetadataService;
+  final AsmrPlaybackCacheService _asmrPlaybackCacheService;
   final NativePlaybackRepository _nativePlaybackRepository;
   final PlaybackCommandRunner _playbackCommandRunner;
   final PowerPlatformService _powerPlatformService;
@@ -544,6 +546,8 @@ class AudioProvider with ChangeNotifier {
     CoverArtworkCacheService? coverArtworkCacheService,
     DlsiteMetadataService? dlsiteMetadataService,
     AsmrMetadataService? asmrMetadataService,
+    AsmrPlaybackCacheService asmrPlaybackCacheService =
+        const AsmrPlaybackCacheService(),
     NativePlaybackRepository? nativePlaybackRepository,
     PlaybackCommandRunner playbackCommandRunner = const PlaybackCommandRunner(),
     PowerPlatformService? powerPlatformService,
@@ -573,6 +577,7 @@ class AudioProvider with ChangeNotifier {
       audioDetailCacheService: resolvedAudioDetailCacheService,
       dlsiteMetadataService: dlsiteMetadataService ?? DlsiteMetadataService(),
       asmrMetadataService: asmrMetadataService ?? AsmrMetadataService(),
+      asmrPlaybackCacheService: asmrPlaybackCacheService,
       nativePlaybackRepository:
           nativePlaybackRepository ?? NativePlaybackRepository(),
       playbackCommandRunner: playbackCommandRunner,
@@ -604,6 +609,8 @@ class AudioProvider with ChangeNotifier {
     CoverArtworkCacheService? coverArtworkCacheService,
     DlsiteMetadataService? dlsiteMetadataService,
     AsmrMetadataService? asmrMetadataService,
+    AsmrPlaybackCacheService asmrPlaybackCacheService =
+        const AsmrPlaybackCacheService(),
     NativePlaybackRepository? nativePlaybackRepository,
     PlaybackCommandRunner playbackCommandRunner = const PlaybackCommandRunner(),
     PowerPlatformService? powerPlatformService,
@@ -633,6 +640,7 @@ class AudioProvider with ChangeNotifier {
       audioDetailCacheService: resolvedAudioDetailCacheService,
       dlsiteMetadataService: dlsiteMetadataService ?? DlsiteMetadataService(),
       asmrMetadataService: asmrMetadataService ?? AsmrMetadataService(),
+      asmrPlaybackCacheService: asmrPlaybackCacheService,
       nativePlaybackRepository:
           nativePlaybackRepository ?? NativePlaybackRepository(),
       playbackCommandRunner: playbackCommandRunner,
@@ -661,6 +669,7 @@ class AudioProvider with ChangeNotifier {
     required AudioDetailCacheService audioDetailCacheService,
     required DlsiteMetadataService dlsiteMetadataService,
     required AsmrMetadataService asmrMetadataService,
+    required AsmrPlaybackCacheService asmrPlaybackCacheService,
     required NativePlaybackRepository nativePlaybackRepository,
     required PlaybackCommandRunner playbackCommandRunner,
     required PowerPlatformService powerPlatformService,
@@ -678,6 +687,7 @@ class AudioProvider with ChangeNotifier {
        _audioDetailCacheService = audioDetailCacheService,
        _dlsiteMetadataService = dlsiteMetadataService,
        _asmrMetadataService = asmrMetadataService,
+       _asmrPlaybackCacheService = asmrPlaybackCacheService,
        _nativePlaybackRepository = nativePlaybackRepository,
        _playbackCommandRunner = playbackCommandRunner,
        _powerPlatformService = powerPlatformService,

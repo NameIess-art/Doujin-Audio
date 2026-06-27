@@ -45,6 +45,7 @@ void main() {
         ..autoCheckUpdates = true
         ..dlsiteMetadataLanguage = AppLanguage.en
         ..cardPositionsLocked = true
+        ..asmrPlaybackCacheEnabled = true
         ..asmrDownloadDestinationRoot = '/downloads/asmr'
         ..asmrDownloadConflictPolicy = AsmrDownloadConflictPolicy.skip
         ..maxCacheBytes = 500 * 1024 * 1024;
@@ -93,6 +94,11 @@ void main() {
             )
             .having((state) => state.cardPositionsLocked, 'fixed cards', isTrue)
             .having(
+              (state) => state.asmrPlaybackCacheEnabled,
+              'asmr playback cache',
+              isTrue,
+            )
+            .having(
               (state) => state.asmrDownloadDestinationRoot,
               'asmr destination',
               '/downloads/asmr',
@@ -124,6 +130,16 @@ void main() {
         repository.slice.state.asmrDownloadConflictPolicy,
         AsmrDownloadConflictPolicy.overwrite,
       );
+    });
+
+    test('ASMR.ONE playback cache defaults to disabled', () {
+      const state = SettingsState();
+      final repository = SettingsRepository();
+      addTearDown(repository.dispose);
+
+      expect(state.asmrPlaybackCacheEnabled, isFalse);
+      repository.syncSlice();
+      expect(repository.slice.state.asmrPlaybackCacheEnabled, isFalse);
     });
   });
 

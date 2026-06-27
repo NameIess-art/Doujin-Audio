@@ -29,6 +29,27 @@ extension AudioProviderNativeBridge on AudioProvider {
       return snapshot;
     }
     final resolvedPath = _resolveRetargetedPath(rawPath);
+    final currentSession = _sessions[snapshot.sessionId];
+    final currentSessionPath = currentSession?.currentTrackPath;
+    if (currentSession != null &&
+        currentSessionPath != null &&
+        currentSessionPath.isNotEmpty &&
+        PathMatcher.equalsNormalized(resolvedPath, rawPath)) {
+      final originalTrack = _sessionTrackForResolvedPath(
+        currentSession,
+        resolvedPath,
+      );
+      if (originalTrack != null &&
+          PathMatcher.equalsNormalized(
+            _resolveRetargetedPath(originalTrack.path),
+            resolvedPath,
+          )) {
+        return snapshot.copyWith(
+          path: originalTrack.path,
+          uri: _snapshotUriForPath(originalTrack.path),
+        );
+      }
+    }
     if (!PathMatcher.equalsNormalized(resolvedPath, rawPath)) {
       return snapshot.copyWith(
         path: resolvedPath,
@@ -36,7 +57,6 @@ extension AudioProviderNativeBridge on AudioProvider {
       );
     }
 
-    final currentSessionPath = _sessions[snapshot.sessionId]?.currentTrackPath;
     if (currentSessionPath == null || currentSessionPath.isEmpty) {
       return snapshot;
     }

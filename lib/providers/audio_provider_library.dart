@@ -1336,7 +1336,12 @@ extension AudioProviderLibrary on AudioProvider {
     }
     for (final session in _sessions.values) {
       for (final track in session.customQueueTracks ?? const <MusicTrack>[]) {
-        if (PathMatcher.equalsNormalized(track.path, resolvedPath)) {
+        if (PathMatcher.equalsNormalized(track.path, trackPath) ||
+            PathMatcher.equalsNormalized(track.path, resolvedPath) ||
+            PathMatcher.equalsNormalized(
+              _resolveRetargetedPath(track.path),
+              resolvedPath,
+            )) {
           return track;
         }
       }
@@ -1370,7 +1375,12 @@ extension AudioProviderLibrary on AudioProvider {
       if (customQueueTracks == null || customQueueTracks.isEmpty) continue;
       if (customQueueTracks.any(
         (candidate) =>
-            PathMatcher.equalsNormalized(candidate.path, resolvedPath),
+            PathMatcher.equalsNormalized(candidate.path, trackPath) ||
+            PathMatcher.equalsNormalized(candidate.path, resolvedPath) ||
+            PathMatcher.equalsNormalized(
+              _resolveRetargetedPath(candidate.path),
+              resolvedPath,
+            ),
       )) {
         return customQueueTracks
             .where((candidate) => candidate.groupKey == track.groupKey)

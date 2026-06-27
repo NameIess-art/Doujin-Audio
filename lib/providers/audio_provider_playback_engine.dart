@@ -273,7 +273,7 @@ extension AudioProviderPlaybackEngine on AudioProvider {
         }
       }
       final paths = candidateTracks
-          .map((track) => _resolveRetargetedPath(track.path))
+          .map((track) => track.path)
           .toList(growable: false);
       if (paths.isEmpty) {
         return null;

@@ -353,8 +353,7 @@ const Map<String, String> appLanguageEn = {
   'dark_mode': 'Theme color',
   'dark_mode_subtitle': 'Choose app appearance.',
   'cover_image_resolution': 'Cover image resolution',
-  'cover_image_resolution_subtitle':
-      'Set the maximum decode size for all cover images.',
+  'cover_image_resolution_subtitle': 'Set maximum display size for covers.',
   'cover_image_resolution_300': 'Memory saver 300px',
   'cover_image_resolution_600': 'Balanced 600px',
   'cover_image_resolution_900': 'High 900px',
@@ -363,7 +362,7 @@ const Map<String, String> appLanguageEn = {
   'theme_light': 'Light',
   'theme_dark': 'Dark',
   'bottom_navigation_style': 'Floating menu bar',
-  'bottom_navigation_style_subtitle': 'Use capsule appearance when enabled, standard bottom bar when disabled.',
+  'bottom_navigation_style_subtitle': 'Use capsule appearance.',
   'blur_player_background': 'Blur Player Background',
   'blur_player_background_subtitle':
       'Use blurred cover as background on player page.',
@@ -386,6 +385,8 @@ const Map<String, String> appLanguageEn = {
   'auto_play_added_sessions': 'Play immediately after adding',
   'auto_play_added_sessions_subtitle':
       'Create library-added audio sessions in the playing state.',
+  'asmr_playback_cache': 'ASMR.ONE playback cache',
+  'asmr_playback_cache_subtitle': 'Cache played audio to reduce reloads.',
   'record_playback_progress': 'Record last playback progress',
   'record_playback_progress_subtitle':
       'Resume playback progress on app startup.',

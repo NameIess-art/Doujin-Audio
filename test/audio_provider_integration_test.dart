@@ -7,6 +7,7 @@ import 'package:just_audio/just_audio.dart';
 import 'package:nameless_audio/i18n/app_language_provider.dart';
 import 'package:nameless_audio/providers/audio_provider.dart';
 import 'package:nameless_audio/services/app_database.dart';
+import 'package:nameless_audio/services/asmr_playback_cache_service.dart';
 import 'package:nameless_audio/services/audio_database_repository.dart';
 import 'package:nameless_audio/services/audio_state_services.dart';
 import 'package:nameless_audio/services/cover_artwork_cache_service.dart';
@@ -103,6 +104,24 @@ void main() {
       }
       expect(prepareCalls, 2);
       expect(playCalls, 1);
+    });
+
+    test('ASMR.ONE playback cache setting is disabled by default', () async {
+      expect(provider.asmrPlaybackCacheEnabled, isFalse);
+
+      await provider.setAsmrPlaybackCacheEnabled(true);
+
+      expect(provider.asmrPlaybackCacheEnabled, isTrue);
+      expect(
+        provider.settingsStateStream,
+        emits(
+          isA<SettingsState>().having(
+            (state) => state.asmrPlaybackCacheEnabled,
+            'asmr playback cache',
+            isTrue,
+          ),
+        ),
+      );
     });
 
     test('toggling play-pause with unknown id does not throw', () {
@@ -1033,6 +1052,96 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 200));
       restoredProvider.dispose();
     });
+
+    test(
+      'ASMR playback cache keeps custom queue metadata on cached paths',
+      () async {
+        const cachedPath = '/cache/asmr_playback_cache/cached_01.mp3';
+        provider.dispose();
+        provider = AudioProvider.test(
+          notificationService: notificationService,
+          audioDatabaseRepository: AudioDatabaseRepository(
+            database: AppDatabase.test(db),
+          ),
+          asmrPlaybackCacheService: const _FakeAsmrPlaybackCacheService(
+            cachedPath,
+          ),
+        );
+        const firstTrack = MusicTrack(
+          path: 'https://example.com/asmr/01.mp3',
+          displayName: '01',
+          groupKey: 'asmr-work-1',
+          groupTitle: 'ASMR Work',
+          groupSubtitle: 'RJ000001',
+          isSingle: false,
+          remoteCoverUrl: 'https://example.com/cover.jpg',
+          remoteMetadataKind: 'asmr.one',
+          remoteMetadata: <String, Object?>{
+            'playbackUrls': <String>['https://example.com/asmr/01.mp3'],
+          },
+        );
+        const secondTrack = MusicTrack(
+          path: 'https://example.com/asmr/02.mp3',
+          displayName: '02',
+          groupKey: 'asmr-work-1',
+          groupTitle: 'ASMR Work',
+          groupSubtitle: 'RJ000001',
+          isSingle: false,
+          remoteCoverUrl: 'https://example.com/cover.jpg',
+          remoteMetadataKind: 'asmr.one',
+          remoteMetadata: <String, Object?>{
+            'playbackUrls': <String>['https://example.com/asmr/02.mp3'],
+          },
+        );
+
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+              if (call.method == NativePlaybackMethod.prepareSession) {
+                final args = call.arguments as Map<Object?, Object?>;
+                return <String, Object?>{
+                  'ok': true,
+                  'value': <String, Object?>{
+                    'sessionId': args['sessionId'] as String,
+                    'uri': args['uri'] as String,
+                    'path': args['path'] as String,
+                    'title': args['title'] as String,
+                    'playing': false,
+                    'playWhenReady': false,
+                    'processingState': 'ready',
+                    'positionMs': 0,
+                    'bufferedPositionMs': 0,
+                    'durationMs': 0,
+                    'volume': 1.0,
+                    'queueIndex': 0,
+                  },
+                };
+              }
+              return <String, Object?>{'ok': true, 'value': null};
+            });
+
+        await provider.setAsmrPlaybackCacheEnabled(true);
+        await provider.spawnSessionWithQueue(const <MusicTrack>[
+          firstTrack,
+          secondTrack,
+        ], autoPlay: false);
+
+        final session = provider.activeSessions.single;
+        for (var i = 0; i < 100; i++) {
+          if (provider.trackByPath(cachedPath) != null) break;
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+        }
+
+        expect(session.currentTrackPath, firstTrack.path);
+        expect(provider.trackByPath(cachedPath)?.toJson(), firstTrack.toJson());
+        expect(
+          provider.tracksInSameGroup(cachedPath).map((track) => track.path),
+          <String>[
+            'https://example.com/asmr/01.mp3',
+            'https://example.com/asmr/02.mp3',
+          ],
+        );
+      },
+    );
   });
 
   // ── native snapshot isolation ──────────────────────────────────
@@ -2785,6 +2894,17 @@ class _RecordingCoverArtworkCacheService extends CoverArtworkCacheService {
   @override
   Future<String?> futureForTrack(MusicTrack? track, {String? trackPath}) async {
     return track?.remoteCoverUrl == expectedRemoteCoverUrl ? coverPath : null;
+  }
+}
+
+class _FakeAsmrPlaybackCacheService extends AsmrPlaybackCacheService {
+  const _FakeAsmrPlaybackCacheService(this.cachedPath);
+
+  final String cachedPath;
+
+  @override
+  Future<String?> cacheTrack(MusicTrack track, {String? playedPath}) async {
+    return cachedPath;
   }
 }
 

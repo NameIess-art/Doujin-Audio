@@ -192,6 +192,7 @@ extension AudioProviderPlaybackSessions on AudioProvider {
     }
 
     var prepared = false;
+    final logicalNextPath = PathMatcher.normalize(nextPath);
     final resolvedNextPath = _resolveRetargetedPath(nextPath);
     try {
       if (!_sessions.containsKey(session.id) ||
@@ -199,10 +200,10 @@ extension AudioProviderPlaybackSessions on AudioProvider {
         return;
       }
 
-      session.currentTrackPath = resolvedNextPath;
+      session.currentTrackPath = logicalNextPath;
       session.lastPersistedPositionBucket = 0;
-      if (!PathMatcher.isRemoteUri(resolvedNextPath)) {
-        _ensureSubtitleTrackLoaded(resolvedNextPath);
+      if (!PathMatcher.isRemoteUri(logicalNextPath)) {
+        _ensureSubtitleTrackLoaded(logicalNextPath);
         _refreshNotificationSubtitleForSession(
           session,
           position: Duration.zero,
@@ -216,7 +217,7 @@ extension AudioProviderPlaybackSessions on AudioProvider {
           ? Uri.parse(resolvedNextPath)
           : Uri.file(resolvedNextPath);
 
-      final track = _sessionTrackForPath(session, resolvedNextPath);
+      final track = _sessionTrackForPath(session, logicalNextPath);
       final candidateUris = _candidatePlaybackUrisForTrack(track);
       final coverPath = resolvedCoverPathForTrack(track);
       if (coverPath == null) {
@@ -329,6 +330,7 @@ extension AudioProviderPlaybackSessions on AudioProvider {
         }
         session.loadedPath = resolvedNextPath;
         session.pendingNativeTrackPath = null;
+        unawaited(_cacheAsmrPlaybackTrack(track, playedPath: resolvedNextPath));
       } else {
         if (forceStartAtZero) {
           await _nativePlaybackRepository.seek(session.id, Duration.zero);
@@ -382,6 +384,25 @@ extension AudioProviderPlaybackSessions on AudioProvider {
         .toSet()
         .toList(growable: false);
     return candidates.isEmpty ? null : candidates;
+  }
+
+  Future<void> _cacheAsmrPlaybackTrack(
+    MusicTrack? track, {
+    required String playedPath,
+  }) async {
+    if (!_settingsRepository.asmrPlaybackCacheEnabled ||
+        track == null ||
+        track.remoteMetadataKind != 'asmr.one' ||
+        !PathMatcher.isRemoteUri(track.path) ||
+        !PathMatcher.isRemoteUri(playedPath)) {
+      return;
+    }
+    final cachedPath = await _asmrPlaybackCacheService.cacheTrack(
+      track,
+      playedPath: playedPath,
+    );
+    if (cachedPath == null || cachedPath.isEmpty) return;
+    _rememberRetargetedPath(track.path, cachedPath);
   }
 
   List<Map<String, Object?>> _nativePlaybackQueueFor(
@@ -514,10 +535,30 @@ extension AudioProviderPlaybackSessions on AudioProvider {
     return null;
   }
 
+  MusicTrack? _sessionTrackForResolvedPath(
+    PlaybackSession session,
+    String resolvedPath,
+  ) {
+    for (final track in session.customQueueTracks ?? const <MusicTrack>[]) {
+      if (PathMatcher.equalsNormalized(
+        _resolveRetargetedPath(track.path),
+        resolvedPath,
+      )) {
+        return track;
+      }
+    }
+    return null;
+  }
+
   MusicTrack? _sessionTrackForPath(PlaybackSession session, String trackPath) {
+    final normalizedPath = PathMatcher.normalize(trackPath);
     final resolvedPath = _resolveRetargetedPath(trackPath);
     for (final track in session.customQueueTracks ?? const <MusicTrack>[]) {
-      if (PathMatcher.equalsNormalized(track.path, resolvedPath)) {
+      if (PathMatcher.equalsNormalized(track.path, normalizedPath) ||
+          PathMatcher.equalsNormalized(
+            _resolveRetargetedPath(track.path),
+            resolvedPath,
+          )) {
         return track;
       }
     }

@@ -356,6 +356,7 @@ class SettingsState {
     this.cardPositionsLocked = false,
     this.customEqPresets = const <EqPreset>[],
     this.maxCacheBytes = 300 * 1024 * 1024,
+    this.asmrPlaybackCacheEnabled = false,
     this.recordPlaybackProgress = true,
     this.blurPlayerBackgroundEnabled = true,
     this.uiBlurEffectEnabled = true,
@@ -378,6 +379,7 @@ class SettingsState {
   final bool cardPositionsLocked;
   final List<EqPreset> customEqPresets;
   final int maxCacheBytes;
+  final bool asmrPlaybackCacheEnabled;
   final bool recordPlaybackProgress;
   final bool blurPlayerBackgroundEnabled;
   final bool uiBlurEffectEnabled;
@@ -402,6 +404,7 @@ class SettingsState {
         other.cardPositionsLocked == cardPositionsLocked &&
         listEquals(other.customEqPresets, customEqPresets) &&
         other.maxCacheBytes == maxCacheBytes &&
+        other.asmrPlaybackCacheEnabled == asmrPlaybackCacheEnabled &&
         other.recordPlaybackProgress == recordPlaybackProgress &&
         other.blurPlayerBackgroundEnabled == blurPlayerBackgroundEnabled &&
         other.uiBlurEffectEnabled == uiBlurEffectEnabled &&
@@ -413,7 +416,7 @@ class SettingsState {
   }
 
   @override
-  int get hashCode => Object.hash(
+  int get hashCode => Object.hashAll(<Object?>[
     converterFormat,
     converterBitrate,
     multiThreadPlaybackEnabled,
@@ -426,6 +429,7 @@ class SettingsState {
     cardPositionsLocked,
     Object.hashAll(customEqPresets),
     maxCacheBytes,
+    asmrPlaybackCacheEnabled,
     recordPlaybackProgress,
     blurPlayerBackgroundEnabled,
     uiBlurEffectEnabled,
@@ -434,7 +438,7 @@ class SettingsState {
     coverImageResolution,
     asmrDownloadDestinationRoot,
     asmrDownloadConflictPolicy,
-  );
+  ]);
 }
 
 @immutable

@@ -48,6 +48,8 @@ extension AudioProviderState on AudioProvider {
   List<EqPreset> get customEqPresets =>
       List<EqPreset>.unmodifiable(_settingsRepository.customEqPresets);
   int get maxCacheBytes => _maxCacheBytes;
+  bool get asmrPlaybackCacheEnabled =>
+      _settingsRepository.asmrPlaybackCacheEnabled;
   int get audioDetailRevision => _audioDetailCacheService.revision;
 
   List<MusicTrack> get library => UnmodifiableListView(_library);

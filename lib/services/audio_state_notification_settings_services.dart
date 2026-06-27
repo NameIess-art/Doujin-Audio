@@ -197,6 +197,7 @@ class SettingsRepository {
   bool cardPositionsLocked = false;
   List<EqPreset> customEqPresets = const <EqPreset>[];
   int maxCacheBytes = 300 * 1024 * 1024;
+  bool asmrPlaybackCacheEnabled = false;
   bool keepCpuAwake = false;
   bool keepAliveHasPlayback = false;
   bool keepAliveHasTimer = false;
@@ -230,6 +231,7 @@ class SettingsRepository {
         cardPositionsLocked: cardPositionsLocked,
         customEqPresets: List<EqPreset>.unmodifiable(customEqPresets),
         maxCacheBytes: maxCacheBytes,
+        asmrPlaybackCacheEnabled: asmrPlaybackCacheEnabled,
         recordPlaybackProgress: recordPlaybackProgress,
         blurPlayerBackgroundEnabled: blurPlayerBackgroundEnabled,
         uiBlurEffectEnabled: uiBlurEffectEnabled,

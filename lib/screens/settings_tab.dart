@@ -789,6 +789,45 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                         ),
                         Consumer(
                           builder: (context, ref, _) {
+                            final asmrPlaybackCacheEnabled = ref.watch(
+                              settingsStateProvider.select(
+                                (s) =>
+                                    s.valueOrNull?.asmrPlaybackCacheEnabled ??
+                                    false,
+                              ),
+                            );
+                            return SwitchListTile(
+                              value: asmrPlaybackCacheEnabled,
+                              onChanged:
+                                  audioProvider.setAsmrPlaybackCacheEnabled,
+                              title: Text(i18n.tr('asmr_playback_cache')),
+                              subtitle: Text(
+                                i18n.tr('asmr_playback_cache_subtitle'),
+                                style: descStyle,
+                              ),
+                              secondary: Container(
+                                width: 38,
+                                height: 38,
+                                decoration: BoxDecoration(
+                                  color: cs.tertiaryContainer,
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Icon(
+                                  Icons.cached_rounded,
+                                  color: cs.onTertiaryContainer,
+                                ),
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                            );
+                          },
+                        ),
+                        Consumer(
+                          builder: (context, ref, _) {
                             final recordProgress = ref.watch(
                               settingsStateProvider.select(
                                 (s) =>

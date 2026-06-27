@@ -109,6 +109,7 @@ extension AudioProviderPersistence on AudioProvider {
     _autoPlayAddedSessions = true;
     _autoCheckUpdates = false;
     _settingsRepository.recordPlaybackProgress = true;
+    _settingsRepository.asmrPlaybackCacheEnabled = false;
     _settingsRepository.blurPlayerBackgroundEnabled = true;
     _settingsRepository.uiBlurEffectEnabled = true;
     _settingsRepository.coverImageResolution = CoverImageResolution.balanced;
@@ -329,6 +330,8 @@ extension AudioProviderPersistence on AudioProvider {
       _autoCheckUpdates = map['autoCheckUpdates'] as bool? ?? false;
       _settingsRepository.recordPlaybackProgress =
           map['recordPlaybackProgress'] as bool? ?? true;
+      _settingsRepository.asmrPlaybackCacheEnabled =
+          map['asmrPlaybackCacheEnabled'] as bool? ?? false;
       _settingsRepository.blurPlayerBackgroundEnabled =
           map['blurPlayerBackgroundEnabled'] as bool? ?? true;
       _settingsRepository.uiBlurEffectEnabled =
@@ -382,6 +385,8 @@ extension AudioProviderPersistence on AudioProvider {
         'autoPlayAddedSessions': _autoPlayAddedSessions,
         'autoCheckUpdates': _autoCheckUpdates,
         'recordPlaybackProgress': _settingsRepository.recordPlaybackProgress,
+        'asmrPlaybackCacheEnabled':
+            _settingsRepository.asmrPlaybackCacheEnabled,
         'blurPlayerBackgroundEnabled':
             _settingsRepository.blurPlayerBackgroundEnabled,
         'uiBlurEffectEnabled': _settingsRepository.uiBlurEffectEnabled,
@@ -768,6 +773,13 @@ extension AudioProviderPersistence on AudioProvider {
   Future<void> setRecordPlaybackProgress(bool enabled) async {
     if (_settingsRepository.recordPlaybackProgress == enabled) return;
     _settingsRepository.recordPlaybackProgress = enabled;
+    _notifySettingsChanged();
+    unawaited(_savePlaybackSettings());
+  }
+
+  Future<void> setAsmrPlaybackCacheEnabled(bool enabled) async {
+    if (_settingsRepository.asmrPlaybackCacheEnabled == enabled) return;
+    _settingsRepository.asmrPlaybackCacheEnabled = enabled;
     _notifySettingsChanged();
     unawaited(_savePlaybackSettings());
   }

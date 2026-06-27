@@ -63,6 +63,9 @@ class _ProgressBarState extends State<_ProgressBar> {
     final nextTickerMode = TickerMode.valuesOf(context).enabled;
     if (_tickerModeEnabled == nextTickerMode) return;
     _tickerModeEnabled = nextTickerMode;
+    if (_tickerModeEnabled) {
+      _syncFromSession();
+    }
     _syncSmoothTimer();
   }
 
@@ -93,6 +96,12 @@ class _ProgressBarState extends State<_ProgressBar> {
     });
     _positionSub = widget.session.positionStream.listen((position) {
       if (_streamPosition == position) return;
+      if (!_tickerModeEnabled) {
+        _streamPosition = position;
+        _lastReportedPosition = position;
+        _lastReportTime = DateTime.now();
+        return;
+      }
       setState(() {
         _streamPosition = position;
         _lastReportedPosition = position;
@@ -600,6 +609,7 @@ class _SessionSubtitlePanelState extends State<_SessionSubtitlePanel> {
   SubtitleTrack? _subtitleTrack;
   String? _subtitleText;
   String? _loadedPath;
+  bool _tickerModeEnabled = true;
 
   @override
   void initState() {
@@ -617,6 +627,17 @@ class _SessionSubtitlePanelState extends State<_SessionSubtitlePanel> {
     }
     if (_loadedPath != widget.session.currentTrackPath) {
       _loadSubtitleTrack();
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final nextTickerMode = TickerMode.valuesOf(context).enabled;
+    if (_tickerModeEnabled == nextTickerMode) return;
+    _tickerModeEnabled = nextTickerMode;
+    if (_tickerModeEnabled) {
+      _updateSubtitleText(widget.session.position);
     }
   }
 
@@ -645,6 +666,7 @@ class _SessionSubtitlePanelState extends State<_SessionSubtitlePanel> {
   }
 
   void _updateSubtitleText(Duration position) {
+    if (!_tickerModeEnabled) return;
     final nextText = widget.provider.subtitleTextForTrackAt(
       widget.session.currentTrackPath,
       position,

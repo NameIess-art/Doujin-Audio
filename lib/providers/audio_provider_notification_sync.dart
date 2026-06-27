@@ -1,6 +1,9 @@
 part of 'audio_provider.dart';
 
 extension AudioProviderNotificationSync on AudioProvider {
+  static const String _interactionNotificationRefreshKey =
+      'playback_notification_refresh_after_interaction';
+
   Future<void> _clearUnifiedPlaybackNotificationsOnPlatform() async {
     _unifiedNotificationSyncKey = null;
     await _notificationService.clearUnifiedNotifications();
@@ -65,6 +68,15 @@ extension AudioProviderNotificationSync on AudioProvider {
   }
 
   void _requestUnifiedPlaybackNotificationFlush() {
+    final interactionCoordinator = UiInteractionCoordinator.instance;
+    if (interactionCoordinator.isInteracting) {
+      interactionCoordinator.scheduleCommit(
+        key: _interactionNotificationRefreshKey,
+        priority: 80,
+        commit: _requestUnifiedPlaybackNotificationFlush,
+      );
+      return;
+    }
     _unifiedNotificationSyncPending = true;
     if (_unifiedNotificationSyncInFlight) {
       return;
@@ -114,6 +126,14 @@ extension AudioProviderNotificationSync on AudioProvider {
     }
 
     if (immediate) {
+      if (UiInteractionCoordinator.instance.isInteracting) {
+        UiInteractionCoordinator.instance.scheduleCommit(
+          key: _interactionNotificationRefreshKey,
+          priority: 80,
+          commit: _syncNotificationState,
+        );
+        return;
+      }
       _notificationProgressRefreshTimer?.cancel();
       _notificationProgressRefreshTimer = null;
       _queuedNotificationRefreshSessionId = null;
@@ -138,6 +158,15 @@ extension AudioProviderNotificationSync on AudioProvider {
       }
       if (!_notificationsEnabled ||
           (_notificationsDismissedWhilePaused && !_hasPlaybackToKeepAlive)) {
+        return;
+      }
+      if (UiInteractionCoordinator.instance.isInteracting) {
+        _queuedNotificationRefreshSessionId = queuedSessionId;
+        UiInteractionCoordinator.instance.scheduleCommit(
+          key: _interactionNotificationRefreshKey,
+          priority: 80,
+          commit: () => _scheduleFocusedNotificationRefresh(queuedSessionId),
+        );
         return;
       }
       _syncNotificationState();

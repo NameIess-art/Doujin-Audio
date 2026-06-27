@@ -13,6 +13,7 @@ import 'package:nameless_audio/services/audio_state_services.dart';
 import 'package:nameless_audio/services/cover_artwork_cache_service.dart';
 import 'package:nameless_audio/services/library_scanner_service.dart';
 import 'package:nameless_audio/services/native_playback_bridge.dart';
+import 'package:nameless_audio/services/notifications_platform_service.dart';
 import 'package:nameless_audio/services/path_matcher.dart';
 import 'package:nameless_audio/services/playback_notification_service.dart';
 import 'package:nameless_audio/services/platform_channels.dart';
@@ -128,6 +129,62 @@ void main() {
       provider.toggleSessionPlayPause('non_existent_session');
       expect(provider.activeSessions, isEmpty);
     });
+
+    testWidgets(
+      'defers playback notification sync while scrolling interaction is active',
+      (tester) async {
+        var notificationSyncCalls = 0;
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(notificationsChannel, (call) async {
+              if (call.method ==
+                  NotificationsMethod.syncUnifiedPlaybackNotifications) {
+                notificationSyncCalls++;
+              }
+              return null;
+            });
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+              return <String, Object?>{'ok': true, 'value': null};
+            });
+
+        provider.dispose();
+        provider = AudioProvider.test(
+          notificationService: PlaybackNotificationService(
+            notificationsPlatformService: NotificationsPlatformService(
+              channel: notificationsChannel,
+              isAndroidOverride: true,
+              timeout: const Duration(milliseconds: 50),
+            ),
+          ),
+          audioDatabaseRepository: AudioDatabaseRepository(
+            database: AppDatabase.test(db),
+          ),
+        );
+        const track = MusicTrack(
+          path: '/music/notification-scroll.mp3',
+          displayName: 'Notification Scroll',
+          groupKey: '/music',
+          groupTitle: 'Music',
+          groupSubtitle: '',
+          isSingle: true,
+        );
+
+        final interactionSource = Object();
+        final coordinator = UiInteractionCoordinator.instance;
+        coordinator.beginInteraction(interactionSource);
+        addTearDown(() => coordinator.cancelInteraction(interactionSource));
+
+        await provider.spawnSession(track, autoPlay: false);
+        await tester.pump(const Duration(milliseconds: 140));
+        expect(notificationSyncCalls, 0);
+
+        coordinator.endInteraction(interactionSource);
+        await tester.pump(const Duration(milliseconds: 170));
+        await tester.pump();
+
+        expect(notificationSyncCalls, 1);
+      },
+    );
 
     test('sessionById returns null for unknown id', () {
       expect(provider.sessionById('nonexistent'), isNull);

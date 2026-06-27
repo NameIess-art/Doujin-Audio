@@ -61,9 +61,9 @@ class _ActiveSessionCard extends ConsumerWidget {
         (s) => s.valueOrNull?.uiBlurEffectEnabled ?? true,
       ),
     );
-    final currentAlpha = blurEnabled ? (isDark ? 0.80 : 0.86) : 1.0;
+    final interactionCoordinator = UiInteractionCoordinator.instance;
 
-    Widget buildCardBody() => Material(
+    Widget buildCardBody(bool useBlur) => Material(
       color: Colors.transparent,
       child: InkWell(
         borderRadius: BorderRadius.circular(cardRadius),
@@ -72,7 +72,7 @@ class _ActiveSessionCard extends ConsumerWidget {
           height: 74,
           decoration: BoxDecoration(
             color: (isDark ? cs.surfaceBright : cs.surfaceContainerHigh)
-                .withValues(alpha: currentAlpha),
+                .withValues(alpha: useBlur ? (isDark ? 0.80 : 0.86) : 1.0),
             borderRadius: BorderRadius.circular(cardRadius),
             border: isBar
                 ? Border(
@@ -128,18 +128,24 @@ class _ActiveSessionCard extends ConsumerWidget {
       ),
     );
 
-    return Semantics(
-      button: true,
-      label: displayName,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(cardRadius),
-        child: blurEnabled
-            ? BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-                child: buildCardBody(),
-              )
-            : buildCardBody(),
-      ),
+    return AnimatedBuilder(
+      animation: interactionCoordinator,
+      builder: (context, _) {
+        final useBlur = blurEnabled && !interactionCoordinator.isInteracting;
+        return Semantics(
+          button: true,
+          label: displayName,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(cardRadius),
+            child: useBlur
+                ? BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+                    child: buildCardBody(useBlur),
+                  )
+                : buildCardBody(useBlur),
+          ),
+        );
+      },
     );
   }
 
@@ -501,65 +507,66 @@ class _ActiveSessionProgressStripState
     return RepaintBoundary(
       child: StreamBuilder<Duration>(
         stream: widget.session.positionStream,
-      initialData: widget.session.position,
-      builder: (context, posSnapshot) {
-        final pos = posSnapshot.data ?? widget.session.position;
-        final dur = _duration;
-        if (dur == null || dur.inMilliseconds <= 0) {
-          return const SizedBox(height: 3);
-        }
-        final fraction = pos.inMilliseconds / dur.inMilliseconds;
-        return Padding(
-          padding: const EdgeInsets.only(top: 8),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(3),
-            child: SizedBox(
-              height: 3,
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final barWidth = constraints.maxWidth;
-                  final fillWidth = (barWidth * fraction.clamp(0.0, 1.0))
-                      .roundToDouble();
-                  return Stack(
-                    children: [
-                      Positioned.fill(
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            color: cs.surfaceContainerHighest.withValues(
-                              alpha: 0.6,
+        initialData: widget.session.position,
+        builder: (context, posSnapshot) {
+          final pos = posSnapshot.data ?? widget.session.position;
+          final dur = _duration;
+          if (dur == null || dur.inMilliseconds <= 0) {
+            return const SizedBox(height: 3);
+          }
+          final fraction = pos.inMilliseconds / dur.inMilliseconds;
+          return Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(3),
+              child: SizedBox(
+                height: 3,
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final barWidth = constraints.maxWidth;
+                    final fillWidth = (barWidth * fraction.clamp(0.0, 1.0))
+                        .roundToDouble();
+                    return Stack(
+                      children: [
+                        Positioned.fill(
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: cs.surfaceContainerHighest.withValues(
+                                alpha: 0.6,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                      Positioned(
-                        left: 0,
-                        top: 0,
-                        bottom: 0,
-                        width: fillWidth,
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [
-                                cs.primary,
-                                cs.primary.withValues(alpha: 0.82),
-                              ],
-                            ),
-                            borderRadius: const BorderRadius.only(
-                              topRight: Radius.circular(3),
-                              bottomRight: Radius.circular(3),
+                        Positioned(
+                          left: 0,
+                          top: 0,
+                          bottom: 0,
+                          width: fillWidth,
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: [
+                                  cs.primary,
+                                  cs.primary.withValues(alpha: 0.82),
+                                ],
+                              ),
+                              borderRadius: const BorderRadius.only(
+                                topRight: Radius.circular(3),
+                                bottomRight: Radius.circular(3),
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                    ],
-                  );
-                },
+                      ],
+                    );
+                  },
+                ),
               ),
             ),
-          ),
-        );
-      },
-    ));
+          );
+        },
+      ),
+    );
   }
 }
 

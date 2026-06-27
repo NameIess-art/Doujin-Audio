@@ -29,6 +29,8 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
   String? _lastTrackPath;
   int _lastCoverGeneration = -1;
   bool _contentEnterStarted = false;
+  final Object _dismissInteractionSource = Object();
+  bool _dismissInteractionActive = false;
 
   final Set<String> _primedAdjacentCoverKeys = <String>{};
   final ValueNotifier<bool> _segmentPanelExpandedNotifier = ValueNotifier(
@@ -63,6 +65,9 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
   @override
   void dispose() {
     _dismissController.removeListener(_syncRevealBehind);
+    UiInteractionCoordinator.instance.cancelInteraction(
+      _dismissInteractionSource,
+    );
     widget.revealBehindNotifier.value = false;
     _segmentPanelExpandedNotifier.dispose();
     _dismissController.dispose();
@@ -89,6 +94,20 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
     if (widget.revealBehindNotifier.value != shouldReveal) {
       widget.revealBehindNotifier.value = shouldReveal;
     }
+  }
+
+  void _beginDismissInteraction() {
+    if (_dismissInteractionActive) return;
+    _dismissInteractionActive = true;
+    UiInteractionCoordinator.instance.beginInteraction(
+      _dismissInteractionSource,
+    );
+  }
+
+  void _endDismissInteraction() {
+    if (!_dismissInteractionActive) return;
+    _dismissInteractionActive = false;
+    UiInteractionCoordinator.instance.endInteraction(_dismissInteractionSource);
   }
 
   Future<void> _precacheImageProvider(
@@ -218,13 +237,17 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
       ref
           .read(audioProviderFacadeProvider)
           .requestCarouselSnapTo(_currentSessionId);
+      _beginDismissInteraction();
       await _animateDismissToEnd(velocity: velocity);
+      _endDismissInteraction();
       if (mounted) {
         await navigator.maybePop();
       }
       return;
     }
+    _beginDismissInteraction();
     await _animateDismissBack();
+    _endDismissInteraction();
   }
 
   Future<void> _animateDismissToEnd({double velocity = 0}) {
@@ -437,7 +460,9 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
                   ref
                       .read(audioProviderFacadeProvider)
                       .requestCarouselSnapTo(_currentSessionId);
+                  _beginDismissInteraction();
                   await _animateDismissToEnd();
+                  _endDismissInteraction();
                   if (context.mounted) {
                     await Navigator.of(context).maybePop();
                   }
@@ -469,6 +494,9 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
                             _dismissController.value +
                             (((details.primaryDelta ?? 0) / screenHeight) *
                                 0.92);
+                        if (nextValue > 0.001) {
+                          _beginDismissInteraction();
+                        }
                         _dismissController.value = nextValue.clamp(0.0, 1.0);
                       }
                     : null,
@@ -477,7 +505,12 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
                     : null,
                 onVerticalDragCancel: enableVerticalDismiss
                     ? () {
-                        _animateDismissBack();
+                        _beginDismissInteraction();
+                        unawaited(
+                          _animateDismissBack().whenComplete(
+                            _endDismissInteraction,
+                          ),
+                        );
                       }
                     : null,
               ),
@@ -816,21 +849,21 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
             // Dynamic Blurred Background
             if (blurEnabled)
               Positioned.fill(
-                child: AnimatedBuilder(
-                  animation: widget.dismissAnimation,
-                  builder: (context, child) {
-                    final dismissProgress = Curves.easeOutCubic.transform(
-                      widget.dismissAnimation.value.clamp(0.0, 1.0),
-                    );
-                    if (dismissProgress >= 1.0) {
-                      return const SizedBox.shrink();
-                    }
-                    return Opacity(
-                      opacity: 1 - dismissProgress,
-                      child: child,
-                    );
-                  },
-                  child: RepaintBoundary(
+                child: RepaintBoundary(
+                  child: AnimatedBuilder(
+                    animation: widget.dismissAnimation,
+                    builder: (context, child) {
+                      final dismissProgress = Curves.easeOutCubic.transform(
+                        widget.dismissAnimation.value.clamp(0.0, 1.0),
+                      );
+                      if (dismissProgress > 0.01) {
+                        return const SizedBox.shrink();
+                      }
+                      return Opacity(
+                        opacity: 1 - dismissProgress,
+                        child: child,
+                      );
+                    },
                     child: ImageFiltered(
                       imageFilter: ImageFilter.blur(
                         sigmaX: _kSessionDetailBackgroundBlurSigma,
@@ -895,10 +928,9 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                               ),
                             );
                     },
-                    child: RepaintBoundary(
-                      child: Column(
-                        children: [
-                          // Top Bar 鈥?outside drag GestureDetector so taps work
+                    child: Column(
+                      children: [
+                        // Top Bar 鈥?outside drag GestureDetector so taps work
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 8),
                           child: Builder(
@@ -1059,8 +1091,7 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                         ),
                       ],
                     ),
-                  ),
-                );
+                  );
                 },
               ),
             ),

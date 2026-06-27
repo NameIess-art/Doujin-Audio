@@ -422,6 +422,17 @@ class AsmrLibraryController extends ChangeNotifier {
     }
   }
 
+  Future<void> reloadPersistedStateAfterBackupRestore() async {
+    _initialized = false;
+    _worksByCategory.clear();
+    _workCache.clear();
+    _detailCache.clear();
+    _trackCache.clear();
+    _visibleTrackCache.clear();
+    _filteredWorksCache.clear();
+    await initialize();
+  }
+
   Future<void> loginAsmrAccount(String name, String password) async {
     _syncPhase = AsmrSyncPhase.syncing;
     _lastSyncError = null;

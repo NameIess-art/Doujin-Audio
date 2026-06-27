@@ -11,6 +11,7 @@ import '../providers/audio_provider.dart';
 import '../services/app_backup_service.dart';
 import '../services/app_log_service.dart';
 import '../services/diagnostic_report_service.dart';
+import '../services/asmr_library_controller.dart';
 import '../widgets/app_feedback.dart';
 import '../widgets/confirm_action_dialog.dart';
 import '../widgets/app_transitions.dart';
@@ -118,6 +119,10 @@ class _DataSupportPageState extends State<DataSupportPage> {
       }
       await context
           .read<AudioProvider>()
+          .reloadPersistedStateAfterBackupRestore();
+      if (!mounted) return;
+      await context
+          .read<AsmrLibraryController>()
           .reloadPersistedStateAfterBackupRestore();
       if (!mounted) return;
       showAppSnackBar(

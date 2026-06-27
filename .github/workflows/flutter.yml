@@ -169,12 +169,28 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $ffmpegName = 'ffmpeg-N-124953-gd30dead35e-win64-gpl.zip'
-          $expectedSha256 = '1610cd7b4d691f0e70ea6f52b5dba0c9fa6207c62b6936ac9f0178f7526e046a'
+          $releaseBaseUrl = 'https://github.com/BtbN/FFmpeg-Builds/releases/download/latest'
+          $ffmpegName = 'ffmpeg-master-latest-win64-gpl.zip'
           $zip = Join-Path $env:RUNNER_TEMP $ffmpegName
           $extract = Join-Path $env:RUNNER_TEMP 'ffmpeg'
+          $checksums = Join-Path $env:RUNNER_TEMP 'ffmpeg-checksums.sha256'
           Invoke-WebRequest `
-            -Uri "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-06-11-14-22/$ffmpegName" `
+            -Uri "$releaseBaseUrl/checksums.sha256" `
+            -OutFile $checksums
+          $checksumLine = Get-Content -LiteralPath $checksums |
+            ForEach-Object {
+              $parts = $_.Split(' ', [System.StringSplitOptions]::RemoveEmptyEntries)
+              if ($parts.Count -ge 2 -and $parts[-1].TrimStart('*') -eq $ffmpegName) {
+                $_
+              }
+            } |
+            Select-Object -First 1
+          if (-not $checksumLine) {
+            throw "FFmpeg checksum entry not found for $ffmpegName"
+          }
+          $expectedSha256 = $checksumLine.Split(' ', [System.StringSplitOptions]::RemoveEmptyEntries)[0].ToLowerInvariant()
+          Invoke-WebRequest `
+            -Uri "$releaseBaseUrl/$ffmpegName" `
             -OutFile $zip
           $actualSha256 = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
           if ($actualSha256 -ne $expectedSha256) {

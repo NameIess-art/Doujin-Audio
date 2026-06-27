@@ -393,7 +393,10 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
                     heightFactor: 1.0,
                     child: Transform.translate(
                       offset: Offset(0, enterOffset + dragDistance),
-                      child: child,
+                      child: MarqueePauseScope(
+                        isPaused: dismissProgress > 0.01,
+                        child: child!,
+                      ),
                     ),
                   ),
                 ),

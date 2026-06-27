@@ -816,21 +816,21 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
             // Dynamic Blurred Background
             if (blurEnabled)
               Positioned.fill(
-                child: RepaintBoundary(
-                  child: AnimatedBuilder(
-                    animation: widget.dismissAnimation,
-                    builder: (context, child) {
-                      final dismissProgress = Curves.easeOutCubic.transform(
-                        widget.dismissAnimation.value.clamp(0.0, 1.0),
-                      );
-                      if (dismissProgress >= 1.0) {
-                        return const SizedBox.shrink();
-                      }
-                      return Opacity(
-                        opacity: 1 - dismissProgress,
-                        child: child,
-                      );
-                    },
+                child: AnimatedBuilder(
+                  animation: widget.dismissAnimation,
+                  builder: (context, child) {
+                    final dismissProgress = Curves.easeOutCubic.transform(
+                      widget.dismissAnimation.value.clamp(0.0, 1.0),
+                    );
+                    if (dismissProgress >= 1.0) {
+                      return const SizedBox.shrink();
+                    }
+                    return Opacity(
+                      opacity: 1 - dismissProgress,
+                      child: child,
+                    );
+                  },
+                  child: RepaintBoundary(
                     child: ImageFiltered(
                       imageFilter: ImageFilter.blur(
                         sigmaX: _kSessionDetailBackgroundBlurSigma,
@@ -895,9 +895,10 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                               ),
                             );
                     },
-                    child: Column(
-                      children: [
-                        // Top Bar 鈥?outside drag GestureDetector so taps work
+                    child: RepaintBoundary(
+                      child: Column(
+                        children: [
+                          // Top Bar 鈥?outside drag GestureDetector so taps work
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 8),
                           child: Builder(
@@ -1058,7 +1059,8 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                         ),
                       ],
                     ),
-                  );
+                  ),
+                );
                 },
               ),
             ),

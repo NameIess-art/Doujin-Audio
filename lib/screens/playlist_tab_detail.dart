@@ -20,6 +20,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
     with TickerProviderStateMixin {
   late final AnimationController _dismissController;
   late final AnimationController _slideController;
+  late final AnimationController _contentEnterController;
   late Animation<Offset> _slideAnimation;
   late String _currentSessionId;
   String? _lastPrecachingCoverKey;
@@ -27,6 +28,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
   Future<String?>? _coverPathFuture;
   String? _lastTrackPath;
   int _lastCoverGeneration = -1;
+  bool _contentEnterStarted = false;
 
   final Set<String> _primedAdjacentCoverKeys = <String>{};
   final ValueNotifier<bool> _segmentPanelExpandedNotifier = ValueNotifier(
@@ -47,6 +49,10 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
       duration: const Duration(milliseconds: 120),
       value: 1,
     );
+    _contentEnterController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 220),
+    );
     _slideAnimation = Tween<Offset>(begin: Offset.zero, end: Offset.zero)
         .animate(
           CurvedAnimation(parent: _slideController, curve: Curves.easeOutCubic),
@@ -61,7 +67,21 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
     _segmentPanelExpandedNotifier.dispose();
     _dismissController.dispose();
     _slideController.dispose();
+    _contentEnterController.dispose();
     super.dispose();
+  }
+
+  void _ensureContentEnterStarted() {
+    if (_contentEnterStarted) return;
+    _contentEnterStarted = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (MediaQuery.disableAnimationsOf(context)) {
+        _contentEnterController.value = 1;
+        return;
+      }
+      unawaited(_contentEnterController.forward());
+    });
   }
 
   void _syncRevealBehind() {
@@ -318,12 +338,15 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
     }
     final coverPathFuture = _coverPathFuture!;
     final detailTrack = provider.trackByPath(detailState.trackPath);
+    _ensureContentEnterStarted();
     _primeCoverArtwork(detailTrack, coverPathFuture, coverCacheWidth);
     _primeAdjacentCoverArtworks(provider, currentCoverGen, coverCacheWidth);
     final routeAnimation = ModalRoute.of(context)?.animation;
-    final animatedListenable = routeAnimation == null
-        ? _dismissController
-        : Listenable.merge([routeAnimation, _dismissController]);
+    final animatedListenable = Listenable.merge([
+      ?routeAnimation,
+      _contentEnterController,
+      _dismissController,
+    ]);
     final enableVerticalDismiss = !Platform.isWindows;
 
     return Material(
@@ -331,9 +354,11 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
       child: AnimatedBuilder(
         animation: animatedListenable,
         builder: (context, child) {
-          final enterProgress = Curves.easeOutCubic.transform(
+          final rawEnterProgress = min(
             (routeAnimation?.value ?? 1).clamp(0.0, 1.0),
+            _contentEnterController.value.clamp(0.0, 1.0),
           );
+          final enterProgress = Curves.easeOutCubic.transform(rawEnterProgress);
           final dismissProgress = Curves.easeOutCubic.transform(
             _dismissController.value.clamp(0.0, 1.0),
           );

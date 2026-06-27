@@ -74,6 +74,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
   bool _dragAccepted = false;
   bool _dragRejected = false;
   bool _contextMenuOpen = false;
+  bool _snapClosed = false;
 
   bool get _hasSecondaryAction => widget.onSecondaryAction != null;
   bool get _hasTertiaryAction => widget.onTertiaryAction != null;
@@ -208,10 +209,20 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
     }
   }
 
-  void _closePane() {
+  void _closePane({bool immediate = false}) {
     if (_revealedWidth == 0) return;
     setState(() {
+      _snapClosed = immediate;
       _revealedWidth = 0;
+    });
+  }
+
+  void _runActionAfterPaneClose(VoidCallback? action) {
+    if (action == null) return;
+    _closePane(immediate: true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      action();
     });
   }
 
@@ -530,9 +541,9 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                                                         AppInteractionFeedbackType
                                                             .selection,
                                                       );
-                                                      _closePane();
-                                                      widget.onTertiaryAction
-                                                          ?.call();
+                                                      _runActionAfterPaneClose(
+                                                        widget.onTertiaryAction,
+                                                      );
                                                     },
                                                     backgroundColor:
                                                         cs.secondaryContainer,
@@ -557,9 +568,10 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                                                         AppInteractionFeedbackType
                                                             .selection,
                                                       );
-                                                      _closePane();
-                                                      widget.onSecondaryAction
-                                                          ?.call();
+                                                      _runActionAfterPaneClose(
+                                                        widget
+                                                            .onSecondaryAction,
+                                                      );
                                                     },
                                                     backgroundColor:
                                                         cs.primaryContainer,
@@ -586,8 +598,9 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                                                           : AppInteractionFeedbackType
                                                                 .confirmation,
                                                     );
-                                                    _closePane();
-                                                    widget.onRemove();
+                                                    _runActionAfterPaneClose(
+                                                      widget.onRemove,
+                                                    );
                                                   },
                                                   backgroundColor: accentColor,
                                                   foregroundColor:
@@ -616,8 +629,9 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                                                   AppInteractionFeedbackType
                                                       .selection,
                                                 );
-                                                _closePane();
-                                                widget.onTertiaryAction?.call();
+                                                _runActionAfterPaneClose(
+                                                  widget.onTertiaryAction,
+                                                );
                                               },
                                               backgroundColor:
                                                   cs.secondaryContainer,
@@ -639,9 +653,9 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                                                   AppInteractionFeedbackType
                                                       .selection,
                                                 );
-                                                _closePane();
-                                                widget.onSecondaryAction
-                                                    ?.call();
+                                                _runActionAfterPaneClose(
+                                                  widget.onSecondaryAction,
+                                                );
                                               },
                                               backgroundColor:
                                                   cs.primaryContainer,
@@ -665,8 +679,9 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                                                     : AppInteractionFeedbackType
                                                           .confirmation,
                                               );
-                                              _closePane();
-                                              widget.onRemove();
+                                              _runActionAfterPaneClose(
+                                                widget.onRemove,
+                                              );
                                             },
                                             backgroundColor: accentColor,
                                             foregroundColor: accentOnColor,
@@ -687,8 +702,16 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                   ),
                 TweenAnimationBuilder<double>(
                   tween: Tween<double>(begin: 0, end: _revealedWidth),
-                  duration: const Duration(milliseconds: 220),
+                  duration: _snapClosed
+                      ? Duration.zero
+                      : const Duration(milliseconds: 220),
                   curve: Curves.easeOutCubic,
+                  onEnd: () {
+                    if (!_snapClosed || !mounted) return;
+                    setState(() {
+                      _snapClosed = false;
+                    });
+                  },
                   builder: (context, value, child) {
                     return Transform.translate(
                       offset: Offset(-value, 0),

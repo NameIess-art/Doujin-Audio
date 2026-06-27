@@ -42,7 +42,7 @@ class AsmrDownloadDetailsPage extends StatelessWidget {
       body: Stack(
         children: [
           CustomScrollView(
-            physics: const BouncingScrollPhysics(),
+            physics: const ClampingScrollPhysics(),
             slivers: [
               SliverPadding(
                 padding: EdgeInsets.fromLTRB(16, headerHeight + 16, 16, 16),
@@ -52,22 +52,28 @@ class AsmrDownloadDetailsPage extends StatelessWidget {
                     children: [
                       Text(
                         task.work.title,
-                        style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                          fontWeight: FontWeight.w800,
-                          height: 1.3,
-                        ),
+                        style: Theme.of(context).textTheme.headlineSmall
+                            ?.copyWith(
+                              fontWeight: FontWeight.w800,
+                              height: 1.3,
+                            ),
                       ),
                       const SizedBox(height: 8),
                       Row(
                         children: [
-                          Icon(Icons.sd_storage_rounded, size: 16, color: cs.onSurfaceVariant),
+                          Icon(
+                            Icons.sd_storage_rounded,
+                            size: 16,
+                            color: cs.onSurfaceVariant,
+                          ),
                           const SizedBox(width: 6),
                           Text(
                             '${_formatBytes(task.downloadedBytes)} / ${_formatBytes(task.totalBytes)}',
-                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              color: cs.onSurfaceVariant,
-                              fontWeight: FontWeight.w600,
-                            ),
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(
+                                  color: cs.onSurfaceVariant,
+                                  fontWeight: FontWeight.w600,
+                                ),
                           ),
                         ],
                       ),
@@ -82,7 +88,9 @@ class AsmrDownloadDetailsPage extends StatelessWidget {
                 )
               else
                 SliverPadding(
-                  padding: EdgeInsets.only(bottom: MediaQuery.paddingOf(context).bottom + 16),
+                  padding: EdgeInsets.only(
+                    bottom: MediaQuery.paddingOf(context).bottom + 16,
+                  ),
                   sliver: SliverList.builder(
                     itemCount: tracks.length,
                     itemBuilder: (context, index) {
@@ -100,10 +108,7 @@ class AsmrDownloadDetailsPage extends StatelessWidget {
             top: 0,
             left: 0,
             right: 0,
-            child: TopPageHeader(
-              leading: BackButton(),
-              title: '',
-            ),
+            child: TopPageHeader(leading: BackButton(), title: ''),
           ),
         ],
       ),
@@ -209,8 +214,11 @@ class _AsmrDownloadDetailsNodeTileState
       );
     }
 
-    final total = widget.task.fileTotalBytes[widget.node.relativePath] ?? widget.node.size;
-    final downloaded = widget.task.fileDownloadedBytes[widget.node.relativePath] ?? 0;
+    final total =
+        widget.task.fileTotalBytes[widget.node.relativePath] ??
+        widget.node.size;
+    final downloaded =
+        widget.task.fileDownloadedBytes[widget.node.relativePath] ?? 0;
     double progress = 0.0;
     if (total > 0) {
       progress = (downloaded / total).clamp(0.0, 1.0);

@@ -1006,9 +1006,7 @@ class AsmrLibraryController extends ChangeNotifier {
           }
           final track = node.toMusicTrack(
             groupTitleOverride: work.title,
-            remoteCoverUrl: work.mainCoverUrl.isNotEmpty
-                ? work.mainCoverUrl
-                : work.coverUrl,
+            remoteCoverUrl: work.preferredCoverUrl,
             remoteMetadataKind: 'asmr.one',
             remoteMetadata: remoteMetadataForTrack(node),
           );

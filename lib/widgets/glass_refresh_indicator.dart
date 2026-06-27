@@ -15,10 +15,6 @@ import 'package:flutter/material.dart';
 
 import 'app_feedback.dart';
 
-// The over-scroll distance that moves the indicator to its maximum
-// displacement, as a percentage of the scrollable's container extent.
-const double _kDragContainerExtentPercentage = 0.25;
-
 // How much the scroll's drag gesture can overshoot the RefreshIndicator's
 // displacement; max displacement = _kDragSizeFactorLimit * displacement.
 const double _kDragSizeFactorLimit = 1.5;
@@ -38,6 +34,35 @@ const Duration _kIndicatorScaleDuration = Duration(milliseconds: 200);
 ///
 /// Used by [RefreshIndicator.onRefresh].
 typedef RefreshCallback = Future<void> Function();
+
+class TopPullRefreshScrollPhysics extends BouncingScrollPhysics {
+  const TopPullRefreshScrollPhysics({super.parent});
+
+  @override
+  TopPullRefreshScrollPhysics applyTo(ScrollPhysics? ancestor) {
+    return TopPullRefreshScrollPhysics(parent: buildParent(ancestor));
+  }
+
+  @override
+  double applyBoundaryConditions(ScrollMetrics position, double value) {
+    if (value < position.minScrollExtent ||
+        position.pixels < position.minScrollExtent) {
+      return 0.0;
+    }
+    if (value > position.pixels &&
+        position.pixels >= position.maxScrollExtent) {
+      return value - position.pixels;
+    }
+    if (position.pixels < position.maxScrollExtent &&
+        position.maxScrollExtent < value) {
+      return value - position.maxScrollExtent;
+    }
+    return 0.0;
+  }
+}
+
+const ScrollPhysics kTopPullRefreshScrollPhysics =
+    AlwaysScrollableScrollPhysics(parent: TopPullRefreshScrollPhysics());
 
 /// Indicates current status of Material `RefreshIndicator`.
 enum GlassGlassRefreshIndicatorStatus {
@@ -357,10 +382,14 @@ class GlassRefreshIndicatorState extends State<GlassRefreshIndicator>
   void initState() {
     super.initState();
     _positionController = AnimationController(vsync: this);
-    _positionFactor = _positionController.drive(_kDragSizeFactorLimitTween);
+    _positionFactor = _positionController.drive(
+      _kDragSizeFactorLimitTween.chain(CurveTween(curve: Curves.easeIn)),
+    );
 
     // The "value" of the circular progress indicator during a drag.
-    _value = _positionController.drive(_threeQuarterTween);
+    _value = _positionController.drive(
+      _threeQuarterTween.chain(CurveTween(curve: Curves.easeIn)),
+    );
 
     _scaleController = AnimationController(vsync: this);
     _scaleFactor = _scaleController.drive(_oneToZeroTween);
@@ -538,8 +567,7 @@ class GlassRefreshIndicatorState extends State<GlassRefreshIndicator>
       _status == GlassGlassRefreshIndicatorStatus.drag ||
           _status == GlassGlassRefreshIndicatorStatus.armed,
     );
-    double newValue =
-        _dragOffset! / (containerExtent * _kDragContainerExtentPercentage);
+    double newValue = _dragOffset! / (widget.displacement * 3.0);
     if (_status == GlassGlassRefreshIndicatorStatus.armed) {
       newValue = math.max(newValue, 1.0 / _kDragSizeFactorLimit);
     }
@@ -559,6 +587,9 @@ class GlassRefreshIndicatorState extends State<GlassRefreshIndicator>
     if (_status == GlassGlassRefreshIndicatorStatus.drag &&
         currentAlpha == effectiveAlpha) {
       _status = GlassGlassRefreshIndicatorStatus.armed;
+      unawaited(
+        AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection),
+      );
       widget.onStatusChange?.call(_status);
     }
   }

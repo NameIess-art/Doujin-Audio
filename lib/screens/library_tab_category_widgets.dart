@@ -129,9 +129,9 @@ extension _LibraryTabCategoryView on _LibraryTabState {
           padding: EdgeInsets.fromLTRB(16, topPadding, 16, bottomPadding),
           cacheExtent: cacheExtent,
           clipBehavior: Clip.none,
-          physics: const AlwaysScrollableScrollPhysics(
-            parent: BouncingScrollPhysics(),
-          ),
+          physics: canPullRefresh
+              ? kTopPullRefreshScrollPhysics
+              : const ClampingScrollPhysics(),
           keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
           itemCount: itemCount,
           itemBuilder: (context, index) {

@@ -58,6 +58,10 @@ extension AudioProviderNotificationCovers on AudioProvider {
     return _coverArtworkCacheService.resolvedForFolder(folderPath);
   }
 
+  String? resolvedCoverPathForRemoteCover(String url) {
+    return _coverArtworkCacheService.resolvedForRemoteCover(url);
+  }
+
   Future<String?> coverPathFutureForTrack(
     MusicTrack? track, {
     String? trackPath,
@@ -70,6 +74,10 @@ extension AudioProviderNotificationCovers on AudioProvider {
 
   Future<String?> coverPathFutureForFolder(String folderPath) {
     return _coverArtworkCacheService.futureForFolder(folderPath);
+  }
+
+  Future<String?> coverPathFutureForRemoteCover(String url) {
+    return _coverArtworkCacheService.futureForRemoteCover(url);
   }
 
   Future<String?> _resolveNotificationCoverPathForTrack(

@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -13,11 +11,11 @@ import '../widgets/app_feedback.dart';
 import '../widgets/async_cover_image.dart';
 
 Future<void> showAsmrWorkDetailSheet(BuildContext context, AsmrWork work) {
-  unawaited(context.read<AsmrLibraryController>().recordHistory(work));
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
     showDragHandle: true,
+    useRootNavigator: true,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
     ),
@@ -164,8 +162,7 @@ class _AsmrWorkDetailSheet extends StatelessWidget {
 
         return ConstrainedBox(
           constraints: BoxConstraints(
-            maxHeight:
-                MediaQuery.sizeOf(context).height * (isLandscape ? 0.95 : 0.82),
+            maxHeight: MediaQuery.sizeOf(context).height * 0.68,
           ),
           child: SingleChildScrollView(
             padding: const EdgeInsets.fromLTRB(24, 0, 24, 32),
@@ -223,6 +220,8 @@ class _AsmrDetailHero extends StatelessWidget {
         (provider) => provider.coverImageResolution,
       ),
     );
+    final provider = context.read<AudioProvider>();
+    final coverUrl = work.preferredCoverUrl;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -231,25 +230,24 @@ class _AsmrDetailHero extends StatelessWidget {
           child: SizedBox(
             width: 110,
             height: 146,
-            child: RetryingNetworkImage(
-              url: work.mainCoverUrl.isNotEmpty
-                  ? work.mainCoverUrl
-                  : work.coverUrl,
+            child: AsyncRemoteCoverImage(
+              url: coverUrl,
+              future: provider.coverPathFutureForRemoteCover(coverUrl),
+              initialPath: provider.resolvedCoverPathForRemoteCover(coverUrl),
+              retryFutureBuilder: () =>
+                  provider.coverPathFutureForRemoteCover(coverUrl),
               fit: BoxFit.cover,
               cacheWidth: coverCacheWidth,
               useDefaultCacheWidth: coverCacheWidth != null,
-              loadingBuilder: (context, child, loadingProgress) =>
-                  loadingProgress == null
-                  ? child
-                  : CoverLoadingArtwork(
-                      placeholder: CoverFallbackArtwork(
-                        seed: work.title,
-                        showIcon: false,
-                      ),
-                      size: 36,
-                      strokeWidth: 3,
-                      color: asmrBlue,
-                    ),
+              loadingBuilder: (_) => CoverLoadingArtwork(
+                placeholder: CoverFallbackArtwork(
+                  seed: work.title,
+                  showIcon: false,
+                ),
+                size: 36,
+                strokeWidth: 3,
+                color: asmrBlue,
+              ),
               fallbackBuilder: (_) => CoverFallbackArtwork(
                 seed: work.title,
                 icon: Icons.graphic_eq_rounded,

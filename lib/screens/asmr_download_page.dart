@@ -340,7 +340,7 @@ class AsmrDownloadTaskPage extends StatelessWidget {
                 16,
                 MediaQuery.paddingOf(context).bottom + 16,
               ),
-              physics: const BouncingScrollPhysics(),
+              physics: const ClampingScrollPhysics(),
               itemCount: tasks.length,
               itemBuilder: (context, index) {
                 final task = tasks[index];

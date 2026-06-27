@@ -23,6 +23,7 @@ Future<void> showAudioDetailSheet(
     context: context,
     isScrollControlled: true,
     showDragHandle: true,
+    useRootNavigator: true,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
     ),

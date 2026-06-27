@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -21,6 +22,103 @@ void main() {
 
     expect(identical(first, second), isTrue);
     expect(await first, isNull);
+  });
+
+  test('remote cover future reuses the same in-flight download', () async {
+    final completer = Completer<String?>();
+    var downloads = 0;
+    final cache = CoverArtworkCacheService(
+      libraryService: LibraryService(),
+      remoteCoverDownloader: (url) {
+        downloads += 1;
+        return completer.future;
+      },
+    );
+
+    final first = cache.futureForRemoteCover('https://example.com/cover.jpg');
+    final second = cache.futureForRemoteCover('https://example.com/cover.jpg');
+
+    expect(identical(first, second), isTrue);
+    expect(downloads, 1);
+
+    completer.complete('/cache/cover.image');
+    expect(await first, '/cache/cover.image');
+    expect(
+      cache.resolvedForRemoteCover(' https://example.com/cover.jpg '),
+      '/cache/cover.image',
+    );
+  });
+
+  test(
+    'tracks with the same remote cover share the resolved cache path',
+    () async {
+      var downloads = 0;
+      final cache = CoverArtworkCacheService(
+        libraryService: LibraryService(),
+        remoteCoverDownloader: (url) async {
+          downloads += 1;
+          return '/cache/${url.hashCode}.image';
+        },
+      );
+      const first = MusicTrack(
+        path: 'https://example.com/audio-a.mp3',
+        displayName: 'A',
+        groupKey: 'remote-a',
+        groupTitle: 'Remote',
+        groupSubtitle: 'Remote',
+        isSingle: false,
+        remoteCoverUrl: 'https://example.com/cover.jpg',
+      );
+      const second = MusicTrack(
+        path: 'https://example.com/audio-b.mp3',
+        displayName: 'B',
+        groupKey: 'remote-b',
+        groupTitle: 'Remote',
+        groupSubtitle: 'Remote',
+        isSingle: false,
+        remoteCoverUrl: ' https://example.com/cover.jpg ',
+      );
+
+      final firstPath = await cache.futureForTrack(first);
+      final secondPath = await cache.futureForTrack(second);
+
+      expect(firstPath, secondPath);
+      expect(downloads, 1);
+      expect(cache.resolvedForTrack(first), firstPath);
+      expect(cache.resolvedForTrack(second), firstPath);
+    },
+  );
+
+  test('remote cover search key normalizes whitespace and trailing slash', () {
+    expect(
+      remoteCoverSearchKey(' https://example.com/cover.jpg/ '),
+      remoteCoverSearchKey('https://example.com/cover.jpg'),
+    );
+  });
+
+  test('remote cover miss is not cached so retry can download again', () async {
+    var downloads = 0;
+    final cache = CoverArtworkCacheService(
+      libraryService: LibraryService(),
+      remoteCoverDownloader: (_) async {
+        downloads += 1;
+        return downloads == 1 ? null : '/cache/cover.image';
+      },
+    );
+
+    expect(
+      await cache.futureForRemoteCover('https://example.com/cover.jpg'),
+      isNull,
+    );
+    expect(
+      await cache.futureForRemoteCover('https://example.com/cover.jpg'),
+      '/cache/cover.image',
+    );
+    expect(downloads, 2);
+    expect(
+      cache.resolvedForRemoteCover('https://example.com/cover.jpg'),
+      '/cache/cover.image',
+    );
   });
 
   test('manual cover is returned before scanning the folder', () async {

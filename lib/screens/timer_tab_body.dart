@@ -392,7 +392,7 @@ extension _TimerTabBody on _TimerTabState {
                   16,
                   24,
                 ),
-                physics: const BouncingScrollPhysics(),
+                physics: const ClampingScrollPhysics(),
                 children: [
                   if (!showCompactOnly) ...[
                     Wrap(

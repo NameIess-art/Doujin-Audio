@@ -43,16 +43,14 @@ extension AudioProviderPlaybackEngine on AudioProvider {
     if (!_isSessionCommandCurrent(session, token)) {
       return;
     }
-    final activated = await _activateAudioSessionForPlayback();
-    if (!_isSessionCommandCurrent(session, token)) {
-      return;
-    }
-    if (!activated) {
-      debugPrint(
-        'AudioProvider._startSessionPlayback: audio session activation '
-        'returned false; continuing playback attempt.',
-      );
-    }
+    unawaited(_activateAudioSessionForPlayback().then((activated) {
+      if (!activated) {
+        debugPrint(
+          'AudioProvider._startSessionPlayback: audio session activation '
+          'returned false; continuing playback attempt.',
+        );
+      }
+    }));
 
     try {
       final playResult = await _nativePlaybackRepository.play(session.id);

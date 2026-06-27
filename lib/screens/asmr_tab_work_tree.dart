@@ -140,7 +140,7 @@ class _AsmrWorkTreeCardState extends State<_AsmrWorkTreeCard> {
             ),
             showTrailingIcon: false,
             tilePadding: LibraryLikeCardMetrics.rootTilePadding,
-            childrenPadding: const EdgeInsets.fromLTRB(12, 0, 0, 0),
+            childrenPadding: const EdgeInsets.fromLTRB(8, 0, 0, 0),
             title: _AsmrRootCardContent(
               work: widget.work,
               expanded: _expanded,
@@ -273,7 +273,7 @@ class _AsmrTrackTreeNodeState extends State<_AsmrTrackTreeNode> {
           collapsedShape: const RoundedRectangleBorder(),
           showTrailingIcon: false,
           tilePadding: const EdgeInsets.fromLTRB(6, 2, 4, 2),
-          childrenPadding: const EdgeInsets.fromLTRB(16, 0, 0, 0),
+          childrenPadding: const EdgeInsets.fromLTRB(4, 0, 0, 0),
           title: Row(
             children: [
               Icon(

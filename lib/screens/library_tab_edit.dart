@@ -1194,7 +1194,7 @@ class _LibraryEditFolderTreeTileState
           setState(() => _expanded = expanded);
         },
         tilePadding: EdgeInsets.fromLTRB(isRootFolder ? 14 : 6, 3, 6, 3),
-        childrenPadding: EdgeInsets.fromLTRB(isRootFolder ? 12 : 16, 0, 0, 6),
+        childrenPadding: EdgeInsets.fromLTRB(isRootFolder ? 8 : 4, 0, 0, 6),
         leading: Icon(
           muted ? Icons.folder_off_rounded : Icons.folder_rounded,
           size: isRootFolder ? 24 : 20,
@@ -1289,7 +1289,7 @@ class _LibraryEditFolderTreeTileState
 
     if (!isRootFolder) {
       return Padding(
-        padding: const EdgeInsets.only(left: 12, bottom: 4),
+        padding: const EdgeInsets.only(left: 8, bottom: 4),
         child: content,
       );
     }
@@ -1328,7 +1328,7 @@ class _LibraryEditTrackTile extends ConsumerWidget {
     final cs = Theme.of(context).colorScheme;
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+      padding: const EdgeInsets.fromLTRB(8, 2, 8, 2),
       child: ListTile(
         dense: true,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),

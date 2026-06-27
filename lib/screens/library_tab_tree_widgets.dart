@@ -168,7 +168,7 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
         tilePadding: isRootFolder
             ? LibraryLikeCardMetrics.rootTilePadding
             : const EdgeInsets.fromLTRB(6, 2, 4, 2),
-        childrenPadding: EdgeInsets.fromLTRB(isRootFolder ? 12 : 16, 0, 0, 0),
+        childrenPadding: EdgeInsets.fromLTRB(isRootFolder ? 8 : 4, 0, 0, 0),
         title: isRootFolder
             ? _RootFolderCardContent(
                 folderPath: widget.folder.path,

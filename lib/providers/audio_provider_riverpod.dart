@@ -4,6 +4,7 @@ import '../services/audio_database_repository.dart';
 import '../services/audio_state_services.dart';
 import '../services/native_playback_repository.dart';
 import '../services/playback_command_runner.dart';
+import '../services/ui_operation_service.dart';
 import '../screens/screen_view_models.dart';
 import 'audio_provider.dart';
 import 'subtitle_settings_provider.dart';
@@ -70,6 +71,25 @@ final settingsRepositoryProvider = Provider<SettingsRepository>((ref) {
   );
 });
 
+final uiOperationServiceProvider = Provider<UiOperationService>((ref) {
+  throw UnimplementedError(
+    'uiOperationServiceProvider must be overridden in ProviderScope.',
+  );
+});
+
+final uiOperationStateProvider = StreamProvider<UiOperationRegistryState>((
+  ref,
+) {
+  return ref.watch(uiOperationServiceProvider).stream;
+});
+
+final uiOperationForScopeProvider =
+    Provider.family<UiOperationState, UiOperationScope>((ref, scope) {
+      final serviceState = ref.watch(uiOperationServiceProvider).state;
+      final asyncState = ref.watch(uiOperationStateProvider).valueOrNull;
+      return (asyncState ?? serviceState).forScope(scope);
+    });
+
 final libraryStateProvider = StreamProvider<LibraryState>((ref) {
   return ref.watch(libraryServiceProvider).slice.stream;
 });
@@ -93,18 +113,29 @@ final notificationStateProvider = StreamProvider<NotificationState>((ref) {
 final libraryHeaderUiProvider = Provider<LibraryHeaderState>((ref) {
   final serviceState = ref.watch(libraryServiceProvider).slice.state;
   final state = ref.watch(libraryStateProvider).valueOrNull ?? serviceState;
+  final refreshOperation = ref.watch(
+    uiOperationForScopeProvider(UiOperationScope.libraryRefresh),
+  );
   final libraryState = LibraryState(
     libraryTrackCount: state.libraryTrackCount,
     watchedFolderCount: state.watchedFolderCount,
     watchedLibraryCount: state.watchedLibraryCount,
     isInitialized: state.isInitialized,
   );
-  return libraryHeaderStateFromSlice(libraryState);
+  return libraryHeaderStateFromSlice(
+    libraryState,
+    isRefreshing: refreshOperation.isBusy || state.isScanning,
+    operationProgress: refreshOperation.progress,
+    operationError: refreshOperation.error,
+  );
 });
 
 final libraryListUiProvider = Provider<LibraryListState>((ref) {
   final serviceState = ref.watch(libraryServiceProvider).slice.state;
   final state = ref.watch(libraryStateProvider).valueOrNull ?? serviceState;
+  final refreshOperation = ref.watch(
+    uiOperationForScopeProvider(UiOperationScope.libraryRefresh),
+  );
   final showForegroundScan = state.isScanning && !state.isBackgroundScanning;
   final libraryState = LibraryState(
     watchedFolderCount: state.watchedFolderCount,
@@ -134,6 +165,9 @@ final libraryListUiProvider = Provider<LibraryListState>((ref) {
     scanFailureCount: libraryState.scanFailureCount,
     structureRevision: libraryState.contentRevision,
     isInitialized: libraryState.isInitialized,
+    isRefreshing: refreshOperation.isBusy || state.isScanning,
+    operationProgress: refreshOperation.progress,
+    operationError: refreshOperation.error,
   );
 });
 
@@ -246,6 +280,7 @@ List<Override> createAudioProviderOverrides({
   required TimerService timerService,
   required NotificationCoordinatorService notificationCoordinatorService,
   required SettingsRepository settingsRepository,
+  UiOperationService? uiOperationService,
 }) {
   return <Override>[
     audioProviderFacadeProvider.overrideWithValue(audioProvider),
@@ -261,5 +296,8 @@ List<Override> createAudioProviderOverrides({
       notificationCoordinatorService,
     ),
     settingsRepositoryProvider.overrideWithValue(settingsRepository),
+    uiOperationServiceProvider.overrideWithValue(
+      uiOperationService ?? UiOperationService.instance,
+    ),
   ];
 }

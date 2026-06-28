@@ -3,9 +3,7 @@ import 'dart:ui' as dart_ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:provider/provider.dart' hide Consumer;
 
-import '../i18n/app_language_provider.dart';
 import '../providers/audio_provider_riverpod.dart';
 import 'marquee_text.dart';
 
@@ -162,13 +160,10 @@ class _TopPageHeaderState extends ConsumerState<TopPageHeader> {
       ),
     );
     final currentAlpha = blurEnabled ? (isDark ? 0.82 : 0.88) : 1.0;
-    final i18n = context.watch<AppLanguageProvider>();
     final topPadding = widget.useSafeAreaTop
         ? MediaQuery.paddingOf(context).top
         : 0.0;
-    final resolvedTitle = widget.isLoading
-        ? i18n.tr('loading_dot')
-        : widget.title;
+    final resolvedTitle = widget.title;
 
     Widget buildHeaderContent(double collapseT) {
       final expandedTitleStyle = Theme.of(context).textTheme.headlineMedium

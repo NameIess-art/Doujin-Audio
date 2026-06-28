@@ -22,6 +22,7 @@ import '../services/natural_sort.dart';
 import '../services/path_display.dart';
 import '../services/path_matcher.dart';
 import '../services/ui_interaction_coordinator.dart';
+import '../services/ui_operation_service.dart';
 import '../services/library_scanner_service.dart';
 import '../widgets/app_feedback.dart';
 import '../widgets/async_cover_image.dart';
@@ -110,6 +111,16 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
 
   void _setLocalState(VoidCallback fn) => setState(fn);
 
+  Future<T> _runLibraryOperation<T>({
+    required UiOperationScope scope,
+    required String labelKey,
+    required Future<T> Function() task,
+  }) {
+    return ref
+        .read(uiOperationServiceProvider)
+        .run<T>(scope: scope, labelKey: labelKey, task: (_) => task());
+  }
+
   void _ensureFilteredSearchSnapshot({
     required List<LibraryNode> tree,
     required String query,
@@ -185,14 +196,18 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
       return;
     }
     try {
-      await _scanner.refreshWatchedFolders(
-        provider: provider,
-        i18n: i18n,
-        showSnack: (msg) {
-          if (mounted) showAppSnackBar(context, msg);
-        },
-        silent: silent,
-        forceShowResult: forceShowResult,
+      await _runLibraryOperation<void>(
+        scope: UiOperationScope.libraryRefresh,
+        labelKey: 'loading_dot',
+        task: () => _scanner.refreshWatchedFolders(
+          provider: provider,
+          i18n: i18n,
+          showSnack: (msg) {
+            if (mounted) showAppSnackBar(context, msg);
+          },
+          silent: silent,
+          forceShowResult: forceShowResult,
+        ),
       );
     } catch (error, stackTrace) {
       AppLogService.error(
@@ -237,12 +252,21 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     final i18n = context.read<AppLanguageProvider>();
     final provider = context.read<AudioProvider>();
     try {
-      await action(
-        provider: provider,
-        i18n: i18n,
-        showSnack: (msg) {
-          if (mounted) showAppSnackBar(context, msg);
+      await _runLibraryOperation<void>(
+        scope: switch (logEvent) {
+          'library_import_files_failed' => UiOperationScope.libraryImportFiles,
+          'library_import_library_failed' =>
+            UiOperationScope.libraryImportLibrary,
+          _ => UiOperationScope.libraryImportFolder,
         },
+        labelKey: 'loading_dot',
+        task: () => action(
+          provider: provider,
+          i18n: i18n,
+          showSnack: (msg) {
+            if (mounted) showAppSnackBar(context, msg);
+          },
+        ),
       );
     } catch (error, stackTrace) {
       AppLogService.error(logEvent, error: error, stackTrace: stackTrace);
@@ -397,6 +421,11 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     final settingsState =
         ref.watch(settingsStateProvider).valueOrNull ?? const SettingsState();
     final cardPositionsLocked = settingsState.cardPositionsLocked;
+    final libraryRefreshOperation = ref.watch(
+      uiOperationForScopeProvider(UiOperationScope.libraryRefresh),
+    );
+    final libraryRefreshBusy =
+        libraryRefreshOperation.isBusy || listState.isScanning;
     _ensureCategorySnapshot(
       provider: provider,
       structureRevision: listState.structureRevision,
@@ -444,7 +473,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     final showLibrarySkeleton =
         !hasLibrary &&
         _effectiveSearchQuery.isEmpty &&
-        listState.isScanning &&
+        libraryRefreshBusy &&
         libraryHeaderState.hasWatchedSources;
     final canPullRefresh = listState.canPullRefresh;
     Widget dynamicSearchBar() {
@@ -584,324 +613,332 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
           return false;
         },
         child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          // Viewport restricted to content area so drag-to-reorder auto-scroll
-          // triggers at content edges rather than screen edges.
-          MediaQuery(
-            data: MediaQuery.of(context).copyWith(
-              padding: EdgeInsets.only(
-                top: headerControlsFullHeight + 4,
-                bottom: listViewportBottomInset,
-                right: 4,
+          clipBehavior: Clip.none,
+          children: [
+            // Viewport restricted to content area so drag-to-reorder auto-scroll
+            // triggers at content edges rather than screen edges.
+            MediaQuery(
+              data: MediaQuery.of(context).copyWith(
+                padding: EdgeInsets.only(
+                  top: headerControlsFullHeight + 4,
+                  bottom: listViewportBottomInset,
+                  right: 4,
+                ),
               ),
-            ),
-            child: ContentBoundReorderArea(
-              headerHeight: _headerHeight,
-              bottomInset: listViewportBottomInset,
-              topExpansion: expansion,
-              bottomExpansion: expansion,
-              scrollController: _scrollController,
-              showScrollbar: isWindows,
-              scrollbarMainAxisMargin: isWindows ? 8 : 0,
-              child: !listState.isInitialized
-                  ? ShimmerLoader(
-                      child: ListView.builder(
-                        physics: const NeverScrollableScrollPhysics(),
-                        padding: EdgeInsets.fromLTRB(
-                          16,
-                          listTopPadding,
-                          16,
-                          listBottomPadding,
-                        ),
-                        itemCount: 15,
-                        itemBuilder: (context, index) {
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 12),
-                            child: Row(
-                              children: [
-                                const ShimmerContainer(width: 48, height: 48),
-                                const SizedBox(width: 16),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      const ShimmerContainer(
-                                        width: double.infinity,
-                                        height: 16,
-                                      ),
-                                      const SizedBox(height: 8),
-                                      ShimmerContainer(
-                                        width:
-                                            MediaQuery.sizeOf(context).width *
-                                            0.4,
-                                        height: 12,
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-                        },
-                      ),
-                    )
-                  : _categoryType == AudioLibraryCategoryType.all &&
-                        tree.isEmpty
-                  ? refreshableEmptyBody()
-                  : _categoryType != AudioLibraryCategoryType.all
-                  ? _buildCategoryBody(
-                      provider: provider,
-                      i18n: i18n,
-                      topPadding: listTopPadding,
-                      bottomPadding: listBottomPadding,
-                      cacheExtent: listCacheExtent,
-                      canPullRefresh: canPullRefresh,
-                      detailRevision: detailRevision,
-                    )
-                  : _effectiveSearchQuery.isNotEmpty
-                  ? ListView.builder(
-                      key: const ValueKey('search_results_list'),
-                      controller: _scrollController,
-                      padding: EdgeInsets.fromLTRB(
-                        16,
-                        listTopPadding,
-                        16,
-                        listBottomPadding,
-                      ),
-                      cacheExtent: listCacheExtent,
-                      clipBehavior: Clip.none,
-                      physics: const AlwaysScrollableScrollPhysics(
-                        parent: BouncingScrollPhysics(),
-                      ),
-                      keyboardDismissBehavior:
-                          ScrollViewKeyboardDismissBehavior.onDrag,
-                      itemCount: tree.length + 1,
-                      itemBuilder: buildLibraryItem,
-                    )
-                  : GlassRefreshIndicator(
-                      key: _refreshIndicatorKey,
-                      color: Theme.of(context).colorScheme.primary,
-                      backgroundColor: Theme.of(context)
-                          .colorScheme
-                          .surfaceContainerHighest
-                          .withValues(alpha: 0.6),
-                      onRefresh: _runLibraryPullRefresh,
-                      edgeOffset: listTopPadding,
-                      displacement: 32,
-                      triggerMode: GlassRefreshIndicatorTriggerMode.anywhere,
-                      child: ReorderAutoScroller(
-                        scrollController: _scrollController,
-                        isDragging: !cardPositionsLocked && _isReordering,
-                        contentMarginTop: listTopPadding,
-                        contentMarginBottom: listBottomPadding,
-                        child: ReorderableListView.builder(
-                          scrollController: _scrollController,
-                          // Clip.none allows items to be visible when scrolled into the
-                          // "empty" space above/below the restricted Positioned area.
-                          clipBehavior: Clip.none,
+              child: ContentBoundReorderArea(
+                headerHeight: _headerHeight,
+                bottomInset: listViewportBottomInset,
+                topExpansion: expansion,
+                bottomExpansion: expansion,
+                scrollController: _scrollController,
+                showScrollbar: isWindows,
+                scrollbarMainAxisMargin: isWindows ? 8 : 0,
+                child: !listState.isInitialized
+                    ? ShimmerLoader(
+                        child: ListView.builder(
+                          physics: const NeverScrollableScrollPhysics(),
                           padding: EdgeInsets.fromLTRB(
                             16,
                             listTopPadding,
                             16,
                             listBottomPadding,
                           ),
-                          cacheExtent: listCacheExtent,
-                          physics: canPullRefresh
-                              ? const AlwaysScrollableScrollPhysics(
-                                  parent: BouncingScrollPhysics(),
-                                )
-                              : null,
-                          buildDefaultDragHandles: false,
-                          keyboardDismissBehavior:
-                              ScrollViewKeyboardDismissBehavior.onDrag,
-                          onReorder: (oldIndex, newIndex) {
-                            if (cardPositionsLocked) return;
-                            setState(() => _isReordering = false);
-                            provider.reorderLibraryNodes(oldIndex, newIndex);
-                          },
-                          onReorderStart: (index) {
-                            if (cardPositionsLocked) return;
-                            setState(() => _isReordering = true);
-                            unawaited(
-                              AppInteractionFeedback.trigger(
-                                AppInteractionFeedbackType.destructive,
+                          itemCount: 15,
+                          itemBuilder: (context, index) {
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 12),
+                              child: Row(
+                                children: [
+                                  const ShimmerContainer(width: 48, height: 48),
+                                  const SizedBox(width: 16),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        const ShimmerContainer(
+                                          width: double.infinity,
+                                          height: 16,
+                                        ),
+                                        const SizedBox(height: 8),
+                                        ShimmerContainer(
+                                          width:
+                                              MediaQuery.sizeOf(context).width *
+                                              0.4,
+                                          height: 12,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
                               ),
                             );
                           },
-                          onReorderEnd: (_) {
-                            if (_isReordering) {
+                        ),
+                      )
+                    : _categoryType == AudioLibraryCategoryType.all &&
+                          tree.isEmpty
+                    ? refreshableEmptyBody()
+                    : _categoryType != AudioLibraryCategoryType.all
+                    ? _buildCategoryBody(
+                        provider: provider,
+                        i18n: i18n,
+                        topPadding: listTopPadding,
+                        bottomPadding: listBottomPadding,
+                        cacheExtent: listCacheExtent,
+                        canPullRefresh: canPullRefresh,
+                        detailRevision: detailRevision,
+                      )
+                    : _effectiveSearchQuery.isNotEmpty
+                    ? ListView.builder(
+                        key: const ValueKey('search_results_list'),
+                        controller: _scrollController,
+                        padding: EdgeInsets.fromLTRB(
+                          16,
+                          listTopPadding,
+                          16,
+                          listBottomPadding,
+                        ),
+                        cacheExtent: listCacheExtent,
+                        clipBehavior: Clip.none,
+                        physics: const AlwaysScrollableScrollPhysics(
+                          parent: BouncingScrollPhysics(),
+                        ),
+                        keyboardDismissBehavior:
+                            ScrollViewKeyboardDismissBehavior.onDrag,
+                        itemCount: tree.length + 1,
+                        itemBuilder: buildLibraryItem,
+                      )
+                    : GlassRefreshIndicator(
+                        key: _refreshIndicatorKey,
+                        color: Theme.of(context).colorScheme.primary,
+                        backgroundColor: Theme.of(context)
+                            .colorScheme
+                            .surfaceContainerHighest
+                            .withValues(alpha: 0.6),
+                        onRefresh: _runLibraryPullRefresh,
+                        edgeOffset: listTopPadding,
+                        displacement: 32,
+                        triggerMode: GlassRefreshIndicatorTriggerMode.anywhere,
+                        child: ReorderAutoScroller(
+                          scrollController: _scrollController,
+                          isDragging: !cardPositionsLocked && _isReordering,
+                          contentMarginTop: listTopPadding,
+                          contentMarginBottom: listBottomPadding,
+                          child: ReorderableListView.builder(
+                            scrollController: _scrollController,
+                            // Clip.none allows items to be visible when scrolled into the
+                            // "empty" space above/below the restricted Positioned area.
+                            clipBehavior: Clip.none,
+                            padding: EdgeInsets.fromLTRB(
+                              16,
+                              listTopPadding,
+                              16,
+                              listBottomPadding,
+                            ),
+                            cacheExtent: listCacheExtent,
+                            physics: canPullRefresh
+                                ? const AlwaysScrollableScrollPhysics(
+                                    parent: BouncingScrollPhysics(),
+                                  )
+                                : null,
+                            buildDefaultDragHandles: false,
+                            keyboardDismissBehavior:
+                                ScrollViewKeyboardDismissBehavior.onDrag,
+                            onReorder: (oldIndex, newIndex) {
+                              if (cardPositionsLocked) return;
                               setState(() => _isReordering = false);
-                            }
-                          },
-                          proxyDecorator: (child, index, animation) =>
-                              _buildReorderProxy(context, child, animation),
-                          itemCount: tree.length + 1,
-                          itemBuilder: (context, index) {
-                            if (index == tree.length) {
-                              return const SizedBox.shrink(
-                                key: ValueKey('bottom_spacing'),
+                              provider.reorderLibraryNodes(oldIndex, newIndex);
+                            },
+                            onReorderStart: (index) {
+                              if (cardPositionsLocked) return;
+                              setState(() => _isReordering = true);
+                              unawaited(
+                                AppInteractionFeedback.trigger(
+                                  AppInteractionFeedbackType.destructive,
+                                ),
                               );
-                            }
-                            final node = tree[index];
-                            final child = RepaintBoundary(
-                              child: _LibraryTreeItem(node: node),
-                            );
-                            if (cardPositionsLocked) {
-                              return KeyedSubtree(
+                            },
+                            onReorderEnd: (_) {
+                              if (_isReordering) {
+                                setState(() => _isReordering = false);
+                              }
+                            },
+                            proxyDecorator: (child, index, animation) =>
+                                _buildReorderProxy(context, child, animation),
+                            itemCount: tree.length + 1,
+                            itemBuilder: (context, index) {
+                              if (index == tree.length) {
+                                return const SizedBox.shrink(
+                                  key: ValueKey('bottom_spacing'),
+                                );
+                              }
+                              final node = tree[index];
+                              final child = RepaintBoundary(
+                                child: _LibraryTreeItem(node: node),
+                              );
+                              if (cardPositionsLocked) {
+                                return KeyedSubtree(
+                                  key: ValueKey(node.path),
+                                  child: child,
+                                );
+                              }
+                              return ReorderableHoldDragStartListener(
                                 key: ValueKey(node.path),
+                                index: index,
                                 child: child,
                               );
-                            }
-                            return ReorderableHoldDragStartListener(
-                              key: ValueKey(node.path),
-                              index: index,
-                              child: child,
-                            );
-                          },
+                            },
+                          ),
                         ),
                       ),
-                    ),
-            ),
-          ),
-
-          // Scan progress card
-          if (listState.isScanning && !listState.isBackgroundScanning)
-            Positioned(
-              top: headerContentHeight + 10,
-              left: 12,
-              right: 12,
-              child: _buildScanProgressCard(
-                i18n,
-                provider,
-                listState.scanCurrentFolder,
-                listState.scanFoundCount,
-                listState.scanDuplicateCount,
-                listState.scanFailureCount,
               ),
             ),
 
-          // Header — frosted glass overlay on top of the scrolling list
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: TopPageHeader(
-              key: _headerKey,
-              icon: Icons.library_music_rounded,
-              title: i18n.tr('music_library'),
-              isLoading: !libraryHeaderState.isInitialized,
-              subtitle: i18n.tr('audio_count', {
-                'count': libraryHeaderState.audioCount,
-              }),
-              subtitleFontSize: 11,
-              fitSubtitleToWidth: true,
-              collapseController: _scrollController,
-              collapseDistance: headerControlsFullHeight,
-              floatingReveal: true,
-              floatingRevealDistance: 56,
-              trailing: SizedBox(
-                width: 104 + (isWindows ? 52 : 0),
-                height: 44,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    if (isWindows)
-                      IconButton(
-                        onPressed: canPullRefresh
-                            ? () => unawaited(
-                                _runLibraryPullRefresh(showSnackbar: true),
-                              )
-                            : null,
-                        icon: const Icon(Icons.refresh_rounded),
-                        tooltip: i18n.tr('refresh_watched_folder'),
-                      ),
-                    UnifiedPopupMenuButton<int>(
-                      icon: Icons.add_circle_outline_rounded,
-                      tooltip: i18n.tr('import_audio'),
-                      entries: [
-                        UnifiedMenuEntry<int>.action(
-                          value: 0,
-                          icon: Icons.create_new_folder_rounded,
-                          label: i18n.tr('import_folder'),
-                        ),
-                        UnifiedMenuEntry<int>.action(
-                          value: 2,
-                          icon: Icons.upload_file_rounded,
-                          label: i18n.tr('import_file'),
-                        ),
-                        UnifiedMenuEntry<int>.action(
-                          value: 1,
-                          icon: Icons.library_add_rounded,
-                          label: i18n.tr('choose_library'),
-                        ),
-                        const UnifiedMenuEntry<int>.divider(),
-                        UnifiedMenuEntry<int>.action(
-                          value: 3,
-                          icon: Icons.video_library_rounded,
-                          label: i18n.tr('video_to_audio'),
-                        ),
-                      ],
-                      onSelected: (value) {
-                        if (value == 0) _addFolder();
-                        if (value == 1) _addLibrary();
-                        if (value == 2) _addFiles();
-                        if (value == 3) _openVideoConverterPage();
-                      },
-                    ),
-                    UnifiedPopupMenuButton<_LibraryMoreAction>(
-                      icon: Icons.more_horiz_rounded,
-                      tooltip: i18n.tr('more_actions'),
-                      entries: [
-                        UnifiedMenuEntry<_LibraryMoreAction>.action(
-                          value: _LibraryMoreAction.manageLibraries,
-                          icon: Icons.edit_note_rounded,
-                          label: i18n.tr('edit_library'),
-                        ),
-                        UnifiedMenuEntry<_LibraryMoreAction>.action(
-                          value: _LibraryMoreAction.batchMetadata,
-                          icon: Icons.library_add_check_rounded,
-                          label: i18n.tr('batch_metadata'),
-                        ),
-                        const UnifiedMenuEntry<_LibraryMoreAction>.divider(),
-                        UnifiedMenuEntry<_LibraryMoreAction>.action(
-                          value: _LibraryMoreAction.toggleCardPositionsLocked,
-                          icon: Icons.push_pin_rounded,
-                          label: i18n.tr('fixed_card_positions'),
-                          trailing: cardPositionsLocked
-                              ? const Icon(Icons.check_rounded, size: 18)
-                              : null,
-                        ),
-                      ],
-                      onSelected: (value) {
-                        switch (value) {
-                          case _LibraryMoreAction.manageLibraries:
-                            _openLibraryManagementPage();
-                            break;
-                          case _LibraryMoreAction.batchMetadata:
-                            _openBatchMetadataPage();
-                            break;
-                          case _LibraryMoreAction.toggleCardPositionsLocked:
-                            unawaited(
-                              provider.setCardPositionsLocked(
-                                !cardPositionsLocked,
-                              ),
-                            );
-                            break;
-                        }
-                      },
-                    ),
-                  ],
+            // Scan progress card
+            if (listState.isScanning && !listState.isBackgroundScanning)
+              Positioned(
+                top: headerContentHeight + 10,
+                left: 12,
+                right: 12,
+                child: _buildScanProgressCard(
+                  i18n,
+                  provider,
+                  listState.scanCurrentFolder,
+                  listState.scanFoundCount,
+                  listState.scanDuplicateCount,
+                  listState.scanFailureCount,
                 ),
               ),
-              bottomSpacing: 4,
-              padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
-              additionalChild: dynamicSearchBar(),
+
+            // Header — frosted glass overlay on top of the scrolling list
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: TopPageHeader(
+                key: _headerKey,
+                icon: Icons.library_music_rounded,
+                title: i18n.tr('music_library'),
+                isLoading:
+                    !libraryHeaderState.isInitialized || libraryRefreshBusy,
+                subtitle: i18n.tr('audio_count', {
+                  'count': libraryHeaderState.audioCount,
+                }),
+                subtitleFontSize: 11,
+                fitSubtitleToWidth: true,
+                collapseController: _scrollController,
+                collapseDistance: headerControlsFullHeight,
+                floatingReveal: true,
+                floatingRevealDistance: 56,
+                trailing: SizedBox(
+                  width: 104 + (isWindows ? 52 : 0),
+                  height: 44,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      if (isWindows)
+                        IconButton(
+                          onPressed: canPullRefresh && !libraryRefreshBusy
+                              ? () => unawaited(
+                                  _runLibraryPullRefresh(showSnackbar: true),
+                                )
+                              : null,
+                          icon: libraryRefreshBusy
+                              ? const SizedBox.square(
+                                  dimension: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2.2,
+                                  ),
+                                )
+                              : const Icon(Icons.refresh_rounded),
+                          tooltip: i18n.tr('refresh_watched_folder'),
+                        ),
+                      UnifiedPopupMenuButton<int>(
+                        icon: Icons.add_circle_outline_rounded,
+                        tooltip: i18n.tr('import_audio'),
+                        entries: [
+                          UnifiedMenuEntry<int>.action(
+                            value: 0,
+                            icon: Icons.create_new_folder_rounded,
+                            label: i18n.tr('import_folder'),
+                          ),
+                          UnifiedMenuEntry<int>.action(
+                            value: 2,
+                            icon: Icons.upload_file_rounded,
+                            label: i18n.tr('import_file'),
+                          ),
+                          UnifiedMenuEntry<int>.action(
+                            value: 1,
+                            icon: Icons.library_add_rounded,
+                            label: i18n.tr('choose_library'),
+                          ),
+                          const UnifiedMenuEntry<int>.divider(),
+                          UnifiedMenuEntry<int>.action(
+                            value: 3,
+                            icon: Icons.video_library_rounded,
+                            label: i18n.tr('video_to_audio'),
+                          ),
+                        ],
+                        onSelected: (value) {
+                          if (value == 0) _addFolder();
+                          if (value == 1) _addLibrary();
+                          if (value == 2) _addFiles();
+                          if (value == 3) _openVideoConverterPage();
+                        },
+                      ),
+                      UnifiedPopupMenuButton<_LibraryMoreAction>(
+                        icon: Icons.more_horiz_rounded,
+                        tooltip: i18n.tr('more_actions'),
+                        entries: [
+                          UnifiedMenuEntry<_LibraryMoreAction>.action(
+                            value: _LibraryMoreAction.manageLibraries,
+                            icon: Icons.edit_note_rounded,
+                            label: i18n.tr('edit_library'),
+                          ),
+                          UnifiedMenuEntry<_LibraryMoreAction>.action(
+                            value: _LibraryMoreAction.batchMetadata,
+                            icon: Icons.library_add_check_rounded,
+                            label: i18n.tr('batch_metadata'),
+                          ),
+                          const UnifiedMenuEntry<_LibraryMoreAction>.divider(),
+                          UnifiedMenuEntry<_LibraryMoreAction>.action(
+                            value: _LibraryMoreAction.toggleCardPositionsLocked,
+                            icon: Icons.push_pin_rounded,
+                            label: i18n.tr('fixed_card_positions'),
+                            trailing: cardPositionsLocked
+                                ? const Icon(Icons.check_rounded, size: 18)
+                                : null,
+                          ),
+                        ],
+                        onSelected: (value) {
+                          switch (value) {
+                            case _LibraryMoreAction.manageLibraries:
+                              _openLibraryManagementPage();
+                              break;
+                            case _LibraryMoreAction.batchMetadata:
+                              _openBatchMetadataPage();
+                              break;
+                            case _LibraryMoreAction.toggleCardPositionsLocked:
+                              unawaited(
+                                provider.setCardPositionsLocked(
+                                  !cardPositionsLocked,
+                                ),
+                              );
+                              break;
+                          }
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+                bottomSpacing: 4,
+                padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+                additionalChild: dynamicSearchBar(),
+              ),
             ),
-          ),
-        ],
-      ),
+          ],
+        ),
       ),
     );
   }

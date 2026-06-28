@@ -17,7 +17,12 @@ class _AsmrWorkTreeCardState extends State<_AsmrWorkTreeCard> {
 
   Future<void> _playWork(BuildContext context) async {
     final asmrController = context.read<AsmrLibraryController>();
-    await asmrController.playWork(context.read<AudioProvider>(), widget.work);
+    await UiOperationService.instance.run<void>(
+      scope: UiOperationScope.asmrWork(AsmrOperationKind.play, widget.work.id),
+      labelKey: 'loading_dot',
+      task: (_) =>
+          asmrController.playWork(context.read<AudioProvider>(), widget.work),
+    );
     if (!context.mounted) {
       return;
     }
@@ -39,7 +44,16 @@ class _AsmrWorkTreeCardState extends State<_AsmrWorkTreeCard> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
     final shouldFavorite = !widget.work.isFavorite;
-    unawaited(controller.toggleFavorite(widget.work));
+    unawaited(
+      UiOperationService.instance.run<void>(
+        scope: UiOperationScope.asmrWork(
+          AsmrOperationKind.favorite,
+          widget.work.id,
+        ),
+        labelKey: 'loading_dot',
+        task: (_) => controller.toggleFavorite(widget.work),
+      ),
+    );
     showAppSnackBar(
       context,
       i18n.tr(shouldFavorite ? 'asmr_favorite_added' : 'asmr_favorite_removed'),
@@ -124,8 +138,15 @@ class _AsmrWorkTreeCardState extends State<_AsmrWorkTreeCard> {
               });
               if (expanded && tree == null && !isTreeLoading) {
                 unawaited(
-                  context.read<AsmrLibraryController>().ensureTrackTree(
-                    widget.work,
+                  UiOperationService.instance.run<List<AsmrTrackFile>>(
+                    scope: UiOperationScope.asmrWork(
+                      AsmrOperationKind.trackTree,
+                      widget.work.id,
+                    ),
+                    labelKey: 'loading_dot',
+                    task: (_) => context
+                        .read<AsmrLibraryController>()
+                        .ensureTrackTree(widget.work),
                   ),
                 );
               }
@@ -143,11 +164,29 @@ class _AsmrWorkTreeCardState extends State<_AsmrWorkTreeCard> {
             showTrailingIcon: false,
             tilePadding: LibraryLikeCardMetrics.rootTilePadding,
             childrenPadding: const EdgeInsets.fromLTRB(8, 0, 0, 0),
-            title: _AsmrRootCardContent(
-              work: widget.work,
-              expanded: _expanded,
-              hasChildren: (visibleTree?.isNotEmpty ?? false) || isTreeLoading,
-              onPlay: () => unawaited(_playWork(context)),
+            title: StreamBuilder<UiOperationRegistryState>(
+              stream: UiOperationService.instance.stream,
+              initialData: UiOperationService.instance.state,
+              builder: (context, operationSnapshot) {
+                final playBusy =
+                    operationSnapshot.data
+                        ?.forScope(
+                          UiOperationScope.asmrWork(
+                            AsmrOperationKind.play,
+                            widget.work.id,
+                          ),
+                        )
+                        .isBusy ??
+                    false;
+                return _AsmrRootCardContent(
+                  work: widget.work,
+                  expanded: _expanded,
+                  hasChildren:
+                      (visibleTree?.isNotEmpty ?? false) || isTreeLoading,
+                  onPlay: () => unawaited(_playWork(context)),
+                  playLoading: playBusy,
+                );
+              },
             ),
             children: [
               if (isTreeLoading && visibleTree == null)
@@ -195,12 +234,14 @@ class _AsmrRootCardContent extends StatelessWidget {
     required this.expanded,
     required this.hasChildren,
     required this.onPlay,
+    required this.playLoading,
   });
 
   final AsmrWork work;
   final bool expanded;
   final bool hasChildren;
   final VoidCallback onPlay;
+  final bool playLoading;
 
   @override
   Widget build(BuildContext context) {
@@ -219,6 +260,7 @@ class _AsmrRootCardContent extends StatelessWidget {
       accentColor: asmrBlue,
       enableMarquee: false,
       enableTitleMarquee: false,
+      playLoading: playLoading,
     );
   }
 }
@@ -314,20 +356,43 @@ class _AsmrTrackTreeNodeState extends State<_AsmrTrackTreeNode> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                IconButton(
-                  onPressed: () => unawaited(_playFolder(context)),
-                  visualDensity: VisualDensity.compact,
-                  tooltip: context.watch<AppLanguageProvider>().tr(
-                    'asmr_add_to_playlist',
-                  ),
-                  style: IconButton.styleFrom(
-                    foregroundColor: asmrBlue,
-                    minimumSize: const Size(40, 44),
-                    maximumSize: const Size(40, 44),
-                    padding: EdgeInsets.zero,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                  icon: const Icon(Icons.add_circle_rounded, size: 25),
+                StreamBuilder<UiOperationRegistryState>(
+                  stream: UiOperationService.instance.stream,
+                  initialData: UiOperationService.instance.state,
+                  builder: (context, operationSnapshot) {
+                    final busy =
+                        operationSnapshot.data
+                            ?.forScope(
+                              _trackPlayScope(widget.work, widget.node),
+                            )
+                            .isBusy ??
+                        false;
+                    return IconButton(
+                      onPressed: busy
+                          ? null
+                          : () => unawaited(_playFolder(context)),
+                      visualDensity: VisualDensity.compact,
+                      tooltip: context.watch<AppLanguageProvider>().tr(
+                        'asmr_add_to_playlist',
+                      ),
+                      style: IconButton.styleFrom(
+                        foregroundColor: asmrBlue,
+                        minimumSize: const Size(40, 44),
+                        maximumSize: const Size(40, 44),
+                        padding: EdgeInsets.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      icon: busy
+                          ? SizedBox.square(
+                              dimension: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: asmrBlue,
+                              ),
+                            )
+                          : const Icon(Icons.add_circle_rounded, size: 25),
+                    );
+                  },
                 ),
                 const SizedBox(width: 2),
                 if (hasVisibleChildren)
@@ -376,12 +441,18 @@ class _AsmrTrackTreeNodeState extends State<_AsmrTrackTreeNode> {
     if (!context.mounted || tracks.isEmpty) {
       return;
     }
-    await controller.recordHistory(widget.work);
-    await provider.spawnSessionWithQueue(
-      tracks,
-      loopMode: tracks.length > 1
-          ? SessionLoopMode.folderSequential
-          : SessionLoopMode.single,
+    await UiOperationService.instance.run<void>(
+      scope: _trackPlayScope(widget.work, widget.node),
+      labelKey: 'loading_dot',
+      task: (_) async {
+        await controller.recordHistory(widget.work);
+        await provider.spawnSessionWithQueue(
+          tracks,
+          loopMode: tracks.length > 1
+              ? SessionLoopMode.folderSequential
+              : SessionLoopMode.single,
+        );
+      },
     );
     if (!context.mounted) {
       return;
@@ -444,16 +515,37 @@ class _AsmrTrackLeafRow extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              IconButton(
-                onPressed: () => unawaited(_playTrack(context)),
-                style: IconButton.styleFrom(
-                  foregroundColor: asmrBlue,
-                  minimumSize: const Size(36, 36),
-                  maximumSize: const Size(36, 36),
-                  padding: EdgeInsets.zero,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
-                icon: const Icon(Icons.add_circle_rounded, size: 22),
+              StreamBuilder<UiOperationRegistryState>(
+                stream: UiOperationService.instance.stream,
+                initialData: UiOperationService.instance.state,
+                builder: (context, operationSnapshot) {
+                  final busy =
+                      operationSnapshot.data
+                          ?.forScope(_trackPlayScope(work, node))
+                          .isBusy ??
+                      false;
+                  return IconButton(
+                    onPressed: busy
+                        ? null
+                        : () => unawaited(_playTrack(context)),
+                    style: IconButton.styleFrom(
+                      foregroundColor: asmrBlue,
+                      minimumSize: const Size(36, 36),
+                      maximumSize: const Size(36, 36),
+                      padding: EdgeInsets.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    icon: busy
+                        ? SizedBox.square(
+                            dimension: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: asmrBlue,
+                            ),
+                          )
+                        : const Icon(Icons.add_circle_rounded, size: 22),
+                  );
+                },
               ),
             ],
           ),
@@ -463,10 +555,14 @@ class _AsmrTrackLeafRow extends StatelessWidget {
   }
 
   Future<void> _playTrack(BuildContext context) async {
-    await context.read<AsmrLibraryController>().playTrack(
-      context.read<AudioProvider>(),
-      work,
-      node,
+    await UiOperationService.instance.run<void>(
+      scope: _trackPlayScope(work, node),
+      labelKey: 'loading_dot',
+      task: (_) => context.read<AsmrLibraryController>().playTrack(
+        context.read<AudioProvider>(),
+        work,
+        node,
+      ),
     );
     if (!context.mounted) {
       return;
@@ -482,6 +578,10 @@ class _AsmrTrackLeafRow extends StatelessWidget {
       iconColor: asmrBlue,
     );
   }
+}
+
+UiOperationScope _trackPlayScope(AsmrWork work, AsmrTrackFile node) {
+  return UiOperationScope('asmr:play:${work.id}:${node.relativePath}');
 }
 
 List<LibraryLikeInfoLineData> _workInfoLines(

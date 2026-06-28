@@ -54,10 +54,13 @@ class AsmrCategoryViewState {
     required this.works,
     required this.isLoading,
     required this.isLoadingMore,
+    required this.isRefreshing,
+    required this.isStale,
     required this.hasMore,
     required this.totalCount,
     required this.activeQuery,
     required this.lastError,
+    required this.operationError,
     required this.revision,
   });
 
@@ -65,10 +68,13 @@ class AsmrCategoryViewState {
   final List<AsmrWork> works;
   final bool isLoading;
   final bool isLoadingMore;
+  final bool isRefreshing;
+  final bool isStale;
   final bool hasMore;
   final int totalCount;
   final String activeQuery;
   final Object? lastError;
+  final Object? operationError;
   final int revision;
 
   @override
@@ -78,10 +84,13 @@ class AsmrCategoryViewState {
         identical(works, other.works) &&
         isLoading == other.isLoading &&
         isLoadingMore == other.isLoadingMore &&
+        isRefreshing == other.isRefreshing &&
+        isStale == other.isStale &&
         hasMore == other.hasMore &&
         totalCount == other.totalCount &&
         activeQuery == other.activeQuery &&
         lastError == other.lastError &&
+        operationError == other.operationError &&
         revision == other.revision;
   }
 
@@ -91,10 +100,13 @@ class AsmrCategoryViewState {
     identityHashCode(works),
     isLoading,
     isLoadingMore,
+    isRefreshing,
+    isStale,
     hasMore,
     totalCount,
     activeQuery,
     lastError,
+    operationError,
     revision,
   );
 }
@@ -105,6 +117,9 @@ class AsmrTrackTreeViewState {
     required this.tree,
     required this.visibleTree,
     required this.isLoading,
+    required this.isRefreshing,
+    required this.isStale,
+    required this.operationError,
     required this.revision,
   });
 
@@ -112,6 +127,9 @@ class AsmrTrackTreeViewState {
   final List<AsmrTrackFile>? tree;
   final List<AsmrTrackFile>? visibleTree;
   final bool isLoading;
+  final bool isRefreshing;
+  final bool isStale;
+  final Object? operationError;
   final int revision;
 
   @override
@@ -121,6 +139,9 @@ class AsmrTrackTreeViewState {
         identical(tree, other.tree) &&
         identical(visibleTree, other.visibleTree) &&
         isLoading == other.isLoading &&
+        isRefreshing == other.isRefreshing &&
+        isStale == other.isStale &&
+        operationError == other.operationError &&
         revision == other.revision;
   }
 
@@ -130,6 +151,9 @@ class AsmrTrackTreeViewState {
     identityHashCode(tree),
     identityHashCode(visibleTree),
     isLoading,
+    isRefreshing,
+    isStale,
+    operationError,
     revision,
   );
 }
@@ -333,6 +357,8 @@ class AsmrLibraryController extends ChangeNotifier {
       works: works,
       isLoading: isLoadingCategory(category),
       isLoadingMore: isLoadingMoreCategory(category),
+      isRefreshing: isLoadingCategory(category) && works.isNotEmpty,
+      isStale: isLoadingCategory(category) && works.isNotEmpty,
       hasMore: hasMoreCategory(category),
       totalCount:
           category == AsmrCategoryType.favorites ||
@@ -341,6 +367,7 @@ class AsmrLibraryController extends ChangeNotifier {
           : totalCountFor(category),
       activeQuery: activeQueryFor(category),
       lastError: _lastError,
+      operationError: _lastError,
       revision: _categoryRevisionFor(category),
     );
   }
@@ -352,6 +379,9 @@ class AsmrLibraryController extends ChangeNotifier {
       tree: tree,
       visibleTree: tree == null ? null : _visibleTrackTreeFor(workId, tree),
       isLoading: isTrackTreeLoading(workId),
+      isRefreshing: isTrackTreeLoading(workId) && tree != null,
+      isStale: isTrackTreeLoading(workId) && tree != null,
+      operationError: null,
       revision: _trackRevisions[workId] ?? 0,
     );
   }

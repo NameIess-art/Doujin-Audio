@@ -49,6 +49,21 @@ void main() {
     expect(marquee.edgePadding, 2);
   });
 
+  testWidgets('top page header keeps page title while loading', (tester) async {
+    await tester.pumpWidget(
+      _buildApp(
+        const TopPageHeader(
+          title: 'Local library',
+          isLoading: true,
+          useSafeAreaTop: false,
+        ),
+      ),
+    );
+
+    expect(find.text('Local library'), findsOneWidget);
+    expect(find.text('Loading...'), findsNothing);
+  });
+
   testWidgets('marquee text forwards custom edge padding', (tester) async {
     await _withPlatform(TargetPlatform.windows, () async {
       await tester.pumpWidget(

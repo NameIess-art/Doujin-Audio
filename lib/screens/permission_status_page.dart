@@ -9,6 +9,7 @@ import '../services/notifications_platform_service.dart';
 import '../services/permission_status_service.dart';
 import '../services/power_platform_service.dart';
 import '../services/subtitle_overlay_controller.dart';
+import '../services/ui_operation_service.dart';
 import '../widgets/app_feedback.dart';
 
 class PermissionStatusPage extends StatefulWidget {
@@ -24,8 +25,10 @@ class _PermissionStatusPageState extends State<PermissionStatusPage>
     with WidgetsBindingObserver {
   final _powerService = PowerPlatformService();
   final _notificationsService = NotificationsPlatformService();
+  final _operationService = UiOperationService.instance;
   late final PermissionStatusService _statusService;
   late Future<PermissionStatusSnapshot> _snapshot;
+  PermissionStatusSnapshot? _lastSnapshot;
 
   @override
   void initState() {
@@ -36,7 +39,7 @@ class _PermissionStatusPageState extends State<PermissionStatusPage>
           powerService: _powerService,
           notificationsService: _notificationsService,
         );
-    _snapshot = _statusService.load();
+    _snapshot = _loadSnapshot();
     WidgetsBinding.instance.addObserver(this);
   }
 
@@ -53,7 +56,16 @@ class _PermissionStatusPageState extends State<PermissionStatusPage>
 
   void _refresh() {
     if (!mounted) return;
-    setState(() => _snapshot = _statusService.load());
+    setState(() => _snapshot = _loadSnapshot());
+  }
+
+  Future<PermissionStatusSnapshot> _loadSnapshot() {
+    return _operationService.run<PermissionStatusSnapshot>(
+      scope: UiOperationScope.settingsPermissionStatus,
+      labelKey: 'permission_center',
+      task: (_) => _statusService.load(),
+      onSuccess: (status) => _lastSnapshot = status,
+    );
   }
 
   Future<void> _open({
@@ -80,7 +92,11 @@ class _PermissionStatusPageState extends State<PermissionStatusPage>
       ),
     );
     if (confirmed != true) return;
-    final opened = await action();
+    final opened = await _operationService.run<bool>(
+      scope: UiOperationScope.settingsPermissionStatus,
+      labelKey: 'permission_center',
+      task: (_) => action(),
+    );
     if (!mounted) return;
     if (!opened) {
       showAppSnackBar(
@@ -109,10 +125,12 @@ class _PermissionStatusPageState extends State<PermissionStatusPage>
         body: FutureBuilder<PermissionStatusSnapshot>(
           future: _snapshot,
           builder: (context, snapshot) {
-            final status = snapshot.data;
+            final status = snapshot.data ?? _lastSnapshot;
             if (status == null) {
               return const Center(child: CircularProgressIndicator());
             }
+            final checking =
+                snapshot.connectionState == ConnectionState.waiting;
             return RefreshIndicator(
               onRefresh: () async => _refresh(),
               child: ListView(
@@ -125,6 +143,10 @@ class _PermissionStatusPageState extends State<PermissionStatusPage>
                     ),
                   ),
                   const SizedBox(height: 16),
+                  if (checking) ...[
+                    const LinearProgressIndicator(),
+                    const SizedBox(height: 8),
+                  ],
                   _PermissionSection(
                     title: i18n.tr('permission_group_playback'),
                   ),

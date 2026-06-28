@@ -89,7 +89,11 @@ extension _SettingsTabActions on _SettingsTabState {
     );
     if (!confirmed) return;
 
-    final deletedBytes = await AppCacheService.clearAllCaches();
+    final deletedBytes = await _runSettingsOperation<int>(
+      scope: UiOperationScope.settingsCache,
+      labelKey: 'loading_dot',
+      task: (_) => AppCacheService.clearAllCaches(),
+    );
     if (!context.mounted) return;
     if (deletedBytes > 0) {
       showAppSnackBar(
@@ -120,7 +124,11 @@ extension _SettingsTabActions on _SettingsTabState {
 
     AppUpdateInfo info;
     try {
-      info = await AppUpdateService.checkLatest();
+      info = await _runSettingsOperation<AppUpdateInfo>(
+        scope: UiOperationScope.settingsUpdate,
+        labelKey: 'loading_dot',
+        task: (_) => AppUpdateService.checkLatest(),
+      );
       if (!mounted) return;
       _setLocalState(() => _lastUpdateInfo = info);
     } catch (_) {
@@ -219,12 +227,19 @@ extension _SettingsTabActions on _SettingsTabState {
 
     File updateFile;
     try {
-      updateFile = await AppUpdateService.downloadUpdate(
-        info,
-        onProgress: (progress) {
-          if (!mounted) return;
-          _setLocalState(() => _downloadProgress = progress);
-        },
+      updateFile = await _runSettingsOperation<File>(
+        scope: UiOperationScope.settingsUpdate,
+        labelKey: 'downloading_update',
+        task: (operationProgress) => AppUpdateService.downloadUpdate(
+          info,
+          onProgress: (progress) {
+            if (progress != null) {
+              operationProgress.report(progress);
+            }
+            if (!mounted) return;
+            _setLocalState(() => _downloadProgress = progress);
+          },
+        ),
       );
     } catch (error, stackTrace) {
       AppLogService.error(

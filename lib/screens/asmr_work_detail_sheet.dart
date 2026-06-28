@@ -7,6 +7,7 @@ import '../models/asmr_models.dart';
 import '../providers/audio_provider.dart';
 import '../services/asmr_library_controller.dart';
 import '../services/audio_state_services.dart';
+import '../services/ui_operation_service.dart';
 import '../widgets/app_feedback.dart';
 import '../widgets/async_cover_image.dart';
 
@@ -23,75 +24,93 @@ Future<void> showAsmrWorkDetailSheet(BuildContext context, AsmrWork work) {
   );
 }
 
-class _AsmrWorkDetailSheet extends StatelessWidget {
+class _AsmrWorkDetailSheet extends StatefulWidget {
   const _AsmrWorkDetailSheet({required this.work});
 
   final AsmrWork work;
 
   @override
+  State<_AsmrWorkDetailSheet> createState() => _AsmrWorkDetailSheetState();
+}
+
+class _AsmrWorkDetailSheetState extends State<_AsmrWorkDetailSheet> {
+  Future<AsmrWorkDetail>? _detailFuture;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _detailFuture ??= UiOperationService.instance.run<AsmrWorkDetail>(
+      scope: UiOperationScope.asmrWork(
+        AsmrOperationKind.detail,
+        widget.work.id,
+      ),
+      labelKey: 'loading_dot',
+      task: (_) =>
+          context.read<AsmrLibraryController>().loadWorkDetail(widget.work),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final controller = context.read<AsmrLibraryController>();
     final i18n = context.watch<AppLanguageProvider>();
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
     return FutureBuilder<AsmrWorkDetail>(
-      future: controller.loadWorkDetail(work),
+      future: _detailFuture,
       builder: (context, snapshot) {
         final detail = snapshot.data;
-        final effectiveWork = detail?.work ?? work;
+        final effectiveWork = detail?.work ?? widget.work;
         final isLandscape =
             MediaQuery.orientationOf(context) == Orientation.landscape;
 
-        Widget mainContent;
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          mainContent = Padding(
-            padding: const EdgeInsets.symmetric(vertical: 48),
-            child: Center(child: CircularProgressIndicator(color: asmrBlue)),
-          );
-        } else if (snapshot.hasError) {
-          mainContent = Padding(
-            padding: const EdgeInsets.symmetric(vertical: 24),
-            child: Text(
-              i18n.tr('asmr_detail_load_failed'),
-              style: TextStyle(color: cs.error),
-            ),
-          );
-        } else {
-          final heroAndButton = Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [_AsmrDetailHero(work: effectiveWork)],
-          );
+        final heroAndButton = Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [_AsmrDetailHero(work: effectiveWork)],
+        );
 
-          final detailsSections = Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
+        final detailsSections = Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _AsmrDetailSection(
+              title: i18n.tr('asmr_detail_basic_info'),
+              children: [
+                _CopyableValueRow(
+                  label: i18n.tr('audio_detail_rj_code'),
+                  value: effectiveWork.rjCode,
+                ),
+                _CopyableValueRow(
+                  label: i18n.tr('audio_detail_work_title'),
+                  value: effectiveWork.title,
+                ),
+                _CopyableValueRow(
+                  label: i18n.tr('asmr_circle_label'),
+                  value: effectiveWork.circleName,
+                ),
+                _CopyableChipWrapRow(
+                  label: i18n.tr('audio_detail_voice_actors'),
+                  values: effectiveWork.voiceActors,
+                ),
+                _CopyableChipWrapRow(
+                  label: i18n.tr('asmr_tags_label'),
+                  values: effectiveWork.tags,
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            if (snapshot.hasError)
               _AsmrDetailSection(
-                title: i18n.tr('asmr_detail_basic_info'),
+                title: i18n.tr('asmr_detail_statistics'),
                 children: [
-                  _CopyableValueRow(
-                    label: i18n.tr('audio_detail_rj_code'),
-                    value: effectiveWork.rjCode,
-                  ),
-                  _CopyableValueRow(
-                    label: i18n.tr('audio_detail_work_title'),
-                    value: effectiveWork.title,
-                  ),
-                  _CopyableValueRow(
-                    label: i18n.tr('asmr_circle_label'),
-                    value: effectiveWork.circleName,
-                  ),
-                  _CopyableChipWrapRow(
-                    label: i18n.tr('audio_detail_voice_actors'),
-                    values: effectiveWork.voiceActors,
-                  ),
-                  _CopyableChipWrapRow(
-                    label: i18n.tr('asmr_tags_label'),
-                    values: effectiveWork.tags,
+                  Text(
+                    i18n.tr('asmr_detail_load_failed'),
+                    style: TextStyle(color: cs.error),
                   ),
                 ],
-              ),
-              const SizedBox(height: 14),
+              )
+            else if (snapshot.connectionState == ConnectionState.waiting)
+              _AsmrDetailLoadingSection(color: asmrBlue)
+            else
               _AsmrDetailSection(
                 title: i18n.tr('asmr_detail_statistics'),
                 children: [
@@ -127,39 +146,35 @@ class _AsmrWorkDetailSheet extends StatelessWidget {
                   ),
                 ],
               ),
-              if ((detail?.description.trim().isNotEmpty ?? false)) ...[
-                const SizedBox(height: 14),
-                _AsmrDetailSection(
-                  title: i18n.tr('asmr_detail_description'),
-                  children: [
-                    _CopyableTextBlock(text: detail!.description.trim()),
-                  ],
-                ),
-              ],
+            if ((detail?.description.trim().isNotEmpty ?? false)) ...[
+              const SizedBox(height: 14),
+              _AsmrDetailSection(
+                title: i18n.tr('asmr_detail_description'),
+                children: [
+                  _CopyableTextBlock(text: detail!.description.trim()),
+                ],
+              ),
             ],
-          );
+          ],
+        );
 
-          if (isLandscape) {
-            mainContent = Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(flex: 2, child: heroAndButton),
-                const SizedBox(width: 24),
-                Expanded(flex: 3, child: detailsSections),
-              ],
-            );
-          } else {
-            mainContent = Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                heroAndButton,
-                const SizedBox(height: 20),
-                detailsSections,
-              ],
-            );
-          }
-        }
-
+        final mainContent = isLandscape
+            ? Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(flex: 2, child: heroAndButton),
+                  const SizedBox(width: 24),
+                  Expanded(flex: 3, child: detailsSections),
+                ],
+              )
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  heroAndButton,
+                  const SizedBox(height: 20),
+                  detailsSections,
+                ],
+              );
         return ConstrainedBox(
           constraints: BoxConstraints(
             maxHeight: MediaQuery.sizeOf(context).height * 0.68,
@@ -201,6 +216,30 @@ class _AsmrWorkDetailSheet extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+class _AsmrDetailLoadingSection extends StatelessWidget {
+  const _AsmrDetailLoadingSection({required this.color});
+
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return _AsmrDetailSection(
+      title: context.watch<AppLanguageProvider>().tr('asmr_detail_statistics'),
+      children: [
+        Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 18),
+            child: SizedBox.square(
+              dimension: 24,
+              child: CircularProgressIndicator(strokeWidth: 2.4, color: color),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

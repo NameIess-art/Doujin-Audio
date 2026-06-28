@@ -44,6 +44,7 @@ class LibraryLikeFeaturedCardContent extends StatelessWidget {
     this.accentColor,
     this.enableMarquee = true,
     this.enableTitleMarquee = true,
+    this.playLoading = false,
   });
 
   final String title;
@@ -56,6 +57,7 @@ class LibraryLikeFeaturedCardContent extends StatelessWidget {
   final Color? accentColor;
   final bool enableMarquee;
   final bool enableTitleMarquee;
+  final bool playLoading;
 
   @override
   Widget build(BuildContext context) {
@@ -134,14 +136,16 @@ class LibraryLikeFeaturedCardContent extends StatelessWidget {
                     ),
                     const SizedBox(width: 8),
                     IconButton(
-                      onPressed: () {
-                        unawaited(
-                          AppInteractionFeedback.trigger(
-                            AppInteractionFeedbackType.tap,
-                          ),
-                        );
-                        onPlay();
-                      },
+                      onPressed: playLoading
+                          ? null
+                          : () {
+                              unawaited(
+                                AppInteractionFeedback.trigger(
+                                  AppInteractionFeedbackType.tap,
+                                ),
+                              );
+                              onPlay();
+                            },
                       visualDensity: VisualDensity.compact,
                       tooltip: playTooltip,
                       style: IconButton.styleFrom(
@@ -157,7 +161,15 @@ class LibraryLikeFeaturedCardContent extends StatelessWidget {
                         padding: EdgeInsets.zero,
                         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       ),
-                      icon: const Icon(Icons.add_circle_rounded, size: 25),
+                      icon: playLoading
+                          ? SizedBox.square(
+                              dimension: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.2,
+                                color: accentColor ?? cs.primary,
+                              ),
+                            )
+                          : const Icon(Icons.add_circle_rounded, size: 25),
                     ),
                     if (showExpandIndicator)
                       Padding(

@@ -12,6 +12,7 @@ import '../services/app_backup_service.dart';
 import '../services/app_log_service.dart';
 import '../services/diagnostic_report_service.dart';
 import '../services/asmr_library_controller.dart';
+import '../services/ui_operation_service.dart';
 import '../widgets/app_feedback.dart';
 import '../widgets/confirm_action_dialog.dart';
 import '../widgets/app_transitions.dart';
@@ -27,7 +28,7 @@ class DataSupportPage extends StatefulWidget {
 class _DataSupportPageState extends State<DataSupportPage> {
   final _backupService = AppBackupService();
   final _diagnosticService = DiagnosticReportService();
-  bool _busy = false;
+  final _operationService = UiOperationService.instance;
 
   Future<File> _temporaryFile(String name) async {
     final directory = await getTemporaryDirectory();
@@ -45,28 +46,32 @@ class _DataSupportPageState extends State<DataSupportPage> {
 
   Future<void> _exportBackup() async {
     final dialogTitle = context.read<AppLanguageProvider>().tr('export_backup');
-    await _run(() async {
-      final temporary = await _temporaryFile(
-        'NamelessAudio-${_timestamp()}.nalbackup',
-      );
-      final backup = await _backupService.exportBackup(temporary.path);
-      final savedPath = await FilePicker.platform.saveFile(
-        dialogTitle: dialogTitle,
-        fileName: path.basename(backup.path),
-        type: FileType.custom,
-        allowedExtensions: const <String>['nalbackup'],
-        bytes: await backup.readAsBytes(),
-        lockParentWindow: true,
-      );
-      if (savedPath != null && mounted) {
-        _showSuccess(
-          'backup_exported',
-          titleKey: 'operation_completed',
-          detail: savedPath,
-          duration: const Duration(seconds: 5),
+    await _run(
+      scope: UiOperationScope.dataSupportBackupExport,
+      labelKey: 'export_backup',
+      action: () async {
+        final temporary = await _temporaryFile(
+          'NamelessAudio-${_timestamp()}.nalbackup',
         );
-      }
-    });
+        final backup = await _backupService.exportBackup(temporary.path);
+        final savedPath = await FilePicker.platform.saveFile(
+          dialogTitle: dialogTitle,
+          fileName: path.basename(backup.path),
+          type: FileType.custom,
+          allowedExtensions: const <String>['nalbackup'],
+          bytes: await backup.readAsBytes(),
+          lockParentWindow: true,
+        );
+        if (savedPath != null && mounted) {
+          _showSuccess(
+            'backup_exported',
+            titleKey: 'operation_completed',
+            detail: savedPath,
+            duration: const Duration(seconds: 5),
+          );
+        }
+      },
+    );
   }
 
   Future<void> _restoreBackup() async {
@@ -81,94 +86,110 @@ class _DataSupportPageState extends State<DataSupportPage> {
     );
     if (!confirmed) return;
 
-    await _run(() async {
-      final selection = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: const <String>['nalbackup'],
-        withData: true,
-        lockParentWindow: true,
-      );
-      final selected = selection?.files.singleOrNull;
-      if (selected == null) return;
-      final temporary = await _temporaryFile(
-        'restore-${_timestamp()}.nalbackup',
-      );
-      final bytes = selected.bytes;
-      if (bytes != null) {
-        await temporary.writeAsBytes(bytes, flush: true);
-      } else if (selected.path != null) {
-        await File(selected.path!).copy(temporary.path);
-      } else {
-        throw const FileSystemException('Selected backup is not readable.');
-      }
+    await _run(
+      scope: UiOperationScope.dataSupportBackupRestore,
+      labelKey: 'restore_backup',
+      action: () async {
+        final selection = await FilePicker.platform.pickFiles(
+          type: FileType.custom,
+          allowedExtensions: const <String>['nalbackup'],
+          withData: true,
+          lockParentWindow: true,
+        );
+        final selected = selection?.files.singleOrNull;
+        if (selected == null) return;
+        final temporary = await _temporaryFile(
+          'restore-${_timestamp()}.nalbackup',
+        );
+        final bytes = selected.bytes;
+        if (bytes != null) {
+          await temporary.writeAsBytes(bytes, flush: true);
+        } else if (selected.path != null) {
+          await File(selected.path!).copy(temporary.path);
+        } else {
+          throw const FileSystemException('Selected backup is not readable.');
+        }
 
-      final result = await _backupService.restoreBackup(temporary.path);
-      if (!mounted) return;
-      if (!result.isValid) {
+        final result = await _backupService.restoreBackup(temporary.path);
+        if (!mounted) return;
+        if (!result.isValid) {
+          showAppSnackBar(
+            context,
+            i18n.tr('backup_invalid_next_step'),
+            tone: AppFeedbackTone.destructive,
+            title: i18n.tr('backup_invalid'),
+            icon: Icons.error_outline_rounded,
+            actionLabel: i18n.tr('export_diagnostics'),
+            onAction: _exportDiagnostics,
+            duration: const Duration(seconds: 6),
+          );
+          return;
+        }
+        await context
+            .read<AudioProvider>()
+            .reloadPersistedStateAfterBackupRestore();
+        if (!mounted) return;
+        await context
+            .read<AsmrLibraryController>()
+            .reloadPersistedStateAfterBackupRestore();
+        if (!mounted) return;
         showAppSnackBar(
           context,
-          i18n.tr('backup_invalid_next_step'),
-          tone: AppFeedbackTone.destructive,
-          title: i18n.tr('backup_invalid'),
-          icon: Icons.error_outline_rounded,
-          actionLabel: i18n.tr('export_diagnostics'),
-          onAction: _exportDiagnostics,
-          duration: const Duration(seconds: 6),
+          i18n.tr('backup_restored_loaded'),
+          tone: AppFeedbackTone.success,
+          title: i18n.tr('operation_completed'),
+          icon: Icons.check_circle_outline_rounded,
+          duration: const Duration(seconds: 4),
         );
-        return;
-      }
-      await context
-          .read<AudioProvider>()
-          .reloadPersistedStateAfterBackupRestore();
-      if (!mounted) return;
-      await context
-          .read<AsmrLibraryController>()
-          .reloadPersistedStateAfterBackupRestore();
-      if (!mounted) return;
-      showAppSnackBar(
-        context,
-        i18n.tr('backup_restored_loaded'),
-        tone: AppFeedbackTone.success,
-        title: i18n.tr('operation_completed'),
-        icon: Icons.check_circle_outline_rounded,
-        duration: const Duration(seconds: 4),
-      );
-    });
+      },
+    );
   }
 
   Future<void> _exportDiagnostics() async {
     final dialogTitle = context.read<AppLanguageProvider>().tr(
       'export_diagnostics',
     );
-    await _run(() async {
-      final temporary = await _temporaryFile(
-        'NamelessAudio-diagnostic-${_timestamp()}.zip',
-      );
-      final report = await _diagnosticService.exportReport(temporary.path);
-      final savedPath = await FilePicker.platform.saveFile(
-        dialogTitle: dialogTitle,
-        fileName: path.basename(report.path),
-        type: FileType.custom,
-        allowedExtensions: const <String>['zip'],
-        bytes: await report.readAsBytes(),
-        lockParentWindow: true,
-      );
-      if (savedPath != null && mounted) {
-        _showSuccess(
-          'diagnostics_exported',
-          titleKey: 'operation_completed',
-          detail: savedPath,
-          duration: const Duration(seconds: 5),
+    await _run(
+      scope: UiOperationScope.dataSupportDiagnosticsExport,
+      labelKey: 'export_diagnostics',
+      action: () async {
+        final temporary = await _temporaryFile(
+          'NamelessAudio-diagnostic-${_timestamp()}.zip',
         );
-      }
-    });
+        final report = await _diagnosticService.exportReport(temporary.path);
+        final savedPath = await FilePicker.platform.saveFile(
+          dialogTitle: dialogTitle,
+          fileName: path.basename(report.path),
+          type: FileType.custom,
+          allowedExtensions: const <String>['zip'],
+          bytes: await report.readAsBytes(),
+          lockParentWindow: true,
+        );
+        if (savedPath != null && mounted) {
+          _showSuccess(
+            'diagnostics_exported',
+            titleKey: 'operation_completed',
+            detail: savedPath,
+            duration: const Duration(seconds: 5),
+          );
+        }
+      },
+    );
   }
 
-  Future<void> _run(Future<void> Function() action) async {
-    if (_busy) return;
-    setState(() => _busy = true);
+  Future<void> _run({
+    required UiOperationScope scope,
+    required String labelKey,
+    required Future<void> Function() action,
+  }) async {
+    if (_operationService.operationFor(scope).isBusy) return;
     try {
-      await action();
+      await _operationService.run<void>(
+        scope: scope,
+        labelKey: labelKey,
+        task: (_) => action(),
+        cancelPrevious: false,
+      );
     } catch (error, stackTrace) {
       AppLogService.error(
         'data_support_operation_failed',
@@ -190,8 +211,6 @@ class _DataSupportPageState extends State<DataSupportPage> {
         onAction: _exportDiagnostics,
         duration: const Duration(seconds: 6),
       );
-    } finally {
-      if (mounted) setState(() => _busy = false);
     }
   }
 
@@ -225,49 +244,66 @@ class _DataSupportPageState extends State<DataSupportPage> {
           elevation: 0,
           automaticallyImplyLeading: false,
         ),
-        body: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
-          children: [
-            Text(
-              i18n.tr('data_and_support_subtitle'),
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(height: 16),
-            if (_busy) const LinearProgressIndicator(),
-            const SizedBox(height: 8),
-            _ActionCard(
-              title: i18n.tr('export_backup'),
-              subtitle: i18n.tr('export_backup_subtitle'),
-              icon: Icons.archive_outlined,
-              onTap: _busy ? null : _exportBackup,
-            ),
-            _ActionCard(
-              title: i18n.tr('restore_backup'),
-              subtitle: i18n.tr('restore_backup_subtitle'),
-              icon: Icons.restore_rounded,
-              onTap: _busy ? null : _restoreBackup,
-            ),
-            _ActionCard(
-              title: i18n.tr('export_diagnostics'),
-              subtitle: i18n.tr('export_diagnostics_subtitle'),
-              icon: Icons.support_agent_rounded,
-              onTap: _busy ? null : _exportDiagnostics,
-            ),
-            _ActionCard(
-              title: i18n.tr('privacy_summary_title'),
-              subtitle: i18n.tr('privacy_summary_local_body'),
-              icon: Icons.privacy_tip_outlined,
-              onTap: _busy
-                  ? null
-                  : () => Navigator.of(context).push(
-                      buildAppPageRoute<void>(
-                        child: const PrivacySummaryPage(),
-                      ),
-                    ),
-            ),
-          ],
+        body: StreamBuilder<UiOperationRegistryState>(
+          stream: _operationService.stream,
+          initialData: _operationService.state,
+          builder: (context, snapshot) {
+            final operations = snapshot.data ?? UiOperationRegistryState.empty;
+            final exportBusy = operations
+                .forScope(UiOperationScope.dataSupportBackupExport)
+                .isBusy;
+            final restoreBusy = operations
+                .forScope(UiOperationScope.dataSupportBackupRestore)
+                .isBusy;
+            final diagnosticsBusy = operations
+                .forScope(UiOperationScope.dataSupportDiagnosticsExport)
+                .isBusy;
+            final dataOperationBusy =
+                exportBusy || restoreBusy || diagnosticsBusy;
+            return ListView(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+              children: [
+                Text(
+                  i18n.tr('data_and_support_subtitle'),
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                if (dataOperationBusy) const LinearProgressIndicator(),
+                const SizedBox(height: 8),
+                _ActionCard(
+                  title: i18n.tr('export_backup'),
+                  subtitle: i18n.tr('export_backup_subtitle'),
+                  icon: Icons.archive_outlined,
+                  busy: exportBusy,
+                  onTap: dataOperationBusy ? null : _exportBackup,
+                ),
+                _ActionCard(
+                  title: i18n.tr('restore_backup'),
+                  subtitle: i18n.tr('restore_backup_subtitle'),
+                  icon: Icons.restore_rounded,
+                  busy: restoreBusy,
+                  onTap: dataOperationBusy ? null : _restoreBackup,
+                ),
+                _ActionCard(
+                  title: i18n.tr('export_diagnostics'),
+                  subtitle: i18n.tr('export_diagnostics_subtitle'),
+                  icon: Icons.support_agent_rounded,
+                  busy: diagnosticsBusy,
+                  onTap: dataOperationBusy ? null : _exportDiagnostics,
+                ),
+                _ActionCard(
+                  title: i18n.tr('privacy_summary_title'),
+                  subtitle: i18n.tr('privacy_summary_local_body'),
+                  icon: Icons.privacy_tip_outlined,
+                  onTap: () => Navigator.of(context).push(
+                    buildAppPageRoute<void>(child: const PrivacySummaryPage()),
+                  ),
+                ),
+              ],
+            );
+          },
         ),
       ),
     );
@@ -280,12 +316,14 @@ class _ActionCard extends StatelessWidget {
     required this.subtitle,
     required this.icon,
     required this.onTap,
+    this.busy = false,
   });
 
   final String title;
   final String subtitle;
   final IconData icon;
   final VoidCallback? onTap;
+  final bool busy;
 
   @override
   Widget build(BuildContext context) {
@@ -326,7 +364,12 @@ class _ActionCard extends StatelessWidget {
             ),
           ),
         ),
-        trailing: Icon(Icons.chevron_right_rounded, color: cs.onSurfaceVariant),
+        trailing: busy
+            ? const SizedBox.square(
+                dimension: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : Icon(Icons.chevron_right_rounded, color: cs.onSurfaceVariant),
       ),
     );
   }

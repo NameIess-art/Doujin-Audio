@@ -13,12 +13,18 @@ class LibraryHeaderState {
     required this.watchedFolderCount,
     required this.watchedLibraryCount,
     required this.isInitialized,
+    this.isRefreshing = false,
+    this.operationProgress,
+    this.operationError,
   });
 
   final int audioCount;
   final int watchedFolderCount;
   final int watchedLibraryCount;
   final bool isInitialized;
+  final bool isRefreshing;
+  final double? operationProgress;
+  final Object? operationError;
 
   bool get hasWatchedSources =>
       watchedFolderCount > 0 || watchedLibraryCount > 0;
@@ -29,7 +35,10 @@ class LibraryHeaderState {
         other.audioCount == audioCount &&
         other.watchedFolderCount == watchedFolderCount &&
         other.watchedLibraryCount == watchedLibraryCount &&
-        other.isInitialized == isInitialized;
+        other.isInitialized == isInitialized &&
+        other.isRefreshing == isRefreshing &&
+        other.operationProgress == operationProgress &&
+        other.operationError == operationError;
   }
 
   @override
@@ -38,6 +47,9 @@ class LibraryHeaderState {
     watchedFolderCount,
     watchedLibraryCount,
     isInitialized,
+    isRefreshing,
+    operationProgress,
+    operationError,
   );
 }
 
@@ -57,6 +69,9 @@ class LibraryListState {
     required this.scanFailureCount,
     required this.structureRevision,
     required this.isInitialized,
+    this.isRefreshing = false,
+    this.operationProgress,
+    this.operationError,
   });
 
   final List<LibraryNode> rawTree;
@@ -72,6 +87,9 @@ class LibraryListState {
   final int scanFailureCount;
   final int structureRevision;
   final bool isInitialized;
+  final bool isRefreshing;
+  final double? operationProgress;
+  final Object? operationError;
 
   bool get hasLibrary => rawTree.isNotEmpty;
   bool get canPullRefresh => watchedFolderCount > 0 || watchedLibraryCount > 0;
@@ -91,7 +109,10 @@ class LibraryListState {
         other.scanDuplicateCount == scanDuplicateCount &&
         other.scanFailureCount == scanFailureCount &&
         other.structureRevision == structureRevision &&
-        other.isInitialized == isInitialized;
+        other.isInitialized == isInitialized &&
+        other.isRefreshing == isRefreshing &&
+        other.operationProgress == operationProgress &&
+        other.operationError == operationError;
   }
 
   @override
@@ -109,6 +130,9 @@ class LibraryListState {
     scanFailureCount,
     structureRevision,
     isInitialized,
+    isRefreshing,
+    operationProgress,
+    operationError,
   );
 }
 
@@ -311,11 +335,19 @@ class _FilteredFolderNodeResult {
   final int matchCount;
 }
 
-LibraryHeaderState libraryHeaderStateFromSlice(LibraryState state) {
+LibraryHeaderState libraryHeaderStateFromSlice(
+  LibraryState state, {
+  bool isRefreshing = false,
+  double? operationProgress,
+  Object? operationError,
+}) {
   return LibraryHeaderState(
     audioCount: state.libraryTrackCount,
     watchedFolderCount: state.watchedFolderCount,
     watchedLibraryCount: state.watchedLibraryCount,
     isInitialized: state.isInitialized,
+    isRefreshing: isRefreshing,
+    operationProgress: operationProgress,
+    operationError: operationError,
   );
 }

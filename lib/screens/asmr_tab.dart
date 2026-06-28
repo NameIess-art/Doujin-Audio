@@ -13,6 +13,7 @@ import '../services/asmr_library_controller.dart';
 import '../services/audio_state_services.dart';
 import '../services/search_query_utils.dart';
 import '../services/ui_interaction_coordinator.dart';
+import '../services/ui_operation_service.dart';
 import '../widgets/app_feedback.dart';
 import '../widgets/app_transitions.dart';
 import '../widgets/async_cover_image.dart';
@@ -82,6 +83,20 @@ class _AsmrTabState extends State<AsmrTab>
   String get _normalizedSearchQuery => normalizeSearchQuery(_searchQuery);
 
   double get _headerControlsFullHeight => 86.0;
+
+  UiOperationService get _operations => UiOperationService.instance;
+
+  Future<T> _runAsmrOperation<T>({
+    required UiOperationScope scope,
+    required String labelKey,
+    required Future<T> Function() task,
+  }) {
+    return _operations.run<T>(
+      scope: scope,
+      labelKey: labelKey,
+      task: (_) => task(),
+    );
+  }
 
   @override
   void initState() {
@@ -177,9 +192,16 @@ class _AsmrTabState extends State<AsmrTab>
           key: 'asmr_load_more_${category.name}_$_normalizedSearchQuery',
           generation: generation,
           priority: 20,
-          task: () => context.read<AsmrLibraryController>().loadMoreCategory(
-            category,
-            searchQuery: _searchQuery,
+          task: () => _runAsmrOperation<void>(
+            scope: UiOperationScope.asmrCategory(
+              AsmrOperationKind.loadMore,
+              category.name,
+            ),
+            labelKey: 'loading_dot',
+            task: () => context.read<AsmrLibraryController>().loadMoreCategory(
+              category,
+              searchQuery: _searchQuery,
+            ),
           ),
         );
       },
@@ -241,13 +263,29 @@ class _AsmrTabState extends State<AsmrTab>
     if (!needsRefresh) {
       return;
     }
-    await controller.refreshCategory(category, searchQuery: _searchQuery);
+    await _runAsmrOperation<void>(
+      scope: UiOperationScope.asmrCategory(
+        AsmrOperationKind.refresh,
+        category.name,
+      ),
+      labelKey: 'loading_dot',
+      task: () =>
+          controller.refreshCategory(category, searchQuery: _searchQuery),
+    );
   }
 
   Future<void> _refreshCurrentCategory() {
-    return context.read<AsmrLibraryController>().refreshCategory(
-      _currentCategory,
-      searchQuery: _searchQuery,
+    final category = _currentCategory;
+    return _runAsmrOperation<void>(
+      scope: UiOperationScope.asmrCategory(
+        AsmrOperationKind.refresh,
+        category.name,
+      ),
+      labelKey: 'loading_dot',
+      task: () => context.read<AsmrLibraryController>().refreshCategory(
+        category,
+        searchQuery: _searchQuery,
+      ),
     );
   }
 
@@ -273,11 +311,18 @@ class _AsmrTabState extends State<AsmrTab>
       );
     }
 
-    await Future.wait(<Future<void>>[
-      controller.refreshCategory(category, searchQuery: _searchQuery),
-      if (controller.isAsmrAccountLoggedIn)
-        controller.syncAsmrAccount(force: true),
-    ]);
+    await _runAsmrOperation<void>(
+      scope: UiOperationScope.asmrCategory(
+        AsmrOperationKind.refresh,
+        category.name,
+      ),
+      labelKey: 'loading_dot',
+      task: () => Future.wait(<Future<void>>[
+        controller.refreshCategory(category, searchQuery: _searchQuery),
+        if (controller.isAsmrAccountLoggedIn)
+          controller.syncAsmrAccount(force: true),
+      ]),
+    );
 
     if (!mounted) {
       return;
@@ -426,7 +471,11 @@ class _AsmrTabState extends State<AsmrTab>
     if (!mounted || result == null) {
       return;
     }
-    await controller.setVisibleCategories(result);
+    await _runAsmrOperation<void>(
+      scope: const UiOperationScope('asmr:categories'),
+      labelKey: 'loading_dot',
+      task: () => controller.setVisibleCategories(result),
+    );
     if (!mounted) {
       return;
     }
@@ -457,7 +506,11 @@ class _AsmrTabState extends State<AsmrTab>
     if (!mounted || result == null) {
       return;
     }
-    await controller.setContentLanguage(result);
+    await _runAsmrOperation<void>(
+      scope: const UiOperationScope('asmr:language'),
+      labelKey: 'loading_dot',
+      task: () => controller.setContentLanguage(result),
+    );
     if (!mounted) {
       return;
     }
@@ -641,11 +694,13 @@ class _AsmrTabState extends State<AsmrTab>
                                 child: _AsmrCategoryList(
                                   key: ValueKey(category),
                                   category: category,
-                                  scrollController: _scrollControllers[category]!,
+                                  scrollController:
+                                      _scrollControllers[category]!,
                                   searchQuery: _searchQuery,
                                   topInset: headerContentHeight,
                                   bottomInset: bottomInset,
-                                  onRefresh: () => _refreshCategoryWithFeedback(category),
+                                  onRefresh: () =>
+                                      _refreshCategoryWithFeedback(category),
                                 ),
                               ),
                             ),
@@ -691,27 +746,27 @@ class _AsmrTabState extends State<AsmrTab>
                 mainAxisSize: MainAxisSize.min,
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                if (isWindows)
-                  IconButton(
-                    onPressed: globalState.initialized
-                        ? () => unawaited(
-                            _refreshCategoryWithFeedback(
-                              currentCategory,
-                              showSnackbar: true,
-                            ),
-                          )
-                        : null,
-                    icon: const Icon(Icons.refresh_rounded),
-                    tooltip: 'Refresh',
+                  if (isWindows)
+                    IconButton(
+                      onPressed: globalState.initialized
+                          ? () => unawaited(
+                              _refreshCategoryWithFeedback(
+                                currentCategory,
+                                showSnackbar: true,
+                              ),
+                            )
+                          : null,
+                      icon: const Icon(Icons.refresh_rounded),
+                      tooltip: 'Refresh',
+                    ),
+                  if (hasDownloadManager)
+                    const _AsmrDownloadProgressInlineButton(),
+                  _AsmrMoreMenuButton(
+                    onAccount: _showAccountDialog,
+                    onCategories: _showCategoryDialog,
+                    onLanguage: _showLanguageDialog,
                   ),
-                if (hasDownloadManager)
-                  const _AsmrDownloadProgressInlineButton(),
-                _AsmrMoreMenuButton(
-                  onAccount: _showAccountDialog,
-                  onCategories: _showCategoryDialog,
-                  onLanguage: _showLanguageDialog,
-                ),
-              ],
+                ],
               ),
             ),
             isLoading: !globalState.initialized,

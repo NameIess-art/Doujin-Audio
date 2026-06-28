@@ -727,7 +727,23 @@ extension AudioProviderLibrary on AudioProvider {
   Future<bool> flushStagedLibraryRefreshChunk({
     bool waitForPersistence = false,
   }) async {
-    await endLibraryBatch(waitForPersistence: waitForPersistence);
+    if (UiInteractionCoordinator.instance.isInteracting) {
+      final completer = Completer<void>();
+      UiInteractionCoordinator.instance.scheduleCommit(
+        key: 'library_refresh_chunk_flush',
+        priority: 0,
+        commit: () {
+          unawaited(
+            endLibraryBatch(
+              waitForPersistence: waitForPersistence,
+            ).then(completer.complete).catchError(completer.completeError),
+          );
+        },
+      );
+      await completer.future;
+    } else {
+      await endLibraryBatch(waitForPersistence: waitForPersistence);
+    }
     await Future<void>.delayed(Duration.zero);
     if (!_isScanning) {
       return false;

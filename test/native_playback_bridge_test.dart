@@ -14,6 +14,38 @@ void main() {
         .setMockMethodCallHandler(channel, null);
   });
 
+  test('progress event decodes independently from legacy snapshots', () {
+    final updates = parseNativePlaybackProgressEvent(<String, Object?>{
+      'eventType': 'progress',
+      'nativeElapsedRealtimeMs': 8000,
+      'updates': <Object?>[
+        <String, Object?>{
+          'sessionId': ' session-1 ',
+          'positionMs': 1500,
+          'bufferedPositionMs': 3000,
+          'durationMs': 5000,
+          'nativeElapsedRealtimeMs': 8000,
+        },
+      ],
+    });
+
+    expect(updates, hasLength(1));
+    expect(updates.single.sessionId, 'session-1');
+    expect(updates.single.position, const Duration(milliseconds: 1500));
+    expect(updates.single.bufferedPosition, const Duration(milliseconds: 3000));
+    expect(updates.single.duration, const Duration(milliseconds: 5000));
+    expect(updates.single.nativeElapsedRealtimeMs, 8000);
+  });
+
+  test('unknown native event is not parsed as progress', () {
+    expect(
+      parseNativePlaybackProgressEvent(<String, Object?>{
+        'eventType': 'future-event',
+      }),
+      isEmpty,
+    );
+  });
+
   test('play decodes success payload into a typed snapshot', () async {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (call) async {

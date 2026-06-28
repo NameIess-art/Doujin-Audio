@@ -1,6 +1,10 @@
 part of 'audio_provider.dart';
 
 extension AudioProviderNativeBridge on AudioProvider {
+  void _handleNativePlaybackProgress(NativePlaybackProgressUpdate progress) {
+    _playbackService.applyNativeProgress(progress);
+  }
+
   String _snapshotUriForPath(String pathValue) {
     if (PathMatcher.isContentUri(pathValue) ||
         PathMatcher.isRemoteUri(pathValue)) {

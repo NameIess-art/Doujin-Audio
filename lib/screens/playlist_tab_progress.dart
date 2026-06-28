@@ -621,15 +621,22 @@ class _SessionSubtitlePanelState extends State<_SessionSubtitlePanel> {
   @override
   Widget build(BuildContext context) {
     final subtitleText = _subtitleText;
-    if (subtitleText == null) {
-      return const SizedBox.shrink();
-    }
-    return _SubtitleChip(text: subtitleText);
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeOutCubic,
+      alignment: Alignment.topCenter,
+      child: subtitleText == null
+          ? const SizedBox(width: double.infinity, height: 0)
+          : _SubtitleChip(
+              key: ValueKey(subtitleText),
+              text: subtitleText,
+            ),
+    );
   }
 }
 
 class _SubtitleChip extends StatelessWidget {
-  const _SubtitleChip({required this.text});
+  const _SubtitleChip({super.key, required this.text});
 
   final String text;
 

@@ -246,6 +246,8 @@ class AudioProvider with ChangeNotifier {
   final Random _random = Random();
 
   StreamSubscription<NativePlaybackSnapshot>? _nativePlaybackSubscription;
+  StreamSubscription<NativePlaybackProgressUpdate>?
+  _nativePlaybackProgressSubscription;
 
   late final LibraryController libraryController;
   late final PlaybackSessionController playbackSessionController;
@@ -723,6 +725,9 @@ class AudioProvider with ChangeNotifier {
     _nativePlaybackSubscription = _nativePlaybackRepository.snapshots.listen(
       _handleNativePlaybackSnapshot,
     );
+    _nativePlaybackProgressSubscription = _nativePlaybackRepository
+        .progressUpdates
+        .listen(_handleNativePlaybackProgress);
     _loadData();
   }
 
@@ -800,6 +805,7 @@ class AudioProvider with ChangeNotifier {
     );
     unawaited(_deactivateAudioSession());
     unawaited(_nativePlaybackSubscription?.cancel());
+    unawaited(_nativePlaybackProgressSubscription?.cancel());
     unawaited(_nativePlaybackRepository.dispose());
     unawaited(_libraryService.dispose());
     unawaited(_playbackService.dispose());

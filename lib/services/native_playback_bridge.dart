@@ -145,6 +145,57 @@ class NativePlaybackSnapshot {
   }
 }
 
+class NativePlaybackProgressUpdate {
+  const NativePlaybackProgressUpdate({
+    required this.sessionId,
+    required this.position,
+    required this.bufferedPosition,
+    required this.nativeElapsedRealtimeMs,
+    this.duration,
+  });
+
+  final String sessionId;
+  final Duration position;
+  final Duration bufferedPosition;
+  final Duration? duration;
+  final int nativeElapsedRealtimeMs;
+
+  factory NativePlaybackProgressUpdate.fromMap(Map<dynamic, dynamic> map) {
+    final sessionId = (map['sessionId'] as String?)?.trim();
+    if (sessionId == null || sessionId.isEmpty) {
+      throw const FormatException(
+        'Native playback progress is missing sessionId.',
+      );
+    }
+    return NativePlaybackProgressUpdate(
+      sessionId: sessionId,
+      position: Duration(
+        milliseconds: (map['positionMs'] as num?)?.round() ?? 0,
+      ),
+      bufferedPosition: Duration(
+        milliseconds: (map['bufferedPositionMs'] as num?)?.round() ?? 0,
+      ),
+      duration: map['durationMs'] == null
+          ? null
+          : Duration(milliseconds: (map['durationMs'] as num).round()),
+      nativeElapsedRealtimeMs:
+          (map['nativeElapsedRealtimeMs'] as num?)?.round() ?? 0,
+    );
+  }
+}
+
+List<NativePlaybackProgressUpdate> parseNativePlaybackProgressEvent(
+  Map<dynamic, dynamic> event,
+) {
+  if (event['eventType'] != 'progress') return const [];
+  final updates = event['updates'];
+  if (updates is! List) return const [];
+  return updates
+      .whereType<Map<dynamic, dynamic>>()
+      .map(NativePlaybackProgressUpdate.fromMap)
+      .toList(growable: false);
+}
+
 class NativePlaybackBundleSnapshot {
   const NativePlaybackBundleSnapshot({
     required this.sessions,
@@ -170,6 +221,8 @@ class NativePlaybackBundleSnapshot {
 
 abstract interface class NativePlaybackBridgeBase {
   Stream<NativePlaybackSnapshot> get snapshots;
+
+  Stream<NativePlaybackProgressUpdate> get progressUpdates;
 
   bool get supportsDeferredSessionRegistration;
 
@@ -271,6 +324,10 @@ class NativePlaybackBridge implements NativePlaybackBridgeBase {
   StreamController<NativePlaybackSnapshot> get _controller =>
       _snapshotController ??=
           StreamController<NativePlaybackSnapshot>.broadcast();
+  StreamController<NativePlaybackProgressUpdate>? _progressController;
+  StreamController<NativePlaybackProgressUpdate>
+  get _progressUpdatesController => _progressController ??=
+      StreamController<NativePlaybackProgressUpdate>.broadcast();
   StreamSubscription<dynamic>? _eventSubscription;
   Timer? _reconnectTimer;
   bool _listeningEnabled = false;
@@ -279,6 +336,10 @@ class NativePlaybackBridge implements NativePlaybackBridgeBase {
 
   @override
   Stream<NativePlaybackSnapshot> get snapshots => _controller.stream;
+
+  @override
+  Stream<NativePlaybackProgressUpdate> get progressUpdates =>
+      _progressUpdatesController.stream;
 
   @override
   bool get supportsDeferredSessionRegistration => true;
@@ -300,10 +361,21 @@ class NativePlaybackBridge implements NativePlaybackBridgeBase {
       (event) {
         if (event is Map) {
           try {
-            _controller.add(NativePlaybackSnapshot.fromMap(event));
+            final eventType = event['eventType'];
+            if (eventType == 'progress') {
+              for (final update in parseNativePlaybackProgressEvent(event)) {
+                _progressUpdatesController.add(update);
+              }
+            } else if (eventType == null) {
+              _controller.add(NativePlaybackSnapshot.fromMap(event));
+            } else {
+              AppLogService.warning(
+                'native_playback_unknown_event type=$eventType',
+              );
+            }
           } catch (error, stackTrace) {
             AppLogService.error(
-              'native_playback_invalid_snapshot',
+              'native_playback_invalid_event',
               error: error,
               stackTrace: stackTrace,
             );
@@ -356,6 +428,8 @@ class NativePlaybackBridge implements NativePlaybackBridgeBase {
     await stopListening();
     await _snapshotController?.close();
     _snapshotController = null;
+    await _progressController?.close();
+    _progressController = null;
   }
 
   @override

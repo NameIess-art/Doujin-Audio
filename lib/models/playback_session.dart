@@ -122,6 +122,22 @@ class PlaybackSession {
     }
   }
 
+  void applyNativeProgress(NativePlaybackProgressUpdate progress) {
+    if (progress.sessionId != id) return;
+    if (lastKnownPosition != progress.position) {
+      lastKnownPosition = progress.position;
+      _positionController.add(lastKnownPosition);
+    }
+    if (progress.duration != null && duration != progress.duration) {
+      duration = progress.duration;
+      _durationController.add(duration);
+    }
+    if (bufferedPosition != progress.bufferedPosition) {
+      bufferedPosition = progress.bufferedPosition;
+      _bufferedPositionController.add(bufferedPosition);
+    }
+  }
+
   void setOptimisticState({bool? playing, ProcessingState? processingState}) {
     final nextState = PlayerState(
       playing ?? state.playing,

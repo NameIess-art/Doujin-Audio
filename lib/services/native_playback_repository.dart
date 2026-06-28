@@ -19,6 +19,9 @@ class NativePlaybackRepository {
 
   Stream<NativePlaybackSnapshot> get snapshots => _bridge.snapshots;
 
+  Stream<NativePlaybackProgressUpdate> get progressUpdates =>
+      _bridge.progressUpdates;
+
   bool get supportsDeferredSessionRegistration =>
       _bridge.supportsDeferredSessionRegistration;
 

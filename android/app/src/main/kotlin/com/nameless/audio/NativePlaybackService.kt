@@ -13,6 +13,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
+import android.os.SystemClock
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import androidx.media3.common.C
@@ -24,6 +25,17 @@ import androidx.media3.session.MediaSessionService
 import androidx.media3.session.MediaNotification
 
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
+
+internal fun shouldPublishProgressHeartbeat(
+    isScreenOn: Boolean,
+    nowElapsedRealtimeMs: Long,
+    lastPublishedElapsedRealtimeMs: Long,
+    screenOffIntervalMs: Long
+): Boolean =
+    isScreenOn ||
+        nowElapsedRealtimeMs - lastPublishedElapsedRealtimeMs >= screenOffIntervalMs
 
 class NativePlaybackService : MediaSessionService() {
     companion object {
@@ -47,6 +59,8 @@ class NativePlaybackService : MediaSessionService() {
         private const val PLAYBACK_STOP_GRACE_MS = 10 * 60 * 1000L
         private const val MAX_ERROR_RETRY_ATTEMPTS = 3
         private const val ERROR_RETRY_BASE_DELAY_MS = 2000L
+        private const val PROGRESS_HEARTBEAT_INTERVAL_MS = 500L
+        private const val SCREEN_OFF_PROGRESS_HEARTBEAT_INTERVAL_MS = 5000L
         private const val LOG_TAG = "NativePlaybackService"
 
         @Volatile
@@ -94,6 +108,10 @@ class NativePlaybackService : MediaSessionService() {
     private val fileCacheOperations by lazy { FileCacheOperations(applicationContext) }
     private val stateListeners = ConcurrentHashMap<String, (Map<String, Any?>) -> Unit>()
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val progressHeartbeatExecutor = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "native-playback-progress").apply { isDaemon = true }
+    }
+    private val progressHeartbeatInFlight = AtomicBoolean(false)
     private val playbackWakeLock by lazy {
         NativePlaybackWakeLock(
             context = this,
@@ -253,7 +271,7 @@ class NativePlaybackService : MediaSessionService() {
             logInfo("foreground_stop_grace_expired playback_resumed_skip")
         }
     }
-    private var lastPublishedTimeMs = 0L
+    private var lastProgressHeartbeatElapsedRealtimeMs = 0L
 
     private val positionTicker = object : Runnable {
         override fun run() {
@@ -262,17 +280,21 @@ class NativePlaybackService : MediaSessionService() {
                 return
             }
             
-            val now = System.currentTimeMillis()
+            val nowElapsedRealtimeMs = SystemClock.elapsedRealtime()
             val powerManager = getSystemService(POWER_SERVICE) as? PowerManager
             val isScreenOn = powerManager?.isInteractive ?: true
-            
-            // Throttle UI updates over the MethodChannel when screen is off to save battery
-            if (isScreenOn || now - lastPublishedTimeMs >= 5000L) {
-                publishProgressSessionStates()
-                lastPublishedTimeMs = now
+
+            if (shouldPublishProgressHeartbeat(
+                isScreenOn = isScreenOn,
+                nowElapsedRealtimeMs = nowElapsedRealtimeMs,
+                lastPublishedElapsedRealtimeMs = lastProgressHeartbeatElapsedRealtimeMs,
+                screenOffIntervalMs = SCREEN_OFF_PROGRESS_HEARTBEAT_INTERVAL_MS
+            )) {
+                publishProgressSessionStatesAsync(nowElapsedRealtimeMs)
+                lastProgressHeartbeatElapsedRealtimeMs = nowElapsedRealtimeMs
             }
-            
-            mainHandler.postDelayed(this, 750L)
+
+            mainHandler.postDelayed(this, PROGRESS_HEARTBEAT_INTERVAL_MS)
         }
     }
     private val foregroundWatchdog = object : Runnable {
@@ -402,6 +424,7 @@ class NativePlaybackService : MediaSessionService() {
         )
         stateListeners.clear()
         mainHandler.removeCallbacks(positionTicker)
+        progressHeartbeatExecutor.shutdownNow()
         stopStatePersistenceTicker()
         cancelScheduledPersistSessionState()
         cancelForegroundStopGrace()
@@ -1662,11 +1685,41 @@ class NativePlaybackService : MediaSessionService() {
         sessions.keys.toList().forEach { publishSessionState(it) }
     }
 
-    private fun publishProgressSessionStates() {
-        sessions.values.forEach { session ->
-            val player = session.playerOrNull() ?: return@forEach
-            if (shouldPublishProgressSnapshot(player.isPlaying, player.playWhenReady)) {
-                publishSessionState(session.sessionId)
+    private fun publishProgressSessionStatesAsync(nowElapsedRealtimeMs: Long) {
+        if (!progressHeartbeatInFlight.compareAndSet(false, true)) return
+        val anchors = sessions.values.map(NativePlaybackSession::progressAnchorSnapshot)
+        progressHeartbeatExecutor.execute {
+            val event = buildNativePlaybackProgressEvent(anchors, nowElapsedRealtimeMs)
+            mainHandler.post {
+                try {
+                    if (event != null && stateListeners.isNotEmpty()) {
+                        val currentAnchors = sessions.mapValues { (_, session) ->
+                            session.progressAnchorSnapshot()
+                        }
+                        val validSessionIds = anchors
+                            .filter { anchor -> currentAnchors[anchor.sessionId] === anchor }
+                            .mapTo(hashSetOf()) { it.sessionId }
+                        val validUpdates = (event["updates"] as? List<*>)
+                            ?.filter { rawUpdate ->
+                                val update = rawUpdate as? Map<*, *> ?: return@filter false
+                                update["sessionId"] in validSessionIds
+                            }
+                            .orEmpty()
+                        if (validUpdates.isNotEmpty()) {
+                            val validEvent = event.toMutableMap().apply {
+                                this["updates"] = validUpdates
+                            }
+                            stateListeners.values.forEach { listener ->
+                                try {
+                                    listener(validEvent)
+                                } catch (_: RuntimeException) {
+                                }
+                            }
+                        }
+                    }
+                } finally {
+                    progressHeartbeatInFlight.set(false)
+                }
             }
         }
     }

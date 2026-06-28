@@ -79,6 +79,7 @@ class _AsmrWorkTreeCardState extends State<_AsmrWorkTreeCard> {
 
     return SwipeRevealCard(
       shape: cardShape,
+      color: asmrBlue,
       actionLabel: i18n.tr('asmr_detail_action'),
       removeTooltip: i18n.tr('asmr_detail_tooltip'),
       primaryActionTooltip: i18n.tr('asmr_detail_action'),

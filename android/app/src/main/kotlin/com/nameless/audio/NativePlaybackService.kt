@@ -27,6 +27,7 @@ import androidx.media3.session.MediaNotification
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 
 internal fun shouldPublishProgressHeartbeat(
     isScreenOn: Boolean,
@@ -36,6 +37,16 @@ internal fun shouldPublishProgressHeartbeat(
 ): Boolean =
     isScreenOn ||
         nowElapsedRealtimeMs - lastPublishedElapsedRealtimeMs >= screenOffIntervalMs
+
+internal fun exclusivePlaybackSessionIdsToPause(
+    targetSessionId: String,
+    sessionPlaybackIntent: Map<String, Boolean>
+): List<String> = sessionPlaybackIntent
+    .filter { (sessionId, hasPlaybackIntent) ->
+        sessionId != targetSessionId && hasPlaybackIntent
+    }
+    .keys
+    .toList()
 
 class NativePlaybackService : MediaSessionService() {
     companion object {
@@ -111,6 +122,10 @@ class NativePlaybackService : MediaSessionService() {
     private val progressHeartbeatExecutor = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "native-playback-progress").apply { isDaemon = true }
     }
+    private val statePersistenceExecutor = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "native-playback-state").apply { isDaemon = true }
+    }
+    private val statePersistenceGeneration = AtomicLong(0L)
     private val progressHeartbeatInFlight = AtomicBoolean(false)
     private val playbackWakeLock by lazy {
         NativePlaybackWakeLock(
@@ -425,6 +440,7 @@ class NativePlaybackService : MediaSessionService() {
         stateListeners.clear()
         mainHandler.removeCallbacks(positionTicker)
         progressHeartbeatExecutor.shutdownNow()
+        statePersistenceExecutor.shutdown()
         stopStatePersistenceTicker()
         cancelScheduledPersistSessionState()
         cancelForegroundStopGrace()
@@ -442,8 +458,10 @@ class NativePlaybackService : MediaSessionService() {
     }
 
     fun addStateListener(ownerId: String, listener: (Map<String, Any?>) -> Unit) {
-        stateListeners[ownerId] = listener
-        sessions.values.forEach { listener(it.snapshot()) }
+        val isNewOwner = stateListeners.put(ownerId, listener) == null
+        if (isNewOwner) {
+            sessions.values.forEach { listener(it.snapshot()) }
+        }
         ensureTicker()
     }
 
@@ -522,9 +540,38 @@ class NativePlaybackService : MediaSessionService() {
         }
     }
 
-    fun play(sessionId: String): Map<String, Any?> {
+    fun play(
+        sessionId: String,
+        transportCommandId: Long = 0L,
+        exclusive: Boolean = false
+    ): Map<String, Any?> {
         val session = sessions[sessionId] ?: return errorResult("Unknown session.")
+        val pausedSessionIds = if (exclusive) {
+            exclusivePlaybackSessionIdsToPause(
+                targetSessionId = sessionId,
+                sessionPlaybackIntent = sessions.mapValues { (candidateId, candidate) ->
+                    val player = candidate.playerOrNull()
+                    candidateId in intendedPlaybackSessionIds ||
+                        player?.isPlaying == true ||
+                        player?.playWhenReady == true
+                }
+            )
+        } else {
+            emptyList()
+        }
+        pausedSessionIds.forEach { pausedSessionId ->
+            val pausedSession = sessions[pausedSessionId] ?: return@forEach
+            if (transportCommandId > 0L) {
+                pausedSession.transportCommandId = transportCommandId
+            }
+            pendingAudioFocusResumeSessionIds.remove(pausedSessionId)
+            clearPlaybackIntent(pausedSessionId)
+            pausedSession.playerOrNull()?.pause()
+        }
         session.lastUsedMs = System.currentTimeMillis()
+        if (transportCommandId > 0L) {
+            session.transportCommandId = transportCommandId
+        }
         pendingAudioFocusResumeSessionIds.remove(sessionId)
         notificationsDismissed = false
         playbackSuspended = false
@@ -533,24 +580,31 @@ class NativePlaybackService : MediaSessionService() {
         focusSession(sessionId)
         session.ensurePlayer().play()
         evictPlayersIfNeeded()
-        publishSessionState(sessionId)
+        pausedSessionIds.forEach(::publishSessionState)
+        val snapshot = publishSessionState(sessionId)
         ensureTicker()
-        persistSessionStateNow()
+        schedulePersistSessionState()
         ensureStatePersistenceTicker()
         syncForegroundState()
-        return okResult(session.snapshot())
+        return okResult(snapshot)
     }
 
-    fun pause(sessionId: String): Map<String, Any?> {
+    fun pause(
+        sessionId: String,
+        transportCommandId: Long = 0L
+    ): Map<String, Any?> {
         val session = sessions[sessionId] ?: return errorResult("Unknown session.")
         session.lastUsedMs = System.currentTimeMillis()
+        if (transportCommandId > 0L) {
+            session.transportCommandId = transportCommandId
+        }
         pendingAudioFocusResumeSessionIds.remove(sessionId)
         clearPlaybackIntent(sessionId)
         session.playerOrNull()?.pause()
-        publishSessionState(sessionId)
-        persistSessionStateNow()
+        val snapshot = publishSessionState(sessionId)
+        schedulePersistSessionState()
         syncForegroundState()
-        return okResult(session.snapshot())
+        return okResult(snapshot)
     }
 
     fun stop(sessionId: String): Map<String, Any?> {
@@ -1442,22 +1496,30 @@ class NativePlaybackService : MediaSessionService() {
 
     private fun persistSessionStateNow() {
         cancelScheduledPersistSessionState()
+        val generation = statePersistenceGeneration.incrementAndGet()
         if (sessions.isEmpty()) {
-            NativePlaybackStateStore.clearSessions(this)
-            return
-        }
-        NativePlaybackStateStore.saveSessions(
-            this,
-            sessions.values.map { session ->
-                session.storedSnapshot().let { stored ->
-                    if (session.sessionId in intendedPlaybackSessionIds) {
-                        stored.copy(playWhenReady = true)
-                    } else {
-                        stored
-                    }
+            statePersistenceExecutor.execute {
+                if (generation == statePersistenceGeneration.get()) {
+                    NativePlaybackStateStore.clearSessions(this)
                 }
             }
-        )
+            return
+        }
+        val intendedSessionIds = intendedPlaybackSessionIds.toSet()
+        val storedSessions = sessions.values.map { session ->
+            session.storedSnapshot().let { stored ->
+                if (session.sessionId in intendedSessionIds) {
+                    stored.copy(playWhenReady = true)
+                } else {
+                    stored
+                }
+            }
+        }
+        statePersistenceExecutor.execute {
+            if (generation == statePersistenceGeneration.get()) {
+                NativePlaybackStateStore.saveSessions(this, storedSessions)
+            }
+        }
     }
 
     private fun restorePersistedPlaybackAfterServiceRestart() {
@@ -1676,9 +1738,9 @@ class NativePlaybackService : MediaSessionService() {
         manager.createNotificationChannel(channel)
     }
 
-    private fun publishSessionState(sessionId: String) {
-        val session = sessions[sessionId] ?: return
-        publishNativePlaybackSessionState(session, stateListeners.values)
+    private fun publishSessionState(sessionId: String): Map<String, Any?>? {
+        val session = sessions[sessionId] ?: return null
+        return publishNativePlaybackSessionState(session, stateListeners.values)
     }
 
     private fun publishAllSessionStates() {

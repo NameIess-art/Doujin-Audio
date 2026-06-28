@@ -39,9 +39,8 @@ class _ActiveSessionCard extends ConsumerWidget {
             ) ??
             session;
         return (
-          playing: currentSession.state.playing,
-          loading:
-              currentSession.isLoading || currentSession.isPlaybackStarting,
+          playing: currentSession.effectivePlaying,
+          loading: currentSession.isLoading,
           trackPath: currentSession.currentTrackPath,
           channelSwapEnabled: currentSession.channelSwapEnabled,
           error: currentSession.playbackError,

@@ -365,7 +365,7 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
     final provider = widget.provider;
     final session = widget.session;
 
-    final isPlaying = session.state.playing;
+    final isPlaying = session.effectivePlaying;
     if (_wasPlaying != isPlaying) {
       _wasPlaying = isPlaying;
     }

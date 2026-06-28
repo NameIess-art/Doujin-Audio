@@ -313,7 +313,7 @@ List<PlaybackSession> overlaySessionsFromPlaybackState(
     return sessions;
   }
   final retainedSession = sessions.firstWhere(
-    (session) => session.state.playing || session.isLoading,
+    (session) => session.effectivePlaying || session.isLoading,
     orElse: () => sessions.first,
   );
   return <PlaybackSession>[retainedSession];
@@ -339,8 +339,8 @@ SessionDetailViewState? sessionDetailViewStateFromPlaybackState(
       sessionId: session.id,
       trackPath: session.currentTrackPath,
       loopMode: session.loopMode,
-      isPlaying: session.state.playing,
-      isLoading: session.isLoading || session.isPlaybackStarting,
+      isPlaying: session.effectivePlaying,
+      isLoading: session.isLoading,
       channelSwapEnabled: session.channelSwapEnabled,
       volume: session.volume,
       speed: session.speed,
@@ -361,8 +361,8 @@ PlaylistSessionCardState? playlistSessionCardStateFromPlaybackState(
       sessionId: session.id,
       trackPath: session.currentTrackPath,
       loopMode: session.loopMode,
-      isPlaying: session.state.playing,
-      isLoading: session.isLoading || session.isPlaybackStarting,
+      isPlaying: session.effectivePlaying,
+      isLoading: session.isLoading,
       channelSwapEnabled: session.channelSwapEnabled,
       playbackError: session.playbackError,
       coverGeneration: playbackState.coverGeneration,

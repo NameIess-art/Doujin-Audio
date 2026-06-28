@@ -168,7 +168,6 @@ extension AudioProviderPlaybackSessions on AudioProvider {
 
     session.loadGeneration++;
     final generation = session.loadGeneration;
-    session.playbackCommandGeneration = generation;
 
     final wasLoading = session.isLoading;
     if (showLoading) {

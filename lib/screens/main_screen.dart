@@ -509,7 +509,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
         .toList(growable: false);
     if (candidates.isEmpty) return null;
     return candidates.firstWhere(
-      (session) => session.state.playing || session.isLoading,
+      (session) => session.effectivePlaying || session.isLoading,
       orElse: () => candidates.first,
     );
   }

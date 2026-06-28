@@ -272,7 +272,7 @@ class _SessionListCardState extends ConsumerState<_SessionListCard> {
       trackPath: trackPath,
       loopMode: uiState?.loopMode ?? session.loopMode,
       isLoading: uiState?.isLoading ?? session.isLoading,
-      isPlaying: uiState?.isPlaying ?? session.state.playing,
+      isPlaying: uiState?.isPlaying ?? session.effectivePlaying,
       channelSwapEnabled:
           uiState?.channelSwapEnabled ?? session.channelSwapEnabled,
       playbackError: uiState?.playbackError ?? session.playbackError,

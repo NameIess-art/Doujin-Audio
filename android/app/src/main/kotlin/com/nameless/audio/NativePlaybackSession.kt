@@ -176,6 +176,7 @@ internal class NativePlaybackSession(
     var lastIsPlaying: Boolean = false
     var lastPlayWhenReady: Boolean = false
     var lastPlaybackState: String = "idle"
+    var transportCommandId: Long = 0L
     @Volatile
     private var progressAnchor = NativePlaybackProgressAnchor(
         sessionId = sessionId,
@@ -630,6 +631,7 @@ internal class NativePlaybackSession(
             "audioEffects" to audioEffectsSnapshot(),
             "eqCapabilities" to eqCapabilitiesSnapshot(),
             "queueIndex" to (p?.currentMediaItemIndex ?: currentQueueIndexFor(queue)).coerceAtLeast(0),
+            "transportCommandId" to transportCommandId,
             "error" to p?.playerError?.message
         )
     }
@@ -893,7 +895,7 @@ internal interface NativePlaybackSessionSnapshotSource {
 internal fun publishNativePlaybackSessionState(
     session: NativePlaybackSessionSnapshotSource,
     listeners: Collection<(Map<String, Any?>) -> Unit>
-) {
+): Map<String, Any?> {
     val audioSessionId = session.currentAudioSessionId()
     if (audioSessionId != C.AUDIO_SESSION_ID_UNSET) {
         session.syncAudioSessionState(audioSessionId)
@@ -906,6 +908,7 @@ internal fun publishNativePlaybackSessionState(
             // Prevent one broken listener from crashing the service.
         }
     }
+    return snapshot
 }
 
 private fun normalizeSpeed(speed: Float): Float = speed.coerceIn(0.5f, 2.0f)

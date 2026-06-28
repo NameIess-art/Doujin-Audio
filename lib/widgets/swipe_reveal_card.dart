@@ -319,22 +319,23 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
     final cs = Theme.of(context).colorScheme;
     final revealProgress = (_revealedWidth / _actionWidth).clamp(0.0, 1.0);
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final brightnessFactor = isDark ? 0.15 : 0.3;
-    final paneStartColor = Color.lerp(
-      widget.destructive ? cs.errorContainer : cs.primaryContainer,
-      Colors.white,
-      brightnessFactor,
-    )!;
-    final paneEndColor = Color.lerp(
-      widget.destructive ? cs.errorContainer : cs.secondaryContainer,
-      Colors.white,
-      brightnessFactor,
-    )!;
-    final accentColor = widget.destructive ? cs.error : cs.primary;
-    final accentOnColor = widget.destructive ? cs.onError : cs.onPrimary;
-    final accentContainerOnColor = widget.destructive
-        ? cs.onErrorContainer
-        : cs.onPrimaryContainer;
+    final baseColor = widget.color ?? (widget.destructive ? cs.errorContainer : cs.primaryContainer);
+    final isBgDark = ThemeData.estimateBrightnessForColor(baseColor) == Brightness.dark;
+    final onColor = isBgDark ? Colors.white : Colors.black;
+
+    final paneStartColor = Color.lerp(baseColor, onColor, isDark ? 0.08 : 0.04)!;
+    final paneEndColor = baseColor;
+    
+    final accentColor = onColor;
+    final accentOnColor = baseColor;
+    final accentContainerOnColor = onColor;
+    
+    final tertiaryBg = onColor.withValues(alpha: 0.18);
+    final tertiaryFg = onColor;
+    final secondaryBg = onColor.withValues(alpha: 0.18);
+    final secondaryFg = onColor;
+    final primaryBg = widget.destructive ? onColor : onColor.withValues(alpha: 0.3);
+    final primaryFg = widget.destructive ? baseColor : onColor;
     final showVerticalActions = widget.verticalActions && _actionCount > 1;
     final actionLabel = _hasTertiaryAction
         ? [
@@ -545,10 +546,8 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                                                         widget.onTertiaryAction,
                                                       );
                                                     },
-                                                    backgroundColor:
-                                                        cs.secondaryContainer,
-                                                    foregroundColor:
-                                                        cs.onSecondaryContainer,
+                                                    backgroundColor: tertiaryBg,
+                                                    foregroundColor: tertiaryFg,
                                                     tooltip:
                                                         widget
                                                             .tertiaryActionTooltip ??
@@ -573,10 +572,8 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                                                             .onSecondaryAction,
                                                       );
                                                     },
-                                                    backgroundColor:
-                                                        cs.primaryContainer,
-                                                    foregroundColor:
-                                                        cs.onPrimaryContainer,
+                                                    backgroundColor: secondaryBg,
+                                                    foregroundColor: secondaryFg,
                                                     tooltip:
                                                         widget
                                                             .secondaryActionTooltip ??
@@ -602,9 +599,8 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                                                       widget.onRemove,
                                                     );
                                                   },
-                                                  backgroundColor: accentColor,
-                                                  foregroundColor:
-                                                      accentOnColor,
+                                                  backgroundColor: primaryBg,
+                                                  foregroundColor: primaryFg,
                                                   tooltip:
                                                       widget
                                                           .primaryActionTooltip ??

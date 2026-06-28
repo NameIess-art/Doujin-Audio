@@ -6,6 +6,7 @@ import androidx.media3.common.audio.AudioProcessor
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Test
 
 class NativePlaybackSessionStateTest {
@@ -122,6 +123,22 @@ class NativePlaybackSessionStateTest {
     }
 
     @Test
+    fun `exclusive playback pauses only other sessions with playback intent`() {
+        assertEquals(
+            listOf("playing", "buffering"),
+            exclusivePlaybackSessionIdsToPause(
+                targetSessionId = "target",
+                sessionPlaybackIntent = linkedMapOf(
+                    "target" to true,
+                    "playing" to true,
+                    "paused" to false,
+                    "buffering" to true
+                )
+            )
+        )
+    }
+
+    @Test
     fun `noise reduction curve stays conservative for ASMR details`() {
         assertEquals(NOISE_REDUCTION_LOW_GAIN_DB, noiseReductionGainFor(60), 0.001f)
         assertEquals(0f, noiseReductionGainFor(1000), 0.001f)
@@ -170,14 +187,17 @@ class NativePlaybackSessionStateTest {
             }
         }
 
-        publishNativePlaybackSessionState(
+        var listenerSnapshot: Map<String, Any?>? = null
+        val publishedSnapshot = publishNativePlaybackSessionState(
             session,
             listOf { snapshot: Map<String, Any?> ->
+                listenerSnapshot = snapshot
                 events += "listener:${snapshot["sessionId"]}"
             }
         )
 
         assertEquals(listOf("sync:42", "snapshot", "listener:session"), events)
+        assertSame(publishedSnapshot, listenerSnapshot)
     }
 
     @Test

@@ -31,6 +31,7 @@ class NativePlaybackSnapshot {
     this.duration,
     this.error,
     this.queueIndex = 0,
+    this.transportCommandId,
   });
 
   final String sessionId;
@@ -53,6 +54,7 @@ class NativePlaybackSnapshot {
   final EqCapabilities eqCapabilities;
   final String? error;
   final int queueIndex;
+  final int? transportCommandId;
 
   NativePlaybackSnapshot copyWith({
     String? sessionId,
@@ -82,6 +84,8 @@ class NativePlaybackSnapshot {
     String? error,
     bool clearError = false,
     int? queueIndex,
+    int? transportCommandId,
+    bool clearTransportCommandId = false,
   }) {
     return NativePlaybackSnapshot(
       sessionId: sessionId ?? this.sessionId,
@@ -104,6 +108,9 @@ class NativePlaybackSnapshot {
       eqCapabilities: eqCapabilities ?? this.eqCapabilities,
       error: clearError ? null : (error ?? this.error),
       queueIndex: queueIndex ?? this.queueIndex,
+      transportCommandId: clearTransportCommandId
+          ? null
+          : (transportCommandId ?? this.transportCommandId),
     );
   }
 
@@ -141,6 +148,7 @@ class NativePlaybackSnapshot {
       eqCapabilities: EqCapabilities.fromJson(map['eqCapabilities']),
       error: map['error'] as String?,
       queueIndex: (map['queueIndex'] as num?)?.toInt() ?? 0,
+      transportCommandId: (map['transportCommandId'] as num?)?.toInt(),
     );
   }
 }
@@ -252,9 +260,16 @@ abstract interface class NativePlaybackBridgeBase {
     bool deferPlayerCreation = false,
   });
 
-  Future<NativeResult<NativePlaybackSnapshot>> play(String sessionId);
+  Future<NativeResult<NativePlaybackSnapshot>> play(
+    String sessionId, {
+    int transportCommandId = 0,
+    bool exclusive = false,
+  });
 
-  Future<NativeResult<NativePlaybackSnapshot>> pause(String sessionId);
+  Future<NativeResult<NativePlaybackSnapshot>> pause(
+    String sessionId, {
+    int transportCommandId = 0,
+  });
 
   Future<NativeResult<NativePlaybackSnapshot>> stop(String sessionId);
 
@@ -478,14 +493,26 @@ class NativePlaybackBridge implements NativePlaybackBridgeBase {
   }
 
   @override
-  Future<NativeResult<NativePlaybackSnapshot>> play(String sessionId) {
-    return _invokeSnapshot(NativePlaybackMethod.play, {'sessionId': sessionId});
+  Future<NativeResult<NativePlaybackSnapshot>> play(
+    String sessionId, {
+    int transportCommandId = 0,
+    bool exclusive = false,
+  }) {
+    return _invokeSnapshot(NativePlaybackMethod.play, {
+      'sessionId': sessionId,
+      'transportCommandId': transportCommandId,
+      'exclusive': exclusive,
+    });
   }
 
   @override
-  Future<NativeResult<NativePlaybackSnapshot>> pause(String sessionId) {
+  Future<NativeResult<NativePlaybackSnapshot>> pause(
+    String sessionId, {
+    int transportCommandId = 0,
+  }) {
     return _invokeSnapshot(NativePlaybackMethod.pause, {
       'sessionId': sessionId,
+      'transportCommandId': transportCommandId,
     });
   }
 

@@ -15,7 +15,7 @@ extension AudioProviderPlaybackEngine on AudioProvider {
     required bool shouldStartTriggerCountdown,
   }) async {
     if (!_sessions.containsKey(session.id)) return;
-    final generation = ++session.playbackCommandGeneration;
+    final generation = ++_transportCommandSequence;
     final token = _playbackCommandRunner.start(
       sessionId: session.id,
       generation: generation,
@@ -26,45 +26,49 @@ extension AudioProviderPlaybackEngine on AudioProvider {
     _notificationsDismissedWhilePaused = false;
     unawaited(_nativePlaybackRepository.undismissNotifications());
     _notificationFocusSessionId = session.id;
-    session.playbackError = null;
-    session.isPlaybackStarting = true;
-    session.setOptimisticState(
-      playing: AppPlatform.usesDesktopPlaybackBridge ? false : true,
-      processingState: session.state.processingState == ProcessingState.idle
-          ? ProcessingState.loading
-          : null,
-    );
+    session.beginTransportCommand(commandId: generation, playing: true);
+    final exclusivelyPausedSessions = !_multiThreadPlaybackEnabled
+        ? _sessions.values
+              .where(
+                (candidate) =>
+                    candidate.id != session.id && candidate.effectivePlaying,
+              )
+              .toList(growable: false)
+        : const <PlaybackSession>[];
+    for (final pausedSession in exclusivelyPausedSessions) {
+      pausedSession.beginTransportCommand(
+        commandId: generation,
+        playing: false,
+      );
+    }
     _syncKeepCpuAwake();
     _notifyPlaybackChanged();
 
-    if (!_multiThreadPlaybackEnabled) {
-      await _enforceSingleThreadPlayback(preferredSessionId: session.id);
-    }
-    if (!_isSessionCommandCurrent(session, token)) {
-      return;
-    }
-    unawaited(_activateAudioSessionForPlayback().then((activated) {
-      if (!activated) {
-        debugPrint(
-          'AudioProvider._startSessionPlayback: audio session activation '
-          'returned false; continuing playback attempt.',
-        );
-      }
-    }));
+    unawaited(
+      _activateAudioSessionForPlayback().then((activated) {
+        if (!activated) {
+          debugPrint(
+            'AudioProvider._startSessionPlayback: audio session activation '
+            'returned false; continuing playback attempt.',
+          );
+        }
+      }),
+    );
 
     try {
-      final playResult = await _nativePlaybackRepository.play(session.id);
+      final playResult = await _nativePlaybackRepository.play(
+        session.id,
+        transportCommandId: generation,
+        exclusive: !_multiThreadPlaybackEnabled,
+      );
       if (!_isSessionCommandCurrent(session, token)) {
         return;
       }
       if (!playResult.isOk) {
-        session.isPlaybackStarting = false;
-        session.setOptimisticState(
-          playing: false,
-          processingState: session.loadedPath != null
-              ? ProcessingState.ready
-              : ProcessingState.idle,
-        );
+        session.failTransportCommand(generation);
+        for (final pausedSession in exclusivelyPausedSessions) {
+          pausedSession.failTransportCommand(generation);
+        }
         _syncKeepCpuAwake();
         _notifyPlaybackChanged();
       } else {
@@ -75,13 +79,10 @@ extension AudioProviderPlaybackEngine on AudioProvider {
       }
     } catch (e) {
       if (_isSessionCommandCurrent(session, token)) {
-        session.isPlaybackStarting = false;
-        session.setOptimisticState(
-          playing: false,
-          processingState: session.loadedPath != null
-              ? ProcessingState.ready
-              : ProcessingState.idle,
-        );
+        session.failTransportCommand(generation);
+        for (final pausedSession in exclusivelyPausedSessions) {
+          pausedSession.failTransportCommand(generation);
+        }
         _syncKeepCpuAwake();
         _notifyPlaybackChanged();
       }
@@ -92,28 +93,48 @@ extension AudioProviderPlaybackEngine on AudioProvider {
       return;
     }
     _syncKeepCpuAwake();
-    unawaited(_clearPlaybackStartingIfStillPending(session.id, generation));
     if (shouldStartTriggerCountdown) {
       _maybeStartTriggerCountdown();
     }
   }
 
-  Future<void> _clearPlaybackStartingIfStillPending(
-    String sessionId,
-    int generation,
-  ) async {
-    await Future<void>.delayed(const Duration(seconds: 3));
-    final session = _sessions[sessionId];
-    if (session == null ||
-        session.playbackCommandGeneration != generation ||
-        !session.isPlaybackStarting ||
-        session.state.playing) {
-      return;
-    }
-    session.isPlaybackStarting = false;
+  Future<void> _pauseSessionPlayback(PlaybackSession session) async {
+    if (!_sessions.containsKey(session.id)) return;
+    final generation = ++_transportCommandSequence;
+    final token = _playbackCommandRunner.start(
+      sessionId: session.id,
+      generation: generation,
+      isCurrent: () =>
+          _sessions.containsKey(session.id) &&
+          session.playbackCommandGeneration == generation,
+    );
+    session.beginTransportCommand(commandId: generation, playing: false);
     _syncKeepCpuAwake();
-    _syncNotificationState();
     _notifyPlaybackChanged();
+    try {
+      final pauseResult = await _nativePlaybackRepository.pause(
+        session.id,
+        transportCommandId: generation,
+      );
+      if (!_isSessionCommandCurrent(session, token)) return;
+      if (!pauseResult.isOk) {
+        session.failTransportCommand(generation);
+        _syncKeepCpuAwake();
+        _notifyPlaybackChanged();
+        return;
+      }
+      final snapshot = pauseResult.valueOrNull;
+      if (snapshot != null) {
+        _handleNativePlaybackSnapshot(snapshot);
+      }
+    } catch (error) {
+      if (_isSessionCommandCurrent(session, token)) {
+        session.failTransportCommand(generation);
+        _syncKeepCpuAwake();
+        _notifyPlaybackChanged();
+      }
+      debugPrint('AudioProvider._pauseSessionPlayback error: $error');
+    }
   }
 
   Future<void> _resetSessionsForSingleThreadMode() async {
@@ -176,7 +197,7 @@ extension AudioProviderPlaybackEngine on AudioProvider {
 
   String? get _preferredSingleSessionId {
     for (final session in activeSessions) {
-      if (session.state.playing) return session.id;
+      if (session.effectivePlaying) return session.id;
     }
     final sessions = activeSessions;
     if (sessions.isEmpty) return null;

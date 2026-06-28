@@ -71,12 +71,23 @@ class NativePlaybackRepository {
     );
   }
 
-  Future<NativeResult<NativePlaybackSnapshot>> play(String sessionId) {
-    return _bridge.play(sessionId);
+  Future<NativeResult<NativePlaybackSnapshot>> play(
+    String sessionId, {
+    int transportCommandId = 0,
+    bool exclusive = false,
+  }) {
+    return _bridge.play(
+      sessionId,
+      transportCommandId: transportCommandId,
+      exclusive: exclusive,
+    );
   }
 
-  Future<NativeResult<NativePlaybackSnapshot>> pause(String sessionId) {
-    return _bridge.pause(sessionId);
+  Future<NativeResult<NativePlaybackSnapshot>> pause(
+    String sessionId, {
+    int transportCommandId = 0,
+  }) {
+    return _bridge.pause(sessionId, transportCommandId: transportCommandId);
   }
 
   Future<NativeResult<NativePlaybackSnapshot>> stop(String sessionId) {

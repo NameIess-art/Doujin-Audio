@@ -50,6 +50,11 @@ void main() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (call) async {
           expect(call.method, NativePlaybackMethod.play);
+          expect(call.arguments, <String, Object?>{
+            'sessionId': 'session-1',
+            'transportCommandId': 7,
+            'exclusive': true,
+          });
           return <String, Object?>{
             'ok': true,
             'value': <String, Object?>{
@@ -63,11 +68,16 @@ void main() {
               'volume': 0.75,
               'speed': 1.5,
               'channelSwap': false,
+              'transportCommandId': 7,
             },
           };
         });
 
-    final result = await NativePlaybackBridge.instance.play('session-1');
+    final result = await NativePlaybackBridge.instance.play(
+      'session-1',
+      transportCommandId: 7,
+      exclusive: true,
+    );
 
     expect(result.isOk, isTrue);
     expect(result.valueOrNull, isNotNull);
@@ -75,6 +85,7 @@ void main() {
     expect(result.valueOrNull!.position, const Duration(milliseconds: 1500));
     expect(result.valueOrNull!.volume, closeTo(0.75, 0.001));
     expect(result.valueOrNull!.speed, closeTo(1.5, 0.001));
+    expect(result.valueOrNull!.transportCommandId, 7);
   });
 
   test('setSpeed forwards session id and speed to native playback', () async {

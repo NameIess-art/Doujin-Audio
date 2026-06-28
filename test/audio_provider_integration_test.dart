@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -128,6 +129,218 @@ void main() {
     test('toggling play-pause with unknown id does not throw', () {
       provider.toggleSessionPlayPause('non_existent_session');
       expect(provider.activeSessions, isEmpty);
+    });
+
+    test('single-thread playback uses one exclusive native play', () async {
+      Map<Object?, Object?>? playArguments;
+      var pauseCalls = 0;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+            final arguments = call.arguments as Map<Object?, Object?>?;
+            if (call.method == NativePlaybackMethod.pause) {
+              pauseCalls++;
+            }
+            if (call.method == NativePlaybackMethod.play) {
+              playArguments = arguments;
+            }
+            if (call.method == NativePlaybackMethod.prepareSession ||
+                call.method == NativePlaybackMethod.play) {
+              final sessionId = arguments?['sessionId'] as String;
+              final path = arguments?['path'] as String? ?? '';
+              final commandId = arguments?['transportCommandId'] as int?;
+              return <String, Object?>{
+                'ok': true,
+                'value': <String, Object?>{
+                  'sessionId': sessionId,
+                  'path': path,
+                  'uri': arguments?['uri'] as String?,
+                  'playing': call.method == NativePlaybackMethod.play,
+                  'playWhenReady': call.method == NativePlaybackMethod.play,
+                  'processingState': 'ready',
+                  'positionMs': 0,
+                  'bufferedPositionMs': 0,
+                  'durationMs': 1000,
+                  'volume': 1.0,
+                  'channelSwap': false,
+                  'transportCommandId': commandId,
+                },
+              };
+            }
+            return <String, Object?>{'ok': true, 'value': null};
+          });
+      const firstTrack = MusicTrack(
+        path: '/music/exclusive-first.mp3',
+        displayName: 'First',
+        groupKey: '/music',
+        groupTitle: 'Music',
+        groupSubtitle: '',
+        isSingle: true,
+      );
+      const secondTrack = MusicTrack(
+        path: '/music/exclusive-second.mp3',
+        displayName: 'Second',
+        groupKey: '/music',
+        groupTitle: 'Music',
+        groupSubtitle: '',
+        isSingle: true,
+      );
+
+      await provider.spawnSession(firstTrack, autoPlay: false);
+      await provider.spawnSession(secondTrack, autoPlay: false);
+      for (var i = 0; i < 100; i++) {
+        if (provider.activeSessions.length == 2 &&
+            provider.activeSessions.every(
+              (session) => session.loadedPath != null && !session.isLoading,
+            )) {
+          break;
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      final firstSession = provider.activeSessions.firstWhere(
+        (session) => PathMatcher.equalsNormalized(
+          session.currentTrackPath,
+          firstTrack.path,
+        ),
+      );
+      final secondSession = provider.activeSessions.firstWhere(
+        (session) => PathMatcher.equalsNormalized(
+          session.currentTrackPath,
+          secondTrack.path,
+        ),
+      );
+      firstSession.setOptimisticState(
+        playing: true,
+        processingState: ProcessingState.ready,
+      );
+
+      final toggle = provider.toggleSessionPlayPause(secondSession.id);
+      expect(firstSession.effectivePlaying, isFalse);
+      expect(secondSession.effectivePlaying, isTrue);
+      await toggle;
+
+      expect(pauseCalls, 0);
+      expect(playArguments?['exclusive'], isTrue);
+      expect(playArguments?['transportCommandId'], isPositive);
+    });
+
+    test('rapid play pause play keeps the latest intent', () async {
+      final playCalls = <Map<Object?, Object?>>[];
+      final playResponses = <Completer<Object?>>[];
+      Map<Object?, Object?>? pauseCall;
+      final pauseResponse = Completer<Object?>();
+
+      Map<String, Object?> snapshotFor(
+        Map<Object?, Object?> arguments, {
+        required bool playing,
+      }) {
+        return <String, Object?>{
+          'sessionId': arguments['sessionId'] as String,
+          'playing': playing,
+          'playWhenReady': playing,
+          'processingState': 'ready',
+          'positionMs': 0,
+          'bufferedPositionMs': 0,
+          'durationMs': 1000,
+          'volume': 1.0,
+          'channelSwap': false,
+          'transportCommandId': arguments['transportCommandId'] as int,
+        };
+      }
+
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+            final arguments = call.arguments as Map<Object?, Object?>?;
+            if (call.method == NativePlaybackMethod.prepareSession) {
+              return <String, Object?>{
+                'ok': true,
+                'value': <String, Object?>{
+                  'sessionId': arguments?['sessionId'] as String,
+                  'path': arguments?['path'] as String,
+                  'uri': arguments?['uri'] as String,
+                  'playing': false,
+                  'playWhenReady': false,
+                  'processingState': 'ready',
+                  'positionMs': 0,
+                  'bufferedPositionMs': 0,
+                  'durationMs': 1000,
+                  'volume': 1.0,
+                  'channelSwap': false,
+                },
+              };
+            }
+            if (call.method == NativePlaybackMethod.play) {
+              final completer = Completer<Object?>();
+              playCalls.add(arguments!);
+              playResponses.add(completer);
+              return completer.future;
+            }
+            if (call.method == NativePlaybackMethod.pause) {
+              pauseCall = arguments;
+              return pauseResponse.future;
+            }
+            return <String, Object?>{'ok': true, 'value': null};
+          });
+      const track = MusicTrack(
+        path: '/music/rapid-toggle.mp3',
+        displayName: 'Rapid Toggle',
+        groupKey: '/music',
+        groupTitle: 'Music',
+        groupSubtitle: '',
+        isSingle: true,
+      );
+      await provider.spawnSession(track, autoPlay: false);
+      for (var i = 0; i < 100; i++) {
+        if (provider.activeSessions.singleOrNull?.loadedPath != null) break;
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      final session = provider.activeSessions.single;
+
+      final firstPlay = provider.toggleSessionPlayPause(session.id);
+      for (var i = 0; i < 20 && playCalls.isEmpty; i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      expect(session.effectivePlaying, isTrue);
+
+      final pause = provider.toggleSessionPlayPause(session.id);
+      for (var i = 0; i < 20 && pauseCall == null; i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      expect(session.effectivePlaying, isFalse);
+
+      final lastPlay = provider.toggleSessionPlayPause(session.id);
+      for (var i = 0; i < 20 && playCalls.length < 2; i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      expect(session.effectivePlaying, isTrue);
+
+      final firstPlayCall = playCalls.first;
+      final lastPlayCall = playCalls.last;
+      playResponses.last.complete(<String, Object?>{
+        'ok': true,
+        'value': snapshotFor(lastPlayCall, playing: true),
+      });
+      pauseResponse.complete(<String, Object?>{
+        'ok': true,
+        'value': snapshotFor(pauseCall!, playing: false),
+      });
+      playResponses.first.complete(<String, Object?>{
+        'ok': true,
+        'value': snapshotFor(firstPlayCall, playing: true),
+      });
+      await Future.wait([firstPlay, pause, lastPlay]);
+
+      expect(
+        (firstPlayCall['transportCommandId'] as int) <
+            (pauseCall!['transportCommandId'] as int),
+        isTrue,
+      );
+      expect(
+        (pauseCall!['transportCommandId'] as int) <
+            (lastPlayCall['transportCommandId'] as int),
+        isTrue,
+      );
+      expect(session.effectivePlaying, isTrue);
+      expect(session.state.playing, isTrue);
     });
 
     testWidgets(

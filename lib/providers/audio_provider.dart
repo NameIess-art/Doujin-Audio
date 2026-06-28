@@ -238,6 +238,7 @@ class AudioProvider with ChangeNotifier {
   bool _notifyListenersQueued = false;
   bool _isDisposed = false;
   bool _nativeRuntimeStarted = false;
+  int _transportCommandSequence = 0;
 
   void requestCarouselSnapTo(String sessionId) {
     _carouselSnapNotifier.value = sessionId;

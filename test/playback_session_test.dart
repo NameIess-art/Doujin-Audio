@@ -117,6 +117,94 @@ void main() {
     expect(session.state.processingState, ProcessingState.ready);
   });
 
+  test('transport intent is immediate and stale snapshots are ignored', () {
+    final session = PlaybackSession(
+      id: 'session_1',
+      currentTrackPath: '/audio/one.mp3',
+      loopMode: SessionLoopMode.single,
+      nonSingleLoopMode: SessionLoopMode.folderSequential,
+      volume: 1,
+      createdAt: DateTime(2026),
+      state: PlayerState(false, ProcessingState.ready),
+    );
+    addTearDown(session.dispose);
+
+    session.beginTransportCommand(commandId: 2, playing: true);
+    expect(session.effectivePlaying, isTrue);
+    expect(session.state.playing, isFalse);
+
+    final staleApplied = session.applyNativeSnapshot(
+      const NativePlaybackSnapshot(
+        sessionId: 'session_1',
+        playing: false,
+        playWhenReady: false,
+        processingState: 'ready',
+        position: Duration.zero,
+        bufferedPosition: Duration.zero,
+        volume: 1,
+        boostGain: 1,
+        channelSwapEnabled: false,
+        transportCommandId: 1,
+      ),
+    );
+    expect(staleApplied, isFalse);
+    expect(session.effectivePlaying, isTrue);
+
+    session.applyNativeSnapshot(
+      const NativePlaybackSnapshot(
+        sessionId: 'session_1',
+        playing: false,
+        playWhenReady: true,
+        processingState: 'buffering',
+        position: Duration.zero,
+        bufferedPosition: Duration.zero,
+        volume: 1,
+        boostGain: 1,
+        channelSwapEnabled: false,
+        transportCommandId: 2,
+      ),
+    );
+    expect(session.effectivePlaying, isTrue);
+
+    session.applyNativeSnapshot(
+      const NativePlaybackSnapshot(
+        sessionId: 'session_1',
+        playing: true,
+        playWhenReady: true,
+        processingState: 'ready',
+        position: Duration.zero,
+        bufferedPosition: Duration.zero,
+        volume: 1,
+        boostGain: 1,
+        channelSwapEnabled: false,
+        transportCommandId: 2,
+      ),
+    );
+    expect(session.pendingPlayingIntent, isNull);
+    expect(session.effectivePlaying, isTrue);
+  });
+
+  test('only the current failed transport command rolls back intent', () {
+    final session = PlaybackSession(
+      id: 'session_1',
+      currentTrackPath: '/audio/one.mp3',
+      loopMode: SessionLoopMode.single,
+      nonSingleLoopMode: SessionLoopMode.folderSequential,
+      volume: 1,
+      createdAt: DateTime(2026),
+      state: PlayerState(true, ProcessingState.ready),
+    );
+    addTearDown(session.dispose);
+
+    session.beginTransportCommand(commandId: 3, playing: false);
+    session.beginTransportCommand(commandId: 4, playing: true);
+
+    expect(session.failTransportCommand(3), isFalse);
+    expect(session.effectivePlaying, isTrue);
+    expect(session.failTransportCommand(4), isTrue);
+    expect(session.effectivePlaying, isTrue);
+  });
+
   test('native progress updates only numeric playback streams', () async {
     final session =
         PlaybackSession(

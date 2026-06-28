@@ -13,6 +13,7 @@ class NativePlaybackBridge(
 ) : MethodChannel.MethodCallHandler, EventChannel.StreamHandler {
     private var events: EventChannel.EventSink? = null
     private var listening = false
+    private var attachedService: NativePlaybackService? = null
     private val listenerId = "flutter"
     private val mainHandler = Handler(Looper.getMainLooper())
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
@@ -24,9 +25,16 @@ class NativePlaybackBridge(
             when (call.method) {
                 NativePlaybackMethods.PREPARE_SESSION -> service?.prepareSession(call.argumentsMap())
                     ?: mapOf("ok" to false, "error" to "Native playback service is not ready.")
-                NativePlaybackMethods.PLAY -> service?.play(call.requiredString("sessionId"))
+                NativePlaybackMethods.PLAY -> service?.play(
+                    call.requiredString("sessionId"),
+                    call.requiredLong("transportCommandId"),
+                    call.argument<Boolean>("exclusive") ?: false
+                )
                     ?: mapOf("ok" to false, "error" to "Native playback service is not ready.")
-                NativePlaybackMethods.PAUSE -> service?.pause(call.requiredString("sessionId"))
+                NativePlaybackMethods.PAUSE -> service?.pause(
+                    call.requiredString("sessionId"),
+                    call.requiredLong("transportCommandId")
+                )
                     ?: mapOf("ok" to false, "error" to "Native playback service is not ready.")
                 NativePlaybackMethods.STOP -> service?.stop(call.requiredString("sessionId"))
                     ?: mapOf("ok" to false, "error" to "Native playback service is not ready.")
@@ -81,7 +89,6 @@ class NativePlaybackBridge(
         } catch (error: IllegalArgumentException) {
             mapOf("ok" to false, "error" to (error.message ?: "Invalid arguments."))
         }
-        publishResponseSnapshot(response)
         result.success(response)
     }
 
@@ -95,7 +102,8 @@ class NativePlaybackBridge(
 
     override fun onCancel(arguments: Any?) {
         listening = false
-        NativePlaybackService.controller()?.removeStateListener(listenerId)
+        attachedService?.removeStateListener(listenerId)
+        attachedService = null
         events = null
     }
 
@@ -116,16 +124,12 @@ class NativePlaybackBridge(
     }
 
     private fun attachEventListenerIfNeeded(service: NativePlaybackService?) {
-        if (service == null) return
+        if (!listening || service == null || attachedService === service) return
+        attachedService?.removeStateListener(listenerId)
+        attachedService = service
         service.addStateListener(listenerId) { snapshot ->
             events?.success(snapshot)
         }
-    }
-
-    private fun publishResponseSnapshot(response: Map<String, Any?>) {
-        val value = response["value"] as? Map<*, *> ?: return
-        if (!value.containsKey("sessionId")) return
-        events?.success(value)
     }
 }
 

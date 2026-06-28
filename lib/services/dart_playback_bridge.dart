@@ -98,6 +98,10 @@ class DartPlaybackBridge implements NativePlaybackBridgeBase {
   Stream<NativePlaybackSnapshot> get snapshots => _snapshots.stream;
 
   @override
+  Stream<NativePlaybackProgressUpdate> get progressUpdates =>
+      const Stream<NativePlaybackProgressUpdate>.empty();
+
+  @override
   bool get supportsDeferredSessionRegistration => false;
 
   @override

@@ -43,9 +43,82 @@ class NativePlaybackSessionStateTest {
 
     @Test
     fun `progress ticker skips paused sessions without playback intent`() {
-        assertEquals(false, shouldPublishProgressSnapshot(false, false))
-        assertEquals(true, shouldPublishProgressSnapshot(true, true))
-        assertEquals(true, shouldPublishProgressSnapshot(false, true))
+        assertEquals(false, shouldIncludeInProgressHeartbeat(false, false))
+        assertEquals(true, shouldIncludeInProgressHeartbeat(true, true))
+        assertEquals(true, shouldIncludeInProgressHeartbeat(false, true))
+    }
+
+    @Test
+    fun `progress anchor extrapolates position using playback speed`() {
+        val normal = progressAnchor(speed = 1f).updateAt(2500L)
+        val faster = progressAnchor(speed = 1.5f).updateAt(2500L)
+
+        assertEquals(2500L, normal?.positionMs)
+        assertEquals(3250L, faster?.positionMs)
+    }
+
+    @Test
+    fun `progress anchor stays fixed while buffering or paused`() {
+        val buffering = progressAnchor(
+            isPlaying = false,
+            playWhenReady = true
+        ).updateAt(5000L)
+        val paused = progressAnchor(
+            isPlaying = false,
+            playWhenReady = false
+        ).updateAt(5000L)
+
+        assertEquals(1000L, buffering?.positionMs)
+        assertNull(paused)
+    }
+
+    @Test
+    fun `progress anchor clamps position and buffer to duration`() {
+        val update = progressAnchor(
+            positionMs = 4500L,
+            bufferedPositionMs = 6000L,
+            durationMs = 5000L
+        ).updateAt(3000L)
+
+        assertEquals(5000L, update?.positionMs)
+        assertEquals(5000L, update?.bufferedPositionMs)
+    }
+
+    @Test
+    fun `progress event only includes sessions with playback intent`() {
+        val event = buildNativePlaybackProgressEvent(
+            listOf(
+                progressAnchor(sessionId = "playing"),
+                progressAnchor(
+                    sessionId = "paused",
+                    isPlaying = false,
+                    playWhenReady = false
+                )
+            ),
+            nowElapsedRealtimeMs = 1500L
+        )
+        val updates = event?.get("updates") as List<*>
+        val update = updates.single() as Map<*, *>
+
+        assertEquals("progress", event["eventType"])
+        assertEquals("playing", update["sessionId"])
+        assertEquals(1500L, update["nativeElapsedRealtimeMs"])
+    }
+
+    @Test
+    fun `progress heartbeat uses screen on and five second screen off cadence`() {
+        assertEquals(
+            true,
+            shouldPublishProgressHeartbeat(false, 6000L, 1000L, 5000L)
+        )
+        assertEquals(
+            false,
+            shouldPublishProgressHeartbeat(false, 5999L, 1000L, 5000L)
+        )
+        assertEquals(
+            true,
+            shouldPublishProgressHeartbeat(true, 1500L, 1000L, 5000L)
+        )
     }
 
     @Test
@@ -129,4 +202,23 @@ class NativePlaybackSessionStateTest {
 
         assertTrue(reached)
     }
+
+    private fun progressAnchor(
+        sessionId: String = "session",
+        positionMs: Long = 1000L,
+        bufferedPositionMs: Long = 4000L,
+        durationMs: Long? = 10000L,
+        speed: Float = 1f,
+        isPlaying: Boolean = true,
+        playWhenReady: Boolean = true
+    ): NativePlaybackProgressAnchor = NativePlaybackProgressAnchor(
+        sessionId = sessionId,
+        positionMs = positionMs,
+        bufferedPositionMs = bufferedPositionMs,
+        durationMs = durationMs,
+        capturedElapsedRealtimeMs = 1000L,
+        speed = speed,
+        isPlaying = isPlaying,
+        playWhenReady = playWhenReady
+    )
 }

@@ -117,6 +117,92 @@ void main() {
     expect(session.state.processingState, ProcessingState.ready);
   });
 
+  test('native progress updates only numeric playback streams', () async {
+    final session =
+        PlaybackSession(
+            id: 'session_1',
+            currentTrackPath: '/audio/one.mp3',
+            loopMode: SessionLoopMode.folderSequential,
+            nonSingleLoopMode: SessionLoopMode.folderSequential,
+            volume: 0.7,
+            createdAt: DateTime(2026),
+            state: PlayerState(true, ProcessingState.ready),
+          )
+          ..loadedPath = '/audio/one.mp3'
+          ..audioEffects = const AudioEffectsState(skipSilenceEnabled: true)
+          ..currentQueueIndex = 4;
+    addTearDown(session.dispose);
+
+    final positions = <Duration>[];
+    final durations = <Duration?>[];
+    final buffers = <Duration>[];
+    final states = <PlayerState>[];
+    session.positionStream.listen(positions.add);
+    session.durationStream.listen(durations.add);
+    session.bufferedPositionStream.listen(buffers.add);
+    session.stateStream.listen(states.add);
+
+    session.applyNativeProgress(
+      const NativePlaybackProgressUpdate(
+        sessionId: 'session_1',
+        position: Duration(seconds: 9),
+        bufferedPosition: Duration(seconds: 15),
+        duration: Duration(minutes: 2),
+        nativeElapsedRealtimeMs: 9000,
+      ),
+    );
+    await Future<void>.delayed(Duration.zero);
+
+    expect(positions, [const Duration(seconds: 9)]);
+    expect(durations, [const Duration(minutes: 2)]);
+    expect(buffers, [const Duration(seconds: 15)]);
+    expect(states, isEmpty);
+    expect(session.state.playing, isTrue);
+    expect(session.currentTrackPath, '/audio/one.mp3');
+    expect(session.loadedPath, '/audio/one.mp3');
+    expect(session.currentQueueIndex, 4);
+    expect(session.audioEffects.skipSilenceEnabled, isTrue);
+  });
+
+  test('full snapshot recalibrates position after progress heartbeat', () {
+    final session = PlaybackSession(
+      id: 'session_1',
+      currentTrackPath: '/audio/one.mp3',
+      loopMode: SessionLoopMode.single,
+      nonSingleLoopMode: SessionLoopMode.folderSequential,
+      volume: 1,
+      createdAt: DateTime(2026),
+      state: PlayerState(true, ProcessingState.ready),
+    );
+    addTearDown(session.dispose);
+
+    session.applyNativeProgress(
+      const NativePlaybackProgressUpdate(
+        sessionId: 'session_1',
+        position: Duration(seconds: 10),
+        bufferedPosition: Duration(seconds: 20),
+        nativeElapsedRealtimeMs: 10000,
+      ),
+    );
+    session.applyNativeSnapshot(
+      const NativePlaybackSnapshot(
+        sessionId: 'session_1',
+        playing: false,
+        playWhenReady: false,
+        processingState: 'ready',
+        position: Duration(seconds: 8),
+        bufferedPosition: Duration(seconds: 18),
+        volume: 1,
+        boostGain: 1,
+        channelSwapEnabled: false,
+      ),
+    );
+
+    expect(session.position, const Duration(seconds: 8));
+    expect(session.bufferedPosition, const Duration(seconds: 18));
+    expect(session.state.playing, isFalse);
+  });
+
   test('playback errors are stored and cleared by authoritative snapshots', () {
     final session = PlaybackSession(
       id: 'session_1',

@@ -101,6 +101,13 @@ class PlaybackSessionService {
     return true;
   }
 
+  bool applyNativeProgress(NativePlaybackProgressUpdate progress) {
+    final session = sessions[progress.sessionId];
+    if (session == null) return false;
+    session.applyNativeProgress(progress);
+    return true;
+  }
+
   void syncSlice({
     required List<PlaybackSession> activeSessions,
     required int playingSessionCount,

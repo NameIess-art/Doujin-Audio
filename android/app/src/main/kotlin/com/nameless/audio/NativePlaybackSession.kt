@@ -5,6 +5,7 @@ import android.media.audiofx.LoudnessEnhancer
 import android.net.Uri
 import android.media.audiofx.DynamicsProcessing
 import android.os.Build
+import android.os.SystemClock
 import androidx.media3.common.audio.AudioProcessor
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -16,6 +17,7 @@ import androidx.media3.exoplayer.audio.ChannelMappingAudioProcessor
 import androidx.media3.exoplayer.audio.SilenceSkippingAudioProcessor
 import kotlin.math.abs
 import kotlin.math.roundToInt
+import kotlin.math.roundToLong
 
 internal data class NativeMediaItemDescriptor(
     val path: String,
@@ -54,10 +56,73 @@ internal fun shouldSyncAudioSessionState(
     audioSessionId != C.AUDIO_SESSION_ID_UNSET &&
         audioSessionId != lastSyncedAudioSessionId
 
-internal fun shouldPublishProgressSnapshot(
+internal fun shouldIncludeInProgressHeartbeat(
     isPlaying: Boolean,
     playWhenReady: Boolean
 ): Boolean = isPlaying || playWhenReady
+
+internal data class NativePlaybackProgressUpdate(
+    val sessionId: String,
+    val positionMs: Long,
+    val bufferedPositionMs: Long,
+    val durationMs: Long?,
+    val nativeElapsedRealtimeMs: Long
+) {
+    fun toMap(): Map<String, Any?> = mapOf(
+        "sessionId" to sessionId,
+        "positionMs" to positionMs,
+        "bufferedPositionMs" to bufferedPositionMs,
+        "durationMs" to durationMs,
+        "nativeElapsedRealtimeMs" to nativeElapsedRealtimeMs
+    )
+}
+
+internal data class NativePlaybackProgressAnchor(
+    val sessionId: String,
+    val positionMs: Long,
+    val bufferedPositionMs: Long,
+    val durationMs: Long?,
+    val capturedElapsedRealtimeMs: Long,
+    val speed: Float,
+    val isPlaying: Boolean,
+    val playWhenReady: Boolean
+) {
+    fun updateAt(nowElapsedRealtimeMs: Long): NativePlaybackProgressUpdate? {
+        if (!shouldIncludeInProgressHeartbeat(isPlaying, playWhenReady)) return null
+        val elapsedMs = (nowElapsedRealtimeMs - capturedElapsedRealtimeMs).coerceAtLeast(0L)
+        val advancedPositionMs = if (isPlaying) {
+            positionMs + (elapsedMs * speed.coerceAtLeast(0f)).roundToLong()
+        } else {
+            positionMs
+        }
+        val clampedPositionMs = durationMs?.let { duration ->
+            advancedPositionMs.coerceIn(0L, duration.coerceAtLeast(0L))
+        } ?: advancedPositionMs.coerceAtLeast(0L)
+        val clampedBufferedPositionMs = durationMs?.let { duration ->
+            bufferedPositionMs.coerceIn(0L, duration.coerceAtLeast(0L))
+        } ?: bufferedPositionMs.coerceAtLeast(0L)
+        return NativePlaybackProgressUpdate(
+            sessionId = sessionId,
+            positionMs = clampedPositionMs,
+            bufferedPositionMs = clampedBufferedPositionMs,
+            durationMs = durationMs,
+            nativeElapsedRealtimeMs = nowElapsedRealtimeMs
+        )
+    }
+}
+
+internal fun buildNativePlaybackProgressEvent(
+    anchors: List<NativePlaybackProgressAnchor>,
+    nowElapsedRealtimeMs: Long
+): Map<String, Any?>? {
+    val updates = anchors.mapNotNull { it.updateAt(nowElapsedRealtimeMs)?.toMap() }
+    if (updates.isEmpty()) return null
+    return mapOf(
+        "eventType" to "progress",
+        "nativeElapsedRealtimeMs" to nowElapsedRealtimeMs,
+        "updates" to updates
+    )
+}
 
 internal class NativePlaybackSession(
     val sessionId: String,
@@ -111,6 +176,17 @@ internal class NativePlaybackSession(
     var lastIsPlaying: Boolean = false
     var lastPlayWhenReady: Boolean = false
     var lastPlaybackState: String = "idle"
+    @Volatile
+    private var progressAnchor = NativePlaybackProgressAnchor(
+        sessionId = sessionId,
+        positionMs = 0L,
+        bufferedPositionMs = 0L,
+        durationMs = null,
+        capturedElapsedRealtimeMs = SystemClock.elapsedRealtime(),
+        speed = 1f,
+        isPlaying = false,
+        playWhenReady = false
+    )
 
     fun hasPlayer(): Boolean = _player != null
 
@@ -523,6 +599,16 @@ internal class NativePlaybackSession(
             lastPlaybackState = p.playbackStateName()
             syncCurrentMediaItemFromPlayer()
         }
+        progressAnchor = NativePlaybackProgressAnchor(
+            sessionId = sessionId,
+            positionMs = lastPositionMs,
+            bufferedPositionMs = lastBufferedPositionMs,
+            durationMs = lastDurationMs,
+            capturedElapsedRealtimeMs = SystemClock.elapsedRealtime(),
+            speed = speed,
+            isPlaying = lastIsPlaying,
+            playWhenReady = lastPlayWhenReady
+        )
 
         return mapOf(
             "sessionId" to sessionId,
@@ -547,6 +633,8 @@ internal class NativePlaybackSession(
             "error" to p?.playerError?.message
         )
     }
+
+    fun progressAnchorSnapshot(): NativePlaybackProgressAnchor = progressAnchor
 
     override fun currentAudioSessionId(): Int {
         return playerOrNull()?.audioSessionId ?: C.AUDIO_SESSION_ID_UNSET

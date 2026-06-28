@@ -34,6 +34,14 @@ class NativePlaybackSessionStateTest {
     }
 
     @Test
+    fun `audio effects sync only when audio session id changes`() {
+        assertEquals(true, shouldSyncAudioSessionState(C.AUDIO_SESSION_ID_UNSET, 42))
+        assertEquals(false, shouldSyncAudioSessionState(42, 42))
+        assertEquals(true, shouldSyncAudioSessionState(42, 84))
+        assertEquals(false, shouldSyncAudioSessionState(42, C.AUDIO_SESSION_ID_UNSET))
+    }
+
+    @Test
     fun `noise reduction curve stays conservative for ASMR details`() {
         assertEquals(NOISE_REDUCTION_LOW_GAIN_DB, noiseReductionGainFor(60), 0.001f)
         assertEquals(0f, noiseReductionGainFor(1000), 0.001f)

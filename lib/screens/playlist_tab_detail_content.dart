@@ -430,20 +430,16 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
             ),
           ),
           const SizedBox(height: 8),
-          AnimatedSize(
-            duration: const Duration(milliseconds: 180),
-            curve: Curves.easeOutCubic,
-            alignment: Alignment.topCenter,
-            child: widget.subtitleEnabled && !_segmentPanelExpanded
-                ? Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: _SessionSubtitlePanel(
-                      session: session,
-                      provider: provider,
-                    ),
-                  )
-                : const SizedBox.shrink(),
-          ),
+          if (widget.subtitleEnabled && !_segmentPanelExpanded)
+            RepaintBoundary(
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: _SessionSubtitlePanel(
+                  session: session,
+                  provider: provider,
+                ),
+              ),
+            ),
           RepaintBoundary(
             child: _ProgressBar(
               key: ValueKey(session.id),

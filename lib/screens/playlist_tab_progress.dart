@@ -33,6 +33,7 @@ class _ProgressBarState extends State<_ProgressBar> {
   List<TimeSegmentLabel> _longPressLabels = const <TimeSegmentLabel>[];
   double? _longPressDx;
   double? _longPressTooltipLeft;
+  int _lastPositionUpdateMs = 0;
 
   @override
   void initState() {
@@ -80,6 +81,12 @@ class _ProgressBarState extends State<_ProgressBar> {
         _streamPosition = position;
         return;
       }
+      final now = DateTime.now().millisecondsSinceEpoch;
+      if (now - _lastPositionUpdateMs < 32) {
+        _streamPosition = position;
+        return;
+      }
+      _lastPositionUpdateMs = now;
       setState(() {
         _streamPosition = position;
       });

@@ -42,6 +42,13 @@ class NativePlaybackSessionStateTest {
     }
 
     @Test
+    fun `progress ticker skips paused sessions without playback intent`() {
+        assertEquals(false, shouldPublishProgressSnapshot(false, false))
+        assertEquals(true, shouldPublishProgressSnapshot(true, true))
+        assertEquals(true, shouldPublishProgressSnapshot(false, true))
+    }
+
+    @Test
     fun `noise reduction curve stays conservative for ASMR details`() {
         assertEquals(NOISE_REDUCTION_LOW_GAIN_DB, noiseReductionGainFor(60), 0.001f)
         assertEquals(0f, noiseReductionGainFor(1000), 0.001f)

@@ -268,7 +268,7 @@ class NativePlaybackService : MediaSessionService() {
             
             // Throttle UI updates over the MethodChannel when screen is off to save battery
             if (isScreenOn || now - lastPublishedTimeMs >= 5000L) {
-                publishAllSessionStates()
+                publishProgressSessionStates()
                 lastPublishedTimeMs = now
             }
             
@@ -1660,6 +1660,15 @@ class NativePlaybackService : MediaSessionService() {
 
     private fun publishAllSessionStates() {
         sessions.keys.toList().forEach { publishSessionState(it) }
+    }
+
+    private fun publishProgressSessionStates() {
+        sessions.values.forEach { session ->
+            val player = session.playerOrNull() ?: return@forEach
+            if (shouldPublishProgressSnapshot(player.isPlaying, player.playWhenReady)) {
+                publishSessionState(session.sessionId)
+            }
+        }
     }
 
     private fun ensureTicker() {

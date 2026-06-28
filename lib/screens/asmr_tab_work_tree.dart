@@ -104,6 +104,7 @@ class _AsmrWorkTreeCardState extends State<_AsmrWorkTreeCard> {
       onTertiaryAction: () => unawaited(_openDownloadPage(context)),
       onSecondaryAction: () => unawaited(_toggleFavorite(context)),
       onRemove: () => unawaited(showAsmrWorkDetailSheet(context, widget.work)),
+      onWillReveal: _expansionController.collapse,
       child: Card(
         margin: EdgeInsets.zero,
         clipBehavior: Clip.hardEdge,

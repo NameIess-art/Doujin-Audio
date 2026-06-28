@@ -471,6 +471,7 @@ class _ActiveSessionProgressStripState
   Duration _position = Duration.zero;
   Duration? _duration;
   bool _positionDirtyWhileInteracting = false;
+  int _lastPositionUpdateMs = 0;
 
   @override
   void initState() {
@@ -511,6 +512,9 @@ class _ActiveSessionProgressStripState
         _positionDirtyWhileInteracting = true;
         return;
       }
+      final now = DateTime.now().millisecondsSinceEpoch;
+      if (now - _lastPositionUpdateMs < 32) return;
+      _lastPositionUpdateMs = now;
       if (mounted) setState(() {});
     });
   }

@@ -1,3 +1,17 @@
+# Nameless Audio v0.12.1
+
+## 体验与性能
+
+- 修复了有音频播放时，由于高频触发重绘导致播放详细页的文字滚动（MarqueeText）和字幕显示严重卡顿的问题。
+- 大幅降低了播放页的 UI 线程 CPU 占用，确保了应用的丝滑体验。
+
+## 发布资产
+
+- `NamelessAudio-android-arm64-v0.12.1.apk`
+- `NamelessAudio-android-arm64-v0.12.1.apk.sha256`
+- `NamelessAudio-windows-x64-v0.12.1.zip`
+- `NamelessAudio-windows-x64-v0.12.1.zip.sha256`
+
 # Nameless Audio v0.12.0
 
 ## ASMR.ONE 播放缓存

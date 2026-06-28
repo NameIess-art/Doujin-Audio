@@ -54,6 +54,11 @@ internal fun shouldSyncAudioSessionState(
     audioSessionId != C.AUDIO_SESSION_ID_UNSET &&
         audioSessionId != lastSyncedAudioSessionId
 
+internal fun shouldPublishProgressSnapshot(
+    isPlaying: Boolean,
+    playWhenReady: Boolean
+): Boolean = isPlaying || playWhenReady
+
 internal class NativePlaybackSession(
     val sessionId: String,
     private val createPlayer: (String, Array<AudioProcessor>) -> ExoPlayer,

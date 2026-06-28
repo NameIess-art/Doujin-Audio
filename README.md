@@ -2,9 +2,9 @@
 
 Nameless Audio 是一款面向 ASMR、语音作品和大体量本地媒体库的跨平台播放器，使用 Flutter、Android 原生 Media3 / ExoPlayer 与 Windows libmpv 混合实现。
 
-当前版本：`0.12.0+1200`
+当前版本：`0.12.1+1201`
 
-最新发布页：[v0.12.0](https://github.com/NameIess-art/nameless-audio/releases/tag/v0.12.0)
+最新发布页：[v0.12.1](https://github.com/NameIess-art/nameless-audio/releases/tag/v0.12.1)
 
 [MIT License](LICENSE) · [隐私说明](PRIVACY.md) · [发行质量说明](docs/release-quality.md)
 
@@ -12,8 +12,8 @@ Nameless Audio 是一款面向 ASMR、语音作品和大体量本地媒体库的
 
 | 平台 | 发布资产 | 说明 |
 |---|---|---|
-| Android arm64-v8a | `NamelessAudio-android-arm64-v0.12.0.apk` | 适用于大多数 64 位 Android 手机 |
-| Windows x64 | `NamelessAudio-windows-x64-v0.12.0.zip` | 解压完整 ZIP 后运行 `nameless_audio.exe` |
+| Android arm64-v8a | `NamelessAudio-android-arm64-v0.12.1.apk` | 适用于大多数 64 位 Android 手机 |
+| Windows x64 | `NamelessAudio-windows-x64-v0.12.1.zip` | 解压完整 ZIP 后运行 `nameless_audio.exe` |
 
 Windows ZIP 包含应用运行所需的完整 Flutter 运行时、`libmpv-2.dll`、FFmpeg 和 FFprobe。不要只复制 EXE。
 
@@ -92,10 +92,10 @@ Windows ZIP 包含应用运行所需的完整 Flutter 运行时、`libmpv-2.dll`
 每个更新资产必须同时发布同名校验文件：
 
 ```text
-NamelessAudio-android-arm64-v0.12.0.apk
-NamelessAudio-android-arm64-v0.12.0.apk.sha256
-NamelessAudio-windows-x64-v0.12.0.zip
-NamelessAudio-windows-x64-v0.12.0.zip.sha256
+NamelessAudio-android-arm64-v0.12.1.apk
+NamelessAudio-android-arm64-v0.12.1.apk.sha256
+NamelessAudio-windows-x64-v0.12.1.zip
+NamelessAudio-windows-x64-v0.12.1.zip.sha256
 ```
 
 ## 支持格式
@@ -148,7 +148,7 @@ build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
 
 ```powershell
 flutter build windows --release
-Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath dist\NamelessAudio-windows-x64-v0.12.0.zip -Force
+Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath dist\NamelessAudio-windows-x64-v0.12.1.zip -Force
 ```
 
 ## 发布流程
@@ -161,10 +161,15 @@ Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath dist\
 4. 为两端资产生成 `.sha256` 并上传到同一个 GitHub Release。
 
 ```powershell
-dart run tool/verify_release.dart --tag v0.12.0
-git tag v0.12.0
-git push origin main v0.12.0
+dart run tool/verify_release.dart --tag v0.12.1
+git tag v0.12.1
+git push origin main v0.12.1
 ```
+
+## v0.12.1 重点变更
+
+- 修复了有音频播放时，播放详细页由于高频触发重绘导致文字滚动（MarqueeText）和字幕显示严重卡顿的问题，并大幅降低了相关的 UI 线程 CPU 占用。
+- 全面清除了开发过程中的冗余临时文件。
 
 ## v0.12.0 重点变更
 

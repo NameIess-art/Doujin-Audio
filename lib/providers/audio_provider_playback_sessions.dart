@@ -144,29 +144,17 @@ extension AudioProviderPlaybackSessions on AudioProvider {
         position: position,
         syncNotification: false,
       );
-      _scheduleFocusedNotificationRefresh(session.id, immediate: changed);
+      if (changed) {
+        _scheduleFocusedNotificationRefresh(session.id, immediate: true);
+      }
     });
     session.subscriptions.add(positionSub);
 
     final durationSub = session.durationStream.listen((_) {
       if (!_sessions.containsKey(session.id)) return;
       _scheduleSaveSessionState(delay: const Duration(milliseconds: 1500));
-      if (!_isNotificationFocusedSessionId(session.id)) return;
-      _scheduleFocusedNotificationRefresh(session.id, immediate: true);
     });
     session.subscriptions.add(durationSub);
-
-    final bufferedPositionSub = session.bufferedPositionStream.listen((_) {
-      if (!_sessions.containsKey(session.id)) return;
-      if (!session.state.playing &&
-          !session.isLoading &&
-          !session.isPlaybackStarting) {
-        return;
-      }
-      if (!_isNotificationFocusedSessionId(session.id)) return;
-      _scheduleFocusedNotificationRefresh(session.id);
-    });
-    session.subscriptions.add(bufferedPositionSub);
   }
 
   Future<void> _prepareAndPlay(

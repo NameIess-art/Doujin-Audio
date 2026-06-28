@@ -21,19 +21,12 @@ class _ProgressBar extends StatefulWidget {
 }
 
 class _ProgressBarState extends State<_ProgressBar> {
-  static const Duration _smoothTickInterval = Duration(milliseconds: 333);
-
-  StreamSubscription<PlayerState>? _stateSub;
   StreamSubscription<Duration>? _positionSub;
   StreamSubscription<Duration?>? _durationSub;
   StreamSubscription<Duration>? _bufferedSub;
-  Timer? _smoothTimer;
-  PlayerState _playerState = PlayerState(false, ProcessingState.idle);
   Duration _streamPosition = Duration.zero;
   Duration? _duration;
   Duration _buffered = Duration.zero;
-  Duration _lastReportedPosition = Duration.zero;
-  DateTime _lastReportTime = DateTime.now();
   bool _isDragging = false;
   double? _dragValueMs;
   bool _tickerModeEnabled = true;
@@ -66,46 +59,29 @@ class _ProgressBarState extends State<_ProgressBar> {
     if (_tickerModeEnabled) {
       _syncFromSession();
     }
-    _syncSmoothTimer();
   }
 
   @override
   void dispose() {
-    _smoothTimer?.cancel();
     _unbindSession();
     super.dispose();
   }
 
   void _syncFromSession() {
-    _playerState = widget.session.state;
     _streamPosition = widget.session.position;
     _duration = widget.session.duration;
     _buffered = widget.session.bufferedPosition;
-    _lastReportedPosition = _streamPosition;
-    _lastReportTime = DateTime.now();
-    _syncSmoothTimer();
   }
 
   void _bindSession() {
-    _stateSub = widget.session.stateStream.listen((state) {
-      if (_playerState == state) return;
-      setState(() {
-        _playerState = state;
-      });
-      _syncSmoothTimer();
-    });
     _positionSub = widget.session.positionStream.listen((position) {
       if (_streamPosition == position) return;
       if (!_tickerModeEnabled) {
         _streamPosition = position;
-        _lastReportedPosition = position;
-        _lastReportTime = DateTime.now();
         return;
       }
       setState(() {
         _streamPosition = position;
-        _lastReportedPosition = position;
-        _lastReportTime = DateTime.now();
       });
     });
     _durationSub = widget.session.durationStream.listen((duration) {
@@ -121,56 +97,15 @@ class _ProgressBarState extends State<_ProgressBar> {
         _buffered = buffered;
       });
     });
-    _syncSmoothTimer();
   }
 
   void _unbindSession() {
-    unawaited(_stateSub?.cancel());
     unawaited(_positionSub?.cancel());
     unawaited(_durationSub?.cancel());
     unawaited(_bufferedSub?.cancel());
-    _stateSub = null;
     _positionSub = null;
     _durationSub = null;
     _bufferedSub = null;
-    _smoothTimer?.cancel();
-    _smoothTimer = null;
-  }
-
-  void _syncSmoothTimer() {
-    final shouldTick =
-        _tickerModeEnabled &&
-        _playerState.playing &&
-        !_isDragging &&
-        (_duration?.inMilliseconds ?? 0) > 0;
-    if (!shouldTick) {
-      _smoothTimer?.cancel();
-      _smoothTimer = null;
-      return;
-    }
-    if (_smoothTimer != null) return;
-    _smoothTimer = Timer.periodic(_smoothTickInterval, (_) {
-      if (!mounted || _isDragging || !_playerState.playing) return;
-      setState(() {});
-    });
-  }
-
-  Duration _getSmoothPosition(Duration streamPosition, bool isPlaying) {
-    if (!isPlaying) {
-      _lastReportedPosition = streamPosition;
-      _lastReportTime = DateTime.now();
-      return streamPosition;
-    }
-
-    final now = DateTime.now();
-    if (streamPosition != _lastReportedPosition) {
-      _lastReportedPosition = streamPosition;
-      _lastReportTime = now;
-      return streamPosition;
-    }
-
-    final diff = now.difference(_lastReportTime);
-    return streamPosition + diff;
   }
 
   @override
@@ -178,7 +113,7 @@ class _ProgressBarState extends State<_ProgressBar> {
     final duration = _duration;
     final hasKnownDuration = duration != null;
     final effectiveDuration = duration ?? Duration.zero;
-    var position = _getSmoothPosition(_streamPosition, _playerState.playing);
+    var position = _streamPosition;
     if (hasKnownDuration && position > effectiveDuration) {
       position = effectiveDuration;
     }
@@ -288,7 +223,6 @@ class _ProgressBarState extends State<_ProgressBar> {
                                   maxMillis,
                                   overlayLabels,
                                 );
-                                _syncSmoothTimer();
                               },
                         onChanged: !canSeek
                             ? null
@@ -313,7 +247,6 @@ class _ProgressBarState extends State<_ProgressBar> {
                                   _dragValueMs = null;
                                 });
                                 _clearLongPressLabels();
-                                _syncSmoothTimer();
                                 final position = Duration(
                                   milliseconds: value.round(),
                                 );

@@ -20,6 +20,7 @@ import '../theme/theme_provider.dart';
 import '../widgets/app_feedback.dart';
 import '../widgets/confirm_action_dialog.dart';
 import '../widgets/mobile_overlay_inset.dart';
+import '../widgets/scroll_activity_gate.dart';
 import '../widgets/subtitle_window_visual.dart';
 import '../widgets/top_page_header.dart';
 import '../widgets/unified_dropdown.dart';
@@ -205,8 +206,8 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
       CoverImageResolution.original: i18n.tr('cover_image_resolution_original'),
     };
 
-    return Stack(
-      children: [
+    return ScrollActivityGate(
+      child: Stack(children: [
         Positioned(
           top: _headerHeight - 80,
           bottom: 0,
@@ -1276,7 +1277,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
             bottomSpacing: 16,
           ),
         ),
-      ],
+      ]),
     );
   }
 }

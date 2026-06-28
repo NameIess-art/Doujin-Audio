@@ -466,29 +466,63 @@ class _ActiveSessionProgressStrip extends StatefulWidget {
 
 class _ActiveSessionProgressStripState
     extends State<_ActiveSessionProgressStrip> {
+  StreamSubscription<Duration>? _positionSub;
   StreamSubscription<Duration?>? _durationSub;
+  Duration _position = Duration.zero;
   Duration? _duration;
+  bool _positionDirtyWhileInteracting = false;
 
   @override
   void initState() {
     super.initState();
+    _position = widget.session.position;
     _duration = widget.session.duration;
+    _bindPosition();
     _bindDuration();
+    UiInteractionCoordinator.instance.addListener(_handleInteractionChanged);
   }
 
   @override
   void didUpdateWidget(covariant _ActiveSessionProgressStrip oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.session == widget.session) return;
+    unawaited(_positionSub?.cancel());
     unawaited(_durationSub?.cancel());
+    _position = widget.session.position;
     _duration = widget.session.duration;
+    _positionDirtyWhileInteracting = false;
+    _bindPosition();
     _bindDuration();
   }
 
   @override
   void dispose() {
+    UiInteractionCoordinator.instance.removeListener(_handleInteractionChanged);
+    unawaited(_positionSub?.cancel());
     unawaited(_durationSub?.cancel());
     super.dispose();
+  }
+
+  void _bindPosition() {
+    _positionSub = widget.session.positionStream.listen((position) {
+      if (_position == position) return;
+      _position = position;
+      if (UiInteractionCoordinator.instance.isInteracting) {
+        _positionDirtyWhileInteracting = true;
+        return;
+      }
+      if (mounted) setState(() {});
+    });
+  }
+
+  void _handleInteractionChanged() {
+    if (!mounted ||
+        UiInteractionCoordinator.instance.isInteracting ||
+        !_positionDirtyWhileInteracting) {
+      return;
+    }
+    _positionDirtyWhileInteracting = false;
+    setState(() {});
   }
 
   void _bindDuration() {
@@ -504,67 +538,62 @@ class _ActiveSessionProgressStripState
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    return RepaintBoundary(
-      child: StreamBuilder<Duration>(
-        stream: widget.session.positionStream,
-        initialData: widget.session.position,
-        builder: (context, posSnapshot) {
-          final pos = posSnapshot.data ?? widget.session.position;
-          final dur = _duration;
-          if (dur == null || dur.inMilliseconds <= 0) {
-            return const SizedBox(height: 3);
-          }
-          final fraction = pos.inMilliseconds / dur.inMilliseconds;
-          return Padding(
-            padding: const EdgeInsets.only(top: 8),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(3),
-              child: SizedBox(
-                height: 3,
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final barWidth = constraints.maxWidth;
-                    final fillWidth = (barWidth * fraction.clamp(0.0, 1.0))
-                        .roundToDouble();
-                    return Stack(
-                      children: [
-                        Positioned.fill(
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              color: cs.surfaceContainerHighest.withValues(
-                                alpha: 0.6,
-                              ),
-                            ),
-                          ),
+    return RepaintBoundary(child: _buildProgressStrip(cs));
+  }
+
+  Widget _buildProgressStrip(ColorScheme cs) {
+    final duration = _duration;
+    if (duration == null || duration.inMilliseconds <= 0) {
+      return const SizedBox(height: 3);
+    }
+    final fraction = _position.inMilliseconds / duration.inMilliseconds;
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(3),
+        child: SizedBox(
+          height: 3,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final barWidth = constraints.maxWidth;
+              final fillWidth = (barWidth * fraction.clamp(0.0, 1.0))
+                  .roundToDouble();
+              return Stack(
+                children: [
+                  Positioned.fill(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: cs.surfaceContainerHighest.withValues(
+                          alpha: 0.6,
                         ),
-                        Positioned(
-                          left: 0,
-                          top: 0,
-                          bottom: 0,
-                          width: fillWidth,
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: [
-                                  cs.primary,
-                                  cs.primary.withValues(alpha: 0.82),
-                                ],
-                              ),
-                              borderRadius: const BorderRadius.only(
-                                topRight: Radius.circular(3),
-                                bottomRight: Radius.circular(3),
-                              ),
-                            ),
-                          ),
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    left: 0,
+                    top: 0,
+                    bottom: 0,
+                    width: fillWidth,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            cs.primary,
+                            cs.primary.withValues(alpha: 0.82),
+                          ],
                         ),
-                      ],
-                    );
-                  },
-                ),
-              ),
-            ),
-          );
-        },
+                        borderRadius: const BorderRadius.only(
+                          topRight: Radius.circular(3),
+                          bottomRight: Radius.circular(3),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
       ),
     );
   }

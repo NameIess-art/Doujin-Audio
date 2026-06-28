@@ -47,6 +47,13 @@ internal const val VOLUME_NORMALIZATION_OUTPUT_GAIN_DB = 0f
 internal const val STRICT_SKIP_SILENCE_MIN_DURATION_US = 900_000L
 internal const val STRICT_SKIP_SILENCE_THRESHOLD_LEVEL: Short = 4
 
+internal fun shouldSyncAudioSessionState(
+    lastSyncedAudioSessionId: Int,
+    audioSessionId: Int
+): Boolean =
+    audioSessionId != C.AUDIO_SESSION_ID_UNSET &&
+        audioSessionId != lastSyncedAudioSessionId
+
 internal class NativePlaybackSession(
     val sessionId: String,
     private val createPlayer: (String, Array<AudioProcessor>) -> ExoPlayer,
@@ -70,6 +77,7 @@ internal class NativePlaybackSession(
     private var equalizerCreateFailed = false
     private var dynamicsProcessing: android.media.audiofx.DynamicsProcessing? = null
     private var dynamicsProcessingSessionId: Int = C.AUDIO_SESSION_ID_UNSET
+    private var lastSyncedAudioSessionId: Int = C.AUDIO_SESSION_ID_UNSET
     private var _player: ExoPlayer? = null
     var lastUsedMs: Long = System.currentTimeMillis()
     var path: String? = null
@@ -157,6 +165,7 @@ internal class NativePlaybackSession(
         releaseLoudnessEnhancer()
         releaseEqualizer()
         releaseDynamicsProcessing()
+        lastSyncedAudioSessionId = C.AUDIO_SESSION_ID_UNSET
         _player = null
     }
 
@@ -295,6 +304,8 @@ internal class NativePlaybackSession(
     private fun isPanningActive(): Boolean = kotlin.math.abs(panning) >= 0.001f
 
     fun onAudioSessionIdChanged(audioSessionId: Int) {
+        if (!shouldSyncAudioSessionState(lastSyncedAudioSessionId, audioSessionId)) return
+        lastSyncedAudioSessionId = audioSessionId
         syncLoudnessEnhancer(audioSessionId)
         syncEqualizer(audioSessionId)
         syncDynamicsProcessing(audioSessionId)
@@ -658,6 +669,7 @@ internal class NativePlaybackSession(
         releaseLoudnessEnhancer()
         releaseEqualizer()
         releaseDynamicsProcessing()
+        lastSyncedAudioSessionId = C.AUDIO_SESSION_ID_UNSET
     }
 
     private fun audioEffectsSnapshot(): Map<String, Any?> {

@@ -458,6 +458,7 @@ class _TrackNodeWidget extends ConsumerWidget {
     }
 
     return SwipeRevealCard(
+      color: cs.surfaceContainerLow,
       shape: cardShape,
       actionLabel: i18n.tr('remove'),
       removeTooltip: i18n.tr('remove_audio'),

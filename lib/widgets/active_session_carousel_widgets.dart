@@ -163,6 +163,10 @@ class _ActiveSessionCard extends ConsumerWidget {
     MusicTrack? currentTrack,
     String displayName,
   ) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
+    final activeColor = currentTrack?.remoteMetadataKind == 'asmr.one' ? asmrBlue : cs.primary;
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(10, 5, 8, 5),
       child: Row(
@@ -186,7 +190,10 @@ class _ActiveSessionCard extends ConsumerWidget {
                   displayName: displayName,
                   playbackError: view.error,
                 ),
-                _ActiveSessionProgressStrip(session: session),
+                _ActiveSessionProgressStrip(
+                  session: session,
+                  activeColor: activeColor,
+                ),
               ],
             ),
           ),
@@ -199,6 +206,7 @@ class _ActiveSessionCard extends ConsumerWidget {
                 isPlaying: isPlaying,
                 isLoading: view.loading,
                 enabled: view.trackPath.isNotEmpty && !view.loading,
+                activeColor: activeColor,
                 onPressed: () {
                   AppInteractionFeedback.trigger(
                     AppInteractionFeedbackType.confirmation,
@@ -222,7 +230,7 @@ class _ActiveSessionCard extends ConsumerWidget {
                           Icon(
                             Icons.subtitles_rounded,
                             size: 10,
-                            color: cs.primary,
+                            color: activeColor,
                           ),
                         if (showSub && view.channelSwapEnabled)
                           const SizedBox(width: 2),
@@ -230,7 +238,7 @@ class _ActiveSessionCard extends ConsumerWidget {
                           Icon(
                             Icons.swap_horiz_rounded,
                             size: 10,
-                            color: cs.primary,
+                            color: activeColor,
                           ),
                       ],
                     ),
@@ -250,12 +258,14 @@ class _ActiveSessionPlayPauseButton extends StatelessWidget {
     required this.isPlaying,
     required this.isLoading,
     required this.enabled,
+    required this.activeColor,
     required this.onPressed,
   });
 
   final bool isPlaying;
   final bool isLoading;
   final bool enabled;
+  final Color activeColor;
   final VoidCallback onPressed;
 
   @override
@@ -291,7 +301,7 @@ class _ActiveSessionPlayPauseButton extends StatelessWidget {
                       height: 26,
                       child: CircularProgressIndicator(
                         strokeWidth: 2.5,
-                        color: cs.primary,
+                        color: activeColor,
                       ),
                     )
                   : Icon(
@@ -300,7 +310,7 @@ class _ActiveSessionPlayPauseButton extends StatelessWidget {
                           : Icons.play_arrow_rounded,
                       key: ValueKey(isPlaying),
                       size: 38,
-                      color: isPlaying ? cs.primary : cs.onSurface,
+                      color: isPlaying ? activeColor : cs.onSurface,
                     ),
             ),
           ),
@@ -454,9 +464,13 @@ class _ActiveSessionTitleSubtitleState
 }
 
 class _ActiveSessionProgressStrip extends StatefulWidget {
-  const _ActiveSessionProgressStrip({required this.session});
+  const _ActiveSessionProgressStrip({
+    required this.session,
+    required this.activeColor,
+  });
 
   final PlaybackSession session;
+  final Color activeColor;
 
   @override
   State<_ActiveSessionProgressStrip> createState() =>
@@ -581,8 +595,8 @@ class _ActiveSessionProgressStripState
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
                           colors: [
-                            cs.primary,
-                            cs.primary.withValues(alpha: 0.82),
+                            widget.activeColor,
+                            widget.activeColor.withValues(alpha: 0.82),
                           ],
                         ),
                         borderRadius: const BorderRadius.only(
@@ -627,6 +641,13 @@ class _ActiveSessionCover extends ConsumerWidget {
       ),
     );
 
+    final bottomNavStyle = ref.watch(
+      settingsStateProvider.select(
+        (s) => s.valueOrNull?.bottomNavigationStyle ?? BottomNavigationStyle.capsule,
+      ),
+    );
+    final borderRadius = bottomNavStyle == BottomNavigationStyle.capsule ? 16.0 : 10.0;
+
     Widget fallback({bool hideIcon = false}) {
       return CoverFallbackArtwork(
         seed: track?.displayName ?? track?.path ?? sessionId,
@@ -641,7 +662,7 @@ class _ActiveSessionCover extends ConsumerWidget {
       height: 64,
       child: Material(
         type: MaterialType.transparency,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(borderRadius),
         clipBehavior: Clip.antiAlias,
         child: AsyncCoverImage(
           future: coverPathFuture,

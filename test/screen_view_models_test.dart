@@ -219,6 +219,34 @@ void main() {
     expect(detailState?.loopMode, SessionLoopMode.folderSequential);
   });
 
+  test('prepared transport intent changes icon without showing loading', () {
+    final detailSession = session(id: 'detail', path: '/tracks/detail.mp3')
+      ..loadedPath = '/tracks/detail.mp3'
+      ..beginTransportCommand(commandId: 1, playing: true);
+    addTearDown(detailSession.dispose);
+
+    final detailState = sessionDetailViewStateFromPlaybackState(
+      PlaybackStateSliceData(activeSessions: [detailSession]),
+      'detail',
+    );
+    final cardState = playlistSessionCardStateFromPlaybackState(
+      PlaybackStateSliceData(activeSessions: [detailSession]),
+      'detail',
+    );
+
+    expect(detailState?.isPlaying, isTrue);
+    expect(detailState?.isLoading, isFalse);
+    expect(cardState?.isPlaying, isTrue);
+    expect(cardState?.isLoading, isFalse);
+
+    detailSession.isLoading = true;
+    final loadingState = sessionDetailViewStateFromPlaybackState(
+      PlaybackStateSliceData(activeSessions: [detailSession]),
+      'detail',
+    );
+    expect(loadingState?.isLoading, isTrue);
+  });
+
   test('session detail view state tracks console control inputs', () {
     final detailSession = session(id: 'detail', path: '/tracks/detail.mp3');
     addTearDown(detailSession.dispose);

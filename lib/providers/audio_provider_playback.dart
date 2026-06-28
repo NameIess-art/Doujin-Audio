@@ -62,12 +62,8 @@ extension AudioProviderPlayback on AudioProvider {
     if (session == null) return;
     if (session.currentTrackPath.isEmpty) return;
 
-    if (session.state.playing) {
-      session.isPlaybackStarting = false;
-      session.setOptimisticState(playing: false);
-      _syncKeepCpuAwake();
-      _notifyPlaybackChanged();
-      await _nativePlaybackRepository.pause(session.id);
+    if (session.effectivePlaying) {
+      await _pauseSessionPlayback(session);
     } else if (session.state.processingState == ProcessingState.completed ||
         session.state.processingState == ProcessingState.idle) {
       final isCompleted =

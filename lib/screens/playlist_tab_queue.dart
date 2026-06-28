@@ -30,7 +30,7 @@ class _PlaybackQueueCardState extends State<_PlaybackQueueCard> {
         ? cs.primary
         : Color(queue.colorValue!);
     final hasCustomColor = queue.colorValue != null;
-    final isPlaying = session.state.playing;
+    final isPlaying = session.effectivePlaying;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final coverTracks = queue.entries
         .where((entry) => entry.tracks.isNotEmpty)
@@ -111,7 +111,7 @@ class _PlaybackQueueCardState extends State<_PlaybackQueueCard> {
                     ),
                   ),
                   IconButton(
-                    tooltip: session.state.playing
+                    tooltip: session.effectivePlaying
                         ? i18n.tr('pause')
                         : i18n.tr('play'),
                     onPressed: tracks.isEmpty

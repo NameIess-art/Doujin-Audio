@@ -49,6 +49,8 @@ class PlaybackSession {
   bool isPlaybackStarting = false;
   int loadGeneration = 0;
   int playbackCommandGeneration = 0;
+  int transportCommandId = 0;
+  bool? pendingPlayingIntent;
   int lastHandledCompletionGeneration = -1;
   bool isAdvancingAfterCompletion = false;
   int? nativePlaybackQueueCacheKey;
@@ -71,11 +73,35 @@ class PlaybackSession {
   Stream<Duration> get bufferedPositionStream =>
       _bufferedPositionController.stream;
   Duration get position => lastKnownPosition;
+  bool get effectivePlaying => pendingPlayingIntent ?? state.playing;
 
-  void applyNativeSnapshot(NativePlaybackSnapshot snapshot) {
-    if (snapshot.sessionId != id) return;
+  bool applyNativeSnapshot(NativePlaybackSnapshot snapshot) {
+    if (snapshot.sessionId != id) return false;
+    final snapshotCommandId = snapshot.transportCommandId;
+    if (snapshotCommandId != null && snapshotCommandId < transportCommandId) {
+      return false;
+    }
+    if (snapshotCommandId == null && pendingPlayingIntent != null) {
+      return false;
+    }
+    if (snapshotCommandId != null && snapshotCommandId > transportCommandId) {
+      transportCommandId = snapshotCommandId;
+      playbackCommandGeneration = snapshotCommandId;
+      pendingPlayingIntent = null;
+      isPlaybackStarting = false;
+    }
     playbackError = snapshot.error;
-    if (isPlaybackStarting && snapshot.playing) {
+    final pendingIntent = pendingPlayingIntent;
+    final confirmsPendingIntent = pendingIntent == null
+        ? false
+        : pendingIntent
+        ? snapshot.playing
+        : !snapshot.playing && !snapshot.playWhenReady;
+    if (pendingIntent == true && snapshot.playWhenReady) {
+      isPlaybackStarting = false;
+    }
+    if (snapshot.error != null || confirmsPendingIntent) {
+      pendingPlayingIntent = null;
       isPlaybackStarting = false;
     }
     final nativeProcessingState = _nativeProcessingState(
@@ -120,6 +146,23 @@ class PlaybackSession {
     if (snapshot.uri != null && loadedPath == null) {
       loadedPath = currentTrackPath;
     }
+    return true;
+  }
+
+  void beginTransportCommand({required int commandId, required bool playing}) {
+    if (commandId < transportCommandId) return;
+    transportCommandId = commandId;
+    playbackCommandGeneration = commandId;
+    pendingPlayingIntent = playing;
+    isPlaybackStarting = playing;
+    playbackError = null;
+  }
+
+  bool failTransportCommand(int commandId) {
+    if (commandId != transportCommandId) return false;
+    pendingPlayingIntent = null;
+    isPlaybackStarting = false;
+    return true;
   }
 
   void applyNativeProgress(NativePlaybackProgressUpdate progress) {

@@ -191,11 +191,32 @@ class DartPlaybackBridge implements NativePlaybackBridgeBase {
   }
 
   @override
-  Future<NativeResult<NativePlaybackSnapshot>> play(String sessionId) async {
+  Future<NativeResult<NativePlaybackSnapshot>> play(
+    String sessionId, {
+    int transportCommandId = 0,
+    bool exclusive = false,
+  }) async {
     final session = _sessions[sessionId];
     if (session == null) return NativeFailure('Unknown session: $sessionId');
     _focusedSessionId = sessionId;
     try {
+      if (exclusive) {
+        final sessionsToPause = _sessions.values.where(
+          (candidate) =>
+              candidate.sessionId != sessionId &&
+              (candidate.playing || candidate.playWhenReady),
+        );
+        for (final candidate in sessionsToPause) {
+          if (transportCommandId > 0) {
+            candidate.transportCommandId = transportCommandId;
+          }
+          await candidate.runSerialized(candidate.pause);
+          _emit(candidate.sessionId);
+        }
+      }
+      if (transportCommandId > 0) {
+        session.transportCommandId = transportCommandId;
+      }
       await session.runSerialized(session.play);
       return NativeSuccess(_snapshotFor(sessionId));
     } catch (error) {
@@ -204,9 +225,15 @@ class DartPlaybackBridge implements NativePlaybackBridgeBase {
   }
 
   @override
-  Future<NativeResult<NativePlaybackSnapshot>> pause(String sessionId) async {
+  Future<NativeResult<NativePlaybackSnapshot>> pause(
+    String sessionId, {
+    int transportCommandId = 0,
+  }) async {
     final session = _sessions[sessionId];
     if (session == null) return NativeFailure('Unknown session: $sessionId');
+    if (transportCommandId > 0) {
+      session.transportCommandId = transportCommandId;
+    }
     await session.runSerialized(session.pause);
     return NativeSuccess(_emit(sessionId));
   }
@@ -418,6 +445,7 @@ class DartPlaybackBridge implements NativePlaybackBridgeBase {
       eqCapabilities: dartPlaybackWindowsEqCapabilities,
       error: session.error,
       queueIndex: session.logicalQueueIndex,
+      transportCommandId: session.transportCommandId,
     );
   }
 }
@@ -522,6 +550,7 @@ class _DartPlaybackSession {
   List<Uri> candidateUris = const <Uri>[];
   int activeCandidateIndex = 0;
   int logicalQueueIndex = 0;
+  int transportCommandId = 0;
   double volume = 1.0;
   double speed = 1.0;
   AudioEffectsState audioEffects = AudioEffectsState.flat;

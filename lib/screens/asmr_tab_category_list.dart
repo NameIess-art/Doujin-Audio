@@ -27,6 +27,7 @@ class _AsmrCategoryListState extends State<_AsmrCategoryList>
   final GlobalKey<GlassRefreshIndicatorState> _refreshIndicatorKey =
       GlobalKey<GlassRefreshIndicatorState>();
   bool _refreshTriggeredInCurrentScroll = false;
+  bool _loadMoreTriggeredInCurrentScroll = false;
 
   @override
   bool get wantKeepAlive => true;
@@ -71,24 +72,41 @@ class _AsmrCategoryListState extends State<_AsmrCategoryList>
           child: NotificationListener<ScrollNotification>(
             onNotification: (notification) {
               if (notification is ScrollUpdateNotification &&
-                  notification.dragDetails != null &&
-                  notification.metrics.pixels < -68 &&
-                  !_refreshTriggeredInCurrentScroll) {
-                _refreshTriggeredInCurrentScroll = true;
-                unawaited(
-                  AppInteractionFeedback.trigger(
-                    AppInteractionFeedbackType.confirmation,
-                  ),
-                );
-                _refreshIndicatorKey.currentState?.show();
+                  notification.dragDetails != null) {
+                if (notification.metrics.pixels < -68 &&
+                    !_refreshTriggeredInCurrentScroll) {
+                  _refreshTriggeredInCurrentScroll = true;
+                  unawaited(
+                    AppInteractionFeedback.trigger(
+                      AppInteractionFeedbackType.confirmation,
+                    ),
+                  );
+                  _refreshIndicatorKey.currentState?.show();
+                } else if (notification.metrics.pixels >
+                        notification.metrics.maxScrollExtent + 56 &&
+                    !_loadMoreTriggeredInCurrentScroll) {
+                  _loadMoreTriggeredInCurrentScroll = true;
+                  if (!state.isLoadingMore && state.hasMore) {
+                    unawaited(
+                      AppInteractionFeedback.trigger(
+                        AppInteractionFeedbackType.confirmation,
+                      ),
+                    );
+                    context.read<AsmrLibraryController>().loadMoreCategory(
+                          widget.category,
+                          searchQuery: widget.searchQuery,
+                        );
+                  }
+                }
               } else if (notification is ScrollEndNotification) {
                 _refreshTriggeredInCurrentScroll = false;
+                _loadMoreTriggeredInCurrentScroll = false;
               }
               return false;
             },
             child: GlassRefreshIndicator(
               key: _refreshIndicatorKey,
-            color: asmrBlue,
+              color: asmrBlue,
             backgroundColor: Theme.of(
               context,
             ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),

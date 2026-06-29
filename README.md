@@ -128,6 +128,25 @@ flutter test
 dart run tool/verify_release.dart
 ```
 
+### Windows 端 Android 测试
+
+在 Windows 上连接 USB 真机或启动 Android 模拟器后，可以用仓库脚本直接安装、启动和测试 Android 版本：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File tool/test_android_on_windows.ps1 -Task doctor,list
+powershell -NoProfile -ExecutionPolicy Bypass -File tool/test_android_on_windows.ps1 -Task smoke
+powershell -NoProfile -ExecutionPolicy Bypass -File tool/test_android_on_windows.ps1 -Task build-debug,install-debug,launch,screenshot,logcat
+```
+
+如果没有真机，可先查看并启动模拟器：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File tool/test_android_on_windows.ps1 -Task list
+powershell -NoProfile -ExecutionPolicy Bypass -File tool/test_android_on_windows.ps1 -Task start-emulator -EmulatorId Medium_Phone_API_36.1
+```
+
+模拟器空间不足或状态异常时，可追加 `-WipeEmulator` 使用干净数据启动。脚本默认不会卸载已有应用；若设备上已安装正式签名版本，debug 包可能因签名不同安装失败，确认已备份 `.nalbackup` 后，才使用 `-ReplaceExisting` 执行一次性替换。日志和截图输出到 `build/android-test/`，不会进入 Git。
+
 ### Android arm64 Release
 
 Release 构建必须配置正式签名。缺少 `android/key.properties` 或对应 keystore 时构建会直接失败，不会回退到 debug 签名。

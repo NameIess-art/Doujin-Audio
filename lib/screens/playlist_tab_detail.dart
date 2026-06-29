@@ -153,29 +153,30 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
     _lastPrecachingCoverKey = precacheKey;
     final imageConfiguration = createLocalImageConfiguration(context);
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      unawaited(
-        Future<void>(() async {
-          final coverPath = await coverPathFuture;
-          if (!mounted || coverPath == null || coverPath.isEmpty) {
-            return;
-          }
-          try {
-            await _precacheImageProvider(
-              ResizeImage.resizeIfNeeded(
-                coverCacheWidth,
-                null,
-                FileImage(File(coverPath)),
-              ),
-              imageConfiguration,
-            );
-          } catch (_) {
-            // Cover precaching is optional; the UI has a visual fallback.
-          }
-        }),
-      );
-    });
+    final coordinator = UiInteractionCoordinator.instance;
+    coordinator.scheduleAfterIdle(
+      key: 'session_detail_cover_$precacheKey',
+      generation: coordinator.generation,
+      priority: 40,
+      task: () async {
+        final coverPath = await coverPathFuture;
+        if (!mounted || coverPath == null || coverPath.isEmpty) {
+          return;
+        }
+        try {
+          await _precacheImageProvider(
+            ResizeImage.resizeIfNeeded(
+              coverCacheWidth,
+              null,
+              FileImage(File(coverPath)),
+            ),
+            imageConfiguration,
+          );
+        } catch (_) {
+          // Cover precaching is optional; the UI has a visual fallback.
+        }
+      },
+    );
   }
 
   void _primeAdjacentCoverArtworks(
@@ -202,27 +203,28 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
       if (!_primedAdjacentCoverKeys.add(precacheKey)) continue;
       final track = provider.trackByPath(trackPath);
       final future = _coverFutureForTrack(provider, track);
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        unawaited(
-          Future<void>(() async {
-            final coverPath = await future;
-            if (!mounted || coverPath == null || coverPath.isEmpty) return;
-            try {
-              await _precacheImageProvider(
-                ResizeImage.resizeIfNeeded(
-                  coverCacheWidth,
-                  null,
-                  FileImage(File(coverPath)),
-                ),
-                imageConfiguration,
-              );
-            } catch (_) {
-              // Cover precaching is optional; the UI has a visual fallback.
-            }
-          }),
-        );
-      });
+      final coordinator = UiInteractionCoordinator.instance;
+      coordinator.scheduleAfterIdle(
+        key: 'session_detail_adjacent_cover_$precacheKey',
+        generation: coordinator.generation,
+        priority: 60,
+        task: () async {
+          final coverPath = await future;
+          if (!mounted || coverPath == null || coverPath.isEmpty) return;
+          try {
+            await _precacheImageProvider(
+              ResizeImage.resizeIfNeeded(
+                coverCacheWidth,
+                null,
+                FileImage(File(coverPath)),
+              ),
+              imageConfiguration,
+            );
+          } catch (_) {
+            // Cover precaching is optional; the UI has a visual fallback.
+          }
+        },
+      );
     }
   }
 

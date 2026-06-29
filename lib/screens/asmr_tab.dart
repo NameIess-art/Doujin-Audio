@@ -169,43 +169,7 @@ class _AsmrTabState extends State<AsmrTab>
   }
 
   void _handleCategoryScroll(AsmrCategoryType category) {
-    final controller = _scrollControllers[category];
-    if (controller == null || !controller.hasClients) {
-      return;
-    }
-    if (controller.position.extentAfter > 280) {
-      return;
-    }
-    if (_loadMoreDebounceTimers.containsKey(category)) {
-      return;
-    }
-    _loadMoreDebounceTimers[category] = Timer(
-      const Duration(milliseconds: 180),
-      () {
-        _loadMoreDebounceTimers.remove(category);
-        if (!mounted) {
-          return;
-        }
-        final coordinator = UiInteractionCoordinator.instance;
-        final generation = coordinator.generation;
-        coordinator.scheduleAfterIdle(
-          key: 'asmr_load_more_${category.name}_$_normalizedSearchQuery',
-          generation: generation,
-          priority: 20,
-          task: () => _runAsmrOperation<void>(
-            scope: UiOperationScope.asmrCategory(
-              AsmrOperationKind.loadMore,
-              category.name,
-            ),
-            labelKey: 'loading_dot',
-            task: () => context.read<AsmrLibraryController>().loadMoreCategory(
-              category,
-              searchQuery: _searchQuery,
-            ),
-          ),
-        );
-      },
-    );
+    // Auto-loading has been replaced by manual pull-up to load in _AsmrCategoryListState.
   }
 
   void _handleTabChanged() {

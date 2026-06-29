@@ -21,34 +21,26 @@ class _ProgressBar extends StatefulWidget {
 }
 
 class _ProgressBarState extends State<_ProgressBar> {
-  StreamSubscription<Duration>? _positionSub;
-  StreamSubscription<Duration?>? _durationSub;
-  StreamSubscription<Duration>? _bufferedSub;
-  Duration _streamPosition = Duration.zero;
-  Duration? _duration;
-  Duration _buffered = Duration.zero;
+  late final PlaybackPositionUiGate _positionGate;
   bool _isDragging = false;
   double? _dragValueMs;
   bool _tickerModeEnabled = true;
   List<TimeSegmentLabel> _longPressLabels = const <TimeSegmentLabel>[];
   double? _longPressDx;
   double? _longPressTooltipLeft;
-  int _lastPositionUpdateMs = 0;
 
   @override
   void initState() {
     super.initState();
-    _syncFromSession();
-    _bindSession();
+    _positionGate = PlaybackPositionUiGate(session: widget.session)
+      ..addListener(_handlePositionTick);
   }
 
   @override
   void didUpdateWidget(covariant _ProgressBar oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.session == widget.session) return;
-    _unbindSession();
-    _syncFromSession();
-    _bindSession();
+    _positionGate.updateSession(widget.session);
   }
 
   @override
@@ -57,76 +49,40 @@ class _ProgressBarState extends State<_ProgressBar> {
     final nextTickerMode = TickerMode.valuesOf(context).enabled;
     if (_tickerModeEnabled == nextTickerMode) return;
     _tickerModeEnabled = nextTickerMode;
-    if (_tickerModeEnabled) {
-      _syncFromSession();
-    }
+    _positionGate.tickerModeEnabled = nextTickerMode;
   }
 
   @override
   void dispose() {
-    _unbindSession();
+    _positionGate
+      ..removeListener(_handlePositionTick)
+      ..dispose();
     super.dispose();
   }
 
-  void _syncFromSession() {
-    _streamPosition = widget.session.position;
-    _duration = widget.session.duration;
-    _buffered = widget.session.bufferedPosition;
-  }
-
-  void _bindSession() {
-    _positionSub = widget.session.positionStream.listen((position) {
-      if (_streamPosition == position) return;
-      if (!_tickerModeEnabled) {
-        _streamPosition = position;
-        return;
-      }
-      final now = DateTime.now().millisecondsSinceEpoch;
-      if (now - _lastPositionUpdateMs < 32) {
-        _streamPosition = position;
-        return;
-      }
-      _lastPositionUpdateMs = now;
-      setState(() {
-        _streamPosition = position;
-      });
-    });
-    _durationSub = widget.session.durationStream.listen((duration) {
-      if (duration == null && _duration != null) return;
-      if (_duration == duration) return;
-      setState(() {
-        _duration = duration;
-      });
-    });
-    _bufferedSub = widget.session.bufferedPositionStream.listen((buffered) {
-      if (_buffered == buffered) return;
-      setState(() {
-        _buffered = buffered;
-      });
-    });
-  }
-
-  void _unbindSession() {
-    unawaited(_positionSub?.cancel());
-    unawaited(_durationSub?.cancel());
-    unawaited(_bufferedSub?.cancel());
-    _positionSub = null;
-    _durationSub = null;
-    _bufferedSub = null;
+  void _handlePositionTick() {
+    if (mounted) setState(() {});
   }
 
   @override
   Widget build(BuildContext context) {
-    final duration = _duration;
+    final snapshot = _positionGate.value;
+    final duration = snapshot.duration;
     final hasKnownDuration = duration != null;
     final effectiveDuration = duration ?? Duration.zero;
-    var position = _streamPosition;
+    var position = snapshot.position;
     if (hasKnownDuration && position > effectiveDuration) {
       position = effectiveDuration;
     }
     final durationMs = hasKnownDuration
         ? max(1, effectiveDuration.inMilliseconds)
-        : max(1, max(position.inMilliseconds, _buffered.inMilliseconds));
+        : max(
+            1,
+            max(
+              position.inMilliseconds,
+              snapshot.bufferedPosition.inMilliseconds,
+            ),
+          );
     final maxMillis = durationMs.toDouble();
     final basePositionMs = position.inMilliseconds
         .clamp(0, durationMs)
@@ -138,8 +94,11 @@ class _ProgressBarState extends State<_ProgressBar> {
         );
     final bufferedValue =
         (_isDragging
-                ? max(_buffered.inMilliseconds, sliderValue.round())
-                : _buffered.inMilliseconds)
+                ? max(
+                    snapshot.bufferedPosition.inMilliseconds,
+                    sliderValue.round(),
+                  )
+                : snapshot.bufferedPosition.inMilliseconds)
             .clamp(0, durationMs)
             .toDouble();
     final shownSeconds = hasKnownDuration
@@ -545,7 +504,8 @@ class _SessionSubtitlePanel extends StatefulWidget {
 }
 
 class _SessionSubtitlePanelState extends State<_SessionSubtitlePanel> {
-  StreamSubscription<Duration>? _positionSub;
+  late final PlaybackPositionUiGate _positionGate;
+  final SubtitleTextCache _subtitleTextCache = SubtitleTextCache();
   SubtitleTrack? _subtitleTrack;
   String? _subtitleText;
   String? _loadedPath;
@@ -554,16 +514,18 @@ class _SessionSubtitlePanelState extends State<_SessionSubtitlePanel> {
   @override
   void initState() {
     super.initState();
+    _positionGate = PlaybackPositionUiGate(
+      session: widget.session,
+      includeBufferedPosition: false,
+    )..addListener(_handlePositionTick);
     _loadSubtitleTrack();
-    _bindPosition();
   }
 
   @override
   void didUpdateWidget(covariant _SessionSubtitlePanel oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.session != widget.session) {
-      unawaited(_positionSub?.cancel());
-      _bindPosition();
+      _positionGate.updateSession(widget.session);
     }
     if (_loadedPath != widget.session.currentTrackPath) {
       _loadSubtitleTrack();
@@ -576,24 +538,25 @@ class _SessionSubtitlePanelState extends State<_SessionSubtitlePanel> {
     final nextTickerMode = TickerMode.valuesOf(context).enabled;
     if (_tickerModeEnabled == nextTickerMode) return;
     _tickerModeEnabled = nextTickerMode;
-    if (_tickerModeEnabled) {
-      _updateSubtitleText(widget.session.position);
-    }
+    _positionGate.tickerModeEnabled = nextTickerMode;
   }
 
   @override
   void dispose() {
-    unawaited(_positionSub?.cancel());
+    _positionGate
+      ..removeListener(_handlePositionTick)
+      ..dispose();
     super.dispose();
   }
 
-  void _bindPosition() {
-    _positionSub = widget.session.positionStream.listen(_updateSubtitleText);
+  void _handlePositionTick() {
+    _updateSubtitleText(_positionGate.value.position);
   }
 
   void _loadSubtitleTrack() {
     final trackPath = widget.session.currentTrackPath;
     _loadedPath = trackPath;
+    _subtitleTextCache.clear();
     setState(() {
       _subtitleTrack = null;
       _subtitleText = null;
@@ -601,16 +564,17 @@ class _SessionSubtitlePanelState extends State<_SessionSubtitlePanel> {
     widget.provider.subtitleTrackForPath(trackPath).then((track) {
       if (!mounted || _loadedPath != trackPath) return;
       _subtitleTrack = track;
-      _updateSubtitleText(widget.session.position);
+      _subtitleTextCache.clear();
+      _updateSubtitleText(_positionGate.value.position);
     });
   }
 
   void _updateSubtitleText(Duration position) {
     if (!_tickerModeEnabled) return;
-    final nextText = widget.provider.subtitleTextForTrackAt(
-      widget.session.currentTrackPath,
-      position,
-      subtitleTrack: _subtitleTrack,
+    final nextText = _subtitleTextCache.resolve(
+      trackPath: widget.session.currentTrackPath,
+      position: position,
+      track: _subtitleTrack,
     );
     if (_subtitleText == nextText) return;
     setState(() {
@@ -627,10 +591,7 @@ class _SessionSubtitlePanelState extends State<_SessionSubtitlePanel> {
       alignment: Alignment.topCenter,
       child: subtitleText == null
           ? const SizedBox(width: double.infinity, height: 0)
-          : _SubtitleChip(
-              key: ValueKey(subtitleText),
-              text: subtitleText,
-            ),
+          : _SubtitleChip(key: ValueKey(subtitleText), text: subtitleText),
     );
   }
 }

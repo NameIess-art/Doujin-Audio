@@ -19,6 +19,7 @@ import '../screens/playlist_tab.dart';
 import 'app_feedback.dart';
 import 'async_cover_image.dart';
 import 'library_like_cards.dart';
+import 'playback_position_ui_gate.dart';
 
 part 'active_session_carousel_widgets.dart';
 

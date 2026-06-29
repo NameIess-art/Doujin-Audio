@@ -216,15 +216,6 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
       height: 1.25,
       color: cs.onSurfaceVariant,
     );
-    final updateOperation = ref.watch(
-      uiOperationForScopeProvider(UiOperationScope.settingsUpdate),
-    );
-    final cacheOperation = ref.watch(
-      uiOperationForScopeProvider(UiOperationScope.settingsCache),
-    );
-    final asmrDownloadPathOperation = ref.watch(
-      uiOperationForScopeProvider(UiOperationScope.settingsAsmrDownloadPath),
-    );
     final coverResolutionLabels = <CoverImageResolution, String>{
       CoverImageResolution.memorySaver: i18n.tr('cover_image_resolution_300'),
       CoverImageResolution.balanced: i18n.tr('cover_image_resolution_600'),
@@ -977,6 +968,11 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                                       ?.asmrDownloadDestinationRoot,
                                 ),
                               );
+                              final asmrDownloadPathOperation = ref.watch(
+                                uiOperationForScopeProvider(
+                                  UiOperationScope.settingsAsmrDownloadPath,
+                                ),
+                              );
                               return ListTile(
                                 onTap: _chooseAsmrDownloadDestination,
                                 title: Text(
@@ -1213,39 +1209,48 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                                 );
                               },
                             ),
-                            ListTile(
-                              onTap: cacheOperation.isBusy
-                                  ? null
-                                  : () => _clearApplicationCache(context),
-                              title: Text(i18n.tr('clear_app_cache')),
-                              subtitle: Text(
-                                i18n.tr('clear_app_cache_subtitle'),
-                                style: descStyle,
-                              ),
-                              leading: Container(
-                                width: 38,
-                                height: 38,
-                                decoration: BoxDecoration(
-                                  color: cs.primaryContainer,
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: Icon(
-                                  Icons.cleaning_services_rounded,
-                                  color: cs.onPrimaryContainer,
-                                ),
-                              ),
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 2,
-                              ),
-                              trailing: cacheOperation.isBusy
-                                  ? const SizedBox.square(
-                                      dimension: 18,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2.2,
-                                      ),
-                                    )
-                                  : null,
+                            Consumer(
+                              builder: (context, ref, _) {
+                                final cacheOperation = ref.watch(
+                                  uiOperationForScopeProvider(
+                                    UiOperationScope.settingsCache,
+                                  ),
+                                );
+                                return ListTile(
+                                  onTap: cacheOperation.isBusy
+                                      ? null
+                                      : () => _clearApplicationCache(context),
+                                  title: Text(i18n.tr('clear_app_cache')),
+                                  subtitle: Text(
+                                    i18n.tr('clear_app_cache_subtitle'),
+                                    style: descStyle,
+                                  ),
+                                  leading: Container(
+                                    width: 38,
+                                    height: 38,
+                                    decoration: BoxDecoration(
+                                      color: cs.primaryContainer,
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: Icon(
+                                      Icons.cleaning_services_rounded,
+                                      color: cs.onPrimaryContainer,
+                                    ),
+                                  ),
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 2,
+                                  ),
+                                  trailing: cacheOperation.isBusy
+                                      ? const SizedBox.square(
+                                          dimension: 18,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2.2,
+                                          ),
+                                        )
+                                      : null,
+                                );
+                              },
                             ),
                           ],
                         ],
@@ -1286,17 +1291,28 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                               ),
                             ),
                           ],
-                          _UpdateSettingsTile(
-                            checking:
-                                _checkingUpdate ||
-                                (updateOperation.isBusy && !_downloadingUpdate),
-                            downloading: _downloadingUpdate,
-                            progress:
-                                _downloadProgress ?? updateOperation.progress,
-                            updateInfo: _lastUpdateInfo,
-                            currentVersion: _appVersionFuture,
-                            textStyle: descStyle,
-                            onCheck: () => _checkForUpdates(context),
+                          Consumer(
+                            builder: (context, ref, _) {
+                              final updateOperation = ref.watch(
+                                uiOperationForScopeProvider(
+                                  UiOperationScope.settingsUpdate,
+                                ),
+                              );
+                              return _UpdateSettingsTile(
+                                checking:
+                                    _checkingUpdate ||
+                                    (updateOperation.isBusy &&
+                                        !_downloadingUpdate),
+                                downloading: _downloadingUpdate,
+                                progress:
+                                    _downloadProgress ??
+                                    updateOperation.progress,
+                                updateInfo: _lastUpdateInfo,
+                                currentVersion: _appVersionFuture,
+                                textStyle: descStyle,
+                                onCheck: () => _checkForUpdates(context),
+                              );
+                            },
                           ),
                           Consumer(
                             builder: (context, ref, _) {

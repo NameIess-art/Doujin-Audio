@@ -165,7 +165,9 @@ class _ActiveSessionCard extends ConsumerWidget {
   ) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
-    final activeColor = currentTrack?.remoteMetadataKind == 'asmr.one' ? asmrBlue : cs.primary;
+    final activeColor = currentTrack?.remoteMetadataKind == 'asmr.one'
+        ? asmrBlue
+        : cs.primary;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(10, 5, 8, 5),
@@ -341,7 +343,8 @@ class _ActiveSessionTitleSubtitle extends StatefulWidget {
 
 class _ActiveSessionTitleSubtitleState
     extends State<_ActiveSessionTitleSubtitle> {
-  StreamSubscription<Duration>? _positionSub;
+  late final PlaybackPositionUiGate _positionGate;
+  final SubtitleTextCache _subtitleTextCache = SubtitleTextCache();
   SubtitleTrack? _subtitleTrack;
   String? _subtitleText;
   String? _loadedPath;
@@ -349,6 +352,10 @@ class _ActiveSessionTitleSubtitleState
   @override
   void initState() {
     super.initState();
+    _positionGate = PlaybackPositionUiGate(
+      session: widget.session,
+      includeBufferedPosition: false,
+    )..addListener(_handlePositionTick);
     _loadSubtitleTrack();
   }
 
@@ -356,8 +363,7 @@ class _ActiveSessionTitleSubtitleState
   void didUpdateWidget(covariant _ActiveSessionTitleSubtitle oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.session != widget.session) {
-      unawaited(_positionSub?.cancel());
-      _positionSub = null;
+      _positionGate.updateSession(widget.session);
     }
     if (_loadedPath != widget.session.currentTrackPath) {
       _loadSubtitleTrack();
@@ -365,20 +371,27 @@ class _ActiveSessionTitleSubtitleState
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _positionGate.tickerModeEnabled = TickerMode.valuesOf(context).enabled;
+  }
+
+  @override
   void dispose() {
-    unawaited(_positionSub?.cancel());
+    _positionGate
+      ..removeListener(_handlePositionTick)
+      ..dispose();
     super.dispose();
   }
 
-  void _bindPosition() {
-    _positionSub = widget.session.positionStream.listen(_updateSubtitleText);
+  void _handlePositionTick() {
+    _updateSubtitleText(_positionGate.value.position);
   }
 
   void _loadSubtitleTrack() {
     final trackPath = widget.session.currentTrackPath;
     _loadedPath = trackPath;
-    unawaited(_positionSub?.cancel());
-    _positionSub = null;
+    _subtitleTextCache.clear();
     if (_subtitleTrack != null || _subtitleText != null) {
       setState(() {
         _subtitleTrack = null;
@@ -388,19 +401,17 @@ class _ActiveSessionTitleSubtitleState
     widget.provider.subtitleTrackForPath(trackPath).then((track) {
       if (!mounted || _loadedPath != trackPath) return;
       _subtitleTrack = track;
-      if (track != null) {
-        _bindPosition();
-      }
-      _updateSubtitleText(widget.session.position);
+      _subtitleTextCache.clear();
+      _updateSubtitleText(_positionGate.value.position);
     });
   }
 
   void _updateSubtitleText(Duration position) {
     if (_subtitleTrack == null) return;
-    final nextText = widget.provider.subtitleTextForTrackAt(
-      widget.session.currentTrackPath,
-      position,
-      subtitleTrack: _subtitleTrack,
+    final nextText = _subtitleTextCache.resolve(
+      trackPath: widget.session.currentTrackPath,
+      position: position,
+      track: _subtitleTrack,
     );
     if (_subtitleText == nextText) return;
     setState(() {
@@ -479,77 +490,40 @@ class _ActiveSessionProgressStrip extends StatefulWidget {
 
 class _ActiveSessionProgressStripState
     extends State<_ActiveSessionProgressStrip> {
-  StreamSubscription<Duration>? _positionSub;
-  StreamSubscription<Duration?>? _durationSub;
-  Duration _position = Duration.zero;
-  Duration? _duration;
-  bool _positionDirtyWhileInteracting = false;
-  int _lastPositionUpdateMs = 0;
+  late final PlaybackPositionUiGate _positionGate;
 
   @override
   void initState() {
     super.initState();
-    _position = widget.session.position;
-    _duration = widget.session.duration;
-    _bindPosition();
-    _bindDuration();
-    UiInteractionCoordinator.instance.addListener(_handleInteractionChanged);
+    _positionGate = PlaybackPositionUiGate(
+      session: widget.session,
+      includeBufferedPosition: false,
+    )..addListener(_handlePositionTick);
   }
 
   @override
   void didUpdateWidget(covariant _ActiveSessionProgressStrip oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.session == widget.session) return;
-    unawaited(_positionSub?.cancel());
-    unawaited(_durationSub?.cancel());
-    _position = widget.session.position;
-    _duration = widget.session.duration;
-    _positionDirtyWhileInteracting = false;
-    _bindPosition();
-    _bindDuration();
+    _positionGate.updateSession(widget.session);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _positionGate.tickerModeEnabled = TickerMode.valuesOf(context).enabled;
   }
 
   @override
   void dispose() {
-    UiInteractionCoordinator.instance.removeListener(_handleInteractionChanged);
-    unawaited(_positionSub?.cancel());
-    unawaited(_durationSub?.cancel());
+    _positionGate
+      ..removeListener(_handlePositionTick)
+      ..dispose();
     super.dispose();
   }
 
-  void _bindPosition() {
-    _positionSub = widget.session.positionStream.listen((position) {
-      if (_position == position) return;
-      _position = position;
-      if (UiInteractionCoordinator.instance.isInteracting) {
-        _positionDirtyWhileInteracting = true;
-        return;
-      }
-      final now = DateTime.now().millisecondsSinceEpoch;
-      if (now - _lastPositionUpdateMs < 32) return;
-      _lastPositionUpdateMs = now;
-      if (mounted) setState(() {});
-    });
-  }
-
-  void _handleInteractionChanged() {
-    if (!mounted ||
-        UiInteractionCoordinator.instance.isInteracting ||
-        !_positionDirtyWhileInteracting) {
-      return;
-    }
-    _positionDirtyWhileInteracting = false;
-    setState(() {});
-  }
-
-  void _bindDuration() {
-    _durationSub = widget.session.durationStream.listen((duration) {
-      if (duration == null && _duration != null) return;
-      if (_duration == duration) return;
-      setState(() {
-        _duration = duration;
-      });
-    });
+  void _handlePositionTick() {
+    if (mounted) setState(() {});
   }
 
   @override
@@ -559,11 +533,12 @@ class _ActiveSessionProgressStripState
   }
 
   Widget _buildProgressStrip(ColorScheme cs) {
-    final duration = _duration;
+    final snapshot = _positionGate.value;
+    final duration = snapshot.duration;
     if (duration == null || duration.inMilliseconds <= 0) {
       return const SizedBox(height: 3);
     }
-    final fraction = _position.inMilliseconds / duration.inMilliseconds;
+    final fraction = snapshot.position.inMilliseconds / duration.inMilliseconds;
     return Padding(
       padding: const EdgeInsets.only(top: 8),
       child: ClipRRect(
@@ -643,10 +618,14 @@ class _ActiveSessionCover extends ConsumerWidget {
 
     final bottomNavStyle = ref.watch(
       settingsStateProvider.select(
-        (s) => s.valueOrNull?.bottomNavigationStyle ?? BottomNavigationStyle.capsule,
+        (s) =>
+            s.valueOrNull?.bottomNavigationStyle ??
+            BottomNavigationStyle.capsule,
       ),
     );
-    final borderRadius = bottomNavStyle == BottomNavigationStyle.capsule ? 16.0 : 10.0;
+    final borderRadius = bottomNavStyle == BottomNavigationStyle.capsule
+        ? 16.0
+        : 10.0;
 
     Widget fallback({bool hideIcon = false}) {
       return CoverFallbackArtwork(

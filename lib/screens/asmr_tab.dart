@@ -66,7 +66,7 @@ class _AsmrTabState extends State<AsmrTab>
   ValueListenable<int?>? _scrollToTopTabListenable;
   String _searchQuery = '';
   final GlobalKey _headerKey = GlobalKey();
-  double _headerHeight = 72;
+  double _headerHeight = 0;
 
   @override
   bool get wantKeepAlive => true;
@@ -573,7 +573,10 @@ class _AsmrTabState extends State<AsmrTab>
         MediaQuery.orientationOf(context) == Orientation.landscape;
     final bottomInset = MobileOverlayInset.of(context);
     final headerControlsFullHeight = _headerControlsFullHeight;
-    final topTotalHeight = _headerHeight + 4;
+    final effectiveHeaderHeight = _headerHeight > 0 
+        ? _headerHeight 
+        : 72 + MediaQuery.paddingOf(context).top;
+    final topTotalHeight = effectiveHeaderHeight + 4;
     final headerContentHeight = topTotalHeight + headerControlsFullHeight;
 
     Widget collapsingHeaderControls() {
@@ -644,6 +647,9 @@ class _AsmrTabState extends State<AsmrTab>
       return Stack(
         clipBehavior: Clip.none,
         children: [
+          Positioned.fill(
+            child: ColoredBox(color: Theme.of(context).colorScheme.surface),
+          ),
           ShimmerLoader(
             child: ListView(
               physics: const NeverScrollableScrollPhysics(),
@@ -677,6 +683,9 @@ class _AsmrTabState extends State<AsmrTab>
     return Stack(
       clipBehavior: Clip.none,
       children: [
+        Positioned.fill(
+          child: ColoredBox(color: Theme.of(context).colorScheme.surface),
+        ),
         globalState.initialized
             ? Stack(
                 fit: StackFit.expand,

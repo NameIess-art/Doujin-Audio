@@ -21,7 +21,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
   late final AnimationController _dismissController;
   late final AnimationController _contentEnterController;
   late String _currentSessionId;
-  PageController? _pageController;
+  double _horizontalDragDelta = 0;
   bool _contentEnterStarted = false;
   final Object _dismissInteractionSource = Object();
   bool _dismissInteractionActive = false;
@@ -55,8 +55,39 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
     _segmentPanelExpandedNotifier.dispose();
     _dismissController.dispose();
     _contentEnterController.dispose();
-    _pageController?.dispose();
     super.dispose();
+  }
+
+  void _changeSessionByOffset(List<String> sessionIds, int offset) {
+    if (sessionIds.isEmpty) return;
+    final currentIndex = sessionIds.indexOf(_currentSessionId);
+    if (currentIndex < 0) return;
+    int nextIndex = currentIndex + offset;
+    if (nextIndex < 0) nextIndex = sessionIds.length - 1;
+    if (nextIndex >= sessionIds.length) nextIndex = 0;
+    if (nextIndex == currentIndex) return;
+
+    setState(() {
+      _horizontalDragDelta = 0;
+      _currentSessionId = sessionIds[nextIndex];
+    });
+  }
+
+  void _handleHorizontalDragEnd(
+    DragEndDetails details,
+    List<String> sessionIds,
+  ) {
+    final velocity = details.primaryVelocity ?? 0;
+    final shouldGoPrevious = _horizontalDragDelta > 48 || velocity > 400;
+    final shouldGoNext = _horizontalDragDelta < -48 || velocity < -400;
+    _horizontalDragDelta = 0;
+    if (shouldGoPrevious) {
+      _changeSessionByOffset(sessionIds, -1);
+      return;
+    }
+    if (shouldGoNext) {
+      _changeSessionByOffset(sessionIds, 1);
+    }
   }
 
   void _ensureContentEnterStarted() {
@@ -141,16 +172,23 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
   @override
   Widget build(BuildContext context) {
     final provider = context.read<AudioProvider>();
-    final sessions = provider.activeSessions;
+    final shellState = ref.watch(sessionDetailShellProvider(_currentSessionId));
+    final sessionIds = shellState.sessionOrder.sessionIds;
 
-    if (sessions.isEmpty) {
+    if (sessionIds.isEmpty) {
       return const Scaffold(body: SizedBox.shrink());
     }
 
-    if (_pageController == null) {
-      final initialIndex = sessions.indexWhere((s) => s.id == _currentSessionId);
-      _pageController = PageController(initialPage: initialIndex >= 0 ? initialIndex : 0);
+    if (shellState.detail == null && sessionIds.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        setState(() {
+          _currentSessionId = sessionIds.first;
+        });
+      });
+      return const Scaffold(body: SizedBox.shrink());
     }
+
 
     _ensureContentEnterStarted();
     final routeAnimation = ModalRoute.of(context)?.animation;
@@ -226,72 +264,97 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
                     if (_segmentPanelExpandedNotifier.value) return;
                     if (event is PointerScrollEvent) {
                       if (event.scrollDelta.dy > 0) {
-                        _pageController?.nextPage(duration: const Duration(milliseconds: 300), curve: Curves.easeOutCubic);
+                        _changeSessionByOffset(sessionIds, 1);
                       } else if (event.scrollDelta.dy < 0) {
-                        _pageController?.previousPage(duration: const Duration(milliseconds: 300), curve: Curves.easeOutCubic);
+                        _changeSessionByOffset(sessionIds, -1);
                       }
                     }
                   }
                 : null,
-            child: PageView.builder(
-              controller: _pageController,
-              itemCount: sessions.length,
-              onPageChanged: (index) {
-                setState(() {
-                  _currentSessionId = sessions[index].id;
-                });
-              },
-              itemBuilder: (context, index) {
-                final pageSession = sessions[index];
-                final detailTrack = provider.trackByPath(pageSession.currentTrackPath);
-                final coverPathFuture = _coverFutureForTrack(provider, detailTrack);
-                
-                return _SessionDetailScaffold(
-                  session: pageSession,
-                  provider: provider,
-                  coverPathFuture: coverPathFuture,
-                  dismissAnimation: _dismissController,
-                  segmentPanelExpandedNotifier: _segmentPanelExpandedNotifier,
-                  onClose: () async {
-                    ref
-                        .read(audioProviderFacadeProvider)
-                        .requestCarouselSnapTo(_currentSessionId);
-                    _beginDismissInteraction();
-                    await _animateDismissToEnd();
-                    _endDismissInteraction();
-                    if (context.mounted) {
-                      await Navigator.of(context).maybePop();
-                    }
-                  },
-                  onVerticalDragUpdate: enableVerticalDismiss
-                      ? (details) {
-                          final screenHeight = MediaQuery.sizeOf(context).height;
-                          if (screenHeight <= 0) return;
-                          final nextValue =
-                              _dismissController.value +
-                              (((details.primaryDelta ?? 0) / screenHeight) *
-                                  0.92);
-                          if (nextValue > 0.001) {
-                            _beginDismissInteraction();
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 300),
+              child: Builder(
+                key: ValueKey(_currentSessionId),
+                builder: (context) {
+                  final pageSession = provider.sessionById(_currentSessionId);
+                  if (pageSession == null) {
+                    return const SizedBox.shrink();
+                  }
+                  final detailTrack = provider.trackByPath(
+                    pageSession.currentTrackPath,
+                  );
+                  final coverPathFuture = _coverFutureForTrack(
+                    provider,
+                    detailTrack,
+                  );
+
+                  return _SessionDetailScaffold(
+                    session: pageSession,
+                    provider: provider,
+                    coverPathFuture: coverPathFuture,
+                    dismissAnimation: _dismissController,
+                    segmentPanelExpandedNotifier: _segmentPanelExpandedNotifier,
+                    onClose: () async {
+                      ref
+                          .read(audioProviderFacadeProvider)
+                          .requestCarouselSnapTo(_currentSessionId);
+                      _beginDismissInteraction();
+                      await _animateDismissToEnd();
+                      _endDismissInteraction();
+                      if (context.mounted) {
+                        await Navigator.of(context).maybePop();
+                      }
+                    },
+                    onHorizontalDragUpdate: Platform.isWindows
+                        ? null
+                        : (details) {
+                            if (_segmentPanelExpandedNotifier.value) return;
+                            _horizontalDragDelta += details.primaryDelta ?? 0;
+                          },
+                    onHorizontalDragEnd: Platform.isWindows
+                        ? null
+                        : (details) {
+                            if (_segmentPanelExpandedNotifier.value) return;
+                            _handleHorizontalDragEnd(details, sessionIds);
+                          },
+                    onHorizontalDragCancel: Platform.isWindows
+                        ? null
+                        : () {
+                            if (_segmentPanelExpandedNotifier.value) return;
+                            _horizontalDragDelta = 0;
+                          },
+                    onVerticalDragUpdate: enableVerticalDismiss
+                        ? (details) {
+                            final screenHeight = MediaQuery.sizeOf(
+                              context,
+                            ).height;
+                            if (screenHeight <= 0) return;
+                            final nextValue =
+                                _dismissController.value +
+                                (((details.primaryDelta ?? 0) / screenHeight) *
+                                    0.92);
+                            if (nextValue > 0.001) {
+                              _beginDismissInteraction();
+                            }
+                            _dismissController.value = nextValue.clamp(0.0, 1.0);
                           }
-                          _dismissController.value = nextValue.clamp(0.0, 1.0);
-                        }
-                      : null,
-                  onVerticalDragEnd: enableVerticalDismiss
-                      ? (details) => _handleVerticalDragEnd(details, context)
-                      : null,
-                  onVerticalDragCancel: enableVerticalDismiss
-                      ? () {
-                          _beginDismissInteraction();
-                          unawaited(
-                            _animateDismissBack().whenComplete(
-                              _endDismissInteraction,
-                            ),
-                          );
-                        }
-                      : null,
-                );
-              },
+                        : null,
+                    onVerticalDragEnd: enableVerticalDismiss
+                        ? (details) => _handleVerticalDragEnd(details, context)
+                        : null,
+                    onVerticalDragCancel: enableVerticalDismiss
+                        ? () {
+                            _beginDismissInteraction();
+                            unawaited(
+                              _animateDismissBack().whenComplete(
+                                _endDismissInteraction,
+                              ),
+                            );
+                          }
+                        : null,
+                  );
+                },
+              ),
             ),
           ),
         ),
@@ -344,6 +407,9 @@ class _SessionDetailScaffold extends ConsumerStatefulWidget {
   final Future<String?> coverPathFuture;
   final Animation<double> dismissAnimation;
   final VoidCallback onClose;
+  final void Function(DragUpdateDetails)? onHorizontalDragUpdate;
+  final void Function(DragEndDetails)? onHorizontalDragEnd;
+  final VoidCallback? onHorizontalDragCancel;
   final void Function(DragUpdateDetails)? onVerticalDragUpdate;
   final void Function(DragEndDetails)? onVerticalDragEnd;
   final VoidCallback? onVerticalDragCancel;
@@ -354,6 +420,9 @@ class _SessionDetailScaffold extends ConsumerStatefulWidget {
     required this.provider,
     required this.coverPathFuture,
     required this.onClose,
+    this.onHorizontalDragUpdate,
+    this.onHorizontalDragEnd,
+    this.onHorizontalDragCancel,
     this.onVerticalDragUpdate,
     this.onVerticalDragEnd,
     this.onVerticalDragCancel,
@@ -520,6 +589,9 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
     final provider = widget.provider;
     final coverPathFuture = widget.coverPathFuture;
     final onClose = widget.onClose;
+    final onHorizontalDragUpdate = widget.onHorizontalDragUpdate;
+    final onHorizontalDragEnd = widget.onHorizontalDragEnd;
+    final onHorizontalDragCancel = widget.onHorizontalDragCancel;
     final onVerticalDragUpdate = widget.onVerticalDragUpdate;
     final onVerticalDragEnd = widget.onVerticalDragEnd;
     final onVerticalDragCancel = widget.onVerticalDragCancel;
@@ -545,6 +617,9 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
       color: cs.surface,
       child: GestureDetector(
         behavior: HitTestBehavior.translucent,
+        onHorizontalDragUpdate: onHorizontalDragUpdate,
+        onHorizontalDragEnd: onHorizontalDragEnd,
+        onHorizontalDragCancel: onHorizontalDragCancel,
         onVerticalDragStart: (details) {
           _isDismissGesture = widget.dismissAnimation.value > 0.01;
           _segmentPanelDragDelta = 0;
@@ -651,168 +726,186 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
               child: LayoutBuilder(
                 builder: (context, constraints) {
                   return Column(
-                      children: [
-                        // Top Bar 鈥?outside drag GestureDetector so taps work
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 8),
-                          child: Builder(
-                            builder: (context) {
-                              final cachedTrack = provider.getSubtitleTrackSync(
-                                session.currentTrackPath,
+                    children: [
+                      // Top Bar 鈥?outside drag GestureDetector so taps work
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        child: Builder(
+                          builder: (context) {
+                            final cachedTrack = provider.getSubtitleTrackSync(
+                              session.currentTrackPath,
+                            );
+                            if (cachedTrack == null) {
+                              unawaited(
+                                provider.subtitleTrackForPath(
+                                  session.currentTrackPath,
+                                ),
                               );
-                              if (cachedTrack == null) {
-                                unawaited(
-                                  provider.subtitleTrackForPath(
-                                    session.currentTrackPath,
-                                  ),
-                                );
-                              }
-                              final hasSubtitle = cachedTrack != null;
-                              final settings = ref.watch(
-                                subtitleSettingsProvider,
-                              );
+                            }
+                            final hasSubtitle = cachedTrack != null;
+                            final settings = ref.watch(
+                              subtitleSettingsProvider,
+                            );
 
-                              return Row(
-                                children: [
-                                  IconButton(
-                                    onPressed: onClose,
-                                    icon: Icon(
-                                      Icons.keyboard_arrow_down_rounded,
-                                      color: cs.onSurface,
-                                      size: 32,
-                                    ),
+                            return Row(
+                              children: [
+                                IconButton(
+                                  onPressed: onClose,
+                                  icon: Icon(
+                                    Icons.keyboard_arrow_down_rounded,
+                                    color: cs.onSurface,
+                                    size: 32,
                                   ),
-                                  const Spacer(),
-                                  if (hasSubtitle &&
-                                      settings.isShowEnabled(session.id) &&
-                                      settings.isGlobalEnabled(session.id)) ...[
-                                    Icon(
-                                      Icons.subtitles_rounded,
-                                      color: cs.onSurface,
-                                      size: 20,
-                                    ),
-                                    const SizedBox(width: 8),
-                                  ],
-                                  if (session.channelSwapEnabled) ...[
-                                    Icon(
-                                      Icons.swap_horiz_rounded,
-                                      color: cs.onSurface,
-                                      size: 20,
-                                    ),
-                                    const SizedBox(width: 8),
-                                  ],
+                                ),
+                                const Spacer(),
+                                if (hasSubtitle &&
+                                    settings.isShowEnabled(session.id) &&
+                                    settings.isGlobalEnabled(session.id)) ...[
+                                  Icon(
+                                    Icons.subtitles_rounded,
+                                    color: cs.onSurface,
+                                    size: 20,
+                                  ),
+                                  const SizedBox(width: 8),
                                 ],
-                              );
-                            },
-                          ),
-                        ),
-                        // Content area 鈥?keep session drag gestures on artwork only
-                        Expanded(
-                          child: Builder(
-                            builder: (context) {
-                              final isLandscape =
-                                  MediaQuery.orientationOf(context) ==
-                                  Orientation.landscape;
-
-                              Widget artworkWidget = _SessionHeroArtwork(
-                                sessionId: session.id,
-                                height: constraints.maxHeight,
-                                track: track,
-                                coverPathFuture: coverPathFuture,
-                              );
-
-                              if (isLandscape) {
-                                artworkWidget = Center(
-                                  child: AspectRatio(
-                                    aspectRatio: 1.0,
-                                    child: artworkWidget,
-                                  ),
-                                );
-                              }
-
-                              final artwork = Padding(
-                                padding: EdgeInsets.symmetric(
-                                  horizontal: isLandscape ? 48.0 : 32.0,
-                                  vertical: isLandscape ? 32.0 : 0.0,
+                                Consumer(
+                                  builder: (context, ref, child) {
+                                    final transport = ref.watch(
+                                      sessionDetailTransportProvider(
+                                        session.id,
+                                      ),
+                                    );
+                                    final channelSwapEnabled =
+                                        transport?.channelSwapEnabled ??
+                                        session.channelSwapEnabled;
+                                    if (!channelSwapEnabled) {
+                                      return const SizedBox.shrink();
+                                    }
+                                    return Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          Icons.swap_horiz_rounded,
+                                          color: cs.onSurface,
+                                          size: 20,
+                                        ),
+                                        const SizedBox(width: 8),
+                                      ],
+                                    );
+                                  },
                                 ),
-                                child: artworkWidget,
-                              );
-
-                              final detailPadding = EdgeInsets.fromLTRB(
-                                isLandscape ? 12 : 28,
-                                isLandscape ? 0 : 12,
-                                isLandscape ? 64 : 28,
-                                isLandscape ? 32 : 8,
-                              );
-                              final cachedTrack = provider.getSubtitleTrackSync(
-                                session.currentTrackPath,
-                              );
-                              if (cachedTrack == null) {
-                                unawaited(
-                                  provider.subtitleTrackForPath(
-                                    session.currentTrackPath,
-                                  ),
-                                );
-                              }
-                              final hasSubtitle = cachedTrack != null;
-                              final subtitleSettings = ref.watch(
-                                subtitleSettingsProvider,
-                              );
-
-                              return _SessionDetailContent(
-                                key: _detailContentKey,
-                                session: session,
-                                provider: provider,
-                                segmentPanelExpandedNotifier:
-                                    widget.segmentPanelExpandedNotifier,
-                                isLandscape: isLandscape,
-                                artworkWidget: artwork,
-                                detailPadding: detailPadding,
-                                hasSubtitle: hasSubtitle,
-                                subtitleEnabled: subtitleSettings.isShowEnabled(
-                                  session.id,
-                                ),
-                                subtitleGlobalEnabled: subtitleSettings
-                                    .isGlobalEnabled(session.id),
-                                onToggleSubtitle: hasSubtitle
-                                    ? () {
-                                        ref
-                                            .read(
-                                              subtitleSettingsProvider.notifier,
-                                            )
-                                            .toggleShowSubtitles(session.id);
-                                      }
-                                    : null,
-                                onToggleGlobalSubtitle: hasSubtitle
-                                    ? () {
-                                        final notifier = ref.read(
-                                          subtitleSettingsProvider.notifier,
-                                        );
-                                        unawaited(
-                                          _toggleGlobalSubtitleDisplay(
-                                            notifier,
-                                            subtitleSettings,
-                                            session.id,
-                                          ),
-                                        );
-                                      }
-                                    : null,
-                                onOpenTimer: () {
-                                  unawaited(_openTimerSettingsPage());
-                                },
-                                onShowAudioDetail: () =>
-                                    _showAudioDetailForSession(
-                                      context,
-                                      provider,
-                                      session,
-                                      track,
-                                    ),
-                              );
-                            },
-                          ),
+                              ],
+                            );
+                          },
                         ),
-                      ],
-                    );
+                      ),
+                      // Content area 鈥?keep session drag gestures on artwork only
+                      Expanded(
+                        child: Builder(
+                          builder: (context) {
+                            final isLandscape =
+                                MediaQuery.orientationOf(context) ==
+                                Orientation.landscape;
+
+                            Widget artworkWidget = _SessionHeroArtwork(
+                              sessionId: session.id,
+                              height: constraints.maxHeight,
+                              track: track,
+                              coverPathFuture: coverPathFuture,
+                            );
+
+                            if (isLandscape) {
+                              artworkWidget = Center(
+                                child: AspectRatio(
+                                  aspectRatio: 1.0,
+                                  child: artworkWidget,
+                                ),
+                              );
+                            }
+
+                            final artwork = Padding(
+                              padding: EdgeInsets.symmetric(
+                                horizontal: isLandscape ? 48.0 : 32.0,
+                                vertical: isLandscape ? 32.0 : 0.0,
+                              ),
+                              child: artworkWidget,
+                            );
+
+                            final detailPadding = EdgeInsets.fromLTRB(
+                              isLandscape ? 12 : 28,
+                              isLandscape ? 0 : 12,
+                              isLandscape ? 64 : 28,
+                              isLandscape ? 32 : 8,
+                            );
+                            final cachedTrack = provider.getSubtitleTrackSync(
+                              session.currentTrackPath,
+                            );
+                            if (cachedTrack == null) {
+                              unawaited(
+                                provider.subtitleTrackForPath(
+                                  session.currentTrackPath,
+                                ),
+                              );
+                            }
+                            final hasSubtitle = cachedTrack != null;
+                            final subtitleSettings = ref.watch(
+                              subtitleSettingsProvider,
+                            );
+
+                            return _SessionDetailContent(
+                              key: _detailContentKey,
+                              session: session,
+                              provider: provider,
+                              segmentPanelExpandedNotifier:
+                                  widget.segmentPanelExpandedNotifier,
+                              isLandscape: isLandscape,
+                              artworkWidget: artwork,
+                              detailPadding: detailPadding,
+                              hasSubtitle: hasSubtitle,
+                              subtitleEnabled: subtitleSettings.isShowEnabled(
+                                session.id,
+                              ),
+                              subtitleGlobalEnabled: subtitleSettings
+                                  .isGlobalEnabled(session.id),
+                              onToggleSubtitle: hasSubtitle
+                                  ? () {
+                                      ref
+                                          .read(
+                                            subtitleSettingsProvider.notifier,
+                                          )
+                                          .toggleShowSubtitles(session.id);
+                                    }
+                                  : null,
+                              onToggleGlobalSubtitle: hasSubtitle
+                                  ? () {
+                                      final notifier = ref.read(
+                                        subtitleSettingsProvider.notifier,
+                                      );
+                                      unawaited(
+                                        _toggleGlobalSubtitleDisplay(
+                                          notifier,
+                                          subtitleSettings,
+                                          session.id,
+                                        ),
+                                      );
+                                    }
+                                  : null,
+                              onOpenTimer: () {
+                                unawaited(_openTimerSettingsPage());
+                              },
+                              onShowAudioDetail: () =>
+                                  _showAudioDetailForSession(
+                                    context,
+                                    provider,
+                                    session,
+                                    track,
+                                  ),
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  );
                 },
               ),
             ),

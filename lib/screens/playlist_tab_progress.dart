@@ -114,7 +114,9 @@ class _ProgressBarState extends State<_ProgressBar> {
     final cs = Theme.of(context).colorScheme;
     final track = widget.provider.trackByPath(widget.session.currentTrackPath);
     final isAsmr = track?.remoteMetadataKind == 'asmr.one';
-    final primaryColor = isAsmr ? AppDesignTokens.of(context).asmrAccent : cs.primary;
+    final primaryColor = isAsmr
+        ? AppDesignTokens.of(context).asmrAccent
+        : cs.primary;
     final overlayLabels = hasKnownDuration
         ? widget.timeSegmentLabels
         : const <TimeSegmentLabel>[];
@@ -169,7 +171,9 @@ class _ProgressBarState extends State<_ProgressBar> {
                           overlayRadius: 16,
                         ),
                         activeTrackColor: primaryColor,
-                        inactiveTrackColor: primaryColor.withValues(alpha: 0.22),
+                        inactiveTrackColor: primaryColor.withValues(
+                          alpha: 0.22,
+                        ),
                         thumbColor: primaryColor,
                         overlayColor: primaryColor.withValues(alpha: 0.15),
                       ),
@@ -599,13 +603,27 @@ class _SessionSubtitlePanelState extends State<_SessionSubtitlePanel> {
   @override
   Widget build(BuildContext context) {
     final subtitleText = _subtitleText;
-    return AnimatedSize(
-      duration: const Duration(milliseconds: 250),
-      curve: Curves.easeOutCubic,
-      alignment: Alignment.topCenter,
-      child: subtitleText == null
-          ? const SizedBox(width: double.infinity, height: 0)
-          : _SubtitleChip(key: ValueKey(subtitleText), text: subtitleText),
+    return SizedBox(
+      width: double.infinity,
+      height: 44,
+      child: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 120),
+        switchInCurve: Curves.easeOutCubic,
+        switchOutCurve: Curves.easeInCubic,
+        layoutBuilder: (currentChild, previousChildren) {
+          return Stack(
+            alignment: Alignment.topLeft,
+            children: [...previousChildren, ?currentChild],
+          );
+        },
+        child: subtitleText == null
+            ? const SizedBox(
+                key: ValueKey('subtitle_empty'),
+                width: double.infinity,
+                height: 44,
+              )
+            : _SubtitleChip(key: ValueKey(subtitleText), text: subtitleText),
+      ),
     );
   }
 }
@@ -620,14 +638,20 @@ class _SubtitleChip extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     return Container(
       width: double.infinity,
+      height: 44,
       padding: EdgeInsets.zero,
-      child: Text(
-        text,
-        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-          color: cs.onSurface.withValues(alpha: 0.85),
-          fontWeight: FontWeight.w600,
-          fontSize: 16,
-          height: 1.3,
+      alignment: Alignment.topLeft,
+      child: ClipRect(
+        child: Text(
+          text,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+            color: cs.onSurface.withValues(alpha: 0.85),
+            fontWeight: FontWeight.w600,
+            fontSize: 16,
+            height: 1.3,
+          ),
         ),
       ),
     );

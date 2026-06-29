@@ -180,7 +180,7 @@ class ThemeProvider with ChangeNotifier {
         asmrContainer: scheme.primaryContainer,
         onAsmrContainer: scheme.onPrimaryContainer,
         onAsmrAccent: scheme.onPrimary,
-        asmrSurface: scheme.surface,
+        asmrSurface: scheme.surfaceContainerLow,
       );
     }
 

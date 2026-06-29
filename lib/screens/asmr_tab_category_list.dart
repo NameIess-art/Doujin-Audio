@@ -81,7 +81,6 @@ class _AsmrCategoryListState extends State<_AsmrCategoryList>
                       AppInteractionFeedbackType.confirmation,
                     ),
                   );
-                  _refreshIndicatorKey.currentState?.show();
                 } else if (notification.metrics.pixels >
                         notification.metrics.maxScrollExtent + 56 &&
                     !_loadMoreTriggeredInCurrentScroll) {
@@ -93,9 +92,9 @@ class _AsmrCategoryListState extends State<_AsmrCategoryList>
                       ),
                     );
                     context.read<AsmrLibraryController>().loadMoreCategory(
-                          widget.category,
-                          searchQuery: widget.searchQuery,
-                        );
+                      widget.category,
+                      searchQuery: widget.searchQuery,
+                    );
                   }
                 }
               } else if (notification is ScrollEndNotification) {
@@ -107,103 +106,103 @@ class _AsmrCategoryListState extends State<_AsmrCategoryList>
             child: GlassRefreshIndicator(
               key: _refreshIndicatorKey,
               color: asmrBlue,
-            backgroundColor: Theme.of(
-              context,
-            ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
-            edgeOffset: widget.topInset,
-            displacement: 32,
-            triggerMode: GlassRefreshIndicatorTriggerMode.anywhere,
-            onRefresh: () async {
-              unawaited(
-                AppInteractionFeedback.trigger(
-                  AppInteractionFeedbackType.confirmation,
+              backgroundColor: Theme.of(
+                context,
+              ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
+              edgeOffset: widget.topInset,
+              displacement: 32,
+              triggerMode: GlassRefreshIndicatorTriggerMode.anywhere,
+              onRefresh: () async {
+                unawaited(
+                  AppInteractionFeedback.trigger(
+                    AppInteractionFeedbackType.confirmation,
+                  ),
+                );
+                await widget.onRefresh();
+                await Future<void>.delayed(const Duration(milliseconds: 300));
+              },
+              child: ListView.builder(
+                controller: widget.scrollController,
+                cacheExtent: 520,
+                physics: const AlwaysScrollableScrollPhysics(
+                  parent: BouncingScrollPhysics(),
                 ),
-              );
-              await widget.onRefresh();
-              await Future<void>.delayed(const Duration(milliseconds: 300));
-            },
-            child: ListView.builder(
-              controller: widget.scrollController,
-              cacheExtent: 520,
-              physics: const AlwaysScrollableScrollPhysics(
-                parent: BouncingScrollPhysics(),
-              ),
-              padding: EdgeInsets.fromLTRB(
-                16,
-                widget.topInset,
-                16,
-                widget.bottomInset + 24,
-              ),
-              itemCount: works.isEmpty
-                  ? 1
-                  : works.length +
-                        ((state.isLoadingMore || state.hasMore) ? 1 : 0),
-              itemBuilder: (context, index) {
-                if (works.isEmpty) {
-                  if (state.isLoading) {
-                    return ShimmerLoader(
-                      child: Column(
-                        children: [
-                          for (int i = 0; i < 5; i++)
-                            const Padding(
-                              padding: EdgeInsets.only(bottom: 6),
-                              child: _AsmrWorkSkeletonCard(),
-                            ),
-                        ],
+                padding: EdgeInsets.fromLTRB(
+                  16,
+                  widget.topInset,
+                  16,
+                  widget.bottomInset + 24,
+                ),
+                itemCount: works.isEmpty
+                    ? 1
+                    : works.length +
+                          ((state.isLoadingMore || state.hasMore) ? 1 : 0),
+                itemBuilder: (context, index) {
+                  if (works.isEmpty) {
+                    if (state.isLoading) {
+                      return ShimmerLoader(
+                        child: Column(
+                          children: [
+                            for (int i = 0; i < 5; i++)
+                              const Padding(
+                                padding: EdgeInsets.only(bottom: 6),
+                                child: _AsmrWorkSkeletonCard(),
+                              ),
+                          ],
+                        ),
+                      );
+                    }
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 80),
+                      child: Center(
+                        child: Text(
+                          state.lastError == null
+                              ? i18n.tr('asmr_empty_category')
+                              : i18n.tr('asmr_refresh_failed'),
+                          style: theme.textTheme.bodyLarge?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                    );
+                  }
+                  if (index >= works.length) {
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 4, bottom: 4),
+                      child: Center(
+                        child: state.isLoadingMore
+                            ? SizedBox(
+                                width: 22,
+                                height: 22,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2.2,
+                                  color: asmrBlue,
+                                ),
+                              )
+                            : Text(
+                                i18n.tr('asmr_load_more_hint'),
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
                       ),
                     );
                   }
                   return Padding(
-                    padding: const EdgeInsets.only(top: 80),
-                    child: Center(
-                      child: Text(
-                        state.lastError == null
-                            ? i18n.tr('asmr_empty_category')
-                            : i18n.tr('asmr_refresh_failed'),
-                        style: theme.textTheme.bodyLarge?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: RepaintBoundary(
+                      child: _AsmrWorkTreeCard(
+                        work: works[index],
+                        searchQuery: widget.searchQuery,
                       ),
                     ),
                   );
-                }
-                if (index >= works.length) {
-                  return Padding(
-                    padding: const EdgeInsets.only(top: 4, bottom: 4),
-                    child: Center(
-                      child: state.isLoadingMore
-                          ? SizedBox(
-                              width: 22,
-                              height: 22,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2.2,
-                                color: asmrBlue,
-                              ),
-                            )
-                          : Text(
-                              i18n.tr('asmr_load_more_hint'),
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: theme.colorScheme.onSurfaceVariant,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                    ),
-                  );
-                }
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 6),
-                  child: RepaintBoundary(
-                    child: _AsmrWorkTreeCard(
-                      work: works[index],
-                      searchQuery: widget.searchQuery,
-                    ),
-                  ),
-                );
-              },
+                },
+              ),
             ),
           ),
         ),
-      ),
       ),
     );
   }

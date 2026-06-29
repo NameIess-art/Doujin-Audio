@@ -676,7 +676,7 @@ class AsmrLibraryController extends ChangeNotifier {
     final normalizedQuery = normalizeSearchQuery(searchQuery);
     _loadingByCategory[category] = true;
     _lastError = null;
-    notifyListeners();
+    _commitPresentation('asmr_loading_start_${category.name}', notifyListeners);
     try {
       switch (category) {
         case AsmrCategoryType.collected:
@@ -742,8 +742,10 @@ class AsmrLibraryController extends ChangeNotifier {
       _lastError = error;
     } finally {
       if (_refreshRequestSerial[category] == requestId) {
-        _loadingByCategory[category] = false;
-        notifyListeners();
+        _commitPresentation('asmr_loading_end_${category.name}', () {
+          _loadingByCategory[category] = false;
+          notifyListeners();
+        });
       }
     }
   }

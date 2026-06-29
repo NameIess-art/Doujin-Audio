@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 
 import '../i18n/app_language_provider.dart';
 import '../models/asmr_models.dart';
+import '../platform/app_platform.dart';
 import '../providers/audio_provider.dart';
 import '../services/asmr_download_manager.dart';
 import '../services/asmr_library_controller.dart';
@@ -169,7 +170,47 @@ class _AsmrTabState extends State<AsmrTab>
   }
 
   void _handleCategoryScroll(AsmrCategoryType category) {
-    // Auto-loading has been replaced by manual pull-up to load in _AsmrCategoryListState.
+    if (!AppPlatform.isWindows) {
+      // Auto-loading has been replaced by manual pull-up to load in _AsmrCategoryListState.
+      return;
+    }
+    final controller = _scrollControllers[category];
+    if (controller == null || !controller.hasClients) {
+      return;
+    }
+    if (controller.position.extentAfter > 280) {
+      return;
+    }
+    if (_loadMoreDebounceTimers.containsKey(category)) {
+      return;
+    }
+    _loadMoreDebounceTimers[category] = Timer(
+      const Duration(milliseconds: 180),
+      () {
+        _loadMoreDebounceTimers.remove(category);
+        if (!mounted) {
+          return;
+        }
+        final coordinator = UiInteractionCoordinator.instance;
+        final generation = coordinator.generation;
+        coordinator.scheduleAfterIdle(
+          key: 'asmr_load_more_${category.name}_$_normalizedSearchQuery',
+          generation: generation,
+          priority: 20,
+          task: () => _runAsmrOperation<void>(
+            scope: UiOperationScope.asmrCategory(
+              AsmrOperationKind.loadMore,
+              category.name,
+            ),
+            labelKey: 'loading_dot',
+            task: () => context.read<AsmrLibraryController>().loadMoreCategory(
+              category,
+              searchQuery: _searchQuery,
+            ),
+          ),
+        );
+      },
+    );
   }
 
   void _handleTabChanged() {
@@ -275,17 +316,18 @@ class _AsmrTabState extends State<AsmrTab>
       );
     }
 
+    await Future<void>.delayed(Duration.zero);
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
+
     await _runAsmrOperation<void>(
       scope: UiOperationScope.asmrCategory(
         AsmrOperationKind.refresh,
         category.name,
       ),
       labelKey: 'loading_dot',
-      task: () => Future.wait(<Future<void>>[
-        controller.refreshCategory(category, searchQuery: _searchQuery),
-        if (controller.isAsmrAccountLoggedIn)
-          controller.syncAsmrAccount(force: true),
-      ]),
+      task: () =>
+          controller.refreshCategory(category, searchQuery: _searchQuery),
     );
 
     if (!mounted) {
@@ -301,6 +343,16 @@ class _AsmrTabState extends State<AsmrTab>
         iconColor: asmrBlue,
       );
       return;
+    }
+
+    if (controller.isAsmrAccountLoggedIn) {
+      final coordinator = UiInteractionCoordinator.instance;
+      coordinator.scheduleAfterIdle(
+        key: 'asmr_account_sync_after_refresh',
+        generation: coordinator.generation,
+        priority: 80,
+        task: () => controller.syncAsmrAccount(force: true),
+      );
     }
 
     final afterIds = controller

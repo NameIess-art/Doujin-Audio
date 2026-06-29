@@ -9,6 +9,7 @@ import 'package:nameless_audio/services/asmr_api_service.dart';
 import 'package:nameless_audio/services/asmr_auth_service.dart';
 import 'package:nameless_audio/services/asmr_library_controller.dart';
 import 'package:nameless_audio/services/asmr_preferences.dart';
+import 'package:nameless_audio/services/ui_interaction_coordinator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -230,6 +231,46 @@ void main() {
       <int>[13],
     );
   });
+
+  testWidgets(
+    'ASMR refresh defers presentation notifications while interacting',
+    (tester) async {
+      await resetPrefs();
+      final api = _FakeAsmrApiService();
+      final controller = AsmrLibraryController(
+        apiService: api,
+        audioDatabaseRepository: _FakeAudioDatabaseRepository(
+          const <MusicTrack>[],
+        ),
+      );
+      final coordinator = UiInteractionCoordinator.instance;
+      final source = Object();
+      final notifications = <bool>[];
+      controller.addListener(
+        () => notifications.add(
+          controller.isLoadingCategory(AsmrCategoryType.release),
+        ),
+      );
+
+      coordinator.beginInteraction(source);
+      await controller.refreshCategory(AsmrCategoryType.release);
+      await tester.pump();
+
+      expect(notifications, isEmpty);
+      expect(controller.worksFor(AsmrCategoryType.release), isEmpty);
+      expect(controller.isLoadingCategory(AsmrCategoryType.release), isTrue);
+
+      coordinator.cancelInteraction(source);
+      await tester.pump();
+
+      expect(notifications, isNotEmpty);
+      expect(
+        controller.worksFor(AsmrCategoryType.release).map((work) => work.id),
+        <int>[12],
+      );
+      expect(controller.isLoadingCategory(AsmrCategoryType.release), isFalse);
+    },
+  );
 
   test('ASMR recommendation search uses ordinary search candidates', () async {
     await resetPrefs();

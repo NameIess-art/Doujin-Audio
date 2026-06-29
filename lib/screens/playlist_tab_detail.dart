@@ -130,7 +130,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
   ) async {
     final navigator = Navigator.of(context);
     final velocity = details.primaryVelocity ?? 0;
-    final shouldDismiss = _dismissController.value > 0.25 || velocity > 800;
+    final shouldDismiss = _dismissController.value > 0.35 || velocity > 1200;
     if (shouldDismiss) {
       ref
           .read(audioProviderFacadeProvider)
@@ -631,7 +631,11 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
           final detailFullyOpen = widget.dismissAnimation.value <= 0.01;
 
           if (!_isDismissGesture && delta > 0 && !panelExpanded) {
-            _isDismissGesture = true;
+            _segmentPanelDragDelta += delta;
+            if (_segmentPanelDragDelta > 32) {
+              _isDismissGesture = true;
+            }
+            return;
           }
 
           if (_isDismissGesture) {

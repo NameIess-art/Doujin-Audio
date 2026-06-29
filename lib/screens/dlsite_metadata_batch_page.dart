@@ -5,8 +5,10 @@ import 'package:provider/provider.dart';
 
 import '../i18n/app_language_provider.dart';
 import '../providers/audio_provider.dart';
+import '../services/ui_operation_service.dart';
 import 'dlsite_metadata_review_page.dart';
 import '../widgets/app_transitions.dart';
+import '../widgets/operation_feedback.dart';
 import '../widgets/top_page_header.dart';
 
 enum _BatchMetadataScope { anyMissing, noMetadata, hasRjCode, all, specific }
@@ -90,9 +92,13 @@ class _DlsiteMetadataBatchPageState extends State<DlsiteMetadataBatchPage> {
       _error = null;
     });
     try {
-      final snapshot = await context
-          .read<AudioProvider>()
-          .audioLibraryCategorySnapshot();
+      final snapshot = await UiOperationService.instance
+          .run<AudioLibraryCategorySnapshot>(
+            scope: UiOperationScope.metadataBatch,
+            labelKey: 'batch_metadata',
+            task: (_) =>
+                context.read<AudioProvider>().audioLibraryCategorySnapshot(),
+          );
       if (!mounted) return;
       setState(() {
         _entries = snapshot.entries;
@@ -185,7 +191,15 @@ class _DlsiteMetadataBatchPageState extends State<DlsiteMetadataBatchPage> {
         children: [
           Positioned.fill(
             child: _loading
-                ? const Center(child: CircularProgressIndicator())
+                ? OperationSkeletonList(
+                    itemCount: 5,
+                    padding: EdgeInsets.fromLTRB(
+                      16,
+                      MediaQuery.paddingOf(context).top + 98,
+                      16,
+                      24,
+                    ),
+                  )
                 : _error != null
                 ? _BatchMetadataErrorView(onRetry: _load)
                 : _summary != null

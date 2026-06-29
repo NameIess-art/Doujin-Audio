@@ -31,6 +31,26 @@ class UiOperationScope {
   static const libraryImportLibrary = UiOperationScope(
     'library:import-library',
   );
+  static const metadataBatch = UiOperationScope('metadata:batch');
+  static const asmrDownloadInit = UiOperationScope('asmr-download:init');
+  static const asmrDownloadStart = UiOperationScope('asmr-download:start');
+  static const timerReliability = UiOperationScope('timer:reliability');
+  static const videoConverterPick = UiOperationScope('video-converter:pick');
+  static const videoConverterConvert = UiOperationScope(
+    'video-converter:convert',
+  );
+
+  static UiOperationScope audioDetail(String targetKey) {
+    return UiOperationScope('audio-detail:$targetKey');
+  }
+
+  static UiOperationScope metadataReview(String targetKey) {
+    return UiOperationScope('metadata:review:$targetKey');
+  }
+
+  static UiOperationScope pageOpen(String pageKey) {
+    return UiOperationScope('page-open:$pageKey');
+  }
 
   static UiOperationScope asmrCategory(AsmrOperationKind kind, String name) {
     return UiOperationScope('asmr:${kind.name}:$name');
@@ -205,6 +225,10 @@ class UiOperationService {
   UiOperationState operationFor(UiOperationScope scope) {
     return _operations[scope] ?? UiOperationState.idle(scope);
   }
+
+  bool isBusy(UiOperationScope scope) => operationFor(scope).isBusy;
+
+  double? progressFor(UiOperationScope scope) => operationFor(scope).progress;
 
   Future<T> run<T>({
     required UiOperationScope scope,

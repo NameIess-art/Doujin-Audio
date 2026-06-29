@@ -8,9 +8,11 @@ import '../i18n/app_language_provider.dart';
 import '../providers/audio_provider.dart';
 import '../providers/audio_provider_riverpod.dart';
 import '../services/audio_state_services.dart';
+import '../services/ui_operation_service.dart';
 import '../services/video_conversion_plan.dart';
 import '../services/video_conversion_runner.dart';
 import '../widgets/app_feedback.dart';
+import '../widgets/operation_feedback.dart';
 import '../widgets/top_page_header.dart';
 import '../widgets/unified_dropdown.dart';
 
@@ -34,7 +36,11 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
 
   Future<void> _pickVideoFile() async {
     final i18n = context.read<AppLanguageProvider>();
-    final result = await FilePicker.platform.pickFiles(type: FileType.video);
+    final result = await UiOperationService.instance.run<FilePickerResult?>(
+      scope: UiOperationScope.videoConverterPick,
+      labelKey: 'source_video_file',
+      task: (_) => FilePicker.platform.pickFiles(type: FileType.video),
+    );
     if (result != null && result.files.single.path != null) {
       final videoPath = result.files.single.path!;
       setState(() {
@@ -48,7 +54,11 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
   }
 
   Future<void> _pickOutputDirectory() async {
-    final result = await FilePicker.platform.getDirectoryPath();
+    final result = await UiOperationService.instance.run<String?>(
+      scope: UiOperationScope.videoConverterPick,
+      labelKey: 'output_directory',
+      task: (_) => FilePicker.platform.getDirectoryPath(),
+    );
     if (result != null) {
       setState(() {
         _outputDirectoryPath = result;
@@ -57,7 +67,11 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
   }
 
   Future<void> _getVideoDuration(String videoPath) async {
-    final durationMs = await _conversionRunner.readDurationMs(videoPath);
+    final durationMs = await UiOperationService.instance.run<int>(
+      scope: UiOperationScope.videoConverterPick,
+      labelKey: 'source_video_file',
+      task: (_) => _conversionRunner.readDurationMs(videoPath),
+    );
 
     if (!mounted) return;
     setState(() {
@@ -83,33 +97,43 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
       _statusMessage = i18n.tr('conversion_starting');
     });
 
-    final selectedFormat = provider.converterFormat;
-    final selectedBitrate = provider.converterBitrate;
-    final plan = await createVideoConversionPlan(
-      inputPath: _selectedVideoPath!,
-      outputDirectoryPath: _outputDirectoryPath!,
-      format: selectedFormat,
-      bitrate: selectedBitrate,
-    );
-
-    final result = await _conversionRunner.convert(
-      plan: plan,
-      durationMs: _videoDurationMs,
-      onProgress: (progress) {
-        if (!mounted) return;
-        setState(() {
-          _progress = progress;
-          _statusMessage = i18n.tr('converting_percent', {
-            'percent': (_progress * 100).toStringAsFixed(1),
-          });
-        });
-      },
-    );
+    final conversion = await UiOperationService.instance
+        .run<({VideoConversionResult result, String outputPath})>(
+          scope: UiOperationScope.videoConverterConvert,
+          labelKey: 'conversion_starting',
+          task: (operationProgress) async {
+            final selectedFormat = provider.converterFormat;
+            final selectedBitrate = provider.converterBitrate;
+            final plan = await createVideoConversionPlan(
+              inputPath: _selectedVideoPath!,
+              outputDirectoryPath: _outputDirectoryPath!,
+              format: selectedFormat,
+              bitrate: selectedBitrate,
+            );
+            final result = await _conversionRunner.convert(
+              plan: plan,
+              durationMs: _videoDurationMs,
+              onProgress: (progress) {
+                operationProgress.report(progress);
+                if (!mounted) return;
+                setState(() {
+                  _progress = progress;
+                  _statusMessage = i18n.tr('converting_percent', {
+                    'percent': (_progress * 100).toStringAsFixed(1),
+                  });
+                });
+              },
+            );
+            return (result: result, outputPath: plan.outputPath);
+          },
+        );
     if (!mounted) return;
+    final result = conversion.result;
+    final outputPath = conversion.outputPath;
 
     switch (result.status) {
       case VideoConversionStatus.success:
-        _onConversionSuccess(i18n, plan.outputPath);
+        _onConversionSuccess(i18n, outputPath);
         break;
       case VideoConversionStatus.canceled:
         setState(() {
@@ -170,6 +194,9 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
     final provider = ref.read(audioProviderFacadeProvider);
     final settingsState =
         ref.watch(settingsStateProvider).valueOrNull ?? const SettingsState();
+    final pickOperation = ref.watch(
+      uiOperationForScopeProvider(UiOperationScope.videoConverterPick),
+    );
     final selectedFormat = settingsState.converterFormat;
     final selectedBitrate = settingsState.converterBitrate;
     final bitrateEnabled = selectedFormat != 'wav' && selectedFormat != 'flac';
@@ -204,19 +231,38 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
                       title: i18n.tr('source_video_file'),
                       placeholder: i18n.tr('tap_select_video_file'),
                       value: _selectedVideoPath,
-                      onTap: _isConverting ? null : _pickVideoFile,
+                      onTap: _isConverting || pickOperation.isBusy
+                          ? null
+                          : _pickVideoFile,
                     ),
-                    Divider(height: 1, color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.4)),
+                    Divider(
+                      height: 1,
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.outlineVariant.withValues(alpha: 0.4),
+                    ),
                     _PathPickerCard(
                       icon: Icons.create_new_folder_rounded,
                       title: i18n.tr('output_directory'),
                       placeholder: i18n.tr('tap_select_output_dir'),
                       value: _outputDirectoryPath,
-                      onTap: _isConverting ? null : _pickOutputDirectory,
+                      onTap: _isConverting || pickOperation.isBusy
+                          ? null
+                          : _pickOutputDirectory,
                     ),
                   ],
                 ),
               ),
+              if (pickOperation.isBusy) ...[
+                const SizedBox(height: 12),
+                OperationStatusBanner(
+                  label: _statusMessage.isNotEmpty
+                      ? _statusMessage
+                      : i18n.tr(pickOperation.labelKey),
+                  progress: pickOperation.progress,
+                  icon: Icons.folder_open_rounded,
+                ),
+              ],
               const SizedBox(height: 16),
               Card(
                 margin: EdgeInsets.zero,
@@ -241,7 +287,10 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
                           Text(
                             i18n.tr('transcode_defaults'),
                             style: Theme.of(context).textTheme.titleMedium
-                                ?.copyWith(fontWeight: FontWeight.w700, fontSize: 15),
+                                ?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 15,
+                                ),
                           ),
                         ],
                       ),
@@ -345,7 +394,8 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
                     vertical: 14,
                   ),
                   decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
+                    color: Theme.of(context).colorScheme.surfaceContainerHighest
+                        .withValues(alpha: 0.6),
                     borderRadius: BorderRadius.circular(16),
                   ),
                   child: Text(

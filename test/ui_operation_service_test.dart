@@ -41,6 +41,23 @@ void main() {
       expect(states.map((state) => state.progress), contains(0.4));
       expect(service.operationFor(scope).phase, UiOperationPhase.succeeded);
       expect(service.operationFor(scope).progress, 1);
+      expect(service.isBusy(scope), isFalse);
+      expect(service.progressFor(scope), 1);
+    });
+
+    test('stable public scopes use distinct operation keys', () {
+      expect(
+        UiOperationScope.audioDetail('folder|a'),
+        isNot(UiOperationScope.audioDetail('folder|b')),
+      );
+      expect(
+        UiOperationScope.metadataReview('folder|a'),
+        isNot(UiOperationScope.metadataBatch),
+      );
+      expect(
+        UiOperationScope.pageOpen('settings'),
+        isNot(UiOperationScope.videoConverterPick),
+      );
     });
 
     test('keeps the latest operation result for the same scope', () async {

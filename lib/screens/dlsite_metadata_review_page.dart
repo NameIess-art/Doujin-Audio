@@ -6,8 +6,10 @@ import 'package:provider/provider.dart';
 import '../i18n/app_language_provider.dart';
 import '../providers/audio_provider.dart';
 import '../services/audio_state_services.dart';
+import '../services/ui_operation_service.dart';
 import '../widgets/app_feedback.dart';
 import '../widgets/async_cover_image.dart';
+import '../widgets/operation_feedback.dart';
 
 enum DlsiteMetadataReviewOutcome { applied, skipped }
 
@@ -67,6 +69,10 @@ class _DlsiteMetadataReviewPageState extends State<DlsiteMetadataReviewPage> {
   bool _saving = false;
   bool _saveCover = true;
 
+  UiOperationScope get _operationScope => UiOperationScope.metadataReview(
+    '${widget.detail.target.targetType.dbValue}|${widget.detail.target.targetPath}',
+  );
+
   @override
   void initState() {
     super.initState();
@@ -94,11 +100,22 @@ class _DlsiteMetadataReviewPageState extends State<DlsiteMetadataReviewPage> {
       _candidateIndex = 0;
     });
     try {
-      final provider = context.read<AudioProvider>();
-      final rjCode = widget.rjCode;
-      final candidates = rjCode != null
-          ? <DlsiteMetadata>[await provider.fetchPreferredMetadata(rjCode)]
-          : await provider.searchPreferredMetadataByTitles(widget.searchTitles);
+      final candidates = await UiOperationService.instance
+          .run<List<DlsiteMetadata>>(
+            scope: _operationScope,
+            labelKey: 'dlsite_review_title',
+            task: (_) async {
+              final provider = context.read<AudioProvider>();
+              final rjCode = widget.rjCode;
+              return rjCode != null
+                  ? <DlsiteMetadata>[
+                      await provider.fetchPreferredMetadata(rjCode),
+                    ]
+                  : provider.searchPreferredMetadataByTitles(
+                      widget.searchTitles,
+                    );
+            },
+          );
       if (!mounted) return;
       _showCandidate(0, candidates);
     } catch (error) {
@@ -155,12 +172,17 @@ class _DlsiteMetadataReviewPageState extends State<DlsiteMetadataReviewPage> {
     );
 
     try {
-      final result = await context.read<AudioProvider>().applyDlsiteMetadata(
-        widget.detail,
-        edited,
-        saveCover: _saveCover,
-        missingOnly: widget.missingOnly,
-      );
+      final result = await UiOperationService.instance
+          .run<DlsiteMetadataApplyResult>(
+            scope: _operationScope,
+            labelKey: 'audio_detail_save_failed',
+            task: (_) => context.read<AudioProvider>().applyDlsiteMetadata(
+              widget.detail,
+              edited,
+              saveCover: _saveCover,
+              missingOnly: widget.missingOnly,
+            ),
+          );
       if (!mounted) return;
       if (result.coverFailed) {
         showAppSnackBar(
@@ -244,7 +266,10 @@ class _DlsiteMetadataReviewPageState extends State<DlsiteMetadataReviewPage> {
       ),
       body: SafeArea(
         child: _loading
-            ? const Center(child: CircularProgressIndicator())
+            ? const SingleChildScrollView(
+                padding: EdgeInsets.fromLTRB(20, 12, 20, 24),
+                child: OperationSkeletonList(itemCount: 7),
+              )
             : _error != null
             ? _DlsiteErrorView(
                 onRetry: _fetch,

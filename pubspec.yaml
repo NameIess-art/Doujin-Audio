@@ -1,7 +1,7 @@
 name: nameless_audio
 description: Local audio player for multi-session ASMR and voice library playback.
 publish_to: 'none'
-version: 0.12.2+1202
+version: 0.12.3+1203
 
 environment:
   sdk: ^3.11.1

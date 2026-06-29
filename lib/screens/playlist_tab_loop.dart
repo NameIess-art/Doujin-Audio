@@ -317,7 +317,7 @@ class _ExpandableLoopOptionsState extends State<_ExpandableLoopOptions>
       link: _anchorLink,
       child: SizedBox(
         width: 44,
-        height: 82,
+        height: 46,
         child: IgnorePointer(
           ignoring: _expanded,
           child: Visibility(

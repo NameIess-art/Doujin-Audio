@@ -139,6 +139,7 @@ const Map<String, String> appLanguageJa = {
   'asmr_detail_readonly_hint': '読み取り専用モードです。編集やドラッグ並べ替えはできません。',
   'asmr_detail_load_failed': '作品情報の読み込みに失敗しました。しばらくしてから再試行してください。',
   'asmr_detail_basic_info': '基本情報',
+  'asmr_detail_other': 'その他',
   'asmr_detail_statistics': '統計情報',
   'asmr_detail_release_date': '発売日',
   'asmr_detail_duration': '長さ',

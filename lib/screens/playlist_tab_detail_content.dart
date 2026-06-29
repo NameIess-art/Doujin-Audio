@@ -414,9 +414,9 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
               ),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
           SizedBox(
-            height: 42,
+            height: 48,
             child: MarqueeText(
               text: displayName,
               pauseDuration: const Duration(seconds: 1),
@@ -432,12 +432,9 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
           const SizedBox(height: 8),
           if (widget.subtitleEnabled && !_segmentPanelExpanded)
             RepaintBoundary(
-              child: Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: _SessionSubtitlePanel(
-                  session: session,
-                  provider: provider,
-                ),
+              child: _SessionSubtitlePanel(
+                session: session,
+                provider: provider,
               ),
             ),
           RepaintBoundary(

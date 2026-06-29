@@ -18,6 +18,9 @@ Future<void> showAsmrWorkDetailSheet(BuildContext context, AsmrWork work) {
     isScrollControlled: true,
     showDragHandle: true,
     useRootNavigator: true,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+    ),
     builder: (_) => _AsmrWorkDetailSheet(work: work),
   );
 }
@@ -53,125 +56,23 @@ class _AsmrWorkDetailSheetState extends State<_AsmrWorkDetailSheet> {
     final i18n = context.watch<AppLanguageProvider>();
     final cs = Theme.of(context).colorScheme;
     final asmrBlue = AppDesignTokens.of(context).asmrAccent;
+    final labelStyle = Theme.of(
+      context,
+    ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700);
+
     return FutureBuilder<AsmrWorkDetail>(
       future: _detailFuture,
       builder: (context, snapshot) {
         final detail = snapshot.data;
         final effectiveWork = detail?.work ?? widget.work;
-        final isLandscape =
-            MediaQuery.orientationOf(context) == Orientation.landscape;
-
-        final heroAndButton = Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [_AsmrDetailHero(work: effectiveWork)],
+        final coverCacheWidth = coverCacheWidthForResolution(
+          context.select<AudioProvider, CoverImageResolution>(
+            (provider) => provider.coverImageResolution,
+          ),
         );
+        final provider = context.read<AudioProvider>();
+        final coverUrl = effectiveWork.preferredCoverUrl;
 
-        final detailsSections = Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _AsmrDetailSection(
-              title: i18n.tr('asmr_detail_basic_info'),
-              children: [
-                _CopyableValueRow(
-                  label: i18n.tr('audio_detail_rj_code'),
-                  value: effectiveWork.rjCode,
-                ),
-                _CopyableValueRow(
-                  label: i18n.tr('audio_detail_work_title'),
-                  value: effectiveWork.title,
-                ),
-                _CopyableValueRow(
-                  label: i18n.tr('asmr_circle_label'),
-                  value: effectiveWork.circleName,
-                ),
-                _CopyableChipWrapRow(
-                  label: i18n.tr('audio_detail_voice_actors'),
-                  values: effectiveWork.voiceActors,
-                ),
-                _CopyableChipWrapRow(
-                  label: i18n.tr('asmr_tags_label'),
-                  values: effectiveWork.tags,
-                ),
-              ],
-            ),
-            const SizedBox(height: 14),
-            if (snapshot.hasError)
-              _AsmrDetailSection(
-                title: i18n.tr('asmr_detail_statistics'),
-                children: [
-                  Text(
-                    i18n.tr('asmr_detail_load_failed'),
-                    style: TextStyle(color: cs.error),
-                  ),
-                ],
-              )
-            else if (snapshot.connectionState == ConnectionState.waiting)
-              _AsmrDetailLoadingSection(color: asmrBlue)
-            else
-              _AsmrDetailSection(
-                title: i18n.tr('asmr_detail_statistics'),
-                children: [
-                  _CopyableValueRow(
-                    label: i18n.tr('asmr_detail_release_date'),
-                    value: _formatDate(i18n, effectiveWork.releaseDate),
-                  ),
-                  _CopyableValueRow(
-                    label: i18n.tr('asmr_detail_duration'),
-                    value: _formatDuration(i18n, effectiveWork.duration),
-                  ),
-                  _CopyableValueRow(
-                    label: i18n.tr('asmr_detail_sales'),
-                    value: '${effectiveWork.dlCount}',
-                  ),
-                  _CopyableValueRow(
-                    label: i18n.tr('asmr_detail_rating'),
-                    value: effectiveWork.rating <= 0
-                        ? i18n.tr('asmr_detail_unrated')
-                        : effectiveWork.rating.toStringAsFixed(2),
-                  ),
-                  _CopyableValueRow(
-                    label: i18n.tr('asmr_detail_reviews'),
-                    value: '${effectiveWork.reviewCount}',
-                  ),
-                  _CopyableValueRow(
-                    label: i18n.tr('asmr_detail_age_rating'),
-                    value: detail?.ageCategory ?? '',
-                  ),
-                  _CopyableChipWrapRow(
-                    label: i18n.tr('asmr_detail_language_editions'),
-                    values: detail?.languageEditionLabels ?? const <String>[],
-                  ),
-                ],
-              ),
-            if ((detail?.description.trim().isNotEmpty ?? false)) ...[
-              const SizedBox(height: 14),
-              _AsmrDetailSection(
-                title: i18n.tr('asmr_detail_description'),
-                children: [
-                  _CopyableTextBlock(text: detail!.description.trim()),
-                ],
-              ),
-            ],
-          ],
-        );
-
-        final mainContent = isLandscape
-            ? Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(flex: 2, child: heroAndButton),
-                  const SizedBox(width: 24),
-                  Expanded(flex: 3, child: detailsSections),
-                ],
-              )
-            : Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  heroAndButton,
-                  const SizedBox(height: 20),
-                  detailsSections,
-                ],
-              );
         return ConstrainedBox(
           constraints: BoxConstraints(
             maxHeight: MediaQuery.sizeOf(context).height * 0.68,
@@ -179,6 +80,7 @@ class _AsmrWorkDetailSheetState extends State<_AsmrWorkDetailSheet> {
           child: SingleChildScrollView(
             padding: const EdgeInsets.fromLTRB(24, 0, 24, 32),
             child: Column(
+              mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
@@ -186,6 +88,8 @@ class _AsmrWorkDetailSheetState extends State<_AsmrWorkDetailSheet> {
                     Expanded(
                       child: Text(
                         i18n.tr('asmr_detail_title'),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: Theme.of(context).textTheme.titleLarge?.copyWith(
                           fontWeight: FontWeight.w800,
                         ),
@@ -193,21 +97,176 @@ class _AsmrWorkDetailSheetState extends State<_AsmrWorkDetailSheet> {
                     ),
                     IconButton(
                       onPressed: () => Navigator.of(context).maybePop(),
-                      tooltip: MaterialLocalizations.of(
-                        context,
-                      ).closeButtonTooltip,
+                      tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
                       icon: const Icon(Icons.keyboard_arrow_down_rounded),
                     ),
                   ],
                 ),
+                const SizedBox(height: 4),
                 Text(
-                  i18n.tr('asmr_detail_readonly_hint'),
+                  effectiveWork.hasSubtitle ? '有字幕' : '无字幕',
                   style: Theme.of(
                     context,
                   ).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
                 ),
                 const SizedBox(height: 16),
-                mainContent,
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(14),
+                  child: AspectRatio(
+                    aspectRatio: 1.45,
+                    child: AsyncRemoteCoverImage(
+                      url: coverUrl,
+                      future: provider.coverPathFutureForRemoteCover(coverUrl),
+                      initialPath: provider.resolvedCoverPathForRemoteCover(coverUrl),
+                      retryFutureBuilder: () =>
+                          provider.coverPathFutureForRemoteCover(coverUrl),
+                      fit: BoxFit.cover,
+                      cacheWidth: coverCacheWidth,
+                      useDefaultCacheWidth: coverCacheWidth != null,
+                      loadingBuilder: (_) => CoverLoadingArtwork(
+                        placeholder: CoverFallbackArtwork(
+                          seed: effectiveWork.title,
+                          showIcon: false,
+                        ),
+                        size: 36,
+                        strokeWidth: 3,
+                        color: asmrBlue,
+                      ),
+                      fallbackBuilder: (_) => CoverFallbackArtwork(
+                        seed: effectiveWork.title,
+                        icon: Icons.graphic_eq_rounded,
+                        iconSize: 36,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                Text(
+                  i18n.tr('asmr_detail_basic_info'),
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    color: asmrBlue,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                _AsmrDetailRow(
+                  label: i18n.tr('audio_detail_rj_code'),
+                  values: [effectiveWork.rjCode],
+                  labelStyle: labelStyle,
+                  isCapsule: true,
+                  onCopy: (val) => _copyText(context, val),
+                ),
+                _AsmrDetailRow(
+                  label: i18n.tr('audio_detail_work_title'),
+                  values: [effectiveWork.title],
+                  labelStyle: labelStyle,
+                  isCapsule: true,
+                  onCopy: (val) => _copyText(context, val),
+                ),
+                _AsmrDetailRow(
+                  label: i18n.tr('asmr_circle_label'),
+                  values: [effectiveWork.circleName],
+                  labelStyle: labelStyle,
+                  isCapsule: true,
+                  onCopy: (val) => _copyText(context, val),
+                ),
+                _AsmrDetailRow(
+                  label: i18n.tr('audio_detail_voice_actors'),
+                  values: effectiveWork.voiceActors,
+                  labelStyle: labelStyle,
+                  isCapsule: true,
+                  onCopy: (val) => _copyText(context, val),
+                ),
+                _AsmrDetailRow(
+                  label: i18n.tr('asmr_tags_label'),
+                  values: effectiveWork.tags,
+                  labelStyle: labelStyle,
+                  isCapsule: true,
+                  onCopy: (val) => _copyText(context, val),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  i18n.tr('asmr_detail_other'),
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    color: asmrBlue,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                if (snapshot.hasError) ...[
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    child: Text(
+                      i18n.tr('asmr_detail_load_failed'),
+                      style: TextStyle(color: cs.error),
+                    ),
+                  ),
+                ] else if (snapshot.connectionState == ConnectionState.waiting) ...[
+                  Center(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 24),
+                      child: SizedBox.square(
+                        dimension: 24,
+                        child: CircularProgressIndicator(strokeWidth: 2.4, color: asmrBlue),
+                      ),
+                    ),
+                  ),
+                ] else ...[
+                  _AsmrDetailRow(
+                    label: i18n.tr('asmr_detail_release_date'),
+                    values: [_formatDate(i18n, effectiveWork.releaseDate)],
+                    labelStyle: labelStyle,
+                    onCopy: (val) => _copyText(context, val),
+                  ),
+                  _AsmrDetailRow(
+                    label: i18n.tr('asmr_detail_duration'),
+                    values: [_formatDuration(i18n, effectiveWork.duration)],
+                    labelStyle: labelStyle,
+                    onCopy: (val) => _copyText(context, val),
+                  ),
+                  _AsmrDetailRow(
+                    label: i18n.tr('asmr_detail_sales'),
+                    values: ['${effectiveWork.dlCount}'],
+                    labelStyle: labelStyle,
+                    onCopy: (val) => _copyText(context, val),
+                  ),
+                  _AsmrDetailRow(
+                    label: i18n.tr('asmr_detail_rating'),
+                    values: [effectiveWork.rating <= 0
+                        ? i18n.tr('asmr_detail_unrated')
+                        : effectiveWork.rating.toStringAsFixed(2)],
+                    labelStyle: labelStyle,
+                    onCopy: (val) => _copyText(context, val),
+                  ),
+                  _AsmrDetailRow(
+                    label: i18n.tr('asmr_detail_reviews'),
+                    values: ['${effectiveWork.reviewCount}'],
+                    labelStyle: labelStyle,
+                    onCopy: (val) => _copyText(context, val),
+                  ),
+                  _AsmrDetailRow(
+                    label: i18n.tr('asmr_detail_age_rating'),
+                    values: [detail?.ageCategory ?? ''],
+                    labelStyle: labelStyle,
+                    isCapsule: false,
+                    onCopy: (val) => _copyText(context, val),
+                  ),
+                  _AsmrDetailRow(
+                    label: i18n.tr('asmr_detail_language_editions'),
+                    values: detail?.languageEditionLabels ?? const <String>[],
+                    labelStyle: labelStyle,
+                    isCapsule: false,
+                    onCopy: (val) => _copyText(context, val),
+                  ),
+                  if ((detail?.description.trim().isNotEmpty ?? false)) ...[
+                    const SizedBox(height: 4),
+                    _AsmrDetailDescriptionBlock(
+                      label: i18n.tr('asmr_detail_description'),
+                      text: detail!.description.trim(),
+                      labelStyle: labelStyle,
+                    ),
+                  ],
+                ],
               ],
             ),
           ),
@@ -217,219 +276,51 @@ class _AsmrWorkDetailSheetState extends State<_AsmrWorkDetailSheet> {
   }
 }
 
-class _AsmrDetailLoadingSection extends StatelessWidget {
-  const _AsmrDetailLoadingSection({required this.color});
+class _AsmrDetailRow extends StatelessWidget {
+  const _AsmrDetailRow({
+    required this.label,
+    required this.values,
+    required this.labelStyle,
+    this.isCapsule = false,
+    this.onCopy,
+  });
 
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return _AsmrDetailSection(
-      title: context.watch<AppLanguageProvider>().tr('asmr_detail_statistics'),
-      children: [
-        Center(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 18),
-            child: SizedBox.square(
-              dimension: 24,
-              child: CircularProgressIndicator(strokeWidth: 2.4, color: color),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _AsmrDetailHero extends StatelessWidget {
-  const _AsmrDetailHero({required this.work});
-
-  final AsmrWork work;
-
-  @override
-  Widget build(BuildContext context) {
-    final asmrBlue = AppDesignTokens.of(context).asmrAccent;
-    final i18n = context.watch<AppLanguageProvider>();
-    final coverCacheWidth = coverCacheWidthForResolution(
-      context.select<AudioProvider, CoverImageResolution>(
-        (provider) => provider.coverImageResolution,
-      ),
-    );
-    final provider = context.read<AudioProvider>();
-    final coverUrl = work.preferredCoverUrl;
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        ClipRRect(
-          borderRadius: BorderRadius.circular(18),
-          child: SizedBox(
-            width: 110,
-            height: 146,
-            child: AsyncRemoteCoverImage(
-              url: coverUrl,
-              future: provider.coverPathFutureForRemoteCover(coverUrl),
-              initialPath: provider.resolvedCoverPathForRemoteCover(coverUrl),
-              retryFutureBuilder: () =>
-                  provider.coverPathFutureForRemoteCover(coverUrl),
-              fit: BoxFit.cover,
-              cacheWidth: coverCacheWidth,
-              useDefaultCacheWidth: coverCacheWidth != null,
-              loadingBuilder: (_) => CoverLoadingArtwork(
-                placeholder: CoverFallbackArtwork(
-                  seed: work.title,
-                  showIcon: false,
-                ),
-                size: 36,
-                strokeWidth: 3,
-                color: asmrBlue,
-              ),
-              fallbackBuilder: (_) => CoverFallbackArtwork(
-                seed: work.title,
-                icon: Icons.graphic_eq_rounded,
-                iconSize: 36,
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(width: 16),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                work.title,
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w800,
-                  height: 1.18,
-                ),
-              ),
-              const SizedBox(height: 10),
-              _AsmrInfoChip(
-                icon: Icons.album_rounded,
-                label: work.circleName.isEmpty
-                    ? i18n.tr('asmr_unknown_circle')
-                    : work.circleName,
-              ),
-              const SizedBox(height: 8),
-              _AsmrInfoChip(
-                icon: Icons.confirmation_number_rounded,
-                label: work.rjCode.isEmpty
-                    ? i18n.tr('asmr_missing_rj')
-                    : work.rjCode,
-              ),
-              if (work.hasSubtitle) ...[
-                const SizedBox(height: 8),
-                _AsmrInfoChip(
-                  icon: Icons.subtitles_rounded,
-                  label: i18n.tr('asmr_has_subtitle'),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _AsmrDetailSection extends StatelessWidget {
-  const _AsmrDetailSection({required this.title, required this.children});
-
-  final String title;
-  final List<Widget> children;
+  final String label;
+  final List<String> values;
+  final TextStyle? labelStyle;
+  final bool isCapsule;
+  final void Function(String)? onCopy;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: cs.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: cs.outlineVariant),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: Theme.of(
-              context,
-            ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
-          ),
-          const SizedBox(height: 12),
-          ...children,
-        ],
-      ),
-    );
-  }
-}
+    final emptyText = context.read<AppLanguageProvider>().tr('audio_detail_empty');
+    final displayValues = values.isEmpty || (values.length == 1 && values.first.isEmpty) 
+        ? [emptyText]
+        : values;
 
-class _CopyableValueRow extends StatelessWidget {
-  const _CopyableValueRow({required this.label, required this.value});
-
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    final i18n = context.watch<AppLanguageProvider>();
-    final text = value.trim().isEmpty
-        ? i18n.tr('audio_detail_empty')
-        : value.trim();
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.symmetric(vertical: 10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            label,
-            style: Theme.of(context).textTheme.labelMedium?.copyWith(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 6),
-          _CopyableTextChip(text: text),
-        ],
-      ),
-    );
-  }
-}
-
-class _CopyableChipWrapRow extends StatelessWidget {
-  const _CopyableChipWrapRow({required this.label, required this.values});
-
-  final String label;
-  final List<String> values;
-
-  @override
-  Widget build(BuildContext context) {
-    final filtered = values.where((value) => value.trim().isNotEmpty).toList();
-    final i18n = context.watch<AppLanguageProvider>();
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: Theme.of(context).textTheme.labelMedium?.copyWith(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
+          Text(label, style: labelStyle),
           const SizedBox(height: 8),
-          if (filtered.isEmpty)
-            _CopyableTextChip(text: i18n.tr('audio_detail_empty'))
-          else
+          if (isCapsule)
             Wrap(
               spacing: 8,
               runSpacing: 8,
-              children: [
-                for (final value in filtered) _CopyableTextChip(text: value),
-              ],
+              children: displayValues.map((v) => _DetailCapsule(
+                text: v,
+                onLongPress: onCopy != null && v != emptyText ? () => onCopy!(v) : null,
+              )).toList(),
+            )
+          else
+            Text(
+              displayValues.join('\uFF0C'),
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: displayValues.first == emptyText ? cs.onSurfaceVariant : cs.onSurface,
+              ),
             ),
         ],
       ),
@@ -437,50 +328,26 @@ class _CopyableChipWrapRow extends StatelessWidget {
   }
 }
 
-class _CopyableTextBlock extends StatelessWidget {
-  const _CopyableTextBlock({required this.text});
+class _DetailCapsule extends StatelessWidget {
+  const _DetailCapsule({required this.text, this.onLongPress});
 
   final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return _CopyableTextChip(text: text, multiline: true, compact: false);
-  }
-}
-
-class _CopyableTextChip extends StatelessWidget {
-  const _CopyableTextChip({
-    required this.text,
-    this.multiline = false,
-    this.compact = true,
-  });
-
-  final String text;
-  final bool multiline;
-  final bool compact;
+  final VoidCallback? onLongPress;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     return Material(
       color: cs.surfaceContainerHighest,
-      borderRadius: BorderRadius.circular(multiline ? 16 : 999),
+      borderRadius: BorderRadius.circular(999),
       child: InkWell(
-        borderRadius: BorderRadius.circular(multiline ? 16 : 999),
-        onLongPress: () => _copyText(context, text),
-        onSecondaryTap: () => _copyText(context, text),
+        onLongPress: onLongPress,
+        borderRadius: BorderRadius.circular(999),
         child: Padding(
-          padding: EdgeInsets.symmetric(
-            horizontal: compact ? 12 : 14,
-            vertical: multiline ? 12 : 9,
-          ),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           child: Text(
             text,
-            maxLines: multiline ? null : 2,
-            overflow: multiline ? null : TextOverflow.ellipsis,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              fontWeight: FontWeight.w600,
-              height: 1.35,
               color: cs.onSurface,
             ),
           ),
@@ -490,38 +357,49 @@ class _CopyableTextChip extends StatelessWidget {
   }
 }
 
-class _AsmrInfoChip extends StatelessWidget {
-  const _AsmrInfoChip({required this.icon, required this.label});
+class _AsmrDetailDescriptionBlock extends StatelessWidget {
+  const _AsmrDetailDescriptionBlock({
+    required this.label,
+    required this.text,
+    required this.labelStyle,
+  });
 
-  final IconData icon;
   final String label;
+  final String text;
+  final TextStyle? labelStyle;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final asmrBlue = AppDesignTokens.of(context).asmrAccent;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-      decoration: BoxDecoration(
-        color: cs.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 15, color: asmrBlue),
-          const SizedBox(width: 6),
-          Flexible(
-            child: Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(
-                context,
-              ).textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w700),
+    return InkWell(
+      onTap: () => _copyText(context, text),
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(label, style: labelStyle),
+                Icon(
+                  Icons.copy_rounded,
+                  size: 18,
+                  color: cs.onSurfaceVariant,
+                ),
+              ],
             ),
-          ),
-        ],
+            const SizedBox(height: 12),
+            Text(
+              text,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: cs.onSurface,
+                height: 1.4,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

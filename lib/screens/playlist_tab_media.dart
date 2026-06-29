@@ -44,28 +44,28 @@ class _SessionHeroArtwork extends ConsumerWidget {
           child: Container(
             width: displayWidth,
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(24),
+              borderRadius: BorderRadius.circular(32),
               border: Border.all(
-                color: cs.onSurface.withValues(alpha: 0.08),
+                color: cs.onSurface.withValues(alpha: 0.12),
                 width: 0.5,
               ),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.35),
-                  blurRadius: 48,
-                  spreadRadius: 8,
-                  offset: const Offset(0, 24),
+                  color: Colors.black.withValues(alpha: 0.25),
+                  blurRadius: 56,
+                  spreadRadius: 4,
+                  offset: const Offset(0, 28),
                 ),
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.15),
-                  blurRadius: 16,
-                  offset: const Offset(0, 8),
+                  color: Colors.black.withValues(alpha: 0.12),
+                  blurRadius: 24,
+                  offset: const Offset(0, 12),
                 ),
               ],
             ),
             child: Material(
               type: MaterialType.transparency,
-              borderRadius: BorderRadius.circular(24),
+              borderRadius: BorderRadius.circular(32),
               clipBehavior: Clip.antiAlias,
               child: Stack(
                 fit: StackFit.expand,

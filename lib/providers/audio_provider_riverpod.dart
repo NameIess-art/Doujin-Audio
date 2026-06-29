@@ -270,6 +270,28 @@ final sessionDetailUiProvider = Provider.family<SessionDetailUiState, String>((
   );
 });
 
+final sessionDetailShellProvider =
+    Provider.family<SessionDetailShellState, String>((ref, sessionId) {
+      final playbackState =
+          ref.watch(playbackStateProvider).valueOrNull ??
+          ref.watch(playbackSessionServiceProvider).slice.state;
+      return SessionDetailShellState(
+        sessionOrder: sessionOrderStateFromPlaybackState(playbackState),
+        detail: sessionDetailShellViewStateFromPlaybackState(
+          playbackState,
+          sessionId,
+        ),
+        coverGeneration: playbackState.coverGeneration,
+      );
+    });
+
+final sessionDetailTransportProvider =
+    Provider.family<SessionDetailViewState?, String>((ref, sessionId) {
+      return ref.watch(
+        sessionDetailUiProvider(sessionId).select((state) => state.detail),
+      );
+    });
+
 List<Override> createAudioProviderOverrides({
   required AudioProvider audioProvider,
   required AudioDatabaseRepository audioDatabaseRepository,

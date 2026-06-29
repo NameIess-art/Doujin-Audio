@@ -189,6 +189,51 @@ class SessionDetailViewState {
 }
 
 @immutable
+class SessionDetailShellViewState {
+  const SessionDetailShellViewState({
+    required this.sessionId,
+    required this.trackPath,
+  });
+
+  final String sessionId;
+  final String trackPath;
+
+  @override
+  bool operator ==(Object other) {
+    return other is SessionDetailShellViewState &&
+        other.sessionId == sessionId &&
+        other.trackPath == trackPath;
+  }
+
+  @override
+  int get hashCode => Object.hash(sessionId, trackPath);
+}
+
+@immutable
+class SessionDetailShellState {
+  const SessionDetailShellState({
+    required this.sessionOrder,
+    required this.detail,
+    required this.coverGeneration,
+  });
+
+  final SessionOrderState sessionOrder;
+  final SessionDetailShellViewState? detail;
+  final int coverGeneration;
+
+  @override
+  bool operator ==(Object other) {
+    return other is SessionDetailShellState &&
+        other.sessionOrder == sessionOrder &&
+        other.detail == detail &&
+        other.coverGeneration == coverGeneration;
+  }
+
+  @override
+  int get hashCode => Object.hash(sessionOrder, detail, coverGeneration);
+}
+
+@immutable
 class SessionDetailUiState {
   const SessionDetailUiState({
     required this.sessionOrder,
@@ -327,6 +372,20 @@ SessionOrderState sessionOrderStateFromPlaybackState(
         .map((session) => session.id)
         .toList(growable: false),
   );
+}
+
+SessionDetailShellViewState? sessionDetailShellViewStateFromPlaybackState(
+  PlaybackStateSliceData playbackState,
+  String sessionId,
+) {
+  for (final session in playbackState.activeSessions) {
+    if (session.id != sessionId) continue;
+    return SessionDetailShellViewState(
+      sessionId: session.id,
+      trackPath: session.currentTrackPath,
+    );
+  }
+  return null;
 }
 
 SessionDetailViewState? sessionDetailViewStateFromPlaybackState(

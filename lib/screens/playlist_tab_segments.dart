@@ -1,8 +1,61 @@
 part of 'playlist_tab.dart';
 
+class _TransportPlaybackControlPanel extends ConsumerWidget {
+  const _TransportPlaybackControlPanel({
+    super.key,
+    required this.session,
+    required this.provider,
+    required this.hasSiblings,
+    required this.segmentPanelExpanded,
+    required this.hasSubtitle,
+    required this.subtitleEnabled,
+    required this.subtitleGlobalEnabled,
+    required this.onShowTrackSwitcher,
+    required this.onToggleSegments,
+    this.onToggleSubtitle,
+    this.onToggleGlobalSubtitle,
+    this.onOpenTimer,
+    this.onShowAudioDetail,
+  });
+
+  final PlaybackSession session;
+  final AudioProvider provider;
+  final bool hasSiblings;
+  final bool segmentPanelExpanded;
+  final bool hasSubtitle;
+  final bool subtitleEnabled;
+  final bool subtitleGlobalEnabled;
+  final VoidCallback onShowTrackSwitcher;
+  final VoidCallback onToggleSegments;
+  final VoidCallback? onToggleSubtitle;
+  final VoidCallback? onToggleGlobalSubtitle;
+  final VoidCallback? onOpenTimer;
+  final VoidCallback? onShowAudioDetail;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final transport = ref.watch(sessionDetailTransportProvider(session.id));
+    return _PlaybackControlPanel(
+      session: session,
+      provider: provider,
+      isPlaying: transport?.isPlaying ?? session.effectivePlaying,
+      hasSiblings: hasSiblings,
+      segmentPanelExpanded: segmentPanelExpanded,
+      hasSubtitle: hasSubtitle,
+      subtitleEnabled: subtitleEnabled,
+      subtitleGlobalEnabled: subtitleGlobalEnabled,
+      onShowTrackSwitcher: onShowTrackSwitcher,
+      onToggleSegments: onToggleSegments,
+      onToggleSubtitle: onToggleSubtitle,
+      onToggleGlobalSubtitle: onToggleGlobalSubtitle,
+      onOpenTimer: onOpenTimer,
+      onShowAudioDetail: onShowAudioDetail,
+    );
+  }
+}
+
 class _PlaybackControlPanel extends StatelessWidget {
   const _PlaybackControlPanel({
-    super.key,
     required this.session,
     required this.provider,
     required this.isPlaying,
@@ -81,8 +134,12 @@ class _PlaybackPrimaryControls extends StatelessWidget {
     final enabled = session.currentTrackPath.isNotEmpty;
     final track = provider.trackByPath(session.currentTrackPath);
     final isAsmr = track?.remoteMetadataKind == 'asmr.one';
-    final primaryColor = isAsmr ? AppDesignTokens.of(context).asmrAccent : cs.primary;
-    final onPrimaryColor = isAsmr ? AppDesignTokens.of(context).onAsmrAccent : cs.onPrimary;
+    final primaryColor = isAsmr
+        ? AppDesignTokens.of(context).asmrAccent
+        : cs.primary;
+    final onPrimaryColor = isAsmr
+        ? AppDesignTokens.of(context).onAsmrAccent
+        : cs.onPrimary;
     final hasPrevious = provider.hasSessionAdjacentTrack(
       session.id,
       forward: false,

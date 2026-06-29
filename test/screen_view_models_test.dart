@@ -219,6 +219,122 @@ void main() {
     expect(detailState?.loopMode, SessionLoopMode.folderSequential);
   });
 
+  test('session detail shell ignores transport-only changes', () {
+    final detailSession = session(
+      id: 'detail',
+      path: '/tracks/detail.mp3',
+      playing: true,
+    );
+    addTearDown(detailSession.dispose);
+
+    final original = SessionDetailShellState(
+      sessionOrder: sessionOrderStateFromPlaybackState(
+        PlaybackStateSliceData(
+          activeSessions: [detailSession],
+          coverGeneration: 1,
+        ),
+      ),
+      detail: sessionDetailShellViewStateFromPlaybackState(
+        PlaybackStateSliceData(
+          activeSessions: [detailSession],
+          coverGeneration: 1,
+        ),
+        'detail',
+      ),
+      coverGeneration: 1,
+    );
+
+    detailSession
+      ..isLoading = true
+      ..volume = 0.6
+      ..speed = 1.5
+      ..audioEffects = const AudioEffectsState(skipSilenceEnabled: true)
+      ..setOptimisticState(playing: false);
+
+    final updated = SessionDetailShellState(
+      sessionOrder: sessionOrderStateFromPlaybackState(
+        PlaybackStateSliceData(
+          activeSessions: [detailSession],
+          coverGeneration: 1,
+        ),
+      ),
+      detail: sessionDetailShellViewStateFromPlaybackState(
+        PlaybackStateSliceData(
+          activeSessions: [detailSession],
+          coverGeneration: 1,
+        ),
+        'detail',
+      ),
+      coverGeneration: 1,
+    );
+
+    expect(updated, original);
+  });
+
+  test('session detail shell tracks track order and cover inputs', () {
+    final detailSession = session(id: 'detail', path: '/tracks/detail.mp3');
+    final otherSession = session(id: 'other', path: '/tracks/other.mp3');
+    addTearDown(detailSession.dispose);
+    addTearDown(otherSession.dispose);
+
+    final originalState = PlaybackStateSliceData(
+      activeSessions: [detailSession, otherSession],
+      coverGeneration: 1,
+    );
+    final original = SessionDetailShellState(
+      sessionOrder: sessionOrderStateFromPlaybackState(originalState),
+      detail: sessionDetailShellViewStateFromPlaybackState(
+        originalState,
+        'detail',
+      ),
+      coverGeneration: originalState.coverGeneration,
+    );
+
+    detailSession.currentTrackPath = '/tracks/detail-2.mp3';
+    final trackChangedState = PlaybackStateSliceData(
+      activeSessions: [detailSession, otherSession],
+      coverGeneration: 1,
+    );
+    final trackChanged = SessionDetailShellState(
+      sessionOrder: sessionOrderStateFromPlaybackState(trackChangedState),
+      detail: sessionDetailShellViewStateFromPlaybackState(
+        trackChangedState,
+        'detail',
+      ),
+      coverGeneration: trackChangedState.coverGeneration,
+    );
+
+    final orderChangedState = PlaybackStateSliceData(
+      activeSessions: [otherSession, detailSession],
+      coverGeneration: 1,
+    );
+    final orderChanged = SessionDetailShellState(
+      sessionOrder: sessionOrderStateFromPlaybackState(orderChangedState),
+      detail: sessionDetailShellViewStateFromPlaybackState(
+        orderChangedState,
+        'detail',
+      ),
+      coverGeneration: orderChangedState.coverGeneration,
+    );
+
+    final coverChangedState = PlaybackStateSliceData(
+      activeSessions: [detailSession, otherSession],
+      coverGeneration: 2,
+    );
+    final coverChanged = SessionDetailShellState(
+      sessionOrder: sessionOrderStateFromPlaybackState(coverChangedState),
+      detail: sessionDetailShellViewStateFromPlaybackState(
+        coverChangedState,
+        'detail',
+      ),
+      coverGeneration: coverChangedState.coverGeneration,
+    );
+
+    expect(trackChanged, isNot(original));
+    expect(orderChanged, isNot(trackChanged));
+    expect(coverChanged, isNot(trackChanged));
+  });
+
   test('prepared transport intent changes icon without showing loading', () {
     final detailSession = session(id: 'detail', path: '/tracks/detail.mp3')
       ..loadedPath = '/tracks/detail.mp3'

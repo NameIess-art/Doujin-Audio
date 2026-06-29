@@ -404,13 +404,23 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
                 ),
               ),
               const SizedBox(width: 12),
-              Text(
-                _loopModeSummary(context, session.loopMode),
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: cs.onSurface.withValues(alpha: 0.7),
-                  fontWeight: FontWeight.w600,
-                  fontStyle: FontStyle.italic,
-                ),
+              Consumer(
+                builder: (context, ref, child) {
+                  final transport = ref.watch(
+                    sessionDetailTransportProvider(session.id),
+                  );
+                  return Text(
+                    _loopModeSummary(
+                      context,
+                      transport?.loopMode ?? session.loopMode,
+                    ),
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: cs.onSurface.withValues(alpha: 0.7),
+                      fontWeight: FontWeight.w600,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  );
+                },
               ),
             ],
           ),
@@ -449,13 +459,12 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
               onManualSeek: _handleSegmentManualSeek,
             ),
           ),
-          _PlaybackControlPanel(
+          _TransportPlaybackControlPanel(
             key: ValueKey(
               widget.isLandscape ? 'controls_landscape' : 'controls',
             ),
             session: session,
             provider: provider,
-            isPlaying: isPlaying,
             hasSiblings: hasSiblings,
             segmentPanelExpanded: _segmentPanelExpanded,
             hasSubtitle: widget.hasSubtitle,

@@ -8,6 +8,7 @@ import '../providers/audio_provider.dart';
 import '../services/asmr_library_controller.dart';
 import '../services/audio_state_services.dart';
 import '../services/ui_operation_service.dart';
+import '../theme/app_design_tokens.dart';
 import '../widgets/app_feedback.dart';
 import '../widgets/async_cover_image.dart';
 
@@ -17,9 +18,6 @@ Future<void> showAsmrWorkDetailSheet(BuildContext context, AsmrWork work) {
     isScrollControlled: true,
     showDragHandle: true,
     useRootNavigator: true,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-    ),
     builder: (_) => _AsmrWorkDetailSheet(work: work),
   );
 }
@@ -54,8 +52,7 @@ class _AsmrWorkDetailSheetState extends State<_AsmrWorkDetailSheet> {
   Widget build(BuildContext context) {
     final i18n = context.watch<AppLanguageProvider>();
     final cs = Theme.of(context).colorScheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
+    final asmrBlue = AppDesignTokens.of(context).asmrAccent;
     return FutureBuilder<AsmrWorkDetail>(
       future: _detailFuture,
       builder: (context, snapshot) {
@@ -251,8 +248,7 @@ class _AsmrDetailHero extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
+    final asmrBlue = AppDesignTokens.of(context).asmrAccent;
     final i18n = context.watch<AppLanguageProvider>();
     final coverCacheWidth = coverCacheWidthForResolution(
       context.select<AudioProvider, CoverImageResolution>(
@@ -503,8 +499,7 @@ class _AsmrInfoChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
+    final asmrBlue = AppDesignTokens.of(context).asmrAccent;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
@@ -541,8 +536,7 @@ Future<void> _copyText(BuildContext context, String value) async {
   if (!context.mounted) {
     return;
   }
-  final isDark = Theme.of(context).brightness == Brightness.dark;
-  final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
+  final asmrBlue = AppDesignTokens.of(context).asmrAccent;
   final i18n = context.read<AppLanguageProvider>();
   showAppSnackBar(
     context,

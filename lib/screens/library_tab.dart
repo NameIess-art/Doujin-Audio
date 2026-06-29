@@ -820,8 +820,6 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                 key: _headerKey,
                 icon: Icons.library_music_rounded,
                 title: i18n.tr('music_library'),
-                isLoading:
-                    !libraryHeaderState.isInitialized || libraryRefreshBusy,
                 subtitle: i18n.tr('audio_count', {
                   'count': libraryHeaderState.audioCount,
                 }),

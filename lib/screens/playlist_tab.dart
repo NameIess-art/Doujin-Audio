@@ -21,6 +21,7 @@ import '../services/permission_action_controller.dart';
 import '../services/subtitle_parser.dart';
 import '../services/subtitle_overlay_controller.dart';
 import '../services/ui_interaction_coordinator.dart';
+import '../theme/app_design_tokens.dart';
 import '../widgets/app_feedback.dart';
 import '../widgets/app_transitions.dart';
 import '../widgets/async_cover_image.dart';
@@ -430,7 +431,6 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                   key: _headerKey,
                   icon: Icons.graphic_eq_rounded,
                   title: i18n.tr('playback_sessions'),
-                  isLoading: !listState.isInitialized,
                   subtitle: sessionSummary,
                   subtitleFontSize: 11,
                   fitSubtitleToWidth: true,

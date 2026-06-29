@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../services/ui_interaction_coordinator.dart';
+import '../theme/app_design_tokens.dart';
 import 'app_feedback.dart';
 
 class UnifiedMenuEntry<T> {
@@ -252,16 +253,19 @@ class _UnifiedPopupMenuCard<T> extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final tokens = AppDesignTokens.of(context);
     final background = isDark ? cs.surfaceBright : cs.surfaceContainerHighest;
 
     return ClipRRect(
-      borderRadius: BorderRadius.circular(20),
+      borderRadius: BorderRadius.circular(tokens.radiusSection),
       child: DecoratedBox(
         decoration: BoxDecoration(
           color: background,
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(tokens.radiusSection),
           border: Border.all(
-            color: cs.outlineVariant.withValues(alpha: isDark ? 0.36 : 0.52),
+            color: cs.outlineVariant.withValues(
+              alpha: tokens.standardBorderAlpha,
+            ),
           ),
           boxShadow: [
             BoxShadow(

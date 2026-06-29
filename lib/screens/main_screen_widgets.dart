@@ -155,21 +155,16 @@ class _FloatingGlassPanel extends ConsumerWidget {
       ),
     );
 
-    final interactionCoordinator = UiInteractionCoordinator.instance;
-    return AnimatedBuilder(
-      animation: interactionCoordinator,
-      builder: (context, _) {
-        final useBlur = blurEnabled && !interactionCoordinator.isInteracting;
-        return ClipRRect(
-          borderRadius: BorderRadius.circular(radius),
-          child: useBlur
-              ? BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-                  child: buildPanel(useBlur),
-                )
-              : buildPanel(useBlur),
-        );
-      },
+    final useBlur = blurEnabled;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(radius),
+      child: useBlur
+          ? BackdropFilter(
+              key: const ValueKey('floating_glass_panel_blur'),
+              filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+              child: buildPanel(useBlur),
+            )
+          : buildPanel(useBlur),
     );
   }
 }
@@ -281,52 +276,81 @@ class _BootstrapOverlayState extends State<_BootstrapOverlay>
 
     _logoScale = TweenSequence<double>([
       TweenSequenceItem(
-        tween: Tween<double>(begin: 0.4, end: 1.0)
-            .chain(CurveTween(curve: Curves.easeOutBack)),
+        tween: Tween<double>(
+          begin: 0.4,
+          end: 1.0,
+        ).chain(CurveTween(curve: Curves.easeOutBack)),
         weight: 35, // 0.0 - 0.35
       ),
-      TweenSequenceItem(tween: ConstantTween<double>(1.0), weight: 15), // 0.35 - 0.50
       TweenSequenceItem(
-        tween: Tween<double>(begin: 1.0, end: 0.85)
-            .chain(CurveTween(curve: Curves.easeInCubic)),
+        tween: ConstantTween<double>(1.0),
+        weight: 15,
+      ), // 0.35 - 0.50
+      TweenSequenceItem(
+        tween: Tween<double>(
+          begin: 1.0,
+          end: 0.85,
+        ).chain(CurveTween(curve: Curves.easeInCubic)),
         weight: 50, // 0.50 - 1.0
       ),
     ]).animate(_controller);
 
     _logoOpacity = TweenSequence<double>([
       TweenSequenceItem(
-        tween: Tween<double>(begin: 0.0, end: 1.0)
-            .chain(CurveTween(curve: Curves.easeOutCubic)),
+        tween: Tween<double>(
+          begin: 0.0,
+          end: 1.0,
+        ).chain(CurveTween(curve: Curves.easeOutCubic)),
         weight: 25, // 0.0 - 0.25
       ),
-      TweenSequenceItem(tween: ConstantTween<double>(1.0), weight: 25), // 0.25 - 0.50
       TweenSequenceItem(
-        tween: Tween<double>(begin: 1.0, end: 0.0)
-            .chain(CurveTween(curve: Curves.easeInCubic)),
+        tween: ConstantTween<double>(1.0),
+        weight: 25,
+      ), // 0.25 - 0.50
+      TweenSequenceItem(
+        tween: Tween<double>(
+          begin: 1.0,
+          end: 0.0,
+        ).chain(CurveTween(curve: Curves.easeInCubic)),
         weight: 50, // 0.50 - 1.0
       ),
     ]).animate(_controller);
 
     _textOpacity = TweenSequence<double>([
-      TweenSequenceItem(tween: ConstantTween<double>(0.0), weight: 15), // Wait 0.0 - 0.15
       TweenSequenceItem(
-        tween: Tween<double>(begin: 0.0, end: 1.0)
-            .chain(CurveTween(curve: Curves.easeOutCubic)),
+        tween: ConstantTween<double>(0.0),
+        weight: 15,
+      ), // Wait 0.0 - 0.15
+      TweenSequenceItem(
+        tween: Tween<double>(
+          begin: 0.0,
+          end: 1.0,
+        ).chain(CurveTween(curve: Curves.easeOutCubic)),
         weight: 25, // 0.15 - 0.40
       ),
-      TweenSequenceItem(tween: ConstantTween<double>(1.0), weight: 10), // 0.40 - 0.50
       TweenSequenceItem(
-        tween: Tween<double>(begin: 1.0, end: 0.0)
-            .chain(CurveTween(curve: Curves.easeInCubic)),
+        tween: ConstantTween<double>(1.0),
+        weight: 10,
+      ), // 0.40 - 0.50
+      TweenSequenceItem(
+        tween: Tween<double>(
+          begin: 1.0,
+          end: 0.0,
+        ).chain(CurveTween(curve: Curves.easeInCubic)),
         weight: 50, // 0.50 - 1.0
       ),
     ]).animate(_controller);
 
     _textSlide = TweenSequence<Offset>([
-      TweenSequenceItem(tween: ConstantTween<Offset>(const Offset(0, 0.4)), weight: 15),
       TweenSequenceItem(
-        tween: Tween<Offset>(begin: const Offset(0, 0.4), end: Offset.zero)
-            .chain(CurveTween(curve: Curves.easeOutCubic)),
+        tween: ConstantTween<Offset>(const Offset(0, 0.4)),
+        weight: 15,
+      ),
+      TweenSequenceItem(
+        tween: Tween<Offset>(
+          begin: const Offset(0, 0.4),
+          end: Offset.zero,
+        ).chain(CurveTween(curve: Curves.easeOutCubic)),
         weight: 25,
       ),
       TweenSequenceItem(tween: ConstantTween<Offset>(Offset.zero), weight: 60),
@@ -335,17 +359,24 @@ class _BootstrapOverlayState extends State<_BootstrapOverlay>
     _opacity = TweenSequence<double>([
       TweenSequenceItem(tween: ConstantTween<double>(1.0), weight: 50),
       TweenSequenceItem(
-        tween: Tween<double>(begin: 1.0, end: 0.0)
-            .chain(CurveTween(curve: Curves.easeInCubic)),
+        tween: Tween<double>(
+          begin: 1.0,
+          end: 0.0,
+        ).chain(CurveTween(curve: Curves.easeInCubic)),
         weight: 50, // Fade during shrink
       ),
     ]).animate(_controller);
 
     _blur = TweenSequence<double>([
-      TweenSequenceItem(tween: ConstantTween<double>(0.0), weight: 50), // No blur during grow
       TweenSequenceItem(
-        tween: Tween<double>(begin: 0.0, end: 25.0)
-            .chain(CurveTween(curve: Curves.easeInQuint)),
+        tween: ConstantTween<double>(0.0),
+        weight: 50,
+      ), // No blur during grow
+      TweenSequenceItem(
+        tween: Tween<double>(
+          begin: 0.0,
+          end: 25.0,
+        ).chain(CurveTween(curve: Curves.easeInQuint)),
         weight: 50, // Blur during shrink
       ),
     ]).animate(_controller);

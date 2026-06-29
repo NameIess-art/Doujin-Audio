@@ -170,10 +170,8 @@ extension _MainScreenLayout on _MainScreenState {
       final label = i18n.tr(item.labelKey);
       final inactive = cs.onSurfaceVariant.withValues(alpha: 0.6);
 
-      final isDark = Theme.of(context).brightness == Brightness.dark;
-      final asmrBlue = isDark
-          ? const Color(0xFF60A5FA)
-          : const Color(0xFF1D4ED8);
+      final tokens = AppDesignTokens.of(context);
+      final asmrBlue = tokens.asmrAccent;
       final isAsmr = item.labelKey == 'ASMR.ONE';
       final activeColor = (selected && isAsmr) ? asmrBlue : cs.primary;
 
@@ -192,7 +190,7 @@ extension _MainScreenLayout on _MainScreenState {
                   alignment: Alignment.center,
                   children: [
                     AnimatedContainer(
-                      duration: const Duration(milliseconds: 300),
+                      duration: tokens.motionSlow,
                       curve: Curves.easeOutQuint,
                       width: selected ? 56 : 0,
                       height: 26,
@@ -200,7 +198,7 @@ extension _MainScreenLayout on _MainScreenState {
                         color: selected
                             ? activeColor.withValues(alpha: 0.11)
                             : Colors.transparent,
-                        borderRadius: BorderRadius.circular(16),
+                        borderRadius: BorderRadius.circular(tokens.radiusCard),
                       ),
                     ),
                     Icon(
@@ -358,45 +356,40 @@ extension _MainScreenLayout on _MainScreenState {
       ),
     );
 
-    final interactionCoordinator = UiInteractionCoordinator.instance;
-    return AnimatedBuilder(
-      animation: interactionCoordinator,
-      builder: (context, _) {
-        final useBlur = blurEnabled && !interactionCoordinator.isInteracting;
-        return SafeArea(
-          key: key,
-          top: false,
-          child: Align(
-            alignment: Alignment.bottomCenter,
-            child: Column(
-              key: isCurrent ? _dockContentKey : null,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (overlaySessions.isNotEmpty)
-                  ActiveSessionCarousel(
-                    sessions: overlaySessions,
-                    provider: ref.read(audioProviderFacadeProvider),
-                    i18n: i18n,
-                    onOpenSession: (sessionId) {
-                      Navigator.of(
-                        context,
-                      ).push(buildSessionDetailRoute(sessionId: sessionId));
-                    },
-                  ),
-                if (!tinyMode)
-                  ClipRect(
-                    child: useBlur
-                        ? BackdropFilter(
-                            filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-                            child: buildBar(useBlur),
-                          )
-                        : buildBar(useBlur),
-                  ),
-              ],
-            ),
-          ),
-        );
-      },
+    final useBlur = blurEnabled;
+    return SafeArea(
+      key: key,
+      top: false,
+      child: Align(
+        alignment: Alignment.bottomCenter,
+        child: Column(
+          key: isCurrent ? _dockContentKey : null,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (overlaySessions.isNotEmpty)
+              ActiveSessionCarousel(
+                sessions: overlaySessions,
+                provider: ref.read(audioProviderFacadeProvider),
+                i18n: i18n,
+                onOpenSession: (sessionId) {
+                  Navigator.of(
+                    context,
+                  ).push(buildSessionDetailRoute(sessionId: sessionId));
+                },
+              ),
+            if (!tinyMode)
+              ClipRect(
+                child: useBlur
+                    ? BackdropFilter(
+                        key: const ValueKey('mobile_bottom_bar_blur'),
+                        filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+                        child: buildBar(useBlur),
+                      )
+                    : buildBar(useBlur),
+              ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -553,11 +546,9 @@ extension _MainScreenLayout on _MainScreenState {
                           final isSelected = _currentIndex == entry.key;
                           final isAsmr =
                               isSelected && item.labelKey == 'ASMR.ONE';
-                          final isDark =
-                              Theme.of(context).brightness == Brightness.dark;
-                          final asmrBlue = isDark
-                              ? const Color(0xFF60A5FA)
-                              : const Color(0xFF1D4ED8);
+                          final asmrBlue = AppDesignTokens.of(
+                            context,
+                          ).asmrAccent;
                           return NavigationRailDestination(
                             icon: Icon(item.icon),
                             selectedIcon: Icon(

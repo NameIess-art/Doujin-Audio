@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../theme/app_design_tokens.dart';
 import 'shimmer_loading.dart';
 
 class OperationStatusBanner extends StatelessWidget {
@@ -21,6 +22,7 @@ class OperationStatusBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final tokens = AppDesignTokens.of(context);
     final hasError = error != null;
     final color = hasError ? cs.error : cs.primary;
     return Container(
@@ -28,7 +30,7 @@ class OperationStatusBanner extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.10),
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(tokens.radiusControl),
         border: Border.all(color: color.withValues(alpha: 0.22)),
       ),
       child: Row(
@@ -95,6 +97,7 @@ class OperationSkeletonList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final tokens = AppDesignTokens.of(context);
     return ShimmerLoader(
       child: Padding(
         padding: padding,
@@ -112,7 +115,7 @@ class OperationSkeletonList extends StatelessWidget {
                 height: 58,
                 decoration: BoxDecoration(
                   color: cs.surfaceContainerHigh,
-                  borderRadius: BorderRadius.circular(14),
+                  borderRadius: BorderRadius.circular(tokens.radiusControl),
                 ),
                 padding: const EdgeInsets.symmetric(
                   horizontal: 14,

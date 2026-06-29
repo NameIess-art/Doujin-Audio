@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/audio_provider_riverpod.dart';
+import '../theme/app_design_tokens.dart';
 import 'marquee_text.dart';
 
 class TopPageHeader extends ConsumerStatefulWidget {
@@ -23,7 +24,6 @@ class TopPageHeader extends ConsumerStatefulWidget {
     this.bottomSpacing = 10,
     this.useSafeAreaTop = true,
     this.additionalChild,
-    this.isLoading = false,
     this.marqueeTitle = false,
     this.forceMarqueeTitle = false,
     this.collapseController,
@@ -48,7 +48,6 @@ class TopPageHeader extends ConsumerStatefulWidget {
   final double bottomSpacing;
   final bool useSafeAreaTop;
   final Widget? additionalChild;
-  final bool isLoading;
   final bool marqueeTitle;
   final bool forceMarqueeTitle;
   final ScrollController? collapseController;
@@ -153,6 +152,7 @@ class _TopPageHeaderState extends ConsumerState<TopPageHeader> {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final tokens = AppDesignTokens.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final blurEnabled = ref.watch(
       settingsStateProvider.select(
@@ -321,7 +321,9 @@ class _TopPageHeaderState extends ConsumerState<TopPageHeader> {
         color: cs.surface.withValues(alpha: currentAlpha),
         border: Border(
           bottom: BorderSide(
-            color: cs.outlineVariant.withValues(alpha: 0.15),
+            color: cs.outlineVariant.withValues(
+              alpha: tokens.subtleBorderAlpha,
+            ),
             width: 0.5,
           ),
         ),

@@ -13,6 +13,7 @@ import '../services/app_log_service.dart';
 import '../services/diagnostic_report_service.dart';
 import '../services/asmr_library_controller.dart';
 import '../services/ui_operation_service.dart';
+import '../theme/app_design_tokens.dart';
 import '../widgets/app_feedback.dart';
 import '../widgets/confirm_action_dialog.dart';
 import '../widgets/app_transitions.dart';
@@ -328,24 +329,27 @@ class _ActionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final tokens = AppDesignTokens.of(context);
     return Card(
       elevation: 0,
       color: cs.surfaceContainerHigh.withValues(alpha: 0.6),
       margin: const EdgeInsets.only(bottom: 12),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(tokens.radiusCard),
+      ),
       clipBehavior: Clip.antiAlias,
       child: ListTile(
         minTileHeight: 76,
         onTap: onTap,
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
         leading: Container(
-          width: 42,
-          height: 42,
+          width: tokens.iconContainerSize,
+          height: tokens.iconContainerSize,
           decoration: BoxDecoration(
             color: cs.primaryContainer,
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(tokens.radiusSmall),
           ),
-          child: Icon(icon, color: cs.primary, size: 22),
+          child: Icon(icon, color: cs.primary, size: 20),
         ),
         title: Text(
           title,

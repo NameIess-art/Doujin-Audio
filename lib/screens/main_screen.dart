@@ -22,6 +22,7 @@ import '../services/permission_action_controller.dart';
 import '../services/power_platform_service.dart';
 import '../services/subtitle_overlay_controller.dart';
 import '../services/ui_interaction_coordinator.dart';
+import '../theme/app_design_tokens.dart';
 import 'asmr_tab.dart';
 import 'library_tab.dart';
 import 'playlist_tab.dart';

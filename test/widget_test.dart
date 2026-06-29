@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart' show ProviderScope;
@@ -8,19 +10,27 @@ import 'package:nameless_audio/main.dart';
 import 'package:nameless_audio/providers/audio_provider.dart';
 import 'package:nameless_audio/providers/audio_provider_riverpod.dart';
 import 'package:nameless_audio/screens/main_screen.dart';
+import 'package:nameless_audio/screens/playlist_tab.dart';
 import 'package:nameless_audio/services/app_preferences.dart';
 import 'package:nameless_audio/services/audio_database_repository.dart';
 import 'package:nameless_audio/services/audio_state_services.dart';
 import 'package:nameless_audio/services/native_playback_repository.dart';
 import 'package:nameless_audio/services/playback_command_runner.dart';
 import 'package:nameless_audio/services/playback_notification_service.dart';
+import 'package:nameless_audio/services/ui_interaction_coordinator.dart';
 import 'package:nameless_audio/theme/theme_provider.dart';
 import 'package:nameless_audio/widgets/active_session_carousel.dart';
 import 'package:provider/provider.dart' as legacy_provider;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUpAll(() {
+    sqfliteFfiInit();
+    databaseFactory = databaseFactoryFfi;
+  });
 
   setUp(() {
     SharedPreferences.setMockInitialValues(const <String, Object>{
@@ -134,6 +144,77 @@ void main() {
     await _pumpMainScreenAnimations(tester);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('bottom dock blur remains active during UI interaction', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1080, 2400);
+    addTearDown(tester.view.resetPhysicalSize);
+    await _pumpAppShell(tester);
+    final interactionSource = Object();
+    addTearDown(
+      () => UiInteractionCoordinator.instance.cancelInteraction(
+        interactionSource,
+      ),
+    );
+
+    expect(
+      find.byKey(const ValueKey('floating_glass_panel_blur')),
+      findsWidgets,
+    );
+    expect(
+      find.byKey(const ValueKey('active_session_blur_orientation_session')),
+      findsOne,
+    );
+
+    UiInteractionCoordinator.instance.beginInteraction(interactionSource);
+    await tester.pump();
+
+    expect(
+      find.byKey(const ValueKey('floating_glass_panel_blur')),
+      findsWidgets,
+    );
+    expect(
+      find.byKey(const ValueKey('active_session_blur_orientation_session')),
+      findsOne,
+    );
+  });
+
+  testWidgets('session detail keeps its blurred background while dragging', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1080, 2400);
+    addTearDown(tester.view.resetPhysicalSize);
+    await _pumpAppShell(tester);
+    unawaited(
+      tester
+          .state<NavigatorState>(find.byType(Navigator).first)
+          .push(buildSessionDetailRoute(sessionId: 'orientation_session')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.byType(SessionDetailPage), findsOne);
+    expect(
+      find.byKey(const ValueKey('session_detail_background_blur')),
+      findsOne,
+    );
+
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.byType(SessionDetailPage)),
+    );
+    await gesture.moveBy(const Offset(0, 96));
+    await tester.pump();
+
+    expect(
+      find.byKey(const ValueKey('session_detail_background_blur')),
+      findsOne,
+    );
+
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
 }
 
 final class _AppShellHarness {
@@ -178,6 +259,7 @@ Future<_AppShellHarness> _pumpAppShell(
       state: PlayerState(false, ProcessingState.ready),
     );
     addTearDown(session.dispose);
+    playbackService.registerSession(session);
     playbackService.syncSlice(
       activeSessions: [session],
       playingSessionCount: 0,

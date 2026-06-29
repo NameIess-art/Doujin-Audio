@@ -24,19 +24,18 @@ class _AsmrDownloadProgressInlineButton extends StatelessWidget {
               child: CircularProgressIndicator(
                 value: state.progress,
                 strokeWidth: 2,
-                color: Theme.of(context)
-                    .colorScheme
-                    .onSurfaceVariant
-                    .withValues(alpha: 0.78),
+                color: Theme.of(
+                  context,
+                ).colorScheme.onSurfaceVariant.withValues(alpha: 0.78),
               ),
             ),
         ],
       ),
       tooltip: 'Downloads',
       onPressed: () {
-        Navigator.of(context).push(
-          buildAppPageRoute<void>(child: const AsmrDownloadTaskPage()),
-        );
+        Navigator.of(
+          context,
+        ).push(buildAppPageRoute<void>(child: const AsmrDownloadTaskPage()));
       },
     );
   }
@@ -96,8 +95,8 @@ class _AsmrSearchBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final asmrBlue = isDark ? _kAsmrBlueDark : _kAsmrBlueLight;
+    final tokens = AppDesignTokens.of(context);
+    final asmrBlue = tokens.asmrAccent;
     final i18n = context.watch<AppLanguageProvider>();
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
@@ -118,8 +117,7 @@ class _AsmrSearchBar extends StatelessWidget {
             textInputAction: TextInputAction.search,
             onTapOutside: (event) =>
                 FocusManager.instance.primaryFocus?.unfocus(),
-            onSubmitted: (_) =>
-                FocusManager.instance.primaryFocus?.unfocus(),
+            onSubmitted: (_) => FocusManager.instance.primaryFocus?.unfocus(),
             decoration: InputDecoration(
               filled: true,
               fillColor: cs.surfaceContainerHigh,
@@ -155,15 +153,15 @@ class _AsmrSearchBar extends StatelessWidget {
                 edgePadding: 0,
               ),
               border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(17),
+                borderRadius: BorderRadius.circular(tokens.radiusCard),
                 borderSide: BorderSide.none,
               ),
               enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(17),
+                borderRadius: BorderRadius.circular(tokens.radiusCard),
                 borderSide: BorderSide.none,
               ),
               focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(17),
+                borderRadius: BorderRadius.circular(tokens.radiusCard),
                 borderSide: BorderSide.none,
               ),
               contentPadding: const EdgeInsets.symmetric(
@@ -195,20 +193,15 @@ class _AsmrCategoryButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final asmrBlue = isDark ? const Color(0xFF3B82F6) : const Color(0xFF1D4ED8);
-    final asmrBlueContainer = isDark
-        ? const Color(0xFF172554)
-        : const Color(0xFFDBEAFE);
-    final onAsmrBlueContainer = isDark
-        ? const Color(0xFFDBEAFE)
-        : const Color(0xFF1E40AF);
+    final tokens = AppDesignTokens.of(context);
+    final asmrBlue = tokens.asmrAccent;
 
     return AnimatedContainer(
-      duration: const Duration(milliseconds: 200),
+      duration: tokens.motionStandard,
       curve: Curves.easeOutCubic,
       decoration: BoxDecoration(
-        color: selected ? asmrBlueContainer : cs.surfaceContainerHigh,
-        borderRadius: BorderRadius.circular(16),
+        color: selected ? tokens.asmrContainer : cs.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(tokens.radiusCard),
         border: Border.all(
           color: selected
               ? asmrBlue.withValues(alpha: isDark ? 0.58 : 0.45)
@@ -219,18 +212,20 @@ class _AsmrCategoryButton extends StatelessWidget {
         type: MaterialType.transparency,
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(tokens.radiusCard),
           child: SizedBox(
             height: 34,
             child: Center(
               child: AnimatedDefaultTextStyle(
-                duration: const Duration(milliseconds: 200),
+                duration: tokens.motionStandard,
                 curve: Curves.easeOutCubic,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.labelMedium!.copyWith(
                   fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
-                  color: selected ? onAsmrBlueContainer : cs.onSurfaceVariant,
+                  color: selected
+                      ? tokens.onAsmrContainer
+                      : cs.onSurfaceVariant,
                 ),
                 child: Text(label),
               ),

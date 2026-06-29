@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../models/asmr_models.dart';
 import '../services/asmr_download_manager.dart';
+import '../theme/app_design_tokens.dart';
 import '../widgets/top_page_header.dart';
 
 class AsmrDownloadDetailsPage extends StatelessWidget {
@@ -157,8 +158,7 @@ class _AsmrDownloadDetailsNodeTileState
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
+    final asmrBlue = AppDesignTokens.of(context).asmrAccent;
     final indent = widget.depth * 16.0;
     const fileRowHeight = 44.0;
 

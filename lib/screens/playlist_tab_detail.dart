@@ -852,52 +852,37 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
             if (blurEnabled)
               Positioned.fill(
                 child: RepaintBoundary(
-                  child: AnimatedBuilder(
-                    animation: widget.dismissAnimation,
-                    builder: (context, child) {
-                      final dismissProgress = Curves.easeOutCubic.transform(
-                        widget.dismissAnimation.value.clamp(0.0, 1.0),
-                      );
-                      if (dismissProgress > 0.01) {
-                        return const SizedBox.shrink();
-                      }
-                      return Opacity(
-                        opacity: 1 - dismissProgress,
-                        child: child,
-                      );
-                    },
-                    child: ImageFiltered(
-                      imageFilter: ImageFilter.blur(
-                        sigmaX: _kSessionDetailBackgroundBlurSigma,
-                        sigmaY: _kSessionDetailBackgroundBlurSigma,
+                  child: ImageFiltered(
+                    key: const ValueKey('session_detail_background_blur'),
+                    imageFilter: ImageFilter.blur(
+                      sigmaX: _kSessionDetailBackgroundBlurSigma,
+                      sigmaY: _kSessionDetailBackgroundBlurSigma,
+                    ),
+                    child: AsyncCoverImage(
+                      duration: Duration.zero,
+                      future: coverPathFuture,
+                      initialPath: provider.resolvedCoverPathForTrack(track),
+                      retryFutureBuilder: () =>
+                          _coverFutureForTrack(provider, track),
+                      fallbackBuilder: (_) => CoverFallbackArtwork(
+                        seed: track?.displayName ?? session.currentTrackPath,
+                        showIcon: false,
                       ),
-                      child: AsyncCoverImage(
-                        duration: Duration.zero,
-                        future: coverPathFuture,
-                        initialPath: provider.resolvedCoverPathForTrack(track),
-                        retryFutureBuilder: () =>
-                            _coverFutureForTrack(provider, track),
-                        fallbackBuilder: (_) => CoverFallbackArtwork(
-                          seed: track?.displayName ?? session.currentTrackPath,
-                          showIcon: false,
-                        ),
-                        imageBuilder: (context, coverPath) {
-                          return RetryingFileImage(
-                            path: coverPath,
-                            cacheWidth: coverCacheWidth,
-                            useDefaultCacheWidth: coverCacheWidth != null,
-                            fit: BoxFit.cover,
-                            color: cs.surface.withValues(alpha: 0.45),
-                            colorBlendMode: BlendMode.darken,
-                            fallbackBuilder: (_) => CoverFallbackArtwork(
-                              seed:
-                                  track?.displayName ??
-                                  session.currentTrackPath,
-                              showIcon: false,
-                            ),
-                          );
-                        },
-                      ),
+                      imageBuilder: (context, coverPath) {
+                        return RetryingFileImage(
+                          path: coverPath,
+                          cacheWidth: coverCacheWidth,
+                          useDefaultCacheWidth: coverCacheWidth != null,
+                          fit: BoxFit.cover,
+                          color: cs.surface.withValues(alpha: 0.45),
+                          colorBlendMode: BlendMode.darken,
+                          fallbackBuilder: (_) => CoverFallbackArtwork(
+                            seed:
+                                track?.displayName ?? session.currentTrackPath,
+                            showIcon: false,
+                          ),
+                        );
+                      },
                     ),
                   ),
                 ),

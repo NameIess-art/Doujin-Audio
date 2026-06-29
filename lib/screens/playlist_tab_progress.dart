@@ -170,58 +170,69 @@ class _ProgressBarState extends State<_ProgressBar> {
                         thumbColor: cs.onSurface,
                         overlayColor: cs.onSurface.withValues(alpha: 0.15),
                       ),
-                      child: Slider(
-                        max: maxMillis,
-                        value: sliderValue,
-                        secondaryTrackValue: bufferedValue,
-                        onChangeStart: !canSeek
-                            ? null
-                            : (value) {
-                                AppInteractionFeedback.trigger(
-                                  AppInteractionFeedbackType.selection,
-                                );
-                                setState(() {
-                                  _isDragging = true;
-                                  _dragValueMs = value;
-                                });
-                                _showLabelsAtSliderValue(
-                                  value,
-                                  maxMillis,
-                                  overlayLabels,
-                                );
-                              },
-                        onChanged: !canSeek
-                            ? null
-                            : (value) {
-                                setState(() {
-                                  _dragValueMs = value;
-                                });
-                                _showLabelsAtSliderValue(
-                                  value,
-                                  maxMillis,
-                                  overlayLabels,
-                                );
-                              },
-                        onChangeEnd: !canSeek
-                            ? null
-                            : (value) {
-                                AppInteractionFeedback.trigger(
-                                  AppInteractionFeedbackType.selection,
-                                );
-                                setState(() {
-                                  _isDragging = false;
-                                  _dragValueMs = null;
-                                });
-                                _clearLongPressLabels();
-                                final position = Duration(
-                                  milliseconds: value.round(),
-                                );
-                                widget.onManualSeek?.call(position);
-                                widget.provider.seekSession(
-                                  widget.session.id,
-                                  position,
-                                );
-                              },
+                      child: TweenAnimationBuilder<double>(
+                        duration: _isDragging
+                            ? Duration.zero
+                            : const Duration(milliseconds: 250),
+                        tween: Tween<double>(
+                          begin: sliderValue,
+                          end: sliderValue,
+                        ),
+                        builder: (context, animatedValue, child) {
+                          return Slider(
+                            max: maxMillis,
+                            value: animatedValue.clamp(0.0, maxMillis),
+                            secondaryTrackValue: bufferedValue,
+                            onChangeStart: !canSeek
+                                ? null
+                                : (value) {
+                                    AppInteractionFeedback.trigger(
+                                      AppInteractionFeedbackType.selection,
+                                    );
+                                    setState(() {
+                                      _isDragging = true;
+                                      _dragValueMs = value;
+                                    });
+                                    _showLabelsAtSliderValue(
+                                      value,
+                                      maxMillis,
+                                      overlayLabels,
+                                    );
+                                  },
+                            onChanged: !canSeek
+                                ? null
+                                : (value) {
+                                    setState(() {
+                                      _dragValueMs = value;
+                                    });
+                                    _showLabelsAtSliderValue(
+                                      value,
+                                      maxMillis,
+                                      overlayLabels,
+                                    );
+                                  },
+                            onChangeEnd: !canSeek
+                                ? null
+                                : (value) {
+                                    AppInteractionFeedback.trigger(
+                                      AppInteractionFeedbackType.selection,
+                                    );
+                                    setState(() {
+                                      _isDragging = false;
+                                      _dragValueMs = null;
+                                    });
+                                    _clearLongPressLabels();
+                                    final position = Duration(
+                                      milliseconds: value.round(),
+                                    );
+                                    widget.onManualSeek?.call(position);
+                                    widget.provider.seekSession(
+                                      widget.session.id,
+                                      position,
+                                    );
+                                  },
+                          );
+                        },
                       ),
                     ),
                   ],

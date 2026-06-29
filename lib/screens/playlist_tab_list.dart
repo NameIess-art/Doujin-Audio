@@ -302,12 +302,11 @@ class _SessionListCardState extends ConsumerState<_SessionListCard> {
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final isAsmrOne = track?.remoteMetadataKind == 'asmr.one';
-    final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
+    final tokens = AppDesignTokens.of(context);
+    final asmrBlue = tokens.asmrAccent;
     final localPlayRose = cs.primary;
 
-    final baseBgColor = isAsmrOne
-        ? (isDark ? const Color(0xFF181D2B) : const Color(0xFFF4F7FA))
-        : cs.surfaceContainerLow;
+    final baseBgColor = isAsmrOne ? tokens.asmrSurface : cs.surfaceContainerLow;
 
     final highlightColor = isAsmrOne
         ? asmrBlue.withValues(alpha: isDark ? 0.18 : 0.14)

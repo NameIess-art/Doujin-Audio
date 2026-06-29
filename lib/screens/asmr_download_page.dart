@@ -10,6 +10,7 @@ import '../services/asmr_download_manager.dart';
 import '../services/asmr_download_selection.dart';
 import '../services/asmr_library_controller.dart';
 import '../services/ui_operation_service.dart';
+import '../theme/app_design_tokens.dart';
 import '../widgets/app_feedback.dart';
 import '../widgets/operation_feedback.dart';
 import '../widgets/top_page_header.dart';
@@ -84,10 +85,7 @@ class _AsmrDownloadPageState extends State<AsmrDownloadPage> {
     }
     if (destinationMissing && mounted) {
       final i18n = context.read<AppLanguageProvider>();
-      final isDark = Theme.of(context).brightness == Brightness.dark;
-      final asmrBlue = isDark
-          ? const Color(0xFF60A5FA)
-          : const Color(0xFF1D4ED8);
+      final asmrBlue = AppDesignTokens.of(context).asmrAccent;
       showAppSnackBar(
         context,
         i18n.tr('asmr_download_path_missing'),
@@ -125,8 +123,7 @@ class _AsmrDownloadPageState extends State<AsmrDownloadPage> {
     if (selection == null) return;
     if (_starting) return;
 
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
+    final asmrBlue = AppDesignTokens.of(context).asmrAccent;
     final downloadManager = context.read<AsmrDownloadManager>();
     final audioProvider = context.read<AudioProvider>();
     final i18n = context.read<AppLanguageProvider>();
@@ -228,11 +225,9 @@ class _AsmrDownloadPageState extends State<AsmrDownloadPage> {
     final i18n = context.watch<AppLanguageProvider>();
     final selectedLeafCount = selection?.selectedLeafCount() ?? 0;
     final selectedTotalSizeBytes = selection?.selectedTotalSizeBytes() ?? 0;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
-    final onAsmrBlue = isDark
-        ? const Color(0xFF0F172A)
-        : const Color(0xFFFFFFFF);
+    final tokens = AppDesignTokens.of(context);
+    final asmrBlue = tokens.asmrAccent;
+    final onAsmrBlue = tokens.onAsmrAccent;
     final hasDestination = (_destinationRoot?.trim().isNotEmpty ?? false);
 
     return Scaffold(
@@ -420,8 +415,7 @@ class _TaskCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final i18n = context.read<AppLanguageProvider>();
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
+    final asmrBlue = AppDesignTokens.of(context).asmrAccent;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -605,8 +599,7 @@ class _AsmrDownloadNodeTileState extends State<_AsmrDownloadNodeTile> {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
+    final asmrBlue = AppDesignTokens.of(context).asmrAccent;
     final i18n = context.watch<AppLanguageProvider>();
     final value = widget.selection.stateForPath(widget.node.track.relativePath);
     final indent = _indentWidth * widget.depth;
@@ -751,8 +744,7 @@ class _CompactNodeCheckbox extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
+    final asmrBlue = AppDesignTokens.of(context).asmrAccent;
     return SizedBox(
       width: 28,
       height: 28,

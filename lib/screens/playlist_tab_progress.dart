@@ -603,9 +603,10 @@ class _SessionSubtitlePanelState extends State<_SessionSubtitlePanel> {
   @override
   Widget build(BuildContext context) {
     final subtitleText = _subtitleText;
-    return SizedBox(
-      width: double.infinity,
-      height: 44,
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 120),
+      curve: Curves.easeOutCubic,
+      alignment: Alignment.topCenter,
       child: AnimatedSwitcher(
         duration: const Duration(milliseconds: 120),
         switchInCurve: Curves.easeOutCubic,
@@ -617,11 +618,7 @@ class _SessionSubtitlePanelState extends State<_SessionSubtitlePanel> {
           );
         },
         child: subtitleText == null
-            ? const SizedBox(
-                key: ValueKey('subtitle_empty'),
-                width: double.infinity,
-                height: 44,
-              )
+            ? const SizedBox.shrink(key: ValueKey('subtitle_empty'))
             : _SubtitleChip(key: ValueKey(subtitleText), text: subtitleText),
       ),
     );

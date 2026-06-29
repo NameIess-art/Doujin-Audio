@@ -197,16 +197,6 @@ class _PlaybackPrimaryControls extends StatelessWidget {
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: enabled ? primaryColor : cs.surfaceContainerHighest,
-                  boxShadow: enabled
-                      ? [
-                          BoxShadow(
-                            color: primaryColor.withValues(alpha: 0.35),
-                            blurRadius: 24,
-                            spreadRadius: 2,
-                            offset: const Offset(0, 12),
-                          ),
-                        ]
-                      : null,
                 ),
                 child: IconButton(
                   tooltip: isPlaying ? i18n.tr('pause') : i18n.tr('play'),

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../i18n/app_language_provider.dart';
@@ -474,18 +475,55 @@ class _AudioDetailSheetState extends State<AudioDetailSheet> {
                 _FolderCoverSelector(folderPath: _target.targetPath),
                 const SizedBox(height: 12),
               ],
-              ..._AudioDetailField.values.expand(
-                (field) => [
-                  _AudioDetailRow(
-                    label: field.label(i18n, detail),
-                    value: field.displayValue(detail, i18n),
-                    labelStyle: labelStyle,
-                    busy: _savingField == field,
-                    onTap: () => _editField(field),
-                  ),
-                  if (field != _AudioDetailField.values.last)
-                    const SizedBox(height: 4),
-                ],
+              const SizedBox(height: 12),
+              Text(
+                i18n.tr('asmr_detail_basic_info'),
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  color: cs.primary,
+                ),
+              ),
+              const SizedBox(height: 8),
+              ...[
+                _AudioDetailField.targetName,
+                _AudioDetailField.rjCode,
+                _AudioDetailField.workTitle,
+                _AudioDetailField.circleName,
+                _AudioDetailField.voiceActors,
+                _AudioDetailField.tags,
+              ].map(
+                (field) => _AudioDetailRow(
+                  label: field.label(i18n, detail),
+                  values: field.readValues(detail),
+                  labelStyle: labelStyle,
+                  busy: _savingField == field,
+                  onTap: () => _editField(field),
+                  isCapsule: true,
+                  onCopy: (val) => _copyText(context, val),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                i18n.tr('asmr_detail_other'),
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  color: cs.primary,
+                ),
+              ),
+              const SizedBox(height: 8),
+              ...[
+                _AudioDetailField.releaseDate,
+                _AudioDetailField.salesCount,
+                _AudioDetailField.rating,
+              ].map(
+                (field) => _AudioDetailRow(
+                  label: field.label(i18n, detail),
+                  values: field.readValues(detail),
+                  labelStyle: labelStyle,
+                  busy: _savingField == field,
+                  onTap: () => _editField(field),
+                  onCopy: (val) => _copyText(context, val),
+                ),
               ),
             ],
           ],
@@ -795,66 +833,127 @@ class _FolderCoverSelectorState extends State<_FolderCoverSelector> {
 class _AudioDetailRow extends StatelessWidget {
   const _AudioDetailRow({
     required this.label,
-    required this.value,
+    required this.values,
     required this.labelStyle,
     required this.busy,
     required this.onTap,
+    this.isCapsule = false,
+    this.onCopy,
   });
 
   final String label;
-  final String value;
+  final List<String> values;
   final TextStyle? labelStyle;
   final bool busy;
   final VoidCallback onTap;
+  final bool isCapsule;
+  final void Function(String)? onCopy;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    return InkWell(
-      onTap: busy ? null : onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 14),
-        child: Row(
-          children: [
-            SizedBox(
-              width: 92,
-              child: Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: labelStyle,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                value,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.right,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: value.isEmpty ? cs.onSurfaceVariant : cs.onSurface,
+    final emptyText = context.read<AppLanguageProvider>().tr('audio_detail_empty');
+    final displayValues = values.isEmpty || (values.length == 1 && values.first.isEmpty) 
+        ? [emptyText]
+        : values;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(label, style: labelStyle),
+              if (busy)
+                const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              else
+                IconButton(
+                  onPressed: onTap,
+                  iconSize: 18,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  style: IconButton.styleFrom(
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    minimumSize: Size.zero,
+                  ),
+                  icon: Icon(Icons.edit_rounded, color: cs.onSurfaceVariant),
                 ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          if (isCapsule)
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: displayValues.map((v) => _DetailCapsule(
+                text: v,
+                onLongPress: onCopy != null && v != emptyText ? () => onCopy!(v) : null,
+              )).toList(),
+            )
+          else
+            Text(
+              displayValues.join('\uFF0C'),
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: displayValues.first == emptyText ? cs.onSurfaceVariant : cs.onSurface,
               ),
             ),
-            const SizedBox(width: 10),
-            SizedBox(
-              width: 24,
-              height: 24,
-              child: busy
-                  ? const CircularProgressIndicator(strokeWidth: 2)
-                  : Icon(
-                      Icons.edit_rounded,
-                      size: 18,
-                      color: cs.onSurfaceVariant,
-                    ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DetailCapsule extends StatelessWidget {
+  const _DetailCapsule({required this.text, this.onLongPress});
+
+  final String text;
+  final VoidCallback? onLongPress;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Material(
+      color: cs.surfaceContainerHighest,
+      borderRadius: BorderRadius.circular(999),
+      child: InkWell(
+        onLongPress: onLongPress,
+        borderRadius: BorderRadius.circular(999),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          child: Text(
+            text,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: cs.onSurface,
             ),
-          ],
+          ),
         ),
       ),
     );
   }
+}
+
+Future<void> _copyText(BuildContext context, String value) async {
+  final text = value.trim();
+  if (text.isEmpty) {
+    return;
+  }
+  await Clipboard.setData(ClipboardData(text: text));
+  if (!context.mounted) {
+    return;
+  }
+  final i18n = context.read<AppLanguageProvider>();
+  showAppSnackBar(
+    context,
+    i18n.tr('copied_to_clipboard', {'value': text}),
+    tone: AppFeedbackTone.success,
+    icon: Icons.copy_rounded,
+  );
 }
 
 enum _AudioDetailFetchScope { all, missing }
@@ -952,11 +1051,8 @@ enum _AudioDetailField {
     };
   }
 
-  String displayValue(AudioDetail detail, AppLanguageProvider i18n) {
-    final value = isMulti
-        ? readList(detail).join(_multiValueSeparator)
-        : readText(detail);
-    return value.isEmpty ? i18n.tr('audio_detail_empty') : value;
+  List<String> readValues(AudioDetail detail) {
+    return isMulti ? readList(detail) : [readText(detail)];
   }
 
   AudioDetail apply(AudioDetail detail, String rawValue) {

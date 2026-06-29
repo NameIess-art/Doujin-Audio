@@ -135,9 +135,7 @@ class _PermissionStatusPageState extends State<PermissionStatusPage>
             }
             final checking =
                 snapshot.connectionState == ConnectionState.waiting;
-            return RefreshIndicator(
-              onRefresh: () async => _refresh(),
-              child: ListView(
+            return ListView(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
                 children: [
                   Text(
@@ -243,8 +241,7 @@ class _PermissionStatusPageState extends State<PermissionStatusPage>
                     ),
                   ),
                 ],
-              ),
-            );
+              );
           },
         ),
       ),

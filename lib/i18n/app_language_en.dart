@@ -152,7 +152,8 @@ const Map<String, String> appLanguageEn = {
       'Read-only mode. Editing and drag sorting are not supported.',
   'asmr_detail_load_failed':
       'Failed to load work information. Please try again later.',
-  'asmr_detail_basic_info': 'Basic info',
+  'asmr_detail_basic_info': 'Basic Information',
+  'asmr_detail_other': 'Other',
   'asmr_detail_statistics': 'Statistics',
   'asmr_detail_release_date': 'Release date',
   'asmr_detail_duration': 'Duration',

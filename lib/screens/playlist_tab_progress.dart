@@ -112,6 +112,9 @@ class _ProgressBarState extends State<_ProgressBar> {
         : 0;
     final canSeek = hasKnownDuration && effectiveDuration.inMilliseconds > 0;
     final cs = Theme.of(context).colorScheme;
+    final track = widget.provider.trackByPath(widget.session.currentTrackPath);
+    final isAsmr = track?.remoteMetadataKind == 'asmr.one';
+    final primaryColor = isAsmr ? AppDesignTokens.of(context).asmrAccent : cs.primary;
     final overlayLabels = hasKnownDuration
         ? widget.timeSegmentLabels
         : const <TimeSegmentLabel>[];
@@ -165,10 +168,10 @@ class _ProgressBarState extends State<_ProgressBar> {
                         overlayShape: const RoundSliderOverlayShape(
                           overlayRadius: 16,
                         ),
-                        activeTrackColor: cs.onSurface,
-                        inactiveTrackColor: cs.onSurface.withValues(alpha: 0.2),
-                        thumbColor: cs.onSurface,
-                        overlayColor: cs.onSurface.withValues(alpha: 0.15),
+                        activeTrackColor: primaryColor,
+                        inactiveTrackColor: primaryColor.withValues(alpha: 0.22),
+                        thumbColor: primaryColor,
+                        overlayColor: primaryColor.withValues(alpha: 0.15),
                       ),
                       child: TweenAnimationBuilder<double>(
                         duration: _isDragging
@@ -617,7 +620,7 @@ class _SubtitleChip extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(vertical: 4),
+      padding: EdgeInsets.zero,
       child: Text(
         text,
         style: Theme.of(context).textTheme.bodyMedium?.copyWith(

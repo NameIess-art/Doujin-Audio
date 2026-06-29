@@ -79,6 +79,10 @@ class _PlaybackPrimaryControls extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     final i18n = context.read<AppLanguageProvider>();
     final enabled = session.currentTrackPath.isNotEmpty;
+    final track = provider.trackByPath(session.currentTrackPath);
+    final isAsmr = track?.remoteMetadataKind == 'asmr.one';
+    final primaryColor = isAsmr ? AppDesignTokens.of(context).asmrAccent : cs.primary;
+    final onPrimaryColor = isAsmr ? AppDesignTokens.of(context).onAsmrAccent : cs.onPrimary;
     final hasPrevious = provider.hasSessionAdjacentTrack(
       session.id,
       forward: false,
@@ -135,13 +139,14 @@ class _PlaybackPrimaryControls extends StatelessWidget {
               Container(
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: cs.onSurface.withValues(alpha: enabled ? 1.0 : 0.12),
+                  color: enabled ? primaryColor : cs.surfaceContainerHighest,
                   boxShadow: enabled
                       ? [
                           BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.2),
-                            blurRadius: 20,
-                            offset: const Offset(0, 8),
+                            color: primaryColor.withValues(alpha: 0.35),
+                            blurRadius: 24,
+                            spreadRadius: 2,
+                            offset: const Offset(0, 12),
                           ),
                         ]
                       : null,
@@ -182,7 +187,7 @@ class _PlaybackPrimaryControls extends StatelessWidget {
                       key: ValueKey(isPlaying),
                       size: playIconSize * 0.75,
                       color: enabled
-                          ? cs.surface
+                          ? onPrimaryColor
                           : cs.onSurface.withValues(alpha: 0.35),
                     ),
                   ),
@@ -261,20 +266,18 @@ class _PlaybackSecondaryControls extends StatelessWidget {
     final i18n = context.read<AppLanguageProvider>();
 
     return Padding(
-      padding: const EdgeInsets.only(top: 4, left: 4, right: 4),
+      padding: const EdgeInsets.only(top: 8, left: 4, right: 4),
       child: SizedBox(
-        height: 52,
-        child: DecoratedBox(
+        height: 56,
+        child: Container(
+          clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
-            color: cs.surfaceContainerHighest.withValues(alpha: 0.18),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: cs.outlineVariant.withValues(alpha: 0.42),
-            ),
+            color: cs.surfaceContainerHighest.withValues(alpha: 0.3),
+            borderRadius: BorderRadius.circular(28),
           ),
           child: SingleChildScrollView(
             scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 8),
             child: Row(
               children: [
                 _ExpandableLoopOptions(session: session, provider: provider),
@@ -388,9 +391,9 @@ class _SecondaryControlButton extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     final enabled = onPressed != null;
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 1),
+      padding: const EdgeInsets.symmetric(horizontal: 2),
       child: IconButton(
-        constraints: const BoxConstraints.tightFor(width: 40, height: 40),
+        constraints: const BoxConstraints.tightFor(width: 46, height: 46),
         padding: EdgeInsets.zero,
         tooltip: tooltip,
         style: IconButton.styleFrom(

@@ -9,7 +9,9 @@ import '../providers/audio_provider.dart';
 import '../services/asmr_download_manager.dart';
 import '../services/asmr_download_selection.dart';
 import '../services/asmr_library_controller.dart';
+import '../services/ui_operation_service.dart';
 import '../widgets/app_feedback.dart';
+import '../widgets/operation_feedback.dart';
 import '../widgets/top_page_header.dart';
 import 'asmr_download_details_page.dart';
 
@@ -27,6 +29,7 @@ class _AsmrDownloadPageState extends State<AsmrDownloadPage> {
   String? _destinationRoot;
   bool _loading = true;
   bool _starting = false;
+  Object? _bootstrapError;
 
   @override
   void initState() {
@@ -37,26 +40,49 @@ class _AsmrDownloadPageState extends State<AsmrDownloadPage> {
   }
 
   Future<void> _bootstrap() async {
-    final libraryController = context.read<AsmrLibraryController>();
-    final downloadManager = context.read<AsmrDownloadManager>();
-    final audioProvider = context.read<AudioProvider>();
-    final tree = await libraryController.ensureTrackTree(widget.work);
-    await downloadManager.initialize();
-    final savedDestination = audioProvider.asmrDownloadDestinationRoot;
-    final destinationMissing =
-        savedDestination != null &&
-        savedDestination.trim().isNotEmpty &&
-        !await downloadManager.destinationExists(savedDestination);
-    if (destinationMissing) {
-      await audioProvider.setAsmrDownloadDestinationRoot(null);
+    var destinationMissing = false;
+    try {
+      final result = await UiOperationService.instance
+          .run<({List<AsmrTrackFile> tree, String? destinationRoot})>(
+            scope: UiOperationScope.asmrDownloadInit,
+            labelKey: 'asmr_download_title',
+            task: (_) async {
+              final libraryController = context.read<AsmrLibraryController>();
+              final downloadManager = context.read<AsmrDownloadManager>();
+              final audioProvider = context.read<AudioProvider>();
+              final tree = await libraryController.ensureTrackTree(widget.work);
+              await downloadManager.initialize();
+              final savedDestination =
+                  audioProvider.asmrDownloadDestinationRoot;
+              destinationMissing =
+                  savedDestination != null &&
+                  savedDestination.trim().isNotEmpty &&
+                  !await downloadManager.destinationExists(savedDestination);
+              if (destinationMissing) {
+                await audioProvider.setAsmrDownloadDestinationRoot(null);
+              }
+              return (
+                tree: tree,
+                destinationRoot: destinationMissing ? null : savedDestination,
+              );
+            },
+          );
+      if (!mounted) return;
+      setState(() {
+        _selection = AsmrDownloadSelectionModel(result.tree);
+        _destinationRoot = result.destinationRoot;
+        _loading = false;
+        _bootstrapError = null;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _bootstrapError = error;
+        _loading = false;
+      });
+      return;
     }
-    if (!mounted) return;
-    setState(() {
-      _selection = AsmrDownloadSelectionModel(tree);
-      _destinationRoot = destinationMissing ? null : savedDestination;
-      _loading = false;
-    });
-    if (destinationMissing) {
+    if (destinationMissing && mounted) {
       final i18n = context.read<AppLanguageProvider>();
       final isDark = Theme.of(context).brightness == Brightness.dark;
       final asmrBlue = isDark
@@ -161,11 +187,15 @@ class _AsmrDownloadPageState extends State<AsmrDownloadPage> {
       _starting = true;
     });
     try {
-      await downloadManager.startDownload(
-        work: widget.work,
-        selectedRoots: selectedRoots,
-        destinationRoot: destination,
-        conflictPolicy: audioProvider.asmrDownloadConflictPolicy,
+      await UiOperationService.instance.run<void>(
+        scope: UiOperationScope.asmrDownloadStart,
+        labelKey: 'asmr_download_starting',
+        task: (_) => downloadManager.startDownload(
+          work: widget.work,
+          selectedRoots: selectedRoots,
+          destinationRoot: destination!,
+          conflictPolicy: audioProvider.asmrDownloadConflictPolicy,
+        ),
       );
       if (!mounted) return;
       if (!mounted) return;
@@ -222,20 +252,41 @@ class _AsmrDownloadPageState extends State<AsmrDownloadPage> {
           ),
         ],
       ),
-      body: _loading || selection == null
-          ? Center(child: CircularProgressIndicator(color: asmrBlue))
-          : Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
-                  child: _DownloadSummaryCard(
-                    work: widget.work,
-                    selectedLeafCount: selectedLeafCount,
-                    selectedTotalSizeBytes: selectedTotalSizeBytes,
-                  ),
-                ),
-                Expanded(
-                  child: ListView(
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+            child: _DownloadSummaryCard(
+              work: widget.work,
+              selectedLeafCount: selectedLeafCount,
+              selectedTotalSizeBytes: selectedTotalSizeBytes,
+            ),
+          ),
+          Expanded(
+            child: _loading
+                ? const SingleChildScrollView(
+                    padding: EdgeInsets.fromLTRB(16, 0, 16, 24),
+                    child: OperationSkeletonList(
+                      itemCount: 6,
+                      showHeader: false,
+                    ),
+                  )
+                : _bootstrapError != null || selection == null
+                ? Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                    child: OperationStatusBanner(
+                      label: i18n.tr('asmr_detail_load_failed'),
+                      error: _bootstrapError,
+                      onRetry: () {
+                        setState(() {
+                          _loading = true;
+                          _bootstrapError = null;
+                        });
+                        unawaited(_bootstrap());
+                      },
+                    ),
+                  )
+                : ListView(
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
                     children: [
                       for (final node in selection.rootNodes)
@@ -250,62 +301,60 @@ class _AsmrDownloadPageState extends State<AsmrDownloadPage> {
                         ),
                     ],
                   ),
-                ),
-                Padding(
-                  padding: EdgeInsets.fromLTRB(
-                    16,
-                    0,
-                    16,
-                    16 + MediaQuery.of(context).viewPadding.bottom,
+          ),
+          Padding(
+            padding: EdgeInsets.fromLTRB(
+              16,
+              0,
+              16,
+              16 + MediaQuery.of(context).viewPadding.bottom,
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: asmrBlue,
+                      side: BorderSide(color: asmrBlue.withValues(alpha: 0.5)),
+                    ),
+                    onPressed: _starting
+                        ? null
+                        : () => Navigator.of(context).maybePop(),
+                    child: Text(i18n.tr('cancel')),
                   ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton(
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: asmrBlue,
-                            side: BorderSide(
-                              color: asmrBlue.withValues(alpha: 0.5),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: asmrBlue,
+                      foregroundColor: onAsmrBlue,
+                    ),
+                    onPressed: _starting ? null : _startDownload,
+                    icon: _starting
+                        ? SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: onAsmrBlue,
                             ),
-                          ),
-                          onPressed: _starting
-                              ? null
-                              : () => Navigator.of(context).maybePop(),
-                          child: Text(i18n.tr('cancel')),
-                        ),
+                          )
+                        : const Icon(Icons.download_rounded),
+                    label: Text(
+                      i18n.tr(
+                        _starting
+                            ? 'asmr_download_starting'
+                            : 'asmr_download_confirm',
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: FilledButton.icon(
-                          style: FilledButton.styleFrom(
-                            backgroundColor: asmrBlue,
-                            foregroundColor: onAsmrBlue,
-                          ),
-                          onPressed: _starting ? null : _startDownload,
-                          icon: _starting
-                              ? SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: onAsmrBlue,
-                                  ),
-                                )
-                              : const Icon(Icons.download_rounded),
-                          label: Text(
-                            i18n.tr(
-                              _starting
-                                  ? 'asmr_download_starting'
-                                  : 'asmr_download_confirm',
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
                 ),
               ],
             ),
+          ),
+        ],
+      ),
     );
   }
 }

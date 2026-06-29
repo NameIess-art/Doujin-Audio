@@ -7,9 +7,12 @@ import 'package:provider/provider.dart';
 import '../i18n/app_language_provider.dart';
 import '../providers/audio_provider.dart';
 import '../services/audio_state_services.dart';
+import '../services/audio_detail_repository.dart';
+import '../services/ui_operation_service.dart';
 import '../services/path_display.dart';
 import '../widgets/app_feedback.dart';
 import '../widgets/async_cover_image.dart';
+import '../widgets/operation_feedback.dart';
 import 'dlsite_metadata_review_page.dart';
 import '../widgets/app_transitions.dart';
 
@@ -48,6 +51,10 @@ class _AudioDetailSheetState extends State<AudioDetailSheet> {
   bool _runningAction = false;
   _AudioDetailField? _savingField;
 
+  UiOperationScope get _operationScope => UiOperationScope.audioDetail(
+    '${_target.targetType.dbValue}|${_target.targetPath}',
+  );
+
   @override
   void initState() {
     super.initState();
@@ -56,9 +63,12 @@ class _AudioDetailSheetState extends State<AudioDetailSheet> {
 
   Future<void> _load() async {
     try {
-      final result = await context.read<AudioProvider>().loadAudioDetail(
-        _target,
-      );
+      final result = await UiOperationService.instance
+          .run<AudioDetailLoadResult>(
+            scope: _operationScope,
+            labelKey: 'audio_detail_title',
+            task: (_) => context.read<AudioProvider>().loadAudioDetail(_target),
+          );
       if (!mounted) return;
       setState(() {
         _detail = result.detail;
@@ -142,9 +152,14 @@ class _AudioDetailSheetState extends State<AudioDetailSheet> {
       _runningAction = true;
     });
     try {
-      final result = await context
-          .read<AudioProvider>()
-          .renameAudioDetailTargetToName(detail, targetName);
+      final result = await UiOperationService.instance
+          .run<AudioDetailRenameResult>(
+            scope: _operationScope,
+            labelKey: 'audio_detail_rename_folder_from_title',
+            task: (_) => context
+                .read<AudioProvider>()
+                .renameAudioDetailTargetToName(detail, targetName),
+          );
       if (!mounted) return;
       setState(() {
         _target = result.detail.target;
@@ -182,9 +197,13 @@ class _AudioDetailSheetState extends State<AudioDetailSheet> {
       _savingField = field;
     });
     try {
-      final result = await context.read<AudioProvider>().saveAudioDetail(
-        nextDetail,
-      );
+      final result = await UiOperationService.instance
+          .run<AudioDetailSaveResult>(
+            scope: _operationScope,
+            labelKey: 'audio_detail_save_failed',
+            task: (_) =>
+                context.read<AudioProvider>().saveAudioDetail(nextDetail),
+          );
       if (!mounted) return;
       setState(() {
         _detail = result.detail;
@@ -276,9 +295,13 @@ class _AudioDetailSheetState extends State<AudioDetailSheet> {
       _runningAction = true;
     });
     try {
-      final result = await context
-          .read<AudioProvider>()
-          .renameAudioDetailTarget(detail);
+      final result = await UiOperationService.instance
+          .run<AudioDetailRenameResult>(
+            scope: _operationScope,
+            labelKey: 'audio_detail_rename_folder_from_title',
+            task: (_) =>
+                context.read<AudioProvider>().renameAudioDetailTarget(detail),
+          );
       if (!mounted) return;
       setState(() {
         _target = result.detail.target;
@@ -393,18 +416,18 @@ class _AudioDetailSheetState extends State<AudioDetailSheet> {
             ),
             const SizedBox(height: 16),
             if (_loading)
-              const Center(
-                child: Padding(
-                  padding: EdgeInsets.symmetric(vertical: 32),
-                  child: CircularProgressIndicator(),
-                ),
+              const OperationSkeletonList(
+                itemCount: 5,
+                showHeader: false,
+                padding: EdgeInsets.symmetric(vertical: 6),
               )
             else if (_loadError != null)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 24),
-                child: Text(
-                  i18n.tr('audio_detail_load_failed'),
-                  style: TextStyle(color: cs.error),
+                child: OperationStatusBanner(
+                  label: i18n.tr('audio_detail_load_failed'),
+                  error: _loadError,
+                  onRetry: () => unawaited(_load()),
                 ),
               )
             else if (detail != null) ...[
@@ -598,9 +621,9 @@ class _FolderCoverSelectorState extends State<_FolderCoverSelector> {
     ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700);
 
     if (_loading) {
-      return const Padding(
-        padding: EdgeInsets.symmetric(vertical: 20),
-        child: Center(child: CircularProgressIndicator()),
+      return const OperationSkeletonList(
+        itemCount: 1,
+        padding: EdgeInsets.symmetric(vertical: 8),
       );
     }
     if (_error != null || _images.isEmpty || _pageController == null) {

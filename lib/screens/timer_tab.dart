@@ -14,6 +14,7 @@ import '../services/audio_state_services.dart';
 import '../services/notifications_platform_service.dart';
 import '../services/power_platform_service.dart';
 import '../services/timer_runtime_calculator.dart';
+import '../services/ui_operation_service.dart';
 import '../widgets/app_feedback.dart';
 import '../widgets/top_page_header.dart';
 
@@ -187,15 +188,21 @@ class _TimerTabState extends ConsumerState<TimerTab>
   }
 
   Future<_TimerReliabilityStatus> _loadReliabilityStatus() async {
-    final results = await Future.wait<bool>([
-      _areNotificationsEnabled(),
-      _canScheduleExactAlarms(),
-      _isIgnoringBatteryOptimizations(),
-    ]);
-    return _TimerReliabilityStatus(
-      notificationsEnabled: results[0],
-      exactAlarmsEnabled: results[1],
-      backgroundRunAllowed: results[2],
+    return UiOperationService.instance.run<_TimerReliabilityStatus>(
+      scope: UiOperationScope.timerReliability,
+      labelKey: 'timer_reliability_checking',
+      task: (_) async {
+        final results = await Future.wait<bool>([
+          _areNotificationsEnabled(),
+          _canScheduleExactAlarms(),
+          _isIgnoringBatteryOptimizations(),
+        ]);
+        return _TimerReliabilityStatus(
+          notificationsEnabled: results[0],
+          exactAlarmsEnabled: results[1],
+          backgroundRunAllowed: results[2],
+        );
+      },
     );
   }
 

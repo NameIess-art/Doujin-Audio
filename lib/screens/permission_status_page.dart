@@ -11,6 +11,7 @@ import '../services/power_platform_service.dart';
 import '../services/subtitle_overlay_controller.dart';
 import '../services/ui_operation_service.dart';
 import '../widgets/app_feedback.dart';
+import '../widgets/operation_feedback.dart';
 
 class PermissionStatusPage extends StatefulWidget {
   const PermissionStatusPage({super.key, this.statusService});
@@ -127,7 +128,10 @@ class _PermissionStatusPageState extends State<PermissionStatusPage>
           builder: (context, snapshot) {
             final status = snapshot.data ?? _lastSnapshot;
             if (status == null) {
-              return const Center(child: CircularProgressIndicator());
+              return const OperationSkeletonList(
+                itemCount: 6,
+                padding: EdgeInsets.fromLTRB(16, 12, 16, 32),
+              );
             }
             final checking =
                 snapshot.connectionState == ConnectionState.waiting;

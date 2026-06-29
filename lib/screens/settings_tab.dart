@@ -470,6 +470,38 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                               );
                             },
                           ),
+                          Consumer(
+                            builder: (context, ref, _) {
+                              final provider = context.watch<ThemeProvider>();
+                              return SwitchListTile(
+                                title: Text(i18n.tr('differentiate_asmr_theme')),
+                                subtitle: Text(
+                                  i18n.tr('differentiate_asmr_theme_subtitle'),
+                                  style: descStyle,
+                                ),
+                                value: provider.differentiateAsmrTheme,
+                                onChanged: (val) => provider.setDifferentiateAsmrTheme(val),
+                                secondary: Container(
+                                  width: 38,
+                                  height: 38,
+                                  decoration: BoxDecoration(
+                                    color: cs.secondaryContainer,
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: Icon(
+                                    Icons.palette_rounded,
+                                    color: cs.onSecondaryContainer,
+                                  ),
+                                ),
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                              );
+                            },
+                          ),
                           ListTile(
                             title: Text(i18n.tr('cover_image_resolution')),
                             subtitle: Text(

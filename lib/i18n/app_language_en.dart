@@ -362,6 +362,8 @@ const Map<String, String> appLanguageEn = {
   'theme_system': 'System',
   'theme_light': 'Light',
   'theme_dark': 'Dark',
+  'differentiate_asmr_theme': 'Distinct ASMR.ONE theme',
+  'differentiate_asmr_theme_subtitle': 'Use a distinct theme color for ASMR.ONE pages when enabled',
   'bottom_navigation_style': 'Floating menu bar',
   'bottom_navigation_style_subtitle': 'Use capsule appearance.',
   'blur_player_background': 'Blur Player Background',

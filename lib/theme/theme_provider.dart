@@ -9,10 +9,12 @@ class ThemeProvider with ChangeNotifier {
   static const _themeModeKey = 'themeMode';
 
   ThemeMode _themeMode = ThemeMode.system;
-  late final ThemeData _lightTheme = _buildTheme(_lightScheme);
-  late final ThemeData _darkTheme = _buildTheme(_darkScheme);
+  bool _differentiateAsmrTheme = true;
+  late ThemeData _lightTheme = _buildTheme(_lightScheme);
+  late ThemeData _darkTheme = _buildTheme(_darkScheme);
 
   ThemeMode get themeMode => _themeMode;
+  bool get differentiateAsmrTheme => _differentiateAsmrTheme;
   ThemeData get lightTheme => _lightTheme;
   ThemeData get darkTheme => _darkTheme;
 
@@ -30,6 +32,7 @@ class ThemeProvider with ChangeNotifier {
         return legacyDarkMode ? ThemeMode.dark : ThemeMode.light;
       },
     );
+    _differentiateAsmrTheme = AppPreferences.getBoolSync('differentiateAsmrTheme') ?? true;
   }
 
   Future<void> setThemeMode(ThemeMode value) async {
@@ -38,6 +41,15 @@ class ThemeProvider with ChangeNotifier {
     notifyListeners();
     await AppPreferences.setString(_themeModeKey, value.name);
     await AppPreferences.remove('isDarkMode');
+  }
+
+  Future<void> setDifferentiateAsmrTheme(bool value) async {
+    if (_differentiateAsmrTheme == value) return;
+    _differentiateAsmrTheme = value;
+    _lightTheme = _buildTheme(_lightScheme);
+    _darkTheme = _buildTheme(_darkScheme);
+    notifyListeners();
+    await AppPreferences.setBool('differentiateAsmrTheme', value);
   }
 
   static final ColorScheme _lightScheme =
@@ -158,9 +170,19 @@ class ThemeProvider with ChangeNotifier {
       ),
     );
 
-    final tokens = scheme.brightness == Brightness.dark
+    AppDesignTokens tokens = scheme.brightness == Brightness.dark
         ? AppDesignTokens.dark
         : AppDesignTokens.light;
+
+    if (!_differentiateAsmrTheme) {
+      tokens = tokens.copyWith(
+        asmrAccent: scheme.primary,
+        asmrContainer: scheme.primaryContainer,
+        onAsmrContainer: scheme.onPrimaryContainer,
+        onAsmrAccent: scheme.onPrimary,
+        asmrSurface: scheme.surface,
+      );
+    }
 
     final largeShape = RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(

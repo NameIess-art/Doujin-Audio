@@ -331,6 +331,8 @@ const Map<String, String> appLanguageJa = {
   'theme_system': 'システム',
   'theme_light': 'ライト',
   'theme_dark': 'ダーク',
+  'differentiate_asmr_theme': 'ASMR.ONE ページを区別する',
+  'differentiate_asmr_theme_subtitle': '有効にすると、ASMR.ONE 関連ページで専用のテーマカラーを使用します',
   'bottom_navigation_style': 'フローティングメニューバー',
   'bottom_navigation_style_subtitle': 'カプセル状の外観を有効にします。',
   'blur_player_background': 'プレーヤーの背景をぼかす',

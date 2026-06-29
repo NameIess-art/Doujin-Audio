@@ -329,6 +329,8 @@ const Map<String, String> appLanguageZh = {
   'theme_system': '跟随系统',
   'theme_light': '浅色',
   'theme_dark': '深色',
+  'differentiate_asmr_theme': '区分 ASMR.ONE 页面',
+  'differentiate_asmr_theme_subtitle': '开启后，ASMR.ONE 相关页面将使用专属的主题颜色',
   'bottom_navigation_style': '悬浮窗菜单栏',
   'bottom_navigation_style_subtitle': '开启后使用胶囊状外观。',
   'blur_player_background': '模糊播放器背景',

@@ -17,6 +17,7 @@ import '../services/audio_state_services.dart';
 import '../services/path_display.dart';
 import '../services/permission_action_controller.dart';
 import '../services/ui_operation_service.dart';
+import '../theme/app_design_tokens.dart';
 import '../theme/theme_provider.dart';
 import '../widgets/app_feedback.dart';
 import '../widgets/confirm_action_dialog.dart';
@@ -142,9 +143,6 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
       builder: (_) => const PermissionStatusPage(),
     );
   }
@@ -154,9 +152,6 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
       builder: (_) => const DataSupportPage(),
     );
   }
@@ -166,9 +161,6 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
       builder: (_) => const _SubtitleWindowSettingsSheet(),
     );
   }
@@ -178,9 +170,6 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
       builder: (_) => const _CardInfoFieldsSettingsSheet(),
     );
   }

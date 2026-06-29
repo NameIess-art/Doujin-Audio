@@ -49,14 +49,12 @@ void main() {
     expect(marquee.edgePadding, 2);
   });
 
-  testWidgets('top page header keeps page title while loading', (tester) async {
+  testWidgets('top page header always renders a stable page title', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       _buildApp(
-        const TopPageHeader(
-          title: 'Local library',
-          isLoading: true,
-          useSafeAreaTop: false,
-        ),
+        const TopPageHeader(title: 'Local library', useSafeAreaTop: false),
       ),
     );
 

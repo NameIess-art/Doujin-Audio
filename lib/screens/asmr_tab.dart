@@ -15,6 +15,7 @@ import '../services/audio_state_services.dart';
 import '../services/search_query_utils.dart';
 import '../services/ui_interaction_coordinator.dart';
 import '../services/ui_operation_service.dart';
+import '../theme/app_design_tokens.dart';
 import '../widgets/app_feedback.dart';
 import '../widgets/app_transitions.dart';
 import '../widgets/async_cover_image.dart';
@@ -42,9 +43,6 @@ class AsmrTab extends StatefulWidget {
   @override
   State<AsmrTab> createState() => _AsmrTabState();
 }
-
-const Color _kAsmrBlueLight = Color(0xFF1D4ED8);
-const Color _kAsmrBlueDark = Color(0xFF3B82F6);
 
 class _AsmrTabState extends State<AsmrTab>
     with AutomaticKeepAliveClientMixin, TickerProviderStateMixin {
@@ -298,8 +296,7 @@ class _AsmrTabState extends State<AsmrTab>
     AsmrCategoryType category, {
     bool showSnackbar = false,
   }) async {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
+    final asmrBlue = AppDesignTokens.of(context).asmrAccent;
     final controller = context.read<AsmrLibraryController>();
     final i18n = context.read<AppLanguageProvider>();
     final beforeIds = controller
@@ -315,10 +312,6 @@ class _AsmrTabState extends State<AsmrTab>
         iconColor: asmrBlue,
       );
     }
-
-    await Future<void>.delayed(Duration.zero);
-    await WidgetsBinding.instance.endOfFrame;
-    if (!mounted) return;
 
     await _runAsmrOperation<void>(
       scope: UiOperationScope.asmrCategory(
@@ -671,7 +664,6 @@ class _AsmrTabState extends State<AsmrTab>
             child: TopPageHeader(
               key: _headerKey,
               title: 'ASMR.ONE',
-              isLoading: true,
               collapseController: currentScrollController,
               floatingReveal: true,
               bottomSpacing: 4,
@@ -785,7 +777,6 @@ class _AsmrTabState extends State<AsmrTab>
                 ],
               ),
             ),
-            isLoading: !globalState.initialized,
             collapseController: currentScrollController,
             collapseDistance: headerControlsFullHeight,
             floatingReveal: true,

@@ -26,8 +26,7 @@ class _AsmrWorkTreeCardState extends State<_AsmrWorkTreeCard> {
     if (!context.mounted) {
       return;
     }
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
+    final asmrBlue = AppDesignTokens.of(context).asmrAccent;
     final i18n = context.read<AppLanguageProvider>();
     showAppSnackBar(
       context,
@@ -41,8 +40,7 @@ class _AsmrWorkTreeCardState extends State<_AsmrWorkTreeCard> {
   Future<void> _toggleFavorite(BuildContext context) async {
     final controller = context.read<AsmrLibraryController>();
     final i18n = context.read<AppLanguageProvider>();
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
+    final asmrBlue = AppDesignTokens.of(context).asmrAccent;
     final shouldFavorite = !widget.work.isFavorite;
     unawaited(
       UiOperationService.instance.run<void>(
@@ -82,11 +80,11 @@ class _AsmrWorkTreeCardState extends State<_AsmrWorkTreeCard> {
     final isTreeLoading = treeState.isLoading;
     final i18n = context.watch<AppLanguageProvider>();
     final cs = Theme.of(context).colorScheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
+    final tokens = AppDesignTokens.of(context);
+    final asmrBlue = tokens.asmrAccent;
     final cardShape = RoundedRectangleBorder(
       side: BorderSide(
-        color: cs.outlineVariant.withValues(alpha: isDark ? 0.26 : 0.42),
+        color: cs.outlineVariant.withValues(alpha: tokens.standardBorderAlpha),
       ),
       borderRadius: BorderRadius.circular(LibraryLikeCardMetrics.cardRadius),
     );
@@ -245,8 +243,7 @@ class _AsmrRootCardContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
+    final asmrBlue = AppDesignTokens.of(context).asmrAccent;
     final i18n = context.watch<AppLanguageProvider>();
     return LibraryLikeFeaturedCardContent(
       title: work.title,
@@ -296,10 +293,7 @@ class _AsmrTrackTreeNodeState extends State<_AsmrTrackTreeNode> {
           .where((child) => child.hasBrowsableContent)
           .toList(growable: false);
       final cs = Theme.of(context).colorScheme;
-      final isDark = Theme.of(context).brightness == Brightness.dark;
-      final asmrBlue = isDark
-          ? const Color(0xFF60A5FA)
-          : const Color(0xFF1D4ED8);
+      final asmrBlue = AppDesignTokens.of(context).asmrAccent;
       return Theme(
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
@@ -457,8 +451,7 @@ class _AsmrTrackTreeNodeState extends State<_AsmrTrackTreeNode> {
     if (!context.mounted) {
       return;
     }
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
+    final asmrBlue = AppDesignTokens.of(context).asmrAccent;
     final i18n = context.read<AppLanguageProvider>();
     showAppSnackBar(
       context,
@@ -479,8 +472,7 @@ class _AsmrTrackLeafRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
+    final asmrBlue = AppDesignTokens.of(context).asmrAccent;
     return ColoredBox(
       color: cs.surfaceContainerLow,
       child: SizedBox(
@@ -567,8 +559,7 @@ class _AsmrTrackLeafRow extends StatelessWidget {
     if (!context.mounted) {
       return;
     }
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
+    final asmrBlue = AppDesignTokens.of(context).asmrAccent;
     final i18n = context.read<AppLanguageProvider>();
     showAppSnackBar(
       context,

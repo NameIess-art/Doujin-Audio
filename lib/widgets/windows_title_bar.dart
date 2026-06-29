@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:window_manager/window_manager.dart';
 
+import '../theme/app_design_tokens.dart';
+
 class WindowsTitleBar extends StatelessWidget {
   const WindowsTitleBar({super.key});
 
@@ -25,9 +27,7 @@ class WindowsTitleBar extends StatelessWidget {
               Icon(
                 Icons.graphic_eq_rounded,
                 size: 18,
-                color: isDark
-                    ? const Color(0xFF60A5FA)
-                    : const Color(0xFF1D4ED8),
+                color: AppDesignTokens.of(context).asmrAccent,
               ),
               const SizedBox(width: 10),
               Text(

@@ -8,7 +8,7 @@ class _SettingsGroupCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final tokens = AppDesignTokens.of(context);
 
     final List<Widget> separatedChildren = [];
     for (int i = 0; i < children.length; i++) {
@@ -21,9 +21,9 @@ class _SettingsGroupCard extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: cs.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(10),
         border: Border.all(
-          color: cs.outlineVariant.withValues(alpha: isDark ? 0.15 : 0.3),
+          color: cs.outlineVariant.withValues(alpha: tokens.subtleBorderAlpha),
           width: 0.5,
         ),
       ),
@@ -60,16 +60,17 @@ class _UpdateSettingsTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final i18n = context.watch<AppLanguageProvider>();
     final cs = Theme.of(context).colorScheme;
+    final tokens = AppDesignTokens.of(context);
     final busy = checking || downloading;
 
     return ListTile(
       onTap: busy ? null : onCheck,
       leading: Container(
-        width: 38,
-        height: 38,
+        width: tokens.iconContainerSize,
+        height: tokens.iconContainerSize,
         decoration: BoxDecoration(
           color: cs.primaryContainer,
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(tokens.radiusSmall),
         ),
         child: Icon(
           Icons.system_update_alt_rounded,
@@ -107,7 +108,9 @@ class _UpdateSettingsTile extends StatelessWidget {
               ),
       ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(tokens.radiusControl),
+      ),
     );
   }
 }
@@ -335,7 +338,10 @@ class _SubtitleWindowSettingsSheet extends StatelessWidget {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(i18n.tr('font_setting'), style: labelStyle),
+                                Text(
+                                  i18n.tr('font_setting'),
+                                  style: labelStyle,
+                                ),
                                 const SizedBox(height: 8),
                                 InputDecorator(
                                   decoration: InputDecoration(
@@ -353,7 +359,9 @@ class _SubtitleWindowSettingsSheet extends StatelessWidget {
                                     isDense: true,
                                     isExpanded: true,
                                     alignment: AlignmentDirectional.centerStart,
-                                    items: List.generate(_fontFamilies.length, (i) {
+                                    items: List.generate(_fontFamilies.length, (
+                                      i,
+                                    ) {
                                       final label = i == 0
                                           ? i18n.tr('system_default')
                                           : _fontFamilies[i];
@@ -392,7 +400,9 @@ class _SubtitleWindowSettingsSheet extends StatelessWidget {
                                     ),
                                     Text(
                                       settings.fontSize.toStringAsFixed(0),
-                                      style: Theme.of(context).textTheme.bodySmall
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall
                                           ?.copyWith(
                                             color: cs.onSurfaceVariant,
                                             fontWeight: FontWeight.w700,
@@ -443,7 +453,9 @@ class _SubtitleWindowSettingsSheet extends StatelessWidget {
                                     ),
                                     Text(
                                       '${((1.0 - settings.backgroundOpacity) * 100).toStringAsFixed(0)}%',
-                                      style: Theme.of(context).textTheme.bodySmall
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall
                                           ?.copyWith(
                                             color: cs.onSurfaceVariant,
                                             fontWeight: FontWeight.w700,
@@ -487,8 +499,11 @@ class _SubtitleWindowSettingsSheet extends StatelessWidget {
                                       ),
                                     ),
                                     Text(
-                                      (settings.borderDepth * 100).toStringAsFixed(0),
-                                      style: Theme.of(context).textTheme.bodySmall
+                                      (settings.borderDepth * 100)
+                                          .toStringAsFixed(0),
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall
                                           ?.copyWith(
                                             color: cs.onSurfaceVariant,
                                             fontWeight: FontWeight.w700,
@@ -548,7 +563,9 @@ class _SubtitleWindowPreviewCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final cardRadius = BorderRadius.circular(24);
+    final cardRadius = BorderRadius.circular(
+      AppDesignTokens.of(context).radiusOverlay,
+    );
 
     return SizedBox(
       height: _SubtitleWindowSettingsSheet._previewHeight,

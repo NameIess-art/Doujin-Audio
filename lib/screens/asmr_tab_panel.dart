@@ -79,23 +79,17 @@ class _AsmrPanelOverlay extends StatelessWidget {
 
 ThemeData _asmrPanelTheme(BuildContext context) {
   final base = Theme.of(context);
-  final isDark = base.brightness == Brightness.dark;
-  final blue = isDark ? _kAsmrBlueDark : _kAsmrBlueLight;
-  final blueContainer = isDark
-      ? const Color(0xFF1E3A8A)
-      : const Color(0xFFDBEAFE);
-  final onBlueContainer = isDark
-      ? const Color(0xFFBFDBFE)
-      : const Color(0xFF1E40AF);
+  final tokens = AppDesignTokens.of(context);
+  final blue = tokens.asmrAccent;
   final scheme = base.colorScheme.copyWith(
     primary: blue,
-    onPrimary: Colors.white,
-    primaryContainer: blueContainer,
-    onPrimaryContainer: onBlueContainer,
+    onPrimary: tokens.onAsmrAccent,
+    primaryContainer: tokens.asmrContainer,
+    onPrimaryContainer: tokens.onAsmrContainer,
     secondary: blue,
-    onSecondary: Colors.white,
-    secondaryContainer: blueContainer,
-    onSecondaryContainer: onBlueContainer,
+    onSecondary: tokens.onAsmrAccent,
+    secondaryContainer: tokens.asmrContainer,
+    onSecondaryContainer: tokens.onAsmrContainer,
   );
   return base.copyWith(
     colorScheme: scheme,
@@ -545,9 +539,7 @@ class _AsmrAccountPanelState extends State<_AsmrAccountPanel> {
   }
 
   Color _accountAccentColor(BuildContext context) {
-    return Theme.of(context).brightness == Brightness.dark
-        ? _kAsmrBlueDark
-        : _kAsmrBlueLight;
+    return AppDesignTokens.of(context).asmrAccent;
   }
 }
 
@@ -560,10 +552,11 @@ class _AsmrAccountStatusLine extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final tokens = AppDesignTokens.of(context);
     return DecoratedBox(
       decoration: BoxDecoration(
         color: cs.surfaceContainerHighest.withValues(alpha: 0.52),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(tokens.radiusCard),
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),

@@ -2,6 +2,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../theme/app_design_tokens.dart';
+
 enum AppFeedbackTone { info, success, warning, destructive }
 
 enum AppInteractionFeedbackType { tap, selection, confirmation, destructive }
@@ -240,7 +242,7 @@ class AppFeedbackSurface extends StatelessWidget {
     this.title,
     this.trailing,
     this.padding = const EdgeInsets.fromLTRB(16, 14, 16, 14),
-    this.borderRadius = 22,
+    this.borderRadius,
     this.iconColor,
   });
 
@@ -250,15 +252,17 @@ class AppFeedbackSurface extends StatelessWidget {
   final String? title;
   final Widget? trailing;
   final EdgeInsets padding;
-  final double borderRadius;
+  final double? borderRadius;
   final Color? iconColor;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
+    final tokens = AppDesignTokens.of(context);
     final accent = iconColor ?? _accentColor(context, tone);
     final chipBackground = accent.withValues(alpha: 0.12);
+    final resolvedBorderRadius = borderRadius ?? tokens.radiusOverlay;
 
     final isDark = theme.brightness == Brightness.dark;
     final surfaceColor = isDark
@@ -266,12 +270,16 @@ class AppFeedbackSurface extends StatelessWidget {
         : cs.surfaceContainerHigh.withValues(alpha: 0.98);
 
     return ClipRRect(
-      borderRadius: BorderRadius.circular(borderRadius),
+      borderRadius: BorderRadius.circular(resolvedBorderRadius),
       child: DecoratedBox(
         decoration: BoxDecoration(
           color: surfaceColor,
-          borderRadius: BorderRadius.circular(borderRadius),
-          border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.18)),
+          borderRadius: BorderRadius.circular(resolvedBorderRadius),
+          border: Border.all(
+            color: cs.outlineVariant.withValues(
+              alpha: tokens.subtleBorderAlpha,
+            ),
+          ),
           boxShadow: [
             BoxShadow(
               color: cs.shadow.withValues(alpha: 0.12),
@@ -290,11 +298,11 @@ class AppFeedbackSurface extends StatelessWidget {
           child: Row(
             children: [
               Container(
-                width: 36,
-                height: 36,
+                width: tokens.iconContainerSize,
+                height: tokens.iconContainerSize,
                 decoration: BoxDecoration(
                   color: chipBackground,
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(tokens.radiusSmall),
                 ),
                 child: Icon(icon, size: 18, color: accent),
               ),

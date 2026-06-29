@@ -14,7 +14,7 @@ import '../providers/audio_provider_riverpod.dart';
 import '../providers/subtitle_settings_provider.dart';
 import '../services/audio_state_services.dart';
 import '../services/subtitle_parser.dart';
-import '../services/ui_interaction_coordinator.dart';
+import '../theme/app_design_tokens.dart';
 import '../screens/playlist_tab.dart';
 import 'app_feedback.dart';
 import 'async_cover_image.dart';

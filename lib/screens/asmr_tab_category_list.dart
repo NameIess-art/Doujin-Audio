@@ -44,8 +44,7 @@ class _AsmrCategoryListState extends State<_AsmrCategoryList>
     final works = state.works;
     final i18n = context.watch<AppLanguageProvider>();
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
+    final asmrBlue = AppDesignTokens.of(context).asmrAccent;
     return Theme(
       data: theme.copyWith(
         scrollbarTheme: theme.scrollbarTheme.copyWith(
@@ -81,6 +80,7 @@ class _AsmrCategoryListState extends State<_AsmrCategoryList>
                       AppInteractionFeedbackType.confirmation,
                     ),
                   );
+                  _refreshIndicatorKey.currentState?.show();
                 } else if (notification.metrics.pixels >
                         notification.metrics.maxScrollExtent + 56 &&
                     !_loadMoreTriggeredInCurrentScroll) {
@@ -112,46 +112,56 @@ class _AsmrCategoryListState extends State<_AsmrCategoryList>
               edgeOffset: widget.topInset,
               displacement: 32,
               triggerMode: GlassRefreshIndicatorTriggerMode.anywhere,
-              onRefresh: () async {
-                unawaited(
-                  AppInteractionFeedback.trigger(
-                    AppInteractionFeedbackType.confirmation,
-                  ),
-                );
-                await widget.onRefresh();
-                await Future<void>.delayed(const Duration(milliseconds: 300));
-              },
-              child: ListView.builder(
-                controller: widget.scrollController,
-                cacheExtent: 520,
-                physics: const AlwaysScrollableScrollPhysics(
-                  parent: BouncingScrollPhysics(),
-                ),
-                padding: EdgeInsets.fromLTRB(
-                  16,
-                  widget.topInset,
-                  16,
-                  widget.bottomInset + 24,
-                ),
-                itemCount: works.isEmpty
-                    ? 1
-                    : works.length +
-                          ((state.isLoadingMore || state.hasMore) ? 1 : 0),
-                itemBuilder: (context, index) {
-                  if (works.isEmpty) {
-                    if (state.isLoading) {
-                      return ShimmerLoader(
-                        child: Column(
-                          children: [
-                            for (int i = 0; i < 5; i++)
-                              const Padding(
-                                padding: EdgeInsets.only(bottom: 6),
-                                child: _AsmrWorkSkeletonCard(),
-                              ),
-                          ],
+              onRefresh: widget.onRefresh,
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 300),
+                child: works.isEmpty && state.isLoading
+                    ? ListView.builder(
+                        key: const ValueKey('loading'),
+                        controller: widget.scrollController,
+                        physics: const AlwaysScrollableScrollPhysics(
+                          parent: BouncingScrollPhysics(),
                         ),
-                      );
-                    }
+                        padding: EdgeInsets.fromLTRB(
+                          16,
+                          widget.topInset,
+                          16,
+                          widget.bottomInset + 24,
+                        ),
+                        itemCount: 1,
+                        itemBuilder: (context, index) {
+                          return ShimmerLoader(
+                            child: Column(
+                              children: [
+                                for (int i = 0; i < 5; i++)
+                                  const Padding(
+                                    padding: EdgeInsets.only(bottom: 6),
+                                    child: _AsmrWorkSkeletonCard(),
+                                  ),
+                              ],
+                            ),
+                          );
+                        },
+                      )
+                    : ListView.builder(
+                        key: const ValueKey('content'),
+                        controller: widget.scrollController,
+                        cacheExtent: 520,
+                        physics: const AlwaysScrollableScrollPhysics(
+                          parent: BouncingScrollPhysics(),
+                        ),
+                        padding: EdgeInsets.fromLTRB(
+                          16,
+                          widget.topInset,
+                          16,
+                          widget.bottomInset + 24,
+                        ),
+                        itemCount: works.isEmpty
+                            ? 1
+                            : works.length +
+                                  ((state.isLoadingMore || state.hasMore) ? 1 : 0),
+                        itemBuilder: (context, index) {
+                          if (works.isEmpty) {
                     return Padding(
                       padding: const EdgeInsets.only(top: 80),
                       child: Center(
@@ -199,6 +209,7 @@ class _AsmrCategoryListState extends State<_AsmrCategoryList>
                     ),
                   );
                 },
+              ),
               ),
             ),
           ),

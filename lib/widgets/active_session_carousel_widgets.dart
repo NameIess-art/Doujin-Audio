@@ -60,7 +60,6 @@ class _ActiveSessionCard extends ConsumerWidget {
         (s) => s.valueOrNull?.uiBlurEffectEnabled ?? true,
       ),
     );
-    final interactionCoordinator = UiInteractionCoordinator.instance;
 
     Widget buildCardBody(bool useBlur) => Material(
       color: Colors.transparent,
@@ -127,24 +126,20 @@ class _ActiveSessionCard extends ConsumerWidget {
       ),
     );
 
-    return AnimatedBuilder(
-      animation: interactionCoordinator,
-      builder: (context, _) {
-        final useBlur = blurEnabled && !interactionCoordinator.isInteracting;
-        return Semantics(
-          button: true,
-          label: displayName,
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(cardRadius),
-            child: useBlur
-                ? BackdropFilter(
-                    filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-                    child: buildCardBody(useBlur),
-                  )
-                : buildCardBody(useBlur),
-          ),
-        );
-      },
+    final useBlur = blurEnabled;
+    return Semantics(
+      button: true,
+      label: displayName,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(cardRadius),
+        child: useBlur
+            ? BackdropFilter(
+                key: ValueKey('active_session_blur_${session.id}'),
+                filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+                child: buildCardBody(useBlur),
+              )
+            : buildCardBody(useBlur),
+      ),
     );
   }
 
@@ -163,8 +158,7 @@ class _ActiveSessionCard extends ConsumerWidget {
     MusicTrack? currentTrack,
     String displayName,
   ) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final asmrBlue = isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
+    final asmrBlue = AppDesignTokens.of(context).asmrAccent;
     final activeColor = currentTrack?.remoteMetadataKind == 'asmr.one'
         ? asmrBlue
         : cs.primary;

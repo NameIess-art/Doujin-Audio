@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../services/app_preferences.dart';
 import '../widgets/app_transitions.dart';
+import 'app_design_tokens.dart';
 
 class ThemeProvider with ChangeNotifier {
   static const _themeModeKey = 'themeMode';
@@ -157,12 +158,19 @@ class ThemeProvider with ChangeNotifier {
       ),
     );
 
+    final tokens = scheme.brightness == Brightness.dark
+        ? AppDesignTokens.dark
+        : AppDesignTokens.light;
+
     final largeShape = RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(isDesktop ? 12 : 20),
+      borderRadius: BorderRadius.circular(
+        isDesktop ? tokens.radiusSmall : tokens.radiusSection,
+      ),
     );
 
     return ThemeData(
       useMaterial3: true,
+      extensions: <ThemeExtension<dynamic>>[tokens],
       visualDensity: isDesktop ? VisualDensity.compact : VisualDensity.standard,
       colorScheme: scheme,
       textTheme: bodyText.apply(
@@ -192,10 +200,12 @@ class ThemeProvider with ChangeNotifier {
         shadowColor: scheme.shadow.withValues(alpha: 0.08),
         surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(isDesktop ? 14 : 16),
+          borderRadius: BorderRadius.circular(
+            isDesktop ? tokens.radiusControl : tokens.radiusCard,
+          ),
           side: BorderSide(
             color: scheme.outlineVariant.withValues(
-              alpha: isDesktop ? 0.38 : 0.62,
+              alpha: isDesktop ? 0.38 : tokens.standardBorderAlpha,
             ),
           ),
         ),
@@ -252,12 +262,16 @@ class ThemeProvider with ChangeNotifier {
       listTileTheme: ListTileThemeData(
         dense: isDesktop,
         minLeadingWidth: 24,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(tokens.radiusCard),
+        ),
       ),
       floatingActionButtonTheme: FloatingActionButtonThemeData(
         backgroundColor: scheme.primaryContainer,
         foregroundColor: scheme.onPrimaryContainer,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(tokens.radiusCard),
+        ),
       ),
       navigationBarTheme: NavigationBarThemeData(
         height: 68,
@@ -276,15 +290,15 @@ class ThemeProvider with ChangeNotifier {
         filled: true,
         fillColor: scheme.surfaceContainer,
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(tokens.radiusControl),
           borderSide: BorderSide(color: scheme.outlineVariant),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(tokens.radiusControl),
           borderSide: BorderSide(color: scheme.outlineVariant),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(tokens.radiusControl),
           borderSide: BorderSide(color: scheme.primary, width: 1.4),
         ),
       ),
@@ -307,8 +321,39 @@ class ThemeProvider with ChangeNotifier {
         shadowColor: scheme.shadow.withValues(alpha: 0.12),
         surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(tokens.radiusOverlay),
           side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.5)),
+        ),
+      ),
+      bottomSheetTheme: BottomSheetThemeData(
+        backgroundColor: scheme.surfaceContainerLow,
+        modalBackgroundColor: scheme.surfaceContainerLow,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        modalElevation: 0,
+        dragHandleColor: scheme.onSurfaceVariant.withValues(alpha: 0.42),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(
+            top: Radius.circular(tokens.radiusOverlay),
+          ),
+          side: BorderSide(
+            color: scheme.outlineVariant.withValues(
+              alpha: tokens.subtleBorderAlpha,
+            ),
+          ),
+        ),
+      ),
+      popupMenuTheme: PopupMenuThemeData(
+        color: scheme.surfaceContainerHigh,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(tokens.radiusCard),
+          side: BorderSide(
+            color: scheme.outlineVariant.withValues(
+              alpha: tokens.standardBorderAlpha,
+            ),
+          ),
         ),
       ),
       scrollbarTheme: ScrollbarThemeData(

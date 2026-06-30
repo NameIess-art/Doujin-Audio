@@ -16,6 +16,14 @@ class AudioDatabaseRepository {
 
   Future<List<MusicTrack>> loadAllTracks() => _database.loadAllTracks();
 
+  Future<List<MusicTrack>> loadTrackSummaries() {
+    return _database.loadTrackSummaries();
+  }
+
+  Future<MusicTrack?> loadTrackDetail(String path) {
+    return _database.loadTrackDetail(path);
+  }
+
   Future<void> saveAllTracks(List<MusicTrack> tracks) {
     return _database.saveAllTracks(tracks);
   }
@@ -49,6 +57,21 @@ class AudioDatabaseRepository {
 
   Future<void> saveAllSessions(List<PersistedSession> sessions) {
     return _database.saveAllSessions(sessions);
+  }
+
+  Future<void> updateSessionOrder(List<String> sessionIds) {
+    return _database.updateSessionOrder(sessionIds);
+  }
+
+  Future<void> updatePlaybackQueueEntryOrder(
+    String sessionId,
+    List<String> entryIds,
+  ) {
+    return _database.updatePlaybackQueueEntryOrder(sessionId, entryIds);
+  }
+
+  Future<void> upsertSessionPlaybackState(PersistedSession session) {
+    return _database.upsertSessionPlaybackState(session);
   }
 
   Future<AudioDetail?> loadAudioDetail(AudioDetailTarget target) {

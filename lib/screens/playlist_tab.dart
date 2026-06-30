@@ -33,7 +33,6 @@ import '../widgets/marquee_text.dart';
 import '../widgets/mobile_overlay_inset.dart';
 import '../widgets/playback_position_ui_gate.dart';
 import '../widgets/reorder_auto_scroller.dart';
-import '../widgets/reorderable_hold_drag_listener.dart';
 import '../widgets/scroll_activity_gate.dart';
 import '../widgets/swipe_reveal_card.dart';
 import '../widgets/target_countdown_builder.dart';
@@ -280,6 +279,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                 provider: provider,
                 index: index,
                 cardPositionsLocked: cardPositionsLocked,
+                isReordering: _isReordering,
                 onOpen: () => session.currentTrackPath.isEmpty
                     ? showAppSnackBar(
                         context,
@@ -295,6 +295,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                 provider: provider,
                 index: index,
                 cardPositionsLocked: cardPositionsLocked,
+                isReordering: _isReordering,
                 onOpen: () => _openSessionDetail(context, session.id),
               ),
       );
@@ -544,10 +545,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
         final animValue = Curves.easeInOut.transform(animation.value);
         final scale = 1.0 + (0.012 * animValue);
 
-        return Transform.scale(
-          scale: scale,
-          child: child,
-        );
+        return Transform.scale(scale: scale, child: child);
       },
       child: child,
     );

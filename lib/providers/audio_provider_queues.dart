@@ -143,9 +143,12 @@ extension AudioProviderQueues on AudioProvider {
     if (oldIndex < newIndex) {
       newIndex -= 1;
     }
-    
+
     final entries = queue.entries.toList();
-    if (oldIndex < 0 || oldIndex >= entries.length || newIndex < 0 || newIndex > entries.length) {
+    if (oldIndex < 0 ||
+        oldIndex >= entries.length ||
+        newIndex < 0 ||
+        newIndex > entries.length) {
       return;
     }
 
@@ -153,12 +156,17 @@ extension AudioProviderQueues on AudioProvider {
     entries.insert(newIndex, item);
 
     session.playbackQueue = queue.copyWith(entries: entries);
-    await _syncPlaybackQueueSession(session);
+    await _syncPlaybackQueueSession(session, persistSession: false);
+    await _audioDatabaseRepository.updatePlaybackQueueEntryOrder(
+      session.id,
+      entries.map((entry) => entry.id).toList(growable: false),
+    );
   }
 
   Future<void> _syncPlaybackQueueSession(
     PlaybackSession session, {
     bool selectFirst = false,
+    bool persistSession = true,
   }) async {
     final tracks =
         session.playbackQueue?.expandedTracks ?? const <MusicTrack>[];
@@ -205,7 +213,9 @@ extension AudioProviderQueues on AudioProvider {
     }
     _markActiveSessionsDirty();
     _notifyPlaybackChanged();
-    _scheduleSessionPersistence();
+    if (persistSession) {
+      _scheduleSessionPersistence();
+    }
   }
 
   bool _replaceSessionTrackSnapshots(MusicTrack updatedTrack) {

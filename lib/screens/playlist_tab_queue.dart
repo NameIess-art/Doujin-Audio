@@ -6,6 +6,7 @@ class _PlaybackQueueCard extends StatefulWidget {
     required this.provider,
     required this.index,
     required this.cardPositionsLocked,
+    required this.isReordering,
     required this.onOpen,
     required this.onEdit,
   });
@@ -14,6 +15,7 @@ class _PlaybackQueueCard extends StatefulWidget {
   final AudioProvider provider;
   final int index;
   final bool cardPositionsLocked;
+  final bool isReordering;
   final VoidCallback onOpen;
   final VoidCallback onEdit;
 
@@ -82,7 +84,11 @@ class _PlaybackQueueCardState extends State<_PlaybackQueueCard> {
               padding: const EdgeInsets.fromLTRB(12, 7, 10, 6),
               child: Row(
                 children: [
-                  _QueueCoverGrid(provider: provider, tracks: coverTracks),
+                  _QueueCoverGrid(
+                    provider: provider,
+                    tracks: coverTracks,
+                    cachedOnly: widget.isReordering,
+                  ),
                   const SizedBox(width: 14),
                   Expanded(
                     child: Column(
@@ -131,7 +137,9 @@ class _PlaybackQueueCardState extends State<_PlaybackQueueCard> {
                                 provider.toggleSessionPlayPause(session.id);
                               },
                         style: IconButton.styleFrom(
-                          foregroundColor: isPlaying ? activeColor : cs.onSurface,
+                          foregroundColor: isPlaying
+                              ? activeColor
+                              : cs.onSurface,
                           minimumSize: const Size(44, 44),
                           maximumSize: const Size(44, 44),
                           padding: EdgeInsets.zero,
@@ -140,12 +148,13 @@ class _PlaybackQueueCardState extends State<_PlaybackQueueCard> {
                           duration: const Duration(milliseconds: 120),
                           transitionBuilder: (child, animation) {
                             return ScaleTransition(
-                              scale: Tween<double>(begin: 0.4, end: 1.0).animate(
-                                CurvedAnimation(
-                                  parent: animation,
-                                  curve: Curves.easeOutBack,
-                                ),
-                              ),
+                              scale: Tween<double>(begin: 0.4, end: 1.0)
+                                  .animate(
+                                    CurvedAnimation(
+                                      parent: animation,
+                                      curve: Curves.easeOutBack,
+                                    ),
+                                  ),
                               child: FadeTransition(
                                 opacity: animation,
                                 child: child,
@@ -166,9 +175,15 @@ class _PlaybackQueueCardState extends State<_PlaybackQueueCard> {
                         ReorderableDragStartListener(
                           index: widget.index,
                           child: Container(
-                            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                            padding: const EdgeInsets.symmetric(
+                              vertical: 8,
+                              horizontal: 4,
+                            ),
                             color: Colors.transparent,
-                            child: const Icon(Icons.drag_handle_rounded, size: 24),
+                            child: const Icon(
+                              Icons.drag_handle_rounded,
+                              size: 24,
+                            ),
                           ),
                         ),
                       ],
@@ -185,10 +200,15 @@ class _PlaybackQueueCardState extends State<_PlaybackQueueCard> {
 }
 
 class _QueueCoverGrid extends StatelessWidget {
-  const _QueueCoverGrid({required this.provider, required this.tracks});
+  const _QueueCoverGrid({
+    required this.provider,
+    required this.tracks,
+    this.cachedOnly = false,
+  });
 
   final AudioProvider provider;
   final List<MusicTrack> tracks;
+  final bool cachedOnly;
 
   @override
   Widget build(BuildContext context) {
@@ -241,6 +261,7 @@ class _QueueCoverGrid extends StatelessWidget {
       key: ValueKey('$index:${track.path}'),
       provider: provider,
       track: track,
+      cachedOnly: cachedOnly,
     );
   }
 }
@@ -250,10 +271,12 @@ class _QueueTrackCover extends StatefulWidget {
     super.key,
     required this.provider,
     required this.track,
+    this.cachedOnly = false,
   });
 
   final AudioProvider provider;
   final MusicTrack track;
+  final bool cachedOnly;
 
   @override
   State<_QueueTrackCover> createState() => _QueueTrackCoverState();
@@ -274,6 +297,7 @@ class _QueueTrackCoverState extends State<_QueueTrackCover> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.track.path != widget.track.path ||
         oldWidget.provider != widget.provider ||
+        oldWidget.cachedOnly != widget.cachedOnly ||
         _coverGeneration != widget.provider.coverGeneration) {
       _bindCoverFuture();
     }
@@ -281,7 +305,11 @@ class _QueueTrackCoverState extends State<_QueueTrackCover> {
 
   void _bindCoverFuture() {
     _coverGeneration = widget.provider.coverGeneration;
-    _coverFuture = _coverFutureForTrack(widget.provider, widget.track);
+    _coverFuture = _coverFutureForTrack(
+      widget.provider,
+      widget.track,
+      cachedOnly: widget.cachedOnly,
+    );
   }
 
   @override
@@ -641,7 +669,7 @@ class PlaybackQueueAudioEditPage extends ConsumerWidget {
     final queue = provider.sessionById(sessionId)?.playbackQueue;
     final i18n = context.watch<AppLanguageProvider>();
     if (queue == null) return const SizedBox.shrink();
-    
+
     return Scaffold(
       appBar: AppBar(title: Text(i18n.tr('edit_queue_audio'))),
       body: LayoutBuilder(
@@ -685,19 +713,30 @@ class PlaybackQueueAudioEditPage extends ConsumerWidget {
                         provider: provider,
                         track: entry.tracks.firstOrNull,
                         title: entry.title,
-                        subtitle: i18n.tr('audio_count', {'count': entry.tracks.length}),
+                        subtitle: i18n.tr('audio_count', {
+                          'count': entry.tracks.length,
+                        }),
                         trailing: Column(
                           mainAxisSize: MainAxisSize.min,
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             IconButton(
                               tooltip: i18n.tr('remove'),
-                              constraints: const BoxConstraints.tightFor(width: 40, height: 32),
+                              constraints: const BoxConstraints.tightFor(
+                                width: 40,
+                                height: 32,
+                              ),
                               padding: EdgeInsets.zero,
                               visualDensity: VisualDensity.compact,
-                              icon: const Icon(Icons.remove_circle_outline_rounded, size: 22),
+                              icon: const Icon(
+                                Icons.remove_circle_outline_rounded,
+                                size: 22,
+                              ),
                               onPressed: () =>
-                                  provider.removePlaybackQueueEntry(sessionId, entry.id),
+                                  provider.removePlaybackQueueEntry(
+                                    sessionId,
+                                    entry.id,
+                                  ),
                             ),
                             ReorderableDragStartListener(
                               index: index,
@@ -705,7 +744,10 @@ class PlaybackQueueAudioEditPage extends ConsumerWidget {
                                 width: 40,
                                 height: 32,
                                 alignment: Alignment.center,
-                                child: const Icon(Icons.drag_handle_rounded, size: 22),
+                                child: const Icon(
+                                  Icons.drag_handle_rounded,
+                                  size: 22,
+                                ),
                               ),
                             ),
                           ],
@@ -732,7 +774,10 @@ class PlaybackQueueAudioEditPage extends ConsumerWidget {
                   padding: const EdgeInsets.symmetric(horizontal: 12),
                   children: [
                     for (final source in provider.ordinaryPlaybackSessions)
-                      _QueueSourceAudioTile(queueSessionId: sessionId, source: source),
+                      _QueueSourceAudioTile(
+                        queueSessionId: sessionId,
+                        source: source,
+                      ),
                   ],
                 ),
               ),

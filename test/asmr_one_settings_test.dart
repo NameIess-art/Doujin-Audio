@@ -17,6 +17,7 @@ void main() {
     FlutterSecureStorage.setMockInitialValues(<String, String>{});
     SharedPreferences.setMockInitialValues(values);
     await AppPreferences.init();
+    await AsmrPreferences.clearForTest();
   }
 
   test(

@@ -246,7 +246,10 @@ extension AudioProviderPersistence on AudioProvider {
   Future<void> _saveSessionOrder() async {
     try {
       final prefs = await _prefs;
-      await prefs.setString(_kSessionOrderKey, json.encode(_sessionOrder));
+      await _audioDatabaseRepository.updateSessionOrder(
+        _sessionOrder.toList(growable: false),
+      );
+      await prefs.remove(_kSessionOrderKey);
     } catch (error, stackTrace) {
       _logAudioProviderPersistenceFailure(error, stackTrace);
     }

@@ -95,8 +95,8 @@ class PlaybackSession {
     final confirmsPendingIntent = pendingIntent == null
         ? false
         : pendingIntent
-        ? snapshot.playing
-        : !snapshot.playing && !snapshot.playWhenReady;
+        ? snapshot.playWhenReady
+        : !snapshot.playWhenReady;
     if (pendingIntent == true && snapshot.playWhenReady) {
       isPlaybackStarting = false;
     }
@@ -107,7 +107,7 @@ class PlaybackSession {
     final nativeProcessingState = _nativeProcessingState(
       snapshot.processingState,
     );
-    var effectivePlaying = snapshot.playing;
+    var effectivePlaying = snapshot.playWhenReady;
     var effectiveProcessingState = nativeProcessingState;
     final nextState = PlayerState(effectivePlaying, effectiveProcessingState);
     if (state != nextState) {

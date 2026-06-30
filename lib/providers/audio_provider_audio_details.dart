@@ -686,7 +686,7 @@ extension AudioProviderAudioDetails on AudioProvider {
       updatedTracks.add(updatedTrack);
     }
     if (updatedTracks.isEmpty) return;
-    _invalidateResolvedCoverScope(targetPath);
+    _invalidateResolvedCoverScopes([folderPath, targetPath]);
     _markActiveSessionsDirty();
     await _audioDatabaseRepository.upsertTracks(updatedTracks);
     _syncNotificationState();

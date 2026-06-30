@@ -179,72 +179,36 @@ class _SessionsEmptyState extends StatelessWidget {
   }
 }
 
-class _SessionListCard extends ConsumerStatefulWidget {
+class _SessionListCard extends StatelessWidget {
   const _SessionListCard({
-    required this.session,
+    required this.sessionId,
+    required this.cardState,
+    required this.track,
+    required this.coverPath,
+    required this.coverCacheWidth,
+    required this.showSubtitles,
     required this.provider,
     required this.index,
     required this.cardPositionsLocked,
-    required this.isReordering,
     required this.onOpen,
   });
 
-  final PlaybackSession session;
+  final String sessionId;
+  final PlaylistSessionCardState cardState;
+  final MusicTrack? track;
+  final String? coverPath;
+  final int? coverCacheWidth;
+  final bool showSubtitles;
   final AudioProvider provider;
   final int index;
   final bool cardPositionsLocked;
-  final bool isReordering;
   final VoidCallback onOpen;
 
-  @override
-  ConsumerState<_SessionListCard> createState() => _SessionListCardState();
-}
-
-class _SessionListCardState extends ConsumerState<_SessionListCard> {
-  Future<String?>? _coverPathFuture;
-  String? _lastTrackPath;
-  int _lastCoverGeneration = -1;
-  bool _lastCoverWasCachedOnly = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _updateFutureIfNeeded(cachedOnly: true);
-  }
-
-  @override
-  void didUpdateWidget(covariant _SessionListCard oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    _updateFutureIfNeeded(cachedOnly: true);
-  }
-
-  void _updateFutureIfNeeded({
-    required bool cachedOnly,
-    String? trackPath,
-    int? coverGeneration,
-  }) {
-    final effectiveTrackPath = trackPath ?? widget.session.currentTrackPath;
-    final currentGen = coverGeneration ?? widget.provider.coverGeneration;
-    if (_lastTrackPath != effectiveTrackPath ||
-        _lastCoverGeneration != currentGen ||
-        _lastCoverWasCachedOnly && !cachedOnly) {
-      _lastTrackPath = effectiveTrackPath;
-      _lastCoverGeneration = currentGen;
-      _lastCoverWasCachedOnly = cachedOnly;
-      final track = widget.provider.trackByPath(effectiveTrackPath);
-      _coverPathFuture = _coverFutureForTrack(
-        widget.provider,
-        track,
-        cachedOnly: cachedOnly,
-      );
-    }
-  }
-
   void _confirmRemoveSession(BuildContext context) {
-    widget.provider.removeSession(widget.session.id);
-    ProviderScope.containerOf(context)
-        .read(subtitleSettingsProvider.notifier)
-        .resetForSession(widget.session.id);
+    provider.removeSession(sessionId);
+    ProviderScope.containerOf(
+      context,
+    ).read(subtitleSettingsProvider.notifier).resetForSession(sessionId);
   }
 
   String _loopModeSummary(BuildContext context, SessionLoopMode mode) {
@@ -267,47 +231,19 @@ class _SessionListCardState extends ConsumerState<_SessionListCard> {
   Widget build(BuildContext context) {
     final i18n = context.watch<AppLanguageProvider>();
     final cs = Theme.of(context).colorScheme;
-    final session = widget.session;
-    final provider = widget.provider;
-    final uiState = widget.isReordering
-        ? null
-        : ref.watch(playlistSessionCardUiProvider(widget.session.id));
-    final int coverGeneration = widget.isReordering
-        ? provider.coverGeneration
-        : uiState?.coverGeneration ?? ref.watch(coverGenerationProvider);
-    final trackPath = uiState?.trackPath ?? session.currentTrackPath;
-    final sessionView = (
-      track: provider.trackByPath(trackPath),
-      trackPath: trackPath,
-      loopMode: uiState?.loopMode ?? session.loopMode,
-      isLoading: uiState?.isLoading ?? session.isLoading,
-      isPlaying: uiState?.isPlaying ?? session.effectivePlaying,
-      channelSwapEnabled:
-          uiState?.channelSwapEnabled ?? session.channelSwapEnabled,
-      playbackError: uiState?.playbackError ?? session.playbackError,
-    );
-    if (!widget.isReordering &&
-        (_lastTrackPath != trackPath ||
-            _lastCoverGeneration != coverGeneration)) {
-      _updateFutureIfNeeded(
-        cachedOnly: false,
-        trackPath: trackPath,
-        coverGeneration: coverGeneration,
-      );
-    }
-    final track = sessionView.track;
     final displayName =
         track?.displayName ??
-        path.basenameWithoutExtension(sessionView.trackPath);
+        path.basenameWithoutExtension(cardState.trackPath);
+    final currentTrack = track;
     final rootFolderName = track?.remoteMetadataKind == 'asmr.one'
         ? ''
-        : provider.getRootFolderName(sessionView.trackPath);
+        : provider.getRootFolderName(cardState.trackPath);
     final folderName = rootFolderName.isNotEmpty
         ? rootFolderName
-        : (track != null && !track.isSingle)
-        ? track.groupTitle
+        : (currentTrack != null && !currentTrack.isSingle)
+        ? currentTrack.groupTitle
         : i18n.tr('imported_files');
-    final isPlaying = sessionView.isPlaying;
+    final isPlaying = cardState.isPlaying;
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final isAsmrOne = track?.remoteMetadataKind == 'asmr.one';
@@ -332,7 +268,7 @@ class _SessionListCardState extends ConsumerState<_SessionListCard> {
     );
 
     return SwipeRevealCard(
-      key: ValueKey(session.id),
+      key: ValueKey(sessionId),
       margin: const EdgeInsets.only(bottom: 6),
       shape: cardShape,
       color: activeColor,
@@ -350,9 +286,7 @@ class _SessionListCardState extends ConsumerState<_SessionListCard> {
             color: isPlaying ? cs.surfaceContainerHigh : baseBgColor,
             elevation: 0,
             shadowColor: Colors.transparent,
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 180),
-              curve: Curves.easeOutCubic,
+            child: DecoratedBox(
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(
                   LibraryLikeCardMetrics.cardRadius,
@@ -383,16 +317,17 @@ class _SessionListCardState extends ConsumerState<_SessionListCard> {
                     AppInteractionFeedback.trigger(
                       AppInteractionFeedbackType.tap,
                     );
-                    widget.onOpen();
+                    onOpen();
                   },
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(12, 7, 10, 6),
                     child: Row(
                       children: [
                         _SessionCoverThumbnail(
-                          sessionId: session.id,
+                          sessionId: sessionId,
                           track: track,
-                          coverPathFuture: _coverPathFuture!,
+                          coverPath: coverPath,
+                          coverCacheWidth: coverCacheWidth,
                         ),
                         const SizedBox(width: 14),
                         Expanded(
@@ -431,7 +366,7 @@ class _SessionListCardState extends ConsumerState<_SessionListCard> {
                                     icon: Icons.repeat_rounded,
                                     text: _loopModeSummary(
                                       context,
-                                      sessionView.loopMode,
+                                      cardState.loopMode,
                                     ),
                                   ),
                                 ],
@@ -450,7 +385,7 @@ class _SessionListCardState extends ConsumerState<_SessionListCard> {
                                   tooltip: isPlaying
                                       ? i18n.tr('pause')
                                       : i18n.tr('play'),
-                                  onPressed: sessionView.isLoading
+                                  onPressed: cardState.isLoading
                                       ? null
                                       : () {
                                           AppInteractionFeedback.trigger(
@@ -458,7 +393,7 @@ class _SessionListCardState extends ConsumerState<_SessionListCard> {
                                                 .selection,
                                           );
                                           provider.toggleSessionPlayPause(
-                                            session.id,
+                                            sessionId,
                                           );
                                         },
                                   style: IconButton.styleFrom(
@@ -489,7 +424,7 @@ class _SessionListCardState extends ConsumerState<_SessionListCard> {
                                         ),
                                       );
                                     },
-                                    child: sessionView.isLoading
+                                    child: cardState.isLoading
                                         ? const SizedBox(
                                             key: ValueKey('loading'),
                                             width: 22,
@@ -507,7 +442,7 @@ class _SessionListCardState extends ConsumerState<_SessionListCard> {
                                           ),
                                   ),
                                 ),
-                                if (sessionView.playbackError != null)
+                                if (cardState.playbackError != null)
                                   Text(
                                     i18n.tr('playback_failed_retry'),
                                     style: Theme.of(context)
@@ -516,20 +451,19 @@ class _SessionListCardState extends ConsumerState<_SessionListCard> {
                                         ?.copyWith(color: cs.error),
                                   ),
                                 _SessionFeatureBadges(
-                                  sessionId: session.id,
                                   channelSwapEnabled:
-                                      sessionView.channelSwapEnabled,
+                                      cardState.channelSwapEnabled,
+                                  showSubtitles: showSubtitles,
                                   activeColor: isAsmrOne
                                       ? asmrBlue
                                       : localPlayRose,
-                                  freezeSubtitleState: widget.isReordering,
                                 ),
                               ],
                             ),
-                            if (!widget.cardPositionsLocked) ...[
+                            if (!cardPositionsLocked) ...[
                               const SizedBox(width: 6),
                               ReorderableDragStartListener(
-                                index: widget.index,
+                                index: index,
                                 child: Container(
                                   padding: const EdgeInsets.symmetric(
                                     vertical: 8,
@@ -558,25 +492,20 @@ class _SessionListCardState extends ConsumerState<_SessionListCard> {
   }
 }
 
-class _SessionFeatureBadges extends ConsumerWidget {
+class _SessionFeatureBadges extends StatelessWidget {
   const _SessionFeatureBadges({
-    required this.sessionId,
     required this.channelSwapEnabled,
+    required this.showSubtitles,
     required this.activeColor,
-    required this.freezeSubtitleState,
   });
 
-  final String sessionId;
   final bool channelSwapEnabled;
+  final bool showSubtitles;
   final Color activeColor;
-  final bool freezeSubtitleState;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final showSub = freezeSubtitleState
-        ? ref.read(subtitleSettingsProvider).isGlobalEnabled(sessionId)
-        : ref.watch(subtitleSettingsProvider).isGlobalEnabled(sessionId);
-    if (!showSub && !channelSwapEnabled) {
+  Widget build(BuildContext context) {
+    if (!showSubtitles && !channelSwapEnabled) {
       return const SizedBox.shrink();
     }
     return Padding(
@@ -584,9 +513,9 @@ class _SessionFeatureBadges extends ConsumerWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (showSub)
+          if (showSubtitles)
             Icon(Icons.subtitles_rounded, size: 10, color: activeColor),
-          if (showSub && channelSwapEnabled) const SizedBox(width: 2),
+          if (showSubtitles && channelSwapEnabled) const SizedBox(width: 2),
           if (channelSwapEnabled)
             Icon(Icons.swap_horiz_rounded, size: 10, color: activeColor),
         ],

@@ -54,23 +54,39 @@ class PlaylistHeaderState {
 class PlaylistListState {
   const PlaylistListState({
     required this.sessions,
+    required this.cardStates,
+    required this.coverGeneration,
     required this.isInitialized,
   });
 
   final List<PlaybackSession> sessions;
+  final Map<String, PlaylistSessionCardState> cardStates;
+  final int coverGeneration;
   final bool isInitialized;
 
   bool get hasSessions => sessions.isNotEmpty;
 
+  PlaylistSessionCardState? cardStateFor(String sessionId) =>
+      cardStates[sessionId];
+
   @override
   bool operator ==(Object other) {
     return other is PlaylistListState &&
-        identical(other.sessions, sessions) &&
+        listEquals(other.sessions, sessions) &&
+        mapEquals(other.cardStates, cardStates) &&
+        other.coverGeneration == coverGeneration &&
         other.isInitialized == isInitialized;
   }
 
   @override
-  int get hashCode => Object.hash(sessions, isInitialized);
+  int get hashCode => Object.hash(
+    Object.hashAll(sessions),
+    Object.hashAllUnordered(
+      cardStates.entries.map((entry) => Object.hash(entry.key, entry.value)),
+    ),
+    coverGeneration,
+    isInitialized,
+  );
 }
 
 @immutable
@@ -267,7 +283,6 @@ class PlaylistSessionCardState {
     required this.isLoading,
     required this.channelSwapEnabled,
     required this.playbackError,
-    required this.coverGeneration,
   });
 
   final String sessionId;
@@ -277,7 +292,6 @@ class PlaylistSessionCardState {
   final bool isLoading;
   final bool channelSwapEnabled;
   final String? playbackError;
-  final int coverGeneration;
 
   @override
   bool operator ==(Object other) {
@@ -288,8 +302,7 @@ class PlaylistSessionCardState {
         other.isPlaying == isPlaying &&
         other.isLoading == isLoading &&
         other.channelSwapEnabled == channelSwapEnabled &&
-        other.playbackError == playbackError &&
-        other.coverGeneration == coverGeneration;
+        other.playbackError == playbackError;
   }
 
   @override
@@ -301,7 +314,6 @@ class PlaylistSessionCardState {
     isLoading,
     channelSwapEnabled,
     playbackError,
-    coverGeneration,
   );
 }
 
@@ -410,22 +422,20 @@ SessionDetailViewState? sessionDetailViewStateFromPlaybackState(
   return null;
 }
 
-PlaylistSessionCardState? playlistSessionCardStateFromPlaybackState(
+Map<String, PlaylistSessionCardState>
+playlistSessionCardStatesFromPlaybackState(
   PlaybackStateSliceData playbackState,
-  String sessionId,
 ) {
-  for (final session in playbackState.activeSessions) {
-    if (session.id != sessionId) continue;
-    return PlaylistSessionCardState(
-      sessionId: session.id,
-      trackPath: session.currentTrackPath,
-      loopMode: session.loopMode,
-      isPlaying: session.effectivePlaying,
-      isLoading: session.isLoading,
-      channelSwapEnabled: session.channelSwapEnabled,
-      playbackError: session.playbackError,
-      coverGeneration: playbackState.coverGeneration,
-    );
-  }
-  return null;
+  return Map<String, PlaylistSessionCardState>.unmodifiable({
+    for (final session in playbackState.activeSessions)
+      session.id: PlaylistSessionCardState(
+        sessionId: session.id,
+        trackPath: session.currentTrackPath,
+        loopMode: session.loopMode,
+        isPlaying: session.effectivePlaying,
+        isLoading: session.isLoading,
+        channelSwapEnabled: session.channelSwapEnabled,
+        playbackError: session.playbackError,
+      ),
+  });
 }

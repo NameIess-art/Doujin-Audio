@@ -64,7 +64,7 @@ extension AudioProviderLibraryCovers on AudioProvider {
     // Refresh system notifications to reflect the new cover
     _syncNotificationState();
 
-    _notifyLibraryChanged();
+    _notifyLibraryAndPlaybackChanged();
   }
 
   Future<void> setFolderManualCover(String folderPath, String imagePath) {

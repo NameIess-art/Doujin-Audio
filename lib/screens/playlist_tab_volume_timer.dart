@@ -245,120 +245,126 @@ class _VerticalVolumeSliderState extends State<_VerticalVolumeSlider> {
     );
     final isBoosted = volume > 1.0;
 
-    return Container(
-      width: 44,
-      height: 250,
-      decoration: BoxDecoration(
-        color: cs.surfaceContainerHigh.withValues(alpha: 0.95),
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.8)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.1),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      padding: const EdgeInsets.fromLTRB(0, 12, 0, 4),
-      child: Column(
-        children: [
-          GestureDetector(
-            onTap: _showVolumeInputDialog,
-            child: Text(
-              '${(volume * 100).round()}%',
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                fontWeight: FontWeight.w900,
-                fontSize: 10,
-                color: isBoosted ? cs.primary : null,
-                decoration: TextDecoration.underline,
-                decorationColor: (isBoosted ? cs.primary : cs.onSurface)
-                    .withValues(alpha: 0.3),
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(999),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+        child: Container(
+          width: 44,
+          height: 180,
+          decoration: BoxDecoration(
+            color: cs.surfaceContainerHigh.withValues(alpha: 0.38),
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.92)),
+            boxShadow: [
+              BoxShadow(
+                color: cs.shadow.withValues(alpha: 0.18),
+                blurRadius: 16,
+                offset: const Offset(0, 10),
               ),
-            ),
+            ],
           ),
-          const SizedBox(height: 8),
-          Expanded(
-            child: RotatedBox(
-              quarterTurns: 3,
-              child: SliderTheme(
-                data: SliderTheme.of(context).copyWith(
-                  trackHeight: 7,
-                  thumbShape: const RoundSliderThumbShape(),
-                  overlayShape: const RoundSliderOverlayShape(
-                    overlayRadius: 18,
+          padding: const EdgeInsets.fromLTRB(0, 12, 0, 4),
+          child: Column(
+            children: [
+              GestureDetector(
+                onTap: _showVolumeInputDialog,
+                child: Text(
+                  '${(volume * 100).round()}%',
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    fontWeight: FontWeight.w900,
+                    fontSize: 10,
+                    color: isBoosted ? cs.primary : null,
+                    decoration: TextDecoration.underline,
+                    decorationColor: (isBoosted ? cs.primary : cs.onSurface)
+                        .withValues(alpha: 0.3),
                   ),
-                  activeTrackColor: isBoosted ? cs.primary : null,
-                ),
-                child: Slider(
-                  value: volume,
-                  max: _maxSessionVolume,
-                  onChanged: (v) {
-                    setState(() => _dragVolume = v);
-                    AppInteractionFeedback.continuous((v * 100).round());
-                    UiInteractionCoordinator.instance.scheduleThrottledCommit(
-                      key: 'session_volume:${widget.session.id}',
-                      commit: () => widget.provider.setSessionVolume(
-                        widget.session.id,
-                        v,
-                        persist: false,
-                      ),
-                    );
-                  },
-                  onChangeEnd: (v) {
-                    setState(() => _dragVolume = null);
-                    AppInteractionFeedback.resetContinuous();
-                    UiInteractionCoordinator.instance.cancelThrottledCommit(
-                      'session_volume:${widget.session.id}',
-                    );
-                    widget.provider.setSessionVolume(widget.session.id, v);
-                  },
                 ),
               ),
-            ),
-          ),
-          const SizedBox(height: 2),
-          IconButton(
-            constraints: const BoxConstraints.tightFor(width: 40, height: 40),
-            padding: EdgeInsets.zero,
-            onPressed: () {
-              AppInteractionFeedback.trigger(
-                AppInteractionFeedbackType.selection,
-              );
-              widget.onClose();
-            },
-            icon: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 250),
-              transitionBuilder: (child, animation) {
-                return ScaleTransition(
-                  scale: Tween<double>(begin: 0.4, end: 1.0).animate(
-                    CurvedAnimation(
-                      parent: animation,
-                      curve: Curves.easeOutBack,
+              const SizedBox(height: 8),
+              Expanded(
+                child: RotatedBox(
+                  quarterTurns: 3,
+                  child: SliderTheme(
+                    data: SliderTheme.of(context).copyWith(
+                      trackHeight: 7,
+                      thumbShape: const RoundSliderThumbShape(),
+                      overlayShape: const RoundSliderOverlayShape(
+                        overlayRadius: 18,
+                      ),
+                      activeTrackColor: isBoosted ? cs.primary : null,
+                    ),
+                    child: Slider(
+                      value: volume,
+                      max: _maxSessionVolume,
+                      onChanged: (v) {
+                        setState(() => _dragVolume = v);
+                        AppInteractionFeedback.continuous((v * 100).round());
+                        UiInteractionCoordinator.instance.scheduleThrottledCommit(
+                          key: 'session_volume:${widget.session.id}',
+                          commit: () => widget.provider.setSessionVolume(
+                            widget.session.id,
+                            v,
+                            persist: false,
+                          ),
+                        );
+                      },
+                      onChangeEnd: (v) {
+                        setState(() => _dragVolume = null);
+                        AppInteractionFeedback.resetContinuous();
+                        UiInteractionCoordinator.instance.cancelThrottledCommit(
+                          'session_volume:${widget.session.id}',
+                        );
+                        widget.provider.setSessionVolume(widget.session.id, v);
+                      },
                     ),
                   ),
-                  child: FadeTransition(opacity: animation, child: child),
-                );
-              },
-              child: Icon(
-                volume == 0
-                    ? Icons.volume_off_rounded
-                    : volume < 0.45
-                    ? Icons.volume_down_rounded
-                    : Icons.volume_up_rounded,
-                key: ValueKey(
-                  volume == 0
-                      ? Icons.volume_off_rounded
-                      : volume < 0.45
-                      ? Icons.volume_down_rounded
-                      : Icons.volume_up_rounded,
                 ),
-                size: 20,
-                color: cs.primary,
               ),
-            ),
+              const SizedBox(height: 2),
+              IconButton(
+                constraints: const BoxConstraints.tightFor(width: 40, height: 40),
+                padding: EdgeInsets.zero,
+                onPressed: () {
+                  AppInteractionFeedback.trigger(
+                    AppInteractionFeedbackType.selection,
+                  );
+                  widget.onClose();
+                },
+                icon: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 250),
+                  transitionBuilder: (child, animation) {
+                    return ScaleTransition(
+                      scale: Tween<double>(begin: 0.4, end: 1.0).animate(
+                        CurvedAnimation(
+                          parent: animation,
+                          curve: Curves.easeOutBack,
+                        ),
+                      ),
+                      child: FadeTransition(opacity: animation, child: child),
+                    );
+                  },
+                  child: Icon(
+                    volume == 0
+                        ? Icons.volume_off_rounded
+                        : volume < 0.45
+                        ? Icons.volume_down_rounded
+                        : Icons.volume_up_rounded,
+                    key: ValueKey(
+                      volume == 0
+                          ? Icons.volume_off_rounded
+                          : volume < 0.45
+                          ? Icons.volume_down_rounded
+                          : Icons.volume_up_rounded,
+                    ),
+                    size: 20,
+                    color: cs.primary,
+                  ),
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }

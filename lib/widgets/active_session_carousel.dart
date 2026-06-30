@@ -27,9 +27,7 @@ Future<String?> _sessionCoverFutureForTrack(
   AudioProvider provider,
   MusicTrack? track,
 ) {
-  final remoteCoverUrl = track?.remoteCoverUrl?.trim();
-  final hasRemoteCover = remoteCoverUrl != null && remoteCoverUrl.isNotEmpty;
-  if (track == null || (track.isSingle && !track.isVideo && !hasRemoteCover)) {
+  if (track == null) {
     return Future<String?>.value();
   }
   return provider.coverPathFutureForTrack(track);

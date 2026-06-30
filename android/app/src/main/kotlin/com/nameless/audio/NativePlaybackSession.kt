@@ -13,8 +13,6 @@ import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.audio.ChannelMappingAudioProcessor
-import androidx.media3.exoplayer.audio.SilenceSkippingAudioProcessor
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.math.roundToLong
@@ -131,15 +129,7 @@ internal class NativePlaybackSession(
     private val logWarn: (String, NativePlaybackSession, RuntimeException) -> Unit,
     private val resolveUriToPath: ((String) -> String?)? = null
 ) : NativePlaybackSessionSnapshotSource {
-    private val strictSilenceSkippingAudioProcessor = SilenceSkippingAudioProcessor(
-        STRICT_SKIP_SILENCE_MIN_DURATION_US,
-        0f,
-        0L,
-        0,
-        STRICT_SKIP_SILENCE_THRESHOLD_LEVEL
-    )
-    private val channelMappingAudioProcessor = ChannelMappingAudioProcessor()
-    private val volumeBalanceAudioProcessor = VolumeBalanceAudioProcessor()
+    private val audioEffects = NativeAudioEffectsController()
     private var loudnessEnhancer: LoudnessEnhancer? = null
     private var loudnessEnhancerSessionId: Int = C.AUDIO_SESSION_ID_UNSET
     private var equalizer: Equalizer? = null
@@ -162,14 +152,46 @@ internal class NativePlaybackSession(
     var repeatAll: Boolean = false
     var shuffleModeEnabled: Boolean = false
     private var queue: List<NativeMediaItemDescriptor> = emptyList()
-    var channelSwapEnabled: Boolean = false
-    var skipSilenceEnabled: Boolean = false
-    var noiseReductionEnabled: Boolean = false
-    var eqEnabled: Boolean = false
-    var eqPresetId: String? = null
-    var eqBandLevels: Map<Int, Float> = emptyMap()
-    var volumeNormalizationEnabled: Boolean = false
-    var panning: Float = 0f
+    var channelSwapEnabled: Boolean
+        get() = audioEffects.channelSwapEnabled
+        set(value) {
+            audioEffects.channelSwapEnabled = value
+        }
+    var skipSilenceEnabled: Boolean
+        get() = audioEffects.skipSilenceEnabled
+        set(value) {
+            audioEffects.skipSilenceEnabled = value
+        }
+    var noiseReductionEnabled: Boolean
+        get() = audioEffects.noiseReductionEnabled
+        set(value) {
+            audioEffects.noiseReductionEnabled = value
+        }
+    var eqEnabled: Boolean
+        get() = audioEffects.eqEnabled
+        set(value) {
+            audioEffects.eqEnabled = value
+        }
+    var eqPresetId: String?
+        get() = audioEffects.eqPresetId
+        set(value) {
+            audioEffects.eqPresetId = value
+        }
+    var eqBandLevels: Map<Int, Float>
+        get() = audioEffects.eqBandLevels
+        set(value) {
+            audioEffects.eqBandLevels = value
+        }
+    var volumeNormalizationEnabled: Boolean
+        get() = audioEffects.volumeNormalizationEnabled
+        set(value) {
+            audioEffects.volumeNormalizationEnabled = value
+        }
+    var panning: Float
+        get() = audioEffects.panning
+        set(value) {
+            audioEffects.panning = value
+        }
     var lastPositionMs: Long = 0L
     var lastDurationMs: Long? = null
     var lastBufferedPositionMs: Long = 0L
@@ -307,13 +329,7 @@ internal class NativePlaybackSession(
     }
 
     fun applyChannelMap() {
-        channelMappingAudioProcessor.setChannelMap(
-            if (channelSwapEnabled) {
-                intArrayOf(1, 0)
-            } else {
-                intArrayOf(0, 1)
-            }
-        )
+        audioEffects.applyChannelMap()
     }
 
     fun applyVolume(volume: Float) {
@@ -332,24 +348,10 @@ internal class NativePlaybackSession(
     }
 
     fun applyAudioEffects(effects: NativeAudioEffects) {
-        val previousPanningActive = isPanningActive()
-        val previousSkipSilenceEnabled = skipSilenceEnabled
-        channelSwapEnabled = effects.channelSwapEnabled
-        skipSilenceEnabled = effects.skipSilenceEnabled
-        noiseReductionEnabled = effects.noiseReductionEnabled
-        eqEnabled = effects.eqEnabled
-        eqPresetId = effects.eqPresetId
-        eqBandLevels = effects.eqBandLevels
-        volumeNormalizationEnabled = effects.volumeNormalizationEnabled
-        panning = effects.panning
-        volumeBalanceAudioProcessor.panning = panning
-        applyChannelMap()
+        val change = audioEffects.apply(effects)
         playerOrNull()?.let { player ->
             applyAudioEffectsToPlayer(player)
-            if (
-                previousPanningActive != isPanningActive() ||
-                previousSkipSilenceEnabled != skipSilenceEnabled
-            ) {
+            if (change.panningActiveChanged || change.skipSilenceChanged) {
                 reprepareCurrentMediaItem()
             }
         }
@@ -367,23 +369,16 @@ internal class NativePlaybackSession(
     }
 
     private fun applyAudioEffectsToPlayer(player: ExoPlayer) {
-        player.setSkipSilenceEnabled(false)
-        strictSilenceSkippingAudioProcessor.setEnabled(skipSilenceEnabled)
-        syncEqualizer(player.audioSessionId)
-        syncDynamicsProcessing(player.audioSessionId)
-    }
-
-    private fun audioProcessors(): Array<AudioProcessor> {
-        volumeBalanceAudioProcessor.panning = panning
-        strictSilenceSkippingAudioProcessor.setEnabled(skipSilenceEnabled)
-        return arrayOf(
-            strictSilenceSkippingAudioProcessor,
-            channelMappingAudioProcessor,
-            volumeBalanceAudioProcessor
+        audioEffects.applyToPlayer(
+            player,
+            syncEqualizer = ::syncEqualizer,
+            syncDynamicsProcessing = ::syncDynamicsProcessing
         )
     }
 
-    private fun isPanningActive(): Boolean = kotlin.math.abs(panning) >= 0.001f
+    private fun audioProcessors(): Array<AudioProcessor> {
+        return audioEffects.audioProcessors()
+    }
 
     fun onAudioSessionIdChanged(audioSessionId: Int) {
         if (!shouldSyncAudioSessionState(lastSyncedAudioSessionId, audioSessionId)) return
@@ -768,17 +763,7 @@ internal class NativePlaybackSession(
     }
 
     private fun audioEffectsSnapshot(): Map<String, Any?> {
-        return mapOf(
-            "skipSilenceEnabled" to skipSilenceEnabled,
-            "noiseReductionEnabled" to noiseReductionEnabled,
-            "eqEnabled" to eqEnabled,
-            "eqPresetId" to eqPresetId,
-            "eqBandLevels" to eqBandLevels.map { (frequencyHz, gainDb) ->
-                mapOf("frequencyHz" to frequencyHz, "gainDb" to gainDb.toDouble())
-            },
-            "volumeNormalizationEnabled" to volumeNormalizationEnabled,
-            "panning" to panning.toDouble()
-        )
+        return audioEffects.snapshot()
     }
 
     private fun syncDynamicsProcessing(audioSessionId: Int) {

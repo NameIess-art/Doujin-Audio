@@ -163,8 +163,9 @@ extension AudioProviderPlayback on AudioProvider {
     if (response.isFailure) {
       session.channelSwapEnabled = previous;
       _markActiveSessionsDirty();
-      debugPrint(
-        'AudioProvider.setSessionChannelSwap error: ${response.errorOrNull}',
+      AppLogService.warning(
+        'AudioProvider.setSessionChannelSwap error: '
+        '${response.errorOrNull}',
       );
       _notifyPlaybackChanged();
       return;
@@ -297,7 +298,9 @@ extension AudioProviderPlayback on AudioProvider {
     if (response.isFailure) {
       session.audioEffects = previous;
       _markActiveSessionsDirty();
-      debugPrint('AudioProvider.$errorLabel error: ${response.errorOrNull}');
+      AppLogService.warning(
+        'AudioProvider.$errorLabel error: ${response.errorOrNull}',
+      );
       _notifyPlaybackChanged();
       return;
     }
@@ -486,7 +489,7 @@ extension AudioProviderPlayback on AudioProvider {
     if (response.isFailure) {
       session.speed = previous;
       _markActiveSessionsDirty();
-      debugPrint(
+      AppLogService.warning(
         'AudioProvider.setSessionSpeed error: ${response.errorOrNull}',
       );
       if (notify) {

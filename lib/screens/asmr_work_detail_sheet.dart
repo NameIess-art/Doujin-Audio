@@ -103,11 +103,23 @@ class _AsmrWorkDetailSheetState extends State<_AsmrWorkDetailSheet> {
                   ],
                 ),
                 const SizedBox(height: 4),
-                Text(
-                  effectiveWork.hasSubtitle ? '有字幕' : '无字幕',
-                  style: Theme.of(
-                    context,
-                  ).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: effectiveWork.hasSubtitle
+                        ? cs.primaryContainer
+                        : cs.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    effectiveWork.hasSubtitle ? '有字幕' : '无字幕',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: effectiveWork.hasSubtitle
+                              ? cs.onPrimaryContainer
+                              : cs.onSurfaceVariant,
+                          fontWeight: FontWeight.w600,
+                        ),
+                  ),
                 ),
                 const SizedBox(height: 16),
                 ClipRRect(

@@ -14,7 +14,6 @@ import '../services/path_display.dart';
 import '../widgets/app_feedback.dart';
 import '../widgets/async_cover_image.dart';
 import '../widgets/operation_feedback.dart';
-import '../widgets/shimmer_loading.dart';
 import 'dlsite_metadata_review_page.dart';
 import '../widgets/app_transitions.dart';
 
@@ -651,6 +650,18 @@ class _FolderCoverSelectorState extends State<_FolderCoverSelector> {
     }
   }
 
+  Widget _buildCoverReveal(Widget child) {
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 650),
+      reverseDuration: const Duration(milliseconds: 220),
+      switchInCurve: Curves.easeOutCubic,
+      switchOutCurve: Curves.easeInCubic,
+      transitionBuilder: (child, animation) =>
+          FadeTransition(opacity: animation, child: child),
+      child: child,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final i18n = context.watch<AppLanguageProvider>();
@@ -660,15 +671,25 @@ class _FolderCoverSelectorState extends State<_FolderCoverSelector> {
     ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700);
 
     if (_loading) {
-      return const ShimmerLoader(
-        child: Column(
+      return _buildCoverReveal(
+        Column(
+          key: const ValueKey('audio_detail_cover_loading'),
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            ShimmerContainer(width: 80, height: 20, borderRadius: 4),
-            SizedBox(height: 10),
-            AspectRatio(
-              aspectRatio: 1.45,
-              child: ShimmerContainer(borderRadius: 14),
+            Text(i18n.tr('audio_detail_cover_image'), style: labelStyle),
+            const SizedBox(height: 10),
+            Card(
+              key: const ValueKey('audio_detail_cover_placeholder'),
+              margin: EdgeInsets.zero,
+              color: cs.surfaceContainer,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+                side: BorderSide(color: cs.outlineVariant),
+              ),
+              child: const AspectRatio(
+                aspectRatio: 1.45,
+                child: SizedBox.expand(),
+              ),
             ),
           ],
         ),
@@ -683,12 +704,14 @@ class _FolderCoverSelectorState extends State<_FolderCoverSelector> {
       ),
     );
 
-    return Column(
+    final content = Column(
+      key: const ValueKey('audio_detail_cover_loaded'),
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(i18n.tr('audio_detail_cover_image'), style: labelStyle),
         const SizedBox(height: 10),
         ClipRRect(
+          key: const ValueKey('audio_detail_cover_content'),
           borderRadius: BorderRadius.circular(14),
           child: AspectRatio(
             aspectRatio: 1.45,
@@ -837,6 +860,7 @@ class _FolderCoverSelectorState extends State<_FolderCoverSelector> {
         ),
       ],
     );
+    return _buildCoverReveal(content);
   }
 }
 

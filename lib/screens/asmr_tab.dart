@@ -24,10 +24,10 @@ import '../widgets/marquee_text.dart';
 import '../widgets/library_like_cards.dart';
 import '../widgets/mobile_overlay_inset.dart';
 import '../widgets/scroll_activity_gate.dart';
-import '../widgets/shimmer_loading.dart';
 import '../widgets/swipe_reveal_card.dart';
 import '../widgets/top_page_header.dart';
 import '../widgets/unified_popup_menu.dart';
+import '../widgets/shimmer_loading.dart';
 import 'asmr_download_page.dart';
 import 'asmr_work_detail_sheet.dart';
 
@@ -655,18 +655,16 @@ class _AsmrTabState extends State<AsmrTab>
           Positioned.fill(
             child: ColoredBox(color: Theme.of(context).colorScheme.surface),
           ),
-          ShimmerLoader(
-            child: ListView(
-              physics: const NeverScrollableScrollPhysics(),
-              padding: EdgeInsets.fromLTRB(16, headerContentHeight + 10, 16, 0),
-              children: [
-                for (int i = 0; i < 5; i++)
-                  const Padding(
-                    padding: EdgeInsets.only(bottom: 8),
-                    child: _AsmrWorkSkeletonCard(),
-                  ),
-              ],
-            ),
+          ListView(
+            physics: const NeverScrollableScrollPhysics(),
+            padding: EdgeInsets.fromLTRB(16, headerContentHeight + 10, 16, 0),
+            children: [
+              for (int i = 0; i < 5; i++)
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 8),
+                  child: _AsmrWorkSkeletonCard(),
+                ),
+            ],
           ),
           Positioned(
             top: 0,
@@ -732,23 +730,22 @@ class _AsmrTabState extends State<AsmrTab>
                     })(),
                 ],
               )
-            : ShimmerLoader(
-                child: ListView(
-                  physics: const NeverScrollableScrollPhysics(),
-                  padding: EdgeInsets.fromLTRB(
-                    16,
-                    headerContentHeight + 10,
-                    16,
-                    0,
-                  ),
-                  children: [
-                    for (int i = 0; i < 5; i++)
-                      const Padding(
-                        padding: EdgeInsets.only(bottom: 8),
-                        child: _AsmrWorkSkeletonCard(),
-                      ),
-                  ],
+            : ListView(
+                key: const ValueKey('asmr_initial_placeholder'),
+                physics: const NeverScrollableScrollPhysics(),
+                padding: EdgeInsets.fromLTRB(
+                  16,
+                  headerContentHeight + 10,
+                  16,
+                  0,
                 ),
+                children: [
+                  for (int i = 0; i < 5; i++)
+                    const Padding(
+                      padding: EdgeInsets.only(bottom: 8),
+                      child: _AsmrWorkSkeletonCard(),
+                    ),
+                ],
               ),
         Positioned(
           top: 0,

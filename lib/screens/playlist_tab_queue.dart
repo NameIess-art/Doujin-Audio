@@ -27,10 +27,10 @@ class _PlaybackQueueCard extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     final queue = session.playbackQueue!;
     final tracks = queue.expandedTracks;
-    final activeColor = queue.colorValue == null
+    final activeColor = cardState.queueColorValue == null
         ? cs.primary
-        : Color(queue.colorValue!);
-    final hasCustomColor = queue.colorValue != null;
+        : Color(cardState.queueColorValue!);
+    final hasCustomColor = cardState.queueColorValue != null;
     final isPlaying = cardState.isPlaying;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final coverTracks = queue.entries

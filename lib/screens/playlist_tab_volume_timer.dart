@@ -250,8 +250,8 @@ class _VerticalVolumeSliderState extends State<_VerticalVolumeSlider> {
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
         child: Container(
-          width: 44,
-          height: 180,
+          width: _sessionDetailCapsuleWidth,
+          height: _sessionDetailCapsuleHeight,
           decoration: BoxDecoration(
             color: cs.surfaceContainerHigh.withValues(alpha: 0.38),
             borderRadius: BorderRadius.circular(999),
@@ -283,42 +283,50 @@ class _VerticalVolumeSliderState extends State<_VerticalVolumeSlider> {
               ),
               const SizedBox(height: 8),
               Expanded(
-                child: RotatedBox(
-                  quarterTurns: 3,
-                  child: SliderTheme(
-                    data: SliderTheme.of(context).copyWith(
-                      trackHeight: 7,
-                      thumbShape: const RoundSliderThumbShape(),
-                      overlayShape: const RoundSliderOverlayShape(
-                        overlayRadius: 18,
-                      ),
-                      activeTrackColor: isBoosted ? cs.primary : null,
-                    ),
-                    child: Slider(
-                      value: volume,
-                      max: _maxSessionVolume,
-                      onChanged: (v) {
-                        setState(() => _dragVolume = v);
-                        AppInteractionFeedback.continuous((v * 100).round());
-                        UiInteractionCoordinator.instance.scheduleThrottledCommit(
-                          key: 'session_volume:${widget.session.id}',
-                          commit: () => widget.provider.setSessionVolume(
-                            widget.session.id,
-                            v,
-                            persist: false,
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    return OverflowBox(
+                      minHeight: constraints.maxHeight + 48,
+                      maxHeight: constraints.maxHeight + 48,
+                      child: RotatedBox(
+                        quarterTurns: 3,
+                        child: SliderTheme(
+                          data: SliderTheme.of(context).copyWith(
+                            trackHeight: 7,
+                            thumbShape: const RoundSliderThumbShape(),
+                            overlayShape: const RoundSliderOverlayShape(
+                              overlayRadius: 18,
+                            ),
+                            activeTrackColor: isBoosted ? cs.primary : null,
                           ),
-                        );
-                      },
-                      onChangeEnd: (v) {
-                        setState(() => _dragVolume = null);
-                        AppInteractionFeedback.resetContinuous();
-                        UiInteractionCoordinator.instance.cancelThrottledCommit(
-                          'session_volume:${widget.session.id}',
-                        );
-                        widget.provider.setSessionVolume(widget.session.id, v);
-                      },
-                    ),
-                  ),
+                          child: Slider(
+                            value: volume,
+                            max: _maxSessionVolume,
+                            onChanged: (v) {
+                              setState(() => _dragVolume = v);
+                              AppInteractionFeedback.continuous((v * 100).round());
+                              UiInteractionCoordinator.instance.scheduleThrottledCommit(
+                                key: 'session_volume:${widget.session.id}',
+                                commit: () => widget.provider.setSessionVolume(
+                                  widget.session.id,
+                                  v,
+                                  persist: false,
+                                ),
+                              );
+                            },
+                            onChangeEnd: (v) {
+                              setState(() => _dragVolume = null);
+                              AppInteractionFeedback.resetContinuous();
+                              UiInteractionCoordinator.instance.cancelThrottledCommit(
+                                'session_volume:${widget.session.id}',
+                              );
+                              widget.provider.setSessionVolume(widget.session.id, v);
+                            },
+                          ),
+                        ),
+                      ),
+                    );
+                  },
                 ),
               ),
               const SizedBox(height: 2),

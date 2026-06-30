@@ -265,6 +265,94 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets('session detail loop and volume capsules share geometry', (
+    tester,
+  ) async {
+    final previousPlatform = debugDefaultTargetPlatformOverride;
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    addTearDown(() {
+      debugDefaultTargetPlatformOverride = previousPlatform;
+    });
+    tester.view.physicalSize = const Size(1080, 2400);
+    addTearDown(tester.view.resetPhysicalSize);
+    await _pumpAppShell(tester);
+    unawaited(
+      tester
+          .state<NavigatorState>(find.byType(Navigator).first)
+          .push(buildSessionDetailRoute(sessionId: 'orientation_session')),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('session_loop_button_anchor')));
+    await tester.pump(const Duration(milliseconds: 400));
+    final loopCapsule = find.byKey(const ValueKey('session_loop_capsule'));
+    expect(loopCapsule, findsOne);
+    final loopSize = tester.getSize(loopCapsule);
+    final loopBottom = tester.getBottomLeft(loopCapsule).dy;
+
+    await tester.tapAt(const Offset(2, 2));
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.tap(
+      find.byKey(const ValueKey('session_volume_button_anchor')),
+    );
+    await tester.pump(const Duration(milliseconds: 400));
+    final volumeCapsule = find.byKey(
+      const ValueKey('session_volume_capsule'),
+    );
+    expect(volumeCapsule, findsOne);
+
+    expect(tester.getSize(volumeCapsule), loopSize);
+    expect(tester.getBottomLeft(volumeCapsule).dy, closeTo(loopBottom, 0.01));
+    debugDefaultTargetPlatformOverride = previousPlatform;
+  });
+
+  testWidgets('session detail dismisses after dragging past one third', (
+    tester,
+  ) async {
+    final previousPlatform = debugDefaultTargetPlatformOverride;
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    addTearDown(() {
+      debugDefaultTargetPlatformOverride = previousPlatform;
+    });
+    tester.view.physicalSize = const Size(1080, 2400);
+    addTearDown(tester.view.resetPhysicalSize);
+    await _pumpAppShell(tester);
+    unawaited(
+      tester
+          .state<NavigatorState>(find.byType(Navigator).first)
+          .push(buildSessionDetailRoute(sessionId: 'orientation_session')),
+    );
+    await tester.pumpAndSettle();
+
+    final detailFinder = find.byType(SessionDetailPage);
+    expect(detailFinder, findsOne);
+    final dismissGesture = tester.widget<GestureDetector>(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is GestureDetector && widget.onVerticalDragUpdate != null,
+      ),
+    );
+    final logicalHeight =
+        tester.view.physicalSize.height / tester.view.devicePixelRatio;
+    final dismissDelta = logicalHeight / 3 + 1;
+    dismissGesture.onVerticalDragStart!(DragStartDetails());
+    dismissGesture.onVerticalDragUpdate!(
+      DragUpdateDetails(
+        globalPosition: Offset.zero,
+        delta: Offset(0, dismissDelta),
+        primaryDelta: dismissDelta,
+      ),
+    );
+    dismissGesture.onVerticalDragEnd!(DragEndDetails(primaryVelocity: 0));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(detailFinder, findsNothing);
+    expect(tester.takeException(), isNull);
+    debugDefaultTargetPlatformOverride = previousPlatform;
+  });
 }
 
 final class _AppShellHarness {

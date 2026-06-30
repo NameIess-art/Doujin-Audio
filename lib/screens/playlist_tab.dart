@@ -55,6 +55,11 @@ part 'playlist_tab_segments.dart';
 part 'playlist_tab_volume_timer.dart';
 part 'playlist_tab_queue.dart';
 
+// Four 48px Material tap targets plus the loop capsule padding and gaps.
+const double _sessionDetailCapsuleWidth = 52;
+const double _sessionDetailCapsuleHeight = 212;
+const double _sessionDetailCapsuleAnchorOffsetY = 26;
+
 Future<String?> _coverFutureForTrack(
   AudioProvider provider,
   MusicTrack? track, {

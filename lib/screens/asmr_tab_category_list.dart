@@ -41,7 +41,7 @@ class _AsmrCategoryListState extends State<_AsmrCategoryList>
       ),
     );
     final works = state.works;
-    final showPlaceholder = works.isEmpty && state.lastError == null;
+    final showPlaceholder = works.isEmpty;
     final i18n = context.watch<AppLanguageProvider>();
     final theme = Theme.of(context);
     final asmrBlue = AppDesignTokens.of(context).asmrAccent;
@@ -107,11 +107,15 @@ class _AsmrCategoryListState extends State<_AsmrCategoryList>
               triggerMode: GlassRefreshIndicatorTriggerMode.anywhere,
               onRefresh: widget.onRefresh,
               child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 300),
+                duration: const Duration(milliseconds: 650),
+                reverseDuration: const Duration(milliseconds: 220),
+                switchInCurve: Curves.easeOutCubic,
+                switchOutCurve: Curves.easeInCubic,
+                transitionBuilder: (child, animation) =>
+                    FadeTransition(opacity: animation, child: child),
                 child: showPlaceholder
                     ? ListView.builder(
                         key: const ValueKey('loading'),
-                        controller: widget.scrollController,
                         physics: const AlwaysScrollableScrollPhysics(
                           parent: BouncingScrollPhysics(),
                         ),
@@ -123,16 +127,14 @@ class _AsmrCategoryListState extends State<_AsmrCategoryList>
                         ),
                         itemCount: 1,
                         itemBuilder: (context, index) {
-                          return ShimmerLoader(
-                            child: Column(
-                              children: [
-                                for (int i = 0; i < 5; i++)
-                                  const Padding(
-                                    padding: EdgeInsets.only(bottom: 6),
-                                    child: _AsmrWorkSkeletonCard(),
-                                  ),
-                              ],
-                            ),
+                          return Column(
+                            children: [
+                              for (int i = 0; i < 5; i++)
+                                const Padding(
+                                  padding: EdgeInsets.only(bottom: 6),
+                                  child: _AsmrWorkSkeletonCard(),
+                                ),
+                            ],
                           );
                         },
                       )

@@ -660,15 +660,15 @@ class _FolderCoverSelectorState extends State<_FolderCoverSelector> {
     ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700);
 
     if (_loading) {
-      return ShimmerLoader(
+      return const ShimmerLoader(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const ShimmerContainer(width: 80, height: 20, borderRadius: 4),
-            const SizedBox(height: 10),
+            ShimmerContainer(width: 80, height: 20, borderRadius: 4),
+            SizedBox(height: 10),
             AspectRatio(
               aspectRatio: 1.45,
-              child: const ShimmerContainer(borderRadius: 14),
+              child: ShimmerContainer(borderRadius: 14),
             ),
           ],
         ),

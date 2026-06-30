@@ -248,7 +248,7 @@ extension AudioProviderPlaybackSessions on AudioProvider {
         final maxAttempts = AppPlatform.usesDesktopPlaybackBridge ? 1 : 2;
         for (var attempt = 0; attempt < maxAttempts; attempt++) {
           if (attempt > 0) {
-            debugPrint(
+            AppLogService.warning(
               'AudioProvider._prepareAndPlay: retrying prepareSession '
               'after 300ms delay.',
             );
@@ -299,7 +299,7 @@ extension AudioProviderPlaybackSessions on AudioProvider {
             ok = true;
             break;
           }
-          debugPrint(
+          AppLogService.warning(
             'AudioProvider._prepareAndPlay: attempt ${attempt + 1} failed: '
             '${result.errorOrNull ?? "unknown error"}.',
           );
@@ -329,8 +329,12 @@ extension AudioProviderPlaybackSessions on AudioProvider {
       }
 
       prepared = true;
-    } catch (e) {
-      debugPrint('AudioProvider._prepareAndPlay error: $e');
+    } catch (e, stackTrace) {
+      AppLogService.error(
+        'AudioProvider._prepareAndPlay error',
+        error: e,
+        stackTrace: stackTrace,
+      );
     } finally {
       if (_sessions.containsKey(session.id) &&
           session.loadGeneration == generation) {

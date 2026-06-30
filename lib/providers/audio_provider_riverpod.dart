@@ -202,6 +202,8 @@ final playlistListUiProvider = Provider<PlaylistListState>((ref) {
       ref.watch(playbackSessionServiceProvider).slice.state;
   return PlaylistListState(
     sessions: playbackState.activeSessions,
+    cardStates: playlistSessionCardStatesFromPlaybackState(playbackState),
+    coverGeneration: playbackState.coverGeneration,
     isInitialized: playbackState.isInitialized,
   );
 });
@@ -222,17 +224,6 @@ final activeTrackPathsProvider = Provider<ActiveTrackPaths>((ref) {
         .toSet(),
   );
 });
-
-final playlistSessionCardUiProvider =
-    Provider.family<PlaylistSessionCardState?, String>((ref, sessionId) {
-      final playbackState =
-          ref.watch(playbackStateProvider).valueOrNull ??
-          ref.watch(playbackSessionServiceProvider).slice.state;
-      return playlistSessionCardStateFromPlaybackState(
-        playbackState,
-        sessionId,
-      );
-    });
 
 final mainOverlayUiProvider = Provider<MainOverlayUiState>((ref) {
   final playbackState =

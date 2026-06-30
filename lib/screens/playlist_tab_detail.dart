@@ -134,7 +134,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
   ) async {
     final navigator = Navigator.of(context);
     final velocity = details.primaryVelocity ?? 0;
-    final shouldDismiss = _dismissController.value > 0.35 || velocity > 1200;
+    final shouldDismiss = _dismissController.value > 0.333 || velocity > 600;
     if (shouldDismiss) {
       ref
           .read(audioProviderFacadeProvider)

@@ -27,7 +27,6 @@ class _AsmrCategoryListState extends State<_AsmrCategoryList>
   final GlobalKey<GlassRefreshIndicatorState> _refreshIndicatorKey =
       GlobalKey<GlassRefreshIndicatorState>();
   bool _refreshTriggeredInCurrentScroll = false;
-  bool _loadMoreTriggeredInCurrentScroll = false;
 
   @override
   bool get wantKeepAlive => true;
@@ -71,9 +70,9 @@ class _AsmrCategoryListState extends State<_AsmrCategoryList>
           ),
           child: NotificationListener<ScrollNotification>(
             onNotification: (notification) {
-              if (notification is ScrollUpdateNotification &&
-                  notification.dragDetails != null) {
-                if (notification.metrics.pixels < -68 &&
+              if (notification is ScrollUpdateNotification) {
+                if (notification.dragDetails != null &&
+                    notification.metrics.pixels < -68 &&
                     !_refreshTriggeredInCurrentScroll) {
                   _refreshTriggeredInCurrentScroll = true;
                   unawaited(
@@ -82,16 +81,10 @@ class _AsmrCategoryListState extends State<_AsmrCategoryList>
                     ),
                   );
                   _refreshIndicatorKey.currentState?.show();
-                } else if (notification.metrics.pixels >
-                        notification.metrics.maxScrollExtent + 56 &&
-                    !_loadMoreTriggeredInCurrentScroll) {
-                  _loadMoreTriggeredInCurrentScroll = true;
+                }
+                if (notification.metrics.pixels >
+                    notification.metrics.maxScrollExtent - 400) {
                   if (!state.isLoadingMore && state.hasMore) {
-                    unawaited(
-                      AppInteractionFeedback.trigger(
-                        AppInteractionFeedbackType.confirmation,
-                      ),
-                    );
                     context.read<AsmrLibraryController>().loadMoreCategory(
                       widget.category,
                       searchQuery: widget.searchQuery,
@@ -100,7 +93,6 @@ class _AsmrCategoryListState extends State<_AsmrCategoryList>
                 }
               } else if (notification is ScrollEndNotification) {
                 _refreshTriggeredInCurrentScroll = false;
-                _loadMoreTriggeredInCurrentScroll = false;
               }
               return false;
             },

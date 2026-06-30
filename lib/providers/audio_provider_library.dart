@@ -782,7 +782,7 @@ extension AudioProviderLibrary on AudioProvider {
       _syncGroupOrderFromLibrary();
       _syncLibraryNodeOrder(persist: false);
       if (notify) {
-        _notifyLibraryChanged();
+        _notifyLibraryAndPlaybackChanged();
       }
     }
     final persistenceTasks = <Future<void>>[];
@@ -849,7 +849,7 @@ extension AudioProviderLibrary on AudioProvider {
       _rebuildLibraryIndexes();
       _syncLibraryNodeOrder(persist: false);
       if (notify) {
-        _notifyLibraryChanged();
+        _notifyLibraryAndPlaybackChanged();
       }
       if (persist && !_skipDisposePersistence) {
         unawaited(_audioDatabaseRepository.upsertTracks(toAdd));
@@ -934,7 +934,7 @@ extension AudioProviderLibrary on AudioProvider {
     _syncGroupOrderFromLibrary();
     _syncLibraryNodeOrder(persist: false);
     if (notify) {
-      _notifyLibraryChanged();
+      _notifyLibraryAndPlaybackChanged();
     }
     if (persist && !_skipDisposePersistence) {
       unawaited(_audioDatabaseRepository.upsertTracks(tracksToPersist));
@@ -1262,7 +1262,7 @@ extension AudioProviderLibrary on AudioProvider {
 
     _rebuildLibraryIndexes();
     _syncLibraryNodeOrder(persist: false);
-    _notifyLibraryChanged();
+    _notifyLibraryAndPlaybackChanged();
     if (!_skipDisposePersistence) {
       unawaited(_audioDatabaseRepository.deleteTracks([trackPath]));
     }
@@ -1327,7 +1327,7 @@ extension AudioProviderLibrary on AudioProvider {
 
     _rebuildLibraryIndexes();
     _syncLibraryNodeOrder(persist: false);
-    _notifyLibraryChanged();
+    _notifyLibraryAndPlaybackChanged();
     if (!_skipDisposePersistence) {
       unawaited(_audioDatabaseRepository.deleteTracks(trackPaths.toList()));
       unawaited(

@@ -180,6 +180,105 @@ void main() {
     expect(paths.contains(''), isFalse);
   });
 
+  testWidgets('playlist cards freeze background updates while reordering', (
+    WidgetTester tester,
+  ) async {
+    final notificationService = PlaybackNotificationService();
+    final audioDatabaseRepository = AudioDatabaseRepository();
+    final nativePlaybackRepository = NativePlaybackRepository();
+    const playbackCommandRunner = PlaybackCommandRunner();
+    final libraryService = LibraryService();
+    final playbackService = PlaybackSessionService();
+    final timerService = TimerService();
+    final notificationCoordinatorService = NotificationCoordinatorService();
+    final settingsRepository = SettingsRepository()
+      ..cardPositionsLocked = false
+      ..syncSlice();
+    final languageProvider = AppLanguageProvider();
+    final audioProvider = AudioProvider.test(
+      notificationService: notificationService,
+      audioDatabaseRepository: audioDatabaseRepository,
+      nativePlaybackRepository: nativePlaybackRepository,
+      libraryService: libraryService,
+      playbackService: playbackService,
+      timerService: timerService,
+      notificationStateService: notificationCoordinatorService,
+      settingsRepository: settingsRepository,
+    );
+    final track = _track(
+      name: 'Frozen card',
+      path: '/library/frozen/card.mp3',
+      groupKey: '/library/frozen',
+      groupTitle: 'Frozen',
+    );
+    final session = PlaybackSession(
+      id: 'frozen-session',
+      currentTrackPath: track.path,
+      loopMode: SessionLoopMode.single,
+      nonSingleLoopMode: SessionLoopMode.single,
+      volume: 1,
+      createdAt: DateTime(2026),
+      state: PlayerState(false, ProcessingState.ready),
+    );
+
+    addTearDown(audioProvider.dispose);
+    addTearDown(session.dispose);
+    audioProvider.addTracks([track], notify: false, persist: false);
+    playbackService.syncSlice(
+      activeSessions: [session],
+      playingSessionCount: 0,
+      focusedSessionId: session.id,
+      multiThreadPlaybackEnabled: false,
+      coverGeneration: 0,
+      isInitialized: true,
+    );
+
+    await tester.pumpWidget(
+      _buildTestApp(
+        audioProvider: audioProvider,
+        audioDatabaseRepository: audioDatabaseRepository,
+        nativePlaybackRepository: nativePlaybackRepository,
+        playbackCommandRunner: playbackCommandRunner,
+        libraryService: libraryService,
+        playbackService: playbackService,
+        timerService: timerService,
+        notificationCoordinatorService: notificationCoordinatorService,
+        settingsRepository: settingsRepository,
+        languageProvider: languageProvider,
+        child: const PlaylistTab(),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget);
+    final reorderable = tester.widget<ReorderableListView>(
+      find.byType(ReorderableListView),
+    );
+    reorderable.onReorderStart?.call(0);
+    await tester.pump();
+
+    session.state = PlayerState(true, ProcessingState.ready);
+    playbackService.markSessionStateDirty();
+    playbackService.syncSlice(
+      activeSessions: [session],
+      playingSessionCount: 1,
+      focusedSessionId: session.id,
+      multiThreadPlaybackEnabled: false,
+      coverGeneration: 0,
+      isInitialized: true,
+    );
+    await tester.pump();
+
+    expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget);
+    expect(find.byIcon(Icons.pause_rounded), findsNothing);
+
+    reorderable.onReorderEnd?.call(0);
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.byIcon(Icons.pause_rounded), findsOneWidget);
+  });
+
   TestWidgetsFlutterBinding.ensureInitialized();
   SharedPreferences.setMockInitialValues(const <String, Object>{});
 

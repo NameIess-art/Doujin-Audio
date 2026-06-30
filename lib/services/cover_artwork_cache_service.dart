@@ -249,7 +249,7 @@ class CoverArtworkCacheService {
     _resolvedRemoteCovers.remove(normalizedScope);
     _resolvedRemoteCoverFutures.remove(normalizedScope);
     _coverSearchMisses.remove(normalizedScope);
-    _manualCoverByScopeCache.remove(normalizedScope);
+    _manualCoverByScopeCache.clear();
     _discoveredImagesByScopeCache.remove(normalizedScope);
   }
 
@@ -275,7 +275,7 @@ class CoverArtworkCacheService {
       _resolvedRemoteCovers.remove(scope);
       _resolvedRemoteCoverFutures.remove(scope);
       _coverSearchMisses.remove(scope);
-      _manualCoverByScopeCache.remove(scope);
+      _manualCoverByScopeCache.clear();
       _discoveredImagesByScopeCache.remove(scope);
     }
   }

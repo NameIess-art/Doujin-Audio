@@ -42,6 +42,7 @@ import '../widgets/unified_dropdown.dart';
 import '../models/asmr_models.dart';
 import 'audio_detail_sheet.dart';
 import 'asmr_work_detail_sheet.dart';
+import 'screen_view_models.dart';
 import 'timer_tab.dart';
 
 part 'playlist_tab_list.dart';
@@ -59,9 +60,7 @@ Future<String?> _coverFutureForTrack(
   MusicTrack? track, {
   bool cachedOnly = false,
 }) {
-  final remoteCoverUrl = track?.remoteCoverUrl?.trim();
-  final hasRemoteCover = remoteCoverUrl != null && remoteCoverUrl.isNotEmpty;
-  if (track == null || (track.isSingle && !track.isVideo && !hasRemoteCover)) {
+  if (track == null) {
     return Future<String?>.value();
   }
   if (cachedOnly) {
@@ -158,6 +157,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
   final ScrollController _scrollController = ScrollController();
   ValueListenable<int?>? _scrollToTopListenable;
   bool _isReordering = false;
+  PlaylistListState? _reorderSnapshot;
 
   @override
   bool get wantKeepAlive => true;
@@ -252,10 +252,25 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     super.build(context);
     final i18n = context.watch<AppLanguageProvider>();
     final provider = ref.read(audioProviderFacadeProvider);
-    final listState = ref.watch(playlistListUiProvider);
+    final PlaylistListState listState;
+    if (_isReordering) {
+      listState = _reorderSnapshot ?? ref.read(playlistListUiProvider);
+    } else {
+      listState = ref.watch(playlistListUiProvider);
+    }
     final settingsState =
-        ref.watch(settingsStateProvider).valueOrNull ?? const SettingsState();
+        (_isReordering
+                ? ref.read(settingsStateProvider)
+                : ref.watch(settingsStateProvider))
+            .valueOrNull ??
+        const SettingsState();
+    final subtitleSettings = _isReordering
+        ? ref.read(subtitleSettingsProvider)
+        : ref.watch(subtitleSettingsProvider);
     final cardPositionsLocked = settingsState.cardPositionsLocked;
+    final coverCacheWidth = coverCacheWidthForResolution(
+      settingsState.coverImageResolution,
+    );
     final listBottomInset = MobileOverlayInset.of(context);
     final listCacheExtent = (_headerHeight + 800)
         .clamp(_headerHeight + 4, 1600.0)
@@ -272,14 +287,33 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
         return const SizedBox.shrink(key: ValueKey('bottom_spacing'));
       }
       final session = listState.sessions[index];
+      final cardState = listState.cardStateFor(session.id);
+      if (cardState == null) {
+        return SizedBox.shrink(key: ValueKey(session.id));
+      }
+      final track = provider.trackByPath(cardState.trackPath);
+      final coverPath = provider.resolvedCoverPathForTrack(track);
+      if (!_isReordering && coverPath == null) {
+        unawaited(_coverFutureForTrack(provider, track));
+      }
+      if (!_isReordering && session.isPlaybackQueue) {
+        for (final entry in session.playbackQueue!.entries.take(4)) {
+          if (entry.tracks.isEmpty) continue;
+          final coverTrack = entry.tracks.first;
+          if (provider.resolvedCoverPathForTrack(coverTrack) == null) {
+            unawaited(_coverFutureForTrack(provider, coverTrack));
+          }
+        }
+      }
       final child = RepaintBoundary(
         child: session.isPlaybackQueue
             ? _PlaybackQueueCard(
                 session: session,
+                cardState: cardState,
                 provider: provider,
                 index: index,
                 cardPositionsLocked: cardPositionsLocked,
-                isReordering: _isReordering,
+                coverCacheWidth: coverCacheWidth,
                 onOpen: () => session.currentTrackPath.isEmpty
                     ? showAppSnackBar(
                         context,
@@ -291,11 +325,15 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                 onEdit: () => _openQueueEditor(context, session.id),
               )
             : _SessionListCard(
-                session: session,
+                sessionId: session.id,
+                cardState: cardState,
+                track: track,
+                coverPath: coverPath,
+                coverCacheWidth: coverCacheWidth,
+                showSubtitles: subtitleSettings.isGlobalEnabled(session.id),
                 provider: provider,
                 index: index,
                 cardPositionsLocked: cardPositionsLocked,
-                isReordering: _isReordering,
                 onOpen: () => _openSessionDetail(context, session.id),
               ),
       );
@@ -380,14 +418,20 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                                           ScrollViewKeyboardDismissBehavior
                                               .onDrag,
                                       onReorder: (oldIndex, newIndex) {
-                                        setState(() => _isReordering = false);
                                         provider.reorderSessions(
                                           oldIndex,
                                           newIndex,
                                         );
+                                        setState(() {
+                                          _isReordering = false;
+                                          _reorderSnapshot = null;
+                                        });
                                       },
                                       onReorderStart: (_) {
-                                        setState(() => _isReordering = true);
+                                        setState(() {
+                                          _reorderSnapshot = listState;
+                                          _isReordering = true;
+                                        });
                                         unawaited(
                                           AppInteractionFeedback.trigger(
                                             AppInteractionFeedbackType
@@ -397,7 +441,10 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                                       },
                                       onReorderEnd: (_) {
                                         if (_isReordering) {
-                                          setState(() => _isReordering = false);
+                                          setState(() {
+                                            _isReordering = false;
+                                            _reorderSnapshot = null;
+                                          });
                                         }
                                       },
                                       proxyDecorator:

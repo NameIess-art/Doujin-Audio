@@ -120,11 +120,12 @@ class _SessionHeroArtwork extends ConsumerWidget {
   }
 }
 
-class _SessionCoverThumbnail extends ConsumerWidget {
+class _SessionCoverThumbnail extends StatelessWidget {
   const _SessionCoverThumbnail({
     required this.sessionId,
     required this.track,
-    required this.coverPathFuture,
+    required this.coverPath,
+    required this.coverCacheWidth,
   });
 
   static const double _width = 96;
@@ -132,28 +133,17 @@ class _SessionCoverThumbnail extends ConsumerWidget {
 
   final String sessionId;
   final MusicTrack? track;
-  final Future<String?> coverPathFuture;
+  final String? coverPath;
+  final int? coverCacheWidth;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final provider = ref.read(audioProviderFacadeProvider);
-    final cs = Theme.of(context).colorScheme;
-    final coverCacheWidth = coverCacheWidthForResolution(
-      ref.watch(
-        settingsStateProvider.select(
-          (s) =>
-              s.valueOrNull?.coverImageResolution ??
-              CoverImageResolution.balanced,
-        ),
-      ),
-    );
-
+  Widget build(BuildContext context) {
     Widget fallback({bool hideIcon = false}) {
       return CoverFallbackArtwork(
         seed: track?.displayName ?? track?.path ?? sessionId,
-        showIcon: !hideIcon,
         compact: true,
-        iconSize: 26,
+        iconSize: hideIcon ? 0 : 26,
+        showIcon: !hideIcon,
       );
     }
 
@@ -165,24 +155,18 @@ class _SessionCoverThumbnail extends ConsumerWidget {
         borderRadius: BorderRadius.circular(LibraryLikeCardMetrics.coverRadius),
         clipBehavior: Clip.antiAlias,
         child: AsyncCoverImage(
-          duration: Duration.zero,
-          future: coverPathFuture,
-          initialPath: provider.resolvedCoverPathForTrack(track),
-          retryFutureBuilder: () => _coverFutureForTrack(provider, track),
+          future: _coverFutureForTrack(context.read<AudioProvider>(), track),
+          initialPath: coverPath,
+          retryFutureBuilder: () => _coverFutureForTrack(context.read<AudioProvider>(), track),
           fallbackBuilder: (_) => fallback(),
-          loadingBuilder: (_) => CoverLoadingArtwork(
-            placeholder: fallback(hideIcon: true),
-            color: cs.onPrimaryContainer.withValues(alpha: 0.75),
+          loadingBuilder: (_) => fallback(hideIcon: true),
+          imageBuilder: (context, path) => RetryingFileImage(
+            path: path,
+            cacheWidth: coverCacheWidth,
+            useDefaultCacheWidth: coverCacheWidth != null,
+            fit: BoxFit.cover,
+            fallbackBuilder: (_) => fallback(),
           ),
-          imageBuilder: (context, coverPath) {
-            return RetryingFileImage(
-              path: coverPath,
-              cacheWidth: coverCacheWidth,
-              useDefaultCacheWidth: coverCacheWidth != null,
-              fit: BoxFit.cover,
-              fallbackBuilder: (_) => fallback(),
-            );
-          },
         ),
       ),
     );

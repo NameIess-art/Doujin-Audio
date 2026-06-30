@@ -1,47 +1,50 @@
 part of 'playlist_tab.dart';
 
-class _PlaybackQueueCard extends StatefulWidget {
+class _PlaybackQueueCard extends StatelessWidget {
   const _PlaybackQueueCard({
     required this.session,
+    required this.cardState,
     required this.provider,
     required this.index,
     required this.cardPositionsLocked,
-    required this.isReordering,
+    required this.coverCacheWidth,
     required this.onOpen,
     required this.onEdit,
   });
 
   final PlaybackSession session;
+  final PlaylistSessionCardState cardState;
   final AudioProvider provider;
   final int index;
   final bool cardPositionsLocked;
-  final bool isReordering;
+  final int? coverCacheWidth;
   final VoidCallback onOpen;
   final VoidCallback onEdit;
 
   @override
-  State<_PlaybackQueueCard> createState() => _PlaybackQueueCardState();
-}
-
-class _PlaybackQueueCardState extends State<_PlaybackQueueCard> {
-  @override
   Widget build(BuildContext context) {
     final i18n = context.watch<AppLanguageProvider>();
     final cs = Theme.of(context).colorScheme;
-    final session = widget.session;
-    final provider = widget.provider;
     final queue = session.playbackQueue!;
     final tracks = queue.expandedTracks;
     final activeColor = queue.colorValue == null
         ? cs.primary
         : Color(queue.colorValue!);
     final hasCustomColor = queue.colorValue != null;
-    final isPlaying = session.effectivePlaying;
+    final isPlaying = cardState.isPlaying;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final coverTracks = queue.entries
         .where((entry) => entry.tracks.isNotEmpty)
         .map((entry) => entry.tracks.first)
         .take(4)
+        .toList(growable: false);
+    final coverItems = coverTracks
+        .map(
+          (track) => (
+            track: track,
+            coverPath: provider.resolvedCoverPathForTrack(track),
+          ),
+        )
         .toList(growable: false);
     final currentTrack = tracks.isEmpty
         ? null
@@ -65,7 +68,7 @@ class _PlaybackQueueCardState extends State<_PlaybackQueueCard> {
       primaryActionIcon: Icons.edit_rounded,
       actionLabel: i18n.tr('edit'),
       removeTooltip: i18n.tr('edit_playback_queue'),
-      onRemove: widget.onEdit,
+      onRemove: onEdit,
       child: ConstrainedBox(
         constraints: const BoxConstraints(minHeight: 88),
         child: Card(
@@ -74,20 +77,22 @@ class _PlaybackQueueCardState extends State<_PlaybackQueueCard> {
           color: isPlaying
               ? cs.surfaceContainerHigh
               : hasCustomColor
-              ? activeColor.withValues(alpha: isDark ? 0.12 : 0.08)
+              ? Color.alphaBlend(
+                  activeColor.withValues(alpha: isDark ? 0.12 : 0.08),
+                  cs.surfaceContainerLow,
+                )
               : cs.surfaceContainerLow,
           shape: shape,
           clipBehavior: Clip.antiAlias,
           child: InkWell(
-            onTap: widget.onOpen,
+            onTap: onOpen,
             child: Padding(
               padding: const EdgeInsets.fromLTRB(12, 7, 10, 6),
               child: Row(
                 children: [
                   _QueueCoverGrid(
-                    provider: provider,
-                    tracks: coverTracks,
-                    cachedOnly: widget.isReordering,
+                    items: coverItems,
+                    coverCacheWidth: coverCacheWidth,
                   ),
                   const SizedBox(width: 14),
                   Expanded(
@@ -170,10 +175,10 @@ class _PlaybackQueueCardState extends State<_PlaybackQueueCard> {
                           ),
                         ),
                       ),
-                      if (!widget.cardPositionsLocked) ...[
+                      if (!cardPositionsLocked) ...[
                         const SizedBox(width: 4),
                         ReorderableDragStartListener(
-                          index: widget.index,
+                          index: index,
                           child: Container(
                             padding: const EdgeInsets.symmetric(
                               vertical: 8,
@@ -200,15 +205,10 @@ class _PlaybackQueueCardState extends State<_PlaybackQueueCard> {
 }
 
 class _QueueCoverGrid extends StatelessWidget {
-  const _QueueCoverGrid({
-    required this.provider,
-    required this.tracks,
-    this.cachedOnly = false,
-  });
+  const _QueueCoverGrid({required this.items, required this.coverCacheWidth});
 
-  final AudioProvider provider;
-  final List<MusicTrack> tracks;
-  final bool cachedOnly;
+  final List<({MusicTrack track, String? coverPath})> items;
+  final int? coverCacheWidth;
 
   @override
   Widget build(BuildContext context) {
@@ -242,7 +242,7 @@ class _QueueCoverGrid extends StatelessWidget {
   }
 
   Widget _buildCell(BuildContext context, int index) {
-    if (index >= tracks.length) {
+    if (index >= items.length) {
       final cs = Theme.of(context).colorScheme;
       final isDark = Theme.of(context).brightness == Brightness.dark;
       return ColoredBox(
@@ -256,81 +256,38 @@ class _QueueCoverGrid extends StatelessWidget {
         ),
       );
     }
-    final track = tracks[index];
+    final item = items[index];
     return _QueueTrackCover(
-      key: ValueKey('$index:${track.path}'),
-      provider: provider,
-      track: track,
-      cachedOnly: cachedOnly,
+      key: ValueKey('$index:${item.track.path}'),
+      track: item.track,
+      coverPath: item.coverPath,
+      coverCacheWidth: coverCacheWidth,
     );
   }
 }
 
-class _QueueTrackCover extends StatefulWidget {
+class _QueueTrackCover extends StatelessWidget {
   const _QueueTrackCover({
     super.key,
-    required this.provider,
     required this.track,
-    this.cachedOnly = false,
+    required this.coverPath,
+    required this.coverCacheWidth,
   });
 
-  final AudioProvider provider;
   final MusicTrack track;
-  final bool cachedOnly;
-
-  @override
-  State<_QueueTrackCover> createState() => _QueueTrackCoverState();
-}
-
-class _QueueTrackCoverState extends State<_QueueTrackCover> {
-  late Future<String?> _coverFuture;
-  late int _coverGeneration;
-
-  @override
-  void initState() {
-    super.initState();
-    _bindCoverFuture();
-  }
-
-  @override
-  void didUpdateWidget(covariant _QueueTrackCover oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.track.path != widget.track.path ||
-        oldWidget.provider != widget.provider ||
-        oldWidget.cachedOnly != widget.cachedOnly ||
-        _coverGeneration != widget.provider.coverGeneration) {
-      _bindCoverFuture();
-    }
-  }
-
-  void _bindCoverFuture() {
-    _coverGeneration = widget.provider.coverGeneration;
-    _coverFuture = _coverFutureForTrack(
-      widget.provider,
-      widget.track,
-      cachedOnly: widget.cachedOnly,
-    );
-  }
+  final String? coverPath;
+  final int? coverCacheWidth;
 
   @override
   Widget build(BuildContext context) {
-    final track = widget.track;
-    final coverCacheWidth = coverCacheWidthForResolution(
-      context.select<AudioProvider, CoverImageResolution>(
-        (provider) => provider.coverImageResolution,
-      ),
-    );
-    return AsyncCoverImage(
-      duration: Duration.zero,
-      future: _coverFuture,
-      initialPath: widget.provider.resolvedCoverPathForTrack(track),
-      imageBuilder: (context, path) => RetryingFileImage(
-        path: path,
-        fit: BoxFit.cover,
-        cacheWidth: coverCacheWidth,
-        useDefaultCacheWidth: coverCacheWidth != null,
-        fallbackBuilder: (_) => CoverFallbackArtwork(seed: track.displayName),
-      ),
+    if (coverPath == null || coverPath!.isEmpty) {
+      return CoverFallbackArtwork(seed: track.displayName);
+    }
+    return RetryingFileImage(
+      path: coverPath!,
+      fit: BoxFit.cover,
+      cacheWidth: coverCacheWidth,
+      useDefaultCacheWidth: coverCacheWidth != null,
       fallbackBuilder: (_) => CoverFallbackArtwork(seed: track.displayName),
     );
   }
@@ -875,6 +832,12 @@ class _QueueAudioEditCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final resolvedCoverPath = track == null
+        ? null
+        : provider.resolvedCoverPathForTrack(track);
+    if (track != null && resolvedCoverPath == null) {
+      unawaited(_coverFutureForTrack(provider, track));
+    }
     return Card(
       margin: const EdgeInsets.only(bottom: 6),
       elevation: 0,
@@ -897,7 +860,13 @@ class _QueueAudioEditCard extends StatelessWidget {
                   height: 72,
                   child: track == null
                       ? CoverFallbackArtwork(seed: title)
-                      : _QueueTrackCover(provider: provider, track: track!),
+                      : _QueueTrackCover(
+                          track: track!,
+                          coverPath: resolvedCoverPath,
+                          coverCacheWidth: coverCacheWidthForResolution(
+                            provider.coverImageResolution,
+                          ),
+                        ),
                 ),
               ),
               const SizedBox(width: 14),

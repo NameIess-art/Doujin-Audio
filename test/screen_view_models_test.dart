@@ -464,10 +464,9 @@ void main() {
       PlaybackStateSliceData(activeSessions: [detailSession]),
       'detail',
     );
-    final cardState = playlistSessionCardStateFromPlaybackState(
+    final cardState = playlistSessionCardStatesFromPlaybackState(
       PlaybackStateSliceData(activeSessions: [detailSession]),
-      'detail',
-    );
+    )['detail'];
 
     expect(detailState?.isPlaying, isTrue);
     expect(detailState?.isLoading, isFalse);
@@ -516,20 +515,17 @@ void main() {
     addTearDown(focused.dispose);
     addTearDown(other.dispose);
 
-    final original = playlistSessionCardStateFromPlaybackState(
+    final original = playlistSessionCardStatesFromPlaybackState(
       PlaybackStateSliceData(activeSessions: [focused, other]),
-      'focused',
-    );
+    )['focused'];
     other.volume = 0.25;
-    final unchanged = playlistSessionCardStateFromPlaybackState(
+    final unchanged = playlistSessionCardStatesFromPlaybackState(
       PlaybackStateSliceData(activeSessions: [focused, other]),
-      'focused',
-    );
+    )['focused'];
     focused.loopMode = SessionLoopMode.folderSequential;
-    final changed = playlistSessionCardStateFromPlaybackState(
+    final changed = playlistSessionCardStatesFromPlaybackState(
       PlaybackStateSliceData(activeSessions: [focused, other]),
-      'focused',
-    );
+    )['focused'];
 
     expect(unchanged, original);
     expect(changed, isNot(original));

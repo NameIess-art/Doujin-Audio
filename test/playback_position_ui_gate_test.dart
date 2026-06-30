@@ -92,6 +92,90 @@ void main() {
     },
   );
 
+  testWidgets(
+    'ticker disabled coalesces updates and flushes latest on resume',
+    (tester) async {
+      final session = _session('one');
+      final gate = PlaybackPositionUiGate(
+        session: session,
+        minUpdateInterval: Duration.zero,
+      );
+      addTearDown(gate.dispose);
+      addTearDown(session.dispose);
+
+      var notifications = 0;
+      gate.addListener(() => notifications++);
+
+      gate.tickerModeEnabled = false;
+      session.setOptimisticPosition(const Duration(seconds: 1));
+      session.applyNativeProgress(
+        const NativePlaybackProgressUpdate(
+          sessionId: 'one',
+          position: Duration(seconds: 2),
+          bufferedPosition: Duration(seconds: 8),
+          duration: Duration(minutes: 1),
+          nativeElapsedRealtimeMs: 2000,
+        ),
+      );
+      await tester.pump();
+
+      expect(notifications, 0);
+      expect(gate.value.position, const Duration(seconds: 2));
+      expect(gate.value.bufferedPosition, const Duration(seconds: 8));
+      expect(gate.value.duration, const Duration(minutes: 1));
+
+      gate.tickerModeEnabled = true;
+      await tester.pump();
+
+      expect(notifications, 1);
+      expect(gate.value.position, const Duration(seconds: 2));
+    },
+  );
+
+  testWidgets(
+    'can ignore buffered position updates for lightweight listeners',
+    (tester) async {
+      final session = _session('one');
+      final gate = PlaybackPositionUiGate(
+        session: session,
+        minUpdateInterval: Duration.zero,
+        includeBufferedPosition: false,
+      );
+      addTearDown(gate.dispose);
+      addTearDown(session.dispose);
+
+      var notifications = 0;
+      gate.addListener(() => notifications++);
+
+      session.applyNativeProgress(
+        const NativePlaybackProgressUpdate(
+          sessionId: 'one',
+          position: Duration.zero,
+          bufferedPosition: Duration(seconds: 8),
+          nativeElapsedRealtimeMs: 2000,
+        ),
+      );
+      await tester.pump();
+
+      expect(notifications, 0);
+      expect(gate.value.bufferedPosition, Duration.zero);
+
+      session.applyNativeProgress(
+        const NativePlaybackProgressUpdate(
+          sessionId: 'one',
+          position: Duration(seconds: 1),
+          bufferedPosition: Duration(seconds: 8),
+          nativeElapsedRealtimeMs: 3000,
+        ),
+      );
+      await tester.pump();
+
+      expect(notifications, 1);
+      expect(gate.value.position, const Duration(seconds: 1));
+      expect(gate.value.bufferedPosition, Duration.zero);
+    },
+  );
+
   test('subtitle cache only changes text when the active cue changes', () {
     const track = SubtitleTrack(
       sourcePath: '/audio/one.srt',

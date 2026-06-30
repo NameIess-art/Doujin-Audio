@@ -620,40 +620,124 @@ class PlaybackQueueAudioEditPage extends ConsumerWidget {
     final queue = provider.sessionById(sessionId)?.playbackQueue;
     final i18n = context.watch<AppLanguageProvider>();
     if (queue == null) return const SizedBox.shrink();
+    
     return Scaffold(
       appBar: AppBar(title: Text(i18n.tr('edit_queue_audio'))),
-      body: ListView(
-        padding: const EdgeInsets.all(12),
-        children: [
-          Text(
-            i18n.tr('queue_added_audio'),
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-          const SizedBox(height: 6),
-          if (queue.entries.isEmpty)
-            ListTile(title: Text(i18n.tr('empty_playback_queue'))),
-          for (final entry in queue.entries)
-            _QueueAudioEditCard(
-              provider: provider,
-              track: entry.tracks.firstOrNull,
-              title: entry.title,
-              subtitle: i18n.tr('audio_count', {'count': entry.tracks.length}),
-              trailing: IconButton(
-                tooltip: i18n.tr('remove'),
-                icon: const Icon(Icons.remove_circle_outline_rounded),
-                onPressed: () =>
-                    provider.removePlaybackQueueEntry(sessionId, entry.id),
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final isLandscape = constraints.maxWidth > constraints.maxHeight;
+          final queueEntries = queue.entries.toList();
+
+          final addedToQueueSection = Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 12, 12, 6),
+                child: Text(
+                  i18n.tr('queue_added_audio'),
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
               ),
-            ),
-          const SizedBox(height: 18),
-          Text(
-            i18n.tr('playback_list_audio'),
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-          const SizedBox(height: 6),
-          for (final source in provider.ordinaryPlaybackSessions)
-            _QueueSourceAudioTile(queueSessionId: sessionId, source: source),
-        ],
+              if (queueEntries.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: ListTile(title: Text(i18n.tr('empty_playback_queue'))),
+                )
+              else
+                Expanded(
+                  child: ReorderableListView.builder(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    buildDefaultDragHandles: false,
+                    proxyDecorator: (child, index, animation) => child,
+                    itemCount: queueEntries.length,
+                    onReorder: (oldIndex, newIndex) {
+                      provider.reorderPlaybackQueueEntry(
+                        sessionId,
+                        oldIndex,
+                        newIndex,
+                      );
+                    },
+                    itemBuilder: (context, index) {
+                      final entry = queueEntries[index];
+                      return _QueueAudioEditCard(
+                        key: ValueKey(entry.id),
+                        provider: provider,
+                        track: entry.tracks.firstOrNull,
+                        title: entry.title,
+                        subtitle: i18n.tr('audio_count', {'count': entry.tracks.length}),
+                        trailing: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            IconButton(
+                              tooltip: i18n.tr('remove'),
+                              constraints: const BoxConstraints.tightFor(width: 40, height: 32),
+                              padding: EdgeInsets.zero,
+                              visualDensity: VisualDensity.compact,
+                              icon: const Icon(Icons.remove_circle_outline_rounded, size: 22),
+                              onPressed: () =>
+                                  provider.removePlaybackQueueEntry(sessionId, entry.id),
+                            ),
+                            ReorderableDragStartListener(
+                              index: index,
+                              child: Container(
+                                width: 40,
+                                height: 32,
+                                alignment: Alignment.center,
+                                child: const Icon(Icons.drag_handle_rounded, size: 22),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
+            ],
+          );
+
+          final playlistAudioSection = Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 12, 12, 6),
+                child: Text(
+                  i18n.tr('playback_list_audio'),
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ),
+              Expanded(
+                child: ListView(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  children: [
+                    for (final source in provider.ordinaryPlaybackSessions)
+                      _QueueSourceAudioTile(queueSessionId: sessionId, source: source),
+                  ],
+                ),
+              ),
+            ],
+          );
+
+          if (isLandscape) {
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: addedToQueueSection),
+                const VerticalDivider(width: 1),
+                Expanded(child: playlistAudioSection),
+              ],
+            );
+          } else {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(child: addedToQueueSection),
+                const Divider(height: 1),
+                Expanded(child: playlistAudioSection),
+              ],
+            );
+          }
+        },
       ),
     );
   }
@@ -708,6 +792,7 @@ class _QueueSourceAudioTile extends ConsumerWidget {
 
 class _QueueAudioEditCard extends StatelessWidget {
   const _QueueAudioEditCard({
+    super.key,
     required this.provider,
     required this.track,
     required this.title,

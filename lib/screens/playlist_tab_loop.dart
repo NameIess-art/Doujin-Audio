@@ -181,7 +181,7 @@ class _ExpandableLoopOptionsState extends State<_ExpandableLoopOptions>
           followerAnchor: Alignment.bottomCenter,
           // The capsule bottom sits slightly below the button center so the
           // bottom action button stays locked to the collapsed position.
-          offset: const Offset(0, 26),
+          offset: const Offset(0, _sessionDetailCapsuleAnchorOffsetY),
           child: Material(
             color: Colors.transparent,
             child: AnimatedBuilder(
@@ -222,6 +222,7 @@ class _ExpandableLoopOptionsState extends State<_ExpandableLoopOptions>
                 return Opacity(
                   opacity: 0.4 + (containerProgress * 0.6),
                   child: ClipRRect(
+                    key: const ValueKey('session_loop_capsule'),
                     borderRadius: BorderRadius.circular(999),
                     child: BackdropFilter(
                       filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
@@ -316,6 +317,7 @@ class _ExpandableLoopOptionsState extends State<_ExpandableLoopOptions>
     return CompositedTransformTarget(
       link: _anchorLink,
       child: SizedBox(
+        key: const ValueKey('session_loop_button_anchor'),
         width: 44,
         height: 46,
         child: IgnorePointer(

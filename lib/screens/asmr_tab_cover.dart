@@ -78,39 +78,8 @@ class _AsmrWorkSkeletonCard extends StatelessWidget {
     return Card(
       margin: EdgeInsets.zero,
       shape: cardShape,
-      color: cs.surface,
-      child: const Padding(
-        padding: EdgeInsets.fromLTRB(12, 12, 12, 10),
-        child: SizedBox(
-          height: 136,
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              ShimmerContainer(width: 110, height: 136, borderRadius: 12),
-              SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    SizedBox(height: 4),
-                    ShimmerContainer(width: 90, height: 14, borderRadius: 4),
-                    SizedBox(height: 12),
-                    ShimmerContainer(width: 140, height: 14, borderRadius: 4),
-                    SizedBox(height: 12),
-                    ShimmerContainer(width: 110, height: 14, borderRadius: 4),
-                    Spacer(),
-                    ShimmerContainer(
-                      width: double.infinity,
-                      height: 26,
-                      borderRadius: 6,
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+      color: cs.surfaceContainer,
+      child: const SizedBox(height: 160),
     );
   }
 }

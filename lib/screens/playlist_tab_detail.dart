@@ -134,7 +134,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
   ) async {
     final navigator = Navigator.of(context);
     final velocity = details.primaryVelocity ?? 0;
-    final shouldDismiss = _dismissController.value > 0.333 || velocity > 600;
+    final shouldDismiss = _dismissController.value >= (1 / 3) || velocity > 500;
     if (shouldDismiss) {
       ref
           .read(audioProviderFacadeProvider)
@@ -180,14 +180,14 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
   @override
   Widget build(BuildContext context) {
     final provider = context.read<AudioProvider>();
-    final shellState = ref.watch(sessionDetailShellProvider(_currentSessionId));
-    final sessionIds = shellState.sessionOrder.sessionIds;
+    final detailState = ref.watch(sessionDetailUiProvider(_currentSessionId));
+    final sessionIds = detailState.sessionOrder.sessionIds;
 
     if (sessionIds.isEmpty) {
       return const Scaffold(body: SizedBox.shrink());
     }
 
-    if (shellState.detail == null && sessionIds.isNotEmpty) {
+    if (detailState.detail == null && sessionIds.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         setState(() {
@@ -330,16 +330,14 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
                               _horizontalDragDelta = 0;
                             },
                       onVerticalDragUpdate: enableVerticalDismiss
-                          ? (details) {
+                          ? (delta) {
                               final screenHeight = MediaQuery.sizeOf(
                                 context,
                               ).height;
                               if (screenHeight <= 0) return;
                               final nextValue =
                                   _dismissController.value +
-                                  (((details.primaryDelta ?? 0) /
-                                          screenHeight) *
-                                      0.92);
+                                  (delta / screenHeight);
                               if (nextValue > 0.001) {
                                 _beginDismissInteraction();
                               }
@@ -426,7 +424,7 @@ class _SessionDetailScaffold extends ConsumerStatefulWidget {
   final void Function(DragUpdateDetails)? onHorizontalDragUpdate;
   final void Function(DragEndDetails)? onHorizontalDragEnd;
   final VoidCallback? onHorizontalDragCancel;
-  final void Function(DragUpdateDetails)? onVerticalDragUpdate;
+  final ValueChanged<double>? onVerticalDragUpdate;
   final void Function(DragEndDetails)? onVerticalDragEnd;
   final VoidCallback? onVerticalDragCancel;
   final ValueNotifier<bool>? segmentPanelExpandedNotifier;
@@ -648,14 +646,17 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
 
           if (!_isDismissGesture && delta > 0 && !panelExpanded) {
             _segmentPanelDragDelta += delta;
-            if (_segmentPanelDragDelta > 48) {
+            if (_segmentPanelDragDelta > 24) {
               _isDismissGesture = true;
+              final dismissDelta = _segmentPanelDragDelta;
+              _segmentPanelDragDelta = 0;
+              onVerticalDragUpdate?.call(dismissDelta);
             }
             return;
           }
 
           if (_isDismissGesture) {
-            onVerticalDragUpdate?.call(details);
+            onVerticalDragUpdate?.call(delta);
             return;
           }
 
@@ -665,7 +666,7 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
             return;
           }
 
-          onVerticalDragUpdate?.call(details);
+          onVerticalDragUpdate?.call(delta);
         },
         onVerticalDragEnd: (details) {
           final velocity = details.primaryVelocity ?? 0;

@@ -205,51 +205,6 @@ class SessionDetailViewState {
 }
 
 @immutable
-class SessionDetailShellViewState {
-  const SessionDetailShellViewState({
-    required this.sessionId,
-    required this.trackPath,
-  });
-
-  final String sessionId;
-  final String trackPath;
-
-  @override
-  bool operator ==(Object other) {
-    return other is SessionDetailShellViewState &&
-        other.sessionId == sessionId &&
-        other.trackPath == trackPath;
-  }
-
-  @override
-  int get hashCode => Object.hash(sessionId, trackPath);
-}
-
-@immutable
-class SessionDetailShellState {
-  const SessionDetailShellState({
-    required this.sessionOrder,
-    required this.detail,
-    required this.coverGeneration,
-  });
-
-  final SessionOrderState sessionOrder;
-  final SessionDetailShellViewState? detail;
-  final int coverGeneration;
-
-  @override
-  bool operator ==(Object other) {
-    return other is SessionDetailShellState &&
-        other.sessionOrder == sessionOrder &&
-        other.detail == detail &&
-        other.coverGeneration == coverGeneration;
-  }
-
-  @override
-  int get hashCode => Object.hash(sessionOrder, detail, coverGeneration);
-}
-
-@immutable
 class SessionDetailUiState {
   const SessionDetailUiState({
     required this.sessionOrder,
@@ -283,6 +238,7 @@ class PlaylistSessionCardState {
     required this.isLoading,
     required this.channelSwapEnabled,
     required this.playbackError,
+    required this.queueColorValue,
   });
 
   final String sessionId;
@@ -292,6 +248,7 @@ class PlaylistSessionCardState {
   final bool isLoading;
   final bool channelSwapEnabled;
   final String? playbackError;
+  final int? queueColorValue;
 
   @override
   bool operator ==(Object other) {
@@ -302,7 +259,8 @@ class PlaylistSessionCardState {
         other.isPlaying == isPlaying &&
         other.isLoading == isLoading &&
         other.channelSwapEnabled == channelSwapEnabled &&
-        other.playbackError == playbackError;
+        other.playbackError == playbackError &&
+        other.queueColorValue == queueColorValue;
   }
 
   @override
@@ -314,6 +272,7 @@ class PlaylistSessionCardState {
     isLoading,
     channelSwapEnabled,
     playbackError,
+    queueColorValue,
   );
 }
 
@@ -386,20 +345,6 @@ SessionOrderState sessionOrderStateFromPlaybackState(
   );
 }
 
-SessionDetailShellViewState? sessionDetailShellViewStateFromPlaybackState(
-  PlaybackStateSliceData playbackState,
-  String sessionId,
-) {
-  for (final session in playbackState.activeSessions) {
-    if (session.id != sessionId) continue;
-    return SessionDetailShellViewState(
-      sessionId: session.id,
-      trackPath: session.currentTrackPath,
-    );
-  }
-  return null;
-}
-
 SessionDetailViewState? sessionDetailViewStateFromPlaybackState(
   PlaybackStateSliceData playbackState,
   String sessionId,
@@ -436,6 +381,7 @@ playlistSessionCardStatesFromPlaybackState(
         isLoading: session.isLoading,
         channelSwapEnabled: session.channelSwapEnabled,
         playbackError: session.playbackError,
+        queueColorValue: session.playbackQueue?.colorValue,
       ),
   });
 }

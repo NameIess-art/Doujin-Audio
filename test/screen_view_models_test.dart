@@ -4,6 +4,7 @@ import 'package:nameless_audio/models/audio_effects.dart';
 import 'package:nameless_audio/models/library_node.dart';
 import 'package:nameless_audio/models/music_track.dart';
 import 'package:nameless_audio/models/playback_mode.dart';
+import 'package:nameless_audio/models/playback_queue.dart';
 import 'package:nameless_audio/models/playback_session.dart';
 import 'package:nameless_audio/screens/screen_view_models.dart';
 import 'package:nameless_audio/services/audio_state_services.dart';
@@ -231,23 +232,6 @@ void main() {
       PlaybackStateSliceData(activeSessions: [detailSession]),
       'detail',
     );
-    final originalShell = SessionDetailShellState(
-      sessionOrder: sessionOrderStateFromPlaybackState(
-        PlaybackStateSliceData(
-          activeSessions: [detailSession],
-          coverGeneration: 1,
-        ),
-      ),
-      detail: sessionDetailShellViewStateFromPlaybackState(
-        PlaybackStateSliceData(
-          activeSessions: [detailSession],
-          coverGeneration: 1,
-        ),
-        'detail',
-      ),
-      coverGeneration: 1,
-    );
-
     detailSession
       ..setOptimisticPosition(const Duration(seconds: 42))
       ..bufferedPosition = const Duration(minutes: 2)
@@ -257,25 +241,7 @@ void main() {
       PlaybackStateSliceData(activeSessions: [detailSession]),
       'detail',
     );
-    final updatedShell = SessionDetailShellState(
-      sessionOrder: sessionOrderStateFromPlaybackState(
-        PlaybackStateSliceData(
-          activeSessions: [detailSession],
-          coverGeneration: 1,
-        ),
-      ),
-      detail: sessionDetailShellViewStateFromPlaybackState(
-        PlaybackStateSliceData(
-          activeSessions: [detailSession],
-          coverGeneration: 1,
-        ),
-        'detail',
-      ),
-      coverGeneration: 1,
-    );
-
     expect(updatedView, originalView);
-    expect(updatedShell, originalShell);
   });
 
   test(
@@ -302,15 +268,6 @@ void main() {
         originalState,
         'detail',
       );
-      final originalShell = SessionDetailShellState(
-        sessionOrder: sessionOrderStateFromPlaybackState(originalState),
-        detail: sessionDetailShellViewStateFromPlaybackState(
-          originalState,
-          'detail',
-        ),
-        coverGeneration: originalState.coverGeneration,
-      );
-
       otherSession
         ..setOptimisticPosition(const Duration(seconds: 50))
         ..bufferedPosition = const Duration(minutes: 2)
@@ -324,135 +281,9 @@ void main() {
         updatedState,
         'detail',
       );
-      final updatedShell = SessionDetailShellState(
-        sessionOrder: sessionOrderStateFromPlaybackState(updatedState),
-        detail: sessionDetailShellViewStateFromPlaybackState(
-          updatedState,
-          'detail',
-        ),
-        coverGeneration: updatedState.coverGeneration,
-      );
-
       expect(updatedView, originalView);
-      expect(updatedShell, originalShell);
     },
   );
-
-  test('session detail shell ignores transport-only changes', () {
-    final detailSession = session(
-      id: 'detail',
-      path: '/tracks/detail.mp3',
-      playing: true,
-    );
-    addTearDown(detailSession.dispose);
-
-    final original = SessionDetailShellState(
-      sessionOrder: sessionOrderStateFromPlaybackState(
-        PlaybackStateSliceData(
-          activeSessions: [detailSession],
-          coverGeneration: 1,
-        ),
-      ),
-      detail: sessionDetailShellViewStateFromPlaybackState(
-        PlaybackStateSliceData(
-          activeSessions: [detailSession],
-          coverGeneration: 1,
-        ),
-        'detail',
-      ),
-      coverGeneration: 1,
-    );
-
-    detailSession
-      ..isLoading = true
-      ..volume = 0.6
-      ..speed = 1.5
-      ..audioEffects = const AudioEffectsState(skipSilenceEnabled: true)
-      ..setOptimisticState(playing: false);
-
-    final updated = SessionDetailShellState(
-      sessionOrder: sessionOrderStateFromPlaybackState(
-        PlaybackStateSliceData(
-          activeSessions: [detailSession],
-          coverGeneration: 1,
-        ),
-      ),
-      detail: sessionDetailShellViewStateFromPlaybackState(
-        PlaybackStateSliceData(
-          activeSessions: [detailSession],
-          coverGeneration: 1,
-        ),
-        'detail',
-      ),
-      coverGeneration: 1,
-    );
-
-    expect(updated, original);
-  });
-
-  test('session detail shell tracks track order and cover inputs', () {
-    final detailSession = session(id: 'detail', path: '/tracks/detail.mp3');
-    final otherSession = session(id: 'other', path: '/tracks/other.mp3');
-    addTearDown(detailSession.dispose);
-    addTearDown(otherSession.dispose);
-
-    final originalState = PlaybackStateSliceData(
-      activeSessions: [detailSession, otherSession],
-      coverGeneration: 1,
-    );
-    final original = SessionDetailShellState(
-      sessionOrder: sessionOrderStateFromPlaybackState(originalState),
-      detail: sessionDetailShellViewStateFromPlaybackState(
-        originalState,
-        'detail',
-      ),
-      coverGeneration: originalState.coverGeneration,
-    );
-
-    detailSession.currentTrackPath = '/tracks/detail-2.mp3';
-    final trackChangedState = PlaybackStateSliceData(
-      activeSessions: [detailSession, otherSession],
-      coverGeneration: 1,
-    );
-    final trackChanged = SessionDetailShellState(
-      sessionOrder: sessionOrderStateFromPlaybackState(trackChangedState),
-      detail: sessionDetailShellViewStateFromPlaybackState(
-        trackChangedState,
-        'detail',
-      ),
-      coverGeneration: trackChangedState.coverGeneration,
-    );
-
-    final orderChangedState = PlaybackStateSliceData(
-      activeSessions: [otherSession, detailSession],
-      coverGeneration: 1,
-    );
-    final orderChanged = SessionDetailShellState(
-      sessionOrder: sessionOrderStateFromPlaybackState(orderChangedState),
-      detail: sessionDetailShellViewStateFromPlaybackState(
-        orderChangedState,
-        'detail',
-      ),
-      coverGeneration: orderChangedState.coverGeneration,
-    );
-
-    final coverChangedState = PlaybackStateSliceData(
-      activeSessions: [detailSession, otherSession],
-      coverGeneration: 2,
-    );
-    final coverChanged = SessionDetailShellState(
-      sessionOrder: sessionOrderStateFromPlaybackState(coverChangedState),
-      detail: sessionDetailShellViewStateFromPlaybackState(
-        coverChangedState,
-        'detail',
-      ),
-      coverGeneration: coverChangedState.coverGeneration,
-    );
-
-    expect(trackChanged, isNot(original));
-    expect(orderChanged, isNot(trackChanged));
-    expect(coverChanged, isNot(trackChanged));
-  });
 
   test('prepared transport intent changes icon without showing loading', () {
     final detailSession = session(id: 'detail', path: '/tracks/detail.mp3')
@@ -489,11 +320,21 @@ void main() {
       PlaybackStateSliceData(activeSessions: [detailSession]),
       'detail',
     );
-    detailSession.volume = 0.6;
-    detailSession.speed = 1.5;
-    detailSession.audioEffects = const AudioEffectsState(
-      skipSilenceEnabled: true,
-    );
+    detailSession
+      ..volume = 0.6
+      ..speed = 1.5
+      ..channelSwapEnabled = true
+      ..audioEffects = const AudioEffectsState(
+        skipSilenceEnabled: true,
+        eqEnabled: true,
+        eqPresetId: 'custom',
+        eqBandLevels: <int, double>{1000: 3},
+        panning: 0.4,
+      )
+      ..eqCapabilities = const EqCapabilities(
+        supported: true,
+        bands: <EqBandInfo>[EqBandInfo(frequencyHz: 1000)],
+      );
     final updated = sessionDetailViewStateFromPlaybackState(
       PlaybackStateSliceData(activeSessions: [detailSession]),
       'detail',
@@ -502,7 +343,34 @@ void main() {
     expect(updated, isNot(original));
     expect(updated?.volume, 0.6);
     expect(updated?.speed, 1.5);
+    expect(updated?.channelSwapEnabled, isTrue);
     expect(updated?.audioEffects.skipSilenceEnabled, isTrue);
+    expect(updated?.audioEffects.eqEnabled, isTrue);
+    expect(updated?.audioEffects.panning, 0.4);
+    expect(updated?.eqCapabilities.supported, isTrue);
+  });
+
+  test('paused playback queue card state tracks queue color changes', () {
+    final queueSession = session(id: 'queue', path: '/tracks/queue.mp3')
+      ..playbackQueue = const PlaybackQueueDefinition(
+        name: 'Queue',
+        entries: <PlaybackQueueEntry>[],
+      );
+    addTearDown(queueSession.dispose);
+
+    final original = playlistSessionCardStatesFromPlaybackState(
+      PlaybackStateSliceData(activeSessions: [queueSession]),
+    )['queue'];
+    queueSession.playbackQueue = queueSession.playbackQueue?.copyWith(
+      colorValue: 0xFF336699,
+    );
+    final updated = playlistSessionCardStatesFromPlaybackState(
+      PlaybackStateSliceData(activeSessions: [queueSession]),
+    )['queue'];
+
+    expect(queueSession.effectivePlaying, isFalse);
+    expect(updated, isNot(original));
+    expect(updated?.queueColorValue, 0xFF336699);
   });
 
   test('playlist session card state ignores unrelated sessions', () {

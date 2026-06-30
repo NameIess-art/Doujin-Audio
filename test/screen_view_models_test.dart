@@ -278,6 +278,66 @@ void main() {
     expect(updatedShell, originalShell);
   });
 
+  test(
+    'session detail state ignores unrelated session progress-only changes',
+    () {
+      final detailSession = session(
+        id: 'detail',
+        path: '/tracks/detail.mp3',
+        playing: true,
+      );
+      final otherSession = session(
+        id: 'other',
+        path: '/tracks/other.mp3',
+        playing: true,
+      )..setOptimisticDuration(const Duration(minutes: 3));
+      addTearDown(detailSession.dispose);
+      addTearDown(otherSession.dispose);
+
+      final originalState = PlaybackStateSliceData(
+        activeSessions: [detailSession, otherSession],
+        coverGeneration: 1,
+      );
+      final originalView = sessionDetailViewStateFromPlaybackState(
+        originalState,
+        'detail',
+      );
+      final originalShell = SessionDetailShellState(
+        sessionOrder: sessionOrderStateFromPlaybackState(originalState),
+        detail: sessionDetailShellViewStateFromPlaybackState(
+          originalState,
+          'detail',
+        ),
+        coverGeneration: originalState.coverGeneration,
+      );
+
+      otherSession
+        ..setOptimisticPosition(const Duration(seconds: 50))
+        ..bufferedPosition = const Duration(minutes: 2)
+        ..setOptimisticDuration(const Duration(minutes: 4));
+
+      final updatedState = PlaybackStateSliceData(
+        activeSessions: [detailSession, otherSession],
+        coverGeneration: 1,
+      );
+      final updatedView = sessionDetailViewStateFromPlaybackState(
+        updatedState,
+        'detail',
+      );
+      final updatedShell = SessionDetailShellState(
+        sessionOrder: sessionOrderStateFromPlaybackState(updatedState),
+        detail: sessionDetailShellViewStateFromPlaybackState(
+          updatedState,
+          'detail',
+        ),
+        coverGeneration: updatedState.coverGeneration,
+      );
+
+      expect(updatedView, originalView);
+      expect(updatedShell, originalShell);
+    },
+  );
+
   test('session detail shell ignores transport-only changes', () {
     final detailSession = session(
       id: 'detail',

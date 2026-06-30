@@ -1,5 +1,16 @@
 part of 'playlist_tab.dart';
 
+typedef _ProgressSliderValue = ({
+  double maxMillis,
+  double sliderValue,
+  double bufferedValue,
+  Duration duration,
+  bool hasKnownDuration,
+  bool canSeek,
+});
+
+typedef _ProgressTimecodeValue = ({String elapsedText, String remainingText});
+
 class _ProgressBar extends StatelessWidget {
   const _ProgressBar({
     super.key,
@@ -68,26 +79,50 @@ class _ProgressSliderAndTimecodes extends StatefulWidget {
 
 class _ProgressSliderAndTimecodesState
     extends State<_ProgressSliderAndTimecodes> {
+  static const Duration _bufferedUpdateInterval = Duration(milliseconds: 120);
+
   late final PlaybackPositionUiGate _positionGate;
+  late final ValueNotifier<_ProgressSliderValue> _sliderValue;
+  late final ValueNotifier<_ProgressTimecodeValue> _timecodeValue;
+  late final ValueNotifier<_ProgressTooltipState?> _tooltipValue;
+  StreamSubscription<Duration>? _bufferedSub;
+  Timer? _bufferedUpdateTimer;
   bool _isDragging = false;
   double? _dragValueMs;
   bool _tickerModeEnabled = true;
-  List<TimeSegmentLabel> _longPressLabels = const <TimeSegmentLabel>[];
-  double? _longPressDx;
-  double? _longPressTooltipLeft;
+  bool _bufferedUpdateQueued = false;
+  Duration _bufferedPosition = Duration.zero;
 
   @override
   void initState() {
     super.initState();
-    _positionGate = PlaybackPositionUiGate(session: widget.session)
-      ..addListener(_handlePositionTick);
+    _bufferedPosition = widget.session.bufferedPosition;
+    _positionGate = PlaybackPositionUiGate(
+      session: widget.session,
+      includeBufferedPosition: false,
+    )..addListener(_handlePositionTick);
+    _sliderValue = ValueNotifier<_ProgressSliderValue>(
+      _buildSliderValue(_positionGate.value),
+    );
+    _timecodeValue = ValueNotifier<_ProgressTimecodeValue>(
+      _buildTimecodeValue(_sliderValue.value),
+    );
+    _tooltipValue = ValueNotifier<_ProgressTooltipState?>(null);
+    _bindBufferedPosition();
   }
 
   @override
   void didUpdateWidget(covariant _ProgressSliderAndTimecodes oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.session == widget.session) return;
-    _positionGate.updateSession(widget.session);
+    if (oldWidget.session != widget.session) {
+      _bufferedPosition = widget.session.bufferedPosition;
+      _positionGate.updateSession(widget.session);
+      _bindBufferedPosition();
+      _publishProgressValue(force: true);
+    } else if (oldWidget.timeSegmentLabels != widget.timeSegmentLabels ||
+        oldWidget.selectedSegmentId != widget.selectedSegmentId) {
+      _clearTooltip();
+    }
   }
 
   @override
@@ -103,19 +138,75 @@ class _ProgressSliderAndTimecodesState
 
   @override
   void dispose() {
+    _bufferedUpdateTimer?.cancel();
+    unawaited(_bufferedSub?.cancel());
     _positionGate
       ..removeListener(_handlePositionTick)
       ..dispose();
+    _sliderValue.dispose();
+    _timecodeValue.dispose();
+    _tooltipValue.dispose();
     super.dispose();
   }
 
   void _handlePositionTick() {
-    if (mounted) setState(() {});
+    _publishProgressValue();
   }
 
   @override
   Widget build(BuildContext context) {
-    final snapshot = _positionGate.value;
+    return RepaintBoundary(
+      child: _ProgressSliderFrame(
+        sliderValue: _sliderValue,
+        timecodeValue: _timecodeValue,
+        tooltipValue: _tooltipValue,
+        staticLayer: widget.staticLayer,
+        primaryColor: widget.primaryColor,
+        onLongPressMove: _handleLongPressPosition,
+        onLongPressEnd: _clearTooltip,
+        onChangeStart: _handleSliderChangeStart,
+        onChanged: _handleSliderChanged,
+        onChangeEnd: _handleSliderChangeEnd,
+      ),
+    );
+  }
+
+  void _bindBufferedPosition() {
+    unawaited(_bufferedSub?.cancel());
+    _bufferedSub = widget.session.bufferedPositionStream.listen(
+      _handleBufferedPosition,
+    );
+  }
+
+  void _handleBufferedPosition(Duration buffered) {
+    if (_bufferedPosition == buffered) return;
+    _bufferedPosition = buffered;
+    if (_isDragging) return;
+    if (_bufferedUpdateTimer?.isActive ?? false) {
+      _bufferedUpdateQueued = true;
+      return;
+    }
+    _publishProgressValue();
+    _bufferedUpdateQueued = false;
+    _bufferedUpdateTimer = Timer(_bufferedUpdateInterval, () {
+      if (!_bufferedUpdateQueued || !mounted || _isDragging) return;
+      _bufferedUpdateQueued = false;
+      _publishProgressValue();
+    });
+  }
+
+  void _publishProgressValue({bool force = false}) {
+    final nextSlider = _buildSliderValue(_positionGate.value);
+    if (force || _sliderValue.value != nextSlider) {
+      _sliderValue.value = nextSlider;
+    }
+    final nextTimecode = _buildTimecodeValue(nextSlider);
+    if (force || _timecodeValue.value != nextTimecode) {
+      _timecodeValue.value = nextTimecode;
+    }
+  }
+
+  _ProgressSliderValue _buildSliderValue(PlaybackPositionUiSnapshot snapshot) {
     final duration = snapshot.duration;
     final hasKnownDuration = duration != null;
     final effectiveDuration = duration ?? Duration.zero;
@@ -127,10 +218,7 @@ class _ProgressSliderAndTimecodesState
         ? max(1, effectiveDuration.inMilliseconds)
         : max(
             1,
-            max(
-              position.inMilliseconds,
-              snapshot.bufferedPosition.inMilliseconds,
-            ),
+            max(position.inMilliseconds, _bufferedPosition.inMilliseconds),
           );
     final maxMillis = durationMs.toDouble();
     final basePositionMs = position.inMilliseconds
@@ -143,168 +231,42 @@ class _ProgressSliderAndTimecodesState
         );
     final bufferedValue =
         (_isDragging
-                ? max(
-                    snapshot.bufferedPosition.inMilliseconds,
-                    sliderValue.round(),
-                  )
-                : snapshot.bufferedPosition.inMilliseconds)
+                ? max(_bufferedPosition.inMilliseconds, sliderValue.round())
+                : _bufferedPosition.inMilliseconds)
             .clamp(0, durationMs)
             .toDouble();
-    final shownSeconds = hasKnownDuration
-        ? (sliderValue ~/ 1000).clamp(0, effectiveDuration.inSeconds)
-        : (sliderValue ~/ 1000);
-    final remainingSeconds = hasKnownDuration
-        ? (effectiveDuration.inSeconds - shownSeconds).clamp(
-            0,
-            effectiveDuration.inSeconds,
-          )
-        : 0;
-    final canSeek = hasKnownDuration && effectiveDuration.inMilliseconds > 0;
-    final primaryColor = widget.primaryColor;
-    final overlayLabels = hasKnownDuration
-        ? widget.timeSegmentLabels
-        : const <TimeSegmentLabel>[];
-
-    return RepaintBoundary(
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-        Column(
-          children: [
-            GestureDetector(
-              behavior: HitTestBehavior.translucent,
-              onLongPressStart: !canSeek
-                  ? null
-                  : (details) => _showLongPressLabels(
-                      details.localPosition,
-                      maxMillis,
-                      overlayLabels,
-                    ),
-              onLongPressMoveUpdate: !canSeek
-                  ? null
-                  : (details) => _showLongPressLabels(
-                      details.localPosition,
-                      maxMillis,
-                      overlayLabels,
-                    ),
-              onLongPressEnd: (_) => _clearLongPressLabels(),
-              onLongPressCancel: _clearLongPressLabels,
-              child: SizedBox(
-                height: 52,
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    Positioned.fill(child: widget.staticLayer),
-                    SliderTheme(
-                      data: SliderTheme.of(context).copyWith(
-                        trackHeight: 4.0,
-                        thumbShape: const RoundSliderThumbShape(
-                          enabledThumbRadius: 7,
-                          elevation: 4,
-                          pressedElevation: 8,
-                        ),
-                        overlayShape: const RoundSliderOverlayShape(
-                          overlayRadius: 16,
-                        ),
-                        activeTrackColor: primaryColor,
-                        inactiveTrackColor: primaryColor.withValues(
-                          alpha: 0.22,
-                        ),
-                        thumbColor: primaryColor,
-                        overlayColor: primaryColor.withValues(alpha: 0.15),
-                      ),
-                      child: Slider(
-                        max: maxMillis,
-                        value: sliderValue,
-                        secondaryTrackValue: bufferedValue,
-                        onChangeStart: !canSeek
-                            ? null
-                            : (value) {
-                                AppInteractionFeedback.trigger(
-                                  AppInteractionFeedbackType.selection,
-                                );
-                                _positionGate.tickerModeEnabled = false;
-                                _setDraggingValueWithLabels(
-                                  value: value,
-                                  maxMillis: maxMillis,
-                                  labels: overlayLabels,
-                                  dragging: true,
-                                );
-                              },
-                        onChanged: !canSeek
-                            ? null
-                            : (value) {
-                                _setDraggingValueWithLabels(
-                                  value: value,
-                                  maxMillis: maxMillis,
-                                  labels: overlayLabels,
-                                  dragging: true,
-                                );
-                              },
-                        onChangeEnd: !canSeek
-                            ? null
-                            : (value) {
-                                AppInteractionFeedback.trigger(
-                                  AppInteractionFeedbackType.selection,
-                                );
-                                final position = Duration(
-                                  milliseconds: value.round(),
-                                );
-                                setState(() {
-                                  _isDragging = false;
-                                  _dragValueMs = null;
-                                  _longPressLabels = const <TimeSegmentLabel>[];
-                                  _longPressDx = null;
-                                  _longPressTooltipLeft = null;
-                                });
-                                widget.onManualSeek?.call(position);
-                                widget.provider.seekSession(
-                                  widget.session.id,
-                                  position,
-                                );
-                                _positionGate.tickerModeEnabled =
-                                    _tickerModeEnabled;
-                              },
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  _TimecodeLabel(text: _fmtSeconds(shownSeconds)),
-                  _TimecodeLabel(
-                    text: hasKnownDuration
-                        ? '-${_fmtSeconds(remainingSeconds)}'
-                        : '--:--',
-                    alignEnd: true,
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        if (_longPressLabels.isNotEmpty && _longPressTooltipLeft != null)
-          Positioned(
-            left: _longPressTooltipLeft,
-            top: 44,
-            child: _TimeSegmentDragTooltip(labels: _longPressLabels),
-          ),
-      ],
-    ));
+    return (
+      maxMillis: maxMillis,
+      sliderValue: sliderValue,
+      bufferedValue: bufferedValue,
+      duration: effectiveDuration,
+      hasKnownDuration: hasKnownDuration,
+      canSeek: hasKnownDuration && effectiveDuration.inMilliseconds > 0,
+    );
   }
 
-  String _fmtSeconds(int totalSeconds) {
-    final clamped = totalSeconds < 0 ? 0 : totalSeconds;
-    final h = clamped ~/ 3600;
-    final m = (clamped ~/ 60).remainder(60).toString().padLeft(2, '0');
-    final s = clamped.remainder(60).toString().padLeft(2, '0');
-    if (h > 0) return '${h.toString().padLeft(2, '0')}:$m:$s';
-    return '$m:$s';
+  _ProgressTimecodeValue _buildTimecodeValue(_ProgressSliderValue value) {
+    final shownSeconds = value.hasKnownDuration
+        ? (value.sliderValue ~/ 1000).clamp(0, value.duration.inSeconds)
+        : (value.sliderValue ~/ 1000);
+    final remainingSeconds = value.hasKnownDuration
+        ? (value.duration.inSeconds - shownSeconds).clamp(
+            0,
+            value.duration.inSeconds,
+          )
+        : 0;
+    return (
+      elapsedText: formatDurationCompact(Duration(seconds: shownSeconds)),
+      remainingText: value.hasKnownDuration
+          ? '-${formatDurationCompact(Duration(seconds: remainingSeconds))}'
+          : '--:--',
+    );
+  }
+
+  void _handleLongPressPosition(Offset localPosition) {
+    final value = _sliderValue.value;
+    if (!value.canSeek) return;
+    _showLongPressLabels(localPosition, value.maxMillis, _overlayLabels);
   }
 
   void _showLongPressLabels(
@@ -328,21 +290,49 @@ class _ProgressSliderAndTimecodesState
     );
   }
 
-  void _setDraggingValueWithLabels({
-    required double value,
-    required double maxMillis,
-    required List<TimeSegmentLabel> labels,
-    required bool dragging,
-  }) {
-    final state = _tooltipStateForSliderValue(value, maxMillis, labels);
-    setState(() {
-      _isDragging = dragging;
-      _dragValueMs = value;
-      if (state != null) {
-        _applyTooltipState(state);
-      }
-    });
+  void _handleSliderChangeStart(double value) {
+    AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
+    _positionGate.tickerModeEnabled = false;
+    _isDragging = true;
+    _dragValueMs = value;
+    _publishProgressValue(force: true);
+    _showLabelsAtSliderValue(value);
   }
+
+  void _handleSliderChanged(double value) {
+    _isDragging = true;
+    _dragValueMs = value;
+    _publishProgressValue(force: true);
+    _showLabelsAtSliderValue(value);
+  }
+
+  void _handleSliderChangeEnd(double value) {
+    AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
+    final position = Duration(milliseconds: value.round());
+    _isDragging = false;
+    _dragValueMs = null;
+    _clearTooltip();
+    _publishProgressValue(force: true);
+    widget.onManualSeek?.call(position);
+    widget.provider.seekSession(widget.session.id, position);
+    _positionGate.tickerModeEnabled = _tickerModeEnabled;
+  }
+
+  void _showLabelsAtSliderValue(double valueMs) {
+    final slider = _sliderValue.value;
+    final state = _tooltipStateForSliderValue(
+      valueMs,
+      slider.maxMillis,
+      _overlayLabels,
+    );
+    if (state == null) return;
+    _showLabelsAtPosition(state);
+  }
+
+  List<TimeSegmentLabel> get _overlayLabels =>
+      _sliderValue.value.hasKnownDuration
+      ? widget.timeSegmentLabels
+      : const <TimeSegmentLabel>[];
 
   _ProgressTooltipState? _tooltipStateForSliderValue(
     double valueMs,
@@ -361,11 +351,8 @@ class _ProgressSliderAndTimecodesState
   }
 
   void _showLabelsAtPosition(_ProgressTooltipState state) {
-    if (_longPressDx == state.dx &&
-        listEquals(_longPressLabels, state.labels)) {
-      return;
-    }
-    setState(() => _applyTooltipState(state));
+    if (_tooltipValue.value == state) return;
+    _tooltipValue.value = state;
   }
 
   _ProgressTooltipState _tooltipStateForPosition(
@@ -384,19 +371,148 @@ class _ProgressSliderAndTimecodesState
     );
   }
 
-  void _applyTooltipState(_ProgressTooltipState state) {
-    _longPressDx = state.dx;
-    _longPressTooltipLeft = state.left;
-    _longPressLabels = state.labels;
+  void _clearTooltip() {
+    if (_tooltipValue.value == null) return;
+    _tooltipValue.value = null;
   }
+}
 
-  void _clearLongPressLabels() {
-    if (_longPressLabels.isEmpty && _longPressDx == null) return;
-    setState(() {
-      _longPressLabels = const <TimeSegmentLabel>[];
-      _longPressDx = null;
-      _longPressTooltipLeft = null;
-    });
+class _ProgressSliderFrame extends StatelessWidget {
+  const _ProgressSliderFrame({
+    required this.sliderValue,
+    required this.timecodeValue,
+    required this.tooltipValue,
+    required this.staticLayer,
+    required this.primaryColor,
+    required this.onLongPressMove,
+    required this.onLongPressEnd,
+    required this.onChangeStart,
+    required this.onChanged,
+    required this.onChangeEnd,
+  });
+
+  final ValueListenable<_ProgressSliderValue> sliderValue;
+  final ValueListenable<_ProgressTimecodeValue> timecodeValue;
+  final ValueListenable<_ProgressTooltipState?> tooltipValue;
+  final Widget staticLayer;
+  final Color primaryColor;
+  final ValueChanged<Offset> onLongPressMove;
+  final VoidCallback onLongPressEnd;
+  final ValueChanged<double> onChangeStart;
+  final ValueChanged<double> onChanged;
+  final ValueChanged<double> onChangeEnd;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Column(
+          children: [
+            GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onLongPressStart: (details) =>
+                  onLongPressMove(details.localPosition),
+              onLongPressMoveUpdate: (details) =>
+                  onLongPressMove(details.localPosition),
+              onLongPressEnd: (_) => onLongPressEnd(),
+              onLongPressCancel: onLongPressEnd,
+              child: SizedBox(
+                height: 52,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Positioned.fill(child: staticLayer),
+                    _ProgressSliderTheme(
+                      primaryColor: primaryColor,
+                      child: ValueListenableBuilder<_ProgressSliderValue>(
+                        valueListenable: sliderValue,
+                        builder: (context, value, child) {
+                          return Slider(
+                            max: value.maxMillis,
+                            value: value.sliderValue,
+                            secondaryTrackValue: value.bufferedValue,
+                            onChangeStart: value.canSeek ? onChangeStart : null,
+                            onChanged: value.canSeek ? onChanged : null,
+                            onChangeEnd: value.canSeek ? onChangeEnd : null,
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            ValueListenableBuilder<_ProgressTimecodeValue>(
+              valueListenable: timecodeValue,
+              builder: (context, value, child) {
+                return _ProgressTimecodeRow(value: value);
+              },
+            ),
+          ],
+        ),
+        ValueListenableBuilder<_ProgressTooltipState?>(
+          valueListenable: tooltipValue,
+          builder: (context, value, child) {
+            if (value == null || value.labels.isEmpty) {
+              return const SizedBox.shrink();
+            }
+            return Positioned(
+              left: value.left,
+              top: 44,
+              child: _TimeSegmentDragTooltip(labels: value.labels),
+            );
+          },
+        ),
+      ],
+    );
+  }
+}
+
+class _ProgressSliderTheme extends StatelessWidget {
+  const _ProgressSliderTheme({required this.primaryColor, required this.child});
+
+  final Color primaryColor;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return SliderTheme(
+      data: SliderTheme.of(context).copyWith(
+        trackHeight: 4.0,
+        thumbShape: const RoundSliderThumbShape(
+          enabledThumbRadius: 7,
+          elevation: 4,
+          pressedElevation: 8,
+        ),
+        overlayShape: const RoundSliderOverlayShape(overlayRadius: 16),
+        activeTrackColor: primaryColor,
+        inactiveTrackColor: primaryColor.withValues(alpha: 0.22),
+        thumbColor: primaryColor,
+        overlayColor: primaryColor.withValues(alpha: 0.15),
+      ),
+      child: child,
+    );
+  }
+}
+
+class _ProgressTimecodeRow extends StatelessWidget {
+  const _ProgressTimecodeRow({required this.value});
+
+  final _ProgressTimecodeValue value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          _TimecodeLabel(text: value.elapsedText),
+          _TimecodeLabel(text: value.remainingText, alignEnd: true),
+        ],
+      ),
+    );
   }
 }
 
@@ -446,6 +562,17 @@ class _ProgressTooltipState {
   final List<TimeSegmentLabel> labels;
   final double dx;
   final double left;
+
+  @override
+  bool operator ==(Object other) {
+    return other is _ProgressTooltipState &&
+        listEquals(other.labels, labels) &&
+        other.dx == dx &&
+        other.left == left;
+  }
+
+  @override
+  int get hashCode => Object.hash(Object.hashAll(labels), dx, left);
 }
 
 class _TimeSegmentProgressPainter extends CustomPainter {

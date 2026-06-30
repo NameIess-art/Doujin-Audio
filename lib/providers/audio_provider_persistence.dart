@@ -119,7 +119,7 @@ extension AudioProviderPersistence on AudioProvider {
         AsmrDownloadConflictPolicy.overwrite;
     _dlsiteMetadataLanguage = AppLanguage.ja;
     _settingsRepository.cardInfoFields = CardInfoField.defaults;
-    _settingsRepository.cardPositionsLocked = false;
+    _settingsRepository.cardPositionsLocked = true;
     _settingsRepository.customEqPresets = const <EqPreset>[];
     _maxCacheBytes = AppCacheService.defaultMaxCacheBytes;
 
@@ -363,7 +363,7 @@ extension AudioProviderPersistence on AudioProvider {
         map['cardInfoFields'],
       );
       _settingsRepository.cardPositionsLocked =
-          map['cardPositionsLocked'] as bool? ?? false;
+          map['cardPositionsLocked'] as bool? ?? true;
       _settingsRepository.customEqPresets = _decodeCustomEqPresets(
         map['customEqPresets'],
       );

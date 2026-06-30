@@ -183,11 +183,15 @@ class _SessionListCard extends ConsumerStatefulWidget {
   const _SessionListCard({
     required this.session,
     required this.provider,
+    required this.index,
+    required this.cardPositionsLocked,
     required this.onOpen,
   });
 
   final PlaybackSession session;
   final AudioProvider provider;
+  final int index;
+  final bool cardPositionsLocked;
   final VoidCallback onOpen;
 
   @override
@@ -326,6 +330,7 @@ class _SessionListCardState extends ConsumerState<_SessionListCard> {
       key: ValueKey(session.id),
       margin: const EdgeInsets.only(bottom: 6),
       shape: cardShape,
+      color: activeColor,
       actionLabel: i18n.tr('remove'),
       removeTooltip: i18n.tr('remove_audio'),
       onRemove: () => _confirmRemoveSession(context),
@@ -430,113 +435,129 @@ class _SessionListCardState extends ConsumerState<_SessionListCard> {
                           ),
                         ),
                         const SizedBox(width: 10),
-                        Column(
+                        Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            IconButton(
-                              tooltip: isPlaying
-                                  ? i18n.tr('pause')
-                                  : i18n.tr('play'),
-                              onPressed: sessionView.isLoading
-                                  ? null
-                                  : () {
-                                      AppInteractionFeedback.trigger(
-                                        AppInteractionFeedbackType.selection,
-                                      );
-                                      provider.toggleSessionPlayPause(
-                                        session.id,
+                            Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(
+                                  tooltip: isPlaying
+                                      ? i18n.tr('pause')
+                                      : i18n.tr('play'),
+                                  onPressed: sessionView.isLoading
+                                      ? null
+                                      : () {
+                                          AppInteractionFeedback.trigger(
+                                            AppInteractionFeedbackType.selection,
+                                          );
+                                          provider.toggleSessionPlayPause(
+                                            session.id,
+                                          );
+                                        },
+                                  style: IconButton.styleFrom(
+                                    foregroundColor: isPlaying
+                                        ? activeColor
+                                        : cs.onSurface,
+                                    minimumSize: const Size(44, 44),
+                                    maximumSize: const Size(44, 44),
+                                    padding: EdgeInsets.zero,
+                                  ),
+                                  icon: AnimatedSwitcher(
+                                    duration: const Duration(milliseconds: 120),
+                                    transitionBuilder: (child, animation) {
+                                      return ScaleTransition(
+                                        scale: Tween<double>(begin: 0.4, end: 1.0)
+                                            .animate(
+                                              CurvedAnimation(
+                                                parent: animation,
+                                                curve: Curves.easeOutBack,
+                                              ),
+                                            ),
+                                        child: FadeTransition(
+                                          opacity: animation,
+                                          child: child,
+                                        ),
                                       );
                                     },
-                              style: IconButton.styleFrom(
-                                foregroundColor: isPlaying
-                                    ? activeColor
-                                    : cs.onSurface,
-                                minimumSize: const Size(44, 44),
-                                maximumSize: const Size(44, 44),
-                                padding: EdgeInsets.zero,
-                              ),
-                              icon: AnimatedSwitcher(
-                                duration: const Duration(milliseconds: 120),
-                                transitionBuilder: (child, animation) {
-                                  return ScaleTransition(
-                                    scale: Tween<double>(begin: 0.4, end: 1.0)
-                                        .animate(
-                                          CurvedAnimation(
-                                            parent: animation,
-                                            curve: Curves.easeOutBack,
+                                    child: sessionView.isLoading
+                                        ? const SizedBox(
+                                            key: ValueKey('loading'),
+                                            width: 22,
+                                            height: 22,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2.3,
+                                            ),
+                                          )
+                                        : Icon(
+                                            isPlaying
+                                                ? Icons.pause_rounded
+                                                : Icons.play_arrow_rounded,
+                                            key: ValueKey(isPlaying),
+                                            size: 28,
                                           ),
-                                        ),
-                                    child: FadeTransition(
-                                      opacity: animation,
-                                      child: child,
-                                    ),
-                                  );
-                                },
-                                child: sessionView.isLoading
-                                    ? const SizedBox(
-                                        key: ValueKey('loading'),
-                                        width: 22,
-                                        height: 22,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2.3,
-                                        ),
-                                      )
-                                    : Icon(
-                                        isPlaying
-                                            ? Icons.pause_rounded
-                                            : Icons.play_arrow_rounded,
-                                        key: ValueKey(isPlaying),
-                                        size: 28,
-                                      ),
-                              ),
-                            ),
-                            if (sessionView.playbackError != null)
-                              Text(
-                                i18n.tr('playback_failed_retry'),
-                                style: Theme.of(context).textTheme.labelSmall
-                                    ?.copyWith(color: cs.error),
-                              ),
-                            Consumer(
-                              builder: (context, ref, child) {
-                                final settings = ref.watch(
-                                  subtitleSettingsProvider,
-                                );
-                                final showSub = settings.isGlobalEnabled(
-                                  session.id,
-                                );
-                                if (!showSub &&
-                                    !sessionView.channelSwapEnabled) {
-                                  return const SizedBox.shrink();
-                                }
-                                return Padding(
-                                  padding: const EdgeInsets.only(top: 1),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      if (showSub)
-                                        Icon(
-                                          Icons.subtitles_rounded,
-                                          size: 10,
-                                          color: isAsmrOne
-                                              ? asmrBlue
-                                              : localPlayRose,
-                                        ),
-                                      if (showSub &&
-                                          sessionView.channelSwapEnabled)
-                                        const SizedBox(width: 2),
-                                      if (sessionView.channelSwapEnabled)
-                                        Icon(
-                                          Icons.swap_horiz_rounded,
-                                          size: 10,
-                                          color: isAsmrOne
-                                              ? asmrBlue
-                                              : localPlayRose,
-                                        ),
-                                    ],
                                   ),
-                                );
-                              },
+                                ),
+                                if (sessionView.playbackError != null)
+                                  Text(
+                                    i18n.tr('playback_failed_retry'),
+                                    style: Theme.of(context).textTheme.labelSmall
+                                        ?.copyWith(color: cs.error),
+                                  ),
+                                Consumer(
+                                  builder: (context, ref, child) {
+                                    final settings = ref.watch(
+                                      subtitleSettingsProvider,
+                                    );
+                                    final showSub = settings.isGlobalEnabled(
+                                      session.id,
+                                    );
+                                    if (!showSub &&
+                                        !sessionView.channelSwapEnabled) {
+                                      return const SizedBox.shrink();
+                                    }
+                                    return Padding(
+                                      padding: const EdgeInsets.only(top: 1),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          if (showSub)
+                                            Icon(
+                                              Icons.subtitles_rounded,
+                                              size: 10,
+                                              color: isAsmrOne
+                                                  ? asmrBlue
+                                                  : localPlayRose,
+                                            ),
+                                          if (showSub &&
+                                              sessionView.channelSwapEnabled)
+                                            const SizedBox(width: 2),
+                                          if (sessionView.channelSwapEnabled)
+                                            Icon(
+                                              Icons.swap_horiz_rounded,
+                                              size: 10,
+                                              color: isAsmrOne
+                                                  ? asmrBlue
+                                                  : localPlayRose,
+                                            ),
+                                        ],
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ],
                             ),
+                            if (!widget.cardPositionsLocked) ...[
+                              const SizedBox(width: 6),
+                              ReorderableDragStartListener(
+                                index: widget.index,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                                  color: Colors.transparent,
+                                  child: const Icon(Icons.drag_handle_rounded, size: 24),
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                       ],

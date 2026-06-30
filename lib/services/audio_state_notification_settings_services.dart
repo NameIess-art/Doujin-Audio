@@ -194,7 +194,7 @@ class SettingsRepository {
   bool autoCheckUpdates = false;
   AppLanguage dlsiteMetadataLanguage = AppLanguage.ja;
   List<CardInfoField> cardInfoFields = CardInfoField.defaults;
-  bool cardPositionsLocked = false;
+  bool cardPositionsLocked = true;
   List<EqPreset> customEqPresets = const <EqPreset>[];
   int maxCacheBytes = 300 * 1024 * 1024;
   bool asmrPlaybackCacheEnabled = false;

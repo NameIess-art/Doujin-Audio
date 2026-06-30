@@ -648,7 +648,7 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
 
           if (!_isDismissGesture && delta > 0 && !panelExpanded) {
             _segmentPanelDragDelta += delta;
-            if (_segmentPanelDragDelta > 32) {
+            if (_segmentPanelDragDelta > 48) {
               _isDismissGesture = true;
             }
             return;

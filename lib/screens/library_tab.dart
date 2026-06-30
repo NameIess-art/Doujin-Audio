@@ -775,17 +775,14 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                               }
                               final node = tree[index];
                               final child = RepaintBoundary(
-                                child: _LibraryTreeItem(node: node),
+                                child: _LibraryTreeItem(
+                                  node: node,
+                                  index: index,
+                                  cardPositionsLocked: cardPositionsLocked,
+                                ),
                               );
-                              if (cardPositionsLocked) {
-                                return KeyedSubtree(
-                                  key: ValueKey(node.path),
-                                  child: child,
-                                );
-                              }
-                              return ReorderableHoldDragStartListener(
+                              return KeyedSubtree(
                                 key: ValueKey(node.path),
-                                index: index,
                                 child: child,
                               );
                             },

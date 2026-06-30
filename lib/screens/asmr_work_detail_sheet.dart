@@ -107,7 +107,7 @@ class _AsmrWorkDetailSheetState extends State<_AsmrWorkDetailSheet> {
                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                   decoration: BoxDecoration(
                     color: effectiveWork.hasSubtitle
-                        ? cs.primaryContainer
+                        ? Colors.green.withValues(alpha: 0.2)
                         : cs.surfaceContainerHighest,
                     borderRadius: BorderRadius.circular(4),
                   ),
@@ -115,7 +115,7 @@ class _AsmrWorkDetailSheetState extends State<_AsmrWorkDetailSheet> {
                     effectiveWork.hasSubtitle ? '有字幕' : '无字幕',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: effectiveWork.hasSubtitle
-                              ? cs.onPrimaryContainer
+                              ? Colors.green
                               : cs.onSurfaceVariant,
                           fontWeight: FontWeight.w600,
                         ),
@@ -124,18 +124,18 @@ class _AsmrWorkDetailSheetState extends State<_AsmrWorkDetailSheet> {
                 const SizedBox(height: 16),
                 ClipRRect(
                   borderRadius: BorderRadius.circular(14),
-                  child: AspectRatio(
-                    aspectRatio: 1.45,
-                    child: AsyncRemoteCoverImage(
-                      url: coverUrl,
-                      future: provider.coverPathFutureForRemoteCover(coverUrl),
-                      initialPath: provider.resolvedCoverPathForRemoteCover(coverUrl),
-                      retryFutureBuilder: () =>
-                          provider.coverPathFutureForRemoteCover(coverUrl),
-                      fit: BoxFit.cover,
-                      cacheWidth: coverCacheWidth,
-                      useDefaultCacheWidth: coverCacheWidth != null,
-                      loadingBuilder: (_) => CoverLoadingArtwork(
+                  child: AsyncRemoteCoverImage(
+                    url: coverUrl,
+                    future: provider.coverPathFutureForRemoteCover(coverUrl),
+                    initialPath: provider.resolvedCoverPathForRemoteCover(coverUrl),
+                    retryFutureBuilder: () =>
+                        provider.coverPathFutureForRemoteCover(coverUrl),
+                    fit: BoxFit.cover,
+                    cacheWidth: coverCacheWidth,
+                    useDefaultCacheWidth: coverCacheWidth != null,
+                    loadingBuilder: (_) => AspectRatio(
+                      aspectRatio: 1.45,
+                      child: CoverLoadingArtwork(
                         placeholder: CoverFallbackArtwork(
                           seed: effectiveWork.title,
                           showIcon: false,
@@ -144,7 +144,10 @@ class _AsmrWorkDetailSheetState extends State<_AsmrWorkDetailSheet> {
                         strokeWidth: 3,
                         color: asmrBlue,
                       ),
-                      fallbackBuilder: (_) => CoverFallbackArtwork(
+                    ),
+                    fallbackBuilder: (_) => AspectRatio(
+                      aspectRatio: 1.45,
+                      child: CoverFallbackArtwork(
                         seed: effectiveWork.title,
                         icon: Icons.graphic_eq_rounded,
                         iconSize: 36,

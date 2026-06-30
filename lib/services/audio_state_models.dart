@@ -353,7 +353,7 @@ class SettingsState {
     this.autoCheckUpdates = false,
     this.dlsiteMetadataLanguage = AppLanguage.ja,
     this.cardInfoFields = CardInfoField.defaults,
-    this.cardPositionsLocked = false,
+    this.cardPositionsLocked = true,
     this.customEqPresets = const <EqPreset>[],
     this.maxCacheBytes = 300 * 1024 * 1024,
     this.asmrPlaybackCacheEnabled = false,

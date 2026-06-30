@@ -45,6 +45,7 @@ class LibraryLikeFeaturedCardContent extends StatelessWidget {
     this.enableMarquee = true,
     this.enableTitleMarquee = true,
     this.playLoading = false,
+    this.extraTrailing,
   });
 
   final String title;
@@ -58,6 +59,7 @@ class LibraryLikeFeaturedCardContent extends StatelessWidget {
   final bool enableMarquee;
   final bool enableTitleMarquee;
   final bool playLoading;
+  final Widget? extraTrailing;
 
   @override
   Widget build(BuildContext context) {
@@ -187,6 +189,7 @@ class LibraryLikeFeaturedCardContent extends StatelessWidget {
                           ),
                         ),
                       ),
+                    if (extraTrailing != null) extraTrailing!,
                   ],
                 ),
               ),

@@ -117,18 +117,27 @@ void main() {
           nativeElapsedRealtimeMs: 2000,
         ),
       );
+      session.applyNativeProgress(
+        const NativePlaybackProgressUpdate(
+          sessionId: 'one',
+          position: Duration(seconds: 3),
+          bufferedPosition: Duration(seconds: 12),
+          duration: Duration(minutes: 2),
+          nativeElapsedRealtimeMs: 3000,
+        ),
+      );
       await tester.pump();
 
       expect(notifications, 0);
-      expect(gate.value.position, const Duration(seconds: 2));
-      expect(gate.value.bufferedPosition, const Duration(seconds: 8));
-      expect(gate.value.duration, const Duration(minutes: 1));
+      expect(gate.value.position, const Duration(seconds: 3));
+      expect(gate.value.bufferedPosition, const Duration(seconds: 12));
+      expect(gate.value.duration, const Duration(minutes: 2));
 
       gate.tickerModeEnabled = true;
       await tester.pump();
 
       expect(notifications, 1);
-      expect(gate.value.position, const Duration(seconds: 2));
+      expect(gate.value.position, const Duration(seconds: 3));
     },
   );
 

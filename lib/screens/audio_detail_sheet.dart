@@ -14,6 +14,7 @@ import '../services/path_display.dart';
 import '../widgets/app_feedback.dart';
 import '../widgets/async_cover_image.dart';
 import '../widgets/operation_feedback.dart';
+import '../widgets/shimmer_loading.dart';
 import 'dlsite_metadata_review_page.dart';
 import '../widgets/app_transitions.dart';
 
@@ -659,9 +660,21 @@ class _FolderCoverSelectorState extends State<_FolderCoverSelector> {
     ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700);
 
     if (_loading) {
-      return const OperationSkeletonList(
-        itemCount: 1,
-        padding: EdgeInsets.symmetric(vertical: 8),
+      return ShimmerLoader(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const ShimmerContainer(width: 80, height: 16, borderRadius: 4),
+              const SizedBox(height: 10),
+              AspectRatio(
+                aspectRatio: 1.45,
+                child: const ShimmerContainer(borderRadius: 14),
+              ),
+            ],
+          ),
+        ),
       );
     }
     if (_error != null || _images.isEmpty || _pageController == null) {

@@ -206,6 +206,7 @@ class SettingsRepository {
   bool recordPlaybackProgress = true;
   bool blurPlayerBackgroundEnabled = true;
   bool uiBlurEffectEnabled = true;
+  bool hapticFeedbackEnabled = true;
   StartupPage startupPage = StartupPage.library;
   BottomNavigationStyle bottomNavigationStyle = BottomNavigationStyle.capsule;
   CoverImageResolution coverImageResolution = CoverImageResolution.balanced;
@@ -235,6 +236,7 @@ class SettingsRepository {
         recordPlaybackProgress: recordPlaybackProgress,
         blurPlayerBackgroundEnabled: blurPlayerBackgroundEnabled,
         uiBlurEffectEnabled: uiBlurEffectEnabled,
+        hapticFeedbackEnabled: hapticFeedbackEnabled,
         startupPage: startupPage,
         bottomNavigationStyle: bottomNavigationStyle,
         coverImageResolution: coverImageResolution,

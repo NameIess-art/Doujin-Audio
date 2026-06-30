@@ -13,6 +13,7 @@ Timer? _activeFeedbackTimer;
 VoidCallback? _activeFeedbackRemove;
 
 abstract final class AppInteractionFeedback {
+  static bool hapticFeedbackEnabled = true;
   static DateTime? _lastContinuousFeedbackAt;
   static Object? _lastContinuousValue;
 
@@ -20,6 +21,7 @@ abstract final class AppInteractionFeedback {
     AppInteractionFeedbackType type, {
     BuildContext? context,
   }) {
+    if (!hapticFeedbackEnabled) return Future<void>.value();
     switch (type) {
       case AppInteractionFeedbackType.tap:
         return context == null
@@ -38,6 +40,7 @@ abstract final class AppInteractionFeedback {
     Object value, {
     Duration interval = const Duration(milliseconds: 72),
   }) {
+    if (!hapticFeedbackEnabled) return Future<void>.value();
     final now = DateTime.now();
     final previousAt = _lastContinuousFeedbackAt;
     if (_lastContinuousValue == value ||

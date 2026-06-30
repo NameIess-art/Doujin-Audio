@@ -360,6 +360,7 @@ class SettingsState {
     this.recordPlaybackProgress = true,
     this.blurPlayerBackgroundEnabled = true,
     this.uiBlurEffectEnabled = true,
+    this.hapticFeedbackEnabled = true,
     this.startupPage = StartupPage.library,
     this.bottomNavigationStyle = BottomNavigationStyle.capsule,
     this.coverImageResolution = CoverImageResolution.balanced,
@@ -383,6 +384,7 @@ class SettingsState {
   final bool recordPlaybackProgress;
   final bool blurPlayerBackgroundEnabled;
   final bool uiBlurEffectEnabled;
+  final bool hapticFeedbackEnabled;
   final StartupPage startupPage;
   final BottomNavigationStyle bottomNavigationStyle;
   final CoverImageResolution coverImageResolution;
@@ -408,6 +410,7 @@ class SettingsState {
         other.recordPlaybackProgress == recordPlaybackProgress &&
         other.blurPlayerBackgroundEnabled == blurPlayerBackgroundEnabled &&
         other.uiBlurEffectEnabled == uiBlurEffectEnabled &&
+        other.hapticFeedbackEnabled == hapticFeedbackEnabled &&
         other.startupPage == startupPage &&
         other.bottomNavigationStyle == bottomNavigationStyle &&
         other.coverImageResolution == coverImageResolution &&
@@ -433,6 +436,7 @@ class SettingsState {
     recordPlaybackProgress,
     blurPlayerBackgroundEnabled,
     uiBlurEffectEnabled,
+    hapticFeedbackEnabled,
     startupPage,
     bottomNavigationStyle,
     coverImageResolution,

@@ -112,6 +112,7 @@ extension AudioProviderPersistence on AudioProvider {
     _settingsRepository.asmrPlaybackCacheEnabled = false;
     _settingsRepository.blurPlayerBackgroundEnabled = true;
     _settingsRepository.uiBlurEffectEnabled = true;
+    _settingsRepository.hapticFeedbackEnabled = true;
     _settingsRepository.coverImageResolution = CoverImageResolution.balanced;
     _settingsRepository.asmrDownloadDestinationRoot = null;
     _settingsRepository.asmrDownloadConflictPolicy =
@@ -336,6 +337,8 @@ extension AudioProviderPersistence on AudioProvider {
           map['blurPlayerBackgroundEnabled'] as bool? ?? true;
       _settingsRepository.uiBlurEffectEnabled =
           map['uiBlurEffectEnabled'] as bool? ?? true;
+      _settingsRepository.hapticFeedbackEnabled =
+          map['hapticFeedbackEnabled'] as bool? ?? true;
       _settingsRepository.coverImageResolution = _decodeCoverImageResolution(
         map['coverImageResolution'],
       );
@@ -390,6 +393,7 @@ extension AudioProviderPersistence on AudioProvider {
         'blurPlayerBackgroundEnabled':
             _settingsRepository.blurPlayerBackgroundEnabled,
         'uiBlurEffectEnabled': _settingsRepository.uiBlurEffectEnabled,
+        'hapticFeedbackEnabled': _settingsRepository.hapticFeedbackEnabled,
         'coverImageResolution': _settingsRepository.coverImageResolution.name,
         'asmrDownloadDestinationRoot':
             _settingsRepository.asmrDownloadDestinationRoot,
@@ -727,6 +731,13 @@ extension AudioProviderPersistence on AudioProvider {
   Future<void> setUiBlurEffectEnabled(bool enabled) async {
     if (_settingsRepository.uiBlurEffectEnabled == enabled) return;
     _settingsRepository.uiBlurEffectEnabled = enabled;
+    _notifySettingsChanged();
+    unawaited(_savePlaybackSettings());
+  }
+
+  Future<void> setHapticFeedbackEnabled(bool enabled) async {
+    if (_settingsRepository.hapticFeedbackEnabled == enabled) return;
+    _settingsRepository.hapticFeedbackEnabled = enabled;
     _notifySettingsChanged();
     unawaited(_savePlaybackSettings());
   }

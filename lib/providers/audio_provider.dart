@@ -12,6 +12,8 @@ import 'package:just_audio/just_audio.dart';
 import 'package:path/path.dart' as path;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../widgets/app_feedback.dart';
+
 import '../i18n/app_language_provider.dart';
 import '../models/audio_detail.dart';
 import '../models/asmr_download.dart';
@@ -918,6 +920,8 @@ class AudioProvider with ChangeNotifier {
 
   void _syncSettingsStateSlice() {
     _settingsRepository.syncSlice();
+    AppInteractionFeedback.hapticFeedbackEnabled =
+        _settingsRepository.hapticFeedbackEnabled;
   }
 
   void _syncNotificationStateSlice() {

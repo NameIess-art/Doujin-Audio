@@ -482,6 +482,8 @@ const Map<String, String> appLanguageJa = {
   'startup_page_asmrOne': 'ASMR.ONE',
   'startup_page_library': 'ライブラリ',
   'startup_page_playlist': 'プレイリスト',
+  'haptic_feedback_enabled': 'バイブレーション',
+  'haptic_feedback_enabled_subtitle': 'インタラクション時にバイブレーションを提供する。',
   'dlsite_metadata_language': 'DLsiteデータ取得言語',
   'dlsite_metadata_language_subtitle': 'DLsite 情報取得の言語。',
   'timer_title': 'タイマー',

@@ -14,22 +14,9 @@ class _AmbientBackground extends StatelessWidget {
     return RepaintBoundary(
       child: DecoratedBox(
         decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              cs.surfaceDim,
-              cs.surface,
-              cs.surfaceContainerLow.withValues(alpha: 0.96),
-            ],
-            stops: const [0, 0.48, 1],
-          ),
-        ),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            border: Border(
-              top: BorderSide(color: cs.primary.withValues(alpha: 0.045)),
-            ),
+          color: cs.surface,
+          border: Border(
+            top: BorderSide(color: cs.primary.withValues(alpha: 0.045)),
           ),
         ),
       ),

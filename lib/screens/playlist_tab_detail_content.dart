@@ -561,13 +561,15 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
           Expanded(
             child: LayoutBuilder(
               builder: (context, scrollConstraints) {
-                return SingleChildScrollView(
-                  padding: const EdgeInsets.symmetric(vertical: 24),
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(
-                      minHeight: max(0.0, scrollConstraints.maxHeight - 48),
+                return ScrollActivityGate(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.symmetric(vertical: 24),
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        minHeight: max(0.0, scrollConstraints.maxHeight - 48),
+                      ),
+                      child: Center(child: contentColumn),
                     ),
-                    child: Center(child: contentColumn),
                   ),
                 );
               },

@@ -68,17 +68,22 @@ class _ReorderAutoScrollerState extends State<ReorderAutoScroller> {
     // Trigger in the top 1/3 and bottom 1/3 of the content area
     final threshold = contentHeight / 3.0;
 
-    if (relativeDy >= 0 && relativeDy < threshold) {
-      // Near top of content area
-      final intensity = 1.0 - (relativeDy / threshold);
+    if (relativeDy < threshold) {
+      // Near top of content area or above it
+      double intensity = 1.0;
+      if (relativeDy >= 0) {
+        intensity = 1.0 - (relativeDy / threshold);
+      }
       // Quadratic velocity ramp as requested
       final curve = intensity * intensity;
       _velocity = -widget.maxVelocity * curve;
-    } else if (relativeDy > contentHeight - threshold &&
-        relativeDy <= contentHeight) {
-      // Near bottom of content area
-      final distFromBottom = contentHeight - relativeDy;
-      final intensity = 1.0 - (distFromBottom / threshold);
+    } else if (relativeDy > contentHeight - threshold) {
+      // Near bottom of content area or below it
+      double intensity = 1.0;
+      if (relativeDy <= contentHeight) {
+        final distFromBottom = contentHeight - relativeDy;
+        intensity = 1.0 - (distFromBottom / threshold);
+      }
       // Quadratic velocity ramp as requested
       final curve = intensity * intensity;
       _velocity = widget.maxVelocity * curve;

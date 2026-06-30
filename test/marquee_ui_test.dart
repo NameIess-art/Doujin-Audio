@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart' show ProviderScope;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/i18n/app_language_provider.dart';
 import 'package:nameless_audio/i18n/app_language_ja.dart';
+import 'package:nameless_audio/services/ui_interaction_coordinator.dart';
 import 'package:nameless_audio/widgets/library_like_cards.dart';
 import 'package:nameless_audio/widgets/marquee_text.dart';
 import 'package:nameless_audio/widgets/scroll_activity_gate.dart';
@@ -323,4 +324,43 @@ void main() {
       expect(scrollView.controller!.offset, greaterThan(0));
     });
   });
+
+  testWidgets('scroll activity gate can track a nested scrollable', (
+    tester,
+  ) async {
+    const nestedListKey = ValueKey('nested_scroll_list');
+    final coordinator = UiInteractionCoordinator.instance;
+
+    await tester.pumpWidget(
+      _buildApp(
+        ScrollActivityGate(
+          idleDelay: const Duration(milliseconds: 10),
+          maxNotificationDepth: 1,
+          child: SizedBox(
+            height: 160,
+            child: PageView(
+              physics: const NeverScrollableScrollPhysics(),
+              children: [
+                ListView.builder(
+                  key: nestedListKey,
+                  itemExtent: 40,
+                  itemCount: 20,
+                  itemBuilder: (_, index) => Text('Item $index'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(coordinator.isInteracting, isFalse);
+    await tester.drag(find.byKey(nestedListKey), const Offset(0, -120));
+    await tester.pump();
+
+    expect(coordinator.isInteracting, isTrue);
+    await tester.pump(const Duration(milliseconds: 180));
+    expect(coordinator.isInteracting, isFalse);
+  });
+
 }

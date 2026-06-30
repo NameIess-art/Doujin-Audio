@@ -546,18 +546,10 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
       builder: (context, child) {
         final animValue = Curves.easeInOut.transform(animation.value);
         final scale = 1.0 + (0.012 * animValue);
-        final elevation = 3.0 * animValue;
 
         return Transform.scale(
           scale: scale,
-          child: Material(
-            elevation: elevation,
-            color: Colors.transparent,
-            shadowColor: Theme.of(
-              context,
-            ).colorScheme.shadow.withValues(alpha: 0.12),
-            child: child,
-          ),
+          child: child,
         );
       },
       child: child,

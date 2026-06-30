@@ -180,41 +180,91 @@ void main() {
     );
   });
 
-  testWidgets('session detail keeps its blurred background while dragging', (
-    tester,
-  ) async {
-    tester.view.physicalSize = const Size(1080, 2400);
-    addTearDown(tester.view.resetPhysicalSize);
-    await _pumpAppShell(tester);
-    unawaited(
-      tester
-          .state<NavigatorState>(find.byType(Navigator).first)
-          .push(buildSessionDetailRoute(sessionId: 'orientation_session')),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
+  testWidgets(
+    'session detail keeps route revealed through a rapid drag reversal',
+    (tester) async {
+      final previousPlatform = debugDefaultTargetPlatformOverride;
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      addTearDown(() {
+        debugDefaultTargetPlatformOverride = previousPlatform;
+      });
+      expect(defaultTargetPlatform, TargetPlatform.android);
+      tester.view.physicalSize = const Size(1080, 2400);
+      addTearDown(tester.view.resetPhysicalSize);
+      await _pumpAppShell(tester);
+      unawaited(
+        tester
+            .state<NavigatorState>(find.byType(Navigator).first)
+            .push(buildSessionDetailRoute(sessionId: 'orientation_session')),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
 
-    expect(find.byType(SessionDetailPage), findsOne);
-    expect(
-      find.byKey(const ValueKey('session_detail_background_blur')),
-      findsOne,
-    );
+      final detailFinder = find.byType(SessionDetailPage);
+      expect(detailFinder, findsOne);
+      final detailContext = tester.element(detailFinder);
+      final detailRoute = ModalRoute.of(detailContext)!;
+      expect(detailRoute.opaque, isTrue);
+      expect(
+        find.byKey(const ValueKey('session_detail_background_blur')),
+        findsOne,
+      );
 
-    final gesture = await tester.startGesture(
-      tester.getCenter(find.byType(SessionDetailPage)),
-    );
-    await gesture.moveBy(const Offset(0, 96));
-    await tester.pump();
+      final dismissGestureFinder = find.byWidgetPredicate(
+        (widget) =>
+            widget is GestureDetector && widget.onVerticalDragUpdate != null,
+      );
+      expect(dismissGestureFinder, findsOne);
+      final dismissGesture = tester.widget<GestureDetector>(
+        dismissGestureFinder,
+      );
+      dismissGesture.onVerticalDragStart!(DragStartDetails());
+      dismissGesture.onVerticalDragUpdate!(
+        DragUpdateDetails(
+          globalPosition: Offset.zero,
+          delta: const Offset(0, 48),
+          primaryDelta: 48,
+        ),
+      );
+      dismissGesture.onVerticalDragUpdate!(
+        DragUpdateDetails(
+          globalPosition: Offset.zero,
+          delta: const Offset(0, 48),
+          primaryDelta: 48,
+        ),
+      );
+      await tester.pump();
 
-    expect(
-      find.byKey(const ValueKey('session_detail_background_blur')),
-      findsOne,
-    );
+      expect(detailRoute.opaque, isFalse);
+      expect(
+        find.byKey(const ValueKey('session_detail_background_blur')),
+        findsOne,
+      );
 
-    await gesture.up();
-    await tester.pumpAndSettle();
-    expect(tester.takeException(), isNull);
-  });
+      dismissGesture.onVerticalDragUpdate!(
+        DragUpdateDetails(
+          globalPosition: Offset.zero,
+          delta: const Offset(0, -48),
+          primaryDelta: -48,
+        ),
+      );
+      await tester.pump();
+
+      expect(detailRoute.opaque, isFalse);
+      expect(
+        find.byKey(const ValueKey('session_detail_background_blur')),
+        findsOne,
+      );
+
+      dismissGesture.onVerticalDragEnd!(DragEndDetails(primaryVelocity: 0));
+      await tester.pumpAndSettle();
+      debugDefaultTargetPlatformOverride = previousPlatform;
+
+      expect(detailFinder, findsOne);
+      expect(detailRoute.opaque, isTrue);
+      expect(tester.takeException(), isNull);
+    },
+  );
 }
 
 final class _AppShellHarness {

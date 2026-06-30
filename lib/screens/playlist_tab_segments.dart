@@ -596,34 +596,37 @@ class _TimeSegmentPanelState extends State<_TimeSegmentPanel> {
           ),
           const SizedBox(height: 12),
           Expanded(
-            child: PageView(
-              controller: _pageController,
-              onPageChanged: _handlePageChanged,
-              children: [
-                _EqualizerPage(
-                  session: widget.session,
-                  provider: widget.provider,
-                ),
-                _AudioFeaturesPage(
-                  session: widget.session,
-                  provider: widget.provider,
-                ),
-                _SpeedWheelPage(
-                  key: ValueKey<String>('speed_${widget.session.id}'),
-                  session: widget.session,
-                  provider: widget.provider,
-                ),
-                _buildSegmentPage(
-                  context,
-                  selected: selected,
-                  activeColor: activeColor,
-                  loopActive: loopActive,
-                ),
-                _VolumeBalancePage(
-                  session: widget.session,
-                  provider: widget.provider,
-                ),
-              ],
+            child: ScrollActivityGate(
+              maxNotificationDepth: 1,
+              child: PageView(
+                controller: _pageController,
+                onPageChanged: _handlePageChanged,
+                children: [
+                  _EqualizerPage(
+                    session: widget.session,
+                    provider: widget.provider,
+                  ),
+                  _AudioFeaturesPage(
+                    session: widget.session,
+                    provider: widget.provider,
+                  ),
+                  _SpeedWheelPage(
+                    key: ValueKey<String>('speed_${widget.session.id}'),
+                    session: widget.session,
+                    provider: widget.provider,
+                  ),
+                  _buildSegmentPage(
+                    context,
+                    selected: selected,
+                    activeColor: activeColor,
+                    loopActive: loopActive,
+                  ),
+                  _VolumeBalancePage(
+                    session: widget.session,
+                    provider: widget.provider,
+                  ),
+                ],
+              ),
             ),
           ),
         ],

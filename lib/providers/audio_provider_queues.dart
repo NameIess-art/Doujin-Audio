@@ -131,6 +131,31 @@ extension AudioProviderQueues on AudioProvider {
     await _syncPlaybackQueueSession(session);
   }
 
+  Future<void> reorderPlaybackQueueEntry(
+    String sessionId,
+    int oldIndex,
+    int newIndex,
+  ) async {
+    final session = _sessions[sessionId];
+    final queue = session?.playbackQueue;
+    if (session == null || queue == null) return;
+
+    if (oldIndex < newIndex) {
+      newIndex -= 1;
+    }
+    
+    final entries = queue.entries.toList();
+    if (oldIndex < 0 || oldIndex >= entries.length || newIndex < 0 || newIndex > entries.length) {
+      return;
+    }
+
+    final item = entries.removeAt(oldIndex);
+    entries.insert(newIndex, item);
+
+    session.playbackQueue = queue.copyWith(entries: entries);
+    await _syncPlaybackQueueSession(session);
+  }
+
   Future<void> _syncPlaybackQueueSession(
     PlaybackSession session, {
     bool selectFirst = false,

@@ -25,6 +25,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
   bool _contentEnterStarted = false;
   final Object _dismissInteractionSource = Object();
   bool _dismissInteractionActive = false;
+  final ValueNotifier<bool> _dismissInteractionNotifier = ValueNotifier(false);
   final ValueNotifier<bool> _segmentPanelExpandedNotifier = ValueNotifier(
     false,
   );
@@ -42,16 +43,15 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
       vsync: this,
       duration: const Duration(milliseconds: 220),
     );
-    _dismissController.addListener(_syncRevealBehind);
   }
 
   @override
   void dispose() {
-    _dismissController.removeListener(_syncRevealBehind);
     UiInteractionCoordinator.instance.cancelInteraction(
       _dismissInteractionSource,
     );
     widget.revealBehindNotifier.value = false;
+    _dismissInteractionNotifier.dispose();
     _segmentPanelExpandedNotifier.dispose();
     _dismissController.dispose();
     _contentEnterController.dispose();
@@ -103,11 +103,9 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
     });
   }
 
-  void _syncRevealBehind() {
-    final shouldReveal = _dismissController.value > 0.001;
-    if (widget.revealBehindNotifier.value != shouldReveal) {
-      widget.revealBehindNotifier.value = shouldReveal;
-    }
+  void _setRevealBehind(bool value) {
+    if (widget.revealBehindNotifier.value == value) return;
+    widget.revealBehindNotifier.value = value;
   }
 
   void _beginDismissInteraction() {
@@ -116,11 +114,17 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
     UiInteractionCoordinator.instance.beginInteraction(
       _dismissInteractionSource,
     );
+    _dismissInteractionNotifier.value = true;
+    _setRevealBehind(true);
   }
 
   void _endDismissInteraction() {
     if (!_dismissInteractionActive) return;
     _dismissInteractionActive = false;
+    if (_dismissController.value <= 0.001) {
+      _setRevealBehind(false);
+    }
+    _dismissInteractionNotifier.value = false;
     UiInteractionCoordinator.instance.endInteraction(_dismissInteractionSource);
   }
 
@@ -141,6 +145,10 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
       if (mounted) {
         await navigator.maybePop();
       }
+      return;
+    }
+    if (_dismissController.value <= 0.001) {
+      _endDismissInteraction();
       return;
     }
     _beginDismissInteraction();
@@ -189,7 +197,6 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
       return const Scaffold(body: SizedBox.shrink());
     }
 
-
     _ensureContentEnterStarted();
     final routeAnimation = ModalRoute.of(context)?.animation;
     final animatedListenable = Listenable.merge([
@@ -197,7 +204,8 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
       _contentEnterController,
       _dismissController,
     ]);
-    final enableVerticalDismiss = !Platform.isWindows;
+    final isWindows = defaultTargetPlatform == TargetPlatform.windows;
+    final enableVerticalDismiss = !isWindows;
 
     return Material(
       color: Colors.transparent,
@@ -219,8 +227,6 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
           final revealProgress = (dismissProgress * 3).clamp(0.0, 1.0);
           final backdropProgress = (enterProgress * pow(1 - revealProgress, 2))
               .clamp(0.0, 1.0);
-          const detailOpacity = 1.0;
-
           return Stack(
             fit: StackFit.expand,
             children: [
@@ -235,125 +241,135 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
                   child: _SessionDetailBackdrop(progress: backdropProgress),
                 ),
               ),
-              Opacity(
-                opacity: detailOpacity,
-                child: Align(
-                  alignment: Alignment.bottomCenter,
-                  child: FractionallySizedBox(
-                    heightFactor: 1.0,
-                    child: Transform.translate(
-                      offset: Offset(0, enterOffset + dragDistance),
-                      child: TickerMode(
-                        enabled: dismissProgress <= 0.01,
-                        child: MarqueePauseScope(
-                          isPaused: dismissProgress > 0.01,
-                          child: child!,
-                        ),
-                      ),
-                    ),
+              Align(
+                alignment: Alignment.bottomCenter,
+                child: FractionallySizedBox(
+                  heightFactor: 1.0,
+                  child: Transform.translate(
+                    offset: Offset(0, enterOffset + dragDistance),
+                    child: child!,
                   ),
                 ),
               ),
             ],
           );
         },
-        child: RepaintBoundary(
-          child: Listener(
-            onPointerSignal: Platform.isWindows
-                ? (event) {
-                    if (_segmentPanelExpandedNotifier.value) return;
-                    if (event is PointerScrollEvent) {
-                      if (event.scrollDelta.dy > 0) {
-                        _changeSessionByOffset(sessionIds, 1);
-                      } else if (event.scrollDelta.dy < 0) {
-                        _changeSessionByOffset(sessionIds, -1);
+        child: ValueListenableBuilder<bool>(
+          valueListenable: _dismissInteractionNotifier,
+          builder: (context, isDismissing, child) {
+            return TickerMode(
+              enabled: !isDismissing,
+              child: MarqueePauseScope(isPaused: isDismissing, child: child!),
+            );
+          },
+          child: RepaintBoundary(
+            child: Listener(
+              onPointerSignal: isWindows
+                  ? (event) {
+                      if (_segmentPanelExpandedNotifier.value) return;
+                      if (event is PointerScrollEvent) {
+                        if (event.scrollDelta.dy > 0) {
+                          _changeSessionByOffset(sessionIds, 1);
+                        } else if (event.scrollDelta.dy < 0) {
+                          _changeSessionByOffset(sessionIds, -1);
+                        }
                       }
                     }
-                  }
-                : null,
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 300),
-              child: Builder(
-                key: ValueKey(_currentSessionId),
-                builder: (context) {
-                  final pageSession = provider.sessionById(_currentSessionId);
-                  if (pageSession == null) {
-                    return const SizedBox.shrink();
-                  }
-                  final detailTrack = provider.trackByPath(
-                    pageSession.currentTrackPath,
-                  );
-                  final coverPathFuture = _coverFutureForTrack(
-                    provider,
-                    detailTrack,
-                  );
+                  : null,
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 300),
+                child: Builder(
+                  key: ValueKey(_currentSessionId),
+                  builder: (context) {
+                    final pageSession = provider.sessionById(_currentSessionId);
+                    if (pageSession == null) {
+                      return const SizedBox.shrink();
+                    }
+                    final detailTrack = provider.trackByPath(
+                      pageSession.currentTrackPath,
+                    );
+                    final coverPathFuture = _coverFutureForTrack(
+                      provider,
+                      detailTrack,
+                    );
 
-                  return _SessionDetailScaffold(
-                    session: pageSession,
-                    provider: provider,
-                    coverPathFuture: coverPathFuture,
-                    dismissAnimation: _dismissController,
-                    segmentPanelExpandedNotifier: _segmentPanelExpandedNotifier,
-                    onClose: () async {
-                      ref
-                          .read(audioProviderFacadeProvider)
-                          .requestCarouselSnapTo(_currentSessionId);
-                      _beginDismissInteraction();
-                      await _animateDismissToEnd();
-                      _endDismissInteraction();
-                      if (context.mounted) {
-                        await Navigator.of(context).maybePop();
-                      }
-                    },
-                    onHorizontalDragUpdate: Platform.isWindows
-                        ? null
-                        : (details) {
-                            if (_segmentPanelExpandedNotifier.value) return;
-                            _horizontalDragDelta += details.primaryDelta ?? 0;
-                          },
-                    onHorizontalDragEnd: Platform.isWindows
-                        ? null
-                        : (details) {
-                            if (_segmentPanelExpandedNotifier.value) return;
-                            _handleHorizontalDragEnd(details, sessionIds);
-                          },
-                    onHorizontalDragCancel: Platform.isWindows
-                        ? null
-                        : () {
-                            if (_segmentPanelExpandedNotifier.value) return;
-                            _horizontalDragDelta = 0;
-                          },
-                    onVerticalDragUpdate: enableVerticalDismiss
-                        ? (details) {
-                            final screenHeight = MediaQuery.sizeOf(
-                              context,
-                            ).height;
-                            if (screenHeight <= 0) return;
-                            final nextValue =
-                                _dismissController.value +
-                                (((details.primaryDelta ?? 0) / screenHeight) *
-                                    0.92);
-                            if (nextValue > 0.001) {
-                              _beginDismissInteraction();
+                    return _SessionDetailScaffold(
+                      session: pageSession,
+                      provider: provider,
+                      coverPathFuture: coverPathFuture,
+                      dismissAnimation: _dismissController,
+                      segmentPanelExpandedNotifier:
+                          _segmentPanelExpandedNotifier,
+                      onClose: () async {
+                        ref
+                            .read(audioProviderFacadeProvider)
+                            .requestCarouselSnapTo(_currentSessionId);
+                        _beginDismissInteraction();
+                        await _animateDismissToEnd();
+                        _endDismissInteraction();
+                        if (context.mounted) {
+                          await Navigator.of(context).maybePop();
+                        }
+                      },
+                      onHorizontalDragUpdate: isWindows
+                          ? null
+                          : (details) {
+                              if (_segmentPanelExpandedNotifier.value) return;
+                              _horizontalDragDelta += details.primaryDelta ?? 0;
+                            },
+                      onHorizontalDragEnd: isWindows
+                          ? null
+                          : (details) {
+                              if (_segmentPanelExpandedNotifier.value) return;
+                              _handleHorizontalDragEnd(details, sessionIds);
+                            },
+                      onHorizontalDragCancel: isWindows
+                          ? null
+                          : () {
+                              if (_segmentPanelExpandedNotifier.value) return;
+                              _horizontalDragDelta = 0;
+                            },
+                      onVerticalDragUpdate: enableVerticalDismiss
+                          ? (details) {
+                              final screenHeight = MediaQuery.sizeOf(
+                                context,
+                              ).height;
+                              if (screenHeight <= 0) return;
+                              final nextValue =
+                                  _dismissController.value +
+                                  (((details.primaryDelta ?? 0) /
+                                          screenHeight) *
+                                      0.92);
+                              if (nextValue > 0.001) {
+                                _beginDismissInteraction();
+                              }
+                              _dismissController.value = nextValue.clamp(
+                                0.0,
+                                1.0,
+                              );
                             }
-                            _dismissController.value = nextValue.clamp(0.0, 1.0);
-                          }
-                        : null,
-                    onVerticalDragEnd: enableVerticalDismiss
-                        ? (details) => _handleVerticalDragEnd(details, context)
-                        : null,
-                    onVerticalDragCancel: enableVerticalDismiss
-                        ? () {
-                            _beginDismissInteraction();
-                            unawaited(
-                              _animateDismissBack().whenComplete(
-                                _endDismissInteraction,
-                              ),
-                            );
-                          }
-                        : null,
-                  );
-                },
+                          : null,
+                      onVerticalDragEnd: enableVerticalDismiss
+                          ? (details) =>
+                                _handleVerticalDragEnd(details, context)
+                          : null,
+                      onVerticalDragCancel: enableVerticalDismiss
+                          ? () {
+                              if (_dismissController.value <= 0.001) {
+                                _endDismissInteraction();
+                                return;
+                              }
+                              _beginDismissInteraction();
+                              unawaited(
+                                _animateDismissBack().whenComplete(
+                                  _endDismissInteraction,
+                                ),
+                              );
+                            }
+                          : null,
+                    );
+                  },
+                ),
               ),
             ),
           ),

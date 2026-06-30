@@ -185,6 +185,7 @@ class _SessionListCard extends ConsumerStatefulWidget {
     required this.provider,
     required this.index,
     required this.cardPositionsLocked,
+    required this.isReordering,
     required this.onOpen,
   });
 
@@ -192,6 +193,7 @@ class _SessionListCard extends ConsumerStatefulWidget {
   final AudioProvider provider;
   final int index;
   final bool cardPositionsLocked;
+  final bool isReordering;
   final VoidCallback onOpen;
 
   @override
@@ -267,9 +269,12 @@ class _SessionListCardState extends ConsumerState<_SessionListCard> {
     final cs = Theme.of(context).colorScheme;
     final session = widget.session;
     final provider = widget.provider;
-    final uiState = ref.watch(playlistSessionCardUiProvider(widget.session.id));
-    final int coverGeneration =
-        uiState?.coverGeneration ?? ref.watch(coverGenerationProvider);
+    final uiState = widget.isReordering
+        ? null
+        : ref.watch(playlistSessionCardUiProvider(widget.session.id));
+    final int coverGeneration = widget.isReordering
+        ? provider.coverGeneration
+        : uiState?.coverGeneration ?? ref.watch(coverGenerationProvider);
     final trackPath = uiState?.trackPath ?? session.currentTrackPath;
     final sessionView = (
       track: provider.trackByPath(trackPath),
@@ -281,9 +286,9 @@ class _SessionListCardState extends ConsumerState<_SessionListCard> {
           uiState?.channelSwapEnabled ?? session.channelSwapEnabled,
       playbackError: uiState?.playbackError ?? session.playbackError,
     );
-    if (_lastTrackPath != trackPath ||
-        _lastCoverGeneration != coverGeneration) {
-      _lastCoverGeneration = coverGeneration;
+    if (!widget.isReordering &&
+        (_lastTrackPath != trackPath ||
+            _lastCoverGeneration != coverGeneration)) {
       _updateFutureIfNeeded(
         cachedOnly: false,
         trackPath: trackPath,
@@ -449,7 +454,8 @@ class _SessionListCardState extends ConsumerState<_SessionListCard> {
                                       ? null
                                       : () {
                                           AppInteractionFeedback.trigger(
-                                            AppInteractionFeedbackType.selection,
+                                            AppInteractionFeedbackType
+                                                .selection,
                                           );
                                           provider.toggleSessionPlayPause(
                                             session.id,
@@ -467,8 +473,11 @@ class _SessionListCardState extends ConsumerState<_SessionListCard> {
                                     duration: const Duration(milliseconds: 120),
                                     transitionBuilder: (child, animation) {
                                       return ScaleTransition(
-                                        scale: Tween<double>(begin: 0.4, end: 1.0)
-                                            .animate(
+                                        scale:
+                                            Tween<double>(
+                                              begin: 0.4,
+                                              end: 1.0,
+                                            ).animate(
                                               CurvedAnimation(
                                                 parent: animation,
                                                 curve: Curves.easeOutBack,
@@ -501,49 +510,19 @@ class _SessionListCardState extends ConsumerState<_SessionListCard> {
                                 if (sessionView.playbackError != null)
                                   Text(
                                     i18n.tr('playback_failed_retry'),
-                                    style: Theme.of(context).textTheme.labelSmall
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .labelSmall
                                         ?.copyWith(color: cs.error),
                                   ),
-                                Consumer(
-                                  builder: (context, ref, child) {
-                                    final settings = ref.watch(
-                                      subtitleSettingsProvider,
-                                    );
-                                    final showSub = settings.isGlobalEnabled(
-                                      session.id,
-                                    );
-                                    if (!showSub &&
-                                        !sessionView.channelSwapEnabled) {
-                                      return const SizedBox.shrink();
-                                    }
-                                    return Padding(
-                                      padding: const EdgeInsets.only(top: 1),
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          if (showSub)
-                                            Icon(
-                                              Icons.subtitles_rounded,
-                                              size: 10,
-                                              color: isAsmrOne
-                                                  ? asmrBlue
-                                                  : localPlayRose,
-                                            ),
-                                          if (showSub &&
-                                              sessionView.channelSwapEnabled)
-                                            const SizedBox(width: 2),
-                                          if (sessionView.channelSwapEnabled)
-                                            Icon(
-                                              Icons.swap_horiz_rounded,
-                                              size: 10,
-                                              color: isAsmrOne
-                                                  ? asmrBlue
-                                                  : localPlayRose,
-                                            ),
-                                        ],
-                                      ),
-                                    );
-                                  },
+                                _SessionFeatureBadges(
+                                  sessionId: session.id,
+                                  channelSwapEnabled:
+                                      sessionView.channelSwapEnabled,
+                                  activeColor: isAsmrOne
+                                      ? asmrBlue
+                                      : localPlayRose,
+                                  freezeSubtitleState: widget.isReordering,
                                 ),
                               ],
                             ),
@@ -552,9 +531,15 @@ class _SessionListCardState extends ConsumerState<_SessionListCard> {
                               ReorderableDragStartListener(
                                 index: widget.index,
                                 child: Container(
-                                  padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 8,
+                                    horizontal: 4,
+                                  ),
                                   color: Colors.transparent,
-                                  child: const Icon(Icons.drag_handle_rounded, size: 24),
+                                  child: const Icon(
+                                    Icons.drag_handle_rounded,
+                                    size: 24,
+                                  ),
                                 ),
                               ),
                             ],
@@ -568,6 +553,43 @@ class _SessionListCardState extends ConsumerState<_SessionListCard> {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _SessionFeatureBadges extends ConsumerWidget {
+  const _SessionFeatureBadges({
+    required this.sessionId,
+    required this.channelSwapEnabled,
+    required this.activeColor,
+    required this.freezeSubtitleState,
+  });
+
+  final String sessionId;
+  final bool channelSwapEnabled;
+  final Color activeColor;
+  final bool freezeSubtitleState;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final showSub = freezeSubtitleState
+        ? ref.read(subtitleSettingsProvider).isGlobalEnabled(sessionId)
+        : ref.watch(subtitleSettingsProvider).isGlobalEnabled(sessionId);
+    if (!showSub && !channelSwapEnabled) {
+      return const SizedBox.shrink();
+    }
+    return Padding(
+      padding: const EdgeInsets.only(top: 1),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (showSub)
+            Icon(Icons.subtitles_rounded, size: 10, color: activeColor),
+          if (showSub && channelSwapEnabled) const SizedBox(width: 2),
+          if (channelSwapEnabled)
+            Icon(Icons.swap_horiz_rounded, size: 10, color: activeColor),
+        ],
       ),
     );
   }

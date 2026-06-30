@@ -189,7 +189,7 @@ class LibraryLikeFeaturedCardContent extends StatelessWidget {
                           ),
                         ),
                       ),
-                    if (extraTrailing != null) extraTrailing!,
+                    ?extraTrailing,
                   ],
                 ),
               ),

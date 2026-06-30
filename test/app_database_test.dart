@@ -201,9 +201,23 @@ void main() {
 
     expect(indexNames, contains('idx_tracks_group_key'));
     expect(indexNames, contains('idx_tracks_display_name'));
-    expect(indexNames, contains('idx_tracks_last_played_at'));
-    expect(indexNames, contains('idx_tracks_favorite'));
-    expect(indexNames, contains('idx_tracks_scan_generation'));
+
+    final playbackIndexes = await db.rawQuery(
+      'PRAGMA index_list(track_playback_state)',
+    );
+    final playbackIndexNames = playbackIndexes
+        .map((row) => row['name'] as String?)
+        .whereType<String>()
+        .toSet();
+    expect(playbackIndexNames, contains('idx_tracks_last_played_at'));
+    expect(playbackIndexNames, contains('idx_tracks_favorite'));
+
+    final scanIndexes = await db.rawQuery('PRAGMA index_list(track_scan_info)');
+    final scanIndexNames = scanIndexes
+        .map((row) => row['name'] as String?)
+        .whereType<String>()
+        .toSet();
+    expect(scanIndexNames, contains('idx_tracks_scan_generation'));
 
     final columns = await db.rawQuery('PRAGMA table_info(tracks)');
     final columnNames = columns
@@ -211,9 +225,54 @@ void main() {
         .whereType<String>()
         .toSet();
 
-    expect(columnNames, contains('remote_cover_url'));
-    expect(columnNames, contains('remote_metadata_kind'));
-    expect(columnNames, contains('remote_metadata_json'));
+    expect(columnNames, isNot(contains('remote_cover_url')));
+    expect(columnNames, isNot(contains('remote_metadata_kind')));
+    expect(columnNames, isNot(contains('remote_metadata_json')));
+
+    final assetColumns = await db.rawQuery('PRAGMA table_info(track_assets)');
+    expect(
+      assetColumns.map((row) => row['name']),
+      containsAll([
+        'cover_cache_path',
+        'manual_cover_path',
+        'remote_cover_url',
+      ]),
+    );
+    final remoteColumns = await db.rawQuery(
+      'PRAGMA table_info(track_remote_metadata)',
+    );
+    expect(
+      remoteColumns.map((row) => row['name']),
+      containsAll(['remote_metadata_kind', 'remote_metadata_json']),
+    );
+  });
+
+  test('loadTrackSummaries reads only main track table fields', () async {
+    const track = MusicTrack(
+      path: '/library/meta.flac',
+      displayName: 'Meta',
+      groupKey: '/library',
+      groupTitle: 'Library',
+      groupSubtitle: '1 track',
+      isSingle: false,
+      lastPlayedPosition: Duration(minutes: 5),
+      isFavorite: true,
+      tags: <String>['focus'],
+      coverCachePath: '/cache/meta.png',
+      remoteMetadataKind: 'asmr.one',
+      remoteMetadata: <String, Object?>{'workId': 123},
+    );
+    await appDatabase.insertTracks([track]);
+
+    final summary = (await appDatabase.loadTrackSummaries()).single;
+    final detail = await appDatabase.loadTrackDetail(track.path);
+
+    expect(summary.path, track.path);
+    expect(summary.coverCachePath, isNull);
+    expect(summary.remoteMetadataKind, isNull);
+    expect(summary.tags, isEmpty);
+    expect(summary.isFavorite, isFalse);
+    expect(detail?.toJson(), track.toJson());
   });
 
   test('sessions persist custom queue tracks', () async {
@@ -323,6 +382,111 @@ void main() {
       expect(loaded.playbackQueue?.entries.last.workRootPath, '/library/work');
       expect(loaded.playbackQueue?.expandedTracks, hasLength(2));
       expect(loaded.currentQueueIndex, 1);
+    },
+  );
+
+  test('updateSessionOrder only changes session sort order', () async {
+    await appDatabase.saveAllSessions(<PersistedSession>[
+      const PersistedSession(
+        id: 'session_1',
+        trackPath: '/library/a.mp3',
+        loopModeIndex: 1,
+        volume: 0.8,
+        positionMs: 1200,
+        durationMs: 3200,
+        customQueueTracks: null,
+        channelSwapEnabled: false,
+        sortOrder: 0,
+      ),
+      const PersistedSession(
+        id: 'session_2',
+        trackPath: '/library/b.mp3',
+        loopModeIndex: 1,
+        volume: 0.4,
+        positionMs: 2200,
+        durationMs: 4200,
+        customQueueTracks: null,
+        channelSwapEnabled: true,
+        sortOrder: 1,
+      ),
+    ]);
+
+    await appDatabase.updateSessionOrder(['session_2', 'session_1']);
+
+    final loaded = await appDatabase.loadAllSessions();
+    expect(loaded.map((session) => session.id), ['session_2', 'session_1']);
+    expect(loaded.first.volume, closeTo(0.4, 0.001));
+    expect(loaded.first.channelSwapEnabled, isTrue);
+    expect(loaded.last.positionMs, 1200);
+  });
+
+  test(
+    'updatePlaybackQueueEntryOrder only changes queue entry order',
+    () async {
+      const firstTrack = MusicTrack(
+        path: '/library/work/01.mp3',
+        displayName: '01',
+        groupKey: '/library/work',
+        groupTitle: 'Work',
+        groupSubtitle: 'Work',
+        isSingle: false,
+      );
+      const secondTrack = MusicTrack(
+        path: '/library/work/02.mp3',
+        displayName: '02',
+        groupKey: '/library/work',
+        groupTitle: 'Work',
+        groupSubtitle: 'Work',
+        isSingle: false,
+      );
+      const queue = PlaybackQueueDefinition(
+        name: 'Night queue',
+        entries: <PlaybackQueueEntry>[
+          PlaybackQueueEntry(
+            id: 'entry_1',
+            kind: PlaybackQueueEntryKind.track,
+            title: '01',
+            tracks: <MusicTrack>[firstTrack],
+          ),
+          PlaybackQueueEntry(
+            id: 'entry_2',
+            kind: PlaybackQueueEntryKind.track,
+            title: '02',
+            tracks: <MusicTrack>[secondTrack],
+          ),
+        ],
+      );
+
+      await appDatabase.saveAllSessions(<PersistedSession>[
+        PersistedSession(
+          id: 'queue_1',
+          trackPath: firstTrack.path,
+          loopModeIndex: 1,
+          volume: 1,
+          positionMs: 0,
+          durationMs: 0,
+          customQueueTracks: queue.expandedTracks,
+          playbackQueue: queue,
+          channelSwapEnabled: false,
+          sortOrder: 0,
+        ),
+      ]);
+
+      await appDatabase.updatePlaybackQueueEntryOrder('queue_1', [
+        'entry_2',
+        'entry_1',
+      ]);
+
+      final loaded = (await appDatabase.loadAllSessions()).single;
+      expect(loaded.playbackQueue?.entries.map((entry) => entry.id), [
+        'entry_2',
+        'entry_1',
+      ]);
+      expect(
+        loaded.playbackQueue?.entries.first.tracks.single.path,
+        secondTrack.path,
+      );
+      expect(loaded.volume, closeTo(1, 0.001));
     },
   );
 

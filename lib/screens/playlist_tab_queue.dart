@@ -4,12 +4,16 @@ class _PlaybackQueueCard extends StatefulWidget {
   const _PlaybackQueueCard({
     required this.session,
     required this.provider,
+    required this.index,
+    required this.cardPositionsLocked,
     required this.onOpen,
     required this.onEdit,
   });
 
   final PlaybackSession session;
   final AudioProvider provider;
+  final int index;
+  final bool cardPositionsLocked;
   final VoidCallback onOpen;
   final VoidCallback onEdit;
 
@@ -54,6 +58,7 @@ class _PlaybackQueueCardState extends State<_PlaybackQueueCard> {
       key: ValueKey(session.id),
       margin: const EdgeInsets.only(bottom: 6),
       shape: shape,
+      color: activeColor,
       destructive: false,
       primaryActionIcon: Icons.edit_rounded,
       actionLabel: i18n.tr('edit'),
@@ -110,48 +115,64 @@ class _PlaybackQueueCardState extends State<_PlaybackQueueCard> {
                       ],
                     ),
                   ),
-                  IconButton(
-                    tooltip: session.effectivePlaying
-                        ? i18n.tr('pause')
-                        : i18n.tr('play'),
-                    onPressed: tracks.isEmpty
-                        ? null
-                        : () {
-                            AppInteractionFeedback.trigger(
-                              AppInteractionFeedbackType.selection,
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        tooltip: session.effectivePlaying
+                            ? i18n.tr('pause')
+                            : i18n.tr('play'),
+                        onPressed: tracks.isEmpty
+                            ? null
+                            : () {
+                                AppInteractionFeedback.trigger(
+                                  AppInteractionFeedbackType.selection,
+                                );
+                                provider.toggleSessionPlayPause(session.id);
+                              },
+                        style: IconButton.styleFrom(
+                          foregroundColor: isPlaying ? activeColor : cs.onSurface,
+                          minimumSize: const Size(44, 44),
+                          maximumSize: const Size(44, 44),
+                          padding: EdgeInsets.zero,
+                        ),
+                        icon: AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 120),
+                          transitionBuilder: (child, animation) {
+                            return ScaleTransition(
+                              scale: Tween<double>(begin: 0.4, end: 1.0).animate(
+                                CurvedAnimation(
+                                  parent: animation,
+                                  curve: Curves.easeOutBack,
+                                ),
+                              ),
+                              child: FadeTransition(
+                                opacity: animation,
+                                child: child,
+                              ),
                             );
-                            provider.toggleSessionPlayPause(session.id);
                           },
-                    style: IconButton.styleFrom(
-                      foregroundColor: isPlaying ? activeColor : cs.onSurface,
-                      minimumSize: const Size(44, 44),
-                      maximumSize: const Size(44, 44),
-                      padding: EdgeInsets.zero,
-                    ),
-                    icon: AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 120),
-                      transitionBuilder: (child, animation) {
-                        return ScaleTransition(
-                          scale: Tween<double>(begin: 0.4, end: 1.0).animate(
-                            CurvedAnimation(
-                              parent: animation,
-                              curve: Curves.easeOutBack,
-                            ),
+                          child: Icon(
+                            isPlaying
+                                ? Icons.pause_rounded
+                                : Icons.play_arrow_rounded,
+                            key: ValueKey(isPlaying),
+                            size: 28,
                           ),
-                          child: FadeTransition(
-                            opacity: animation,
-                            child: child,
-                          ),
-                        );
-                      },
-                      child: Icon(
-                        isPlaying
-                            ? Icons.pause_rounded
-                            : Icons.play_arrow_rounded,
-                        key: ValueKey(isPlaying),
-                        size: 28,
+                        ),
                       ),
-                    ),
+                      if (!widget.cardPositionsLocked) ...[
+                        const SizedBox(width: 4),
+                        ReorderableDragStartListener(
+                          index: widget.index,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                            color: Colors.transparent,
+                            child: const Icon(Icons.drag_handle_rounded, size: 24),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ],
               ),

@@ -278,6 +278,8 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
             ? _PlaybackQueueCard(
                 session: session,
                 provider: provider,
+                index: index,
+                cardPositionsLocked: cardPositionsLocked,
                 onOpen: () => session.currentTrackPath.isEmpty
                     ? showAppSnackBar(
                         context,
@@ -291,17 +293,12 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
             : _SessionListCard(
                 session: session,
                 provider: provider,
+                index: index,
+                cardPositionsLocked: cardPositionsLocked,
                 onOpen: () => _openSessionDetail(context, session.id),
               ),
       );
-      if (cardPositionsLocked) {
-        return KeyedSubtree(key: ValueKey(session.id), child: child);
-      }
-      return ReorderableHoldDragStartListener(
-        key: ValueKey(session.id),
-        index: index,
-        child: child,
-      );
+      return KeyedSubtree(key: ValueKey(session.id), child: child);
     }
 
     return ScrollActivityGate(

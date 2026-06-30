@@ -236,8 +236,10 @@ class _AsmrTabState extends State<AsmrTab>
   void _measureHeader() {
     final box = _headerKey.currentContext?.findRenderObject() as RenderBox?;
     if (box != null && mounted) {
-      final h = box.size.height - _headerControlsFullHeight;
-      if (h > 0 && h != _headerHeight) {
+      final globalState = context.read<AsmrLibraryController?>()?.globalViewState;
+      final hasControls = globalState != null;
+      final h = box.size.height - (hasControls ? _headerControlsFullHeight : 0);
+      if (h > 0 && (h - _headerHeight).abs() > 0.5) {
         setState(() => _headerHeight = h);
       }
     }
@@ -554,6 +556,9 @@ class _AsmrTabState extends State<AsmrTab>
   @override
   Widget build(BuildContext context) {
     super.build(context);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _measureHeader();
+    });
     final globalState = context
         .select<AsmrLibraryController?, AsmrLibraryGlobalViewState?>(
           (controller) => controller?.globalViewState,

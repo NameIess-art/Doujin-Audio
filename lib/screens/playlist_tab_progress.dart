@@ -165,9 +165,10 @@ class _ProgressSliderAndTimecodesState
         ? widget.timeSegmentLabels
         : const <TimeSegmentLabel>[];
 
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
+    return RepaintBoundary(
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
         Column(
           children: [
             GestureDetector(
@@ -294,7 +295,7 @@ class _ProgressSliderAndTimecodesState
             child: _TimeSegmentDragTooltip(labels: _longPressLabels),
           ),
       ],
-    );
+    ));
   }
 
   String _fmtSeconds(int totalSeconds) {

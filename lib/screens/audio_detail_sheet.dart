@@ -661,19 +661,16 @@ class _FolderCoverSelectorState extends State<_FolderCoverSelector> {
 
     if (_loading) {
       return ShimmerLoader(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const ShimmerContainer(width: 80, height: 16, borderRadius: 4),
-              const SizedBox(height: 10),
-              AspectRatio(
-                aspectRatio: 1.45,
-                child: const ShimmerContainer(borderRadius: 14),
-              ),
-            ],
-          ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const ShimmerContainer(width: 80, height: 20, borderRadius: 4),
+            const SizedBox(height: 10),
+            AspectRatio(
+              aspectRatio: 1.45,
+              child: const ShimmerContainer(borderRadius: 14),
+            ),
+          ],
         ),
       );
     }

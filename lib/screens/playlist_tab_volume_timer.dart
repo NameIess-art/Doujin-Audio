@@ -364,7 +364,7 @@ class _VerticalVolumeSliderState extends State<_VerticalVolumeSlider> {
   }
 }
 
-class _TimerCountdownCapsule extends StatefulWidget {
+class _TimerCountdownCapsule extends StatelessWidget {
   const _TimerCountdownCapsule({
     required this.remaining,
     required this.active,
@@ -378,128 +378,68 @@ class _TimerCountdownCapsule extends StatefulWidget {
   final VoidCallback? onTap;
 
   @override
-  State<_TimerCountdownCapsule> createState() => _TimerCountdownCapsuleState();
-}
-
-class _TimerCountdownCapsuleState extends State<_TimerCountdownCapsule> {
-  Timer? _ticker;
-  Duration _autoResumeRemaining = Duration.zero;
-
-  @override
-  void initState() {
-    super.initState();
-    _updateAutoResumeRemaining();
-    if (widget.autoResumeAt != null) {
-      _startTicker();
-    }
-  }
-
-  @override
-  void didUpdateWidget(covariant _TimerCountdownCapsule oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.autoResumeAt != oldWidget.autoResumeAt) {
-      _updateAutoResumeRemaining();
-      if (widget.autoResumeAt != null) {
-        _startTicker();
-      } else {
-        _stopTicker();
-      }
-    }
-  }
-
-  @override
-  void dispose() {
-    _stopTicker();
-    super.dispose();
-  }
-
-  void _startTicker() {
-    _ticker?.cancel();
-    _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (!mounted) return;
-      _updateAutoResumeRemaining();
-    });
-  }
-
-  void _stopTicker() {
-    _ticker?.cancel();
-    _ticker = null;
-  }
-
-  void _updateAutoResumeRemaining() {
-    final target = widget.autoResumeAt;
-    if (target == null) return;
-    final diff = target.difference(DateTime.now());
-    final next = diff > Duration.zero ? diff : Duration.zero;
-    if (mounted) {
-      setState(() => _autoResumeRemaining = next);
-    } else {
-      _autoResumeRemaining = next;
-    }
-  }
-
-  String _fmt(Duration d) {
-    final h = d.inHours;
-    final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
-    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
-    if (h > 0) return '${h.toString().padLeft(2, '0')}:$m:$s';
-    return '$m:$s';
-  }
-
-  @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final autoResumeAt = widget.autoResumeAt;
 
     // When auto-resume is pending, show the auto-resume countdown instead.
     final showAutoResume = autoResumeAt != null;
-    final displayDuration = showAutoResume
-        ? _autoResumeRemaining
-        : widget.remaining;
-    final hasRemaining = displayDuration > Duration.zero;
 
-    return Material(
-      color: cs.primaryContainer.withValues(alpha: 0.85),
-      borderRadius: BorderRadius.circular(999),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(999),
-        onTap: () {
-          AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
-          widget.onTap?.call();
-        },
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          decoration: BoxDecoration(
+    return TargetCountdownBuilder(
+      target: autoResumeAt,
+      builder: (context, autoResumeRemaining) {
+        final displayDuration = showAutoResume
+            ? autoResumeRemaining
+            : remaining;
+        final hasRemaining = displayDuration > Duration.zero;
+
+        return Material(
+          color: cs.primaryContainer.withValues(alpha: 0.85),
+          borderRadius: BorderRadius.circular(999),
+          child: InkWell(
             borderRadius: BorderRadius.circular(999),
-            border: Border.all(color: cs.primary.withValues(alpha: 0.3)),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                showAutoResume
-                    ? Icons.alarm_rounded
-                    : widget.active
-                    ? Icons.timer_rounded
-                    : hasRemaining
-                    ? Icons.timer_rounded
-                    : Icons.alarm_off_rounded,
-                size: 14,
-                color: cs.onPrimaryContainer,
+            onTap: () {
+              AppInteractionFeedback.trigger(
+                AppInteractionFeedbackType.selection,
+              );
+              onTap?.call();
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(color: cs.primary.withValues(alpha: 0.3)),
               ),
-              const SizedBox(width: 5),
-              Text(
-                hasRemaining ? _fmt(displayDuration) : '00:00',
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: cs.onPrimaryContainer,
-                  fontWeight: FontWeight.w800,
-                  fontFeatures: const [FontFeature.tabularFigures()],
-                ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    showAutoResume
+                        ? Icons.alarm_rounded
+                        : active
+                        ? Icons.timer_rounded
+                        : hasRemaining
+                        ? Icons.timer_rounded
+                        : Icons.alarm_off_rounded,
+                    size: 14,
+                    color: cs.onPrimaryContainer,
+                  ),
+                  const SizedBox(width: 5),
+                  Text(
+                    hasRemaining
+                        ? formatDurationCompact(displayDuration)
+                        : '00:00',
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: cs.onPrimaryContainer,
+                      fontWeight: FontWeight.w800,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                    ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }

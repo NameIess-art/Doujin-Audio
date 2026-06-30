@@ -524,9 +524,11 @@ class CoverArtworkCacheService {
       if (nativeFrame != null && nativeFrame.isNotEmpty) return nativeFrame;
     } on MissingPluginException {
       // Windows generates the frame through its bundled FFmpeg below.
-    } catch (e) {
-      debugPrint(
-        'CoverArtworkCacheService._resolveVideoFramePathForTrack error: $e',
+    } catch (e, stackTrace) {
+      AppLogService.warning(
+        'CoverArtworkCacheService._resolveVideoFramePathForTrack error',
+        error: e,
+        stackTrace: stackTrace,
       );
     }
     if (!AppPlatform.isWindows) return null;
@@ -559,9 +561,11 @@ class CoverArtworkCacheService {
       );
     } on MissingPluginException {
       return null;
-    } catch (e) {
-      debugPrint(
-        'CoverArtworkCacheService._resolvePlatformCoverPathForTrack error: $e',
+    } catch (e, stackTrace) {
+      AppLogService.warning(
+        'CoverArtworkCacheService._resolvePlatformCoverPathForTrack error',
+        error: e,
+        stackTrace: stackTrace,
       );
       return null;
     }
@@ -608,9 +612,11 @@ class CoverArtworkCacheService {
       );
     } on MissingPluginException {
       return null;
-    } catch (e) {
-      debugPrint(
-        'CoverArtworkCacheService._resolveContentCoverPathForFolder error: $e',
+    } catch (e, stackTrace) {
+      AppLogService.warning(
+        'CoverArtworkCacheService._resolveContentCoverPathForFolder error',
+        error: e,
+        stackTrace: stackTrace,
       );
       return null;
     }
@@ -688,8 +694,12 @@ class CoverArtworkCacheService {
       );
     } on MissingPluginException {
       return [];
-    } catch (e) {
-      debugPrint('Error discovering content images in root $rootFolder: $e');
+    } catch (e, stackTrace) {
+      AppLogService.warning(
+        'Error discovering content images',
+        error: e,
+        stackTrace: stackTrace,
+      );
       return [];
     }
   }
@@ -713,8 +723,12 @@ class CoverArtworkCacheService {
         if (!_supportedImageExtensions.contains(ext)) continue;
         images.add(entity.path);
       }
-    } catch (e) {
-      debugPrint('Error discovering images in root $folderPath: $e');
+    } catch (e, stackTrace) {
+      AppLogService.warning(
+        'Error discovering images',
+        error: e,
+        stackTrace: stackTrace,
+      );
     }
 
     images.sort((a, b) => a.compareTo(b));

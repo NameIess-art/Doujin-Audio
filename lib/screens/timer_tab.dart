@@ -13,9 +13,11 @@ import '../providers/audio_provider_riverpod.dart';
 import '../services/audio_state_services.dart';
 import '../services/notifications_platform_service.dart';
 import '../services/power_platform_service.dart';
+import '../services/time_text_formatters.dart';
 import '../services/timer_runtime_calculator.dart';
 import '../services/ui_operation_service.dart';
 import '../widgets/app_feedback.dart';
+import '../widgets/target_countdown_builder.dart';
 import '../widgets/top_page_header.dart';
 
 part 'timer_tab_body.dart';
@@ -128,15 +130,9 @@ class _TimerTabState extends ConsumerState<TimerTab>
     });
   }
 
-  String _fmtClockTime(int h, int m) =>
-      '${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}';
+  String _fmtClockTime(int h, int m) => formatClockTime(h, m);
 
-  String _fmtDuration(Duration d) {
-    final h = d.inHours;
-    final m = d.inMinutes.remainder(60);
-    final s = d.inSeconds.remainder(60);
-    return '${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
-  }
+  String _fmtDuration(Duration d) => formatDurationHms(d);
 
   void _onConfirm(AudioProvider provider) {
     if (_durationIsZero) return;

@@ -248,14 +248,12 @@ class _AsmrWorkDetailSheetState extends State<_AsmrWorkDetailSheet> {
                     label: i18n.tr('asmr_detail_age_rating'),
                     values: [detail?.ageCategory ?? ''],
                     labelStyle: labelStyle,
-                    isCapsule: false,
                     onCopy: (val) => _copyText(context, val),
                   ),
                   _AsmrDetailRow(
                     label: i18n.tr('asmr_detail_language_editions'),
                     values: detail?.languageEditionLabels ?? const <String>[],
                     labelStyle: labelStyle,
-                    isCapsule: false,
                     onCopy: (val) => _copyText(context, val),
                   ),
                   if ((detail?.description.trim().isNotEmpty ?? false)) ...[

@@ -6,6 +6,7 @@ import 'package:media_kit/media_kit.dart' as media;
 import 'native_playback_bridge.dart';
 import 'native_result.dart';
 import 'path_matcher.dart';
+import 'app_log_service.dart';
 import '../models/audio_effects.dart';
 import '../platform/app_platform.dart';
 
@@ -465,7 +466,11 @@ class _DartPlaybackSession {
             _notifyChanged();
           },
           onError: (Object e, StackTrace st) {
-            debugPrint('DartPlaybackSession stream error: $e\n$st');
+            AppLogService.error(
+              'DartPlaybackSession stream error',
+              error: e,
+              stackTrace: st,
+            );
             error = e.toString();
             _notifyChanged();
           },
@@ -535,7 +540,7 @@ class _DartPlaybackSession {
       if (!wasOpening) {
         opening = false;
       }
-      debugPrint('DartPlaybackSession media_kit error: $value');
+      AppLogService.error('DartPlaybackSession media_kit error', error: value);
       if (!wasOpening) {
         _scheduleAutomaticLoadRetry(shouldResume: shouldResume);
       }
@@ -857,9 +862,9 @@ class _DartPlaybackSession {
         return;
       } catch (failure) {
         lastError = error ?? failure;
-        debugPrint(
-          'DartPlaybackSession candidate ${index + 1}/${candidateUris.length} '
-          'failed: $failure',
+        AppLogService.warning(
+          'DartPlaybackSession candidate ${index + 1}/${candidateUris.length} failed',
+          error: failure,
         );
       }
     }

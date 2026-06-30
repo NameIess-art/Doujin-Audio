@@ -1,6 +1,6 @@
 part of 'timer_tab.dart';
 
-class _CountdownCard extends StatefulWidget {
+class _CountdownCard extends StatelessWidget {
   const _CountdownCard({
     required this.provider,
     required this.timerExpired,
@@ -20,111 +20,47 @@ class _CountdownCard extends StatefulWidget {
   final bool compact;
 
   @override
-  State<_CountdownCard> createState() => _CountdownCardState();
-}
-
-class _CountdownCardState extends State<_CountdownCard> {
-  Timer? _ticker;
-  Duration _autoResumeRemaining = Duration.zero;
-
-  @override
-  void initState() {
-    super.initState();
-    _updateAutoResumeRemaining();
-    if (_shouldTick()) {
-      _startTicker();
-    }
-  }
-
-  @override
-  void didUpdateWidget(covariant _CountdownCard oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    _updateAutoResumeRemaining();
-    if (_shouldTick()) {
-      _startTicker();
-    } else {
-      _stopTicker();
-    }
-  }
-
-  @override
-  void dispose() {
-    _stopTicker();
-    super.dispose();
-  }
-
-  bool _shouldTick() {
-    return widget.timerExpired && widget.autoResumeAt != null;
-  }
-
-  void _startTicker() {
-    if (_ticker?.isActive == true) return;
-    _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (!mounted) return;
-      _updateAutoResumeRemaining();
-    });
-  }
-
-  void _stopTicker() {
-    _ticker?.cancel();
-    _ticker = null;
-  }
-
-  void _updateAutoResumeRemaining() {
-    final target = widget.autoResumeAt;
-    if (target == null) return;
-    final diff = target.difference(DateTime.now());
-    final next = diff > Duration.zero ? diff : Duration.zero;
-    if (mounted) {
-      setState(() => _autoResumeRemaining = next);
-    } else {
-      _autoResumeRemaining = next;
-    }
-  }
-
-  @override
   Widget build(BuildContext context) {
     final i18n = context.watch<AppLanguageProvider>();
-    final remaining = widget.provider.timerRemaining ?? Duration.zero;
+    final remaining = provider.timerRemaining ?? Duration.zero;
 
-    final showAutoResumeCountdown =
-        widget.timerExpired && widget.autoResumeAt != null;
+    final showAutoResumeCountdown = timerExpired && autoResumeAt != null;
 
     final title = showAutoResumeCountdown
         ? i18n.tr('waiting_for_auto_resume')
-        : widget.timerExpired
+        : timerExpired
         ? i18n.tr('countdown_finished')
-        : widget.waitingTrigger
+        : waitingTrigger
         ? i18n.tr('waiting_to_start_countdown')
         : i18n.tr('counting_down');
 
     final accent = showAutoResumeCountdown
-        ? widget.cs.primary
-        : widget.timerExpired
-        ? widget.cs.error
-        : widget.waitingTrigger
-        ? widget.cs.onSurfaceVariant
-        : widget.cs.primary;
+        ? cs.primary
+        : timerExpired
+        ? cs.error
+        : waitingTrigger
+        ? cs.onSurfaceVariant
+        : cs.primary;
 
     final timeColor = showAutoResumeCountdown
-        ? widget.cs.onPrimaryContainer
-        : widget.timerExpired
-        ? widget.cs.error
-        : widget.waitingTrigger
-        ? widget.cs.onSurface
-        : widget.cs.onPrimaryContainer;
+        ? cs.onPrimaryContainer
+        : timerExpired
+        ? cs.error
+        : waitingTrigger
+        ? cs.onSurface
+        : cs.onPrimaryContainer;
 
     return Container(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(32),
-        color: widget.cs.surfaceContainerLow,
+        color: cs.surfaceContainerLow,
       ),
       child: Padding(
-        padding: EdgeInsets.all(widget.compact ? 14 : 24),
+        padding: EdgeInsets.all(compact ? 14 : 24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (!widget.compact) ...[
+            if (!compact) ...[
               Row(
                 children: [
                   Container(
@@ -132,20 +68,20 @@ class _CountdownCardState extends State<_CountdownCard> {
                     height: 48,
                     decoration: BoxDecoration(
                       color: showAutoResumeCountdown
-                          ? widget.cs.primaryContainer
-                          : widget.timerExpired
-                          ? widget.cs.errorContainer
-                          : widget.waitingTrigger
-                          ? widget.cs.surfaceContainerHighest
-                          : widget.cs.primaryContainer,
+                          ? cs.primaryContainer
+                          : timerExpired
+                          ? cs.errorContainer
+                          : waitingTrigger
+                          ? cs.surfaceContainerHighest
+                          : cs.primaryContainer,
                       borderRadius: BorderRadius.circular(16),
                     ),
                     child: Icon(
                       showAutoResumeCountdown
                           ? Icons.restore_rounded
-                          : widget.timerExpired
+                          : timerExpired
                           ? Icons.alarm_off_rounded
-                          : widget.waitingTrigger
+                          : waitingTrigger
                           ? Icons.schedule_rounded
                           : Icons.timer_rounded,
                       size: 24,
@@ -157,7 +93,7 @@ class _CountdownCardState extends State<_CountdownCard> {
                     child: Text(
                       title,
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        color: widget.cs.onSurface,
+                        color: cs.onSurface,
                         fontWeight: FontWeight.w800,
                       ),
                     ),
@@ -167,33 +103,37 @@ class _CountdownCardState extends State<_CountdownCard> {
               const SizedBox(height: 18),
             ],
             Center(
-              child: Text(
-                showAutoResumeCountdown
-                    ? widget.fmtDuration(_autoResumeRemaining)
-                    : widget.fmtDuration(remaining),
-                style: TextStyle(
-                  fontSize: widget.compact ? 32 : 46,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: widget.compact ? 1.4 : 2.6,
-                  fontFeatures: const [FontFeature.tabularFigures()],
-                  color: timeColor,
-                ),
+              child: TargetCountdownBuilder(
+                target: showAutoResumeCountdown ? autoResumeAt : null,
+                builder: (context, autoResumeRemaining) {
+                  return Text(
+                    showAutoResumeCountdown
+                        ? fmtDuration(autoResumeRemaining)
+                        : fmtDuration(remaining),
+                    style: TextStyle(
+                      fontSize: compact ? 32 : 46,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: compact ? 1.4 : 2.6,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                      color: timeColor,
+                    ),
+                  );
+                },
               ),
             ),
-            if (widget.timerExpired && !showAutoResumeCountdown) ...[
+            if (timerExpired && !showAutoResumeCountdown) ...[
               Builder(
                 builder: (context) {
                   final chips = <Widget>[
-                    if (widget.provider.pausedByTimerSessionIds.isNotEmpty)
+                    if (provider.pausedByTimerSessionIds.isNotEmpty)
                       _TimerSummaryChip(
                         icon: Icons.pause_circle_outline_rounded,
                         text: i18n.tr('paused_audio_count', {
-                          'count':
-                              widget.provider.pausedByTimerSessionIds.length,
+                          'count': provider.pausedByTimerSessionIds.length,
                         }),
-                        foregroundColor: widget.cs.onErrorContainer,
-                        backgroundColor: widget.cs.errorContainer,
-                        compact: widget.compact,
+                        foregroundColor: cs.onErrorContainer,
+                        backgroundColor: cs.errorContainer,
+                        compact: compact,
                       ),
                   ];
 
@@ -202,8 +142,8 @@ class _CountdownCardState extends State<_CountdownCard> {
                   }
 
                   return Padding(
-                    padding: EdgeInsets.only(top: widget.compact ? 12 : 16),
-                    child: widget.compact
+                    padding: EdgeInsets.only(top: compact ? 12 : 16),
+                    child: compact
                         ? Wrap(
                             alignment: WrapAlignment.center,
                             spacing: 8,

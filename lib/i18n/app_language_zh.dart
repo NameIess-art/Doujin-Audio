@@ -471,6 +471,8 @@ const Map<String, String> appLanguageZh = {
   'startup_page_asmrOne': 'ASMR.ONE',
   'startup_page_library': '本地音频库',
   'startup_page_playlist': '播放列表',
+  'haptic_feedback_enabled': '震动效果',
+  'haptic_feedback_enabled_subtitle': '在应用内操作时提供触觉震动反馈。',
   'dlsite_metadata_language': 'DLsite数据读取语言',
   'dlsite_metadata_language_subtitle': '读取 DLsite 作品信息的语言。',
   'timer_title': '计时器',

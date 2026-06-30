@@ -538,6 +538,8 @@ const Map<String, String> appLanguageEn = {
   'startup_page_asmrOne': 'ASMR.ONE',
   'startup_page_library': 'Library',
   'startup_page_playlist': 'Playlist',
+  'haptic_feedback_enabled': 'Haptic feedback',
+  'haptic_feedback_enabled_subtitle': 'Provide haptic feedback for interactions.',
   'dlsite_metadata_language': 'DLsite metadata language',
   'dlsite_metadata_language_subtitle': 'Language for fetching DLsite metadata.',
   'timer_title': 'Timer',

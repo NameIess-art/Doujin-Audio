@@ -404,6 +404,43 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                               );
                             },
                           ),
+                          Consumer(
+                            builder: (context, ref, _) {
+                              final hapticFeedbackEnabled = ref.watch(
+                                settingsStateProvider.select(
+                                  (s) =>
+                                      s.valueOrNull?.hapticFeedbackEnabled ??
+                                      true,
+                                ),
+                              );
+                              return SwitchListTile(
+                                title: Text(i18n.tr('haptic_feedback_enabled')),
+                                subtitle: Text(
+                                  i18n.tr('haptic_feedback_enabled_subtitle'),
+                                  style: descStyle,
+                                ),
+                                value: hapticFeedbackEnabled,
+                                onChanged:
+                                    audioProvider.setHapticFeedbackEnabled,
+                                secondary: Container(
+                                  width: 38,
+                                  height: 38,
+                                  decoration: BoxDecoration(
+                                    color: cs.primaryContainer,
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: Icon(
+                                    Icons.vibration_rounded,
+                                    color: cs.onPrimaryContainer,
+                                  ),
+                                ),
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 2,
+                                ),
+                              );
+                            },
+                          ),
                         ],
                       ),
                       _SectionHeader(title: i18n.tr('section_appearance')),

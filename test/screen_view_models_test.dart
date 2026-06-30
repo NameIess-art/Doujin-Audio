@@ -219,6 +219,65 @@ void main() {
     expect(detailState?.loopMode, SessionLoopMode.folderSequential);
   });
 
+  test('session detail view state ignores progress-only changes', () {
+    final detailSession = session(
+      id: 'detail',
+      path: '/tracks/detail.mp3',
+      playing: true,
+    )..setOptimisticDuration(const Duration(minutes: 5));
+    addTearDown(detailSession.dispose);
+
+    final originalView = sessionDetailViewStateFromPlaybackState(
+      PlaybackStateSliceData(activeSessions: [detailSession]),
+      'detail',
+    );
+    final originalShell = SessionDetailShellState(
+      sessionOrder: sessionOrderStateFromPlaybackState(
+        PlaybackStateSliceData(
+          activeSessions: [detailSession],
+          coverGeneration: 1,
+        ),
+      ),
+      detail: sessionDetailShellViewStateFromPlaybackState(
+        PlaybackStateSliceData(
+          activeSessions: [detailSession],
+          coverGeneration: 1,
+        ),
+        'detail',
+      ),
+      coverGeneration: 1,
+    );
+
+    detailSession
+      ..setOptimisticPosition(const Duration(seconds: 42))
+      ..bufferedPosition = const Duration(minutes: 2)
+      ..setOptimisticDuration(const Duration(minutes: 6));
+
+    final updatedView = sessionDetailViewStateFromPlaybackState(
+      PlaybackStateSliceData(activeSessions: [detailSession]),
+      'detail',
+    );
+    final updatedShell = SessionDetailShellState(
+      sessionOrder: sessionOrderStateFromPlaybackState(
+        PlaybackStateSliceData(
+          activeSessions: [detailSession],
+          coverGeneration: 1,
+        ),
+      ),
+      detail: sessionDetailShellViewStateFromPlaybackState(
+        PlaybackStateSliceData(
+          activeSessions: [detailSession],
+          coverGeneration: 1,
+        ),
+        'detail',
+      ),
+      coverGeneration: 1,
+    );
+
+    expect(updatedView, originalView);
+    expect(updatedShell, originalShell);
+  });
+
   test('session detail shell ignores transport-only changes', () {
     final detailSession = session(
       id: 'detail',

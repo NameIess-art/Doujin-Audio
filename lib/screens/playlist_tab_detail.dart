@@ -689,38 +689,41 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
             // Dynamic Blurred Background
             if (blurEnabled)
               Positioned.fill(
-                child: RepaintBoundary(
-                  child: ImageFiltered(
-                    key: const ValueKey('session_detail_background_blur'),
-                    imageFilter: ImageFilter.blur(
-                      sigmaX: _kSessionDetailBackgroundBlurSigma,
-                      sigmaY: _kSessionDetailBackgroundBlurSigma,
-                    ),
-                    child: AsyncCoverImage(
-                      duration: Duration.zero,
-                      future: coverPathFuture,
-                      initialPath: provider.resolvedCoverPathForTrack(track),
-                      retryFutureBuilder: () =>
-                          _coverFutureForTrack(provider, track),
-                      fallbackBuilder: (_) => CoverFallbackArtwork(
-                        seed: track?.displayName ?? session.currentTrackPath,
-                        showIcon: false,
+                child: ClipRect(
+                  child: RepaintBoundary(
+                    child: ImageFiltered(
+                      key: const ValueKey('session_detail_background_blur'),
+                      imageFilter: ImageFilter.blur(
+                        sigmaX: _kSessionDetailBackgroundBlurSigma,
+                        sigmaY: _kSessionDetailBackgroundBlurSigma,
+                        tileMode: TileMode.decal,
                       ),
-                      imageBuilder: (context, coverPath) {
-                        return RetryingFileImage(
-                          path: coverPath,
-                          cacheWidth: coverCacheWidth,
-                          useDefaultCacheWidth: coverCacheWidth != null,
-                          fit: BoxFit.cover,
-                          color: cs.surface.withValues(alpha: 0.45),
-                          colorBlendMode: BlendMode.darken,
-                          fallbackBuilder: (_) => CoverFallbackArtwork(
-                            seed:
-                                track?.displayName ?? session.currentTrackPath,
-                            showIcon: false,
-                          ),
-                        );
-                      },
+                      child: AsyncCoverImage(
+                        duration: Duration.zero,
+                        future: coverPathFuture,
+                        initialPath: provider.resolvedCoverPathForTrack(track),
+                        retryFutureBuilder: () =>
+                            _coverFutureForTrack(provider, track),
+                        fallbackBuilder: (_) => CoverFallbackArtwork(
+                          seed: track?.displayName ?? session.currentTrackPath,
+                          showIcon: false,
+                        ),
+                        imageBuilder: (context, coverPath) {
+                          return RetryingFileImage(
+                            path: coverPath,
+                            cacheWidth: coverCacheWidth,
+                            useDefaultCacheWidth: coverCacheWidth != null,
+                            fit: BoxFit.cover,
+                            color: cs.surface.withValues(alpha: 0.45),
+                            colorBlendMode: BlendMode.darken,
+                            fallbackBuilder: (_) => CoverFallbackArtwork(
+                              seed: track?.displayName ??
+                                  session.currentTrackPath,
+                              showIcon: false,
+                            ),
+                          );
+                        },
+                      ),
                     ),
                   ),
                 ),

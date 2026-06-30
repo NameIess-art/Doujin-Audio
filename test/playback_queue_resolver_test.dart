@@ -130,4 +130,110 @@ void main() {
 
     expect(randomCalls, 1);
   });
+
+  test('custom playback queue advances from queue index with duplicates', () {
+    final scope = resolver.resolveScope(
+      currentPath: 'a1',
+      currentTrack: a1,
+      loopMode: SessionLoopMode.folderSequential,
+      sortedLibraryTrackPaths: const <String>['a1', 'a2', 'b1'],
+      tracksByGroup: tracksByGroup,
+      customQueueTracks: <MusicTrack>[a1, a2, a1],
+      isPlaybackQueue: true,
+      currentQueueIndex: 2,
+    );
+
+    final next = resolver.resolveAdvance(
+      scope: scope,
+      forward: true,
+      loopMode: SessionLoopMode.folderSequential,
+      nextInt: (_) => 0,
+    );
+
+    expect(scope.paths, const <String>['a1', 'a2', 'a1']);
+    expect(scope.currentIndex, 2);
+    expect(next?.path, 'a1');
+    expect(next?.queueIndex, 0);
+  });
+
+  test('custom non-playback queue filters to current folder scope', () {
+    final scope = resolver.resolveScope(
+      currentPath: 'a1',
+      currentTrack: a1,
+      loopMode: SessionLoopMode.folderSequential,
+      sortedLibraryTrackPaths: const <String>['a1', 'a2', 'b1'],
+      tracksByGroup: tracksByGroup,
+      customQueueTracks: <MusicTrack>[a1, b1, a2],
+      folderKeyForTrack: (track) => track.groupKey,
+    );
+
+    final next = resolver.resolveAdvance(
+      scope: scope,
+      forward: true,
+      loopMode: SessionLoopMode.folderSequential,
+      nextInt: (_) => 0,
+    );
+
+    expect(scope.paths, const <String>['a1', 'a2']);
+    expect(next?.path, 'a2');
+    expect(next?.queueIndex, 1);
+  });
+
+  test('custom cross-folder scope keeps every custom track', () {
+    final scope = resolver.resolveScope(
+      currentPath: 'a1',
+      currentTrack: a1,
+      loopMode: SessionLoopMode.crossSequential,
+      sortedLibraryTrackPaths: const <String>['a1', 'a2', 'b1'],
+      tracksByGroup: tracksByGroup,
+      customQueueTracks: <MusicTrack>[a1, b1, a2],
+      folderKeyForTrack: (track) => track.groupKey,
+    );
+
+    expect(scope.paths, const <String>['a1', 'b1', 'a2']);
+    expect(
+      resolver
+          .resolveAdvance(
+            scope: scope,
+            forward: true,
+            loopMode: SessionLoopMode.crossSequential,
+            nextInt: (_) => 0,
+          )
+          ?.path,
+      'b1',
+    );
+  });
+
+  test('scope hasAdjacent does not consume random values', () {
+    var randomCalls = 0;
+    final scope = resolver.resolveScope(
+      currentPath: 'a1',
+      currentTrack: a1,
+      loopMode: SessionLoopMode.crossRandom,
+      sortedLibraryTrackPaths: const <String>['a1', 'a2', 'b1'],
+      tracksByGroup: tracksByGroup,
+    );
+
+    expect(
+      resolver.hasAdjacentInScope(
+        scope: scope,
+        loopMode: SessionLoopMode.crossRandom,
+      ),
+      isTrue,
+    );
+    expect(randomCalls, 0);
+
+    final next = resolver.resolveAdvance(
+      scope: scope,
+      forward: true,
+      loopMode: SessionLoopMode.crossRandom,
+      nextInt: (_) {
+        randomCalls++;
+        return 1;
+      },
+    );
+
+    expect(next?.path, 'a2');
+    expect(randomCalls, 1);
+  });
 }

@@ -25,9 +25,6 @@ import androidx.media3.session.MediaSessionService
 import androidx.media3.session.MediaNotification
 
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.Executors
-import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicLong
 
 internal fun shouldPublishProgressHeartbeat(
     isScreenOn: Boolean,
@@ -119,14 +116,37 @@ class NativePlaybackService : MediaSessionService() {
     private val fileCacheOperations by lazy { FileCacheOperations(applicationContext) }
     private val stateListeners = ConcurrentHashMap<String, (Map<String, Any?>) -> Unit>()
     private val mainHandler = Handler(Looper.getMainLooper())
-    private val progressHeartbeatExecutor = Executors.newSingleThreadExecutor { runnable ->
-        Thread(runnable, "native-playback-progress").apply { isDaemon = true }
+    private val progressPublisher by lazy {
+        NativePlaybackProgressPublisher(
+            mainHandler = mainHandler,
+            anchors = { sessions.values.map(NativePlaybackSession::progressAnchorSnapshot) },
+            currentAnchors = {
+                sessions.mapValues { (_, session) -> session.progressAnchorSnapshot() }
+            },
+            listeners = { stateListeners.values }
+        )
     }
-    private val statePersistenceExecutor = Executors.newSingleThreadExecutor { runnable ->
-        Thread(runnable, "native-playback-state").apply { isDaemon = true }
+    private val statePersistence by lazy {
+        NativePlaybackStatePersistenceCoordinator(
+            context = applicationContext,
+            mainHandler = mainHandler,
+            intervalMs = STATE_PERSISTENCE_INTERVAL_MS,
+            debounceMs = STATE_PERSISTENCE_DEBOUNCE_MS,
+            hasSessions = { sessions.isNotEmpty() },
+            storedSessions = {
+                val intendedSessionIds = intendedPlaybackSessionIds.toSet()
+                sessions.values.map { session ->
+                    session.storedSnapshot().let { stored ->
+                        if (session.sessionId in intendedSessionIds) {
+                            stored.copy(playWhenReady = true)
+                        } else {
+                            stored
+                        }
+                    }
+                }
+            }
+        )
     }
-    private val statePersistenceGeneration = AtomicLong(0L)
-    private val progressHeartbeatInFlight = AtomicBoolean(false)
     private val playbackWakeLock by lazy {
         NativePlaybackWakeLock(
             context = this,
@@ -211,7 +231,6 @@ class NativePlaybackService : MediaSessionService() {
         private set
     private var tickerScheduled = false
     private var foregroundWatchdogScheduled = false
-    private var statePersistenceScheduled = false
     private var playbackSuspended = false
     private var playbackForegroundStarted = false
     private var playbackForegroundSignature: String? = null
@@ -221,7 +240,6 @@ class NativePlaybackService : MediaSessionService() {
     private val pendingAudioFocusResumeSessionIds = linkedSetOf<String>()
     private val intendedPlaybackSessionIds = linkedSetOf<String>()
     private var attemptedStickyPlaybackRestore = false
-    private var pendingPersistScheduled = false
     private val errorRetryAttempts = mutableMapOf<String, Int>()
     // Whether a deferred foreground-stop is pending (grace period after
     // playback appears to have stopped).
@@ -356,21 +374,6 @@ class NativePlaybackService : MediaSessionService() {
             mainHandler.postDelayed(this, FOREGROUND_WATCHDOG_INTERVAL_MS)
         }
     }
-    private val statePersistenceTicker = object : Runnable {
-        override fun run() {
-            persistSessionStateNow()
-            if (sessions.isEmpty()) {
-                statePersistenceScheduled = false
-                return
-            }
-            mainHandler.postDelayed(this, STATE_PERSISTENCE_INTERVAL_MS)
-        }
-    }
-    private val persistSessionStateRunnable = Runnable {
-        pendingPersistScheduled = false
-        persistSessionStateNow()
-    }
-
     override fun onCreate() {
         super.onCreate()
         ensurePlaybackChannel()
@@ -439,10 +442,8 @@ class NativePlaybackService : MediaSessionService() {
         )
         stateListeners.clear()
         mainHandler.removeCallbacks(positionTicker)
-        progressHeartbeatExecutor.shutdownNow()
-        statePersistenceExecutor.shutdown()
-        stopStatePersistenceTicker()
-        cancelScheduledPersistSessionState()
+        progressPublisher.shutdown()
+        statePersistence.shutdown()
         cancelForegroundStopGrace()
         stopForegroundWatchdog()
         tickerScheduled = false
@@ -1467,59 +1468,23 @@ class NativePlaybackService : MediaSessionService() {
     }
 
     private fun ensureStatePersistenceTicker() {
-        if (statePersistenceScheduled) return
-        if (sessions.isEmpty()) return
-        statePersistenceScheduled = true
-        mainHandler.postDelayed(statePersistenceTicker, STATE_PERSISTENCE_INTERVAL_MS)
+        statePersistence.ensureTicker()
     }
 
     private fun stopStatePersistenceTicker() {
-        if (!statePersistenceScheduled) return
-        mainHandler.removeCallbacks(statePersistenceTicker)
-        statePersistenceScheduled = false
+        statePersistence.stopTicker()
     }
 
     private fun schedulePersistSessionState() {
-        mainHandler.removeCallbacks(persistSessionStateRunnable)
-        pendingPersistScheduled = true
-        mainHandler.postDelayed(
-            persistSessionStateRunnable,
-            STATE_PERSISTENCE_DEBOUNCE_MS
-        )
+        statePersistence.schedulePersist()
     }
 
     private fun cancelScheduledPersistSessionState() {
-        if (!pendingPersistScheduled) return
-        mainHandler.removeCallbacks(persistSessionStateRunnable)
-        pendingPersistScheduled = false
+        statePersistence.cancelScheduledPersist()
     }
 
     private fun persistSessionStateNow() {
-        cancelScheduledPersistSessionState()
-        val generation = statePersistenceGeneration.incrementAndGet()
-        if (sessions.isEmpty()) {
-            statePersistenceExecutor.execute {
-                if (generation == statePersistenceGeneration.get()) {
-                    NativePlaybackStateStore.clearSessions(this)
-                }
-            }
-            return
-        }
-        val intendedSessionIds = intendedPlaybackSessionIds.toSet()
-        val storedSessions = sessions.values.map { session ->
-            session.storedSnapshot().let { stored ->
-                if (session.sessionId in intendedSessionIds) {
-                    stored.copy(playWhenReady = true)
-                } else {
-                    stored
-                }
-            }
-        }
-        statePersistenceExecutor.execute {
-            if (generation == statePersistenceGeneration.get()) {
-                NativePlaybackStateStore.saveSessions(this, storedSessions)
-            }
-        }
+        statePersistence.persistNow()
     }
 
     private fun restorePersistedPlaybackAfterServiceRestart() {
@@ -1748,42 +1713,7 @@ class NativePlaybackService : MediaSessionService() {
     }
 
     private fun publishProgressSessionStatesAsync(nowElapsedRealtimeMs: Long) {
-        if (!progressHeartbeatInFlight.compareAndSet(false, true)) return
-        val anchors = sessions.values.map(NativePlaybackSession::progressAnchorSnapshot)
-        progressHeartbeatExecutor.execute {
-            val event = buildNativePlaybackProgressEvent(anchors, nowElapsedRealtimeMs)
-            mainHandler.post {
-                try {
-                    if (event != null && stateListeners.isNotEmpty()) {
-                        val currentAnchors = sessions.mapValues { (_, session) ->
-                            session.progressAnchorSnapshot()
-                        }
-                        val validSessionIds = anchors
-                            .filter { anchor -> currentAnchors[anchor.sessionId] === anchor }
-                            .mapTo(hashSetOf()) { it.sessionId }
-                        val validUpdates = (event["updates"] as? List<*>)
-                            ?.filter { rawUpdate ->
-                                val update = rawUpdate as? Map<*, *> ?: return@filter false
-                                update["sessionId"] in validSessionIds
-                            }
-                            .orEmpty()
-                        if (validUpdates.isNotEmpty()) {
-                            val validEvent = event.toMutableMap().apply {
-                                this["updates"] = validUpdates
-                            }
-                            stateListeners.values.forEach { listener ->
-                                try {
-                                    listener(validEvent)
-                                } catch (_: RuntimeException) {
-                                }
-                            }
-                        }
-                    }
-                } finally {
-                    progressHeartbeatInFlight.set(false)
-                }
-            }
-        }
+        progressPublisher.publishAsync(nowElapsedRealtimeMs)
     }
 
     private fun ensureTicker() {

@@ -47,7 +47,7 @@ extension AudioProviderPlaybackEngine on AudioProvider {
     unawaited(
       _activateAudioSessionForPlayback().then((activated) {
         if (!activated) {
-          debugPrint(
+          AppLogService.warning(
             'AudioProvider._startSessionPlayback: audio session activation '
             'returned false; continuing playback attempt.',
           );
@@ -77,7 +77,7 @@ extension AudioProviderPlaybackEngine on AudioProvider {
           _handleNativePlaybackSnapshot(snapshot);
         }
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
       if (_isSessionCommandCurrent(session, token)) {
         session.failTransportCommand(generation);
         for (final pausedSession in exclusivelyPausedSessions) {
@@ -86,7 +86,11 @@ extension AudioProviderPlaybackEngine on AudioProvider {
         _syncKeepCpuAwake();
         _notifyPlaybackChanged();
       }
-      debugPrint('AudioProvider._startSessionPlayback error: $e');
+      AppLogService.error(
+        'AudioProvider._startSessionPlayback error',
+        error: e,
+        stackTrace: stackTrace,
+      );
     }
 
     if (!_isSessionCommandCurrent(session, token)) {
@@ -127,13 +131,17 @@ extension AudioProviderPlaybackEngine on AudioProvider {
       if (snapshot != null) {
         _handleNativePlaybackSnapshot(snapshot);
       }
-    } catch (error) {
+    } catch (error, stackTrace) {
       if (_isSessionCommandCurrent(session, token)) {
         session.failTransportCommand(generation);
         _syncKeepCpuAwake();
         _notifyPlaybackChanged();
       }
-      debugPrint('AudioProvider._pauseSessionPlayback error: $error');
+      AppLogService.error(
+        'AudioProvider._pauseSessionPlayback error',
+        error: error,
+        stackTrace: stackTrace,
+      );
     }
   }
 
@@ -273,99 +281,29 @@ extension AudioProviderPlaybackEngine on AudioProvider {
   }
 
   String? _nextPathFor(PlaybackSession session, {required bool forward}) {
-    final customQueueTracks = session.customQueueTracks;
-    if (customQueueTracks != null && customQueueTracks.isNotEmpty) {
-      if (session.loopMode == SessionLoopMode.single) {
-        return session.currentTrackPath;
-      }
-      Iterable<MusicTrack> candidateTracks = customQueueTracks;
-      if (!session.isPlaybackQueue && !_isCrossFolderMode(session.loopMode)) {
-        final currentTrack = _sessionTrackForPath(
-          session,
-          session.currentTrackPath,
-        );
-        if (currentTrack != null) {
-          final folderKey = _folderKeyForTrack(currentTrack);
-          candidateTracks = customQueueTracks.where(
-            (t) => _folderKeyForTrack(t) == folderKey,
-          );
-        }
-      }
-      final paths = candidateTracks
-          .map((track) => track.path)
-          .toList(growable: false);
-      if (paths.isEmpty) {
-        return null;
-      }
-      if (paths.length == 1) {
-        session.currentQueueIndex = 0;
-        return paths.first;
-      }
-      final currentIndex = session.isPlaybackQueue
-          ? session.currentQueueIndex.clamp(0, paths.length - 1)
-          : paths.indexWhere(
-              (item) =>
-                  PathMatcher.equalsNormalized(item, session.currentTrackPath),
-            );
-      if (_isShuffleMode(session.loopMode)) {
-        final fallbackIndex = currentIndex < 0 ? 0 : currentIndex;
-        var nextIndex = fallbackIndex;
-        while (nextIndex == fallbackIndex) {
-          nextIndex = _random.nextInt(paths.length);
-        }
-        session.currentQueueIndex = nextIndex;
-        return paths[nextIndex];
-      }
-      final baseIndex = currentIndex < 0 ? 0 : currentIndex;
-      final nextIndex = forward
-          ? (baseIndex + 1) % paths.length
-          : (baseIndex - 1 + paths.length) % paths.length;
-      session.currentQueueIndex = nextIndex;
-      return paths[nextIndex];
-    }
-    final currentTrack = trackByPath(session.currentTrackPath);
-    final crossFolderTrackPaths = _isCrossFolderMode(session.loopMode)
-        ? _crossFolderTrackPathsFor(currentTrack)
-        : _sortedLibraryTrackPaths;
-    return _playbackQueueResolver.resolveNextPath(
-      currentTrack: currentTrack,
+    final result = _playbackQueueResolver.resolveAdvance(
+      scope: _playbackQueueScopeFor(
+        session,
+        currentPath: session.currentTrackPath,
+      ),
       forward: forward,
       loopMode: session.loopMode,
-      sortedLibraryTrackPaths: crossFolderTrackPaths,
-      tracksByGroup: _tracksByGroup,
       nextInt: _random.nextInt,
     );
+    final queueIndex = result?.queueIndex;
+    if (queueIndex != null) {
+      session.currentQueueIndex = queueIndex;
+    }
+    return result?.path;
   }
 
   bool _hasAdjacentPathFor(PlaybackSession session, {required bool forward}) {
-    final customQueueTracks = session.customQueueTracks;
-    if (customQueueTracks != null) {
-      if (session.isPlaybackQueue || _isCrossFolderMode(session.loopMode)) {
-        return customQueueTracks.length > 1;
-      }
-      final currentTrack = _sessionTrackForPath(
+    return _playbackQueueResolver.hasAdjacentInScope(
+      scope: _playbackQueueScopeFor(
         session,
-        session.currentTrackPath,
-      );
-      if (currentTrack != null) {
-        final folderKey = _folderKeyForTrack(currentTrack);
-        return customQueueTracks
-                .where((t) => _folderKeyForTrack(t) == folderKey)
-                .length >
-            1;
-      }
-      return customQueueTracks.length > 1;
-    }
-    final currentTrack = trackByPath(session.currentTrackPath);
-    final crossFolderTrackPaths = _isCrossFolderMode(session.loopMode)
-        ? _crossFolderTrackPathsFor(currentTrack)
-        : _sortedLibraryTrackPaths;
-    return _playbackQueueResolver.hasAdjacentPath(
-      currentTrack: currentTrack,
-      forward: forward,
+        currentPath: session.currentTrackPath,
+      ),
       loopMode: session.loopMode,
-      sortedLibraryTrackPaths: crossFolderTrackPaths,
-      tracksByGroup: _tracksByGroup,
     );
   }
 }

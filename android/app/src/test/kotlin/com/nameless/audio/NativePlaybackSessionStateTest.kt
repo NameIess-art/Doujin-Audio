@@ -161,6 +161,55 @@ class NativePlaybackSessionStateTest {
     }
 
     @Test
+    fun `audio effects controller reports reprepare-sensitive changes`() {
+        val controller = NativeAudioEffectsController()
+        val firstChange = controller.apply(
+            NativeAudioEffects(
+                skipSilenceEnabled = true,
+                panning = 0.5f
+            )
+        )
+        val repeatedChange = controller.apply(
+            NativeAudioEffects(
+                skipSilenceEnabled = true,
+                panning = 0.5f
+            )
+        )
+
+        assertEquals(true, firstChange.skipSilenceChanged)
+        assertEquals(true, firstChange.panningActiveChanged)
+        assertEquals(false, repeatedChange.skipSilenceChanged)
+        assertEquals(false, repeatedChange.panningActiveChanged)
+    }
+
+    @Test
+    fun `audio effects controller snapshot preserves enabled effects`() {
+        val controller = NativeAudioEffectsController()
+        controller.apply(
+            NativeAudioEffects(
+                noiseReductionEnabled = true,
+                eqEnabled = true,
+                eqPresetId = "voice",
+                eqBandLevels = mapOf(1000 to 3.5f),
+                volumeNormalizationEnabled = true,
+                panning = -0.25f
+            )
+        )
+
+        val snapshot = controller.snapshot()
+        val levels = snapshot["eqBandLevels"] as List<*>
+        val level = levels.single() as Map<*, *>
+
+        assertEquals(true, snapshot["noiseReductionEnabled"])
+        assertEquals(true, snapshot["eqEnabled"])
+        assertEquals("voice", snapshot["eqPresetId"])
+        assertEquals(1000, level["frequencyHz"])
+        assertEquals(3.5, level["gainDb"])
+        assertEquals(true, snapshot["volumeNormalizationEnabled"])
+        assertEquals(-0.25, snapshot["panning"])
+    }
+
+    @Test
     fun `volume balance processor stays out of default playback path`() {
         val stereo16Bit = AudioProcessor.AudioFormat(48000, 2, C.ENCODING_PCM_16BIT)
 

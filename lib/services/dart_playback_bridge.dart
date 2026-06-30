@@ -215,11 +215,12 @@ class DartPlaybackBridge implements NativePlaybackBridgeBase {
           _emit(candidate.sessionId);
         }
       }
-      if (transportCommandId > 0) {
-        session.transportCommandId = transportCommandId;
-      }
-      await session.runSerialized(session.play);
-      return NativeSuccess(_snapshotFor(sessionId));
+      return _runSessionCommand(
+        sessionId,
+        transportCommandId: transportCommandId,
+        emitSnapshot: false,
+        command: (session) => session.play(),
+      );
     } catch (error) {
       return NativeFailure(error.toString());
     }
@@ -230,21 +231,16 @@ class DartPlaybackBridge implements NativePlaybackBridgeBase {
     String sessionId, {
     int transportCommandId = 0,
   }) async {
-    final session = _sessions[sessionId];
-    if (session == null) return NativeFailure('Unknown session: $sessionId');
-    if (transportCommandId > 0) {
-      session.transportCommandId = transportCommandId;
-    }
-    await session.runSerialized(session.pause);
-    return NativeSuccess(_emit(sessionId));
+    return _runSessionCommand(
+      sessionId,
+      transportCommandId: transportCommandId,
+      command: (session) => session.pause(),
+    );
   }
 
   @override
   Future<NativeResult<NativePlaybackSnapshot>> stop(String sessionId) async {
-    final session = _sessions[sessionId];
-    if (session == null) return NativeFailure('Unknown session: $sessionId');
-    await session.runSerialized(session.stop);
-    return NativeSuccess(_emit(sessionId));
+    return _runSessionCommand(sessionId, command: (session) => session.stop());
   }
 
   @override
@@ -252,10 +248,10 @@ class DartPlaybackBridge implements NativePlaybackBridgeBase {
     String sessionId,
     Duration position,
   ) async {
-    final session = _sessions[sessionId];
-    if (session == null) return NativeFailure('Unknown session: $sessionId');
-    await session.runSerialized(() => session.seek(position));
-    return NativeSuccess(_emit(sessionId));
+    return _runSessionCommand(
+      sessionId,
+      command: (session) => session.seek(position),
+    );
   }
 
   @override
@@ -264,12 +260,11 @@ class DartPlaybackBridge implements NativePlaybackBridgeBase {
     double volume, {
     bool reloadSource = true,
   }) async {
-    final session = _sessions[sessionId];
-    if (session == null) return NativeFailure('Unknown session: $sessionId');
-    await session.runSerialized(
-      () => session.setVolume(volume, reloadSource: reloadSource),
+    return _runSessionCommand(
+      sessionId,
+      command: (session) =>
+          session.setVolume(volume, reloadSource: reloadSource),
     );
-    return NativeSuccess(_emit(sessionId));
   }
 
   @override
@@ -277,10 +272,10 @@ class DartPlaybackBridge implements NativePlaybackBridgeBase {
     String sessionId,
     double speed,
   ) async {
-    final session = _sessions[sessionId];
-    if (session == null) return NativeFailure('Unknown session: $sessionId');
-    await session.runSerialized(() => session.setSpeed(speed));
-    return NativeSuccess(_emit(sessionId));
+    return _runSessionCommand(
+      sessionId,
+      command: (session) => session.setSpeed(speed),
+    );
   }
 
   @override
@@ -292,17 +287,15 @@ class DartPlaybackBridge implements NativePlaybackBridgeBase {
     bool repeatAll = false,
     bool shuffle = false,
   }) async {
-    final session = _sessions[sessionId];
-    if (session == null) return NativeFailure('Unknown session: $sessionId');
-    await session.runSerialized(
-      () => _applyLoopAndShuffle(
+    return _runSessionCommand(
+      sessionId,
+      command: (session) => _applyLoopAndShuffle(
         session,
         repeatOne: repeatOne,
         repeatAll: repeatAll,
         shuffle: shuffle,
       ),
     );
-    return NativeSuccess(_emit(sessionId));
   }
 
   @override
@@ -310,14 +303,11 @@ class DartPlaybackBridge implements NativePlaybackBridgeBase {
     String sessionId,
     NativeAudioEffects effects,
   ) async {
-    final session = _sessions[sessionId];
-    if (session == null) return NativeFailure('Unknown session: $sessionId');
-    try {
-      await session.runSerialized(() => session.setAudioEffects(effects));
-    } catch (error) {
-      return NativeFailure(error.toString());
-    }
-    return NativeSuccess(_snapshotFor(sessionId));
+    return _runSessionCommand(
+      sessionId,
+      emitSnapshot: false,
+      command: (session) => session.setAudioEffects(effects),
+    );
   }
 
   @override
@@ -325,10 +315,10 @@ class DartPlaybackBridge implements NativePlaybackBridgeBase {
     String sessionId,
     double multiplier,
   ) async {
-    final session = _sessions[sessionId];
-    if (session == null) return NativeFailure('Unknown session: $sessionId');
-    await session.runSerialized(() => session.setFadeMultiplier(multiplier));
-    return NativeSuccess(_emit(sessionId));
+    return _runSessionCommand(
+      sessionId,
+      command: (session) => session.setFadeMultiplier(multiplier),
+    );
   }
 
   @override
@@ -383,6 +373,27 @@ class DartPlaybackBridge implements NativePlaybackBridgeBase {
         focusedSessionId: _focusedSessionId,
       ),
     );
+  }
+
+  Future<NativeResult<NativePlaybackSnapshot>> _runSessionCommand(
+    String sessionId, {
+    required Future<void> Function(_DartPlaybackSession session) command,
+    int transportCommandId = 0,
+    bool emitSnapshot = true,
+  }) async {
+    final session = _sessions[sessionId];
+    if (session == null) return NativeFailure('Unknown session: $sessionId');
+    if (transportCommandId > 0) {
+      session.transportCommandId = transportCommandId;
+    }
+    try {
+      await session.runSerialized(() => command(session));
+      return NativeSuccess(
+        emitSnapshot ? _emit(sessionId) : _snapshotFor(sessionId),
+      );
+    } catch (error) {
+      return NativeFailure(error.toString());
+    }
   }
 
   _DartPlaybackItem _itemFor({

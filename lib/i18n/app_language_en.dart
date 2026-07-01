@@ -63,6 +63,7 @@ const Map<String, String> appLanguageEn = {
       'Unable to load the local library. Please try again.',
   'library_manage_empty': 'No imported libraries yet.',
   'skip': 'Skip',
+  'search': 'Search ',
   'search_audio_placeholder': 'Search audio...',
   'scanning_title': 'Scanning...',
   'loading_dot': 'Loading...',

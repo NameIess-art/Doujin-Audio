@@ -57,6 +57,7 @@ const Map<String, String> appLanguageZh = {
   'batch_metadata_load_failed': '无法加载本地曲库，请重试。',
   'library_manage_empty': '还没有导入正式曲库。',
   'skip': '跳过',
+  'search': '搜索',
   'search_audio_placeholder': '搜索音频...',
   'scanning_title': '正在扫描...',
   'loading_dot': '正在加载...',

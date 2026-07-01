@@ -57,6 +57,7 @@ const Map<String, String> appLanguageJa = {
   'batch_metadata_load_failed': 'ローカルライブラリを読み込めませんでした。もう一度お試しください。',
   'library_manage_empty': '追加済みのライブラリはありません。',
   'skip': 'スキップ',
+  'search': '検索',
   'search_audio_placeholder': 'オーディオを検索...',
   'scanning_title': 'スキャン中...',
   'loading_dot': '読み込み中...',

@@ -3,7 +3,6 @@ import 'dart:collection';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -90,6 +89,15 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   final Set<String> _selectedTagTerms = <String>{};
   final Set<String> _selectedVoiceActorTerms = <String>{};
   final Set<String> _selectedCircleTerms = <String>{};
+  final Map<AudioLibraryCategoryType, String> _termSearchQueries = {};
+  String get _termSearchQuery => _termSearchQueries[_categoryType] ?? '';
+  set _termSearchQuery(String value) {
+    if (value.isEmpty) {
+      _termSearchQueries.remove(_categoryType);
+    } else {
+      _termSearchQueries[_categoryType] = value;
+    }
+  }
 
   bool _refreshTriggeredInCurrentScroll = false;
   bool _isReordering = false;
@@ -481,7 +489,8 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     final listCacheExtent = (headerContentHeight + 800)
         .clamp(headerContentHeight, 1600.0)
         .toDouble();
-    final hasLibrary = listState.hasLibrary || libraryHeaderState.audioCount > 0;
+    final hasLibrary =
+        listState.hasLibrary || libraryHeaderState.audioCount > 0;
     final showLibrarySkeleton =
         !hasLibrary &&
         _effectiveSearchQuery.isEmpty &&

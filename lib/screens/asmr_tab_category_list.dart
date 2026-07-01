@@ -116,9 +116,7 @@ class _AsmrCategoryListState extends State<_AsmrCategoryList>
                 child: showPlaceholder
                     ? ListView.builder(
                         key: const ValueKey('loading'),
-                        physics: const AlwaysScrollableScrollPhysics(
-                          parent: BouncingScrollPhysics(),
-                        ),
+                        physics: const NeverScrollableScrollPhysics(),
                         padding: EdgeInsets.fromLTRB(
                           16,
                           widget.topInset,

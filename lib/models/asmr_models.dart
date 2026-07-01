@@ -461,6 +461,27 @@ String _localizedText(
   return '';
 }
 
+int _compareNatural(String a, String b) {
+  final regExp = RegExp(r'(\d+)|(\D+)');
+  final matchesA = regExp.allMatches(a).toList(growable: false);
+  final matchesB = regExp.allMatches(b).toList(growable: false);
+  for (var i = 0; i < matchesA.length && i < matchesB.length; i++) {
+    final matchA = matchesA[i].group(0)!;
+    final matchB = matchesB[i].group(0)!;
+    final numA = int.tryParse(matchA);
+    final numB = int.tryParse(matchB);
+    if (numA != null && numB != null) {
+      final cmp = numA.compareTo(numB);
+      if (cmp != 0) return cmp;
+    } else {
+      final cmp = matchA.compareTo(matchB);
+      if (cmp != 0) return cmp;
+    }
+  }
+  return a.length.compareTo(b.length);
+}
+
+
 @immutable
 class AsmrTrackFile {
   const AsmrTrackFile({
@@ -552,7 +573,8 @@ class AsmrTrackFile {
     final children = (json['children'] as List<dynamic>? ?? const <dynamic>[])
         .whereType<Map<String, dynamic>>()
         .map((child) => AsmrTrackFile.fromJson(child, parentPath: nextPath))
-        .toList(growable: false);
+        .toList()
+      ..sort((a, b) => _compareNatural(a.title, b.title));
     final work = json['work'] as Map<String, dynamic>?;
     return AsmrTrackFile(
       hash: (json['hash'] as String?) ?? '',

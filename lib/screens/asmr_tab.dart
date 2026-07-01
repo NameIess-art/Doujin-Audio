@@ -253,6 +253,9 @@ class _AsmrTabState extends State<AsmrTab>
     if (controller == null || !controller.hasClients) {
       return;
     }
+    if (controller.offset > 2500) {
+      controller.jumpTo(2500);
+    }
     controller.animateTo(
       0,
       duration: const Duration(milliseconds: 350),

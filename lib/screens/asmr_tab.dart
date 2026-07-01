@@ -27,7 +27,7 @@ import '../widgets/scroll_activity_gate.dart';
 import '../widgets/swipe_reveal_card.dart';
 import '../widgets/top_page_header.dart';
 import '../widgets/unified_popup_menu.dart';
-import '../widgets/shimmer_loading.dart';
+
 import 'asmr_download_page.dart';
 import 'asmr_work_detail_sheet.dart';
 

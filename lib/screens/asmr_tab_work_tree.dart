@@ -583,81 +583,24 @@ List<LibraryLikeInfoLineData> _workInfoLines(
   final fields = context.select<AudioProvider, List<CardInfoField>>(
     (provider) => provider.cardInfoFields,
   );
-  final result = <LibraryLikeInfoLineData>[];
-  for (final field in fields) {
-    switch (field) {
-      case CardInfoField.rjCode:
-        if (work.rjCode.trim().isNotEmpty) {
-          result.add(LibraryLikeInfoLineData('RJ', work.rjCode));
-        }
-        break;
-      case CardInfoField.voiceActors:
-        if (work.voiceActors.isNotEmpty) {
-          result.add(LibraryLikeInfoLineData('CV', work.voiceActors.join('、')));
-        }
-        break;
-      case CardInfoField.circleName:
-        if (work.circleName.trim().isNotEmpty) {
-          result.add(
-            LibraryLikeInfoLineData(
-              i18n.tr('asmr_circle_label'),
-              work.circleName.trim(),
-            ),
-          );
-        }
-        break;
-      case CardInfoField.tags:
-        if (work.tags.isNotEmpty) {
-          result.add(
-            LibraryLikeInfoLineData(
-              i18n.tr('asmr_tags_label'),
-              work.tags.join('、'),
-              lines: CardInfoField.tagLineCountForSelection(fields.length),
-            ),
-          );
-        }
-        break;
-      case CardInfoField.releaseDate:
-        final value = _formatAsmrCardDate(work.releaseDate);
-        if (value.isNotEmpty) {
-          result.add(
-            LibraryLikeInfoLineData(i18n.tr('card_info_release_date'), value),
-          );
-        }
-        break;
-      case CardInfoField.salesCount:
-        if (work.dlCount > 0) {
-          result.add(
-            LibraryLikeInfoLineData(
-              i18n.tr('card_info_sales_count'),
-              work.dlCount.toString(),
-            ),
-          );
-        }
-        break;
-      case CardInfoField.rating:
-        final value = _formatAsmrCardRating(work.rating);
-        if (value.isNotEmpty) {
-          result.add(
-            LibraryLikeInfoLineData(i18n.tr('card_info_rating'), value),
-          );
-        }
-        break;
-    }
-  }
-  return result;
-}
-
-String _formatAsmrCardDate(DateTime? value) {
-  if (value == null) return '';
-  return '${value.year.toString().padLeft(4, '0')}-'
-      '${value.month.toString().padLeft(2, '0')}-'
-      '${value.day.toString().padLeft(2, '0')}';
-}
-
-String _formatAsmrCardRating(double value) {
-  if (value <= 0) return '';
-  return value.toStringAsFixed(value.truncateToDouble() == value ? 0 : 1);
+  return buildLibraryLikeInfoLines(
+    fields: fields,
+    metadata: LibraryLikeInfoMetadata(
+      rjCode: work.rjCode,
+      voiceActors: work.voiceActors,
+      circleName: work.circleName,
+      tags: work.tags,
+      releaseDate: work.releaseDate,
+      salesCount: work.dlCount,
+      rating: work.rating,
+    ),
+    circleLabel: i18n.tr('asmr_circle_label'),
+    tagsLabel: i18n.tr('asmr_tags_label'),
+    releaseDateLabel: i18n.tr('card_info_release_date'),
+    salesCountLabel: i18n.tr('card_info_sales_count'),
+    ratingLabel: i18n.tr('card_info_rating'),
+    listSeparator: '、',
+  );
 }
 
 String _formatDuration(Duration value) {

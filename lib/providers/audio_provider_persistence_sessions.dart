@@ -4,18 +4,7 @@ extension AudioProviderPersistenceSessions on AudioProvider {
   Future<void> _loadSessions() async {
     try {
       final db = _audioDatabaseRepository;
-      var persistedSessions = await db.loadAllSessions();
-
-      if (persistedSessions.isEmpty) {
-        final prefs = await _prefs;
-        final raw = prefs.getString(_kSessionsKey);
-        final migrated = AppDatabase.tryMigrateSessionsFromJson(raw);
-        if (migrated != null && migrated.isNotEmpty) {
-          await db.saveAllSessions(migrated);
-          await prefs.remove(_kSessionsKey);
-          persistedSessions = migrated;
-        }
-      }
+      final persistedSessions = await db.loadAllSessions();
 
       if (persistedSessions.isEmpty) return;
 
@@ -249,8 +238,6 @@ extension AudioProviderPersistenceSessions on AudioProvider {
         await _audioDatabaseRepository.upsertTracks(tracksToUpdate);
       }
       await _audioDatabaseRepository.saveAllSessions(payload);
-      final prefs = await _prefs;
-      await prefs.remove(_kSessionsKey);
     } catch (error, stackTrace) {
       _logAudioProviderPersistenceFailure(error, stackTrace);
     }

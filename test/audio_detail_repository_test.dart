@@ -111,35 +111,6 @@ void main() {
     expect(backup['circleName'], 'Circle');
   });
 
-  test('saving root folder detail removes stale legacy hidden backup', () async {
-    final target = AudioDetailTarget.libraryRootFolder(tempDir.path);
-    final legacyBackupFile = File(
-      '${tempDir.path}${Platform.pathSeparator}${AudioDetailRepository.legacyBackupFileName}',
-    );
-    await legacyBackupFile.writeAsString(
-      json.encode({
-        'schemaVersion': 1,
-        'type': 'audio-detail',
-        'targetType': 'library-root-folder',
-        'targetPath': '${tempDir.path}${Platform.pathSeparator}old',
-        'rjCode': 'RJ000001',
-      }),
-    );
-
-    final result = await repository.save(
-      AudioDetail.empty(target).copyWith(workTitle: 'Current'),
-    );
-
-    expect(result.backupSaved, isTrue);
-    expect(await legacyBackupFile.exists(), isFalse);
-    expect(
-      await File(
-        '${tempDir.path}${Platform.pathSeparator}${AudioDetailRepository.backupFileName}',
-      ).exists(),
-      isTrue,
-    );
-  });
-
   test('root folder load restores from backup when database is empty', () async {
     final target = AudioDetailTarget.libraryRootFolder(tempDir.path);
     final backupFile = File(
@@ -351,37 +322,6 @@ void main() {
   });
 
   test(
-    'single audio load restores from legacy sidecar when no directory backup exists',
-    () async {
-      final target = AudioDetailTarget.singleAudioFile(
-        '${tempDir.path}${Platform.pathSeparator}single.mp3',
-      );
-      // Write the old per-file sidecar format.
-      final legacySidecar = File('${target.targetPath}.nameless-audio.json');
-      await legacySidecar.writeAsString(
-        json.encode({
-          'schemaVersion': 1,
-          'type': 'audio-detail',
-          'targetType': 'single-audio-file',
-          'targetPath': target.targetPath,
-          'rjCode': 'RJ998877',
-          'workTitle': 'Single backup work',
-          'circleName': 'Single backup circle',
-          'voiceActors': ['A', 'B'],
-          'tags': ['tag'],
-        }),
-      );
-
-      final result = await repository.load(target);
-
-      expect(result.restoredFromBackup, isTrue);
-      expect(result.detail.rjCode, 'RJ998877');
-      expect(result.detail.workTitle, 'Single backup work');
-      expect((await appDatabase.loadAudioDetail(target))?.rjCode, 'RJ998877');
-    },
-  );
-
-  test(
     'multiple single files in the same directory each get their own entry',
     () async {
       final target1 = AudioDetailTarget.singleAudioFile(
@@ -436,10 +376,10 @@ void main() {
     },
   );
 
-  test('legacy hidden backup file is still readable', () async {
+  test('legacy hidden backup file is ignored', () async {
     final target = AudioDetailTarget.libraryRootFolder(tempDir.path);
     final legacyBackupFile = File(
-      '${tempDir.path}${Platform.pathSeparator}${AudioDetailRepository.legacyBackupFileName}',
+      '${tempDir.path}${Platform.pathSeparator}.nameless-audio.json',
     );
     await legacyBackupFile.writeAsString(
       json.encode({
@@ -454,37 +394,9 @@ void main() {
 
     final result = await repository.load(target);
 
-    expect(result.restoredFromBackup, isTrue);
-    expect(result.detail.rjCode, 'RJ777777');
-    expect(result.detail.workTitle, 'Legacy backup');
-  });
-
-  test('legacy backup cannot retarget the current folder path', () async {
-    final target = AudioDetailTarget.libraryRootFolder(tempDir.path);
-    final stalePath =
-        '${tempDir.parent.path}${Platform.pathSeparator}Old Folder Name';
-    final legacyBackupFile = File(
-      '${tempDir.path}${Platform.pathSeparator}${AudioDetailRepository.legacyBackupFileName}',
-    );
-    await legacyBackupFile.writeAsString(
-      json.encode({
-        'schemaVersion': 1,
-        'type': 'audio-detail',
-        'targetType': 'library-root-folder',
-        'targetPath': stalePath,
-        'rjCode': 'RJ111222',
-        'workTitle': 'Stale backup',
-      }),
-    );
-
-    final result = await repository.load(target);
-
-    expect(result.restoredFromBackup, isTrue);
-    expect(result.detail.target.targetPath, target.targetPath);
-    expect(
-      (await appDatabase.loadAudioDetail(target))?.target.targetPath,
-      target.targetPath,
-    );
+    expect(result.restoredFromBackup, isFalse);
+    expect(result.detail.isEmpty, isTrue);
+    expect(await appDatabase.loadAudioDetail(target), isNull);
   });
 
   test('backup with mismatched target type is ignored', () async {

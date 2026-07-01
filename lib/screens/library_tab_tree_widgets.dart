@@ -892,11 +892,7 @@ class _SingleVideoFileCardContent extends StatelessWidget {
   }
 }
 
-class _AudioDetailInfoLineData extends LibraryLikeInfoLineData {
-  const _AudioDetailInfoLineData(super.label, super.text, {super.lines = 1});
-}
-
-List<_AudioDetailInfoLineData> _audioDetailInfoLines(
+List<LibraryLikeInfoLineData> _audioDetailInfoLines(
   AppLanguageProvider i18n,
   AudioDetail? detail,
   bool detailLoading,
@@ -904,97 +900,26 @@ List<_AudioDetailInfoLineData> _audioDetailInfoLines(
 ) {
   final d = detail;
   if (detailLoading || d == null) {
-    return const <_AudioDetailInfoLineData>[];
+    return const <LibraryLikeInfoLineData>[];
   }
 
-  final result = <_AudioDetailInfoLineData>[];
-  for (final field in fields) {
-    switch (field) {
-      case CardInfoField.rjCode:
-        if (d.rjCode.trim().isNotEmpty) {
-          result.add(_AudioDetailInfoLineData('RJ', d.rjCode.trim()));
-        }
-        break;
-      case CardInfoField.voiceActors:
-        if (d.voiceActors.isNotEmpty) {
-          result.add(
-            _AudioDetailInfoLineData(
-              'CV',
-              AudioDetail.normalizeList(d.voiceActors).join('\uFF0C'),
-            ),
-          );
-        }
-        break;
-      case CardInfoField.circleName:
-        if (d.circleName.trim().isNotEmpty) {
-          result.add(
-            _AudioDetailInfoLineData(
-              i18n.tr('library_category_circles'),
-              d.circleName.trim(),
-            ),
-          );
-        }
-        break;
-      case CardInfoField.tags:
-        if (d.tags.isNotEmpty) {
-          result.add(_tagsDetailInfoLine(i18n, d.tags, fields.length));
-        }
-        break;
-      case CardInfoField.releaseDate:
-        final value = _formatLibraryCardDate(d.releaseDate);
-        if (value.isNotEmpty) {
-          result.add(
-            _AudioDetailInfoLineData(i18n.tr('card_info_release_date'), value),
-          );
-        }
-        break;
-      case CardInfoField.salesCount:
-        final value = d.salesCount;
-        if (value != null && value > 0) {
-          result.add(
-            _AudioDetailInfoLineData(
-              i18n.tr('card_info_sales_count'),
-              value.toString(),
-            ),
-          );
-        }
-        break;
-      case CardInfoField.rating:
-        final value = _formatLibraryCardRating(d.rating);
-        if (value.isNotEmpty) {
-          result.add(
-            _AudioDetailInfoLineData(i18n.tr('card_info_rating'), value),
-          );
-        }
-        break;
-    }
-  }
-  return result;
-}
-
-_AudioDetailInfoLineData _tagsDetailInfoLine(
-  AppLanguageProvider i18n,
-  List<String> tags,
-  int selectedFieldCount,
-) {
-  final text = AudioDetail.normalizeList(tags).join('\uFF0C');
-  return _AudioDetailInfoLineData(
-    i18n.tr('library_category_tags'),
-    text,
-    lines: CardInfoField.tagLineCountForSelection(selectedFieldCount),
+  return buildLibraryLikeInfoLines(
+    fields: fields,
+    metadata: LibraryLikeInfoMetadata(
+      rjCode: d.rjCode,
+      voiceActors: d.voiceActors,
+      circleName: d.circleName,
+      tags: d.tags,
+      releaseDate: d.releaseDate,
+      salesCount: d.salesCount,
+      rating: d.rating,
+    ),
+    circleLabel: i18n.tr('library_category_circles'),
+    tagsLabel: i18n.tr('library_category_tags'),
+    releaseDateLabel: i18n.tr('card_info_release_date'),
+    salesCountLabel: i18n.tr('card_info_sales_count'),
+    ratingLabel: i18n.tr('card_info_rating'),
   );
-}
-
-String _formatLibraryCardDate(DateTime? value) {
-  if (value == null) return '';
-  return '${value.year.toString().padLeft(4, '0')}-'
-      '${value.month.toString().padLeft(2, '0')}-'
-      '${value.day.toString().padLeft(2, '0')}';
-}
-
-String _formatLibraryCardRating(double? value) {
-  if (value == null || value <= 0) return '';
-  return value.toStringAsFixed(value.truncateToDouble() == value ? 0 : 1);
 }
 
 class _HighlightedText extends StatelessWidget {

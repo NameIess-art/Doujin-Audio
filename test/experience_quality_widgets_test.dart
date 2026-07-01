@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/i18n/app_language_en.dart';
 import 'package:nameless_audio/i18n/app_language_zh.dart';
+import 'package:nameless_audio/models/asmr_models.dart';
+import 'package:nameless_audio/models/audio_detail.dart';
+import 'package:nameless_audio/models/card_info_field.dart';
 import 'package:nameless_audio/widgets/library_like_cards.dart';
 import 'package:nameless_audio/widgets/marquee_text.dart';
 
@@ -39,6 +42,105 @@ LibraryLikeFeaturedCardContent _buildFeaturedCard({
 }
 
 void main() {
+  test('library-like info lines map AudioDetail metadata consistently', () {
+    final detail = AudioDetail.empty(
+      AudioDetailTarget.libraryRootFolder('/library'),
+    ).copyWith(
+      rjCode: ' RJ123456 ',
+      circleName: ' Circle ',
+      voiceActors: const <String>[' Alice ', 'Alice', 'Bob'],
+      tags: const <String>[' sleep ', 'sleep', 'voice'],
+      releaseDate: DateTime(2026, 7, 2),
+      salesCount: 1200,
+      rating: 4.0,
+    );
+
+    final lines = buildLibraryLikeInfoLines(
+      fields: CardInfoField.values,
+      metadata: LibraryLikeInfoMetadata(
+        rjCode: detail.rjCode,
+        voiceActors: detail.voiceActors,
+        circleName: detail.circleName,
+        tags: detail.tags,
+        releaseDate: detail.releaseDate,
+        salesCount: detail.salesCount,
+        rating: detail.rating,
+      ),
+      circleLabel: 'Circle',
+      tagsLabel: 'Tags',
+      releaseDateLabel: 'Release',
+      salesCountLabel: 'Sales',
+      ratingLabel: 'Rating',
+    );
+
+    expect(
+      lines.map((line) => '${line.label}:${line.text}:${line.lines}'),
+      <String>[
+        'RJ:RJ123456:1',
+        'CV:Alice，Bob:1',
+        'Circle:Circle:1',
+        'Tags:sleep，voice:1',
+        'Release:2026-07-02:1',
+        'Sales:1200:1',
+        'Rating:4:1',
+      ],
+    );
+  });
+
+  test('library-like info lines map AsmrWork metadata consistently', () {
+    final work = AsmrWork(
+      id: 1,
+      title: 'Work',
+      circleName: 'Circle',
+      sourceId: 'RJ654321',
+      sourceType: 'dlsite',
+      sourceUrl: '',
+      coverUrl: '',
+      thumbnailUrl: '',
+      mainCoverUrl: '',
+      releaseDate: DateTime(2026, 6, 9),
+      createDate: null,
+      duration: const Duration(minutes: 30),
+      dlCount: 345,
+      reviewCount: 20,
+      rating: 4.5,
+      voiceActors: const <String>['Voice A', 'Voice B'],
+      tags: const <String>['ASMR', 'Sleep'],
+    );
+
+    final lines = buildLibraryLikeInfoLines(
+      fields: CardInfoField.values,
+      metadata: LibraryLikeInfoMetadata(
+        rjCode: work.rjCode,
+        voiceActors: work.voiceActors,
+        circleName: work.circleName,
+        tags: work.tags,
+        releaseDate: work.releaseDate,
+        salesCount: work.dlCount,
+        rating: work.rating,
+      ),
+      circleLabel: 'Circle',
+      tagsLabel: 'Tags',
+      releaseDateLabel: 'Release',
+      salesCountLabel: 'Sales',
+      ratingLabel: 'Rating',
+      listSeparator: '、',
+    );
+
+    expect(
+      lines.map((line) => '${line.label}:${line.text}:${line.lines}'),
+      <String>[
+        'RJ:RJ654321:1',
+        'CV:Voice A、Voice B:1',
+        'Circle:Circle:1',
+        'Tags:ASMR、Sleep:1',
+        'Release:2026-06-09:1',
+        'Sales:345:1',
+        'Rating:4.5:1',
+      ],
+    );
+  });
+
   testWidgets('library card metrics keep the compact P2 baseline', (
     tester,
   ) async {

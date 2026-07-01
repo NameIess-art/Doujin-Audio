@@ -15,9 +15,9 @@ void main() {
     expect(ThemeProvider().themeMode, ThemeMode.system);
   });
 
-  test('migrates the legacy dark mode preference', () async {
+  test('loads and saves the current theme mode preference', () async {
     SharedPreferences.setMockInitialValues(const <String, Object>{
-      'isDarkMode': true,
+      'themeMode': 'dark',
     });
     await AppPreferences.init();
     final provider = ThemeProvider();
@@ -27,7 +27,6 @@ void main() {
     await provider.setThemeMode(ThemeMode.light);
     final preferences = await SharedPreferences.getInstance();
     expect(preferences.getString('themeMode'), 'light');
-    expect(preferences.containsKey('isDarkMode'), isFalse);
   });
 
   test('light and dark themes expose the shared design tokens', () async {

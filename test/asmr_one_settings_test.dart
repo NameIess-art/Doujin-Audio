@@ -33,16 +33,15 @@ void main() {
   );
 
   test('ASMR visible categories are sanitized and capped at five', () async {
-    await resetPrefs(<String, Object>{
-      'asmr_visible_categories_v1': <String>[
-        'sales',
-        'rating',
-        'release',
-        'favorites',
-        'history',
-        'collected',
-      ],
-    });
+    await resetPrefs();
+    await AsmrPreferences.saveVisibleCategories(const <AsmrCategoryType>[
+      AsmrCategoryType.sales,
+      AsmrCategoryType.rating,
+      AsmrCategoryType.release,
+      AsmrCategoryType.favorites,
+      AsmrCategoryType.history,
+      AsmrCategoryType.collected,
+    ]);
 
     if (Platform.isWindows) {
       expect(await AsmrPreferences.loadVisibleCategories(), <AsmrCategoryType>[

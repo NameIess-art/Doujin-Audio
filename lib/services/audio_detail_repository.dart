@@ -46,9 +46,6 @@ class AudioDetailRepository {
        _now = now ?? DateTime.now;
 
   static const backupFileName = 'nameless-audio.json';
-  static const legacyBackupFileName = '.nameless-audio.json';
-  // Legacy sidecar suffix kept for migration reads only.
-  static const _legacySingleBackupSuffix = '.nameless-audio.json';
   final AudioDatabaseRepository _databaseRepository;
   final FileCachePlatformGateway _fileCacheGateway;
   final DateTime Function() _now;
@@ -114,7 +111,6 @@ class AudioDetailRepository {
       } else {
         final backupFile = _folderBackupFile(normalized.target.targetPath);
         await backupFile.writeAsString(payload, flush: true);
-        await _deleteLegacyBackupIfNeeded(normalized.target);
       }
       return AudioDetailSaveResult(
         detail: normalized,
@@ -170,10 +166,7 @@ class AudioDetailRepository {
       return _readSingleFileBackupEntryViaChannel(target);
     }
     final backupFile = _singleDirBackupFile(target.targetPath);
-    if (!await backupFile.exists()) {
-      // Fall back to the legacy per-file sidecar written by older versions.
-      return _readLegacySingleSidecar(target);
-    }
+    if (!await backupFile.exists()) return null;
     try {
       final raw = await backupFile.readAsString();
       return _parseSingleFileEntry(target, raw);
@@ -197,13 +190,12 @@ class AudioDetailRepository {
     }
   }
 
-  /// Parses [raw] JSON (array or single object) and returns the entry whose
+  /// Parses [raw] JSON and returns the entry whose
   /// targetPath matches [target.targetPath], or null.
   AudioDetail? _parseSingleFileEntry(AudioDetailTarget target, String raw) {
     if (raw.isEmpty) return null;
     try {
       final decoded = json.decode(raw);
-      // New format: array of entries.
       if (decoded is List) {
         Map<String, dynamic>? matchedEntry;
         var matchedScore = 0;
@@ -231,37 +223,10 @@ class AudioDetailRepository {
         }
         return null;
       }
-      // Legacy single-object format (folder-style or old sidecar content).
-      final entry = _stringKeyedMap(decoded);
-      if (entry != null) {
-        final detail = AudioDetail.fromBackupJson(target, entry);
-        if (detail.target.targetType != target.targetType) return null;
-        return detail.copyWith(target: target);
-      }
     } catch (_) {
       // Invalid optional backup metadata should not block repository reads.
     }
     return null;
-  }
-
-  /// Reads the legacy per-file sidecar (`song.mp3.nameless-audio.json`).
-  Future<AudioDetail?> _readLegacySingleSidecar(
-    AudioDetailTarget target,
-  ) async {
-    final sidecar = File('${target.targetPath}$_legacySingleBackupSuffix');
-    if (!await sidecar.exists()) return null;
-    try {
-      final raw = await sidecar.readAsString();
-      if (raw.isEmpty) return null;
-      final decoded = json.decode(raw);
-      final entry = _stringKeyedMap(decoded);
-      if (entry == null) return null;
-      final detail = AudioDetail.fromBackupJson(target, entry);
-      if (detail.target.targetType != target.targetType) return null;
-      return detail.copyWith(target: target);
-    } catch (_) {
-      return null;
-    }
   }
 
   /// Writes [detail] into the shared `nameless-audio.json` in the same
@@ -282,10 +247,6 @@ class AudioDetailRepository {
           final decoded = json.decode(raw);
           if (decoded is List) {
             entries = _stringKeyedMapList(decoded);
-          } else if (decoded is Map) {
-            // Migrate a legacy single-object file to array format.
-            final entry = _stringKeyedMap(decoded);
-            if (entry != null) entries = [entry];
           }
         }
       } catch (_) {
@@ -325,9 +286,6 @@ class AudioDetailRepository {
         final decoded = json.decode(existingRaw);
         if (decoded is List) {
           entries = _stringKeyedMapList(decoded);
-        } else if (decoded is Map) {
-          final entry = _stringKeyedMap(decoded);
-          if (entry != null) entries = [entry];
         }
       } catch (_) {
         entries = [];
@@ -380,14 +338,7 @@ class AudioDetailRepository {
       return _fileCacheGateway.readAudioDetailBackup(target.targetPath);
     }
     final backupFile = _folderBackupFile(target.targetPath);
-    if (!await backupFile.exists()) {
-      final legacyBackupFile = _folderBackupFile(
-        target.targetPath,
-        legacy: true,
-      );
-      if (!await legacyBackupFile.exists()) return null;
-      return legacyBackupFile.readAsString();
-    }
+    if (!await backupFile.exists()) return null;
     return backupFile.readAsString();
   }
 
@@ -458,25 +409,7 @@ class AudioDetailRepository {
     return value.map((key, value) => MapEntry(key.toString(), value));
   }
 
-  File _folderBackupFile(String folderPath, {bool legacy = false}) {
-    return File(
-      path.join(folderPath, legacy ? legacyBackupFileName : backupFileName),
-    );
-  }
-
-  Future<void> _deleteLegacyBackupIfNeeded(AudioDetailTarget target) async {
-    if (!target.isLibraryRootFolder ||
-        PathMatcher.isContentUri(target.targetPath)) {
-      return;
-    }
-    final legacyBackupFile = _folderBackupFile(target.targetPath, legacy: true);
-    try {
-      if (await legacyBackupFile.exists()) {
-        await legacyBackupFile.delete();
-      }
-    } catch (_) {
-      // Legacy cleanup is best-effort; the modern backup and database are
-      // already saved, so cleanup failure should not discard user edits.
-    }
+  File _folderBackupFile(String folderPath) {
+    return File(path.join(folderPath, backupFileName));
   }
 }

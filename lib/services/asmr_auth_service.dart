@@ -1,9 +1,6 @@
-import 'dart:convert';
-
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../models/asmr_models.dart';
-import 'app_preferences.dart';
 import 'app_log_service.dart';
 import 'asmr_api_service.dart';
 
@@ -28,76 +25,26 @@ class SecureAsmrTokenStore implements AsmrTokenStore {
   static const String _tokenKey = 'asmr_one_jwt_token_v1';
   static const String _nameKey = 'asmr_one_name_v1';
   static const String _passKey = 'asmr_one_pass_v1';
-  static const String _migratedKey = 'asmr_auth_secure_storage_migrated_v2';
 
   final FlutterSecureStorage _storage;
 
-  Future<void> _ensureMigrated() async {
-    final migrated = await AppPreferences.getBool(_migratedKey);
-    if (migrated == true) return;
-
-    final secureToken = await _storage.read(key: _tokenKey);
-    final secureName = await _storage.read(key: _nameKey);
-    final securePass = await _storage.read(key: _passKey);
-    final legacyToken = await AppPreferences.getString(_tokenKey);
-    final legacyName = await AppPreferences.getString(_nameKey);
-    final legacyEncodedPass = await AppPreferences.getString(_passKey);
-
-    if (secureToken == null && legacyToken?.isNotEmpty == true) {
-      await _storage.write(key: _tokenKey, value: legacyToken);
-    }
-    final legacyPass = _decodeLegacyPassword(legacyEncodedPass);
-    if (secureName == null && legacyName?.isNotEmpty == true) {
-      await _storage.write(key: _nameKey, value: legacyName);
-    }
-    if (securePass == null && legacyPass != null) {
-      await _storage.write(key: _passKey, value: legacyPass);
-    }
-
-    await _removeLegacyValue(_tokenKey);
-    await _removeLegacyValue(_nameKey);
-    await _removeLegacyValue(_passKey);
-    if (!await AppPreferences.setBool(_migratedKey, true)) {
-      throw StateError('Failed to mark ASMR credential migration complete');
-    }
-  }
-
-  String? _decodeLegacyPassword(String? encodedPassword) {
-    if (encodedPassword == null || encodedPassword.isEmpty) return null;
-    try {
-      return utf8.decode(base64.decode(encodedPassword));
-    } on FormatException {
-      return null;
-    }
-  }
-
-  Future<void> _removeLegacyValue(String key) async {
-    if (!await AppPreferences.remove(key)) {
-      throw StateError('Failed to remove legacy ASMR credential: $key');
-    }
-  }
-
   @override
   Future<String?> readToken() async {
-    await _ensureMigrated();
     return _storage.read(key: _tokenKey);
   }
 
   @override
   Future<void> writeToken(String token) async {
-    await _ensureMigrated();
     await _storage.write(key: _tokenKey, value: token);
   }
 
   @override
   Future<void> clearToken() async {
     await _storage.delete(key: _tokenKey);
-    await _removeLegacyValue(_tokenKey);
   }
 
   @override
   Future<Map<String, String>?> readCredentials() async {
-    await _ensureMigrated();
     final name = await _storage.read(key: _nameKey);
     final pass = await _storage.read(key: _passKey);
     if (name != null && pass != null && name.isNotEmpty) {
@@ -108,7 +55,6 @@ class SecureAsmrTokenStore implements AsmrTokenStore {
 
   @override
   Future<void> writeCredentials(String name, String password) async {
-    await _ensureMigrated();
     await _storage.write(key: _nameKey, value: name);
     await _storage.write(key: _passKey, value: password);
   }
@@ -117,8 +63,6 @@ class SecureAsmrTokenStore implements AsmrTokenStore {
   Future<void> clearCredentials() async {
     await _storage.delete(key: _nameKey);
     await _storage.delete(key: _passKey);
-    await _removeLegacyValue(_nameKey);
-    await _removeLegacyValue(_passKey);
   }
 }
 

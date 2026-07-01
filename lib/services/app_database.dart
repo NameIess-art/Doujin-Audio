@@ -1341,59 +1341,6 @@ class AppDatabase {
     await batch.commit(noResult: true);
   }
 
-  // ---- SharedPreferences migration helper ----
-
-  /// One-shot: load from the legacy SharedPreferences JSON blob and store
-  /// into SQLite. Returns the deserialized track list so the caller can
-  /// feed it into the in-memory library without a second parse.
-  static List<MusicTrack>? tryMigrateFromJson(String? rawJson) {
-    if (rawJson == null || rawJson.isEmpty) return null;
-    try {
-      final list = json.decode(rawJson) as List<dynamic>;
-      return list
-          .whereType<Map<String, dynamic>>()
-          .map(MusicTrack.fromJson)
-          .toList();
-    } catch (_) {
-      return null;
-    }
-  }
-
-  static List<PersistedSession>? tryMigrateSessionsFromJson(String? rawJson) {
-    if (rawJson == null || rawJson.isEmpty) return null;
-    try {
-      final list = json.decode(rawJson) as List<dynamic>;
-      final sessions = <PersistedSession>[];
-      for (var i = 0; i < list.length; i++) {
-        final item = list[i];
-        if (item is! Map<String, dynamic>) continue;
-        final trackPath = item['path'] as String?;
-        if (trackPath == null || trackPath.isEmpty) continue;
-        sessions.add(
-          PersistedSession(
-            id: item['id'] as String? ?? 'session_$i',
-            trackPath: trackPath,
-            loopModeIndex: (item['loopMode'] as num?)?.toInt() ?? 1,
-            volume: (item['volume'] as num?)?.toDouble() ?? 1.0,
-            speed: (item['speed'] as num?)?.toDouble() ?? 1.0,
-            positionMs: (item['positionMs'] as num?)?.toInt() ?? 0,
-            durationMs: (item['durationMs'] as num?)?.toInt() ?? 0,
-            customQueueTracks: null,
-            channelSwapEnabled: item['channelSwap'] as bool? ?? false,
-            audioEffects: AudioEffectsState.fromJson(item['audioEffects']),
-            createdAtMs: (item['createdAtMs'] as num?)?.toInt(),
-            updatedAtMs: (item['updatedAtMs'] as num?)?.toInt(),
-            lastPlayedAtMs: (item['lastPlayedAtMs'] as num?)?.toInt(),
-            sortOrder: i,
-          ),
-        );
-      }
-      return sessions;
-    } catch (_) {
-      return null;
-    }
-  }
-
   // ---- Internals ----
 
   static Future<List<Map<String, dynamic>>> _queryFullTrackRows(

@@ -61,6 +61,8 @@ const Map<String, String> appLanguageZh = {
   'scanning_title': '正在扫描...',
   'loading_dot': '正在加载...',
   'playback_failed_retry': '播放失败，点击重试',
+  'asmr_playback_load_failed_retry': '加载失败，点击重试',
+  'asmr_playback_network_failed_retry': '网络连接失败，点击重试',
   'scan_cancel': '取消',
   'scan_current_folder': '当前文件夹',
   'scan_found': '已发现',

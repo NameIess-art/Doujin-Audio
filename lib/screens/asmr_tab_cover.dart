@@ -70,12 +70,12 @@ class _AsmrWorkSkeletonCard extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    final fallbackColor = isDark
-        ? cs.surfaceContainerHigh
-        : cs.surfaceContainerHighest;
+    final fallbackColor = cs.surfaceContainerLow;
 
     final cardShape = RoundedRectangleBorder(
-      side: BorderSide(color: cs.outlineVariant),
+      side: BorderSide(
+        color: cs.outlineVariant.withValues(alpha: isDark ? 0.26 : 0.42),
+      ),
       borderRadius: BorderRadius.circular(14),
     );
 

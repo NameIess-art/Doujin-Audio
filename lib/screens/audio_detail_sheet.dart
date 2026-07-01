@@ -1029,6 +1029,7 @@ class _AudioDetailFetchScopeDialog extends StatelessWidget {
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(16),
               ),
+              tileColor: cs.surfaceContainer,
               contentPadding: const EdgeInsets.symmetric(horizontal: 16),
               leading: const Icon(Icons.select_all_rounded),
               title: Text(i18n.tr('batch_metadata_all')),
@@ -1040,6 +1041,7 @@ class _AudioDetailFetchScopeDialog extends StatelessWidget {
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(16),
               ),
+              tileColor: cs.surfaceContainer,
               contentPadding: const EdgeInsets.symmetric(horizontal: 16),
               leading: const Icon(Icons.playlist_add_check_rounded),
               title: Text(i18n.tr('metadata_scope_missing')),

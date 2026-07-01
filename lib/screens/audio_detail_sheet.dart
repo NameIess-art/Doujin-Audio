@@ -1017,38 +1017,32 @@ class _AudioDetailFetchScopeDialog extends StatelessWidget {
                 Expanded(
                   child: Text(
                     i18n.tr('audio_detail_fetch_scope_title'),
-                    style: textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.w600,
+                    style: textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 16),
-            Text(
-              i18n.tr('audio_detail_fetch_scope_hint'),
-              style: textTheme.bodyMedium,
-            ),
-            const SizedBox(height: 16),
             ListTile(
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(16),
               ),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16),
               leading: const Icon(Icons.select_all_rounded),
               title: Text(i18n.tr('batch_metadata_all')),
-              subtitle: Text(i18n.tr('audio_detail_fetch_scope_all_hint')),
               onTap: () =>
                   Navigator.of(context).pop(_AudioDetailFetchScope.all),
             ),
+            const SizedBox(height: 4),
             ListTile(
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(16),
               ),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16),
               leading: const Icon(Icons.playlist_add_check_rounded),
               title: Text(i18n.tr('metadata_scope_missing')),
-              subtitle: Text(i18n.tr('audio_detail_fetch_scope_missing_hint')),
               onTap: () =>
                   Navigator.of(context).pop(_AudioDetailFetchScope.missing),
             ),

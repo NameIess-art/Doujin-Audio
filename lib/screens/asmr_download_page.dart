@@ -281,20 +281,21 @@ class _AsmrDownloadPageState extends State<AsmrDownloadPage> {
                       },
                     ),
                   )
-                : ListView(
+                : ListView.builder(
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                    children: [
-                      for (final node in selection.rootNodes)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 2),
-                          child: _AsmrDownloadNodeTile(
-                            node: node,
-                            depth: 0,
-                            selection: selection,
-                            onSelectionChanged: _refreshSelection,
-                          ),
+                    itemCount: selection.rootNodes.length,
+                    itemBuilder: (context, index) {
+                      final node = selection.rootNodes[index];
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 2),
+                        child: _AsmrDownloadNodeTile(
+                          node: node,
+                          depth: 0,
+                          selection: selection,
+                          onSelectionChanged: _refreshSelection,
                         ),
-                    ],
+                      );
+                    },
                   ),
           ),
           Padding(

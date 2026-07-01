@@ -69,7 +69,7 @@ class _AsmrWorkSkeletonCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    
+
     final fallbackColor = isDark
         ? cs.surfaceContainerHigh
         : cs.surfaceContainerHighest;

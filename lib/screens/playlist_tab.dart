@@ -189,12 +189,17 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
 
   void _jumpPlaylistToTop() {
     if (!_scrollController.hasClients) return;
-    if (_scrollController.offset > 2500) {
-      _scrollController.jumpTo(2500);
+    const fakeAnimationStartOffset = 360.0;
+    final animationStartOffset =
+        _scrollController.position.maxScrollExtent < fakeAnimationStartOffset
+        ? _scrollController.position.maxScrollExtent
+        : fakeAnimationStartOffset;
+    if (_scrollController.offset > animationStartOffset) {
+      _scrollController.jumpTo(animationStartOffset);
     }
     _scrollController.animateTo(
       0,
-      duration: const Duration(milliseconds: 350),
+      duration: const Duration(milliseconds: 260),
       curve: Curves.easeOutCubic,
     );
   }

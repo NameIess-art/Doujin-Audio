@@ -8,6 +8,7 @@ abstract final class AsmrPreferences {
   static const String _historyWorksKey = 'asmr_history_works_v1';
   static const String _syncOpsKey = 'asmr_sync_ops_v1';
   static const String _lastSyncAtKey = 'asmr_last_sync_at_v1';
+  static const String _syncOutboxSeededKey = 'asmr_sync_outbox_seeded_v2';
   static const String _visibleCategoriesKey = 'asmr_visible_categories_v1';
   static const String _contentLanguageKey = 'asmr_content_language_v1';
 
@@ -25,7 +26,11 @@ abstract final class AsmrPreferences {
     batch.delete('asmr_work_tags');
     batch.delete('asmr_work_voice_actors');
     batch.delete('asmr_works');
-    for (final key in [_contentLanguageKey, _lastSyncAtKey]) {
+    for (final key in [
+      _contentLanguageKey,
+      _lastSyncAtKey,
+      _syncOutboxSeededKey,
+    ]) {
       batch.delete('app_kv_settings', where: 'key = ?', whereArgs: [key]);
     }
     await batch.commit(noResult: true);
@@ -166,6 +171,14 @@ abstract final class AsmrPreferences {
   static Future<void> saveLastSyncAt(DateTime value) async {
     await _database.saveAppSetting(_lastSyncAtKey, value.toIso8601String());
     await AppPreferences.remove(_lastSyncAtKey);
+  }
+
+  static Future<bool> isSyncOutboxSeeded() async {
+    return await _database.loadAppSetting(_syncOutboxSeededKey) == 'true';
+  }
+
+  static Future<void> markSyncOutboxSeeded() async {
+    await _database.saveAppSetting(_syncOutboxSeededKey, 'true');
   }
 
   static List<AsmrCategoryType> _sanitizeCategories(List<String>? raw) {

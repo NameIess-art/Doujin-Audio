@@ -566,14 +566,19 @@ void main() {
       expect(controller.syncViewState.pendingCount, 1);
       expect(
         controller.worksFor(AsmrCategoryType.favorites).map((work) => work.id),
-        containsAll(<int>[71, 72]),
+        <int>[71],
       );
+      expect(api.calls.where((call) => call.startsWith('fetch:')), isEmpty);
 
       await controller.syncAsmrAccount(force: true);
 
       expect(controller.syncViewState.phase, AsmrSyncPhase.succeeded);
       expect(controller.syncViewState.pendingCount, 0);
       expect(api.reviewPuts, <String>['71:marked']);
+      expect(
+        controller.worksFor(AsmrCategoryType.favorites).map((work) => work.id),
+        containsAll(<int>[71, 72]),
+      );
     },
   );
 
@@ -611,6 +616,7 @@ void main() {
       expect(controller.syncViewState.phase, AsmrSyncPhase.succeeded);
       expect(controller.syncViewState.pendingCount, 0);
       expect(api.deletedReviewWorkIds, <int>[82]);
+      expect(controller.worksFor(AsmrCategoryType.favorites), isEmpty);
     },
   );
 
@@ -707,6 +713,209 @@ void main() {
       expect(await tokenStore.readCredentials(), isNull);
     },
   );
+
+  test('ASMR sync pushes local changes before pulling remote state', () async {
+    await resetPrefs();
+    final api = _FakeAsmrApiService();
+    final controller = AsmrLibraryController(
+      apiService: api,
+      authService: AsmrAuthService(
+        apiService: api,
+        tokenStore: _MemoryAsmrTokenStore(),
+      ),
+      audioDatabaseRepository: _FakeAudioDatabaseRepository(
+        const <MusicTrack>[],
+      ),
+    );
+    await controller.initialize(defaultLanguage: AsmrContentLanguage.en);
+    await controller.toggleFavorite(_work(id: 91, title: 'Local Favorite'));
+
+    await controller.loginAsmrAccount('alice', 'password');
+
+    final putIndex = api.calls.indexOf('put:91:marked');
+    final pullIndex = api.calls.indexWhere((call) => call.startsWith('fetch:'));
+    expect(putIndex, greaterThanOrEqualTo(0));
+    expect(pullIndex, greaterThan(putIndex));
+    expect(controller.syncViewState.pendingCount, 0);
+    expect(
+      controller.worksFor(AsmrCategoryType.favorites).map((work) => work.id),
+      contains(91),
+    );
+  });
+
+  test('ASMR history preflight never downgrades a remote favorite', () async {
+    await resetPrefs();
+    final work = _work(id: 92, title: 'Remote Favorite');
+    final api = _FakeAsmrApiService(
+      remoteReviewRecords: <AsmrReviewRecord>[
+        AsmrReviewRecord(
+          work: work,
+          progress: 'marked',
+          updatedAt: DateTime(2026, 6),
+        ),
+      ],
+    );
+    final controller = AsmrLibraryController(
+      apiService: api,
+      authService: AsmrAuthService(
+        apiService: api,
+        tokenStore: _MemoryAsmrTokenStore(),
+      ),
+      audioDatabaseRepository: _FakeAudioDatabaseRepository(
+        const <MusicTrack>[],
+      ),
+    );
+    await controller.initialize(defaultLanguage: AsmrContentLanguage.en);
+    await controller.recordHistory(work);
+
+    await controller.loginAsmrAccount('alice', 'password');
+
+    expect(api.reviewPuts, isNot(contains('92:listening')));
+    expect(api.calls.first, 'fetch:marked:1');
+    expect(controller.syncViewState.pendingCount, 0);
+  });
+
+  test('ASMR remote favorites and history are sorted newest first', () async {
+    await resetPrefs();
+    final api = _FakeAsmrApiService(
+      remoteReviewRecords: <AsmrReviewRecord>[
+        AsmrReviewRecord(
+          work: _work(id: 93, title: 'Older Favorite'),
+          progress: 'marked',
+          updatedAt: DateTime(2026, 5),
+        ),
+        AsmrReviewRecord(
+          work: _work(id: 94, title: 'Newer Favorite'),
+          progress: 'marked',
+          updatedAt: DateTime(2026, 6),
+        ),
+        AsmrReviewRecord(
+          work: _work(id: 95, title: 'Older History'),
+          progress: 'listening',
+          updatedAt: DateTime(2026, 4),
+        ),
+        AsmrReviewRecord(
+          work: _work(id: 96, title: 'Newer History'),
+          progress: 'listening',
+          updatedAt: DateTime(2026, 6, 2),
+        ),
+      ],
+    );
+    final controller = AsmrLibraryController(
+      apiService: api,
+      authService: AsmrAuthService(
+        apiService: api,
+        tokenStore: _MemoryAsmrTokenStore(),
+      ),
+      audioDatabaseRepository: _FakeAudioDatabaseRepository(
+        const <MusicTrack>[],
+      ),
+    );
+    await controller.initialize(defaultLanguage: AsmrContentLanguage.en);
+
+    await controller.loginAsmrAccount('alice', 'password');
+
+    expect(
+      controller.worksFor(AsmrCategoryType.favorites).map((work) => work.id),
+      <int>[94, 93],
+    );
+    expect(
+      controller.worksFor(AsmrCategoryType.history).map((work) => work.id),
+      <int>[96, 95],
+    );
+  });
+
+  test('ASMR manual refresh synchronizes before loading category', () async {
+    await resetPrefs();
+    final api = _FakeAsmrApiService();
+    final controller = AsmrLibraryController(
+      apiService: api,
+      authService: AsmrAuthService(
+        apiService: api,
+        tokenStore: _MemoryAsmrTokenStore(),
+      ),
+      audioDatabaseRepository: _FakeAudioDatabaseRepository(
+        const <MusicTrack>[],
+      ),
+    );
+    await controller.initialize(defaultLanguage: AsmrContentLanguage.en);
+    await controller.loginAsmrAccount('alice', 'password');
+    api.calls.clear();
+
+    await controller.refreshCategoryWithSync(AsmrCategoryType.release);
+
+    final pullIndex = api.calls.indexWhere((call) => call.startsWith('fetch:'));
+    final categoryIndex = api.calls.indexOf('works:release:desc:1');
+    expect(pullIndex, greaterThanOrEqualTo(0));
+    expect(categoryIndex, greaterThan(pullIndex));
+  });
+
+  test('ASMR sync drains changes added while a batch is running', () async {
+    await resetPrefs();
+    final api = _FakeAsmrApiService();
+    late final AsmrLibraryController controller;
+    controller = AsmrLibraryController(
+      apiService: api,
+      authService: AsmrAuthService(
+        apiService: api,
+        tokenStore: _MemoryAsmrTokenStore(),
+      ),
+      audioDatabaseRepository: _FakeAudioDatabaseRepository(
+        const <MusicTrack>[],
+      ),
+    );
+    await controller.initialize(defaultLanguage: AsmrContentLanguage.en);
+    await controller.toggleFavorite(_work(id: 97, title: 'Favorite'));
+    api.onPutReview = (_, _) async {
+      await controller.recordHistory(_work(id: 98, title: 'History'));
+    };
+
+    await controller.loginAsmrAccount('alice', 'password');
+
+    expect(api.reviewPuts, containsAll(<String>['97:marked', '98:listening']));
+    expect(controller.syncViewState.pendingCount, 0);
+    expect(
+      controller.worksFor(AsmrCategoryType.history).map((work) => work.id),
+      contains(98),
+    );
+  });
+
+  test('ASMR local timestamps keep new favorites and history first', () async {
+    await resetPrefs();
+    final api = _FakeAsmrApiService(
+      remoteReviewRecords: <AsmrReviewRecord>[
+        AsmrReviewRecord(
+          work: _work(id: 99, title: 'Older Remote Favorite'),
+          progress: 'marked',
+          updatedAt: DateTime(2026, 6),
+        ),
+        AsmrReviewRecord(
+          work: _work(id: 100, title: 'Older Remote History'),
+          progress: 'listening',
+          updatedAt: DateTime(2026, 6),
+        ),
+      ],
+    );
+    final controller = AsmrLibraryController(
+      apiService: api,
+      authService: AsmrAuthService(
+        apiService: api,
+        tokenStore: _MemoryAsmrTokenStore(),
+      ),
+      audioDatabaseRepository: _FakeAudioDatabaseRepository(
+        const <MusicTrack>[],
+      ),
+    );
+    await controller.initialize(defaultLanguage: AsmrContentLanguage.en);
+    await controller.toggleFavorite(_work(id: 101, title: 'Local Favorite'));
+    await controller.recordHistory(_work(id: 102, title: 'Local History'));
+    await controller.loginAsmrAccount('alice', 'password');
+
+    await controller.syncAsmrAccount(force: true);
+
+    expect(controller.worksFor(AsmrCategoryType.favorites).first.id, 101);
+    expect(controller.worksFor(AsmrCategoryType.history).first.id, 102);
+  });
 }
 
 class _FakeAsmrApiService extends AsmrApiService {
@@ -715,17 +924,19 @@ class _FakeAsmrApiService extends AsmrApiService {
     this.recommendationPageCount = 2,
     this.recommendationWorks,
     this.trackTree = const <AsmrTrackFile>[],
-    this.remoteReviewRecords = const <AsmrReviewRecord>[],
+    List<AsmrReviewRecord> remoteReviewRecords = const <AsmrReviewRecord>[],
     this.failPutReviewCount = 0,
     this.failingFetchOrders = const <String>{},
     this.emptyCheckSessionUserName = false,
-  }) : super(baseUri: Uri.parse('https://example.test'));
+  }) : remoteReviewRecords = List<AsmrReviewRecord>.of(remoteReviewRecords),
+       super(baseUri: Uri.parse('https://example.test'));
 
   final List<String> fetchWorkOrders = <String>[];
   final List<String> fetchWorkRequests = <String>[];
   final List<String> searchKeywords = <String>[];
   final List<String> reviewPuts = <String>[];
   final List<int> deletedReviewWorkIds = <int>[];
+  final List<String> calls = <String>[];
   final bool largeRecommendationPool;
   final int recommendationPageCount;
   final List<AsmrWork>? recommendationWorks;
@@ -739,6 +950,7 @@ class _FakeAsmrApiService extends AsmrApiService {
   int? loginFailureStatusCode;
   int loginCount = 0;
   String _lastLoginName = '';
+  Future<void> Function(int workId, String progress)? onPutReview;
 
   @override
   Future<AsmrAuthSession> login({
@@ -787,6 +999,7 @@ class _FakeAsmrApiService extends AsmrApiService {
     String? token,
     AsmrContentLanguage language = AsmrContentLanguage.zh,
   }) async {
+    calls.add('works:$order:$sort:$page');
     fetchWorkOrders.add('$order:$sort');
     fetchWorkRequests.add('$order:$sort:$page');
     if (failingFetchOrders.contains(order)) {
@@ -886,6 +1099,7 @@ class _FakeAsmrApiService extends AsmrApiService {
     String sort = 'desc',
     AsmrContentLanguage language = AsmrContentLanguage.zh,
   }) async {
+    calls.add('fetch:${filter ?? 'all'}:$page');
     if (fetchReviewAuthFailuresRemaining > 0) {
       fetchReviewAuthFailuresRemaining--;
       throw AsmrApiException(
@@ -908,6 +1122,12 @@ class _FakeAsmrApiService extends AsmrApiService {
     required String progress,
     required String token,
   }) async {
+    calls.add('put:$workId:$progress');
+    final callback = onPutReview;
+    onPutReview = null;
+    if (callback != null) {
+      await callback(workId, progress);
+    }
     if (failPutReviewCount > 0) {
       failPutReviewCount--;
       throw const HttpException('put review failed');
@@ -920,6 +1140,7 @@ class _FakeAsmrApiService extends AsmrApiService {
     required int workId,
     required String token,
   }) async {
+    calls.add('delete:$workId');
     deletedReviewWorkIds.add(workId);
   }
 }

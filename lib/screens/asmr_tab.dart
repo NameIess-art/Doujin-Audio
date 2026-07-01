@@ -285,8 +285,10 @@ class _AsmrTabState extends State<AsmrTab>
         category.name,
       ),
       labelKey: 'loading_dot',
-      task: () =>
-          controller.refreshCategory(category, searchQuery: _searchQuery),
+      task: () => controller.refreshCategoryWithSync(
+        category,
+        searchQuery: _searchQuery,
+      ),
     );
   }
 
@@ -349,16 +351,6 @@ class _AsmrTabState extends State<AsmrTab>
         iconColor: asmrBlue,
       );
       return;
-    }
-
-    if (controller.isAsmrAccountLoggedIn) {
-      final coordinator = UiInteractionCoordinator.instance;
-      coordinator.scheduleAfterIdle(
-        key: 'asmr_account_sync_after_refresh',
-        generation: coordinator.generation,
-        priority: 80,
-        task: () => controller.syncAsmrAccount(force: true),
-      );
     }
 
     final afterIds = controller

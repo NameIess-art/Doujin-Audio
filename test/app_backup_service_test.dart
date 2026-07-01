@@ -18,7 +18,7 @@ void main() {
     tempDirectory = await Directory.systemTemp.createTemp('app_backup_test_');
     databaseFile = File('${tempDirectory.path}/audio_player.db');
     await databaseFile.writeAsString('original database');
-    preferences = <String, Object>{'language': 'zh', 'isDarkMode': true};
+    preferences = <String, Object>{'language': 'zh', 'themeMode': 'dark'};
     closeCount = 0;
     reopenCount = 0;
   });
@@ -112,7 +112,7 @@ void main() {
     expect(result.isValid, isTrue);
     expect(await databaseFile.readAsString(), 'original database');
     expect(preferences, containsPair('language', 'zh'));
-    expect(preferences, containsPair('isDarkMode', true));
+    expect(preferences, containsPair('themeMode', 'dark'));
   });
 
   test('rolls database back when restoring preferences fails', () async {

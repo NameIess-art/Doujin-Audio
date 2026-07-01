@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/models/audio_effects.dart';
 import 'package:nameless_audio/models/audio_detail.dart';
@@ -142,25 +140,6 @@ void main() {
       expect(loaded, isEmpty);
     },
   );
-
-  test('tryMigrateFromJson handles legacy SharedPreferences payloads', () {
-    final raw = jsonEncode([
-      const MusicTrack(
-        path: '/legacy/a.mp3',
-        displayName: 'Legacy A',
-        groupKey: '/legacy',
-        groupTitle: 'Legacy',
-        groupSubtitle: '1 track',
-        isSingle: false,
-      ).toJson(),
-    ]);
-
-    final migrated = AppDatabase.tryMigrateFromJson(raw);
-
-    expect(migrated, isNotNull);
-    expect(migrated!.single.path, '/legacy/a.mp3');
-    expect(AppDatabase.tryMigrateFromJson('{bad json'), isNull);
-  });
 
   test('scan generation helpers keep only the current scan snapshot', () async {
     const first = MusicTrack(

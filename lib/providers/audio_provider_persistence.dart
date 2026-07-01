@@ -150,24 +150,9 @@ extension AudioProviderPersistence on AudioProvider {
   Future<void> _loadLibrary() async {
     try {
       final db = _audioDatabaseRepository;
-      var tracks = await db.loadAllTracks();
+      final tracks = await db.loadAllTracks();
       if (tracks.isNotEmpty) {
         _library.addAll(tracks);
-        _rebuildLibraryIndexes();
-        _notifyListeners();
-        // Clean up legacy SharedPreferences blob after successful migration.
-        final prefs = await _prefs;
-        await prefs.remove(_kLibraryKey);
-        return;
-      }
-      // One-shot migration from legacy SharedPreferences JSON.
-      final prefs = await _prefs;
-      final raw = prefs.getString(_kLibraryKey);
-      final migrated = AppDatabase.tryMigrateFromJson(raw);
-      if (migrated != null && migrated.isNotEmpty) {
-        await db.saveAllTracks(migrated);
-        await prefs.remove(_kLibraryKey);
-        _library.addAll(migrated);
         _rebuildLibraryIndexes();
         _notifyListeners();
       }
@@ -348,17 +333,7 @@ extension AudioProviderPersistence on AudioProvider {
         map['coverImageResolution'],
       );
       _settingsRepository.asmrDownloadDestinationRoot =
-          _decodeOptionalTrimmedString(map['asmrDownloadDestinationRoot']) ??
-          _decodeOptionalTrimmedString(
-            await AppPreferences.getString(
-              AsmrDownloadManager.legacyDefaultDestinationKey,
-            ),
-          );
-      if (_settingsRepository.asmrDownloadDestinationRoot != null) {
-        await AppPreferences.remove(
-          AsmrDownloadManager.legacyDefaultDestinationKey,
-        );
-      }
+          _decodeOptionalTrimmedString(map['asmrDownloadDestinationRoot']);
       _settingsRepository.asmrDownloadConflictPolicy =
           _decodeAsmrDownloadConflictPolicy(map['asmrDownloadConflictPolicy']);
       _dlsiteMetadataLanguage = _decodeDlsiteMetadataLanguage(

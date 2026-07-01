@@ -91,7 +91,6 @@ internal class FileCacheOperations(
     )
 
     private val audioDetailBackupFileName = "nameless-audio.json"
-    private val legacyAudioDetailBackupFileName = ".nameless-audio.json"
 
         data class ScannedTrack(
             val path: String,
@@ -337,8 +336,6 @@ internal class FileCacheOperations(
             if (folder != null && folder.exists()) {
                 val backup = folder.listFiles().firstOrNull {
                     it.isFile && it.name == audioDetailBackupFileName
-                } ?: folder.listFiles().firstOrNull {
-                    it.isFile && it.name == legacyAudioDetailBackupFileName
                 }
                 if (backup != null) {
                     return contentResolver.openInputStream(backup.uri)?.use { input ->
@@ -350,8 +347,6 @@ internal class FileCacheOperations(
             val filePath = contentUriToFilePath(folderPath) ?: return null
             val backupFile = java.io.File(filePath, audioDetailBackupFileName)
             if (backupFile.exists()) return backupFile.readText(Charsets.UTF_8)
-            val legacyFile = java.io.File(filePath, legacyAudioDetailBackupFileName)
-            if (legacyFile.exists()) return legacyFile.readText(Charsets.UTF_8)
             return null
         }
 

@@ -26,11 +26,7 @@ class ThemeProvider with ChangeNotifier {
     final storedMode = AppPreferences.getStringSync(_themeModeKey);
     _themeMode = ThemeMode.values.firstWhere(
       (mode) => mode.name == storedMode,
-      orElse: () {
-        final legacyDarkMode = AppPreferences.getBoolSync('isDarkMode');
-        if (legacyDarkMode == null) return ThemeMode.system;
-        return legacyDarkMode ? ThemeMode.dark : ThemeMode.light;
-      },
+      orElse: () => ThemeMode.system,
     );
     _differentiateAsmrTheme = AppPreferences.getBoolSync('differentiateAsmrTheme') ?? true;
   }
@@ -40,7 +36,6 @@ class ThemeProvider with ChangeNotifier {
     _themeMode = value;
     notifyListeners();
     await AppPreferences.setString(_themeModeKey, value.name);
-    await AppPreferences.remove('isDarkMode');
   }
 
   Future<void> setDifferentiateAsmrTheme(bool value) async {

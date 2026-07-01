@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../models/card_info_field.dart';
 import 'app_feedback.dart';
 import 'marquee_text.dart';
 
@@ -29,6 +30,123 @@ class LibraryLikeInfoLineData {
   final String label;
   final String text;
   final int lines;
+}
+
+class LibraryLikeInfoMetadata {
+  const LibraryLikeInfoMetadata({
+    this.rjCode = '',
+    this.voiceActors = const <String>[],
+    this.circleName = '',
+    this.tags = const <String>[],
+    this.releaseDate,
+    this.salesCount,
+    this.rating,
+  });
+
+  final String rjCode;
+  final List<String> voiceActors;
+  final String circleName;
+  final List<String> tags;
+  final DateTime? releaseDate;
+  final int? salesCount;
+  final double? rating;
+}
+
+List<LibraryLikeInfoLineData> buildLibraryLikeInfoLines({
+  required Iterable<CardInfoField> fields,
+  required LibraryLikeInfoMetadata metadata,
+  required String circleLabel,
+  required String tagsLabel,
+  required String releaseDateLabel,
+  required String salesCountLabel,
+  required String ratingLabel,
+  String listSeparator = '\uFF0C',
+}) {
+  final selectedFields = fields.toList(growable: false);
+  final result = <LibraryLikeInfoLineData>[];
+  for (final field in selectedFields) {
+    switch (field) {
+      case CardInfoField.rjCode:
+        final value = metadata.rjCode.trim();
+        if (value.isNotEmpty) {
+          result.add(LibraryLikeInfoLineData('RJ', value));
+        }
+        break;
+      case CardInfoField.voiceActors:
+        if (metadata.voiceActors.isNotEmpty) {
+          result.add(
+            LibraryLikeInfoLineData(
+              'CV',
+              _normalizeLibraryLikeList(metadata.voiceActors).join(
+                listSeparator,
+              ),
+            ),
+          );
+        }
+        break;
+      case CardInfoField.circleName:
+        final value = metadata.circleName.trim();
+        if (value.isNotEmpty) {
+          result.add(LibraryLikeInfoLineData(circleLabel, value));
+        }
+        break;
+      case CardInfoField.tags:
+        if (metadata.tags.isNotEmpty) {
+          result.add(
+            LibraryLikeInfoLineData(
+              tagsLabel,
+              _normalizeLibraryLikeList(metadata.tags).join(listSeparator),
+              lines: CardInfoField.tagLineCountForSelection(
+                selectedFields.length,
+              ),
+            ),
+          );
+        }
+        break;
+      case CardInfoField.releaseDate:
+        final value = formatLibraryLikeDate(metadata.releaseDate);
+        if (value.isNotEmpty) {
+          result.add(LibraryLikeInfoLineData(releaseDateLabel, value));
+        }
+        break;
+      case CardInfoField.salesCount:
+        final value = metadata.salesCount;
+        if (value != null && value > 0) {
+          result.add(LibraryLikeInfoLineData(salesCountLabel, value.toString()));
+        }
+        break;
+      case CardInfoField.rating:
+        final value = formatLibraryLikeRating(metadata.rating);
+        if (value.isNotEmpty) {
+          result.add(LibraryLikeInfoLineData(ratingLabel, value));
+        }
+        break;
+    }
+  }
+  return result;
+}
+
+String formatLibraryLikeDate(DateTime? value) {
+  if (value == null) return '';
+  return '${value.year.toString().padLeft(4, '0')}-'
+      '${value.month.toString().padLeft(2, '0')}-'
+      '${value.day.toString().padLeft(2, '0')}';
+}
+
+String formatLibraryLikeRating(double? value) {
+  if (value == null || value <= 0) return '';
+  return value.toStringAsFixed(value.truncateToDouble() == value ? 0 : 1);
+}
+
+List<String> _normalizeLibraryLikeList(Iterable<String> values) {
+  final seen = <String>{};
+  final result = <String>[];
+  for (final value in values) {
+    final trimmed = value.trim();
+    if (trimmed.isEmpty || !seen.add(trimmed)) continue;
+    result.add(trimmed);
+  }
+  return result;
 }
 
 class LibraryLikeFeaturedCardContent extends StatelessWidget {

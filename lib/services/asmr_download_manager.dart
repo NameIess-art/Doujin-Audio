@@ -255,8 +255,6 @@ class AsmrDownloadManager extends ChangeNotifier {
   AsmrDownloadManager({FileCachePlatformGateway? fileCacheGateway})
     : _fileCacheGateway = fileCacheGateway ?? FileCachePlatformGateway.instance;
 
-  static const String legacyDefaultDestinationKey =
-      'asmr_download_default_destination_v1';
   static const Duration _progressNotifyMinInterval = Duration(
     milliseconds: 120,
   );

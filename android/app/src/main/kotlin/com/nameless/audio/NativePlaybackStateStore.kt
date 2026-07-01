@@ -70,7 +70,6 @@ object NativePlaybackStateStore {
     private const val keyPausedSessionIds = "paused_session_ids"
     private const val keyTimerCandidateSessionIds = "timer_candidate_session_ids"
     private const val keyTimerRuntimeState = "timer_runtime_state_v3"
-    private const val legacyTimerRuntimeState = "timer_runtime_state_v2"
 
     fun saveSessions(
         context: Context,
@@ -266,8 +265,6 @@ object NativePlaybackStateStore {
     fun loadTimerRuntimeState(context: Context): StoredPlaybackTimerRuntimeState? {
         val raw = context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
             .getString(keyTimerRuntimeState, null)
-            ?: context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
-                .getString(legacyTimerRuntimeState, null)
             ?: return null
         return try {
             val json = JSONObject(raw)
@@ -302,7 +299,6 @@ object NativePlaybackStateStore {
         context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
             .edit()
             .remove(keyTimerRuntimeState)
-            .remove(legacyTimerRuntimeState)
             .apply()
     }
 }

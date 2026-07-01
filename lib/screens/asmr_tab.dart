@@ -236,7 +236,9 @@ class _AsmrTabState extends State<AsmrTab>
   void _measureHeader() {
     final box = _headerKey.currentContext?.findRenderObject() as RenderBox?;
     if (box != null && mounted) {
-      final globalState = context.read<AsmrLibraryController?>()?.globalViewState;
+      final globalState = context
+          .read<AsmrLibraryController?>()
+          ?.globalViewState;
       final hasControls = globalState != null;
       final h = box.size.height - (hasControls ? _headerControlsFullHeight : 0);
       if (h > 0 && (h - _headerHeight).abs() > 0.5) {
@@ -253,12 +255,17 @@ class _AsmrTabState extends State<AsmrTab>
     if (controller == null || !controller.hasClients) {
       return;
     }
-    if (controller.offset > 2500) {
-      controller.jumpTo(2500);
+    const fakeAnimationStartOffset = 360.0;
+    final animationStartOffset =
+        controller.position.maxScrollExtent < fakeAnimationStartOffset
+        ? controller.position.maxScrollExtent
+        : fakeAnimationStartOffset;
+    if (controller.offset > animationStartOffset) {
+      controller.jumpTo(animationStartOffset);
     }
     controller.animateTo(
       0,
-      duration: const Duration(milliseconds: 350),
+      duration: const Duration(milliseconds: 260),
       curve: Curves.easeOutCubic,
     );
   }
@@ -581,8 +588,8 @@ class _AsmrTabState extends State<AsmrTab>
         MediaQuery.orientationOf(context) == Orientation.landscape;
     final bottomInset = MobileOverlayInset.of(context);
     final headerControlsFullHeight = _headerControlsFullHeight;
-    final effectiveHeaderHeight = _headerHeight > 0 
-        ? _headerHeight 
+    final effectiveHeaderHeight = _headerHeight > 0
+        ? _headerHeight
         : 72 + MediaQuery.paddingOf(context).top;
     final topTotalHeight = effectiveHeaderHeight + 4;
     final headerContentHeight = topTotalHeight + headerControlsFullHeight;

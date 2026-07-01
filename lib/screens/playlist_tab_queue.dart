@@ -725,15 +725,16 @@ class PlaybackQueueAudioEditPage extends ConsumerWidget {
                 ),
               ),
               Expanded(
-                child: ListView(
+                child: ListView.builder(
                   padding: const EdgeInsets.symmetric(horizontal: 12),
-                  children: [
-                    for (final source in provider.ordinaryPlaybackSessions)
-                      _QueueSourceAudioTile(
-                        queueSessionId: sessionId,
-                        source: source,
-                      ),
-                  ],
+                  itemCount: provider.ordinaryPlaybackSessions.length,
+                  itemBuilder: (context, index) {
+                    final source = provider.ordinaryPlaybackSessions[index];
+                    return _QueueSourceAudioTile(
+                      queueSessionId: sessionId,
+                      source: source,
+                    );
+                  },
                 ),
               ),
             ],

@@ -115,12 +115,17 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
 
   void _jumpSettingsToTop() {
     if (!_scrollController.hasClients) return;
-    if (_scrollController.offset > 2500) {
-      _scrollController.jumpTo(2500);
+    const fakeAnimationStartOffset = 360.0;
+    final animationStartOffset =
+        _scrollController.position.maxScrollExtent < fakeAnimationStartOffset
+        ? _scrollController.position.maxScrollExtent
+        : fakeAnimationStartOffset;
+    if (_scrollController.offset > animationStartOffset) {
+      _scrollController.jumpTo(animationStartOffset);
     }
     _scrollController.animateTo(
       0,
-      duration: const Duration(milliseconds: 350),
+      duration: const Duration(milliseconds: 260),
       curve: Curves.easeOutCubic,
     );
   }
@@ -514,13 +519,16 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                             builder: (context, ref, _) {
                               final provider = context.watch<ThemeProvider>();
                               return SwitchListTile(
-                                title: Text(i18n.tr('differentiate_asmr_theme')),
+                                title: Text(
+                                  i18n.tr('differentiate_asmr_theme'),
+                                ),
                                 subtitle: Text(
                                   i18n.tr('differentiate_asmr_theme_subtitle'),
                                   style: descStyle,
                                 ),
                                 value: provider.differentiateAsmrTheme,
-                                onChanged: (val) => provider.setDifferentiateAsmrTheme(val),
+                                onChanged: (val) =>
+                                    provider.setDifferentiateAsmrTheme(val),
                                 secondary: Container(
                                   width: 38,
                                   height: 38,

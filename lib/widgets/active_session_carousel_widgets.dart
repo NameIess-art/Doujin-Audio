@@ -162,6 +162,8 @@ class _ActiveSessionCard extends ConsumerWidget {
     final activeColor = currentTrack?.remoteMetadataKind == 'asmr.one'
         ? asmrBlue
         : cs.primary;
+    final hasAsmrOnePlaybackError =
+        view.error != null && currentTrack?.remoteMetadataKind == 'asmr.one';
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(10, 5, 8, 5),
@@ -185,6 +187,7 @@ class _ActiveSessionCard extends ConsumerWidget {
                   provider: provider,
                   displayName: displayName,
                   playbackError: view.error,
+                  useAsmrOneErrorText: hasAsmrOnePlaybackError,
                 ),
                 _ActiveSessionProgressStrip(
                   session: session,
@@ -199,7 +202,7 @@ class _ActiveSessionCard extends ConsumerWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               _ActiveSessionPlayPauseButton(
-                isPlaying: isPlaying,
+                showPauseIcon: isPlaying || hasAsmrOnePlaybackError,
                 isLoading: view.loading,
                 enabled: view.trackPath.isNotEmpty && !view.loading,
                 activeColor: activeColor,
@@ -251,14 +254,14 @@ class _ActiveSessionCard extends ConsumerWidget {
 
 class _ActiveSessionPlayPauseButton extends StatelessWidget {
   const _ActiveSessionPlayPauseButton({
-    required this.isPlaying,
+    required this.showPauseIcon,
     required this.isLoading,
     required this.enabled,
     required this.activeColor,
     required this.onPressed,
   });
 
-  final bool isPlaying;
+  final bool showPauseIcon;
   final bool isLoading;
   final bool enabled;
   final Color activeColor;
@@ -301,12 +304,12 @@ class _ActiveSessionPlayPauseButton extends StatelessWidget {
                       ),
                     )
                   : Icon(
-                      isPlaying
+                      showPauseIcon
                           ? Icons.pause_rounded
                           : Icons.play_arrow_rounded,
-                      key: ValueKey(isPlaying),
+                      key: ValueKey(showPauseIcon),
                       size: 38,
-                      color: isPlaying ? activeColor : cs.onSurface,
+                      color: showPauseIcon ? activeColor : cs.onSurface,
                     ),
             ),
           ),
@@ -323,12 +326,14 @@ class _ActiveSessionTitleSubtitle extends StatefulWidget {
     required this.provider,
     required this.displayName,
     required this.playbackError,
+    required this.useAsmrOneErrorText,
   });
 
   final PlaybackSession session;
   final AudioProvider provider;
   final String displayName;
   final String? playbackError;
+  final bool useAsmrOneErrorText;
 
   @override
   State<_ActiveSessionTitleSubtitle> createState() =>
@@ -419,6 +424,8 @@ class _ActiveSessionTitleSubtitleState
     final i18n = context.watch<AppLanguageProvider>();
     final secondaryText = widget.playbackError == null
         ? _subtitleText
+        : widget.useAsmrOneErrorText
+        ? _asmrOnePlaybackErrorText(i18n, widget.playbackError)
         : i18n.tr('playback_failed_retry');
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -466,6 +473,27 @@ class _ActiveSessionTitleSubtitleState
       ],
     );
   }
+}
+
+String _asmrOnePlaybackErrorText(AppLanguageProvider i18n, String? error) {
+  final normalized = error?.toLowerCase() ?? '';
+  final isNetworkError =
+      normalized.contains('network') ||
+      normalized.contains('socket') ||
+      normalized.contains('connection') ||
+      normalized.contains('timeout') ||
+      normalized.contains('timed out') ||
+      normalized.contains('host') ||
+      normalized.contains('http') ||
+      normalized.contains('dns') ||
+      normalized.contains('tls') ||
+      normalized.contains('ssl') ||
+      normalized.contains('internet');
+  return i18n.tr(
+    isNetworkError
+        ? 'asmr_playback_network_failed_retry'
+        : 'asmr_playback_load_failed_retry',
+  );
 }
 
 class _ActiveSessionProgressStrip extends StatefulWidget {

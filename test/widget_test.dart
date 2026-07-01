@@ -145,6 +145,110 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('ASMR playback errors show retry subtitle and pause icon', (
+    tester,
+  ) async {
+    final themeProvider = ThemeProvider();
+    final languageProvider = AppLanguageProvider();
+    final notificationService = PlaybackNotificationService();
+    final audioDatabaseRepository = AudioDatabaseRepository();
+    final nativePlaybackRepository = NativePlaybackRepository();
+    const playbackCommandRunner = PlaybackCommandRunner();
+    final libraryService = LibraryService();
+    final playbackService = PlaybackSessionService();
+    final timerService = TimerService();
+    final notificationCoordinatorService = NotificationCoordinatorService();
+    final settingsRepository = SettingsRepository();
+    final audioProvider = AudioProvider.test(
+      notificationService: notificationService,
+      audioDatabaseRepository: audioDatabaseRepository,
+      nativePlaybackRepository: nativePlaybackRepository,
+      libraryService: libraryService,
+      playbackService: playbackService,
+      timerService: timerService,
+      notificationStateService: notificationCoordinatorService,
+      settingsRepository: settingsRepository,
+    );
+    const track = MusicTrack(
+      path: 'https://asmr.one/media/work/track.mp3',
+      displayName: 'ASMR remote track',
+      groupKey: 'RJ123456',
+      groupTitle: 'ASMR work',
+      groupSubtitle: 'ASMR work',
+      isSingle: false,
+      remoteMetadataKind: 'asmr.one',
+    );
+    final session = PlaybackSession(
+      id: 'asmr_error_session',
+      currentTrackPath: track.path,
+      loopMode: SessionLoopMode.single,
+      nonSingleLoopMode: SessionLoopMode.single,
+      volume: 1,
+      createdAt: DateTime(2026),
+      state: PlayerState(false, ProcessingState.idle),
+    )..playbackError = 'network failed';
+    addTearDown(audioProvider.dispose);
+    addTearDown(session.dispose);
+    audioProvider.addTracks([track], notify: false, persist: false);
+    playbackService.registerSession(session);
+    playbackService.syncSlice(
+      activeSessions: [session],
+      playingSessionCount: 0,
+      focusedSessionId: session.id,
+      multiThreadPlaybackEnabled: false,
+      coverGeneration: 0,
+      isInitialized: true,
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: createAudioProviderOverrides(
+          audioProvider: audioProvider,
+          audioDatabaseRepository: audioDatabaseRepository,
+          nativePlaybackRepository: nativePlaybackRepository,
+          playbackCommandRunner: playbackCommandRunner,
+          libraryService: libraryService,
+          playbackService: playbackService,
+          timerService: timerService,
+          notificationCoordinatorService: notificationCoordinatorService,
+          settingsRepository: settingsRepository,
+        ),
+        child: legacy_provider.MultiProvider(
+          providers: [
+            legacy_provider.ChangeNotifierProvider.value(value: themeProvider),
+            legacy_provider.ChangeNotifierProvider.value(
+              value: languageProvider,
+            ),
+            legacy_provider.ChangeNotifierProvider.value(value: audioProvider),
+          ],
+          child: MaterialApp(
+            home: Scaffold(
+              body: Center(
+                child: ActiveSessionCarousel(
+                  sessions: [session],
+                  provider: audioProvider,
+                  onOpenSession: (_) {},
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      find.text(languageProvider.tr('asmr_playback_network_failed_retry')),
+      findsOneWidget,
+    );
+    expect(find.byIcon(Icons.pause_rounded), findsOneWidget);
+    expect(find.byIcon(Icons.play_arrow_rounded), findsNothing);
+    expect(tester.takeException(), isNull);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(milliseconds: 100));
+  });
+
   testWidgets('bottom dock blur remains active during UI interaction', (
     tester,
   ) async {

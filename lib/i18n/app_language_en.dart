@@ -67,6 +67,9 @@ const Map<String, String> appLanguageEn = {
   'scanning_title': 'Scanning...',
   'loading_dot': 'Loading...',
   'playback_failed_retry': 'Playback failed. Tap to retry',
+  'asmr_playback_load_failed_retry': 'Loading failed. Tap to retry',
+  'asmr_playback_network_failed_retry':
+      'Network connection failed. Tap to retry',
   'scan_cancel': 'Cancel',
   'scan_current_folder': 'Current folder',
   'scan_found': 'Found',

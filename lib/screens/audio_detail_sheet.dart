@@ -252,8 +252,9 @@ class _AudioDetailSheetState extends State<AudioDetailSheet> {
       );
       return;
     }
-    final scope = await Navigator.of(context).push<_AudioDetailFetchScope>(
-      buildAppPageRoute(child: const _AudioDetailFetchScopePage()),
+    final scope = await showDialog<_AudioDetailFetchScope>(
+      context: context,
+      builder: (context) => const _AudioDetailFetchScopeDialog(),
     );
     if (scope == null || !mounted) return;
 
@@ -992,24 +993,48 @@ Future<void> _copyText(BuildContext context, String value) async {
 
 enum _AudioDetailFetchScope { all, missing }
 
-class _AudioDetailFetchScopePage extends StatelessWidget {
-  const _AudioDetailFetchScopePage();
+class _AudioDetailFetchScopeDialog extends StatelessWidget {
+  const _AudioDetailFetchScopeDialog();
 
   @override
   Widget build(BuildContext context) {
     final i18n = context.watch<AppLanguageProvider>();
-    return Scaffold(
-      appBar: AppBar(title: Text(i18n.tr('audio_detail_fetch_scope_title'))),
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+    final cs = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+
+    return Dialog(
+      backgroundColor: cs.surfaceContainerHigh,
+      child: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            Row(
+              children: [
+                Icon(Icons.download_rounded, color: cs.primary),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    i18n.tr('audio_detail_fetch_scope_title'),
+                    style: textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
             Text(
               i18n.tr('audio_detail_fetch_scope_hint'),
-              style: Theme.of(context).textTheme.bodyMedium,
+              style: textTheme.bodyMedium,
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 16),
             ListTile(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12),
               leading: const Icon(Icons.select_all_rounded),
               title: Text(i18n.tr('batch_metadata_all')),
               subtitle: Text(i18n.tr('audio_detail_fetch_scope_all_hint')),
@@ -1017,6 +1042,10 @@ class _AudioDetailFetchScopePage extends StatelessWidget {
                   Navigator.of(context).pop(_AudioDetailFetchScope.all),
             ),
             ListTile(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12),
               leading: const Icon(Icons.playlist_add_check_rounded),
               title: Text(i18n.tr('metadata_scope_missing')),
               subtitle: Text(i18n.tr('audio_detail_fetch_scope_missing_hint')),

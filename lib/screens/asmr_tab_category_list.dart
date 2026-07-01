@@ -107,7 +107,7 @@ class _AsmrCategoryListState extends State<_AsmrCategoryList>
               triggerMode: GlassRefreshIndicatorTriggerMode.anywhere,
               onRefresh: widget.onRefresh,
               child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 650),
+                duration: const Duration(milliseconds: 750),
                 reverseDuration: const Duration(milliseconds: 220),
                 switchInCurve: Curves.easeOutCubic,
                 switchOutCurve: Curves.easeInCubic,

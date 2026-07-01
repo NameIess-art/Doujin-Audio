@@ -699,64 +699,72 @@ class _AsmrTabState extends State<AsmrTab>
         Positioned.fill(
           child: ColoredBox(color: Theme.of(context).colorScheme.surface),
         ),
-        globalState.initialized
-            ? Stack(
-                fit: StackFit.expand,
-                clipBehavior: Clip.none,
-                children: [
-                  for (int i = 0; i < _categories.length; i++)
-                    (() {
-                      final category = _categories[i];
-                      final isActive = category == currentCategory;
-                      return IgnorePointer(
-                        ignoring: !isActive,
-                        child: AnimatedOpacity(
-                          key: ValueKey<String>('asmr_category_fade_$i'),
-                          opacity: isActive ? 1.0 : 0.0,
-                          duration: const Duration(milliseconds: 120),
-                          curve: Curves.easeOutCubic,
-                          child: TickerMode(
-                            enabled: isActive,
-                            child: ExcludeFocus(
-                              excluding: !isActive,
-                              child: ExcludeSemantics(
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 750),
+          switchInCurve: Curves.easeOutCubic,
+          switchOutCurve: Curves.easeInCubic,
+          transitionBuilder: (child, animation) =>
+              FadeTransition(opacity: animation, child: child),
+          child: globalState.initialized
+              ? Stack(
+                  key: const ValueKey('asmr_initial_content'),
+                  fit: StackFit.expand,
+                  clipBehavior: Clip.none,
+                  children: [
+                    for (int i = 0; i < _categories.length; i++)
+                      (() {
+                        final category = _categories[i];
+                        final isActive = category == currentCategory;
+                        return IgnorePointer(
+                          ignoring: !isActive,
+                          child: AnimatedOpacity(
+                            key: ValueKey<String>('asmr_category_fade_$i'),
+                            opacity: isActive ? 1.0 : 0.0,
+                            duration: const Duration(milliseconds: 120),
+                            curve: Curves.easeOutCubic,
+                            child: TickerMode(
+                              enabled: isActive,
+                              child: ExcludeFocus(
                                 excluding: !isActive,
-                                child: _AsmrCategoryList(
-                                  key: ValueKey(category),
-                                  category: category,
-                                  scrollController:
-                                      _scrollControllers[category]!,
-                                  searchQuery: _searchQuery,
-                                  topInset: headerContentHeight,
-                                  bottomInset: bottomInset,
-                                  onRefresh: () =>
-                                      _refreshCategoryWithFeedback(category),
+                                child: ExcludeSemantics(
+                                  excluding: !isActive,
+                                  child: _AsmrCategoryList(
+                                    key: ValueKey(category),
+                                    category: category,
+                                    scrollController:
+                                        _scrollControllers[category]!,
+                                    searchQuery: _searchQuery,
+                                    topInset: headerContentHeight,
+                                    bottomInset: bottomInset,
+                                    onRefresh: () =>
+                                        _refreshCategoryWithFeedback(category),
+                                  ),
                                 ),
                               ),
                             ),
                           ),
-                        ),
-                      );
-                    })(),
-                ],
-              )
-            : ListView(
-                key: const ValueKey('asmr_initial_placeholder'),
-                physics: const NeverScrollableScrollPhysics(),
-                padding: EdgeInsets.fromLTRB(
-                  16,
-                  headerContentHeight + 10,
-                  16,
-                  0,
+                        );
+                      })(),
+                  ],
+                )
+              : ListView(
+                  key: const ValueKey('asmr_initial_placeholder'),
+                  physics: const NeverScrollableScrollPhysics(),
+                  padding: EdgeInsets.fromLTRB(
+                    16,
+                    headerContentHeight + 10,
+                    16,
+                    0,
+                  ),
+                  children: [
+                    for (int i = 0; i < 5; i++)
+                      const Padding(
+                        padding: EdgeInsets.only(bottom: 8),
+                        child: _AsmrWorkSkeletonCard(),
+                      ),
+                  ],
                 ),
-                children: [
-                  for (int i = 0; i < 5; i++)
-                    const Padding(
-                      padding: EdgeInsets.only(bottom: 8),
-                      child: _AsmrWorkSkeletonCard(),
-                    ),
-                ],
-              ),
+        ), // Close AnimatedSwitcher
         Positioned(
           top: 0,
           left: 0,

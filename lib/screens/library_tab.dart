@@ -344,6 +344,9 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
 
   void _jumpLibraryListToTop() {
     if (!_scrollController.hasClients) return;
+    if (_scrollController.offset > 2500) {
+      _scrollController.jumpTo(2500);
+    }
     _scrollController.animateTo(
       0,
       duration: const Duration(milliseconds: 350),

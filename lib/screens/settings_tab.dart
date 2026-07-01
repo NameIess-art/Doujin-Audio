@@ -115,6 +115,9 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
 
   void _jumpSettingsToTop() {
     if (!_scrollController.hasClients) return;
+    if (_scrollController.offset > 2500) {
+      _scrollController.jumpTo(2500);
+    }
     _scrollController.animateTo(
       0,
       duration: const Duration(milliseconds: 350),

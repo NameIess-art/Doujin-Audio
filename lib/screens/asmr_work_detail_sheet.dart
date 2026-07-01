@@ -140,9 +140,6 @@ class _AsmrWorkDetailSheetState extends State<_AsmrWorkDetailSheet> {
                           seed: effectiveWork.title,
                           showIcon: false,
                         ),
-                        size: 36,
-                        strokeWidth: 3,
-                        color: asmrBlue,
                       ),
                       fallbackBuilder: (_) => CoverFallbackArtwork(
                         seed: effectiveWork.title,

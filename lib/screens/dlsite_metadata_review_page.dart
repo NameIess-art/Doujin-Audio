@@ -215,7 +215,6 @@ class _DlsiteMetadataReviewPageState extends State<DlsiteMetadataReviewPage> {
   @override
   Widget build(BuildContext context) {
     final i18n = context.watch<AppLanguageProvider>();
-    final cs = Theme.of(context).colorScheme;
     final metadata = _metadata;
     final coverUrl = widget.detail.target.isLibraryRootFolder
         ? metadata?.coverUrl
@@ -296,9 +295,6 @@ class _DlsiteMetadataReviewPageState extends State<DlsiteMetadataReviewPage> {
                                     seed: coverUrl,
                                     showIcon: false,
                                   ),
-                                  size: 40,
-                                  strokeWidth: 3,
-                                  color: cs.primary,
                                 ),
                           fallbackBuilder: (_) => CoverFallbackArtwork(
                             seed: coverUrl,

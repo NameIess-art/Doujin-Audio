@@ -29,7 +29,7 @@ void main() {
     );
 
     expect(find.byType(CoverFallbackArtwork), findsOneWidget);
-    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
 
     completer.complete(null);
     await tester.pump();

@@ -73,6 +73,7 @@ class CoverArtworkCacheService {
       <String, Future<String?>>{};
   final Set<String> _coverSearchMisses = <String>{};
   final Map<String, String?> _manualCoverByScopeCache = <String, String?>{};
+  bool _manualCoverCachePrimed = false;
   final Map<String, List<String>> _discoveredImagesByScopeCache =
       <String, List<String>>{};
   int _generation = 0;
@@ -250,6 +251,7 @@ class CoverArtworkCacheService {
     _resolvedRemoteCoverFutures.remove(normalizedScope);
     _coverSearchMisses.remove(normalizedScope);
     _manualCoverByScopeCache.clear();
+    _manualCoverCachePrimed = false;
     _discoveredImagesByScopeCache.remove(normalizedScope);
   }
 
@@ -264,6 +266,8 @@ class CoverArtworkCacheService {
       return;
     }
     _generation++;
+    _manualCoverByScopeCache.clear();
+    _manualCoverCachePrimed = false;
     for (final scope in normalizedScopes) {
       _folderCoverFutures.remove(scope);
       _resolvedFolderCovers.remove(scope);
@@ -275,7 +279,6 @@ class CoverArtworkCacheService {
       _resolvedRemoteCovers.remove(scope);
       _resolvedRemoteCoverFutures.remove(scope);
       _coverSearchMisses.remove(scope);
-      _manualCoverByScopeCache.clear();
       _discoveredImagesByScopeCache.remove(scope);
     }
   }
@@ -293,11 +296,13 @@ class CoverArtworkCacheService {
     _resolvedRemoteCoverFutures.clear();
     _coverSearchMisses.clear();
     _manualCoverByScopeCache.clear();
+    _manualCoverCachePrimed = false;
     _discoveredImagesByScopeCache.clear();
   }
 
   void _ensureManualCoverCache() {
-    if (_manualCoverByScopeCache.isNotEmpty) return;
+    if (_manualCoverCachePrimed) return;
+    _manualCoverByScopeCache.clear();
     for (final track in _libraryService.library) {
       final manualCoverPath = _validatedManualCoverPathSync(
         track.manualCoverPath,
@@ -307,6 +312,7 @@ class CoverArtworkCacheService {
       if (scope == null || scope.isEmpty) continue;
       _manualCoverByScopeCache[scope] = manualCoverPath;
     }
+    _manualCoverCachePrimed = true;
   }
 
   Future<String?> _resolveCoverPathForTrack(

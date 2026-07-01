@@ -254,6 +254,32 @@ void main() {
     },
   );
 
+  test('manual cover miss is cached until scope invalidation', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'cover_cache_manual_miss_test_',
+    );
+    addTearDown(() async {
+      if (await directory.exists()) await directory.delete(recursive: true);
+    });
+    final missingCover = '${directory.path}${Platform.pathSeparator}manual.jpg';
+    final library = LibraryService()
+      ..library.add(
+        _track(
+          path: '${directory.path}${Platform.pathSeparator}track.mp3',
+          groupKey: directory.path,
+          manualCoverPath: missingCover,
+        ),
+      );
+    final cache = CoverArtworkCacheService(libraryService: library);
+
+    expect(cache.resolvedForFolder(directory.path), isNull);
+    await File(missingCover).writeAsBytes(<int>[0xff, 0xd8, 0xff, 0xd9]);
+
+    expect(cache.resolvedForFolder(directory.path), isNull);
+    cache.invalidateFolder(directory.path);
+    expect(cache.resolvedForFolder(directory.path), missingCover);
+  });
+
   test('folder miss can resolve after scope invalidation', () async {
     final directory = await Directory.systemTemp.createTemp(
       'cover_cache_miss_test_',

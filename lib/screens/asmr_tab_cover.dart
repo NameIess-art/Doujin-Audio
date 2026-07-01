@@ -45,8 +45,6 @@ class _AsmrWorkCover extends StatelessWidget {
                     showIcon: false,
                     compact: true,
                   ),
-                  size: 36,
-                  strokeWidth: 3,
                 ),
                 fallbackBuilder: (_) => CoverFallbackArtwork(
                   seed: url,

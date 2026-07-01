@@ -634,14 +634,9 @@ class _LibraryCoverThumbnailState
               ),
               retryFutureBuilder: () =>
                   provider.coverPathFutureForFolder(widget.folderPath),
-              duration: Duration.zero,
               fallbackBuilder: (_) => fallback(),
-              loadingBuilder: (_) => CoverLoadingArtwork(
-                placeholder: fallback(hideIcon: true),
-                size: 34,
-                strokeWidth: 3,
-                color: Theme.of(context).colorScheme.primary,
-              ),
+              loadingBuilder: (_) =>
+                  CoverLoadingArtwork(placeholder: fallback(hideIcon: true)),
               imageBuilder: (context, coverPath) {
                 return RetryingFileImage(
                   path: coverPath,
@@ -725,14 +720,9 @@ class _LibraryTrackCoverThumbnailState
             future: coverPathFuture,
             initialPath: provider.resolvedCoverPathForTrack(track),
             retryFutureBuilder: () => provider.coverPathFutureForTrack(track),
-            duration: Duration.zero,
             fallbackBuilder: (_) => fallback(),
-            loadingBuilder: (_) => CoverLoadingArtwork(
-              placeholder: fallback(hideIcon: true),
-              size: 34,
-              strokeWidth: 3,
-              color: Theme.of(context).colorScheme.primary,
-            ),
+            loadingBuilder: (_) =>
+                CoverLoadingArtwork(placeholder: fallback(hideIcon: true)),
             imageBuilder: (context, coverPath) {
               return RetryingFileImage(
                 path: coverPath,

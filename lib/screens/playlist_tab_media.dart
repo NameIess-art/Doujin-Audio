@@ -71,7 +71,6 @@ class _SessionHeroArtwork extends ConsumerWidget {
                 fit: StackFit.expand,
                 children: [
                   AsyncCoverImage(
-                    duration: Duration.zero,
                     future: coverPathFuture,
                     initialPath: provider.resolvedCoverPathForTrack(track),
                     retryFutureBuilder: () =>
@@ -79,9 +78,6 @@ class _SessionHeroArtwork extends ConsumerWidget {
                     fallbackBuilder: (_) => fallback(),
                     loadingBuilder: (_) => CoverLoadingArtwork(
                       placeholder: fallback(hideIcon: true),
-                      size: 36,
-                      strokeWidth: 3,
-                      color: cs.onPrimaryContainer.withValues(alpha: 0.75),
                     ),
                     imageBuilder: (context, coverPath) {
                       return RepaintBoundary(

@@ -599,7 +599,6 @@ class _ActiveSessionCover extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final provider = ref.read(audioProviderFacadeProvider);
-    final cs = Theme.of(context).colorScheme;
     final coverCacheWidth = coverCacheWidthForResolution(
       ref.watch(
         settingsStateProvider.select(
@@ -643,12 +642,8 @@ class _ActiveSessionCover extends ConsumerWidget {
           retryFutureBuilder: () =>
               _sessionCoverFutureForTrack(provider, track),
           fallbackBuilder: (_) => fallback(),
-          loadingBuilder: (_) => CoverLoadingArtwork(
-            placeholder: fallback(hideIcon: true),
-            size: 28,
-            strokeWidth: 2.6,
-            color: cs.primary,
-          ),
+          loadingBuilder: (_) =>
+              CoverLoadingArtwork(placeholder: fallback(hideIcon: true)),
           imageBuilder: (context, coverPath) {
             return RetryingFileImage(
               path: coverPath,

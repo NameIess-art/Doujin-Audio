@@ -8,6 +8,7 @@ import '../services/ui_interaction_coordinator.dart';
 import 'scroll_activity_gate.dart';
 
 const int kCoverImageCacheSize = 600;
+const Duration kCoverImageFadeDuration = Duration(milliseconds: 750);
 
 int? coverCacheWidthForResolution(CoverImageResolution resolution) {
   switch (resolution) {
@@ -48,7 +49,7 @@ class AsyncCoverImage extends StatefulWidget {
     required this.fallbackBuilder,
     this.retryFutureBuilder,
     this.loadingBuilder,
-    this.duration = const Duration(milliseconds: 600),
+    this.duration = kCoverImageFadeDuration,
     this.retryDelay = const Duration(seconds: 2),
     this.maxRetryAttempts = 12,
   });
@@ -218,61 +219,13 @@ class _AsyncCoverImageState extends State<AsyncCoverImage> {
   }
 }
 
-class CoverLoadingIndicator extends StatelessWidget {
-  const CoverLoadingIndicator({
-    super.key,
-    this.size = 32,
-    this.strokeWidth = 2.8,
-    this.color,
-  });
-
-  final double size;
-  final double strokeWidth;
-  final Color? color;
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return Center(
-      child: SizedBox.square(
-        dimension: size,
-        child: CircularProgressIndicator(
-          strokeWidth: strokeWidth,
-          color: color ?? cs.primary,
-        ),
-      ),
-    );
-  }
-}
-
 class CoverLoadingArtwork extends StatelessWidget {
-  const CoverLoadingArtwork({
-    super.key,
-    required this.placeholder,
-    this.size = 32,
-    this.strokeWidth = 2.8,
-    this.color,
-  });
+  const CoverLoadingArtwork({super.key, required this.placeholder});
 
   final Widget placeholder;
-  final double size;
-  final double strokeWidth;
-  final Color? color;
 
   @override
-  Widget build(BuildContext context) {
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        placeholder,
-        CoverLoadingIndicator(
-          size: size,
-          strokeWidth: strokeWidth,
-          color: color,
-        ),
-      ],
-    );
-  }
+  Widget build(BuildContext context) => placeholder;
 }
 
 class CoverFallbackArtwork extends StatelessWidget {
@@ -484,7 +437,7 @@ class AsyncRemoteCoverImage extends StatelessWidget {
     this.colorBlendMode,
     this.useDefaultCacheWidth = true,
     this.filterQuality = FilterQuality.medium,
-    this.duration = const Duration(milliseconds: 600),
+    this.duration = kCoverImageFadeDuration,
   });
 
   final String url;
@@ -674,6 +627,15 @@ class _RetryingImageState extends State<RetryingImage> {
       colorBlendMode: widget.colorBlendMode,
       filterQuality: widget.filterQuality,
       gaplessPlayback: widget.gaplessPlayback,
+      frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+        if (wasSynchronouslyLoaded) return child;
+        return AnimatedOpacity(
+          opacity: frame == null ? 0 : 1,
+          duration: kCoverImageFadeDuration,
+          curve: Curves.easeInOutSine,
+          child: child,
+        );
+      },
       loadingBuilder: (context, child, loadingProgress) {
         if (loadingProgress == null) {
           return child;

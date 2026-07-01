@@ -716,7 +716,6 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                         tileMode: TileMode.decal,
                       ),
                       child: AsyncCoverImage(
-                        duration: Duration.zero,
                         future: coverPathFuture,
                         initialPath: provider.resolvedCoverPathForTrack(track),
                         retryFutureBuilder: () =>

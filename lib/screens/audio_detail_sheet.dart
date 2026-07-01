@@ -900,7 +900,7 @@ class _AudioDetailRow extends StatelessWidget {
           Row(
             children: [
               Text(label, style: labelStyle),
-              const SizedBox(width: 8),
+              const Spacer(),
               if (busy)
                 const SizedBox(
                   width: 18,

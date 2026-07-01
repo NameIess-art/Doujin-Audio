@@ -10,13 +10,27 @@ extension _LibraryTabCategoryView on _LibraryTabState {
     };
   }
 
+  List<String> get _termSearchKeywords {
+    return _termSearchQuery
+        .toLowerCase()
+        .split(RegExp(r'[\s,，;；|]+'))
+        .where((s) => s.isNotEmpty)
+        .toList(growable: false);
+  }
+
   List<String> _termsForCategory(AudioLibraryCategorySnapshot snapshot) {
-    return switch (_categoryType) {
+    final terms = switch (_categoryType) {
       AudioLibraryCategoryType.tags => snapshot.tagTerms,
       AudioLibraryCategoryType.voiceActors => snapshot.voiceActorTerms,
       AudioLibraryCategoryType.circles => snapshot.circleTerms,
       AudioLibraryCategoryType.all => const <String>[],
     };
+    final keywords = _termSearchKeywords;
+    if (keywords.isEmpty) return terms;
+    return terms.where((term) {
+      final t = term.toLowerCase();
+      return keywords.any((k) => t.contains(k));
+    }).toList();
   }
 
   List<String> _entryTermsForCategory(AudioLibraryCategoryEntry entry) {
@@ -81,11 +95,25 @@ extension _LibraryTabCategoryView on _LibraryTabState {
   ) {
     final selectedTerms = _selectedTermsForCurrentCategory;
     final normalizedQuery = _effectiveSearchQuery.trim().toLowerCase();
+    final termKeywords = _termSearchKeywords;
+
     return snapshot.entries
         .where((entry) {
           if (selectedTerms.isNotEmpty) {
             final entryTerms = _entryTermsForCategory(entry).toSet();
             if (!selectedTerms.any(entryTerms.contains)) return false;
+          }
+          if (termKeywords.isNotEmpty) {
+            final entryTerms = _entryTermsForCategory(entry).toSet();
+            bool hasMatchingTerm = false;
+            for (final term in entryTerms) {
+              final t = term.toLowerCase();
+              if (termKeywords.any((k) => t.contains(k))) {
+                hasMatchingTerm = true;
+                break;
+              }
+            }
+            if (!hasMatchingTerm) return false;
           }
           if (normalizedQuery.isNotEmpty &&
               !entry.searchableText.contains(normalizedQuery)) {
@@ -94,6 +122,19 @@ extension _LibraryTabCategoryView on _LibraryTabState {
           return true;
         })
         .toList(growable: false);
+  }
+
+  String _termSearchHintText(AppLanguageProvider i18n) {
+    final searchPrefix = i18n.tr('search');
+    return switch (_categoryType) {
+      AudioLibraryCategoryType.tags =>
+        '$searchPrefix${i18n.tr('library_category_tags')}...',
+      AudioLibraryCategoryType.voiceActors =>
+        '$searchPrefix${i18n.tr('library_category_voice_actors')}...',
+      AudioLibraryCategoryType.circles =>
+        '$searchPrefix${i18n.tr('library_category_circles')}...',
+      AudioLibraryCategoryType.all => '$searchPrefix...',
+    };
   }
 
   Widget _buildCategoryBody({
@@ -139,10 +180,16 @@ extension _LibraryTabCategoryView on _LibraryTabState {
           itemBuilder: (context, index) {
             if (hasTermBox && index == 0) {
               return _LibraryCategoryTermBox(
+                categoryType: _categoryType,
                 terms: terms,
                 selectedTerms: _selectedTermsForCurrentCategory,
                 emptyText: _noTermsText(i18n),
                 clearLabel: i18n.tr('clear'),
+                searchHintText: _termSearchHintText(i18n),
+                searchQuery: _termSearchQuery,
+                onSearchQueryChanged: (val) {
+                  _setLocalState(() => _termSearchQuery = val);
+                },
                 onToggle: (term) {
                   _setLocalState(() {
                     final selected = _selectedTermsForCurrentCategory;
@@ -224,38 +271,95 @@ extension _LibraryTabCategoryView on _LibraryTabState {
 
 class _LibraryCategoryTermBox extends StatefulWidget {
   const _LibraryCategoryTermBox({
+    required this.categoryType,
     required this.terms,
     required this.selectedTerms,
     required this.emptyText,
     required this.clearLabel,
     required this.onToggle,
     required this.onClear,
+    required this.searchHintText,
+    required this.searchQuery,
+    required this.onSearchQueryChanged,
   });
 
+  final AudioLibraryCategoryType categoryType;
   final List<String> terms;
   final Set<String> selectedTerms;
   final String emptyText;
   final String clearLabel;
   final ValueChanged<String> onToggle;
   final VoidCallback onClear;
+  final String searchHintText;
+  final String searchQuery;
+  final ValueChanged<String> onSearchQueryChanged;
 
   @override
-  State<_LibraryCategoryTermBox> createState() => _LibraryCategoryTermBoxState();
+  State<_LibraryCategoryTermBox> createState() =>
+      _LibraryCategoryTermBoxState();
 }
 
 class _LibraryCategoryTermBoxState extends State<_LibraryCategoryTermBox> {
   bool _expanded = false;
+  bool _wasExpandedBeforeSearch = false;
+  late final TextEditingController _searchController;
+  late final String _prefKey;
 
   @override
   void initState() {
     super.initState();
-    _expanded = AppPreferences.getBoolSync('library_category_terms_expanded') ?? false;
+    _prefKey = 'library_category_terms_expanded_${widget.categoryType.name}';
+    _expanded = AppPreferences.getBoolSync(_prefKey) ?? false;
+    _searchController = TextEditingController(text: widget.searchQuery);
+  }
+
+  void _onSearchQueryChangedLocally(String val) {
+    if (widget.searchQuery.isEmpty && val.isNotEmpty) {
+      _wasExpandedBeforeSearch = _expanded;
+      if (!_expanded) {
+        setState(() {
+          _expanded = true;
+          AppPreferences.setBool(_prefKey, _expanded);
+        });
+      }
+    } else if (widget.searchQuery.isNotEmpty && val.isEmpty) {
+      if (!_wasExpandedBeforeSearch && _expanded) {
+        setState(() {
+          _expanded = false;
+          AppPreferences.setBool(_prefKey, _expanded);
+        });
+      }
+    }
+    widget.onSearchQueryChanged(val);
+  }
+
+  void _onClearSearchLocally() {
+    _searchController.clear();
+    _onSearchQueryChangedLocally('');
+  }
+
+  @override
+  void didUpdateWidget(covariant _LibraryCategoryTermBox oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.searchQuery != widget.searchQuery &&
+        _searchController.text != widget.searchQuery) {
+      _searchController.text = widget.searchQuery;
+    }
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   void _toggleExpanded() {
     setState(() {
       _expanded = !_expanded;
-      AppPreferences.setBool('library_category_terms_expanded', _expanded);
+      AppPreferences.setBool(_prefKey, _expanded);
+      if (widget.searchQuery.isNotEmpty) {
+        _wasExpandedBeforeSearch = _expanded;
+      }
     });
   }
 
@@ -270,7 +374,7 @@ class _LibraryCategoryTermBoxState extends State<_LibraryCategoryTermBox> {
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: cs.outlineVariant),
       ),
-      child: widget.terms.isEmpty
+      child: widget.terms.isEmpty && widget.searchQuery.isEmpty
           ? Text(
               widget.emptyText,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -282,35 +386,175 @@ class _LibraryCategoryTermBoxState extends State<_LibraryCategoryTermBox> {
               duration: const Duration(milliseconds: 250),
               curve: Curves.easeOutCubic,
               alignment: Alignment.topCenter,
-              child: ConstrainedBox(
-                constraints: BoxConstraints(
-                  maxHeight: _expanded ? double.infinity : 28.0,
-                ),
-                child: ClipRect(
-                  child: Align(
-                    alignment: Alignment.topLeft,
-                    widthFactor: 1.0,
-                    child: _FloatRightWrap(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: SizedBox(
+                          height: 28,
+                          child: TextField(
+                            controller: _searchController,
+                            onChanged: _onSearchQueryChangedLocally,
+                            style: Theme.of(context).textTheme.labelSmall
+                                ?.copyWith(
+                                  color: cs.onSurface,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                            decoration: InputDecoration(
+                              hintText: widget.searchHintText,
+                              hintStyle: Theme.of(context).textTheme.labelSmall
+                                  ?.copyWith(
+                                    color: cs.onSurfaceVariant.withValues(
+                                      alpha: 0.6,
+                                    ),
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                              contentPadding: const EdgeInsets.only(
+                                left: 10,
+                                bottom: 14,
+                              ),
+                              filled: true,
+                              fillColor: cs.surface,
+                              isDense: true,
+                              suffixIcon: widget.searchQuery.isNotEmpty
+                                  ? GestureDetector(
+                                      onTap: _onClearSearchLocally,
+                                      behavior: HitTestBehavior.opaque,
+                                      child: Icon(
+                                        Icons.cancel_rounded,
+                                        size: 14,
+                                        color: cs.onSurfaceVariant,
+                                      ),
+                                    )
+                                  : null,
+                              suffixIconConstraints: const BoxConstraints(
+                                minWidth: 28,
+                                minHeight: 28,
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                borderSide: BorderSide(
+                                  color: cs.outlineVariant,
+                                ),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                borderSide: BorderSide(color: cs.primary),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      if (widget.selectedTerms.isNotEmpty) ...[
+                        SizedBox(
+                          height: 28,
+                          child: ActionChip(
+                            label: Padding(
+                              padding: const EdgeInsets.only(bottom: 2),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.close_rounded, size: 14),
+                                  const SizedBox(width: 2),
+                                  Text(widget.clearLabel),
+                                ],
+                              ),
+                            ),
+                            onPressed: widget.onClear,
+                            visualDensity: VisualDensity.compact,
+                            materialTapTargetSize:
+                                MaterialTapTargetSize.shrinkWrap,
+                            padding: EdgeInsets.zero,
+                            labelPadding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                            ),
+                            backgroundColor: cs.surface,
+                            side: BorderSide(color: cs.outlineVariant),
+                            labelStyle: Theme.of(context).textTheme.labelSmall
+                                ?.copyWith(
+                                  color: cs.primary,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                      ],
+                      SizedBox(
+                        height: 28,
+                        child: ActionChip(
+                          label: Padding(
+                            padding: const EdgeInsets.only(bottom: 2),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  _expanded
+                                      ? Icons.expand_less_rounded
+                                      : Icons.expand_more_rounded,
+                                  size: 16,
+                                  color: cs.primary,
+                                ),
+                                const SizedBox(width: 2),
+                                Text(_expanded ? '收起' : '展开'),
+                              ],
+                            ),
+                          ),
+                          onPressed: _toggleExpanded,
+                          visualDensity: VisualDensity.compact,
+                          materialTapTargetSize:
+                              MaterialTapTargetSize.shrinkWrap,
+                          padding: EdgeInsets.zero,
+                          labelPadding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                          ),
+                          backgroundColor: cs.surface,
+                          side: BorderSide(color: cs.outlineVariant),
+                          labelStyle: Theme.of(context).textTheme.labelSmall
+                              ?.copyWith(
+                                color: cs.primary,
+                                fontWeight: FontWeight.w800,
+                              ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (_expanded) ...[
+                    const SizedBox(height: 8),
+                    Wrap(
                       spacing: 10,
                       runSpacing: 8,
                       children: widget.terms
                           .map<Widget>((term) {
-                            final selected = widget.selectedTerms.contains(term);
+                            final selected = widget.selectedTerms.contains(
+                              term,
+                            );
                             return GestureDetector(
                               behavior: HitTestBehavior.translucent,
-                              onLongPress: () => _copyCategoryTerm(context, term),
-                              onSecondaryTap: () => _copyCategoryTerm(context, term),
+                              onLongPress: () =>
+                                  _copyCategoryTerm(context, term),
+                              onSecondaryTap: () =>
+                                  _copyCategoryTerm(context, term),
                               child: SizedBox(
                                 height: 28,
                                 child: FilterChip(
                                   selected: selected,
-                                  label: Text(term),
+                                  label: Padding(
+                                    padding: const EdgeInsets.only(bottom: 2),
+                                    child: Text(term),
+                                  ),
                                   onSelected: (_) => widget.onToggle(term),
                                   showCheckmark: false,
                                   visualDensity: VisualDensity.compact,
-                                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                  materialTapTargetSize:
+                                      MaterialTapTargetSize.shrinkWrap,
                                   padding: EdgeInsets.zero,
-                                  labelPadding: const EdgeInsets.symmetric(horizontal: 8),
+                                  labelPadding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                  ),
                                   selectedColor: cs.secondaryContainer,
                                   backgroundColor: cs.surface,
                                   side: BorderSide(
@@ -318,7 +562,9 @@ class _LibraryCategoryTermBoxState extends State<_LibraryCategoryTermBox> {
                                         ? cs.secondary.withValues(alpha: 0.45)
                                         : cs.outlineVariant,
                                   ),
-                                  labelStyle: Theme.of(context).textTheme.labelSmall
+                                  labelStyle: Theme.of(context)
+                                      .textTheme
+                                      .labelSmall
                                       ?.copyWith(
                                         color: selected
                                             ? cs.onSecondaryContainer
@@ -331,73 +577,10 @@ class _LibraryCategoryTermBoxState extends State<_LibraryCategoryTermBox> {
                               ),
                             );
                           })
-                          .followedBy(<Widget>[
-                            Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                SizedBox(
-                                  height: 28,
-                                  child: ActionChip(
-                                    label: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        const Icon(Icons.close_rounded, size: 14),
-                                        const SizedBox(width: 2),
-                                        Text(widget.clearLabel),
-                                      ],
-                                    ),
-                                    onPressed: widget.selectedTerms.isEmpty ? null : widget.onClear,
-                                    visualDensity: VisualDensity.compact,
-                                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                    padding: EdgeInsets.zero,
-                                    labelPadding: const EdgeInsets.symmetric(horizontal: 6),
-                                    backgroundColor: cs.surface,
-                                    side: BorderSide(color: cs.outlineVariant),
-                                    labelStyle: Theme.of(context).textTheme.labelSmall
-                                        ?.copyWith(
-                                          color: widget.selectedTerms.isEmpty
-                                              ? cs.onSurfaceVariant.withValues(alpha: 0.45)
-                                              : cs.primary,
-                                          fontWeight: FontWeight.w800,
-                                        ),
-                                  ),
-                                ),
-                                const SizedBox(width: 6),
-                                SizedBox(
-                                  height: 28,
-                                  child: ActionChip(
-                                    label: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Icon(
-                                          _expanded ? Icons.expand_less_rounded : Icons.expand_more_rounded,
-                                          size: 16,
-                                          color: cs.primary,
-                                        ),
-                                        const SizedBox(width: 2),
-                                        Text(_expanded ? '收起' : '展开'),
-                                      ],
-                                    ),
-                                    onPressed: _toggleExpanded,
-                                    visualDensity: VisualDensity.compact,
-                                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                    padding: EdgeInsets.zero,
-                                    labelPadding: const EdgeInsets.symmetric(horizontal: 6),
-                                    backgroundColor: cs.surface,
-                                    side: BorderSide(color: cs.outlineVariant),
-                                    labelStyle: Theme.of(context).textTheme.labelSmall?.copyWith(
-                                      color: cs.primary,
-                                      fontWeight: FontWeight.w800,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ])
                           .toList(growable: false),
                     ),
-                  ),
-                ),
+                  ],
+                ],
               ),
             ),
     );
@@ -667,125 +850,5 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
               ),
       ),
     );
-  }
-}
-
-class _FloatRightWrap extends MultiChildRenderObjectWidget {
-  const _FloatRightWrap({
-    required super.children,
-    this.spacing = 0.0,
-    this.runSpacing = 0.0,
-  });
-
-  final double spacing;
-  final double runSpacing;
-
-  @override
-  RenderObject createRenderObject(BuildContext context) {
-    return _RenderFloatRightWrap(spacing: spacing, runSpacing: runSpacing);
-  }
-
-  @override
-  void updateRenderObject(BuildContext context, covariant _RenderFloatRightWrap renderObject) {
-    renderObject
-      ..spacing = spacing
-      ..runSpacing = runSpacing;
-  }
-}
-
-class _FloatRightWrapParentData extends ContainerBoxParentData<RenderBox> {}
-
-class _RenderFloatRightWrap extends RenderBox
-    with ContainerRenderObjectMixin<RenderBox, _FloatRightWrapParentData>,
-         RenderBoxContainerDefaultsMixin<RenderBox, _FloatRightWrapParentData> {
-  double _spacing;
-  double get spacing => _spacing;
-  set spacing(double value) {
-    if (_spacing == value) return;
-    _spacing = value;
-    markNeedsLayout();
-  }
-
-  double _runSpacing;
-  double get runSpacing => _runSpacing;
-  set runSpacing(double value) {
-    if (_runSpacing == value) return;
-    _runSpacing = value;
-    markNeedsLayout();
-  }
-
-  _RenderFloatRightWrap({required double spacing, required double runSpacing})
-    : _spacing = spacing, _runSpacing = runSpacing;
-
-  @override
-  void setupParentData(RenderBox child) {
-    if (child.parentData is! _FloatRightWrapParentData) {
-      child.parentData = _FloatRightWrapParentData();
-    }
-  }
-
-  @override
-  void performLayout() {
-    if (firstChild == null) {
-      size = constraints.smallest;
-      return;
-    }
-
-    RenderBox? floatChild = lastChild;
-    if (floatChild == null) {
-       size = constraints.smallest;
-       return;
-    }
-    
-    floatChild.layout(constraints.loosen(), parentUsesSize: true);
-    final double floatWidth = floatChild.size.width;
-    final double floatHeight = floatChild.size.height;
-
-    double x = 0.0;
-    double y = 0.0;
-    double maxLineHeight = 0.0;
-    double maxWidth = constraints.maxWidth;
-    if (maxWidth.isInfinite) maxWidth = 400.0; // Fallback
-
-    RenderBox? child = firstChild;
-    while (child != null && child != floatChild) {
-      child.layout(constraints.loosen(), parentUsesSize: true);
-
-      double availableWidth = (y < floatHeight) ? (maxWidth - floatWidth - spacing) : maxWidth;
-
-      if (x + child.size.width > availableWidth && x > 0.0) {
-        x = 0.0;
-        y += maxLineHeight + runSpacing;
-        maxLineHeight = 0.0;
-        availableWidth = (y < floatHeight) ? (maxWidth - floatWidth - spacing) : maxWidth;
-      }
-
-      final childParentData = child.parentData as _FloatRightWrapParentData;
-      childParentData.offset = Offset(x, y);
-
-      x += child.size.width + spacing;
-      if (child.size.height > maxLineHeight) {
-        maxLineHeight = child.size.height;
-      }
-
-      child = childParentData.nextSibling;
-    }
-
-    final floatParentData = floatChild.parentData as _FloatRightWrapParentData;
-    floatParentData.offset = Offset(maxWidth - floatWidth, 0.0);
-
-    double totalHeight = y + maxLineHeight;
-    double finalHeight = totalHeight > floatHeight ? totalHeight : floatHeight;
-    size = constraints.constrain(Size(maxWidth, finalHeight));
-  }
-
-  @override
-  void paint(PaintingContext context, Offset offset) {
-    defaultPaint(context, offset);
-  }
-
-  @override
-  bool hitTestChildren(BoxHitTestResult result, {required Offset position}) {
-    return defaultHitTestChildren(result, position: position);
   }
 }

@@ -3,6 +3,7 @@ import 'dart:collection';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -16,6 +17,7 @@ import '../providers/audio_provider.dart';
 import '../providers/audio_provider_riverpod.dart';
 import '../services/audio_state_services.dart';
 import '../services/app_log_service.dart';
+import '../services/app_preferences.dart';
 import '../services/file_cache_platform_gateway.dart';
 import '../services/media_file_support.dart';
 import '../services/natural_sort.dart';
@@ -468,7 +470,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         Platform.isWindows ||
         MediaQuery.orientationOf(context) == Orientation.landscape;
     const double expansion = 320.0;
-    final listTopPadding = 4 + headerControlsFullHeight + expansion;
+    final listTopPadding = (_categoryType == AudioLibraryCategoryType.all ? 4.0 : 0.0) + headerControlsFullHeight + expansion;
     const listBottomPadding = 16.0 + expansion;
     final listViewportBottomInset = listBottomInset + (isWindows ? 16.0 : 0.0);
     // Reduced cacheExtent to significantly lower memory footprint and improve
@@ -627,7 +629,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
             MediaQuery(
               data: MediaQuery.of(context).copyWith(
                 padding: EdgeInsets.only(
-                  top: headerControlsFullHeight + 4,
+                  top: headerControlsFullHeight + (_categoryType == AudioLibraryCategoryType.all ? 4.0 : 0.0),
                   bottom: listViewportBottomInset,
                   right: 4,
                 ),

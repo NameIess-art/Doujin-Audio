@@ -222,7 +222,7 @@ extension _LibraryTabCategoryView on _LibraryTabState {
   }
 }
 
-class _LibraryCategoryTermBox extends StatelessWidget {
+class _LibraryCategoryTermBox extends StatefulWidget {
   const _LibraryCategoryTermBox({
     required this.terms,
     required this.selectedTerms,
@@ -240,77 +240,165 @@ class _LibraryCategoryTermBox extends StatelessWidget {
   final VoidCallback onClear;
 
   @override
+  State<_LibraryCategoryTermBox> createState() => _LibraryCategoryTermBoxState();
+}
+
+class _LibraryCategoryTermBoxState extends State<_LibraryCategoryTermBox> {
+  bool _expanded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _expanded = AppPreferences.getBoolSync('library_category_terms_expanded') ?? false;
+  }
+
+  void _toggleExpanded() {
+    setState(() {
+      _expanded = !_expanded;
+      AppPreferences.setBool('library_category_terms_expanded', _expanded);
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.fromLTRB(10, 9, 10, 10),
+      margin: const EdgeInsets.only(bottom: 4),
+      padding: const EdgeInsets.fromLTRB(10, 5, 10, 5),
       decoration: BoxDecoration(
         color: cs.surfaceContainerHigh,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: cs.outlineVariant),
       ),
-      child: terms.isEmpty
+      child: widget.terms.isEmpty
           ? Text(
-              emptyText,
+              widget.emptyText,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: cs.onSurfaceVariant,
                 fontWeight: FontWeight.w600,
               ),
             )
-          : Wrap(
-              spacing: 7,
-              runSpacing: 7,
-              children: terms
-                  .map<Widget>((term) {
-                    final selected = selectedTerms.contains(term);
-                    return GestureDetector(
-                      behavior: HitTestBehavior.translucent,
-                      onLongPress: () => _copyCategoryTerm(context, term),
-                      onSecondaryTap: () => _copyCategoryTerm(context, term),
-                      child: FilterChip(
-                        selected: selected,
-                        label: Text(term),
-                        onSelected: (_) => onToggle(term),
-                        showCheckmark: false,
-                        visualDensity: VisualDensity.compact,
-                        selectedColor: cs.secondaryContainer,
-                        backgroundColor: cs.surface,
-                        side: BorderSide(
-                          color: selected
-                              ? cs.secondary.withValues(alpha: 0.45)
-                              : cs.outlineVariant,
-                        ),
-                        labelStyle: Theme.of(context).textTheme.labelSmall
-                            ?.copyWith(
-                              color: selected
-                                  ? cs.onSecondaryContainer
-                                  : cs.onSurfaceVariant,
-                              fontWeight: selected
-                                  ? FontWeight.w800
-                                  : FontWeight.w600,
+          : AnimatedSize(
+              duration: const Duration(milliseconds: 250),
+              curve: Curves.easeOutCubic,
+              alignment: Alignment.topCenter,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: _expanded ? double.infinity : 28.0,
+                ),
+                child: ClipRect(
+                  child: Align(
+                    alignment: Alignment.topLeft,
+                    widthFactor: 1.0,
+                    child: _FloatRightWrap(
+                      spacing: 10,
+                      runSpacing: 8,
+                      children: widget.terms
+                          .map<Widget>((term) {
+                            final selected = widget.selectedTerms.contains(term);
+                            return GestureDetector(
+                              behavior: HitTestBehavior.translucent,
+                              onLongPress: () => _copyCategoryTerm(context, term),
+                              onSecondaryTap: () => _copyCategoryTerm(context, term),
+                              child: SizedBox(
+                                height: 28,
+                                child: FilterChip(
+                                  selected: selected,
+                                  label: Text(term),
+                                  onSelected: (_) => widget.onToggle(term),
+                                  showCheckmark: false,
+                                  visualDensity: VisualDensity.compact,
+                                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                  padding: EdgeInsets.zero,
+                                  labelPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+                                  selectedColor: cs.secondaryContainer,
+                                  backgroundColor: cs.surface,
+                                  side: BorderSide(
+                                    color: selected
+                                        ? cs.secondary.withValues(alpha: 0.45)
+                                        : cs.outlineVariant,
+                                  ),
+                                  labelStyle: Theme.of(context).textTheme.labelSmall
+                                      ?.copyWith(
+                                        color: selected
+                                            ? cs.onSecondaryContainer
+                                            : cs.onSurfaceVariant,
+                                        fontWeight: selected
+                                            ? FontWeight.w800
+                                            : FontWeight.w600,
+                                      ),
+                                ),
+                              ),
+                            );
+                          })
+                          .followedBy(<Widget>[
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                SizedBox(
+                                  height: 28,
+                                  child: ActionChip(
+                                    label: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const Icon(Icons.close_rounded, size: 14),
+                                        const SizedBox(width: 2),
+                                        Text(widget.clearLabel),
+                                      ],
+                                    ),
+                                    onPressed: widget.selectedTerms.isEmpty ? null : widget.onClear,
+                                    visualDensity: VisualDensity.compact,
+                                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                    padding: EdgeInsets.zero,
+                                    labelPadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 0),
+                                    backgroundColor: cs.surface,
+                                    side: BorderSide(color: cs.outlineVariant),
+                                    labelStyle: Theme.of(context).textTheme.labelSmall
+                                        ?.copyWith(
+                                          color: widget.selectedTerms.isEmpty
+                                              ? cs.onSurfaceVariant.withValues(alpha: 0.45)
+                                              : cs.primary,
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                SizedBox(
+                                  height: 28,
+                                  child: ActionChip(
+                                    label: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          _expanded ? Icons.expand_less_rounded : Icons.expand_more_rounded,
+                                          size: 16,
+                                          color: cs.primary,
+                                        ),
+                                        const SizedBox(width: 2),
+                                        Text(_expanded ? '收起' : '展开'),
+                                      ],
+                                    ),
+                                    onPressed: _toggleExpanded,
+                                    visualDensity: VisualDensity.compact,
+                                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                    padding: EdgeInsets.zero,
+                                    labelPadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 0),
+                                    backgroundColor: cs.surface,
+                                    side: BorderSide(color: cs.outlineVariant),
+                                    labelStyle: Theme.of(context).textTheme.labelSmall?.copyWith(
+                                      color: cs.primary,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
-                      ),
-                    );
-                  })
-                  .followedBy(<Widget>[
-                    ActionChip(
-                      avatar: const Icon(Icons.close_rounded, size: 16),
-                      label: Text(clearLabel),
-                      onPressed: selectedTerms.isEmpty ? null : onClear,
-                      visualDensity: VisualDensity.compact,
-                      backgroundColor: cs.surface,
-                      side: BorderSide(color: cs.outlineVariant),
-                      labelStyle: Theme.of(context).textTheme.labelSmall
-                          ?.copyWith(
-                            color: selectedTerms.isEmpty
-                                ? cs.onSurfaceVariant.withValues(alpha: 0.45)
-                                : cs.primary,
-                            fontWeight: FontWeight.w800,
-                          ),
+                          ])
+                          .toList(growable: false),
                     ),
-                  ])
-                  .toList(growable: false),
+                  ),
+                ),
+              ),
             ),
     );
   }
@@ -420,8 +508,11 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
     final isAlreadyPlaying = firstTrack == null
         ? false
         : ref.watch(activeTrackPathsProvider).contains(firstTrack.path);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final cardShape = RoundedRectangleBorder(
-      side: BorderSide(color: cs.outlineVariant),
+      side: BorderSide(
+        color: cs.outlineVariant.withValues(alpha: isDark ? 0.26 : 0.42),
+      ),
       borderRadius: BorderRadius.circular(14),
     );
     const cardHeight = _FolderNodeWidgetState._rootFolderTileHeight;
@@ -443,7 +534,7 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
           margin: EdgeInsets.zero,
           clipBehavior: Clip.antiAlias,
           shape: cardShape,
-          color: cs.surface,
+          color: cs.surfaceContainerLow,
           child: Theme(
             data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
             child: ExpansionTile(
@@ -506,9 +597,9 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
         color: isAlreadyPlaying
             ? Color.alphaBlend(
                 cs.primaryContainer.withValues(alpha: 0.40),
-                cs.surface,
+                cs.surfaceContainerLow,
               )
-            : cs.surface,
+            : cs.surfaceContainerLow,
         child: entry.isFolder
             ? SizedBox(
                 height: cardHeight,
@@ -576,5 +667,126 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
               ),
       ),
     );
+  }
+}
+
+class _FloatRightWrap extends MultiChildRenderObjectWidget {
+  final double spacing;
+  final double runSpacing;
+  
+  const _FloatRightWrap({
+    Key? key,
+    required List<Widget> children,
+    this.spacing = 0.0,
+    this.runSpacing = 0.0,
+  }) : super(key: key, children: children);
+
+  @override
+  RenderObject createRenderObject(BuildContext context) {
+    return _RenderFloatRightWrap(spacing: spacing, runSpacing: runSpacing);
+  }
+
+  @override
+  void updateRenderObject(BuildContext context, covariant _RenderFloatRightWrap renderObject) {
+    renderObject
+      ..spacing = spacing
+      ..runSpacing = runSpacing;
+  }
+}
+
+class _FloatRightWrapParentData extends ContainerBoxParentData<RenderBox> {}
+
+class _RenderFloatRightWrap extends RenderBox
+    with ContainerRenderObjectMixin<RenderBox, _FloatRightWrapParentData>,
+         RenderBoxContainerDefaultsMixin<RenderBox, _FloatRightWrapParentData> {
+  double _spacing;
+  double get spacing => _spacing;
+  set spacing(double value) {
+    if (_spacing == value) return;
+    _spacing = value;
+    markNeedsLayout();
+  }
+
+  double _runSpacing;
+  double get runSpacing => _runSpacing;
+  set runSpacing(double value) {
+    if (_runSpacing == value) return;
+    _runSpacing = value;
+    markNeedsLayout();
+  }
+
+  _RenderFloatRightWrap({required double spacing, required double runSpacing})
+    : _spacing = spacing, _runSpacing = runSpacing;
+
+  @override
+  void setupParentData(RenderBox child) {
+    if (child.parentData is! _FloatRightWrapParentData) {
+      child.parentData = _FloatRightWrapParentData();
+    }
+  }
+
+  @override
+  void performLayout() {
+    if (firstChild == null) {
+      size = constraints.smallest;
+      return;
+    }
+
+    RenderBox? floatChild = lastChild;
+    if (floatChild == null) {
+       size = constraints.smallest;
+       return;
+    }
+    
+    floatChild.layout(constraints.loosen(), parentUsesSize: true);
+    final double floatWidth = floatChild.size.width;
+    final double floatHeight = floatChild.size.height;
+
+    double x = 0.0;
+    double y = 0.0;
+    double maxLineHeight = 0.0;
+    double maxWidth = constraints.maxWidth;
+    if (maxWidth.isInfinite) maxWidth = 400.0; // Fallback
+
+    RenderBox? child = firstChild;
+    while (child != null && child != floatChild) {
+      child.layout(constraints.loosen(), parentUsesSize: true);
+      
+      double availableWidth = (y < floatHeight) ? (maxWidth - floatWidth - spacing) : maxWidth;
+
+      if (x + child.size.width > availableWidth && x > 0.0) {
+        x = 0.0;
+        y += maxLineHeight + runSpacing;
+        maxLineHeight = 0.0;
+        availableWidth = (y < floatHeight) ? (maxWidth - floatWidth - spacing) : maxWidth;
+      }
+
+      final childParentData = child.parentData as _FloatRightWrapParentData;
+      childParentData.offset = Offset(x, y);
+
+      x += child.size.width + spacing;
+      if (child.size.height > maxLineHeight) {
+        maxLineHeight = child.size.height;
+      }
+
+      child = childParentData.nextSibling;
+    }
+
+    final floatParentData = floatChild.parentData as _FloatRightWrapParentData;
+    floatParentData.offset = Offset(maxWidth - floatWidth, 0.0);
+
+    double totalHeight = y + maxLineHeight;
+    double finalHeight = totalHeight > floatHeight ? totalHeight : floatHeight;
+    size = constraints.constrain(Size(maxWidth, finalHeight));
+  }
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    defaultPaint(context, offset);
+  }
+
+  @override
+  bool hitTestChildren(BoxHitTestResult result, {required Offset position}) {
+    return defaultHitTestChildren(result, position: position);
   }
 }

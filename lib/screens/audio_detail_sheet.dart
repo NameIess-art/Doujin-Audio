@@ -898,9 +898,9 @@ class _AudioDetailRow extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(label, style: labelStyle),
+              const SizedBox(width: 8),
               if (busy)
                 const SizedBox(
                   width: 18,

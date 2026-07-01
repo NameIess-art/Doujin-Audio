@@ -13,8 +13,9 @@ class AsmrDownloadDetailsPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final manager = context.watch<AsmrDownloadManager>();
-    final task = manager.getTask(workId);
+    final task = context.select<AsmrDownloadManager, AsmrDownloadTaskSnapshot?>(
+      (manager) => manager.getTask(workId),
+    );
     final headerHeight = MediaQuery.paddingOf(context).top + 56;
     final cs = Theme.of(context).colorScheme;
 

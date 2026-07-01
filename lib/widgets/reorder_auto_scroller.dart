@@ -1,4 +1,4 @@
-import 'dart:async';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/material.dart';
 
 /// A wrapper that provides enhanced auto-scroll behavior for reorderable lists.
@@ -35,15 +35,17 @@ class ReorderAutoScroller extends StatefulWidget {
   State<ReorderAutoScroller> createState() => _ReorderAutoScrollerState();
 }
 
-class _ReorderAutoScrollerState extends State<ReorderAutoScroller> {
-  Timer? _timer;
+class _ReorderAutoScrollerState extends State<ReorderAutoScroller>
+    with SingleTickerProviderStateMixin {
+  Ticker? _ticker;
+  Duration? _lastTickElapsed;
   double _velocity = 0;
 
   void _onPointerMove(PointerMoveEvent event) {
     if (!widget.isDragging) {
       if (_velocity != 0) {
         _velocity = 0;
-        _stopTimer();
+        _stopTicker();
       }
       return;
     }
@@ -91,42 +93,53 @@ class _ReorderAutoScrollerState extends State<ReorderAutoScroller> {
       _velocity = 0;
     }
 
-    if (_velocity != 0 && _timer == null) {
-      _startTimer();
+    if (_velocity != 0 && _ticker?.isActive != true) {
+      _startTicker();
     }
   }
 
   void _onPointerUp(PointerEvent event) {
     _velocity = 0;
-    _stopTimer();
+    _stopTicker();
   }
 
-  void _startTimer() {
-    _timer?.cancel();
-    _timer = Timer.periodic(const Duration(milliseconds: 16), (timer) {
-      if (_velocity == 0 || !widget.isDragging) {
-        _stopTimer();
-        return;
-      }
-
-      if (!widget.scrollController.hasClients) return;
-
-      final pos = widget.scrollController.position;
-      final delta = _velocity * 0.016;
-      final newOffset = (pos.pixels + delta).clamp(
-        pos.minScrollExtent,
-        pos.maxScrollExtent,
-      );
-
-      if (newOffset != pos.pixels) {
-        widget.scrollController.jumpTo(newOffset);
-      }
-    });
+  void _startTicker() {
+    _ticker ??= createTicker(_handleTick);
+    _lastTickElapsed = null;
+    _ticker!.start();
   }
 
-  void _stopTimer() {
-    _timer?.cancel();
-    _timer = null;
+  void _handleTick(Duration elapsed) {
+    if (_velocity == 0 || !widget.isDragging) {
+      _stopTicker();
+      return;
+    }
+
+    if (!widget.scrollController.hasClients) return;
+
+    final previousElapsed = _lastTickElapsed;
+    _lastTickElapsed = elapsed;
+    final deltaSeconds = previousElapsed == null
+        ? 0.016
+        : (elapsed - previousElapsed).inMicroseconds /
+              Duration.microsecondsPerSecond;
+    if (deltaSeconds <= 0) return;
+
+    final pos = widget.scrollController.position;
+    final delta = _velocity * deltaSeconds;
+    final newOffset = (pos.pixels + delta).clamp(
+      pos.minScrollExtent,
+      pos.maxScrollExtent,
+    );
+
+    if (newOffset != pos.pixels) {
+      widget.scrollController.jumpTo(newOffset);
+    }
+  }
+
+  void _stopTicker() {
+    _ticker?.stop();
+    _lastTickElapsed = null;
   }
 
   @override
@@ -134,13 +147,13 @@ class _ReorderAutoScrollerState extends State<ReorderAutoScroller> {
     super.didUpdateWidget(oldWidget);
     if (!widget.isDragging && oldWidget.isDragging) {
       _velocity = 0;
-      _stopTimer();
+      _stopTicker();
     }
   }
 
   @override
   void dispose() {
-    _stopTimer();
+    _ticker?.dispose();
     super.dispose();
   }
 

@@ -73,6 +73,9 @@ class CoverArtworkCacheService {
       <String, Future<String?>>{};
   final Set<String> _coverSearchMisses = <String>{};
   final Map<String, String?> _manualCoverByScopeCache = <String, String?>{};
+  final Map<String, bool> _manualCoverPathValidityCache = <String, bool>{};
+  final Map<String, Future<String?>> _manualCoverValidationFutures =
+      <String, Future<String?>>{};
   bool _manualCoverCachePrimed = false;
   final Map<String, List<String>> _discoveredImagesByScopeCache =
       <String, List<String>>{};
@@ -81,9 +84,7 @@ class CoverArtworkCacheService {
   int get generation => _generation;
 
   String? resolvedForTrack(MusicTrack? track, {String? trackPath}) {
-    final manualCoverPath = _validatedManualCoverPathSync(
-      track?.manualCoverPath,
-    );
+    final manualCoverPath = _cachedManualCoverPath(track?.manualCoverPath);
     if (manualCoverPath != null) {
       return manualCoverPath;
     }
@@ -94,8 +95,7 @@ class CoverArtworkCacheService {
 
   String? resolvedForFolder(String folderPath) {
     final normalizedFolderPath = PathMatcher.normalize(folderPath);
-    _ensureManualCoverCache();
-    return _validatedManualCoverPathSync(
+    return _cachedManualCoverPath(
           _manualCoverByScopeCache[normalizedFolderPath],
         ) ??
         _resolvedFolderCovers[normalizedFolderPath] ??
@@ -251,6 +251,8 @@ class CoverArtworkCacheService {
     _resolvedRemoteCoverFutures.remove(normalizedScope);
     _coverSearchMisses.remove(normalizedScope);
     _manualCoverByScopeCache.clear();
+    _manualCoverPathValidityCache.clear();
+    _manualCoverValidationFutures.clear();
     _manualCoverCachePrimed = false;
     _discoveredImagesByScopeCache.remove(normalizedScope);
   }
@@ -267,6 +269,8 @@ class CoverArtworkCacheService {
     }
     _generation++;
     _manualCoverByScopeCache.clear();
+    _manualCoverPathValidityCache.clear();
+    _manualCoverValidationFutures.clear();
     _manualCoverCachePrimed = false;
     for (final scope in normalizedScopes) {
       _folderCoverFutures.remove(scope);
@@ -296,15 +300,17 @@ class CoverArtworkCacheService {
     _resolvedRemoteCoverFutures.clear();
     _coverSearchMisses.clear();
     _manualCoverByScopeCache.clear();
+    _manualCoverPathValidityCache.clear();
+    _manualCoverValidationFutures.clear();
     _manualCoverCachePrimed = false;
     _discoveredImagesByScopeCache.clear();
   }
 
-  void _ensureManualCoverCache() {
+  Future<void> _ensureManualCoverCache() async {
     if (_manualCoverCachePrimed) return;
     _manualCoverByScopeCache.clear();
     for (final track in _libraryService.library) {
-      final manualCoverPath = _validatedManualCoverPathSync(
+      final manualCoverPath = await _validatedManualCoverPath(
         track.manualCoverPath,
       );
       if (manualCoverPath == null) continue;
@@ -322,23 +328,42 @@ class CoverArtworkCacheService {
     final pathValue = track?.path ?? trackPath;
     final coverSearchKey = coverSearchKeyForTrack(track, trackPath: pathValue);
     if (coverSearchKey == null) return Future<String?>.value();
-    final manualPath = _validatedManualCoverPathSync(track?.manualCoverPath);
-    if (manualPath != null) {
-      _resolvedTrackCovers[coverSearchKey] = manualPath;
+    final cachedManualPath = _cachedManualCoverPath(track?.manualCoverPath);
+    if (cachedManualPath != null) {
+      _resolvedTrackCovers[coverSearchKey] = cachedManualPath;
       return _resolvedTrackCoverFutures.putIfAbsent(
         coverSearchKey,
-        () => SynchronousFuture<String?>(manualPath),
+        () => SynchronousFuture<String?>(cachedManualPath),
       );
     }
 
-    if (_resolvedTrackCovers.containsKey(coverSearchKey)) {
-      return _resolvedTrackCoverFutures.putIfAbsent(
-        coverSearchKey,
-        () => SynchronousFuture<String?>(_resolvedTrackCovers[coverSearchKey]),
-      );
+    final manualPathFuture = _validatedManualCoverPath(track?.manualCoverPath);
+    final cachedFuture = _resolvedTrackCoverFutures[coverSearchKey];
+    if (cachedFuture != null &&
+        _resolvedTrackCovers.containsKey(coverSearchKey)) {
+      return cachedFuture;
     }
 
     return _trackCoverFutures.putIfAbsent(coverSearchKey, () async {
+      final manualPath = await manualPathFuture;
+      if (manualPath != null) {
+        _resolvedTrackCovers[coverSearchKey] = manualPath;
+        _resolvedTrackCoverFutures[coverSearchKey] = SynchronousFuture<String?>(
+          manualPath,
+        );
+        final removedTrackFuture = _trackCoverFutures.remove(coverSearchKey);
+        if (removedTrackFuture != null) unawaited(removedTrackFuture);
+        return manualPath;
+      }
+
+      if (_resolvedTrackCovers.containsKey(coverSearchKey)) {
+        return _resolvedTrackCoverFutures.putIfAbsent(
+          coverSearchKey,
+          () =>
+              SynchronousFuture<String?>(_resolvedTrackCovers[coverSearchKey]),
+        );
+      }
+
       String? coverPath;
       final remoteCoverUrl = track?.remoteCoverUrl?.trim();
       if (remoteCoverUrl != null && remoteCoverUrl.isNotEmpty) {
@@ -415,9 +440,9 @@ class CoverArtworkCacheService {
     }
 
     return _folderCoverFutures.putIfAbsent(normalizedFolderPath, () async {
-      _ensureManualCoverCache();
+      await _ensureManualCoverCache();
       final coverPath =
-          _validatedManualCoverPathSync(
+          _cachedManualCoverPath(
             _manualCoverByScopeCache[normalizedFolderPath],
           ) ??
           (PathMatcher.isContentUri(normalizedFolderPath)
@@ -546,13 +571,32 @@ class CoverArtworkCacheService {
     return framePath;
   }
 
-  String? _validatedManualCoverPathSync(String? coverPath) {
+  String? _cachedManualCoverPath(String? coverPath) {
     final value = coverPath?.trim();
     if (value == null || value.isEmpty) return null;
     if (PathMatcher.isContentUri(value) || PathMatcher.isRemoteUri(value)) {
       return value;
     }
-    return File(value).existsSync() ? value : null;
+    return _manualCoverPathValidityCache[value] == true ? value : null;
+  }
+
+  Future<String?> _validatedManualCoverPath(String? coverPath) {
+    final value = coverPath?.trim();
+    if (value == null || value.isEmpty) return SynchronousFuture<String?>(null);
+    if (PathMatcher.isContentUri(value) || PathMatcher.isRemoteUri(value)) {
+      _manualCoverPathValidityCache[value] = true;
+      return SynchronousFuture<String?>(value);
+    }
+    final cached = _manualCoverPathValidityCache[value];
+    if (cached != null) {
+      return SynchronousFuture<String?>(cached ? value : null);
+    }
+    return _manualCoverValidationFutures.putIfAbsent(value, () async {
+      final exists = await File(value).exists();
+      _manualCoverPathValidityCache[value] = exists;
+      unawaited(_manualCoverValidationFutures.remove(value) ?? Future.value());
+      return exists ? value : null;
+    });
   }
 
   Future<String?> _resolvePlatformCoverPathForTrack(

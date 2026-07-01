@@ -116,7 +116,9 @@ class _AsmrCategoryListState extends State<_AsmrCategoryList>
                 child: showPlaceholder
                     ? ListView.builder(
                         key: const ValueKey('loading'),
-                        physics: const NeverScrollableScrollPhysics(),
+                        physics: const AlwaysScrollableScrollPhysics(
+                          parent: _TopOnlyBouncingScrollPhysics(),
+                        ),
                         padding: EdgeInsets.fromLTRB(
                           16,
                           widget.topInset,
@@ -212,5 +214,22 @@ class _AsmrCategoryListState extends State<_AsmrCategoryList>
         ),
       ),
     );
+  }
+}
+
+class _TopOnlyBouncingScrollPhysics extends BouncingScrollPhysics {
+  const _TopOnlyBouncingScrollPhysics({super.parent});
+
+  @override
+  _TopOnlyBouncingScrollPhysics applyTo(ScrollPhysics? ancestor) {
+    return _TopOnlyBouncingScrollPhysics(parent: buildParent(ancestor));
+  }
+
+  @override
+  double applyBoundaryConditions(ScrollMetrics position, double value) {
+    if (value > 0.0) {
+      return value - (position.pixels > 0.0 ? position.pixels : 0.0);
+    }
+    return super.applyBoundaryConditions(position, value);
   }
 }

@@ -146,7 +146,7 @@ final libraryListUiProvider = Provider<LibraryListState>((ref) {
     scanFoundCount: showForegroundScan ? state.scanFoundCount : 0,
     scanDuplicateCount: showForegroundScan ? state.scanDuplicateCount : 0,
     scanFailureCount: showForegroundScan ? state.scanFailureCount : 0,
-    structureRevision: state.structureRevision,
+    structureRevision: state.treeSnapshotRevision,
     contentRevision: state.contentRevision,
     isInitialized: state.isInitialized,
   );
@@ -163,7 +163,7 @@ final libraryListUiProvider = Provider<LibraryListState>((ref) {
     scanFoundCount: libraryState.scanFoundCount,
     scanDuplicateCount: libraryState.scanDuplicateCount,
     scanFailureCount: libraryState.scanFailureCount,
-    structureRevision: libraryState.contentRevision,
+    structureRevision: libraryState.structureRevision,
     isInitialized: libraryState.isInitialized,
     isRefreshing: refreshOperation.isBusy || state.isScanning,
     operationProgress: refreshOperation.progress,

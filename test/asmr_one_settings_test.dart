@@ -513,6 +513,24 @@ void main() {
   });
 
   test(
+    'ASMR auth restore uses saved account name when session check omits it',
+    () async {
+      await resetPrefs();
+      final api = _FakeAsmrApiService(emptyCheckSessionUserName: true);
+      final tokenStore = _MemoryAsmrTokenStore();
+      await tokenStore.writeToken('cached-token');
+      await tokenStore.writeCredentials('alice', 'password');
+      final auth = AsmrAuthService(apiService: api, tokenStore: tokenStore);
+
+      final session = await auth.restoreSession();
+
+      expect(session?.token, 'cached-token');
+      expect(session?.userName, 'alice');
+      expect(tokenStore.token, 'cached-token');
+    },
+  );
+
+  test(
     'ASMR account sync maps favorites to marked review progress and retries',
     () async {
       await resetPrefs();
@@ -631,6 +649,64 @@ void main() {
       expect(api.reviewPuts.where((call) => call == '83:listening'), isEmpty);
     },
   );
+
+  test(
+    'ASMR account sync refreshes expired token with saved credentials',
+    () async {
+      await resetPrefs();
+      final api = _FakeAsmrApiService();
+      final tokenStore = _MemoryAsmrTokenStore();
+      final controller = AsmrLibraryController(
+        apiService: api,
+        authService: AsmrAuthService(apiService: api, tokenStore: tokenStore),
+        audioDatabaseRepository: _FakeAudioDatabaseRepository(
+          const <MusicTrack>[],
+        ),
+      );
+      await controller.initialize(defaultLanguage: AsmrContentLanguage.en);
+      await controller.loginAsmrAccount('alice', 'password');
+
+      final loginCountBefore = api.loginCount;
+      api.fetchReviewAuthFailuresRemaining = 1;
+      api.checkSessionAuthFailuresRemaining = 1;
+      await controller.syncAsmrAccount(force: true);
+
+      expect(controller.isAsmrAccountLoggedIn, isTrue);
+      expect(controller.asmrAccountName, 'alice');
+      expect(controller.syncViewState.phase, AsmrSyncPhase.succeeded);
+      expect(api.loginCount, loginCountBefore + 1);
+      expect(tokenStore.token, 'token-alice');
+    },
+  );
+
+  test(
+    'ASMR account sync logs out when expired token cannot be recovered',
+    () async {
+      await resetPrefs();
+      final api = _FakeAsmrApiService();
+      final tokenStore = _MemoryAsmrTokenStore();
+      final controller = AsmrLibraryController(
+        apiService: api,
+        authService: AsmrAuthService(apiService: api, tokenStore: tokenStore),
+        audioDatabaseRepository: _FakeAudioDatabaseRepository(
+          const <MusicTrack>[],
+        ),
+      );
+      await controller.initialize(defaultLanguage: AsmrContentLanguage.en);
+      await controller.loginAsmrAccount('alice', 'password');
+
+      api.fetchReviewAuthFailuresRemaining = 1;
+      api.checkSessionAuthFailuresRemaining = 1;
+      api.loginFailureStatusCode = HttpStatus.forbidden;
+      await controller.syncAsmrAccount(force: true);
+
+      expect(controller.isAsmrAccountLoggedIn, isFalse);
+      expect(controller.syncViewState.phase, AsmrSyncPhase.failed);
+      expect(controller.syncViewState.lastError, isA<AsmrApiException>());
+      expect(tokenStore.token, isNull);
+      expect(await tokenStore.readCredentials(), isNull);
+    },
+  );
 }
 
 class _FakeAsmrApiService extends AsmrApiService {
@@ -642,6 +718,7 @@ class _FakeAsmrApiService extends AsmrApiService {
     this.remoteReviewRecords = const <AsmrReviewRecord>[],
     this.failPutReviewCount = 0,
     this.failingFetchOrders = const <String>{},
+    this.emptyCheckSessionUserName = false,
   }) : super(baseUri: Uri.parse('https://example.test'));
 
   final List<String> fetchWorkOrders = <String>[];
@@ -655,7 +732,12 @@ class _FakeAsmrApiService extends AsmrApiService {
   final List<AsmrTrackFile> trackTree;
   final List<AsmrReviewRecord> remoteReviewRecords;
   final Set<String> failingFetchOrders;
+  final bool emptyCheckSessionUserName;
   int failPutReviewCount;
+  int checkSessionAuthFailuresRemaining = 0;
+  int fetchReviewAuthFailuresRemaining = 0;
+  int? loginFailureStatusCode;
+  int loginCount = 0;
   String _lastLoginName = '';
 
   @override
@@ -663,17 +745,37 @@ class _FakeAsmrApiService extends AsmrApiService {
     required String name,
     required String password,
   }) async {
+    loginCount++;
+    final failureStatusCode = loginFailureStatusCode;
+    if (failureStatusCode != null) {
+      throw AsmrApiException(
+        'Simulated ASMR login auth failure',
+        statusCode: failureStatusCode,
+        uri: Uri.parse('https://example.test/api/auth/me'),
+      );
+    }
     _lastLoginName = name;
     return AsmrAuthSession(token: 'token-$name', userName: name);
   }
 
   @override
   Future<AsmrAuthSession?> checkSession(String token) async {
+    if (checkSessionAuthFailuresRemaining > 0) {
+      checkSessionAuthFailuresRemaining--;
+      throw AsmrApiException(
+        'Simulated ASMR session auth failure',
+        statusCode: HttpStatus.unauthorized,
+        uri: Uri.parse('https://example.test/api/auth/me'),
+      );
+    }
     if (token.isEmpty) {
       return null;
     }
     final name = _lastLoginName.isEmpty ? 'restored' : _lastLoginName;
-    return AsmrAuthSession(token: token, userName: name);
+    return AsmrAuthSession(
+      token: token,
+      userName: emptyCheckSessionUserName ? '' : name,
+    );
   }
 
   @override
@@ -784,6 +886,14 @@ class _FakeAsmrApiService extends AsmrApiService {
     String sort = 'desc',
     AsmrContentLanguage language = AsmrContentLanguage.zh,
   }) async {
+    if (fetchReviewAuthFailuresRemaining > 0) {
+      fetchReviewAuthFailuresRemaining--;
+      throw AsmrApiException(
+        'Simulated ASMR review auth failure',
+        statusCode: HttpStatus.unauthorized,
+        uri: Uri.parse('https://example.test/api/review'),
+      );
+    }
     if (page > 1) {
       return const <AsmrReviewRecord>[];
     }
@@ -816,6 +926,7 @@ class _FakeAsmrApiService extends AsmrApiService {
 
 class _MemoryAsmrTokenStore implements AsmrTokenStore {
   String? token;
+  Map<String, String>? credentials;
 
   @override
   Future<void> clearToken() async {
@@ -831,13 +942,17 @@ class _MemoryAsmrTokenStore implements AsmrTokenStore {
   }
 
   @override
-  Future<void> clearCredentials() async {}
+  Future<void> clearCredentials() async {
+    credentials = null;
+  }
 
   @override
-  Future<Map<String, String>?> readCredentials() async => null;
+  Future<Map<String, String>?> readCredentials() async => credentials;
 
   @override
-  Future<void> writeCredentials(String username, String password) async {}
+  Future<void> writeCredentials(String username, String password) async {
+    credentials = <String, String>{'name': username, 'password': password};
+  }
 }
 
 class _FakeAudioDatabaseRepository extends AudioDatabaseRepository {

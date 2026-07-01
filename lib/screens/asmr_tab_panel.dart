@@ -371,10 +371,15 @@ class _AsmrAccountPanelState extends State<_AsmrAccountPanel> {
       }
       final syncState = controller.syncViewState;
       final failed = syncState.phase == AsmrSyncPhase.failed;
+      final authExpired = _isAuthExpired(syncState.lastError);
       showAppSnackBar(
         context,
         context.read<AppLanguageProvider>().tr(
-          failed ? 'asmr_account_sync_failed' : 'asmr_account_sync_done',
+          authExpired
+              ? 'asmr_token_expired'
+              : failed
+              ? 'asmr_account_sync_failed'
+              : 'asmr_account_sync_done',
         ),
         tone: failed ? AppFeedbackTone.destructive : AppFeedbackTone.success,
         icon: failed ? Icons.sync_problem_rounded : Icons.sync_rounded,
@@ -528,6 +533,9 @@ class _AsmrAccountPanelState extends State<_AsmrAccountPanel> {
       return i18n.tr('asmr_account_syncing');
     }
     if (syncState.phase == AsmrSyncPhase.failed) {
+      if (_isAuthExpired(syncState.lastError)) {
+        return i18n.tr('asmr_token_expired');
+      }
       return i18n.tr('asmr_account_sync_failed');
     }
     if (syncState.pendingCount > 0) {
@@ -537,6 +545,9 @@ class _AsmrAccountPanelState extends State<_AsmrAccountPanel> {
     }
     return i18n.tr('asmr_account_sync_done');
   }
+
+  bool _isAuthExpired(Object? error) =>
+      error != null && AsmrApiException.isAuthenticationError(error);
 
   Color _accountAccentColor(BuildContext context) {
     return AppDesignTokens.of(context).asmrAccent;

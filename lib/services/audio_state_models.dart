@@ -37,6 +37,7 @@ class LibraryState {
     this.scanDuplicateCount = 0,
     this.scanFailureCount = 0,
     this.structureRevision = 0,
+    this.treeSnapshotRevision = -1,
     this.contentRevision = 0,
     this.detailRevision = 0,
     this.categorySnapshotRevision = 0,
@@ -53,6 +54,7 @@ class LibraryState {
   final int scanDuplicateCount;
   final int scanFailureCount;
   final int structureRevision;
+  final int treeSnapshotRevision;
   final int contentRevision;
   final int detailRevision;
   final int categorySnapshotRevision;
@@ -71,6 +73,7 @@ class LibraryState {
         other.scanDuplicateCount == scanDuplicateCount &&
         other.scanFailureCount == scanFailureCount &&
         other.structureRevision == structureRevision &&
+        other.treeSnapshotRevision == treeSnapshotRevision &&
         other.contentRevision == contentRevision &&
         other.detailRevision == detailRevision &&
         other.categorySnapshotRevision == categorySnapshotRevision &&
@@ -89,6 +92,7 @@ class LibraryState {
     scanDuplicateCount,
     scanFailureCount,
     structureRevision,
+    treeSnapshotRevision,
     contentRevision,
     detailRevision,
     categorySnapshotRevision,

@@ -290,6 +290,7 @@ extension AudioProviderPersistence on AudioProvider {
       _syncGroupOrderFromLibrary();
       _syncLibraryNodeOrder(persist: false);
       _markLibraryStructureDirty();
+      await _ensureLibraryTreeSnapshot(notifyOnCommit: false);
 
       // Phase 4: Notification state + first UI update.
       if (!_notificationsEnabled) {
@@ -311,6 +312,7 @@ extension AudioProviderPersistence on AudioProvider {
       // Phase 7: Deferred warmup, keep-alive sync, final UI update.
       scheduleUiWarmup(currentPageIndex: 0);
       _syncKeepCpuAwake();
+      await _ensureLibraryTreeSnapshot(notifyOnCommit: false);
       _isInitialized = true;
       _notifyListeners();
     }

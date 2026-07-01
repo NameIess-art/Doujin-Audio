@@ -58,7 +58,20 @@ extension AudioProviderState on AudioProvider {
   List<String> get watchedLibraries => UnmodifiableListView(_watchedLibraries);
   int get watchedFolderCount => _watchedFolders.length;
   int get watchedLibraryCount => _watchedLibraries.length;
-  List<LibraryNode> get libraryTree => _librarySnapshotCacheService.treeSync;
+  List<LibraryNode> get libraryTree {
+    if (_librarySnapshotCacheService.treeSnapshotRevision !=
+        _libraryService.structureRevision) {
+      unawaited(_ensureLibraryTreeSnapshot());
+    } else if (_libraryService.slice.state.treeSnapshotRevision !=
+        _librarySnapshotCacheService.treeSnapshotRevision) {
+      scheduleMicrotask(
+        () => _syncLibraryStateSlice(preserveSliceInitialized: true),
+      );
+    }
+    return _librarySnapshotCacheService.tree;
+  }
+  int get libraryTreeSnapshotRevision =>
+      _librarySnapshotCacheService.treeSnapshotRevision;
 
   int get libraryLeafFolderCount {
     return _librarySnapshotCacheService.leafFolderCount;
@@ -185,5 +198,18 @@ extension AudioProviderCoreState on AudioProvider {
   Future<SharedPreferences> get _prefs async {
     _cachedPrefs ??= await SharedPreferences.getInstance();
     return _cachedPrefs!;
+  }
+
+  Future<LibraryTreeSnapshot> _ensureLibraryTreeSnapshot({
+    bool notifyOnCommit = true,
+  }) {
+    return _librarySnapshotCacheService.treeSnapshot(
+      onCommitted: () {
+        _syncLibraryStateSlice(preserveSliceInitialized: true);
+        if (notifyOnCommit) {
+          _notifyPresentationListeners();
+        }
+      },
+    );
   }
 }

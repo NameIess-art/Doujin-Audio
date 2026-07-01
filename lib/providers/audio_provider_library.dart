@@ -848,6 +848,9 @@ extension AudioProviderLibrary on AudioProvider {
       _clearResolvedCoverPaths();
       _rebuildLibraryIndexes();
       _syncLibraryNodeOrder(persist: false);
+      if (!notify) {
+        unawaited(_ensureLibraryTreeSnapshot(notifyOnCommit: false));
+      }
       if (notify) {
         _notifyLibraryAndPlaybackChanged();
       }
@@ -933,6 +936,9 @@ extension AudioProviderLibrary on AudioProvider {
     _rebuildLibraryIndexes();
     _syncGroupOrderFromLibrary();
     _syncLibraryNodeOrder(persist: false);
+    if (!notify) {
+      unawaited(_ensureLibraryTreeSnapshot(notifyOnCommit: false));
+    }
     if (notify) {
       _notifyLibraryAndPlaybackChanged();
     }

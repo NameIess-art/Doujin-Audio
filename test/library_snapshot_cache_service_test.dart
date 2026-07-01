@@ -33,6 +33,39 @@ void main() {
   );
 
   test(
+    'tree snapshot runs every callback attached to an in-flight build',
+    () async {
+      final library = LibraryService();
+      library.watchedFolders.add('/library');
+      library.library.add(
+        _track(path: '/library/work/track.mp3', groupKey: '/library/work'),
+      );
+      library.markStructureChanged();
+      final service = LibrarySnapshotCacheService(
+        libraryService: library,
+        detailCacheService: AudioDetailCacheService(
+          repository: _FakeAudioDetailRepository(),
+        ),
+      );
+
+      var firstCommitted = false;
+      var secondCommitted = false;
+      final first = service.treeSnapshot(
+        onCommitted: () => firstCommitted = true,
+      );
+      final second = service.treeSnapshot(
+        onCommitted: () => secondCommitted = true,
+      );
+
+      expect(identical(first, second), isTrue);
+      await first;
+
+      expect(firstCommitted, isTrue);
+      expect(secondCommitted, isTrue);
+    },
+  );
+
+  test(
     'category snapshot reuses cached detail loads until detail revision changes',
     () async {
       final target = AudioDetailTarget.libraryRootFolder('/library');
@@ -68,7 +101,7 @@ void main() {
     },
   );
 
-  test('tree sync invalidates when the library structure revision changes', () {
+  test('tree cache updates only after async snapshot commits', () async {
     final library = LibraryService();
     library.watchedFolders.add('/library');
     final service = LibrarySnapshotCacheService(
@@ -78,7 +111,8 @@ void main() {
       ),
     );
 
-    expect(service.treeSync, isEmpty);
+    expect(service.tree, isEmpty);
+    expect(service.treeSnapshotRevision, -1);
 
     library.library.add(
       _track(path: '/library/work/track.mp3', groupKey: '/library/work'),
@@ -86,7 +120,17 @@ void main() {
     library.markStructureChanged();
     service.markStructureChanged();
 
-    expect(service.treeSync.whereType<FolderNode>(), isNotEmpty);
+    expect(service.tree, isEmpty);
+
+    var committed = false;
+    final snapshot = await service.treeSnapshot(
+      onCommitted: () => committed = true,
+    );
+
+    expect(snapshot.tree.whereType<FolderNode>(), isNotEmpty);
+    expect(service.tree.whereType<FolderNode>(), isNotEmpty);
+    expect(service.treeSnapshotRevision, library.structureRevision);
+    expect(committed, isTrue);
   });
 }
 

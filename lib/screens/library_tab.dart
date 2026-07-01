@@ -470,7 +470,10 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         Platform.isWindows ||
         MediaQuery.orientationOf(context) == Orientation.landscape;
     const double expansion = 320.0;
-    final listTopPadding = (_categoryType == AudioLibraryCategoryType.all ? 4.0 : 0.0) + headerControlsFullHeight + expansion;
+    final listTopPadding =
+        (_categoryType == AudioLibraryCategoryType.all ? 4.0 : 0.0) +
+        headerControlsFullHeight +
+        expansion;
     const listBottomPadding = 16.0 + expansion;
     final listViewportBottomInset = listBottomInset + (isWindows ? 16.0 : 0.0);
     // Reduced cacheExtent to significantly lower memory footprint and improve
@@ -478,7 +481,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     final listCacheExtent = (headerContentHeight + 800)
         .clamp(headerContentHeight, 1600.0)
         .toDouble();
-    final hasLibrary = listState.hasLibrary;
+    final hasLibrary = listState.hasLibrary || libraryHeaderState.audioCount > 0;
     final showLibrarySkeleton =
         !hasLibrary &&
         _effectiveSearchQuery.isEmpty &&
@@ -629,7 +632,11 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
             MediaQuery(
               data: MediaQuery.of(context).copyWith(
                 padding: EdgeInsets.only(
-                  top: headerControlsFullHeight + (_categoryType == AudioLibraryCategoryType.all ? 4.0 : 0.0),
+                  top:
+                      headerControlsFullHeight +
+                      (_categoryType == AudioLibraryCategoryType.all
+                          ? 4.0
+                          : 0.0),
                   bottom: listViewportBottomInset,
                   right: 4,
                 ),
@@ -751,6 +758,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                                     parent: BouncingScrollPhysics(),
                                   )
                                 : null,
+                            autoScrollerVelocityScalar: 0,
                             buildDefaultDragHandles: false,
                             keyboardDismissBehavior:
                                 ScrollViewKeyboardDismissBehavior.onDrag,

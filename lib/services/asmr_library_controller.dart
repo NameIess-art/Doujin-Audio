@@ -309,8 +309,14 @@ class AsmrLibraryController extends ChangeNotifier {
 
   List<AsmrCategoryType> get visibleCategories => _visibleCategories;
   AsmrContentLanguage get contentLanguage => _contentLanguage;
-  bool get isAsmrAccountLoggedIn => _authSession?.isValid ?? false;
-  String get asmrAccountName => _authSession?.userName ?? '';
+  bool get isAsmrAccountLoggedIn {
+    final session = _authSession;
+    return session != null &&
+        session.isValid &&
+        session.userName.trim().isNotEmpty;
+  }
+
+  String get asmrAccountName => _authSession?.userName.trim() ?? '';
 
   bool isLoadingCategory(AsmrCategoryType category) =>
       _loadingByCategory[category] ?? false;
@@ -516,21 +522,26 @@ class AsmrLibraryController extends ChangeNotifier {
     _bumpGlobalRevision();
     notifyListeners();
     try {
-      await _pullRemoteReviewState(session.token);
-      await _queueMissingRemoteFavorites();
-      await _queueMissingRemoteHistory();
-      await _flushSyncOperations(session.token);
-      _lastSyncAt = DateTime.now();
-      await AsmrPreferences.saveLastSyncAt(_lastSyncAt!);
-      _syncPhase = AsmrSyncPhase.succeeded;
+      await _runAsmrAccountSync(session.token);
+      await _markAsmrAccountSyncSucceeded();
     } catch (error) {
-      if (error is AsmrApiException &&
-          error.statusCode == HttpStatus.unauthorized) {
+      var failure = error;
+      final recovered = await _recoverAsmrAccountSession(error);
+      if (recovered != null) {
+        try {
+          await _runAsmrAccountSync(recovered.token);
+          await _markAsmrAccountSyncSucceeded();
+          return;
+        } catch (retryError) {
+          failure = retryError;
+        }
+      }
+      if (AsmrApiException.isAuthenticationError(failure)) {
         await _authService.logout();
         _authSession = null;
       }
       _syncPhase = AsmrSyncPhase.failed;
-      _lastSyncError = error;
+      _lastSyncError = failure;
     } finally {
       _updateLocalCategoryCounts();
       _bumpCategoryRevision(AsmrCategoryType.favorites);
@@ -538,6 +549,31 @@ class AsmrLibraryController extends ChangeNotifier {
       _bumpGlobalRevision();
       notifyListeners();
     }
+  }
+
+  Future<void> _runAsmrAccountSync(String token) async {
+    await _pullRemoteReviewState(token);
+    await _queueMissingRemoteFavorites();
+    await _queueMissingRemoteHistory();
+    await _flushSyncOperations(token);
+  }
+
+  Future<void> _markAsmrAccountSyncSucceeded() async {
+    _lastSyncAt = DateTime.now();
+    await AsmrPreferences.saveLastSyncAt(_lastSyncAt!);
+    _syncPhase = AsmrSyncPhase.succeeded;
+  }
+
+  Future<AsmrAuthSession?> _recoverAsmrAccountSession(Object error) async {
+    if (!AsmrApiException.isAuthenticationError(error)) {
+      return null;
+    }
+    final recovered = await _authService.restoreSession();
+    if (recovered == null || !recovered.isValid) {
+      return null;
+    }
+    _authSession = recovered;
+    return recovered;
   }
 
   Future<void> setVisibleCategories(List<AsmrCategoryType> categories) async {
@@ -1354,8 +1390,7 @@ class AsmrLibraryController extends ChangeNotifier {
             break;
         }
       } catch (error) {
-        if (error is AsmrApiException &&
-            error.statusCode == HttpStatus.unauthorized) {
+        if (AsmrApiException.isAuthenticationError(error)) {
           rethrow;
         }
         hadFailure = true;

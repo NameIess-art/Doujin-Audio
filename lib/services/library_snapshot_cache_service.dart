@@ -15,17 +15,14 @@ class LibrarySnapshotCacheService {
   LibrarySnapshotCacheService({
     required LibraryService libraryService,
     required AudioDetailCacheService detailCacheService,
-    LibraryOrganizer organizer = const LibraryOrganizer(),
     UiInteractionCoordinator? interactionCoordinator,
   }) : _libraryService = libraryService,
        _detailCacheService = detailCacheService,
-       _organizer = organizer,
        _interactionCoordinator =
            interactionCoordinator ?? UiInteractionCoordinator.instance;
 
   final LibraryService _libraryService;
   final AudioDetailCacheService _detailCacheService;
-  final LibraryOrganizer _organizer;
   final UiInteractionCoordinator _interactionCoordinator;
 
   List<LibraryNode> _cachedTree = const <LibraryNode>[];
@@ -33,6 +30,7 @@ class LibrarySnapshotCacheService {
   int _cachedLeafFolderCount = 0;
   Future<LibraryTreeSnapshot>? _treeFuture;
   int _treeFutureRevision = -1;
+  final List<VoidCallback> _treeCommitCallbacks = <VoidCallback>[];
 
   AudioLibraryCategorySnapshot? _categorySnapshot;
   Future<AudioLibraryCategorySnapshot>? _categoryFuture;
@@ -40,21 +38,11 @@ class LibrarySnapshotCacheService {
   int _categoryFutureDetailRevision = -1;
   int _categorySnapshotRevision = 0;
 
-  List<LibraryNode> get treeSync {
-    if (_cachedTreeRevision == _libraryService.structureRevision) {
-      return _cachedTree;
-    }
-    final snapshot = _buildTreeSnapshotSync();
-    _cacheTreeSnapshot(snapshot);
-    return _cachedTree;
-  }
+  List<LibraryNode> get tree => _cachedTree;
 
-  int get leafFolderCount {
-    if (_cachedTreeRevision != _libraryService.structureRevision) {
-      final _ = treeSync;
-    }
-    return _cachedLeafFolderCount;
-  }
+  int get treeSnapshotRevision => _cachedTreeRevision;
+
+  int get leafFolderCount => _cachedLeafFolderCount;
 
   int get categorySnapshotRevision => _categorySnapshotRevision;
 
@@ -73,7 +61,10 @@ class LibrarySnapshotCacheService {
       );
     }
     final inFlight = _treeFuture;
-    if (inFlight != null && _treeFutureRevision == revision) return inFlight;
+    if (inFlight != null && _treeFutureRevision == revision) {
+      _treeCommitCallbacks.add(onCommitted);
+      return inFlight;
+    }
 
     final payload = _LibraryTreeBuildPayload(
       tracks: List<MusicTrack>.unmodifiable(_libraryService.library),
@@ -83,6 +74,9 @@ class LibrarySnapshotCacheService {
     final future = compute(_buildLibraryTreeFromPayload, payload);
     _treeFuture = future;
     _treeFutureRevision = revision;
+    _treeCommitCallbacks
+      ..clear()
+      ..add(onCommitted);
     unawaited(
       future
           .then((snapshot) {
@@ -90,7 +84,11 @@ class LibrarySnapshotCacheService {
             void commit() {
               if (_libraryService.structureRevision != revision) return;
               _cacheTreeSnapshot(snapshot);
-              onCommitted();
+              final callbacks = List<VoidCallback>.of(_treeCommitCallbacks);
+              _treeCommitCallbacks.clear();
+              for (final callback in callbacks) {
+                callback();
+              }
             }
 
             if (_interactionCoordinator.isInteracting) {
@@ -106,6 +104,7 @@ class LibrarySnapshotCacheService {
           .whenComplete(() {
             if (identical(_treeFuture, future)) {
               _treeFuture = null;
+              _treeCommitCallbacks.clear();
             }
           }),
     );
@@ -180,6 +179,7 @@ class LibrarySnapshotCacheService {
   void markStructureChanged() {
     _cachedTreeRevision = -1;
     _treeFuture = null;
+    _treeCommitCallbacks.clear();
     _categoryFuture = null;
   }
 
@@ -196,19 +196,12 @@ class LibrarySnapshotCacheService {
     _cachedLeafFolderCount = 0;
     _treeFuture = null;
     _treeFutureRevision = -1;
+    _treeCommitCallbacks.clear();
     _categorySnapshot = null;
     _categoryFuture = null;
     _categoryFutureStructureRevision = -1;
     _categoryFutureDetailRevision = -1;
     _categorySnapshotRevision = 0;
-  }
-
-  LibraryTreeSnapshot _buildTreeSnapshotSync() {
-    return _organizer.buildTree(
-      tracks: _libraryService.library,
-      watchedFolders: _libraryService.watchedFolders,
-      nodeOrder: _libraryService.libraryNodeOrder,
-    );
   }
 
   void _cacheTreeSnapshot(LibraryTreeSnapshot snapshot) {
@@ -221,13 +214,12 @@ class LibrarySnapshotCacheService {
     required int structureRevision,
     required int detailRevision,
   }) async {
-    var tree = treeSync;
-    final pendingTreeBuild = _treeFuture;
-    if (pendingTreeBuild != null && _treeFutureRevision == structureRevision) {
-      final treeSnapshot = await pendingTreeBuild;
-      if (_libraryService.structureRevision == structureRevision) {
-        tree = treeSnapshot.tree;
-      }
+    final snapshot = await treeSnapshot(onCommitted: () {});
+    var tree = snapshot.tree;
+    if (_libraryService.structureRevision != structureRevision) {
+      tree = _cachedTreeRevision == structureRevision
+          ? _cachedTree
+          : const <LibraryNode>[];
     }
 
     final entryFutures = <Future<AudioLibraryCategoryEntry>>[];

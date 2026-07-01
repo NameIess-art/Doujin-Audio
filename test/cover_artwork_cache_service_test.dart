@@ -121,32 +121,37 @@ void main() {
     );
   });
 
-  test('manual cover is returned before scanning the folder', () async {
-    final directory = await Directory.systemTemp.createTemp(
-      'cover_cache_manual_test_',
-    );
-    addTearDown(() async {
-      if (await directory.exists()) await directory.delete(recursive: true);
-    });
-    final manualCover = File(
-      '${directory.path}${Platform.pathSeparator}manual.jpg',
-    );
-    await manualCover.writeAsBytes(<int>[0xff, 0xd8, 0xff, 0xd9]);
+  test(
+    'manual cover is validated asynchronously before scanning the folder',
+    () async {
+      final directory = await Directory.systemTemp.createTemp(
+        'cover_cache_manual_test_',
+      );
+      addTearDown(() async {
+        if (await directory.exists()) await directory.delete(recursive: true);
+      });
+      final manualCover = File(
+        '${directory.path}${Platform.pathSeparator}manual.jpg',
+      );
+      await manualCover.writeAsBytes(<int>[0xff, 0xd8, 0xff, 0xd9]);
 
-    final library = LibraryService();
-    library.watchedFolders.add('/library');
-    library.library.add(
-      _track(
-        path: '/library/work/track.mp3',
-        groupKey: '/library/work',
-        manualCoverPath: manualCover.path,
-      ),
-    );
-    final cache = CoverArtworkCacheService(libraryService: library);
+      final library = LibraryService();
+      library.watchedFolders.add('/library');
+      library.library.add(
+        _track(
+          path: '/library/work/track.mp3',
+          groupKey: '/library/work',
+          manualCoverPath: manualCover.path,
+        ),
+      );
+      final cache = CoverArtworkCacheService(libraryService: library);
 
-    expect(cache.resolvedForFolder('/library'), manualCover.path);
-    expect(cache.resolvedForTrack(library.library.single), manualCover.path);
-  });
+      expect(cache.resolvedForFolder('/library'), isNull);
+      expect(await cache.futureForFolder('/library'), manualCover.path);
+      expect(cache.resolvedForFolder('/library'), manualCover.path);
+      expect(cache.resolvedForTrack(library.library.single), manualCover.path);
+    },
+  );
 
   test('content folder cover tries later tracks when the first misses', () async {
     const root =
@@ -277,6 +282,7 @@ void main() {
 
     expect(cache.resolvedForFolder(directory.path), isNull);
     cache.invalidateFolder(directory.path);
+    expect(await cache.futureForFolder(directory.path), missingCover);
     expect(cache.resolvedForFolder(directory.path), missingCover);
   });
 

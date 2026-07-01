@@ -264,6 +264,7 @@ class AsmrDownloadManager extends ChangeNotifier {
   final FileCachePlatformGateway _fileCacheGateway;
 
   final Map<int, AsmrDownloadTaskSnapshot> _tasks = {};
+  List<int> _taskIdsSnapshot = const <int>[];
   final List<int> _queue = [];
   final Set<int> _activeTasks = {};
   final Map<int, List<_PlannedDownloadFile>> _plannedFilesMap = {};
@@ -281,6 +282,7 @@ class AsmrDownloadManager extends ChangeNotifier {
   int _lastProgressNotifyBytes = 0;
 
   List<AsmrDownloadTaskSnapshot> get tasks => _tasks.values.toList();
+  List<int> get taskIds => _taskIdsSnapshot;
   AsmrDownloadTaskSnapshot? getTask(int workId) => _tasks[workId];
   bool get hasLiveTask => _activeTasks.isNotEmpty || _queue.isNotEmpty;
 
@@ -944,8 +946,15 @@ class AsmrDownloadManager extends ChangeNotifier {
   void _notifyTaskChanged() {
     _deferredProgressNotifyTimer?.cancel();
     _deferredProgressNotifyTimer = null;
+    _refreshTaskIdsSnapshot();
     _markProgressNotified();
     notifyListeners();
+  }
+
+  void _refreshTaskIdsSnapshot() {
+    final taskIds = _tasks.keys.toList(growable: false);
+    if (listEquals(taskIds, _taskIdsSnapshot)) return;
+    _taskIdsSnapshot = List<int>.unmodifiable(taskIds);
   }
 
   void _notifyProgressChanged() {

@@ -360,15 +360,16 @@ class AsmrDownloadTaskPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final manager = context.watch<AsmrDownloadManager>();
-    final tasks = manager.tasks;
+    final taskIds = context.select<AsmrDownloadManager, List<int>>(
+      (manager) => manager.taskIds,
+    );
     final i18n = context.watch<AppLanguageProvider>();
     final headerHeight = MediaQuery.paddingOf(context).top + 56;
 
     return Scaffold(
       body: Stack(
         children: [
-          if (tasks.isEmpty)
+          if (taskIds.isEmpty)
             Center(
               child: Text(
                 i18n.tr('asmr_download_no_tasks'),
@@ -386,10 +387,9 @@ class AsmrDownloadTaskPage extends StatelessWidget {
                 MediaQuery.paddingOf(context).bottom + 16,
               ),
               physics: const ClampingScrollPhysics(),
-              itemCount: tasks.length,
+              itemCount: taskIds.length,
               itemBuilder: (context, index) {
-                final task = tasks[index];
-                return _TaskCard(task: task);
+                return _TaskCard(workId: taskIds[index]);
               },
             ),
           Positioned(
@@ -408,12 +408,17 @@ class AsmrDownloadTaskPage extends StatelessWidget {
 }
 
 class _TaskCard extends StatelessWidget {
-  const _TaskCard({required this.task});
+  const _TaskCard({required this.workId});
 
-  final AsmrDownloadTaskSnapshot task;
+  final int workId;
 
   @override
   Widget build(BuildContext context) {
+    final task = context.select<AsmrDownloadManager, AsmrDownloadTaskSnapshot?>(
+      (manager) => manager.getTask(workId),
+    );
+    if (task == null) return const SizedBox.shrink();
+
     final cs = Theme.of(context).colorScheme;
     final i18n = context.read<AppLanguageProvider>();
     final asmrBlue = AppDesignTokens.of(context).asmrAccent;

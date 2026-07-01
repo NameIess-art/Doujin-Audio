@@ -894,13 +894,18 @@ class AudioProvider with ChangeNotifier {
     _syncNotificationStateSlice();
   }
 
-  void _syncLibraryStateSlice() {
+  void _syncLibraryStateSlice({bool preserveSliceInitialized = false}) {
     _libraryService.syncSlice(
-      isInitialized: _isInitialized,
+      isInitialized:
+          _isInitialized ||
+          (preserveSliceInitialized &&
+              _libraryService.slice.state.isInitialized),
       detailRevision: _audioDetailCacheService.revision,
+      treeSnapshotRevision: _librarySnapshotCacheService.treeSnapshotRevision,
       categorySnapshotRevision:
           _librarySnapshotCacheService.categorySnapshotRevision,
     );
+    unawaited(_ensureLibraryTreeSnapshot());
   }
 
   void _syncPlaybackStateSlice() {

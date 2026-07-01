@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
@@ -134,54 +133,85 @@ class AsmrAuthService {
   Future<AsmrAuthSession?> restoreSession() async {
     final token = await _tokenStore.readToken();
     if (token == null || token.trim().isEmpty) {
-      return null;
+      return _restoreWithStoredCredentials();
     }
     try {
       final session = await _apiService.checkSession(token);
       if (session == null || !session.isValid) {
         await _tokenStore.clearToken();
-        return null;
+        return _restoreWithStoredCredentials();
       }
       if (session.token != token) {
         await _tokenStore.writeToken(session.token);
       }
-      return session;
+      return _withStoredAccountName(session);
     } catch (error, stackTrace) {
-      if (error is AsmrApiException &&
-          error.statusCode == HttpStatus.unauthorized) {
-        // Token expired. Try auto-login using saved credentials.
-        final creds = await _tokenStore.readCredentials();
-        if (creds != null) {
-          try {
-            final newSession = await _apiService.login(
-              name: creds['name']!,
-              password: creds['password']!,
-            );
-            await _tokenStore.writeToken(newSession.token);
-            return newSession;
-          } catch (loginError, loginStackTrace) {
-            AppLogService.error(
-              'asmr_auto_login_failed',
-              error: loginError,
-              stackTrace: loginStackTrace,
-            );
-            // Auto-login failed. Clear everything.
-            await _tokenStore.clearToken();
-            await _tokenStore.clearCredentials();
-            return null;
-          }
-        } else {
-          await _tokenStore.clearToken();
-          return null;
-        }
+      if (AsmrApiException.isAuthenticationError(error)) {
+        await _tokenStore.clearToken();
+        return _restoreWithStoredCredentials(
+          clearCredentialsOnAuthFailure: true,
+        );
       }
       AppLogService.warning(
         'asmr_session_restore_failed_using_cached_token',
         error: error,
         stackTrace: stackTrace,
       );
-      return AsmrAuthSession(token: token, userName: '');
+      final fallbackName = await _storedAccountName();
+      if (fallbackName == null) {
+        return null;
+      }
+      return AsmrAuthSession(token: token, userName: fallbackName);
     }
+  }
+
+  Future<AsmrAuthSession?> _restoreWithStoredCredentials({
+    bool clearCredentialsOnAuthFailure = false,
+  }) async {
+    final creds = await _tokenStore.readCredentials();
+    if (creds == null) {
+      return null;
+    }
+    try {
+      final session = await _apiService.login(
+        name: creds['name']!,
+        password: creds['password']!,
+      );
+      await _tokenStore.writeToken(session.token);
+      return _withStoredAccountName(session, credentials: creds);
+    } catch (error, stackTrace) {
+      AppLogService.error(
+        'asmr_auto_login_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      if (clearCredentialsOnAuthFailure &&
+          AsmrApiException.isAuthenticationError(error)) {
+        await _tokenStore.clearCredentials();
+      }
+      return null;
+    }
+  }
+
+  Future<AsmrAuthSession> _withStoredAccountName(
+    AsmrAuthSession session, {
+    Map<String, String>? credentials,
+  }) async {
+    final sessionName = session.userName.trim();
+    if (sessionName.isNotEmpty) {
+      return AsmrAuthSession(token: session.token, userName: sessionName);
+    }
+    final credentialName = credentials?['name']?.trim();
+    final resolvedName = credentialName != null && credentialName.isNotEmpty
+        ? credentialName
+        : await _storedAccountName();
+    return AsmrAuthSession(token: session.token, userName: resolvedName ?? '');
+  }
+
+  Future<String?> _storedAccountName() async {
+    final creds = await _tokenStore.readCredentials();
+    final name = creds?['name']?.trim();
+    return name == null || name.isEmpty ? null : name;
   }
 
   Future<AsmrAuthSession> login(String name, String password) async {

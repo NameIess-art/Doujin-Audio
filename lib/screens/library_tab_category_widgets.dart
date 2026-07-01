@@ -310,7 +310,7 @@ class _LibraryCategoryTermBoxState extends State<_LibraryCategoryTermBox> {
                                   visualDensity: VisualDensity.compact,
                                   materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                                   padding: EdgeInsets.zero,
-                                  labelPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+                                  labelPadding: const EdgeInsets.symmetric(horizontal: 8),
                                   selectedColor: cs.secondaryContainer,
                                   backgroundColor: cs.surface,
                                   side: BorderSide(
@@ -350,7 +350,7 @@ class _LibraryCategoryTermBoxState extends State<_LibraryCategoryTermBox> {
                                     visualDensity: VisualDensity.compact,
                                     materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                                     padding: EdgeInsets.zero,
-                                    labelPadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 0),
+                                    labelPadding: const EdgeInsets.symmetric(horizontal: 6),
                                     backgroundColor: cs.surface,
                                     side: BorderSide(color: cs.outlineVariant),
                                     labelStyle: Theme.of(context).textTheme.labelSmall
@@ -382,7 +382,7 @@ class _LibraryCategoryTermBoxState extends State<_LibraryCategoryTermBox> {
                                     visualDensity: VisualDensity.compact,
                                     materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                                     padding: EdgeInsets.zero,
-                                    labelPadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 0),
+                                    labelPadding: const EdgeInsets.symmetric(horizontal: 6),
                                     backgroundColor: cs.surface,
                                     side: BorderSide(color: cs.outlineVariant),
                                     labelStyle: Theme.of(context).textTheme.labelSmall?.copyWith(
@@ -671,15 +671,14 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
 }
 
 class _FloatRightWrap extends MultiChildRenderObjectWidget {
-  final double spacing;
-  final double runSpacing;
-  
   const _FloatRightWrap({
-    Key? key,
-    required List<Widget> children,
+    required super.children,
     this.spacing = 0.0,
     this.runSpacing = 0.0,
-  }) : super(key: key, children: children);
+  });
+
+  final double spacing;
+  final double runSpacing;
 
   @override
   RenderObject createRenderObject(BuildContext context) {
@@ -751,7 +750,7 @@ class _RenderFloatRightWrap extends RenderBox
     RenderBox? child = firstChild;
     while (child != null && child != floatChild) {
       child.layout(constraints.loosen(), parentUsesSize: true);
-      
+
       double availableWidth = (y < floatHeight) ? (maxWidth - floatWidth - spacing) : maxWidth;
 
       if (x + child.size.width > availableWidth && x > 0.0) {

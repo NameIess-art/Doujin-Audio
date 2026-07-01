@@ -265,4 +265,12 @@ class AsmrApiException extends HttpException {
   const AsmrApiException(super.message, {required this.statusCode, super.uri});
 
   final int statusCode;
+
+  bool get isAuthenticationFailure =>
+      statusCode == HttpStatus.unauthorized ||
+      statusCode == HttpStatus.forbidden ||
+      statusCode == 419;
+
+  static bool isAuthenticationError(Object error) =>
+      error is AsmrApiException && error.isAuthenticationFailure;
 }

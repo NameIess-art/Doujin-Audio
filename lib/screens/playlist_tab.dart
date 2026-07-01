@@ -426,6 +426,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                                       ),
                                       cacheExtent: listCacheExtent,
                                       clipBehavior: Clip.none,
+                                      autoScrollerVelocityScalar: 0,
                                       buildDefaultDragHandles: false,
                                       keyboardDismissBehavior:
                                           ScrollViewKeyboardDismissBehavior

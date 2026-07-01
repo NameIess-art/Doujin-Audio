@@ -557,6 +557,7 @@ class LibraryService {
   void syncSlice({
     required bool isInitialized,
     required int detailRevision,
+    int treeSnapshotRevision = -1,
     int categorySnapshotRevision = 0,
   }) {
     slice.update(
@@ -571,6 +572,7 @@ class LibraryService {
         scanDuplicateCount: scanDuplicateCount,
         scanFailureCount: scanFailureCount,
         structureRevision: structureRevision,
+        treeSnapshotRevision: treeSnapshotRevision,
         contentRevision: contentRevision,
         detailRevision: detailRevision,
         categorySnapshotRevision: categorySnapshotRevision,

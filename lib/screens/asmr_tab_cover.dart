@@ -68,6 +68,12 @@ class _AsmrWorkSkeletonCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    
+    final fallbackColor = isDark
+        ? cs.surfaceContainerHigh
+        : cs.surfaceContainerHighest;
+
     final cardShape = RoundedRectangleBorder(
       side: BorderSide(color: cs.outlineVariant),
       borderRadius: BorderRadius.circular(14),
@@ -76,8 +82,12 @@ class _AsmrWorkSkeletonCard extends StatelessWidget {
     return Card(
       margin: EdgeInsets.zero,
       shape: cardShape,
-      color: cs.surfaceContainer,
-      child: const SizedBox(height: 160),
+      color: fallbackColor,
+      elevation: 0,
+      child: const SizedBox(
+        height: 158,
+        width: double.infinity,
+      ),
     );
   }
 }

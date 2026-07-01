@@ -54,8 +54,6 @@ class _PlaybackQueueCard extends StatelessWidget {
       side: BorderSide(
         color: isPlaying
             ? activeColor.withValues(alpha: isDark ? 0.34 : 0.28)
-            : hasCustomColor
-            ? activeColor.withValues(alpha: isDark ? 0.28 : 0.22)
             : cs.outlineVariant.withValues(alpha: isDark ? 0.26 : 0.42),
       ),
     );

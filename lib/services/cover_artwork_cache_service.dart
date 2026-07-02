@@ -98,6 +98,17 @@ class CoverArtworkCacheService {
     return _resolvedTrackCovers[coverSearchKey];
   }
 
+  String? resolvedForPlaybackTrack(MusicTrack? track, {String? trackPath}) {
+    final trackCoverPath = resolvedForTrack(track, trackPath: trackPath);
+    if (trackCoverPath != null) return trackCoverPath;
+    final folderScope = _playbackFallbackFolderScopeForTrack(
+      track,
+      trackPath: trackPath,
+    );
+    if (folderScope == null) return null;
+    return resolvedForFolder(folderScope);
+  }
+
   String? resolvedForFolder(String folderPath) {
     final normalizedFolderPath = PathMatcher.normalize(folderPath);
     return _resolvedFolderCovers[normalizedFolderPath];
@@ -111,6 +122,35 @@ class CoverArtworkCacheService {
 
   Future<String?> futureForTrack(MusicTrack? track, {String? trackPath}) {
     return _resolveCoverPathForTrack(track, trackPath: trackPath);
+  }
+
+  Future<String?> futureForPlaybackTrack(
+    MusicTrack? track, {
+    String? trackPath,
+  }) async {
+    final trackCoverPath = await futureForTrack(track, trackPath: trackPath);
+    if (trackCoverPath != null) return trackCoverPath;
+    final folderScope = _playbackFallbackFolderScopeForTrack(
+      track,
+      trackPath: trackPath,
+    );
+    if (folderScope == null) return null;
+    final previousPlaybackCover = resolvedForPlaybackTrack(
+      track,
+      trackPath: trackPath,
+    );
+    final folderCoverPath = await futureForFolder(folderScope);
+    if (folderCoverPath != null && previousPlaybackCover != folderCoverPath) {
+      final coverSearchKey = coverSearchKeyForTrack(
+        track,
+        trackPath: trackPath,
+      );
+      if (coverSearchKey != null &&
+          (_isActiveCoverKey?.call(coverSearchKey) ?? false)) {
+        _onActiveCoverChanged?.call();
+      }
+    }
+    return folderCoverPath;
   }
 
   Future<String?> futureForFolder(String folderPath) {
@@ -176,6 +216,17 @@ class CoverArtworkCacheService {
     final directoryPath = path.dirname(pathValue);
     if (directoryPath.isEmpty || directoryPath == '.') return null;
     return directoryPath;
+  }
+
+  String? _playbackFallbackFolderScopeForTrack(
+    MusicTrack? track, {
+    String? trackPath,
+  }) {
+    final pathValue = track?.path ?? trackPath;
+    if (pathValue == null || pathValue.isEmpty) return null;
+    if (PathMatcher.isRemoteUri(pathValue)) return null;
+    if (track?.isVideo == true || _isStandaloneAudioTrack(track)) return null;
+    return coverScopeFolderForTrack(track, trackPath: trackPath);
   }
 
   String? coverSearchKeyForTrack(MusicTrack? track, {String? trackPath}) {

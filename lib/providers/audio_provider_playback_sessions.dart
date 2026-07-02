@@ -306,7 +306,7 @@ extension AudioProviderPlaybackSessions on AudioProvider {
         ? Uri.parse(resolvedPath)
         : Uri.file(resolvedPath);
     final track = _sessionTrackForPath(session, logicalPath);
-    final coverPath = resolvedCoverPathForTrack(track);
+    final coverPath = resolvedPlaybackCoverPathForTrack(track);
     if (coverPath == null) {
       unawaited(_resolveNotificationCoverPathForTrack(track));
     }
@@ -552,7 +552,7 @@ extension AudioProviderPlaybackSessions on AudioProvider {
     final resolvedTrackPath = _resolveRetargetedPath(trackPath);
     final track = _trackForAnyPath(resolvedTrackPath);
     final subtitle = track?.groupTitle;
-    final coverPath = resolvedCoverPathForTrack(track);
+    final coverPath = resolvedPlaybackCoverPathForTrack(track);
     final artUri = coverPath == null
         ? track?.remoteCoverUrl
         : Uri.file(coverPath).toString();

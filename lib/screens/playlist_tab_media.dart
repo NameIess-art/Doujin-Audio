@@ -64,7 +64,9 @@ class _SessionHeroArtwork extends ConsumerWidget {
                 children: [
                   AsyncLocalCoverImage(
                     future: coverPathFuture,
-                    initialPath: provider.resolvedCoverPathForTrack(track),
+                    initialPath: provider.resolvedPlaybackCoverPathForTrack(
+                      track,
+                    ),
                     retryFutureBuilder: () =>
                         _coverFutureForTrack(provider, track),
                     seed: track?.displayName ?? track?.path ?? sessionId,

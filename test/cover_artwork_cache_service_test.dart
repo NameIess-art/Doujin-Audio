@@ -321,8 +321,43 @@ void main() {
     );
 
     expect(await cache.futureForTrack(library.library.single), isNull);
+    expect(await cache.futureForPlaybackTrack(library.library.single), isNull);
     expect(gateway.resolveTrackCoverPaths, <String>[trackPath]);
   });
+
+  test(
+    'folder audio playback falls back to the selected folder cover only',
+    () async {
+      final directory = await Directory.systemTemp.createTemp(
+        'cover_cache_playback_folder_fallback_',
+      );
+      addTearDown(() async {
+        if (await directory.exists()) await directory.delete(recursive: true);
+      });
+      final trackPath = '${directory.path}${Platform.pathSeparator}voice.flac';
+      final folderCover = '${directory.path}${Platform.pathSeparator}cover.jpg';
+      await File(trackPath).writeAsBytes(<int>[1]);
+      await File(folderCover).writeAsBytes(<int>[0xff, 0xd8, 0xff, 0xd9]);
+
+      final track = _track(path: trackPath, groupKey: directory.path);
+      final library = LibraryService()
+        ..watchedFolders.add(directory.path)
+        ..library.add(track);
+      final gateway = _FakeFileCachePlatformGateway(coversByPath: const {});
+      final cache = CoverArtworkCacheService(
+        libraryService: library,
+        fileCacheGateway: gateway,
+      );
+
+      await cache.setFolderCoverSelection(directory.path, folderCover);
+
+      expect(await cache.futureForTrack(track), isNull);
+      expect(cache.resolvedForTrack(track), isNull);
+      expect(await cache.futureForPlaybackTrack(track), folderCover);
+      expect(cache.resolvedForPlaybackTrack(track), folderCover);
+      expect(cache.resolvedForTrack(track), isNull);
+    },
+  );
 
   test('tracks in one folder keep separate embedded cover caches', () async {
     final library = LibraryService();

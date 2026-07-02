@@ -30,7 +30,7 @@ Future<String?> _sessionCoverFutureForTrack(
   if (track == null) {
     return Future<String?>.value();
   }
-  return provider.coverPathFutureForTrack(track);
+  return provider.playbackCoverPathFutureForTrack(track);
 }
 
 class ActiveSessionCarousel extends ConsumerStatefulWidget {

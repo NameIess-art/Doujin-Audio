@@ -20,7 +20,7 @@ extension AudioProviderNotificationCovers on AudioProvider {
     final track = trackByPath(trackPath);
     final artPath = coverPathForTrack(track, trackPath: trackPath);
     if (artPath == null) {
-      unawaited(coverPathFutureForTrack(track, trackPath: trackPath));
+      unawaited(playbackCoverPathFutureForTrack(track, trackPath: trackPath));
     }
     return track?.displayName ??
         path.basenameWithoutExtension(session.currentTrackPath);
@@ -44,11 +44,21 @@ extension AudioProviderNotificationCovers on AudioProvider {
   }
 
   String? coverPathForTrack(MusicTrack? track, {String? trackPath}) {
-    return resolvedCoverPathForTrack(track, trackPath: trackPath);
+    return resolvedPlaybackCoverPathForTrack(track, trackPath: trackPath);
   }
 
   String? resolvedCoverPathForTrack(MusicTrack? track, {String? trackPath}) {
     return _coverArtworkCacheService.resolvedForTrack(
+      track,
+      trackPath: trackPath,
+    );
+  }
+
+  String? resolvedPlaybackCoverPathForTrack(
+    MusicTrack? track, {
+    String? trackPath,
+  }) {
+    return _coverArtworkCacheService.resolvedForPlaybackTrack(
       track,
       trackPath: trackPath,
     );
@@ -72,6 +82,16 @@ extension AudioProviderNotificationCovers on AudioProvider {
     );
   }
 
+  Future<String?> playbackCoverPathFutureForTrack(
+    MusicTrack? track, {
+    String? trackPath,
+  }) {
+    return _coverArtworkCacheService.futureForPlaybackTrack(
+      track,
+      trackPath: trackPath,
+    );
+  }
+
   Future<String?> coverPathFutureForFolder(String folderPath) {
     return _coverArtworkCacheService.futureForFolder(folderPath);
   }
@@ -84,7 +104,7 @@ extension AudioProviderNotificationCovers on AudioProvider {
     MusicTrack? track, {
     String? trackPath,
   }) {
-    return coverPathFutureForTrack(track, trackPath: trackPath);
+    return playbackCoverPathFutureForTrack(track, trackPath: trackPath);
   }
 
   bool isCoverPathLoadingForFolder(String folderPath) {

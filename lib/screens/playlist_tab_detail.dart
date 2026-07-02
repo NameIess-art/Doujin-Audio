@@ -717,7 +717,9 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                       ),
                       child: AsyncCoverImage(
                         future: coverPathFuture,
-                        initialPath: provider.resolvedCoverPathForTrack(track),
+                        initialPath: provider.resolvedPlaybackCoverPathForTrack(
+                          track,
+                        ),
                         retryFutureBuilder: () =>
                             _coverFutureForTrack(provider, track),
                         fallbackBuilder: (_) => CoverFallbackArtwork(
@@ -831,7 +833,7 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                                 MediaQuery.orientationOf(context) ==
                                 Orientation.landscape;
                             final resolvedCoverPath = provider
-                                .resolvedCoverPathForTrack(track);
+                                .resolvedPlaybackCoverPathForTrack(track);
                             final useArtworkConsole =
                                 track?.isSingle == true &&
                                 track?.isVideo != true &&

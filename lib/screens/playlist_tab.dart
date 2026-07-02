@@ -70,10 +70,10 @@ Future<String?> _coverFutureForTrack(
   }
   if (cachedOnly) {
     return SynchronousFuture<String?>(
-      provider.resolvedCoverPathForTrack(track),
+      provider.resolvedPlaybackCoverPathForTrack(track),
     );
   }
-  return provider.coverPathFutureForTrack(track);
+  return provider.playbackCoverPathFutureForTrack(track);
 }
 
 PageRoute<void> buildSessionDetailRoute({required String sessionId}) {
@@ -305,7 +305,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
         return SizedBox.shrink(key: ValueKey(session.id));
       }
       final track = provider.trackByPath(cardState.trackPath);
-      final coverPath = provider.resolvedCoverPathForTrack(track);
+      final coverPath = provider.resolvedPlaybackCoverPathForTrack(track);
       if (!_isReordering && coverPath == null) {
         unawaited(_coverFutureForTrack(provider, track));
       }
@@ -313,7 +313,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
         for (final entry in session.playbackQueue!.entries.take(4)) {
           if (entry.tracks.isEmpty) continue;
           final coverTrack = entry.tracks.first;
-          if (provider.resolvedCoverPathForTrack(coverTrack) == null) {
+          if (provider.resolvedPlaybackCoverPathForTrack(coverTrack) == null) {
             unawaited(_coverFutureForTrack(provider, coverTrack));
           }
         }

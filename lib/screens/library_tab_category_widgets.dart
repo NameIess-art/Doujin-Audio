@@ -783,77 +783,102 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
                 cs.surfaceContainerLow,
               )
             : cs.surfaceContainerLow,
-        child: entry.isFolder
-            ? SizedBox(
-                height: cardHeight,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 2, 12, 2),
-                  child: _RootFolderCardContent(
-                    folderPath: entry.path,
-                    folderName: entry.title,
-                    detail: entry.detail,
-                    detailLoading: false,
-                    expanded: false,
-                    hasChildren: false,
-                    onPlay: firstTrack == null
-                        ? () {}
-                        : () => _play(context, provider),
-                  ),
-                ),
-              )
-            : firstTrack != null &&
-                  (firstTrack.isVideo ||
-                      hasDisplayableCoverArtwork(
-                        firstTrack,
-                        provider.resolvedCoverPathForTrack(firstTrack),
-                      ))
-            ? Theme(
-                data: Theme.of(
-                  context,
-                ).copyWith(dividerColor: Colors.transparent),
-                child: SizedBox(
-                  height: cardHeight,
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 2, 12, 2),
-                    child: _SingleMediaFileCardContent(
-                      track: firstTrack,
-                      title: entry.title,
-                      detail: entry.detail,
-                      detailLoading: false,
-                      onPlay: () => _play(context, provider),
-                    ),
-                  ),
-                ),
-              )
-            : Padding(
-                padding: const EdgeInsets.fromLTRB(12, 12, 6, 12),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Expanded(
-                      child: _SingleAudioFileCardContent(
-                        title: entry.title,
-                        detail: entry.detail,
-                        detailLoading: false,
-                      ),
-                    ),
-                    IconButton(
-                      onPressed: firstTrack == null
-                          ? null
-                          : () => _play(context, provider),
-                      style: IconButton.styleFrom(
-                        foregroundColor: cs.primary,
-                        minimumSize: const Size(40, 44),
-                        maximumSize: const Size(40, 44),
-                        padding: EdgeInsets.zero,
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
-                      icon: const Icon(Icons.add_circle_rounded, size: 25),
-                    ),
-                  ],
-                ),
-              ),
+        child: _buildEntryContent(context, provider, firstTrack, cardHeight),
       ),
     );
+  }
+
+  Widget _buildEntryContent(
+    BuildContext context,
+    AudioProvider provider,
+    MusicTrack? firstTrack,
+    double cardHeight,
+  ) {
+    if (entry.isFolder) {
+      return SizedBox(
+        height: cardHeight,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 2, 12, 2),
+          child: _RootFolderCardContent(
+            folderPath: entry.path,
+            folderName: entry.title,
+            detail: entry.detail,
+            detailLoading: false,
+            expanded: false,
+            hasChildren: false,
+            onPlay: firstTrack == null ? () {} : () => _play(context, provider),
+          ),
+        ),
+      );
+    }
+
+    Widget buildSingleFileContent(bool useFeaturedCard) {
+      if (firstTrack != null && useFeaturedCard) {
+        return Theme(
+          data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+          child: SizedBox(
+            height: cardHeight,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 2, 12, 2),
+              child: _SingleMediaFileCardContent(
+                track: firstTrack,
+                title: entry.title,
+                detail: entry.detail,
+                detailLoading: false,
+                onPlay: () => _play(context, provider),
+              ),
+            ),
+          ),
+        );
+      }
+
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(12, 12, 6, 12),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Expanded(
+              child: _SingleAudioFileCardContent(
+                title: entry.title,
+                detail: entry.detail,
+                detailLoading: false,
+              ),
+            ),
+            IconButton(
+              onPressed: firstTrack == null
+                  ? null
+                  : () => _play(context, provider),
+              style: IconButton.styleFrom(
+                foregroundColor: Theme.of(context).colorScheme.primary,
+                minimumSize: const Size(40, 44),
+                maximumSize: const Size(40, 44),
+                padding: EdgeInsets.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              icon: const Icon(Icons.add_circle_rounded, size: 25),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (firstTrack == null) return buildSingleFileContent(false);
+    final resolvedCoverPath = provider.resolvedCoverPathForTrack(firstTrack);
+    final useFeaturedCard =
+        firstTrack.isVideo ||
+        hasDisplayableCoverArtwork(firstTrack, resolvedCoverPath);
+    if (!firstTrack.isVideo && !useFeaturedCard) {
+      return FutureBuilder<String?>(
+        future: provider.coverPathFutureForTrack(firstTrack),
+        builder: (context, snapshot) {
+          final resolvedPath =
+              snapshot.data ?? provider.resolvedCoverPathForTrack(firstTrack);
+          return buildSingleFileContent(
+            hasDisplayableCoverArtwork(firstTrack, resolvedPath),
+          );
+        },
+      );
+    }
+    return buildSingleFileContent(useFeaturedCard);
   }
 }

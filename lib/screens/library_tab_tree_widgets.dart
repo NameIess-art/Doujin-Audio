@@ -408,7 +408,7 @@ class _TrackNodeWidget extends ConsumerWidget {
       );
     }
 
-    if (track.isSingle) {
+    Widget buildSingleTrackCard(bool useFeaturedCard) {
       return SwipeRevealCard(
         margin: const EdgeInsets.only(bottom: 6),
         shape: cardShape,
@@ -434,7 +434,7 @@ class _TrackNodeWidget extends ConsumerWidget {
                   cs.surfaceContainerLow,
                 )
               : cs.surfaceContainerLow,
-          child: useFeaturedSingleCard
+          child: useFeaturedCard
               ? ListTile(
                   contentPadding: const EdgeInsets.fromLTRB(12, 2, 12, 2),
                   minTileHeight: _FolderNodeWidgetState._rootFolderTileHeight,
@@ -492,6 +492,22 @@ class _TrackNodeWidget extends ConsumerWidget {
                 ),
         ),
       );
+    }
+
+    if (track.isSingle) {
+      if (!track.isVideo && !useFeaturedSingleCard) {
+        return FutureBuilder<String?>(
+          future: provider.coverPathFutureForTrack(track),
+          builder: (context, snapshot) {
+            final resolvedPath =
+                snapshot.data ?? provider.resolvedCoverPathForTrack(track);
+            return buildSingleTrackCard(
+              hasDisplayableCoverArtwork(track, resolvedPath),
+            );
+          },
+        );
+      }
+      return buildSingleTrackCard(useFeaturedSingleCard);
     }
 
     return SwipeRevealCard(

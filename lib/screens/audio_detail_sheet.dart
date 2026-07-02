@@ -475,6 +475,9 @@ class _AudioDetailSheetState extends State<AudioDetailSheet> {
               if (_target.isLibraryRootFolder) ...[
                 _FolderCoverSelector(folderPath: _target.targetPath),
                 const SizedBox(height: 12),
+              ] else ...[
+                _SingleFileCoverPreview(filePath: _target.targetPath),
+                const SizedBox(height: 12),
               ],
               const SizedBox(height: 12),
               Text(
@@ -538,6 +541,92 @@ String _renameWorkTitleLabel(AudioDetail detail, AppLanguageProvider i18n) {
   return detail.target.isLibraryRootFolder
       ? i18n.tr('audio_detail_rename_folder_from_title')
       : i18n.tr('audio_detail_rename_file_from_title');
+}
+
+class _SingleFileCoverPreview extends StatefulWidget {
+  const _SingleFileCoverPreview({required this.filePath});
+
+  final String filePath;
+
+  @override
+  State<_SingleFileCoverPreview> createState() =>
+      _SingleFileCoverPreviewState();
+}
+
+class _SingleFileCoverPreviewState extends State<_SingleFileCoverPreview> {
+  Future<String?>? _coverFuture;
+  String? _lastTrackPath;
+  int _lastCoverGeneration = -1;
+
+  Future<String?> _futureFor(
+    AudioProvider provider,
+    MusicTrack track,
+    int coverGeneration,
+  ) {
+    if (_lastTrackPath != track.path ||
+        _lastCoverGeneration != coverGeneration) {
+      _lastTrackPath = track.path;
+      _lastCoverGeneration = coverGeneration;
+      _coverFuture = provider.coverPathFutureForTrack(track);
+    }
+    return _coverFuture!;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final provider = context.read<AudioProvider>();
+    final track = context.select<AudioProvider, MusicTrack?>(
+      (provider) => provider.trackByPath(widget.filePath),
+    );
+    if (track == null) return const SizedBox.shrink();
+
+    final coverGeneration = context.select<AudioProvider, int>(
+      (provider) => provider.coverGeneration,
+    );
+    final initialPath = provider.resolvedCoverPathForTrack(track);
+    final coverFuture = _futureFor(provider, track, coverGeneration);
+    final coverCacheWidth = coverCacheWidthForResolution(
+      context.select<AudioProvider, CoverImageResolution>(
+        (provider) => provider.coverImageResolution,
+      ),
+    );
+    final i18n = context.watch<AppLanguageProvider>();
+    final labelStyle = Theme.of(
+      context,
+    ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700);
+
+    return FutureBuilder<String?>(
+      future: coverFuture,
+      initialData: initialPath,
+      builder: (context, snapshot) {
+        final coverPath = snapshot.data;
+        if (coverPath == null || coverPath.isEmpty) {
+          return const SizedBox.shrink();
+        }
+        return Column(
+          key: const ValueKey('audio_detail_single_cover_loaded'),
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(i18n.tr('audio_detail_cover_image'), style: labelStyle),
+            const SizedBox(height: 10),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(14),
+              child: AspectRatio(
+                aspectRatio: 1.45,
+                child: RetryingFileImage(
+                  path: coverPath,
+                  fit: BoxFit.cover,
+                  cacheWidth: coverCacheWidth,
+                  useDefaultCacheWidth: coverCacheWidth != null,
+                  fallbackBuilder: (_) => const SizedBox.shrink(),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
 }
 
 class _FolderCoverSelector extends StatefulWidget {
@@ -887,8 +976,11 @@ class _AudioDetailRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final emptyText = context.read<AppLanguageProvider>().tr('audio_detail_empty');
-    final displayValues = values.isEmpty || (values.length == 1 && values.first.isEmpty) 
+    final emptyText = context.read<AppLanguageProvider>().tr(
+      'audio_detail_empty',
+    );
+    final displayValues =
+        values.isEmpty || (values.length == 1 && values.first.isEmpty)
         ? [emptyText]
         : values;
 
@@ -926,16 +1018,24 @@ class _AudioDetailRow extends StatelessWidget {
             Wrap(
               spacing: 8,
               runSpacing: 8,
-              children: displayValues.map((v) => _DetailCapsule(
-                text: v,
-                onLongPress: onCopy != null && v != emptyText ? () => onCopy!(v) : null,
-              )).toList(),
+              children: displayValues
+                  .map(
+                    (v) => _DetailCapsule(
+                      text: v,
+                      onLongPress: onCopy != null && v != emptyText
+                          ? () => onCopy!(v)
+                          : null,
+                    ),
+                  )
+                  .toList(),
             )
           else
             Text(
               displayValues.join('\uFF0C'),
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: displayValues.first == emptyText ? cs.onSurfaceVariant : cs.onSurface,
+                color: displayValues.first == emptyText
+                    ? cs.onSurfaceVariant
+                    : cs.onSurface,
               ),
             ),
         ],
@@ -963,9 +1063,9 @@ class _DetailCapsule extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           child: Text(
             text,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: cs.onSurface,
-            ),
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: cs.onSurface),
           ),
         ),
       ),

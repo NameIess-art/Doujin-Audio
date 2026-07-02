@@ -522,6 +522,7 @@ class NativePlaybackService : MediaSessionService() {
             )
             if (!deferPlayerCreation) {
                 focusSession(sessionId)
+                ensureFocusedMediaSession()
             }
             publishSessionState(sessionId)
             ensureTicker()
@@ -579,7 +580,7 @@ class NativePlaybackService : MediaSessionService() {
         markPlaybackIntended(sessionId)
         session.applyFadeMultiplier(1f)
         focusSession(sessionId)
-        session.ensurePlayer().play()
+        ensureFocusedPlayer(session).play()
         evictPlayersIfNeeded()
         pausedSessionIds.forEach(::publishSessionState)
         val snapshot = publishSessionState(sessionId)
@@ -626,7 +627,7 @@ class NativePlaybackService : MediaSessionService() {
         val session = sessions[sessionId] ?: return errorResult("Session not found")
         session.lastUsedMs = System.currentTimeMillis()
         focusSession(sessionId)
-        session.ensurePlayer().seekToNextMediaItem()
+        ensureFocusedPlayer(session).seekToNextMediaItem()
         evictPlayersIfNeeded()
         publishSessionState(sessionId)
         persistSessionStateNow()
@@ -638,7 +639,7 @@ class NativePlaybackService : MediaSessionService() {
         val session = sessions[sessionId] ?: return errorResult("Session not found")
         session.lastUsedMs = System.currentTimeMillis()
         focusSession(sessionId)
-        session.ensurePlayer().seekToPreviousMediaItem()
+        ensureFocusedPlayer(session).seekToPreviousMediaItem()
         evictPlayersIfNeeded()
         publishSessionState(sessionId)
         persistSessionStateNow()
@@ -653,7 +654,7 @@ class NativePlaybackService : MediaSessionService() {
         notificationsDismissed = false
         playbackSuspended = false
         focusSession(sessionId)
-        val player = session.ensurePlayer()
+        val player = ensureFocusedPlayer(session)
         if (player.playWhenReady) {
             clearPlaybackIntent(sessionId)
             player.pause()
@@ -939,7 +940,7 @@ class NativePlaybackService : MediaSessionService() {
             markPlaybackIntended(sessionId)
             session.applyFadeMultiplier(1f)
             focusSession(sessionId)
-            session.ensurePlayer().play()
+            ensureFocusedPlayer(session).play()
             resumedSessionIds += sessionId
         }
         if (resumedSessionIds.isNotEmpty()) {
@@ -1170,6 +1171,17 @@ class NativePlaybackService : MediaSessionService() {
         }
     }
 
+    private fun ensureFocusedPlayer(session: NativePlaybackSession): ExoPlayer {
+        val player = session.ensurePlayer()
+        ensureFocusedMediaSession()
+        return player
+    }
+
+    private fun ensureFocusedMediaSession(): MediaSession? {
+        updateMediaSessionPlayer()
+        return ensureMediaSession()
+    }
+
     private fun mediaSessionCandidate(): NativePlaybackSession? {
         sessions[focusedSessionId]?.takeIf { it.playerOrNull() != null }?.let {
             return it
@@ -1241,7 +1253,7 @@ class NativePlaybackService : MediaSessionService() {
                 logInfo("recover_intended_playback trigger=$trigger recreate_player", session)
                 focusSession(sessionId)
                 session.applyFadeMultiplier(1f)
-                session.ensurePlayer().play()
+                ensureFocusedPlayer(session).play()
                 recoveredAny = true
                 return@forEach
             }
@@ -1268,7 +1280,7 @@ class NativePlaybackService : MediaSessionService() {
             if (player.playbackState == Player.STATE_IDLE) {
                 session.reprepareCurrentMediaItem()
             }
-            session.ensurePlayer().play()
+            ensureFocusedPlayer(session).play()
             recoveredAny = true
         }
 
@@ -1344,6 +1356,7 @@ class NativePlaybackService : MediaSessionService() {
                 logInfo("start_foreground_skip no_session")
                 return
             }
+        val mediaSession = ensureFocusedMediaSession()
         val usesUnifiedNotification =
             !notificationsDismissed &&
                 !foregroundSuppressed &&
@@ -1364,7 +1377,7 @@ class NativePlaybackService : MediaSessionService() {
                 foregroundNotificationFactory.buildPlaybackNotification(
                     title = foregroundSession.title,
                     subtitle = foregroundSession.subtitle,
-                    mediaSession = currentMediaSession(),
+                    mediaSession = mediaSession,
                     allowRichSummary = usesUnifiedNotification
                 ),
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
@@ -1610,7 +1623,7 @@ class NativePlaybackService : MediaSessionService() {
         sessionIdsToResume.forEach { sessionId ->
             val session = sessions[sessionId] ?: return@forEach
             focusSession(sessionId)
-            session.ensurePlayer().play()
+            ensureFocusedPlayer(session).play()
         }
         publishAllSessionStates()
         ensureTicker()

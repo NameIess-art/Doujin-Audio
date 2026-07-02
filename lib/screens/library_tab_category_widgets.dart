@@ -801,7 +801,12 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
                   ),
                 ),
               )
-            : firstTrack?.isVideo == true
+            : firstTrack != null &&
+                  (firstTrack.isVideo ||
+                      hasDisplayableCoverArtwork(
+                        firstTrack,
+                        provider.resolvedCoverPathForTrack(firstTrack),
+                      ))
             ? Theme(
                 data: Theme.of(
                   context,
@@ -810,8 +815,8 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
                   height: cardHeight,
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(12, 2, 12, 2),
-                    child: _SingleVideoFileCardContent(
-                      track: firstTrack!,
+                    child: _SingleMediaFileCardContent(
+                      track: firstTrack,
                       title: entry.title,
                       detail: entry.detail,
                       detailLoading: false,

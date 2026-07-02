@@ -388,6 +388,25 @@ class _TrackNodeWidget extends ConsumerWidget {
           )
         : null;
     final isSingleDetailLoading = track.isSingle && categorySnapshot == null;
+    final resolvedCoverPath = provider.resolvedCoverPathForTrack(track);
+    final useFeaturedSingleCard =
+        track.isVideo || hasDisplayableCoverArtwork(track, resolvedCoverPath);
+
+    void playSingleTrack() {
+      AppInteractionFeedback.trigger(
+        AppInteractionFeedbackType.tap,
+        context: context,
+      );
+      unawaited(
+        track.isVideo
+            ? provider.spawnSession(track, autoPlay: true)
+            : provider.spawnSession(track),
+      );
+      _showSessionCreatedSnack(
+        context,
+        i18n.tr('session_created', {'name': track.displayName}),
+      );
+    }
 
     if (track.isSingle) {
       return SwipeRevealCard(
@@ -415,28 +434,18 @@ class _TrackNodeWidget extends ConsumerWidget {
                   cs.surfaceContainerLow,
                 )
               : cs.surfaceContainerLow,
-          child: track.isVideo
+          child: useFeaturedSingleCard
               ? ListTile(
                   contentPadding: const EdgeInsets.fromLTRB(12, 2, 12, 2),
                   minTileHeight: _FolderNodeWidgetState._rootFolderTileHeight,
-                  title: _SingleVideoFileCardContent(
+                  title: _SingleMediaFileCardContent(
                     track: track,
                     title: track.displayName,
                     detail: singleDetail,
                     detailLoading: isSingleDetailLoading,
                     index: index,
                     cardPositionsLocked: cardPositionsLocked,
-                    onPlay: () {
-                      AppInteractionFeedback.trigger(
-                        AppInteractionFeedbackType.tap,
-                        context: context,
-                      );
-                      unawaited(provider.spawnSession(track, autoPlay: true));
-                      _showSessionCreatedSnack(
-                        context,
-                        i18n.tr('session_created', {'name': track.displayName}),
-                      );
-                    },
+                    onPlay: playSingleTrack,
                   ),
                 )
               : Padding(
@@ -451,19 +460,7 @@ class _TrackNodeWidget extends ConsumerWidget {
                         ),
                       ),
                       IconButton(
-                        onPressed: () {
-                          AppInteractionFeedback.trigger(
-                            AppInteractionFeedbackType.tap,
-                            context: context,
-                          );
-                          unawaited(provider.spawnSession(track));
-                          _showSessionCreatedSnack(
-                            context,
-                            i18n.tr('session_created', {
-                              'name': track.displayName,
-                            }),
-                          );
-                        },
+                        onPressed: playSingleTrack,
                         style: IconButton.styleFrom(
                           foregroundColor: cs.primary,
                           minimumSize: const Size(40, 44),
@@ -478,9 +475,15 @@ class _TrackNodeWidget extends ConsumerWidget {
                         ReorderableDragStartListener(
                           index: index!,
                           child: Container(
-                            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                            padding: const EdgeInsets.symmetric(
+                              vertical: 8,
+                              horizontal: 4,
+                            ),
                             color: Colors.transparent,
-                            child: const Icon(Icons.drag_handle_rounded, size: 24),
+                            child: const Icon(
+                              Icons.drag_handle_rounded,
+                              size: 24,
+                            ),
                           ),
                         ),
                       ],
@@ -549,7 +552,10 @@ class _TrackNodeWidget extends ConsumerWidget {
                 ReorderableDragStartListener(
                   index: index!,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 8,
+                      horizontal: 4,
+                    ),
                     color: Colors.transparent,
                     child: const Icon(Icons.drag_handle_rounded, size: 24),
                   ),
@@ -828,8 +834,8 @@ class _SingleAudioFileCardContent extends StatelessWidget {
   }
 }
 
-class _SingleVideoFileCardContent extends StatelessWidget {
-  const _SingleVideoFileCardContent({
+class _SingleMediaFileCardContent extends StatelessWidget {
+  const _SingleMediaFileCardContent({
     required this.track,
     required this.title,
     required this.detail,

@@ -231,6 +231,97 @@ void main() {
   );
 
   test(
+    'standalone audio track ignores folder image and uses its own embedded cover',
+    () async {
+      final directory = await Directory.systemTemp.createTemp(
+        'cover_cache_single_audio_',
+      );
+      addTearDown(() async {
+        if (await directory.exists()) await directory.delete(recursive: true);
+      });
+      final trackPath = '${directory.path}${Platform.pathSeparator}voice.mp3';
+      final folderCover = '${directory.path}${Platform.pathSeparator}cover.jpg';
+      await File(trackPath).writeAsBytes(<int>[1]);
+      await File(folderCover).writeAsBytes(<int>[0xff, 0xd8, 0xff, 0xd9]);
+
+      final library = LibraryService()
+        ..watchedFolders.add(directory.path)
+        ..library.add(
+          _track(path: trackPath, groupKey: '__single_files__', isSingle: true),
+        );
+      final gateway = _FakeFileCachePlatformGateway(
+        coversByPath: <String, String>{trackPath: '/cache/voice-cover.image'},
+      );
+      final cache = CoverArtworkCacheService(
+        libraryService: library,
+        fileCacheGateway: gateway,
+      );
+
+      expect(
+        await cache.futureForTrack(library.library.single),
+        '/cache/voice-cover.image',
+      );
+      expect(gateway.resolveTrackCoverPaths, <String>[trackPath]);
+    },
+  );
+
+  test('standalone audio track does not fall back to folder cover', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'cover_cache_single_audio_miss_',
+    );
+    addTearDown(() async {
+      if (await directory.exists()) await directory.delete(recursive: true);
+    });
+    final trackPath = '${directory.path}${Platform.pathSeparator}voice.mp3';
+    final folderCover = '${directory.path}${Platform.pathSeparator}cover.jpg';
+    await File(trackPath).writeAsBytes(<int>[1]);
+    await File(folderCover).writeAsBytes(<int>[0xff, 0xd8, 0xff, 0xd9]);
+
+    final library = LibraryService()
+      ..watchedFolders.add(directory.path)
+      ..library.add(
+        _track(path: trackPath, groupKey: '__single_files__', isSingle: true),
+      );
+    final gateway = _FakeFileCachePlatformGateway(coversByPath: const {});
+    final cache = CoverArtworkCacheService(
+      libraryService: library,
+      fileCacheGateway: gateway,
+    );
+
+    expect(await cache.futureForTrack(library.library.single), isNull);
+    expect(gateway.resolveTrackCoverPaths, <String>[trackPath]);
+  });
+
+  test('stored cover cache path is used before platform lookup', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'cover_cache_stored_track_cover_',
+    );
+    addTearDown(() async {
+      if (await directory.exists()) await directory.delete(recursive: true);
+    });
+    final trackPath = '${directory.path}${Platform.pathSeparator}voice.mp3';
+    final cachedCover =
+        '${directory.path}${Platform.pathSeparator}embedded.image';
+    await File(trackPath).writeAsBytes(<int>[1]);
+    await File(cachedCover).writeAsBytes(<int>[0xff, 0xd8, 0xff, 0xd9]);
+
+    final track = _track(
+      path: trackPath,
+      groupKey: '__single_files__',
+      isSingle: true,
+      coverCachePath: cachedCover,
+    );
+    final gateway = _FakeFileCachePlatformGateway(coversByPath: const {});
+    final cache = CoverArtworkCacheService(
+      libraryService: LibraryService()..library.add(track),
+      fileCacheGateway: gateway,
+    );
+
+    expect(await cache.futureForTrack(track), cachedCover);
+    expect(gateway.resolveTrackCoverPaths, isEmpty);
+  });
+
+  test(
     'stale restored manual cover is ignored and folder is rescanned',
     () async {
       final directory = await Directory.systemTemp.createTemp(
@@ -338,6 +429,9 @@ MusicTrack _track({
   required String path,
   required String groupKey,
   String? manualCoverPath,
+  String? coverCachePath,
+  bool isSingle = false,
+  bool isVideo = false,
 }) {
   return MusicTrack(
     path: path,
@@ -345,7 +439,9 @@ MusicTrack _track({
     groupKey: groupKey,
     groupTitle: 'Work',
     groupSubtitle: groupKey,
-    isSingle: false,
+    isSingle: isSingle,
+    isVideo: isVideo,
+    coverCachePath: coverCachePath,
     manualCoverPath: manualCoverPath,
   );
 }

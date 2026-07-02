@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import '../models/music_track.dart';
 import '../services/audio_state_services.dart';
 import '../services/ui_interaction_coordinator.dart';
 import 'scroll_activity_gate.dart';
@@ -21,6 +22,24 @@ int? coverCacheWidthForResolution(CoverImageResolution resolution) {
     case CoverImageResolution.original:
       return null;
   }
+}
+
+bool hasDisplayableCoverArtwork(MusicTrack? track, String? resolvedCoverPath) {
+  if (resolvedCoverPath?.trim().isNotEmpty == true) return true;
+  if (track?.manualCoverPath?.trim().isNotEmpty == true) return true;
+  if (track?.coverCachePath?.trim().isNotEmpty == true) return true;
+  if (track?.remoteCoverUrl?.trim().isNotEmpty == true) return true;
+  return track?.isVideo == true;
+}
+
+bool shouldShowPlaylistCoverArtwork(
+  MusicTrack? track,
+  String? resolvedCoverPath,
+) {
+  if (track?.isSingle == true && track?.isVideo != true) {
+    return hasDisplayableCoverArtwork(track, resolvedCoverPath);
+  }
+  return track != null;
 }
 
 class PulsingPlaceholder extends StatelessWidget {

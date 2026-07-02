@@ -4,9 +4,54 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:nameless_audio/models/music_track.dart';
 import 'package:nameless_audio/widgets/async_cover_image.dart';
 
 void main() {
+  test('standalone audio without stored cover hides playlist artwork', () {
+    const track = MusicTrack(
+      path: 'C:/media/voice.mp3',
+      displayName: 'voice.mp3',
+      groupKey: 'voice',
+      groupTitle: 'voice',
+      groupSubtitle: '',
+      isSingle: true,
+    );
+
+    expect(hasDisplayableCoverArtwork(track, null), isFalse);
+    expect(shouldShowPlaylistCoverArtwork(track, null), isFalse);
+  });
+
+  test('standalone audio with stored cover shows playlist artwork', () {
+    const track = MusicTrack(
+      path: 'C:/media/voice.mp3',
+      displayName: 'voice.mp3',
+      groupKey: 'voice',
+      groupTitle: 'voice',
+      groupSubtitle: '',
+      isSingle: true,
+      coverCachePath: 'C:/cache/voice.cover',
+    );
+
+    expect(hasDisplayableCoverArtwork(track, null), isTrue);
+    expect(shouldShowPlaylistCoverArtwork(track, null), isTrue);
+  });
+
+  test('video keeps playlist artwork even without resolved cover', () {
+    const track = MusicTrack(
+      path: 'C:/media/movie.mp4',
+      displayName: 'movie.mp4',
+      groupKey: 'movie',
+      groupTitle: 'movie',
+      groupSubtitle: '',
+      isSingle: true,
+      isVideo: true,
+    );
+
+    expect(hasDisplayableCoverArtwork(track, null), isTrue);
+    expect(shouldShowPlaylistCoverArtwork(track, null), isTrue);
+  });
+
   testWidgets('LocalCoverImage shows fallback artwork for an empty path', (
     tester,
   ) async {

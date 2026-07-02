@@ -8,6 +8,7 @@ class _SessionDetailContent extends StatefulWidget {
     this.segmentPanelExpandedNotifier,
     this.isLandscape = false,
     this.artworkWidget,
+    this.useArtworkConsole = false,
     this.detailPadding = EdgeInsets.zero,
     this.hasSubtitle = false,
     this.subtitleEnabled = true,
@@ -23,6 +24,7 @@ class _SessionDetailContent extends StatefulWidget {
   final ValueNotifier<bool>? segmentPanelExpandedNotifier;
   final bool isLandscape;
   final Widget? artworkWidget;
+  final bool useArtworkConsole;
   final EdgeInsetsGeometry detailPadding;
   final bool hasSubtitle;
   final bool subtitleEnabled;
@@ -34,6 +36,51 @@ class _SessionDetailContent extends StatefulWidget {
 
   @override
   State<_SessionDetailContent> createState() => _SessionDetailContentState();
+}
+
+class _SessionDetailConsoleArtwork extends StatelessWidget {
+  const _SessionDetailConsoleArtwork({
+    required this.progressBar,
+    required this.controls,
+  });
+
+  final Widget progressBar;
+  final Widget controls;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 32),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 560),
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
+            decoration: BoxDecoration(
+              color: cs.surfaceContainerHigh.withValues(alpha: 0.86),
+              borderRadius: BorderRadius.circular(32),
+              border: Border.all(
+                color: cs.onSurface.withValues(alpha: 0.12),
+                width: 0.5,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.18),
+                  blurRadius: 42,
+                  offset: const Offset(0, 20),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [progressBar, const SizedBox(height: 8), controls],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _SessionDetailContentState extends State<_SessionDetailContent> {
@@ -385,6 +432,46 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
         : i18n.tr('imported_files');
     final hasSiblings =
         provider.tracksInSameWork(session.currentTrackPath).length > 1;
+    final selectedSegmentId = _segmentPanelExpanded ? _selectedSegmentId : null;
+
+    Widget buildProgressBar() {
+      return _ProgressBar(
+        key: ValueKey('progress_${session.id}'),
+        session: session,
+        provider: provider,
+        timeSegmentLabels: _segmentLabels,
+        selectedSegmentId: selectedSegmentId,
+        onManualSeek: _handleSegmentManualSeek,
+      );
+    }
+
+    Widget buildTransportControls() {
+      return _TransportPlaybackControlPanel(
+        key: ValueKey(widget.isLandscape ? 'controls_landscape' : 'controls'),
+        session: session,
+        provider: provider,
+        hasSiblings: hasSiblings,
+        segmentPanelExpanded: _segmentPanelExpanded,
+        hasSubtitle: widget.hasSubtitle,
+        subtitleEnabled: widget.subtitleEnabled,
+        subtitleGlobalEnabled: widget.subtitleGlobalEnabled,
+        onShowTrackSwitcher: () => _showTrackSwitcher(context),
+        onToggleSegments: _segmentPanelExpanded
+            ? collapseSegmentPanel
+            : expandSegmentPanel,
+        onToggleSubtitle: widget.onToggleSubtitle,
+        onToggleGlobalSubtitle: widget.onToggleGlobalSubtitle,
+        onOpenTimer: widget.onOpenTimer,
+        onShowAudioDetail: widget.onShowAudioDetail,
+      );
+    }
+
+    final artworkConsole = widget.useArtworkConsole
+        ? _SessionDetailConsoleArtwork(
+            progressBar: RepaintBoundary(child: buildProgressBar()),
+            controls: buildTransportControls(),
+          )
+        : null;
 
     final contentColumn = Padding(
       padding: widget.detailPadding,
@@ -447,38 +534,10 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
                 provider: provider,
               ),
             ),
-          RepaintBoundary(
-            child: _ProgressBar(
-              key: ValueKey(session.id),
-              session: session,
-              provider: provider,
-              timeSegmentLabels: _segmentLabels,
-              selectedSegmentId: _segmentPanelExpanded
-                  ? _selectedSegmentId
-                  : null,
-              onManualSeek: _handleSegmentManualSeek,
-            ),
-          ),
-          _TransportPlaybackControlPanel(
-            key: ValueKey(
-              widget.isLandscape ? 'controls_landscape' : 'controls',
-            ),
-            session: session,
-            provider: provider,
-            hasSiblings: hasSiblings,
-            segmentPanelExpanded: _segmentPanelExpanded,
-            hasSubtitle: widget.hasSubtitle,
-            subtitleEnabled: widget.subtitleEnabled,
-            subtitleGlobalEnabled: widget.subtitleGlobalEnabled,
-            onShowTrackSwitcher: () => _showTrackSwitcher(context),
-            onToggleSegments: _segmentPanelExpanded
-                ? collapseSegmentPanel
-                : expandSegmentPanel,
-            onToggleSubtitle: widget.onToggleSubtitle,
-            onToggleGlobalSubtitle: widget.onToggleGlobalSubtitle,
-            onOpenTimer: widget.onOpenTimer,
-            onShowAudioDetail: widget.onShowAudioDetail,
-          ),
+          if (!widget.useArtworkConsole) ...[
+            RepaintBoundary(child: buildProgressBar()),
+            buildTransportControls(),
+          ],
           if (!widget.isLandscape)
             AnimatedSwitcher(
               duration: const Duration(milliseconds: 180),
@@ -502,7 +561,10 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
           Expanded(
             child: Stack(
               children: [
-                if (widget.artworkWidget != null) widget.artworkWidget!,
+                if (artworkConsole != null)
+                  artworkConsole
+                else if (widget.artworkWidget != null)
+                  widget.artworkWidget!,
                 if (_segmentPanelExpanded)
                   Positioned.fill(
                     child: AnimatedOpacity(
@@ -581,7 +643,9 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
 
     return Column(
       children: [
-        if (widget.artworkWidget != null)
+        if (artworkConsole != null)
+          Expanded(child: artworkConsole)
+        else if (widget.artworkWidget != null)
           Expanded(child: widget.artworkWidget!),
         contentColumn,
       ],

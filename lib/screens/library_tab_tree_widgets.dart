@@ -416,7 +416,7 @@ class _TrackNodeWidget extends ConsumerWidget {
         removeTooltip: i18n.tr('remove_audio'),
         secondaryActionLabel: i18n.tr('audio_detail'),
         secondaryActionTooltip: i18n.tr('audio_detail'),
-        verticalActions: track.isVideo,
+        verticalActions: useFeaturedCard,
         onSecondaryAction: () => unawaited(
           showAudioDetailSheet(
             context,
@@ -511,73 +511,75 @@ class _TrackNodeWidget extends ConsumerWidget {
     }
 
     return SwipeRevealCard(
-      color: cs.surfaceContainerLow,
       shape: cardShape,
       actionLabel: i18n.tr('remove'),
       removeTooltip: i18n.tr('remove_audio'),
       onRemove: () => _removeTrack(context, provider, track),
-      child: SizedBox(
-        height: 38,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 6),
-          child: Row(
-            children: [
-              Icon(
-                Icons.audio_file_rounded,
-                size: 16,
-                color: cs.onSurfaceVariant.withValues(alpha: 0.6),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _HighlightedText(
-                  text: track.displayName,
-                  query: searchQuery,
-                  maxLines: 1,
-                  style:
-                      Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 13,
-                        color: isAlreadyPlaying ? cs.primary : cs.onSurface,
-                      ) ??
-                      const TextStyle(),
+      child: ColoredBox(
+        color: cs.surfaceContainerLow,
+        child: SizedBox(
+          height: 38,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.audio_file_rounded,
+                  size: 16,
+                  color: cs.onSurfaceVariant.withValues(alpha: 0.6),
                 ),
-              ),
-              IconButton(
-                onPressed: () {
-                  AppInteractionFeedback.trigger(
-                    AppInteractionFeedbackType.tap,
-                    context: context,
-                  );
-                  unawaited(provider.spawnSession(track));
-                  _showSessionCreatedSnack(
-                    context,
-                    i18n.tr('session_created', {'name': track.displayName}),
-                  );
-                },
-                style: IconButton.styleFrom(
-                  foregroundColor: cs.primary,
-                  minimumSize: const Size(36, 36),
-                  maximumSize: const Size(36, 36),
-                  padding: EdgeInsets.zero,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
-                icon: const Icon(Icons.add_circle_rounded, size: 22),
-              ),
-              if (index != null && !cardPositionsLocked) ...[
-                const SizedBox(width: 4),
-                ReorderableDragStartListener(
-                  index: index!,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      vertical: 8,
-                      horizontal: 4,
-                    ),
-                    color: Colors.transparent,
-                    child: const Icon(Icons.drag_handle_rounded, size: 24),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _HighlightedText(
+                    text: track.displayName,
+                    query: searchQuery,
+                    maxLines: 1,
+                    style:
+                        Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13,
+                          color: isAlreadyPlaying ? cs.primary : cs.onSurface,
+                        ) ??
+                        const TextStyle(),
                   ),
                 ),
+                IconButton(
+                  onPressed: () {
+                    AppInteractionFeedback.trigger(
+                      AppInteractionFeedbackType.tap,
+                      context: context,
+                    );
+                    unawaited(provider.spawnSession(track));
+                    _showSessionCreatedSnack(
+                      context,
+                      i18n.tr('session_created', {'name': track.displayName}),
+                    );
+                  },
+                  style: IconButton.styleFrom(
+                    foregroundColor: cs.primary,
+                    minimumSize: const Size(36, 36),
+                    maximumSize: const Size(36, 36),
+                    padding: EdgeInsets.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  icon: const Icon(Icons.add_circle_rounded, size: 22),
+                ),
+                if (index != null && !cardPositionsLocked) ...[
+                  const SizedBox(width: 4),
+                  ReorderableDragStartListener(
+                    index: index!,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        vertical: 8,
+                        horizontal: 4,
+                      ),
+                      color: Colors.transparent,
+                      child: const Icon(Icons.drag_handle_rounded, size: 24),
+                    ),
+                  ),
+                ],
               ],
-            ],
+            ),
           ),
         ),
       ),

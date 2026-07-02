@@ -759,39 +759,71 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
       );
     }
 
-    return SwipeRevealCard(
-      margin: const EdgeInsets.only(bottom: 6),
-      shape: cardShape,
-      actionLabel: i18n.tr('remove'),
-      removeTooltip: entry.isFolder
-          ? i18n.tr('remove_audio_folder')
-          : i18n.tr('remove_audio'),
-      secondaryActionLabel: i18n.tr('audio_detail'),
-      secondaryActionTooltip: i18n.tr('audio_detail'),
-      onSecondaryAction: () =>
-          unawaited(showAudioDetailSheet(context, entry.target)),
-      onRemove: () => _remove(context, provider),
-      child: Card(
-        margin: EdgeInsets.zero,
-        clipBehavior: Clip.antiAlias,
+    Widget buildEntryCard(bool useFeaturedCard) {
+      return SwipeRevealCard(
+        margin: const EdgeInsets.only(bottom: 6),
         shape: cardShape,
-        color: isAlreadyPlaying
-            ? Color.alphaBlend(
-                cs.primaryContainer.withValues(alpha: 0.40),
-                cs.surfaceContainerLow,
-              )
-            : cs.surfaceContainerLow,
-        child: _buildEntryContent(context, provider, firstTrack, cardHeight),
-      ),
-    );
+        actionLabel: i18n.tr('remove'),
+        removeTooltip: entry.isFolder
+            ? i18n.tr('remove_audio_folder')
+            : i18n.tr('remove_audio'),
+        secondaryActionLabel: i18n.tr('audio_detail'),
+        secondaryActionTooltip: i18n.tr('audio_detail'),
+        verticalActions: useFeaturedCard,
+        onSecondaryAction: () =>
+            unawaited(showAudioDetailSheet(context, entry.target)),
+        onRemove: () => _remove(context, provider),
+        child: Card(
+          margin: EdgeInsets.zero,
+          clipBehavior: Clip.antiAlias,
+          shape: cardShape,
+          color: isAlreadyPlaying
+              ? Color.alphaBlend(
+                  cs.primaryContainer.withValues(alpha: 0.40),
+                  cs.surfaceContainerLow,
+                )
+              : cs.surfaceContainerLow,
+          child: _buildEntryContent(
+            context,
+            provider,
+            firstTrack,
+            cardHeight,
+            useFeaturedCardOverride: useFeaturedCard,
+          ),
+        ),
+      );
+    }
+
+    if (!entry.isFolder && firstTrack != null) {
+      final resolvedCoverPath = provider.resolvedCoverPathForTrack(firstTrack);
+      final useFeaturedCard =
+          firstTrack.isVideo ||
+          hasDisplayableCoverArtwork(firstTrack, resolvedCoverPath);
+      if (!firstTrack.isVideo && !useFeaturedCard) {
+        return FutureBuilder<String?>(
+          future: provider.coverPathFutureForTrack(firstTrack),
+          builder: (context, snapshot) {
+            final resolvedPath =
+                snapshot.data ?? provider.resolvedCoverPathForTrack(firstTrack);
+            return buildEntryCard(
+              hasDisplayableCoverArtwork(firstTrack, resolvedPath),
+            );
+          },
+        );
+      }
+      return buildEntryCard(useFeaturedCard);
+    }
+
+    return buildEntryCard(entry.isFolder);
   }
 
   Widget _buildEntryContent(
     BuildContext context,
     AudioProvider provider,
     MusicTrack? firstTrack,
-    double cardHeight,
-  ) {
+    double cardHeight, {
+    bool? useFeaturedCardOverride,
+  }) {
     if (entry.isFolder) {
       return SizedBox(
         height: cardHeight,
@@ -863,9 +895,12 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
     if (firstTrack == null) return buildSingleFileContent(false);
     final resolvedCoverPath = provider.resolvedCoverPathForTrack(firstTrack);
     final useFeaturedCard =
-        firstTrack.isVideo ||
-        hasDisplayableCoverArtwork(firstTrack, resolvedCoverPath);
-    if (!firstTrack.isVideo && !useFeaturedCard) {
+        useFeaturedCardOverride ??
+        (firstTrack.isVideo ||
+            hasDisplayableCoverArtwork(firstTrack, resolvedCoverPath));
+    if (useFeaturedCardOverride == null &&
+        !firstTrack.isVideo &&
+        !useFeaturedCard) {
       return FutureBuilder<String?>(
         future: provider.coverPathFutureForTrack(firstTrack),
         builder: (context, snapshot) {

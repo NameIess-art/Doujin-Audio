@@ -52,7 +52,9 @@ class _ActiveSessionCard extends ConsumerWidget {
     final displayName =
         currentTrack?.displayName ??
         path.basenameWithoutExtension(view.trackPath);
-    final resolvedCoverPath = provider.resolvedCoverPathForTrack(currentTrack);
+    final resolvedCoverPath = provider.resolvedPlaybackCoverPathForTrack(
+      currentTrack,
+    );
     final showCover = shouldShowPlaylistCoverArtwork(
       currentTrack,
       resolvedCoverPath,
@@ -676,7 +678,7 @@ class _ActiveSessionCover extends ConsumerWidget {
         clipBehavior: Clip.antiAlias,
         child: AsyncLocalCoverImage(
           future: coverPathFuture,
-          initialPath: provider.resolvedCoverPathForTrack(track),
+          initialPath: provider.resolvedPlaybackCoverPathForTrack(track),
           retryFutureBuilder: () =>
               _sessionCoverFutureForTrack(provider, track),
           seed: track?.displayName ?? track?.path ?? sessionId,

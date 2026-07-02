@@ -195,8 +195,7 @@ class _AsmrWorkTreeCardState extends State<_AsmrWorkTreeCard> {
                   ),
                   onPlay: () => unawaited(_playWork(context)),
                   expanded: _expanded,
-                  showExpandIndicator:
-                      (visibleTree?.isNotEmpty ?? false) || isTreeLoading,
+                  showExpandIndicator: true,
                   playTooltip: i18n.tr('asmr_add_to_playlist'),
                   accentColor: asmrBlue,
                   enableMarquee: false,

@@ -41,7 +41,7 @@ class _PlaybackQueueCard extends StatelessWidget {
         .map(
           (track) => (
             track: track,
-            coverPath: provider.resolvedCoverPathForTrack(track),
+            coverPath: provider.resolvedPlaybackCoverPathForTrack(track),
           ),
         )
         .where(
@@ -838,7 +838,7 @@ class _QueueAudioEditCard extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     final resolvedCoverPath = track == null
         ? null
-        : provider.resolvedCoverPathForTrack(track);
+        : provider.resolvedPlaybackCoverPathForTrack(track);
     if (track != null && resolvedCoverPath == null) {
       unawaited(_coverFutureForTrack(provider, track));
     }

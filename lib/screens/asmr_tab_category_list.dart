@@ -41,7 +41,7 @@ class _AsmrCategoryListState extends State<_AsmrCategoryList>
       ),
     );
     final works = state.works;
-    final showPlaceholder = works.isEmpty;
+    final showPlaceholder = works.isEmpty && state.isLoading;
     final i18n = context.watch<AppLanguageProvider>();
     final theme = Theme.of(context);
     final asmrBlue = AppDesignTokens.of(context).asmrAccent;
@@ -159,11 +159,15 @@ class _AsmrCategoryListState extends State<_AsmrCategoryList>
                                       : 0),
                         itemBuilder: (context, index) {
                           if (works.isEmpty) {
+                            final errorText = state.lastError != null
+                                ? state.lastError.toString()
+                                : i18n.tr('asmr_empty_category');
                             return Padding(
-                              padding: const EdgeInsets.only(top: 80),
+                              padding: const EdgeInsets.only(top: 80, left: 32, right: 32),
                               child: Center(
                                 child: Text(
-                                  i18n.tr('asmr_refresh_failed'),
+                                  errorText,
+                                  textAlign: TextAlign.center,
                                   style: theme.textTheme.bodyLarge?.copyWith(
                                     color: theme.colorScheme.onSurfaceVariant,
                                   ),

@@ -1519,15 +1519,15 @@ class AsmrLibraryController extends ChangeNotifier {
         byId[work.id] = work.copyWith(isFavorite: true);
       }
     }
+    for (final work in _favoriteWorks) {
+      if (!pendingRemoves.contains(work.id)) {
+        byId[work.id] = work.copyWith(isFavorite: true);
+      }
+    }
     for (final record in sortedRecords) {
       final work = record.work;
       if (!pendingRemoves.contains(work.id)) {
         byId[work.id] = _decorateWork(work).copyWith(isFavorite: true);
-      }
-    }
-    for (final work in _favoriteWorks) {
-      if (!pendingRemoves.contains(work.id)) {
-        byId[work.id] = work.copyWith(isFavorite: true);
       }
     }
     _favoriteWorks = byId.values.toList(growable: false);
@@ -1591,28 +1591,15 @@ class AsmrLibraryController extends ChangeNotifier {
     final merged = <AsmrWork>[];
     final seenIds = <int>{};
 
-    final pendingHistoryIds = _syncOperations
-        .where((op) => op.type == AsmrSyncOperationType.historyListening)
-        .map((op) => op.workId)
-        .toSet();
-
     for (final work in _historyWorks) {
-      if (pendingHistoryIds.contains(work.id)) {
-        if (seenIds.add(work.id)) {
-          merged.add(_decorateWork(work));
-        }
+      if (seenIds.add(work.id)) {
+        merged.add(_decorateWork(work));
       }
     }
 
     for (final record in historyRecords) {
       if (seenIds.add(record.work.id)) {
         merged.add(_decorateWork(record.work));
-      }
-    }
-
-    for (final work in _historyWorks) {
-      if (seenIds.add(work.id)) {
-        merged.add(_decorateWork(work));
       }
     }
 

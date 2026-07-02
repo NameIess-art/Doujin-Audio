@@ -915,6 +915,99 @@ void main() {
     expect(controller.worksFor(AsmrCategoryType.favorites).first.id, 101);
     expect(controller.worksFor(AsmrCategoryType.history).first.id, 102);
   });
+
+  test(
+    'ASMR sync keeps local favorite first when remote timestamp lags',
+    () async {
+      await resetPrefs();
+      final remoteFavorite = _work(id: 103, title: 'Remote Favorite');
+      final localFavorite = _work(id: 104, title: 'Fresh Local Favorite');
+      final api = _FakeAsmrApiService(
+        remoteReviewRecords: <AsmrReviewRecord>[
+          AsmrReviewRecord(
+            work: remoteFavorite,
+            progress: 'marked',
+            updatedAt: DateTime(2026, 6),
+          ),
+        ],
+      );
+      final controller = AsmrLibraryController(
+        apiService: api,
+        authService: AsmrAuthService(
+          apiService: api,
+          tokenStore: _MemoryAsmrTokenStore(),
+        ),
+        audioDatabaseRepository: _FakeAudioDatabaseRepository(
+          const <MusicTrack>[],
+        ),
+      );
+      await controller.initialize(defaultLanguage: AsmrContentLanguage.en);
+      await controller.loginAsmrAccount('alice', 'password');
+      await controller.toggleFavorite(localFavorite);
+      await controller.syncAsmrAccount(force: true);
+
+      api.remoteReviewRecords
+        ..clear()
+        ..addAll(<AsmrReviewRecord>[
+          AsmrReviewRecord(
+            work: remoteFavorite,
+            progress: 'marked',
+            updatedAt: DateTime(2026, 7),
+          ),
+          AsmrReviewRecord(
+            work: localFavorite,
+            progress: 'marked',
+            updatedAt: DateTime(2026, 5),
+          ),
+        ]);
+
+      await controller.syncAsmrAccount(force: true);
+
+      expect(controller.worksFor(AsmrCategoryType.favorites).first.id, 104);
+    },
+  );
+
+  test('ASMR sync keeps local history when remote pull is stale', () async {
+    await resetPrefs();
+    final remoteHistory = <AsmrReviewRecord>[
+      for (var index = 0; index < 60; index++)
+        AsmrReviewRecord(
+          work: _work(id: 200 + index, title: 'Remote History $index'),
+          progress: 'listening',
+          updatedAt: DateTime(2026, 7).subtract(Duration(minutes: index)),
+        ),
+    ];
+    final localHistory = _work(id: 300, title: 'Fresh Local History');
+    final api = _FakeAsmrApiService(remoteReviewRecords: remoteHistory);
+    final controller = AsmrLibraryController(
+      apiService: api,
+      authService: AsmrAuthService(
+        apiService: api,
+        tokenStore: _MemoryAsmrTokenStore(),
+      ),
+      audioDatabaseRepository: _FakeAudioDatabaseRepository(
+        const <MusicTrack>[],
+      ),
+    );
+    await controller.initialize(defaultLanguage: AsmrContentLanguage.en);
+    await controller.loginAsmrAccount('alice', 'password');
+    await controller.recordHistory(localHistory);
+    await controller.syncAsmrAccount(force: true);
+
+    api.remoteReviewRecords
+      ..clear()
+      ..addAll(remoteHistory);
+
+    await controller.syncAsmrAccount(force: true);
+
+    final historyIds = controller
+        .worksFor(AsmrCategoryType.history)
+        .map((work) => work.id)
+        .toList(growable: false);
+    expect(historyIds.first, 300);
+    expect(historyIds, contains(300));
+    expect(historyIds, hasLength(60));
+  });
 }
 
 class _FakeAsmrApiService extends AsmrApiService {

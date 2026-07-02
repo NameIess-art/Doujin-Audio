@@ -648,15 +648,6 @@ class _ActiveSessionCover extends ConsumerWidget {
         ? 16.0
         : 10.0;
 
-    Widget fallback({bool hideIcon = false}) {
-      return CoverFallbackArtwork(
-        seed: track?.displayName ?? track?.path ?? sessionId,
-        showIcon: !hideIcon,
-        compact: true,
-        iconSize: 24,
-      );
-    }
-
     return SizedBox(
       width: 64,
       height: 64,
@@ -664,23 +655,17 @@ class _ActiveSessionCover extends ConsumerWidget {
         type: MaterialType.transparency,
         borderRadius: BorderRadius.circular(borderRadius),
         clipBehavior: Clip.antiAlias,
-        child: AsyncCoverImage(
+        child: AsyncLocalCoverImage(
           future: coverPathFuture,
           initialPath: provider.resolvedCoverPathForTrack(track),
           retryFutureBuilder: () =>
               _sessionCoverFutureForTrack(provider, track),
-          fallbackBuilder: (_) => fallback(),
-          loadingBuilder: (_) =>
-              CoverLoadingArtwork(placeholder: fallback(hideIcon: true)),
-          imageBuilder: (context, coverPath) {
-            return RetryingFileImage(
-              path: coverPath,
-              cacheWidth: coverCacheWidth,
-              useDefaultCacheWidth: coverCacheWidth != null,
-              fit: BoxFit.cover,
-              fallbackBuilder: (_) => fallback(),
-            );
-          },
+          seed: track?.displayName ?? track?.path ?? sessionId,
+          cacheWidth: coverCacheWidth,
+          useDefaultCacheWidth: coverCacheWidth != null,
+          fit: BoxFit.cover,
+          compact: true,
+          iconSize: 24,
         ),
       ),
     );

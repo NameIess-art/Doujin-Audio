@@ -86,6 +86,54 @@ class WindowsFfmpegService {
     }
   }
 
+  static Future<String?> resolveAudioCover({
+    required String audioPath,
+    int? modifiedAtMs,
+  }) async {
+    if (!isAvailable) return null;
+    final file = File(audioPath);
+    if (!await file.exists()) return null;
+
+    final cacheRoot = await getTemporaryDirectory();
+    final cacheDirectory = Directory(path.join(cacheRoot.path, 'audio_covers'));
+    await cacheDirectory.create(recursive: true);
+    final cacheKey = sha256
+        .convert(utf8.encode('$audioPath|${modifiedAtMs ?? 0}|v1'))
+        .toString();
+    final output = File(path.join(cacheDirectory.path, '$cacheKey.jpg'));
+
+    if (await output.exists() && await output.length() > 0) {
+      return output.path;
+    }
+
+    final partial = File('${output.path}.part.jpg');
+    try {
+      if (await partial.exists()) await partial.delete();
+      final result = await Process.run(ffmpegPath, [
+        '-y',
+        '-i',
+        audioPath,
+        '-an',
+        '-vcodec',
+        'mjpeg',
+        '-frames:v',
+        '1',
+        partial.path,
+      ]);
+      if (result.exitCode == 0 &&
+          await partial.exists() &&
+          await partial.length() > 0) {
+        await partial.rename(output.path);
+        return output.path;
+      }
+      return null;
+    } catch (_) {
+      return null;
+    } finally {
+      if (await partial.exists()) await partial.delete();
+    }
+  }
+
   static Future<double> _readDurationSeconds(String videoPath) async {
     final result = await Process.run(ffprobePath, [
       '-v',

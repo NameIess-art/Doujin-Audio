@@ -52,6 +52,11 @@ class _ActiveSessionCard extends ConsumerWidget {
     final displayName =
         currentTrack?.displayName ??
         path.basenameWithoutExtension(view.trackPath);
+    final resolvedCoverPath = provider.resolvedCoverPathForTrack(currentTrack);
+    final showCover = shouldShowPlaylistCoverArtwork(
+      currentTrack,
+      resolvedCoverPath,
+    );
     final screenSize = MediaQuery.sizeOf(context);
     final isTinyWindow = screenSize.width < 300 || screenSize.height < 300;
 
@@ -107,13 +112,23 @@ class _ActiveSessionCard extends ConsumerWidget {
                   ],
           ),
           child: compact
-              ? Center(
-                  child: _ActiveSessionCover(
-                    sessionId: session.id,
-                    track: currentTrack,
-                    coverPathFuture: coverPathFuture,
-                  ),
-                )
+              ? (showCover
+                    ? Center(
+                        child: _ActiveSessionCover(
+                          sessionId: session.id,
+                          track: currentTrack,
+                          coverPathFuture: coverPathFuture,
+                        ),
+                      )
+                    : _buildCardContent(
+                        context,
+                        cs,
+                        isPlaying,
+                        view,
+                        currentTrack,
+                        displayName,
+                        showCover: false,
+                      ))
               : _buildCardContent(
                   context,
                   cs,
@@ -121,6 +136,7 @@ class _ActiveSessionCard extends ConsumerWidget {
                   view,
                   currentTrack,
                   displayName,
+                  showCover: showCover,
                 ),
         ),
       ),
@@ -156,8 +172,9 @@ class _ActiveSessionCard extends ConsumerWidget {
     })
     view,
     MusicTrack? currentTrack,
-    String displayName,
-  ) {
+    String displayName, {
+    required bool showCover,
+  }) {
     final asmrBlue = AppDesignTokens.of(context).asmrAccent;
     final activeColor = currentTrack?.remoteMetadataKind == 'asmr.one'
         ? asmrBlue
@@ -169,12 +186,14 @@ class _ActiveSessionCard extends ConsumerWidget {
       padding: const EdgeInsets.fromLTRB(10, 5, 8, 5),
       child: Row(
         children: [
-          _ActiveSessionCover(
-            sessionId: session.id,
-            track: currentTrack,
-            coverPathFuture: coverPathFuture,
-          ),
-          const SizedBox(width: 12),
+          if (showCover) ...[
+            _ActiveSessionCover(
+              sessionId: session.id,
+              track: currentTrack,
+              coverPathFuture: coverPathFuture,
+            ),
+            const SizedBox(width: 12),
+          ],
           Expanded(
             child: Column(
               mainAxisSize: MainAxisSize.min,

@@ -758,7 +758,7 @@ class _RootFolderCardContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _LibraryFeaturedCardContent(
+    return _AudioDetailWorkCardContent(
       title: folderName,
       detail: detail,
       detailLoading: detailLoading,
@@ -773,8 +773,8 @@ class _RootFolderCardContent extends StatelessWidget {
   }
 }
 
-class _LibraryFeaturedCardContent extends StatelessWidget {
-  const _LibraryFeaturedCardContent({
+class _AudioDetailWorkCardContent extends StatelessWidget {
+  const _AudioDetailWorkCardContent({
     required this.title,
     required this.detail,
     required this.detailLoading,
@@ -802,9 +802,16 @@ class _LibraryFeaturedCardContent extends StatelessWidget {
     final fields = context.select<AudioProvider, List<CardInfoField>>(
       (provider) => provider.cardInfoFields,
     );
-    return LibraryLikeWorkCardContent(
+    return LibraryLikeMetadataWorkCardContent(
       title: title,
-      lines: _audioDetailInfoLines(i18n, detail, detailLoading, fields),
+      fields: fields,
+      metadata: _audioDetailMetadata(detail),
+      circleLabel: i18n.tr('library_category_circles'),
+      tagsLabel: i18n.tr('library_category_tags'),
+      releaseDateLabel: i18n.tr('card_info_release_date'),
+      salesCountLabel: i18n.tr('card_info_sales_count'),
+      ratingLabel: i18n.tr('card_info_rating'),
+      loading: detailLoading || detail == null,
       coverBuilder: coverBuilder,
       onPlay: onPlay,
       expanded: expanded,
@@ -873,7 +880,7 @@ class _SingleMediaFileCardContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _LibraryFeaturedCardContent(
+    return _AudioDetailWorkCardContent(
       title: title,
       detail: detail,
       detailLoading: detailLoading,
@@ -884,6 +891,20 @@ class _SingleMediaFileCardContent extends StatelessWidget {
           _LibraryTrackCoverThumbnail(track: track, width: coverWidth),
     );
   }
+}
+
+LibraryLikeInfoMetadata _audioDetailMetadata(AudioDetail? detail) {
+  final d = detail;
+  if (d == null) return const LibraryLikeInfoMetadata();
+  return LibraryLikeInfoMetadata(
+    rjCode: d.rjCode,
+    voiceActors: d.voiceActors,
+    circleName: d.circleName,
+    tags: d.tags,
+    releaseDate: d.releaseDate,
+    salesCount: d.salesCount,
+    rating: d.rating,
+  );
 }
 
 List<LibraryLikeInfoLineData> _audioDetailInfoLines(
@@ -899,15 +920,7 @@ List<LibraryLikeInfoLineData> _audioDetailInfoLines(
 
   return buildLibraryLikeInfoLines(
     fields: fields,
-    metadata: LibraryLikeInfoMetadata(
-      rjCode: d.rjCode,
-      voiceActors: d.voiceActors,
-      circleName: d.circleName,
-      tags: d.tags,
-      releaseDate: d.releaseDate,
-      salesCount: d.salesCount,
-      rating: d.rating,
-    ),
+    metadata: _audioDetailMetadata(d),
     circleLabel: i18n.tr('library_category_circles'),
     tagsLabel: i18n.tr('library_category_tags'),
     releaseDateLabel: i18n.tr('card_info_release_date'),

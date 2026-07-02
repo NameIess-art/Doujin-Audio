@@ -257,6 +257,7 @@ class _SessionListCard extends StatelessWidget {
         ? asmrBlue.withValues(alpha: isDark ? 0.18 : 0.14)
         : localPlayRose.withValues(alpha: isDark ? 0.16 : 0.12);
     final activeColor = isAsmrOne ? asmrBlue : localPlayRose;
+    final showCover = shouldShowPlaylistCoverArtwork(track, coverPath);
 
     final cardShape = RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(LibraryLikeCardMetrics.cardRadius),
@@ -323,13 +324,15 @@ class _SessionListCard extends StatelessWidget {
                     padding: const EdgeInsets.fromLTRB(12, 7, 10, 6),
                     child: Row(
                       children: [
-                        _SessionCoverThumbnail(
-                          sessionId: sessionId,
-                          track: track,
-                          coverPath: coverPath,
-                          coverCacheWidth: coverCacheWidth,
-                        ),
-                        const SizedBox(width: 14),
+                        if (showCover) ...[
+                          _SessionCoverThumbnail(
+                            sessionId: sessionId,
+                            track: track,
+                            coverPath: coverPath,
+                            coverCacheWidth: coverCacheWidth,
+                          ),
+                          const SizedBox(width: 14),
+                        ],
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,

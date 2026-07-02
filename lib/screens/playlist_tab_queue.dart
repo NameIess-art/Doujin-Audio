@@ -36,7 +36,6 @@ class _PlaybackQueueCard extends StatelessWidget {
     final coverTracks = queue.entries
         .where((entry) => entry.tracks.isNotEmpty)
         .map((entry) => entry.tracks.first)
-        .take(4)
         .toList(growable: false);
     final coverItems = coverTracks
         .map(
@@ -45,6 +44,10 @@ class _PlaybackQueueCard extends StatelessWidget {
             coverPath: provider.resolvedCoverPathForTrack(track),
           ),
         )
+        .where(
+          (item) => shouldShowPlaylistCoverArtwork(item.track, item.coverPath),
+        )
+        .take(4)
         .toList(growable: false);
     final currentTrack = tracks.isEmpty
         ? null
@@ -88,11 +91,13 @@ class _PlaybackQueueCard extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(12, 7, 10, 6),
               child: Row(
                 children: [
-                  _QueueCoverGrid(
-                    items: coverItems,
-                    coverCacheWidth: coverCacheWidth,
-                  ),
-                  const SizedBox(width: 14),
+                  if (coverItems.isNotEmpty) ...[
+                    _QueueCoverGrid(
+                      items: coverItems,
+                      coverCacheWidth: coverCacheWidth,
+                    ),
+                    const SizedBox(width: 14),
+                  ],
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -837,6 +842,7 @@ class _QueueAudioEditCard extends StatelessWidget {
     if (track != null && resolvedCoverPath == null) {
       unawaited(_coverFutureForTrack(provider, track));
     }
+    final showCover = shouldShowPlaylistCoverArtwork(track, resolvedCoverPath);
     return Card(
       margin: const EdgeInsets.only(bottom: 6),
       elevation: 0,
@@ -852,23 +858,25 @@ class _QueueAudioEditCard extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(12, 7, 10, 6),
           child: Row(
             children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(14),
-                child: SizedBox(
-                  width: 96,
-                  height: 72,
-                  child: track == null
-                      ? CoverFallbackArtwork(seed: title)
-                      : _QueueTrackCover(
-                          track: track!,
-                          coverPath: resolvedCoverPath,
-                          coverCacheWidth: coverCacheWidthForResolution(
-                            provider.coverImageResolution,
+              if (showCover) ...[
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(14),
+                  child: SizedBox(
+                    width: 96,
+                    height: 72,
+                    child: track == null
+                        ? CoverFallbackArtwork(seed: title)
+                        : _QueueTrackCover(
+                            track: track!,
+                            coverPath: resolvedCoverPath,
+                            coverCacheWidth: coverCacheWidthForResolution(
+                              provider.coverImageResolution,
+                            ),
                           ),
-                        ),
+                  ),
                 ),
-              ),
-              const SizedBox(width: 14),
+                const SizedBox(width: 14),
+              ],
               Expanded(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,

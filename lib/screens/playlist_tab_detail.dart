@@ -733,7 +733,8 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                             color: cs.surface.withValues(alpha: 0.45),
                             colorBlendMode: BlendMode.darken,
                             fallbackBuilder: (_) => CoverFallbackArtwork(
-                              seed: track?.displayName ??
+                              seed:
+                                  track?.displayName ??
                                   session.currentTrackPath,
                               showIcon: false,
                             ),
@@ -829,15 +830,26 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                             final isLandscape =
                                 MediaQuery.orientationOf(context) ==
                                 Orientation.landscape;
+                            final resolvedCoverPath = provider
+                                .resolvedCoverPathForTrack(track);
+                            final useArtworkConsole =
+                                track?.isSingle == true &&
+                                track?.isVideo != true &&
+                                !hasDisplayableCoverArtwork(
+                                  track,
+                                  resolvedCoverPath,
+                                );
 
-                            Widget artworkWidget = _SessionHeroArtwork(
-                              sessionId: session.id,
-                              height: constraints.maxHeight,
-                              track: track,
-                              coverPathFuture: coverPathFuture,
-                            );
+                            Widget? artworkWidget = useArtworkConsole
+                                ? null
+                                : _SessionHeroArtwork(
+                                    sessionId: session.id,
+                                    height: constraints.maxHeight,
+                                    track: track,
+                                    coverPathFuture: coverPathFuture,
+                                  );
 
-                            if (isLandscape) {
+                            if (isLandscape && artworkWidget != null) {
                               artworkWidget = Center(
                                 child: AspectRatio(
                                   aspectRatio: 1.0,
@@ -846,13 +858,15 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                               );
                             }
 
-                            final artwork = Padding(
-                              padding: EdgeInsets.symmetric(
-                                horizontal: isLandscape ? 48.0 : 32.0,
-                                vertical: isLandscape ? 32.0 : 0.0,
-                              ),
-                              child: artworkWidget,
-                            );
+                            final artwork = artworkWidget == null
+                                ? null
+                                : Padding(
+                                    padding: EdgeInsets.symmetric(
+                                      horizontal: isLandscape ? 48.0 : 32.0,
+                                      vertical: isLandscape ? 32.0 : 0.0,
+                                    ),
+                                    child: artworkWidget,
+                                  );
 
                             final detailPadding = EdgeInsets.fromLTRB(
                               isLandscape ? 12 : 28,
@@ -883,6 +897,7 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                                   widget.segmentPanelExpandedNotifier,
                               isLandscape: isLandscape,
                               artworkWidget: artwork,
+                              useArtworkConsole: useArtworkConsole,
                               detailPadding: detailPadding,
                               hasSubtitle: hasSubtitle,
                               subtitleEnabled: subtitleSettings.isShowEnabled(

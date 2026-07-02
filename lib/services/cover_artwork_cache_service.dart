@@ -88,6 +88,10 @@ class CoverArtworkCacheService {
     if (manualCoverPath != null) {
       return manualCoverPath;
     }
+    final cachedCoverPath = _cachedManualCoverPath(track?.coverCachePath);
+    if (cachedCoverPath != null) {
+      return cachedCoverPath;
+    }
     final coverSearchKey = coverSearchKeyForTrack(track, trackPath: trackPath);
     if (coverSearchKey == null) return null;
     return _resolvedTrackCovers[coverSearchKey];
@@ -133,6 +137,7 @@ class CoverArtworkCacheService {
     final pathValue = track?.path ?? trackPath;
     if (pathValue == null || pathValue.isEmpty) return null;
     if (PathMatcher.isRemoteUri(pathValue)) return null;
+    if (_isStandaloneAudioTrack(track)) return null;
 
     final groupKey = track?.groupKey.trim() ?? '';
     final watchedFolder =
@@ -186,6 +191,7 @@ class CoverArtworkCacheService {
           : remoteCoverSearchKey(remoteCoverUrl);
     }
     if (track?.isVideo == true) return PathMatcher.normalize(pathValue);
+    if (_isStandaloneAudioTrack(track)) return PathMatcher.normalize(pathValue);
     final scopedFolder = coverScopeFolderForTrack(track, trackPath: pathValue);
     if (scopedFolder != null && scopedFolder.isNotEmpty) {
       return PathMatcher.normalize(scopedFolder);
@@ -336,8 +342,19 @@ class CoverArtworkCacheService {
         () => SynchronousFuture<String?>(cachedManualPath),
       );
     }
+    final cachedCoverPath = _cachedManualCoverPath(track?.coverCachePath);
+    if (cachedCoverPath != null) {
+      _resolvedTrackCovers[coverSearchKey] = cachedCoverPath;
+      return _resolvedTrackCoverFutures.putIfAbsent(
+        coverSearchKey,
+        () => SynchronousFuture<String?>(cachedCoverPath),
+      );
+    }
 
     final manualPathFuture = _validatedManualCoverPath(track?.manualCoverPath);
+    final coverCachePathFuture = _validatedManualCoverPath(
+      track?.coverCachePath,
+    );
     final cachedFuture = _resolvedTrackCoverFutures[coverSearchKey];
     if (cachedFuture != null &&
         _resolvedTrackCovers.containsKey(coverSearchKey)) {
@@ -354,6 +371,16 @@ class CoverArtworkCacheService {
         final removedTrackFuture = _trackCoverFutures.remove(coverSearchKey);
         if (removedTrackFuture != null) unawaited(removedTrackFuture);
         return manualPath;
+      }
+      final coverCachePath = await coverCachePathFuture;
+      if (coverCachePath != null) {
+        _resolvedTrackCovers[coverSearchKey] = coverCachePath;
+        _resolvedTrackCoverFutures[coverSearchKey] = SynchronousFuture<String?>(
+          coverCachePath,
+        );
+        final removedTrackFuture = _trackCoverFutures.remove(coverSearchKey);
+        if (removedTrackFuture != null) unawaited(removedTrackFuture);
+        return coverCachePath;
       }
 
       if (_resolvedTrackCovers.containsKey(coverSearchKey)) {
@@ -376,7 +403,9 @@ class CoverArtworkCacheService {
           track,
           trackPath: pathValue,
         );
-        if (track?.isSingle == true && track?.isVideo == true) {
+        if (_isStandaloneAudioTrack(track)) {
+          coverPath = await _resolvePlatformCoverPathForTrack(track!);
+        } else if (track?.isSingle == true && track?.isVideo == true) {
           coverPath = await _resolveVideoFramePathForTrack(track!);
         } else if (PathMatcher.isContentUri(pathValue)) {
           if (track != null) {
@@ -814,6 +843,10 @@ String? _libraryWorkScopeFolderPath(String libraryRoot, String groupKey) {
   }
 
   return PathMatcher.join(normalizedRoot, firstSegment);
+}
+
+bool _isStandaloneAudioTrack(MusicTrack? track) {
+  return track?.isSingle == true && track?.isVideo != true;
 }
 
 int _coverPriority(String baseName) {

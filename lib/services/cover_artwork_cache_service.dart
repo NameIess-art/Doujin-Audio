@@ -13,6 +13,7 @@ import '../platform/app_platform.dart';
 import 'app_cache_service.dart';
 import 'app_log_service.dart';
 import 'audio_state_services.dart';
+import 'embedded_cover_artwork_service.dart';
 import 'file_cache_platform_gateway.dart';
 import 'path_matcher.dart';
 import 'windows_ffmpeg_service.dart';
@@ -633,16 +634,70 @@ class CoverArtworkCacheService {
     String? rootFolder,
   }) async {
     try {
-      return await _fileCacheGateway.resolveTrackCover(
+      final nativeCover = await _fileCacheGateway.resolveTrackCover(
         path: track.path,
         groupKey: track.groupKey,
         rootFolder: rootFolder,
+      );
+      if (nativeCover != null && nativeCover.isNotEmpty) return nativeCover;
+    } on MissingPluginException {
+      // Continue with the Dart fallback below.
+    } catch (e, stackTrace) {
+      AppLogService.warning(
+        'CoverArtworkCacheService._resolvePlatformCoverPathForTrack error',
+        error: e,
+        stackTrace: stackTrace,
+      );
+    }
+    
+    if (AppPlatform.isWindows) {
+      try {
+        final ffmpegCover = await WindowsFfmpegService.resolveAudioCover(
+          audioPath: track.path,
+          modifiedAtMs: track.modifiedAt?.millisecondsSinceEpoch,
+        );
+        if (ffmpegCover != null) return ffmpegCover;
+      } catch (e, stackTrace) {
+        AppLogService.warning(
+          'CoverArtworkCacheService._resolvePlatformCoverPathForTrack WindowsFfmpegService error',
+          error: e,
+          stackTrace: stackTrace,
+        );
+      }
+    }
+
+    final embeddedCover = await EmbeddedCoverArtworkService.resolveForTrack(
+      track,
+    );
+    if (embeddedCover != null) unawaited(AppCacheService.enforceLimit());
+    if (embeddedCover != null) return embeddedCover;
+
+    if (PathMatcher.isContentUri(track.path)) {
+      final cachedPath = await _cacheContentTrackForEmbeddedCover(track);
+      if (cachedPath != null) {
+        final cachedEmbeddedCover =
+            await EmbeddedCoverArtworkService.resolveForPath(cachedPath);
+        if (cachedEmbeddedCover != null) {
+          unawaited(AppCacheService.enforceLimit());
+          return cachedEmbeddedCover;
+        }
+      }
+    }
+    return null;
+  }
+
+  Future<String?> _cacheContentTrackForEmbeddedCover(MusicTrack track) async {
+    try {
+      return await _fileCacheGateway.cacheFromUri(
+        uri: track.path,
+        name: track.displayName,
+        index: 0,
       );
     } on MissingPluginException {
       return null;
     } catch (e, stackTrace) {
       AppLogService.warning(
-        'CoverArtworkCacheService._resolvePlatformCoverPathForTrack error',
+        'CoverArtworkCacheService._cacheContentTrackForEmbeddedCover error',
         error: e,
         stackTrace: stackTrace,
       );

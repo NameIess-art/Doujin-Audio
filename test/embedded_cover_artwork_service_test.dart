@@ -1,0 +1,185 @@
+import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:flutter/services.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:nameless_audio/models/music_track.dart';
+import 'package:nameless_audio/services/embedded_cover_artwork_service.dart';
+
+void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  const pathProviderChannel = MethodChannel('plugins.flutter.io/path_provider');
+  late Directory tempDir;
+
+  setUp(() async {
+    tempDir = await Directory.systemTemp.createTemp(
+      'embedded_cover_cache_test_',
+    );
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(pathProviderChannel, (call) async {
+          if (call.method == 'getTemporaryDirectory') return tempDir.path;
+          return null;
+        });
+  });
+
+  tearDown(() async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(pathProviderChannel, null);
+    if (await tempDir.exists()) await tempDir.delete(recursive: true);
+  });
+
+  test(
+    'reads FLAC metadata block picture as standalone cover artwork',
+    () async {
+      final directory = await Directory.systemTemp.createTemp(
+        'embedded_cover_test_',
+      );
+      addTearDown(() async {
+        if (await directory.exists()) await directory.delete(recursive: true);
+      });
+      final flacFile = File('${directory.path}/track.flac');
+      final imageBytes = Uint8List.fromList(<int>[0x89, 0x50, 0x4e, 0x47]);
+      await flacFile.writeAsBytes(_flacWithPicture(imageBytes), flush: true);
+
+      final coverPath = await EmbeddedCoverArtworkService.resolveForTrack(
+        MusicTrack(
+          path: flacFile.path,
+          displayName: 'track.flac',
+          groupKey: flacFile.path,
+          groupTitle: 'track',
+          groupSubtitle: '',
+          isSingle: true,
+        ),
+      );
+
+      expect(coverPath, isNotNull);
+      expect(await File(coverPath!).readAsBytes(), imageBytes);
+    },
+  );
+
+  test('reads FLAC picture after a leading ID3v2 tag', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'embedded_cover_test_',
+    );
+    addTearDown(() async {
+      if (await directory.exists()) await directory.delete(recursive: true);
+    });
+    final flacFile = File('${directory.path}/track-with-id3.flac');
+    final imageBytes = Uint8List.fromList(<int>[0xff, 0xd8, 0xff, 0xd9]);
+    await flacFile.writeAsBytes(
+      _withId3v2Prefix(_flacWithPicture(imageBytes)),
+      flush: true,
+    );
+
+    final coverPath = await EmbeddedCoverArtworkService.resolveForPath(
+      flacFile.path,
+    );
+
+    expect(coverPath, isNotNull);
+    expect(await File(coverPath!).readAsBytes(), imageBytes);
+  });
+
+  test('reads FLAC METADATA_BLOCK_PICTURE vorbis comment', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'embedded_cover_test_',
+    );
+    addTearDown(() async {
+      if (await directory.exists()) await directory.delete(recursive: true);
+    });
+    final flacFile = File('${directory.path}/track-comment.flac');
+    final imageBytes = Uint8List.fromList(<int>[0x89, 0x50, 0x4e, 0x47, 0x0d]);
+    await flacFile.writeAsBytes(
+      _flacWithVorbisPictureComment(imageBytes),
+      flush: true,
+    );
+
+    final coverPath = await EmbeddedCoverArtworkService.resolveForPath(
+      flacFile.path,
+    );
+
+    expect(coverPath, isNotNull);
+    expect(await File(coverPath!).readAsBytes(), imageBytes);
+  });
+}
+
+Uint8List _flacWithPicture(Uint8List pictureBytes) {
+  return _flacWithMetadataBlock(
+    blockType: 6,
+    block: _pictureBlock(pictureBytes),
+  );
+}
+
+Uint8List _flacWithVorbisPictureComment(Uint8List pictureBytes) {
+  final comment = utf8.encode(
+    'METADATA_BLOCK_PICTURE=${base64.encode(_pictureBlock(pictureBytes))}',
+  );
+  final block = BytesBuilder();
+  final vendor = utf8.encode('nameless-audio-test');
+  _addUint32Le(block, vendor.length);
+  block.add(vendor);
+  _addUint32Le(block, 1);
+  _addUint32Le(block, comment.length);
+  block.add(comment);
+  return _flacWithMetadataBlock(blockType: 4, block: block.toBytes());
+}
+
+Uint8List _flacWithMetadataBlock({
+  required int blockType,
+  required Uint8List block,
+}) {
+  final flac = BytesBuilder();
+  flac.add(ascii.encode('fLaC'));
+  flac.add(<int>[
+    0x80 | blockType,
+    (block.length >> 16) & 0xff,
+    (block.length >> 8) & 0xff,
+    block.length & 0xff,
+  ]);
+  flac.add(block);
+  return flac.toBytes();
+}
+
+Uint8List _pictureBlock(Uint8List pictureBytes) {
+  final pictureBlock = BytesBuilder();
+  _addUint32(pictureBlock, 3);
+  final mime = ascii.encode('image/png');
+  _addUint32(pictureBlock, mime.length);
+  pictureBlock.add(mime);
+  _addUint32(pictureBlock, 0);
+  _addUint32(pictureBlock, 1);
+  _addUint32(pictureBlock, 1);
+  _addUint32(pictureBlock, 24);
+  _addUint32(pictureBlock, 0);
+  _addUint32(pictureBlock, pictureBytes.length);
+  pictureBlock.add(pictureBytes);
+  return pictureBlock.toBytes();
+}
+
+Uint8List _withId3v2Prefix(Uint8List flacBytes) {
+  const payload = <int>[1, 2, 3, 4];
+  final bytes = BytesBuilder();
+  bytes.add(<int>[0x49, 0x44, 0x33, 4, 0, 0, 0, 0, 0, payload.length]);
+  bytes.add(payload);
+  bytes.add(flacBytes);
+  return bytes.toBytes();
+}
+
+void _addUint32(BytesBuilder builder, int value) {
+  builder.add(<int>[
+    (value >> 24) & 0xff,
+    (value >> 16) & 0xff,
+    (value >> 8) & 0xff,
+    value & 0xff,
+  ]);
+}
+
+void _addUint32Le(BytesBuilder builder, int value) {
+  builder.add(<int>[
+    value & 0xff,
+    (value >> 8) & 0xff,
+    (value >> 16) & 0xff,
+    (value >> 24) & 0xff,
+  ]);
+}

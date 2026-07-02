@@ -502,6 +502,7 @@ class _TimeSegmentPanel extends StatefulWidget {
     required this.onEditEnd,
     required this.onDelete,
     required this.onToggleLoop,
+    this.expandToParent = false,
   });
 
   final PlaybackSession session;
@@ -523,6 +524,7 @@ class _TimeSegmentPanel extends StatefulWidget {
   final VoidCallback onEditEnd;
   final VoidCallback onDelete;
   final VoidCallback onToggleLoop;
+  final bool expandToParent;
 
   @override
   State<_TimeSegmentPanel> createState() => _TimeSegmentPanelState();
@@ -575,8 +577,7 @@ class _TimeSegmentPanelState extends State<_TimeSegmentPanel> {
     final mediaHeight = MediaQuery.sizeOf(context).height;
     final targetHeight = max(360.0, mediaHeight * 0.5 - 130.0);
 
-    return Container(
-      height: targetHeight,
+    final content = Padding(
       padding: const EdgeInsets.fromLTRB(0, 6, 0, 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -632,6 +633,10 @@ class _TimeSegmentPanelState extends State<_TimeSegmentPanel> {
         ],
       ),
     );
+    if (widget.expandToParent) {
+      return SizedBox.expand(child: content);
+    }
+    return SizedBox(height: targetHeight, child: content);
   }
 
   Widget _buildSegmentPage(

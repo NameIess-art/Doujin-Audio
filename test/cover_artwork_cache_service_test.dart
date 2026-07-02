@@ -122,6 +122,30 @@ void main() {
     );
   });
 
+  test('playback cover miss remains retryable', () async {
+    var downloads = 0;
+    final cache = CoverArtworkCacheService(
+      libraryService: LibraryService(),
+      remoteCoverDownloader: (_) async {
+        downloads += 1;
+        return downloads == 1 ? null : '/cache/cover.image';
+      },
+    );
+    const track = MusicTrack(
+      path: 'https://example.com/audio.mp3',
+      displayName: 'Remote audio',
+      groupKey: 'remote',
+      groupTitle: 'Remote',
+      groupSubtitle: 'Remote',
+      isSingle: false,
+      remoteCoverUrl: 'https://example.com/cover.jpg',
+    );
+
+    expect(await cache.futureForPlaybackTrack(track), isNull);
+    expect(await cache.futureForPlaybackTrack(track), '/cache/cover.image');
+    expect(downloads, 2);
+  });
+
   test(
     'loose folder image affects the folder but not the track cover',
     () async {
@@ -353,9 +377,22 @@ void main() {
 
       expect(await cache.futureForTrack(track), isNull);
       expect(cache.resolvedForTrack(track), isNull);
-      expect(await cache.futureForPlaybackTrack(track), folderCover);
+      final firstPlaybackFuture = cache.futureForPlaybackTrack(track);
+      final secondPlaybackFuture = cache.futureForPlaybackTrack(track);
+      expect(identical(firstPlaybackFuture, secondPlaybackFuture), isTrue);
+      expect(await firstPlaybackFuture, folderCover);
+      expect(
+        identical(firstPlaybackFuture, cache.futureForPlaybackTrack(track)),
+        isTrue,
+      );
       expect(cache.resolvedForPlaybackTrack(track), folderCover);
       expect(cache.resolvedForTrack(track), isNull);
+
+      cache.invalidateFolder(directory.path);
+      expect(
+        identical(firstPlaybackFuture, cache.futureForPlaybackTrack(track)),
+        isFalse,
+      );
     },
   );
 

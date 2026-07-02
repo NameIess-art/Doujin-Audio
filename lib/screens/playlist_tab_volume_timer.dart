@@ -281,7 +281,7 @@ class _VerticalVolumeSliderState extends State<_VerticalVolumeSlider> {
                   ),
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 24),
               Expanded(
                 child: LayoutBuilder(
                   builder: (context, constraints) {

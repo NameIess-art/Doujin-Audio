@@ -80,6 +80,7 @@ class CoverArtworkCacheService {
   bool _manualCoverCachePrimed = false;
   final Map<String, List<String>> _discoveredImagesByScopeCache =
       <String, List<String>>{};
+  final Map<String, String> _perTrackEmbeddedCovers = <String, String>{};
   int _generation = 0;
 
   int get generation => _generation;
@@ -92,6 +93,12 @@ class CoverArtworkCacheService {
     final cachedCoverPath = _cachedManualCoverPath(track?.coverCachePath);
     if (cachedCoverPath != null) {
       return cachedCoverPath;
+    }
+    final pathValue = track?.path ?? trackPath;
+    if (pathValue != null && pathValue.isNotEmpty) {
+      final perTrackKey = PathMatcher.normalize(pathValue);
+      final perTrackCover = _perTrackEmbeddedCovers[perTrackKey];
+      if (perTrackCover != null) return perTrackCover;
     }
     final coverSearchKey = coverSearchKeyForTrack(track, trackPath: trackPath);
     if (coverSearchKey == null) return null;
@@ -257,6 +264,7 @@ class CoverArtworkCacheService {
     _resolvedRemoteCovers.remove(normalizedScope);
     _resolvedRemoteCoverFutures.remove(normalizedScope);
     _coverSearchMisses.remove(normalizedScope);
+    _perTrackEmbeddedCovers.remove(normalizedScope);
     _manualCoverByScopeCache.clear();
     _manualCoverPathValidityCache.clear();
     _manualCoverValidationFutures.clear();
@@ -275,6 +283,7 @@ class CoverArtworkCacheService {
       return;
     }
     _generation++;
+    _perTrackEmbeddedCovers.clear();
     _manualCoverByScopeCache.clear();
     _manualCoverPathValidityCache.clear();
     _manualCoverValidationFutures.clear();
@@ -306,6 +315,7 @@ class CoverArtworkCacheService {
     _resolvedRemoteCovers.clear();
     _resolvedRemoteCoverFutures.clear();
     _coverSearchMisses.clear();
+    _perTrackEmbeddedCovers.clear();
     _manualCoverByScopeCache.clear();
     _manualCoverPathValidityCache.clear();
     _manualCoverValidationFutures.clear();
@@ -423,6 +433,19 @@ class CoverArtworkCacheService {
           coverPath = await _findCoverPath(coverScopeFolder ?? coverSearchKey);
           if (coverPath == null && track != null) {
             coverPath = await _resolvePlatformCoverPathForTrack(track);
+          }
+          if (track != null &&
+              !_isStandaloneAudioTrack(track) &&
+              track.isVideo != true &&
+              !PathMatcher.isContentUri(pathValue)) {
+            final perTrackKey = PathMatcher.normalize(track.path);
+            if (!_perTrackEmbeddedCovers.containsKey(perTrackKey)) {
+              final embeddedCover =
+                  await _resolvePlatformCoverPathForTrack(track);
+              if (embeddedCover != null) {
+                _perTrackEmbeddedCovers[perTrackKey] = embeddedCover;
+              }
+            }
           }
         }
         if (coverPath == null && track?.isVideo == true) {
@@ -723,6 +746,10 @@ class CoverArtworkCacheService {
         rootFolder: PathMatcher.isContentUri(folderPath) ? folderPath : null,
       );
       if (coverPath != null && coverPath.isNotEmpty) return coverPath;
+      if (track.isVideo) {
+        final framePath = await _resolveVideoFramePathForTrack(track);
+        if (framePath != null && framePath.isNotEmpty) return framePath;
+      }
     }
     return null;
   }

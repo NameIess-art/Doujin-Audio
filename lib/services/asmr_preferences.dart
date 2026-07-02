@@ -5,7 +5,6 @@ import 'app_database.dart';
 abstract final class AsmrPreferences {
   static const String _lastSyncAtKey = 'asmr_last_sync_at_v1';
   static const String _syncOutboxSeededKey = 'asmr_sync_outbox_seeded_v2';
-  static const String _visibleCategoriesKey = 'asmr_visible_categories_v1';
   static const String _contentLanguageKey = 'asmr_content_language_v1';
 
   static AppDatabase get _database {

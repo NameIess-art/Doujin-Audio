@@ -7,6 +7,80 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/widgets/async_cover_image.dart';
 
 void main() {
+  testWidgets('LocalCoverImage shows fallback artwork for an empty path', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: SizedBox(
+          width: 120,
+          height: 90,
+          child: LocalCoverImage(path: '', seed: 'empty-cover'),
+        ),
+      ),
+    );
+
+    expect(find.byType(CoverFallbackArtwork), findsOneWidget);
+    expect(find.byType(RetryingImage), findsNothing);
+  });
+
+  testWidgets('AsyncLocalCoverImage hides the fallback icon while loading', (
+    tester,
+  ) async {
+    final completer = Completer<String?>();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SizedBox(
+          width: 120,
+          height: 90,
+          child: AsyncLocalCoverImage(
+            future: completer.future,
+            seed: 'loading-cover',
+            duration: Duration.zero,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byType(CoverLoadingArtwork), findsOneWidget);
+    expect(find.byType(CoverFallbackArtwork), findsOneWidget);
+    final hiddenIcon = tester.widget<AnimatedOpacity>(
+      find.byType(AnimatedOpacity),
+    );
+    expect(hiddenIcon.opacity, 0);
+  });
+
+  testWidgets('AsyncLocalCoverImage shows fallback after a null result', (
+    tester,
+  ) async {
+    final completer = Completer<String?>();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SizedBox(
+          width: 120,
+          height: 90,
+          child: AsyncLocalCoverImage(
+            future: completer.future,
+            seed: 'missing-cover',
+            duration: Duration.zero,
+          ),
+        ),
+      ),
+    );
+
+    completer.complete(null);
+    await tester.pump();
+
+    expect(find.byType(CoverLoadingArtwork), findsNothing);
+    expect(find.byType(CoverFallbackArtwork), findsOneWidget);
+    final visibleIcon = tester.widget<AnimatedOpacity>(
+      find.byType(AnimatedOpacity),
+    );
+    expect(visibleIcon.opacity, 1);
+  });
+
   testWidgets('AsyncCoverImage shows fallback artwork while loading', (
     tester,
   ) async {

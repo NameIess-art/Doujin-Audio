@@ -27,14 +27,6 @@ class _SessionHeroArtwork extends ConsumerWidget {
       ),
     );
 
-    Widget fallback({bool hideIcon = false}) {
-      return CoverFallbackArtwork(
-        seed: track?.displayName ?? track?.path ?? sessionId,
-        showIcon: !hideIcon,
-        iconSize: 56,
-      );
-    }
-
     return LayoutBuilder(
       builder: (context, constraints) {
         final displayWidth = constraints.maxWidth;
@@ -70,26 +62,16 @@ class _SessionHeroArtwork extends ConsumerWidget {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  AsyncCoverImage(
+                  AsyncLocalCoverImage(
                     future: coverPathFuture,
                     initialPath: provider.resolvedCoverPathForTrack(track),
                     retryFutureBuilder: () =>
                         _coverFutureForTrack(provider, track),
-                    fallbackBuilder: (_) => fallback(),
-                    loadingBuilder: (_) => CoverLoadingArtwork(
-                      placeholder: fallback(hideIcon: true),
-                    ),
-                    imageBuilder: (context, coverPath) {
-                      return RepaintBoundary(
-                        child: RetryingFileImage(
-                          path: coverPath,
-                          cacheWidth: coverCacheWidth,
-                          useDefaultCacheWidth: coverCacheWidth != null,
-                          fit: BoxFit.cover,
-                          fallbackBuilder: (_) => fallback(),
-                        ),
-                      );
-                    },
+                    seed: track?.displayName ?? track?.path ?? sessionId,
+                    cacheWidth: coverCacheWidth,
+                    useDefaultCacheWidth: coverCacheWidth != null,
+                    fit: BoxFit.cover,
+                    iconSize: 56,
                   ),
                   Positioned.fill(
                     child: DecoratedBox(
@@ -134,15 +116,6 @@ class _SessionCoverThumbnail extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    Widget fallback({bool hideIcon = false}) {
-      return CoverFallbackArtwork(
-        seed: track?.displayName ?? track?.path ?? sessionId,
-        compact: true,
-        iconSize: hideIcon ? 0 : 26,
-        showIcon: !hideIcon,
-      );
-    }
-
     return SizedBox(
       width: _width,
       height: _height,
@@ -150,19 +123,17 @@ class _SessionCoverThumbnail extends StatelessWidget {
         type: MaterialType.transparency,
         borderRadius: BorderRadius.circular(LibraryLikeCardMetrics.coverRadius),
         clipBehavior: Clip.antiAlias,
-        child: AsyncCoverImage(
+        child: AsyncLocalCoverImage(
           future: _coverFutureForTrack(context.read<AudioProvider>(), track),
           initialPath: coverPath,
-          retryFutureBuilder: () => _coverFutureForTrack(context.read<AudioProvider>(), track),
-          fallbackBuilder: (_) => fallback(),
-          loadingBuilder: (_) => fallback(hideIcon: true),
-          imageBuilder: (context, path) => RetryingFileImage(
-            path: path,
-            cacheWidth: coverCacheWidth,
-            useDefaultCacheWidth: coverCacheWidth != null,
-            fit: BoxFit.cover,
-            fallbackBuilder: (_) => fallback(),
-          ),
+          retryFutureBuilder: () =>
+              _coverFutureForTrack(context.read<AudioProvider>(), track),
+          seed: track?.displayName ?? track?.path ?? sessionId,
+          cacheWidth: coverCacheWidth,
+          useDefaultCacheWidth: coverCacheWidth != null,
+          fit: BoxFit.cover,
+          compact: true,
+          iconSize: 26,
         ),
       ),
     );

@@ -604,15 +604,6 @@ class _LibraryCoverThumbnailState
     );
     final provider = ref.read(audioProviderFacadeProvider);
     final coverPathFuture = _coverFutureFor(provider, coverGeneration);
-    Widget fallback({bool hideIcon = false}) {
-      return CoverFallbackArtwork(
-        seed: widget.folderPath,
-        showIcon: !hideIcon,
-        compact: true,
-        iconSize: 28,
-      );
-    }
-
     final width = widget.width;
     final height = width * 0.8;
     return SizedBox(
@@ -627,25 +618,19 @@ class _LibraryCoverThumbnailState
           child: Hero(
             tag: 'cover_${widget.folderPath}',
             placeholderBuilder: (context, heroSize, child) => child,
-            child: AsyncCoverImage(
+            child: AsyncLocalCoverImage(
               future: coverPathFuture,
               initialPath: provider.resolvedCoverPathForFolder(
                 widget.folderPath,
               ),
               retryFutureBuilder: () =>
                   provider.coverPathFutureForFolder(widget.folderPath),
-              fallbackBuilder: (_) => fallback(),
-              loadingBuilder: (_) =>
-                  CoverLoadingArtwork(placeholder: fallback(hideIcon: true)),
-              imageBuilder: (context, coverPath) {
-                return RetryingFileImage(
-                  path: coverPath,
-                  cacheWidth: coverCacheWidth,
-                  useDefaultCacheWidth: coverCacheWidth != null,
-                  fit: BoxFit.cover,
-                  fallbackBuilder: (_) => fallback(),
-                );
-              },
+              seed: widget.folderPath,
+              cacheWidth: coverCacheWidth,
+              useDefaultCacheWidth: coverCacheWidth != null,
+              fit: BoxFit.cover,
+              compact: true,
+              iconSize: 28,
             ),
           ),
         ),
@@ -697,15 +682,6 @@ class _LibraryTrackCoverThumbnailState
     final coverPathFuture = _coverFutureFor(provider, coverGeneration);
     final track = widget.track;
 
-    Widget fallback({bool hideIcon = false}) {
-      return CoverFallbackArtwork(
-        seed: track.displayName,
-        showIcon: !hideIcon,
-        compact: true,
-        iconSize: 28,
-      );
-    }
-
     final width = widget.width;
     final height = width * 0.8;
     return SizedBox(
@@ -716,22 +692,16 @@ class _LibraryTrackCoverThumbnailState
         child: Hero(
           tag: 'cover_${track.path}',
           placeholderBuilder: (context, heroSize, child) => child,
-          child: AsyncCoverImage(
+          child: AsyncLocalCoverImage(
             future: coverPathFuture,
             initialPath: provider.resolvedCoverPathForTrack(track),
             retryFutureBuilder: () => provider.coverPathFutureForTrack(track),
-            fallbackBuilder: (_) => fallback(),
-            loadingBuilder: (_) =>
-                CoverLoadingArtwork(placeholder: fallback(hideIcon: true)),
-            imageBuilder: (context, coverPath) {
-              return RetryingFileImage(
-                path: coverPath,
-                cacheWidth: coverCacheWidth,
-                useDefaultCacheWidth: coverCacheWidth != null,
-                fit: BoxFit.cover,
-                fallbackBuilder: (_) => fallback(),
-              );
-            },
+            seed: track.displayName,
+            cacheWidth: coverCacheWidth,
+            useDefaultCacheWidth: coverCacheWidth != null,
+            fit: BoxFit.cover,
+            compact: true,
+            iconSize: 28,
           ),
         ),
       ),

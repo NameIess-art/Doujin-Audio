@@ -228,6 +228,149 @@ class CoverLoadingArtwork extends StatelessWidget {
   Widget build(BuildContext context) => placeholder;
 }
 
+class LocalCoverImage extends StatelessWidget {
+  const LocalCoverImage({
+    super.key,
+    this.path,
+    required this.seed,
+    this.cacheWidth,
+    this.cacheHeight,
+    this.useDefaultCacheWidth = true,
+    this.fit,
+    this.alignment = Alignment.center,
+    this.icon,
+    this.compact = false,
+    this.iconSize,
+    this.showIcon = true,
+    this.color,
+    this.colorBlendMode,
+    this.filterQuality = FilterQuality.medium,
+  });
+
+  final String? path;
+  final String seed;
+  final int? cacheWidth;
+  final int? cacheHeight;
+  final bool useDefaultCacheWidth;
+  final BoxFit? fit;
+  final AlignmentGeometry alignment;
+  final IconData? icon;
+  final bool compact;
+  final double? iconSize;
+  final bool showIcon;
+  final Color? color;
+  final BlendMode? colorBlendMode;
+  final FilterQuality filterQuality;
+
+  Widget _fallback(BuildContext context, {bool? showIconOverride}) {
+    return CoverFallbackArtwork(
+      seed: seed,
+      icon: icon,
+      showIcon: showIconOverride ?? showIcon,
+      compact: compact,
+      iconSize: iconSize,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final resolvedPath = path;
+    if (resolvedPath == null || resolvedPath.isEmpty) {
+      return _fallback(context);
+    }
+    return RetryingFileImage(
+      path: resolvedPath,
+      cacheWidth: cacheWidth,
+      cacheHeight: cacheHeight,
+      useDefaultCacheWidth: useDefaultCacheWidth,
+      fit: fit,
+      alignment: alignment,
+      color: color,
+      colorBlendMode: colorBlendMode,
+      filterQuality: filterQuality,
+      fallbackBuilder: (context) => _fallback(context),
+    );
+  }
+}
+
+class AsyncLocalCoverImage extends StatelessWidget {
+  const AsyncLocalCoverImage({
+    super.key,
+    required this.future,
+    this.initialPath,
+    this.retryFutureBuilder,
+    required this.seed,
+    this.cacheWidth,
+    this.cacheHeight,
+    this.useDefaultCacheWidth = true,
+    this.fit,
+    this.alignment = Alignment.center,
+    this.icon,
+    this.compact = false,
+    this.iconSize,
+    this.showIcon = true,
+    this.color,
+    this.colorBlendMode,
+    this.filterQuality = FilterQuality.medium,
+    this.hideIconWhileLoading = true,
+    this.duration = kCoverImageFadeDuration,
+  });
+
+  final Future<String?> future;
+  final String? initialPath;
+  final Future<String?> Function()? retryFutureBuilder;
+  final String seed;
+  final int? cacheWidth;
+  final int? cacheHeight;
+  final bool useDefaultCacheWidth;
+  final BoxFit? fit;
+  final AlignmentGeometry alignment;
+  final IconData? icon;
+  final bool compact;
+  final double? iconSize;
+  final bool showIcon;
+  final Color? color;
+  final BlendMode? colorBlendMode;
+  final FilterQuality filterQuality;
+  final bool hideIconWhileLoading;
+  final Duration duration;
+
+  Widget _cover(BuildContext context, String? path, {required bool loading}) {
+    return LocalCoverImage(
+      path: path,
+      seed: seed,
+      cacheWidth: cacheWidth,
+      cacheHeight: cacheHeight,
+      useDefaultCacheWidth: useDefaultCacheWidth,
+      fit: fit,
+      alignment: alignment,
+      icon: icon,
+      compact: compact,
+      iconSize: iconSize,
+      showIcon: loading && hideIconWhileLoading ? false : showIcon,
+      color: color,
+      colorBlendMode: colorBlendMode,
+      filterQuality: filterQuality,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AsyncCoverImage(
+      future: future,
+      initialPath: initialPath,
+      retryFutureBuilder: retryFutureBuilder,
+      duration: duration,
+      fallbackBuilder: (context) => _cover(context, null, loading: false),
+      loadingBuilder: (context) => CoverLoadingArtwork(
+        placeholder: _cover(context, null, loading: true),
+      ),
+      imageBuilder: (context, coverPath) =>
+          _cover(context, coverPath, loading: false),
+    );
+  }
+}
+
 class CoverFallbackArtwork extends StatelessWidget {
   const CoverFallbackArtwork({
     super.key,

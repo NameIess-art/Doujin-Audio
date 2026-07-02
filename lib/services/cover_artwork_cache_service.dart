@@ -12,47 +12,42 @@ import '../models/music_track.dart';
 import '../platform/app_platform.dart';
 import 'app_cache_service.dart';
 import 'app_log_service.dart';
+import 'audio_database_repository.dart';
 import 'audio_state_services.dart';
 import 'embedded_cover_artwork_service.dart';
 import 'file_cache_platform_gateway.dart';
 import 'path_matcher.dart';
 import 'windows_ffmpeg_service.dart';
 
-const List<String> _preferredCoverBasenames = <String>[
-  'cover',
-  'folder',
-  'front',
-  'album',
-  'artwork',
-  'poster',
-];
+const String _folderCoverSelectionsKey = 'folder_cover_selections_v1';
+const Set<String> _folderCoverImageExtensions = <String>{
+  '.jpg',
+  '.jpeg',
+  '.png',
+  '.webp',
+  '.bmp',
+  '.gif',
+};
 
 class CoverArtworkCacheService {
   CoverArtworkCacheService({
     required LibraryService libraryService,
+    AudioDatabaseRepository? databaseRepository,
     FileCachePlatformGateway? fileCacheGateway,
-    Set<String> supportedImageExtensions = const <String>{
-      '.jpg',
-      '.jpeg',
-      '.png',
-      '.webp',
-      '.bmp',
-      '.gif',
-    },
     Future<String?> Function(String remoteUrl)? remoteCoverDownloader,
     bool Function(String coverSearchKey)? isActiveCoverKey,
     VoidCallback? onActiveCoverChanged,
   }) : _libraryService = libraryService,
+       _databaseRepository = databaseRepository,
        _fileCacheGateway =
            fileCacheGateway ?? FileCachePlatformGateway.instance,
-       _supportedImageExtensions = supportedImageExtensions,
        _remoteCoverDownloader = remoteCoverDownloader,
        _isActiveCoverKey = isActiveCoverKey,
        _onActiveCoverChanged = onActiveCoverChanged;
 
   final LibraryService _libraryService;
+  final AudioDatabaseRepository? _databaseRepository;
   final FileCachePlatformGateway _fileCacheGateway;
-  final Set<String> _supportedImageExtensions;
   final Future<String?> Function(String remoteUrl)? _remoteCoverDownloader;
   final bool Function(String coverSearchKey)? _isActiveCoverKey;
   final VoidCallback? _onActiveCoverChanged;
@@ -72,21 +67,19 @@ class CoverArtworkCacheService {
   final Map<String, String?> _resolvedRemoteCovers = <String, String?>{};
   final Map<String, Future<String?>> _resolvedRemoteCoverFutures =
       <String, Future<String?>>{};
-  final Set<String> _coverSearchMisses = <String>{};
-  final Map<String, String?> _manualCoverByScopeCache = <String, String?>{};
   final Map<String, bool> _manualCoverPathValidityCache = <String, bool>{};
   final Map<String, Future<String?>> _manualCoverValidationFutures =
       <String, Future<String?>>{};
-  bool _manualCoverCachePrimed = false;
-  final Map<String, List<String>> _discoveredImagesByScopeCache =
-      <String, List<String>>{};
-  final Map<String, String> _perTrackEmbeddedCovers = <String, String>{};
+  final Map<String, String> _folderCoverSelections = <String, String>{};
+  Future<void>? _folderCoverSelectionsLoadFuture;
   int _generation = 0;
 
   int get generation => _generation;
 
   String? resolvedForTrack(MusicTrack? track, {String? trackPath}) {
-    final manualCoverPath = _cachedManualCoverPath(track?.manualCoverPath);
+    final manualCoverPath = track?.isSingle == true
+        ? _cachedManualCoverPath(track?.manualCoverPath)
+        : null;
     if (manualCoverPath != null) {
       return manualCoverPath;
     }
@@ -95,10 +88,10 @@ class CoverArtworkCacheService {
       return cachedCoverPath;
     }
     final pathValue = track?.path ?? trackPath;
-    if (pathValue != null && pathValue.isNotEmpty) {
-      final perTrackKey = PathMatcher.normalize(pathValue);
-      final perTrackCover = _perTrackEmbeddedCovers[perTrackKey];
-      if (perTrackCover != null) return perTrackCover;
+    if (pathValue != null &&
+        pathValue.isNotEmpty &&
+        !PathMatcher.isRemoteUri(pathValue)) {
+      return _resolvedTrackCovers[PathMatcher.normalize(pathValue)];
     }
     final coverSearchKey = coverSearchKeyForTrack(track, trackPath: trackPath);
     if (coverSearchKey == null) return null;
@@ -107,11 +100,7 @@ class CoverArtworkCacheService {
 
   String? resolvedForFolder(String folderPath) {
     final normalizedFolderPath = PathMatcher.normalize(folderPath);
-    return _cachedManualCoverPath(
-          _manualCoverByScopeCache[normalizedFolderPath],
-        ) ??
-        _resolvedFolderCovers[normalizedFolderPath] ??
-        _resolvedTrackCovers[normalizedFolderPath];
+    return _resolvedFolderCovers[normalizedFolderPath];
   }
 
   String? resolvedForRemoteCover(String url) {
@@ -198,49 +187,62 @@ class CoverArtworkCacheService {
           ? null
           : remoteCoverSearchKey(remoteCoverUrl);
     }
-    if (track?.isVideo == true) return PathMatcher.normalize(pathValue);
-    if (_isStandaloneAudioTrack(track)) return PathMatcher.normalize(pathValue);
-    final scopedFolder = coverScopeFolderForTrack(track, trackPath: pathValue);
-    if (scopedFolder != null && scopedFolder.isNotEmpty) {
-      return PathMatcher.normalize(scopedFolder);
-    }
-    final directoryPath = path.dirname(pathValue);
-    if (directoryPath.isEmpty || directoryPath == '.') return null;
-    return PathMatcher.normalize(directoryPath);
+    return PathMatcher.normalize(pathValue);
   }
 
-  Future<List<String>> discoverImagesInRoot(
-    String trackPath,
-    MusicTrack? track,
+  Future<List<String>> discoverCoverCandidatesInFolder(
+    String folderPath,
   ) async {
-    final scopeFolder = coverScopeFolderForTrack(track, trackPath: trackPath);
-    if (scopeFolder == null || scopeFolder.isEmpty) return [];
-
-    if (PathMatcher.isContentUri(scopeFolder) ||
-        PathMatcher.isContentUri(trackPath)) {
-      return _discoverContentImages(
-        trackPath: trackPath,
-        groupKey: track?.groupKey,
-        rootFolder: scopeFolder,
-      );
-    }
-
-    return discoverImagesInFolder(scopeFolder);
+    final normalizedFolder = PathMatcher.normalize(folderPath);
+    if (normalizedFolder.isEmpty) return const <String>[];
+    return _resolveFolderCoverCandidates(normalizedFolder);
   }
 
-  Future<List<String>> discoverImagesInFolder(String folderPath) async {
-    if (folderPath.trim().isEmpty) return [];
+  Future<void> setFolderCoverSelection(
+    String folderPath,
+    String coverPath,
+  ) async {
     final normalizedFolder = PathMatcher.normalize(folderPath);
-    if (normalizedFolder.isEmpty) return [];
+    final normalizedCover = coverPath.trim();
+    if (normalizedFolder.isEmpty || normalizedCover.isEmpty) return;
+    final candidates = await _resolveFolderCoverCandidates(normalizedFolder);
+    if (!candidates.contains(normalizedCover)) return;
+    await _ensureFolderCoverSelections();
+    _folderCoverSelections[normalizedFolder] = normalizedCover;
+    await _saveFolderCoverSelections();
+    invalidateFolder(normalizedFolder);
+  }
 
-    if (PathMatcher.isContentUri(normalizedFolder)) {
-      return _discoverContentImages(
-        trackPath: normalizedFolder,
-        rootFolder: normalizedFolder,
+  Future<void> retargetFolderCoverSelection(
+    String oldFolderPath,
+    String newFolderPath,
+  ) async {
+    await _ensureFolderCoverSelections();
+    final oldFolder = PathMatcher.normalize(oldFolderPath);
+    final newFolder = PathMatcher.normalize(newFolderPath);
+    final previousCover = _folderCoverSelections.remove(oldFolder);
+    if (previousCover == null || newFolder.isEmpty) return;
+    final relativeCover = PathMatcher.relativeWithin(previousCover, oldFolder);
+    _folderCoverSelections[newFolder] = relativeCover == null
+        ? previousCover
+        : PathMatcher.join(newFolder, relativeCover);
+    await _saveFolderCoverSelections();
+    invalidateFolders(<String>[oldFolder, newFolder]);
+  }
+
+  Future<void> _saveFolderCoverSelections() async {
+    try {
+      await _databaseRepository?.saveAppSetting(
+        _folderCoverSelectionsKey,
+        json.encode(_folderCoverSelections),
+      );
+    } catch (error, stackTrace) {
+      AppLogService.warning(
+        'Unable to save folder cover selections.',
+        error: error,
+        stackTrace: stackTrace,
       );
     }
-
-    return _discoverFileSystemImages(normalizedFolder);
   }
 
   void invalidateTrack(MusicTrack? track, {String? trackPath}) {
@@ -263,13 +265,8 @@ class CoverArtworkCacheService {
     _remoteCoverFutures.remove(normalizedScope);
     _resolvedRemoteCovers.remove(normalizedScope);
     _resolvedRemoteCoverFutures.remove(normalizedScope);
-    _coverSearchMisses.remove(normalizedScope);
-    _perTrackEmbeddedCovers.remove(normalizedScope);
-    _manualCoverByScopeCache.clear();
     _manualCoverPathValidityCache.clear();
     _manualCoverValidationFutures.clear();
-    _manualCoverCachePrimed = false;
-    _discoveredImagesByScopeCache.remove(normalizedScope);
   }
 
   void invalidateFolders(Iterable<String?> scopes) {
@@ -283,11 +280,8 @@ class CoverArtworkCacheService {
       return;
     }
     _generation++;
-    _perTrackEmbeddedCovers.clear();
-    _manualCoverByScopeCache.clear();
     _manualCoverPathValidityCache.clear();
     _manualCoverValidationFutures.clear();
-    _manualCoverCachePrimed = false;
     for (final scope in normalizedScopes) {
       _folderCoverFutures.remove(scope);
       _resolvedFolderCovers.remove(scope);
@@ -298,8 +292,6 @@ class CoverArtworkCacheService {
       _remoteCoverFutures.remove(scope);
       _resolvedRemoteCovers.remove(scope);
       _resolvedRemoteCoverFutures.remove(scope);
-      _coverSearchMisses.remove(scope);
-      _discoveredImagesByScopeCache.remove(scope);
     }
   }
 
@@ -314,28 +306,34 @@ class CoverArtworkCacheService {
     _remoteCoverFutures.clear();
     _resolvedRemoteCovers.clear();
     _resolvedRemoteCoverFutures.clear();
-    _coverSearchMisses.clear();
-    _perTrackEmbeddedCovers.clear();
-    _manualCoverByScopeCache.clear();
     _manualCoverPathValidityCache.clear();
     _manualCoverValidationFutures.clear();
-    _manualCoverCachePrimed = false;
-    _discoveredImagesByScopeCache.clear();
   }
 
-  Future<void> _ensureManualCoverCache() async {
-    if (_manualCoverCachePrimed) return;
-    _manualCoverByScopeCache.clear();
-    for (final track in _libraryService.library) {
-      final manualCoverPath = await _validatedManualCoverPath(
-        track.manualCoverPath,
-      );
-      if (manualCoverPath == null) continue;
-      final scope = coverSearchKeyForTrack(track);
-      if (scope == null || scope.isEmpty) continue;
-      _manualCoverByScopeCache[scope] = manualCoverPath;
-    }
-    _manualCoverCachePrimed = true;
+  Future<void> _ensureFolderCoverSelections() {
+    return _folderCoverSelectionsLoadFuture ??= () async {
+      try {
+        final raw = await _databaseRepository?.loadAppSetting(
+          _folderCoverSelectionsKey,
+        );
+        if (raw == null || raw.isEmpty) return;
+        final decoded = json.decode(raw);
+        if (decoded is! Map) return;
+        for (final entry in decoded.entries) {
+          final folder = PathMatcher.normalize(entry.key.toString());
+          final cover = entry.value?.toString().trim() ?? '';
+          if (folder.isNotEmpty && cover.isNotEmpty) {
+            _folderCoverSelections[folder] = cover;
+          }
+        }
+      } catch (error, stackTrace) {
+        AppLogService.warning(
+          'Unable to load folder cover selections.',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      }
+    }();
   }
 
   Future<String?> _resolveCoverPathForTrack(
@@ -345,7 +343,9 @@ class CoverArtworkCacheService {
     final pathValue = track?.path ?? trackPath;
     final coverSearchKey = coverSearchKeyForTrack(track, trackPath: pathValue);
     if (coverSearchKey == null) return Future<String?>.value();
-    final cachedManualPath = _cachedManualCoverPath(track?.manualCoverPath);
+    final cachedManualPath = track?.isSingle == true
+        ? _cachedManualCoverPath(track?.manualCoverPath)
+        : null;
     if (cachedManualPath != null) {
       _resolvedTrackCovers[coverSearchKey] = cachedManualPath;
       return _resolvedTrackCoverFutures.putIfAbsent(
@@ -362,7 +362,9 @@ class CoverArtworkCacheService {
       );
     }
 
-    final manualPathFuture = _validatedManualCoverPath(track?.manualCoverPath);
+    final manualPathFuture = track?.isSingle == true
+        ? _validatedManualCoverPath(track?.manualCoverPath)
+        : SynchronousFuture<String?>(null);
     final coverCachePathFuture = _validatedManualCoverPath(
       track?.coverCachePath,
     );
@@ -410,46 +412,10 @@ class CoverArtworkCacheService {
       if (coverPath == null &&
           pathValue != null &&
           !PathMatcher.isRemoteUri(pathValue)) {
-        final coverScopeFolder = coverScopeFolderForTrack(
-          track,
-          trackPath: pathValue,
-        );
-        if (_isStandaloneAudioTrack(track)) {
-          coverPath = await _resolvePlatformCoverPathForTrack(track!);
-        } else if (track?.isSingle == true && track?.isVideo == true) {
+        if (track?.isVideo == true) {
           coverPath = await _resolveVideoFramePathForTrack(track!);
-        } else if (PathMatcher.isContentUri(pathValue)) {
-          if (track != null) {
-            coverPath = await _resolvePlatformCoverPathForTrack(
-              track,
-              rootFolder: coverScopeFolder,
-            );
-          } else {
-            coverPath = await _resolveContentCoverPathForFolder(
-              coverScopeFolder ?? pathValue,
-            );
-          }
-        } else {
-          coverPath = await _findCoverPath(coverScopeFolder ?? coverSearchKey);
-          if (coverPath == null && track != null) {
-            coverPath = await _resolvePlatformCoverPathForTrack(track);
-          }
-          if (track != null &&
-              !_isStandaloneAudioTrack(track) &&
-              track.isVideo != true &&
-              !PathMatcher.isContentUri(pathValue)) {
-            final perTrackKey = PathMatcher.normalize(track.path);
-            if (!_perTrackEmbeddedCovers.containsKey(perTrackKey)) {
-              final embeddedCover =
-                  await _resolvePlatformCoverPathForTrack(track);
-              if (embeddedCover != null) {
-                _perTrackEmbeddedCovers[perTrackKey] = embeddedCover;
-              }
-            }
-          }
-        }
-        if (coverPath == null && track?.isVideo == true) {
-          coverPath = await _resolveVideoFramePathForTrack(track!);
+        } else if (track != null) {
+          coverPath = await _resolvePlatformCoverPathForTrack(track);
         }
       }
 
@@ -493,16 +459,19 @@ class CoverArtworkCacheService {
     }
 
     return _folderCoverFutures.putIfAbsent(normalizedFolderPath, () async {
-      await _ensureManualCoverCache();
+      await _ensureFolderCoverSelections();
+      final candidates = await _resolveFolderCoverCandidates(
+        normalizedFolderPath,
+      );
+      final selectedCover = _folderCoverSelections[normalizedFolderPath];
       final coverPath =
-          _cachedManualCoverPath(
-            _manualCoverByScopeCache[normalizedFolderPath],
-          ) ??
-          (PathMatcher.isContentUri(normalizedFolderPath)
-              ? await _resolveContentCoverPathForFolder(normalizedFolderPath)
-              : await _resolveFileSystemCoverPathForFolder(
-                  normalizedFolderPath,
-                ));
+          selectedCover != null && candidates.contains(selectedCover)
+          ? selectedCover
+          : candidates.firstOrNull;
+      if (selectedCover != null && selectedCover != coverPath) {
+        _folderCoverSelections.remove(normalizedFolderPath);
+        await _saveFolderCoverSelections();
+      }
       unawaited(
         _folderCoverFutures.remove(normalizedFolderPath) ?? Future.value(),
       );
@@ -672,7 +641,7 @@ class CoverArtworkCacheService {
         stackTrace: stackTrace,
       );
     }
-    
+
     if (AppPlatform.isWindows) {
       try {
         final ffmpegCover = await WindowsFfmpegService.resolveAudioCover(
@@ -695,92 +664,77 @@ class CoverArtworkCacheService {
     if (embeddedCover != null) unawaited(AppCacheService.enforceLimit());
     if (embeddedCover != null) return embeddedCover;
 
-    if (PathMatcher.isContentUri(track.path)) {
-      final cachedPath = await _cacheContentTrackForEmbeddedCover(track);
-      if (cachedPath != null) {
-        final cachedEmbeddedCover =
-            await EmbeddedCoverArtworkService.resolveForPath(cachedPath);
-        if (cachedEmbeddedCover != null) {
-          unawaited(AppCacheService.enforceLimit());
-          return cachedEmbeddedCover;
-        }
-      }
-    }
     return null;
   }
 
-  Future<String?> _cacheContentTrackForEmbeddedCover(MusicTrack track) async {
-    try {
-      return await _fileCacheGateway.cacheFromUri(
-        uri: track.path,
-        name: track.displayName,
-        index: 0,
-      );
-    } on MissingPluginException {
-      return null;
-    } catch (e, stackTrace) {
-      AppLogService.warning(
-        'CoverArtworkCacheService._cacheContentTrackForEmbeddedCover error',
-        error: e,
-        stackTrace: stackTrace,
-      );
-      return null;
+  Future<List<String>> _resolveFolderCoverCandidates(String folderPath) async {
+    final candidates = <String>[];
+    final seen = <String>{};
+    void addCandidate(String? value) {
+      final candidate = value?.trim();
+      if (candidate == null || candidate.isEmpty || !seen.add(candidate)) {
+        return;
+      }
+      candidates.add(candidate);
     }
-  }
 
-  Future<String?> _resolveFileSystemCoverPathForFolder(
-    String folderPath,
-  ) async {
-    final coverPath = await _findCoverPath(folderPath);
-    if (coverPath != null && coverPath.isNotEmpty) return coverPath;
-
-    return _resolveCoverPathFromCandidateTracks(folderPath);
-  }
-
-  Future<String?> _resolveCoverPathFromCandidateTracks(
-    String folderPath,
-  ) async {
+    for (final imagePath in await _discoverFolderImages(folderPath)) {
+      addCandidate(imagePath);
+    }
     for (final track in _tracksInCoverScope(folderPath)) {
-      final coverPath = await _resolvePlatformCoverPathForTrack(
-        track,
-        rootFolder: PathMatcher.isContentUri(folderPath) ? folderPath : null,
-      );
-      if (coverPath != null && coverPath.isNotEmpty) return coverPath;
       if (track.isVideo) {
-        final framePath = await _resolveVideoFramePathForTrack(track);
-        if (framePath != null && framePath.isNotEmpty) return framePath;
+        addCandidate(await _resolveVideoFramePathForTrack(track));
+      } else {
+        addCandidate(await _resolvePlatformCoverPathForTrack(track));
       }
     }
-    return null;
+    return List<String>.unmodifiable(candidates);
   }
 
-  Future<String?> _resolveContentCoverPathForFolder(String folderPath) async {
-    final candidates = _tracksInCoverScope(folderPath);
-    for (final track in candidates) {
-      final coverPath = await _resolvePlatformCoverPathForTrack(
-        track,
-        rootFolder: folderPath,
-      );
-      if (coverPath != null && coverPath.isNotEmpty) return coverPath;
+  Future<List<String>> _discoverFolderImages(String folderPath) async {
+    if (PathMatcher.isContentUri(folderPath)) {
+      try {
+        return await _fileCacheGateway.discoverRootImages(
+          path: folderPath,
+          rootFolder: folderPath,
+        );
+      } on MissingPluginException {
+        return const <String>[];
+      } catch (error, stackTrace) {
+        AppLogService.warning(
+          'Unable to discover content folder images.',
+          error: error,
+          stackTrace: stackTrace,
+        );
+        return const <String>[];
+      }
     }
 
-    if (candidates.isNotEmpty) return null;
-
+    final images = <String>[];
     try {
-      return await _fileCacheGateway.resolveTrackCover(
-        path: folderPath,
-        rootFolder: folderPath,
-      );
-    } on MissingPluginException {
-      return null;
-    } catch (e, stackTrace) {
+      final directory = Directory(folderPath);
+      if (!await directory.exists()) return const <String>[];
+      await for (final entity in directory.list(
+        recursive: true,
+        followLinks: false,
+      )) {
+        if (entity is! File ||
+            !_folderCoverImageExtensions.contains(
+              path.extension(entity.path).toLowerCase(),
+            )) {
+          continue;
+        }
+        images.add(entity.path);
+      }
+    } catch (error, stackTrace) {
       AppLogService.warning(
-        'CoverArtworkCacheService._resolveContentCoverPathForFolder error',
-        error: e,
+        'Unable to discover folder cover images.',
+        error: error,
         stackTrace: stackTrace,
       );
-      return null;
     }
+    images.sort();
+    return List<String>.unmodifiable(images);
   }
 
   List<MusicTrack> _tracksInCoverScope(String folderPath) {
@@ -796,106 +750,6 @@ class CoverArtworkCacheService {
       }
     }
     return tracks;
-  }
-
-  Future<String?> _findCoverPath(String folderPath) async {
-    final normalizedFolderPath = path.normalize(folderPath);
-    if (normalizedFolderPath.isEmpty) return null;
-    if (_coverSearchMisses.contains(normalizedFolderPath)) return null;
-    if (_resolvedFolderCovers.containsKey(normalizedFolderPath)) {
-      return _resolvedFolderCovers[normalizedFolderPath];
-    }
-    if (_resolvedTrackCovers.containsKey(normalizedFolderPath)) {
-      return _resolvedTrackCovers[normalizedFolderPath];
-    }
-
-    final directory = Directory(folderPath);
-    if (!await directory.exists()) {
-      _coverSearchMisses.add(normalizedFolderPath);
-      return null;
-    }
-
-    try {
-      final candidates = <String>[];
-      await for (final entity in directory.list(followLinks: false)) {
-        if (entity is! File) continue;
-        final extension = path.extension(entity.path).toLowerCase();
-        if (!_supportedImageExtensions.contains(extension)) continue;
-        candidates.add(entity.path);
-      }
-      if (candidates.isNotEmpty) {
-        candidates.sort(_compareCoverPaths);
-        _coverSearchMisses.remove(normalizedFolderPath);
-        return candidates.first;
-      }
-      candidates.addAll(await _discoverFileSystemImages(folderPath));
-      if (candidates.isNotEmpty) {
-        candidates.sort(_compareCoverPaths);
-        _coverSearchMisses.remove(normalizedFolderPath);
-        return candidates.first;
-      }
-    } catch (_) {
-      // Cover discovery is optional; UI and notifications render fallbacks.
-    }
-
-    _coverSearchMisses.add(normalizedFolderPath);
-    return null;
-  }
-
-  Future<List<String>> _discoverContentImages({
-    required String trackPath,
-    required String rootFolder,
-    String? groupKey,
-  }) async {
-    try {
-      return _fileCacheGateway.discoverRootImages(
-        path: trackPath,
-        groupKey: groupKey,
-        rootFolder: rootFolder,
-      );
-    } on MissingPluginException {
-      return [];
-    } catch (e, stackTrace) {
-      AppLogService.warning(
-        'Error discovering content images',
-        error: e,
-        stackTrace: stackTrace,
-      );
-      return [];
-    }
-  }
-
-  Future<List<String>> _discoverFileSystemImages(String folderPath) async {
-    final normalizedScope = PathMatcher.normalize(folderPath);
-    final cached = _discoveredImagesByScopeCache[normalizedScope];
-    if (cached != null) return cached;
-
-    final images = <String>[];
-    try {
-      final dir = Directory(folderPath);
-      if (!await dir.exists()) return [];
-
-      await for (final entity in dir.list(
-        recursive: true,
-        followLinks: false,
-      )) {
-        if (entity is! File) continue;
-        final ext = path.extension(entity.path).toLowerCase();
-        if (!_supportedImageExtensions.contains(ext)) continue;
-        images.add(entity.path);
-      }
-    } catch (e, stackTrace) {
-      AppLogService.warning(
-        'Error discovering images',
-        error: e,
-        stackTrace: stackTrace,
-      );
-    }
-
-    images.sort((a, b) => a.compareTo(b));
-    final snapshot = List<String>.unmodifiable(images);
-    _discoveredImagesByScopeCache[normalizedScope] = snapshot;
-    return snapshot;
   }
 }
 
@@ -929,29 +783,6 @@ String? _libraryWorkScopeFolderPath(String libraryRoot, String groupKey) {
 
 bool _isStandaloneAudioTrack(MusicTrack? track) {
   return track?.isSingle == true && track?.isVideo != true;
-}
-
-int _coverPriority(String baseName) {
-  final exactMatchIndex = _preferredCoverBasenames.indexOf(baseName);
-  if (exactMatchIndex >= 0) return exactMatchIndex;
-  for (var i = 0; i < _preferredCoverBasenames.length; i++) {
-    if (baseName.contains(_preferredCoverBasenames[i])) return 100 + i;
-  }
-  return 200;
-}
-
-int _compareCoverPaths(String leftPath, String rightPath) {
-  final leftName = path.basename(leftPath);
-  final rightName = path.basename(rightPath);
-  final leftBase = path.basenameWithoutExtension(leftName).toLowerCase();
-  final rightBase = path.basenameWithoutExtension(rightName).toLowerCase();
-  final scoreCompare = _coverPriority(
-    leftBase,
-  ).compareTo(_coverPriority(rightBase));
-  if (scoreCompare != 0) return scoreCompare;
-  final nameCompare = leftBase.compareTo(rightBase);
-  if (nameCompare != 0) return nameCompare;
-  return leftPath.toLowerCase().compareTo(rightPath.toLowerCase());
 }
 
 String? remoteCoverSearchKey(String url) {

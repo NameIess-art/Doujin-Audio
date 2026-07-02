@@ -75,6 +75,36 @@ class AppCacheService {
     return totalBytes;
   }
 
+  static Future<int> cleanupOrphanedPersistentImports(
+    Iterable<String> retainedPaths, {
+    Directory? importDirectory,
+  }) async {
+    if (!Platform.isAndroid && importDirectory == null) return 0;
+    try {
+      final directory =
+          importDirectory ??
+          Directory(
+            path.join(
+              (await getApplicationSupportDirectory()).path,
+              'nameless_audio_imports',
+            ),
+          );
+      if (!await directory.exists()) return 0;
+      final retained = retainedPaths
+          .where((value) => value.isNotEmpty && !value.contains('://'))
+          .map(path.normalize)
+          .toSet();
+      var deletedBytes = 0;
+      await for (final entity in directory.list(followLinks: false)) {
+        if (retained.contains(path.normalize(entity.path))) continue;
+        deletedBytes += await _deleteEntity(entity);
+      }
+      return deletedBytes;
+    } catch (_) {
+      return 0;
+    }
+  }
+
   static Future<void> enforceLimit() async {
     if (Platform.isAndroid) {
       try {

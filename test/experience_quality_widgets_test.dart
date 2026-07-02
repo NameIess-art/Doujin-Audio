@@ -15,13 +15,13 @@ Widget _buildSurface(Widget child) => MaterialApp(
   ),
 );
 
-LibraryLikeFeaturedCardContent _buildFeaturedCard({
+LibraryLikeWorkCardContent _buildFeaturedCard({
   required String title,
   required List<LibraryLikeInfoLineData> lines,
   required Key coverKey,
   bool showExpandIndicator = true,
 }) {
-  return LibraryLikeFeaturedCardContent(
+  return LibraryLikeWorkCardContent(
     title: title,
     lines: lines,
     playTooltip: 'add',
@@ -43,17 +43,18 @@ LibraryLikeFeaturedCardContent _buildFeaturedCard({
 
 void main() {
   test('library-like info lines map AudioDetail metadata consistently', () {
-    final detail = AudioDetail.empty(
-      AudioDetailTarget.libraryRootFolder('/library'),
-    ).copyWith(
-      rjCode: ' RJ123456 ',
-      circleName: ' Circle ',
-      voiceActors: const <String>[' Alice ', 'Alice', 'Bob'],
-      tags: const <String>[' sleep ', 'sleep', 'voice'],
-      releaseDate: DateTime(2026, 7, 2),
-      salesCount: 1200,
-      rating: 4.0,
-    );
+    final detail =
+        AudioDetail.empty(
+          AudioDetailTarget.libraryRootFolder('/library'),
+        ).copyWith(
+          rjCode: ' RJ123456 ',
+          circleName: ' Circle ',
+          voiceActors: const <String>[' Alice ', 'Alice', 'Bob'],
+          tags: const <String>[' sleep ', 'sleep', 'voice'],
+          releaseDate: DateTime(2026, 7, 2),
+          salesCount: 1200,
+          rating: 4.0,
+        );
 
     final lines = buildLibraryLikeInfoLines(
       fields: CardInfoField.values,
@@ -174,7 +175,7 @@ void main() {
     expect(LibraryLikeCardMetrics.coverRadius, 12);
 
     expect(
-      tester.getSize(find.byType(LibraryLikeFeaturedCardContent)),
+      tester.getSize(find.byType(LibraryLikeWorkCardContent)),
       const Size(360, LibraryLikeCardMetrics.contentHeight),
     );
     expect(

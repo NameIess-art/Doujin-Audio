@@ -692,11 +692,9 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
         ? false
         : ref.watch(activeTrackPathsProvider).contains(firstTrack.path);
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final cardShape = RoundedRectangleBorder(
-      side: BorderSide(
-        color: cs.outlineVariant.withValues(alpha: isDark ? 0.26 : 0.42),
-      ),
-      borderRadius: BorderRadius.circular(14),
+    final cardShape = LibraryLikeCardMetrics.cardShape(
+      cs,
+      borderAlpha: isDark ? 0.26 : 0.42,
     );
     const cardHeight = _FolderNodeWidgetState._rootFolderTileHeight;
     final folderNode = folder;

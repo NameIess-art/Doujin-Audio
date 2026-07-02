@@ -704,6 +704,7 @@ class AudioProvider with ChangeNotifier {
         coverArtworkCacheService ??
         CoverArtworkCacheService(
           libraryService: _libraryService,
+          databaseRepository: _audioDatabaseRepository,
           isActiveCoverKey: _isActiveCoverKey,
           onActiveCoverChanged: () {
             _syncNotificationState();
@@ -935,10 +936,6 @@ class AudioProvider with ChangeNotifier {
 
   void _clearResolvedCoverPaths() {
     _coverArtworkCacheService.invalidateAll();
-  }
-
-  void _invalidateResolvedCoverScope(String? scope) {
-    _coverArtworkCacheService.invalidateFolder(scope);
   }
 
   void _invalidateResolvedCoverScopes(Iterable<String?> scopes) {

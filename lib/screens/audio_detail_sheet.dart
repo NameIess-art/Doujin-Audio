@@ -665,7 +665,9 @@ class _FolderCoverSelectorState extends State<_FolderCoverSelector> {
   Future<void> _load() async {
     try {
       final provider = context.read<AudioProvider>();
-      final images = await provider.discoverImagesInFolder(widget.folderPath);
+      final images = await provider.discoverCoverCandidatesInFolder(
+        widget.folderPath,
+      );
       if (!mounted) return;
       if (images.isEmpty) {
         setState(() {

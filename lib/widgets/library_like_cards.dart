@@ -20,6 +20,18 @@ class LibraryLikeCardMetrics {
   static const double cardRadius = 14;
   static const double actionButtonSize = 40;
   static const EdgeInsets rootTilePadding = EdgeInsets.fromLTRB(12, 2, 12, 2);
+
+  static RoundedRectangleBorder cardShape(
+    ColorScheme colorScheme, {
+    required double borderAlpha,
+  }) {
+    return RoundedRectangleBorder(
+      side: BorderSide(
+        color: colorScheme.outlineVariant.withValues(alpha: borderAlpha),
+      ),
+      borderRadius: BorderRadius.circular(cardRadius),
+    );
+  }
 }
 
 class LibraryLikeInfoLineData {
@@ -77,9 +89,9 @@ List<LibraryLikeInfoLineData> buildLibraryLikeInfoLines({
           result.add(
             LibraryLikeInfoLineData(
               'CV',
-              _normalizeLibraryLikeList(metadata.voiceActors).join(
-                listSeparator,
-              ),
+              _normalizeLibraryLikeList(
+                metadata.voiceActors,
+              ).join(listSeparator),
             ),
           );
         }
@@ -112,7 +124,9 @@ List<LibraryLikeInfoLineData> buildLibraryLikeInfoLines({
       case CardInfoField.salesCount:
         final value = metadata.salesCount;
         if (value != null && value > 0) {
-          result.add(LibraryLikeInfoLineData(salesCountLabel, value.toString()));
+          result.add(
+            LibraryLikeInfoLineData(salesCountLabel, value.toString()),
+          );
         }
         break;
       case CardInfoField.rating:
@@ -149,8 +163,8 @@ List<String> _normalizeLibraryLikeList(Iterable<String> values) {
   return result;
 }
 
-class LibraryLikeFeaturedCardContent extends StatelessWidget {
-  const LibraryLikeFeaturedCardContent({
+class LibraryLikeWorkCardContent extends StatelessWidget {
+  const LibraryLikeWorkCardContent({
     super.key,
     required this.title,
     required this.lines,

@@ -59,6 +59,8 @@ class CoverArtworkCacheService {
       <String, Future<String?>>{};
   final Map<String, Future<String?>> _trackCoverFutures =
       <String, Future<String?>>{};
+  final Map<String, Future<String?>> _playbackTrackCoverFutures =
+      <String, Future<String?>>{};
   final Map<String, String?> _resolvedTrackCovers = <String, String?>{};
   final Map<String, Future<String?>> _resolvedTrackCoverFutures =
       <String, Future<String?>>{};
@@ -125,6 +127,37 @@ class CoverArtworkCacheService {
   }
 
   Future<String?> futureForPlaybackTrack(
+    MusicTrack? track, {
+    String? trackPath,
+  }) {
+    final coverSearchKey = coverSearchKeyForTrack(track, trackPath: trackPath);
+    if (coverSearchKey == null) return Future<String?>.value();
+
+    return _playbackTrackCoverFutures.putIfAbsent(coverSearchKey, () {
+      final future = _resolvePlaybackCoverPathForTrack(
+        track,
+        trackPath: trackPath,
+      );
+      unawaited(
+        future.then(
+          (coverPath) {
+            if (coverPath == null &&
+                identical(_playbackTrackCoverFutures[coverSearchKey], future)) {
+              _playbackTrackCoverFutures.remove(coverSearchKey);
+            }
+          },
+          onError: (Object _) {
+            if (identical(_playbackTrackCoverFutures[coverSearchKey], future)) {
+              _playbackTrackCoverFutures.remove(coverSearchKey);
+            }
+          },
+        ),
+      );
+      return future;
+    });
+  }
+
+  Future<String?> _resolvePlaybackCoverPathForTrack(
     MusicTrack? track, {
     String? trackPath,
   }) async {
@@ -310,6 +343,7 @@ class CoverArtworkCacheService {
     _folderCoverFutures.remove(normalizedScope);
     _resolvedFolderCovers.remove(normalizedScope);
     _resolvedFolderCoverFutures.remove(normalizedScope);
+    _playbackTrackCoverFutures.clear();
     _trackCoverFutures.remove(normalizedScope);
     _resolvedTrackCovers.remove(normalizedScope);
     _resolvedTrackCoverFutures.remove(normalizedScope);
@@ -333,6 +367,7 @@ class CoverArtworkCacheService {
     _generation++;
     _manualCoverPathValidityCache.clear();
     _manualCoverValidationFutures.clear();
+    _playbackTrackCoverFutures.clear();
     for (final scope in normalizedScopes) {
       _folderCoverFutures.remove(scope);
       _resolvedFolderCovers.remove(scope);
@@ -351,6 +386,7 @@ class CoverArtworkCacheService {
     _folderCoverFutures.clear();
     _resolvedFolderCovers.clear();
     _resolvedFolderCoverFutures.clear();
+    _playbackTrackCoverFutures.clear();
     _trackCoverFutures.clear();
     _resolvedTrackCovers.clear();
     _resolvedTrackCoverFutures.clear();

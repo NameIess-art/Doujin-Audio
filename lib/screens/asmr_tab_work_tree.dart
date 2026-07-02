@@ -82,11 +82,9 @@ class _AsmrWorkTreeCardState extends State<_AsmrWorkTreeCard> {
     final cs = Theme.of(context).colorScheme;
     final tokens = AppDesignTokens.of(context);
     final asmrBlue = tokens.asmrAccent;
-    final cardShape = RoundedRectangleBorder(
-      side: BorderSide(
-        color: cs.outlineVariant.withValues(alpha: tokens.standardBorderAlpha),
-      ),
-      borderRadius: BorderRadius.circular(LibraryLikeCardMetrics.cardRadius),
+    final cardShape = LibraryLikeCardMetrics.cardShape(
+      cs,
+      borderAlpha: tokens.standardBorderAlpha,
     );
 
     return SwipeRevealCard(
@@ -245,7 +243,7 @@ class _AsmrRootCardContent extends StatelessWidget {
   Widget build(BuildContext context) {
     final asmrBlue = AppDesignTokens.of(context).asmrAccent;
     final i18n = context.watch<AppLanguageProvider>();
-    return LibraryLikeFeaturedCardContent(
+    return LibraryLikeWorkCardContent(
       title: work.title,
       lines: _workInfoLines(context, work),
       coverBuilder: (coverWidth) =>

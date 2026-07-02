@@ -1436,7 +1436,7 @@ internal class FileCacheOperations(
 
         fun resolveTrackCover(
             trackPath: String,
-            groupKey: String?,
+            _groupKey: String?,
             rootFolder: String?
         ): String? {
             if (!trackPath.startsWith("content://")) {
@@ -1461,40 +1461,7 @@ internal class FileCacheOperations(
                 return null
             }
 
-            val rootTreeUri = when {
-                groupKey.isNullOrBlank() -> null
-                groupKey.contains("::") -> groupKey.substringBefore("::")
-                else -> groupKey
-            }?.takeIf { it.startsWith("content://") } ?: return null
-
-            val relativeDirectory = when {
-                groupKey.isNullOrBlank() -> ""
-                groupKey.contains("::") -> groupKey.substringAfter("::", "")
-                else -> ""
-            }
-
-            val treeRoot = DocumentFile.fromTreeUri(context, Uri.parse(rootTreeUri))
-                ?: DocumentFile.fromSingleUri(context, Uri.parse(rootTreeUri))
-            if (treeRoot != null && treeRoot.exists()) {
-                val candidateDirectories = resolveCandidateDocumentDirectories(
-                    treeRoot,
-                    relativeDirectory
-                )
-                candidateDirectories.forEach { directory ->
-                    val cover = findPreferredCoverInDocumentDirectory(directory) ?: return@forEach
-                    return cacheDocumentCover(cover, trackPath)
-                }
-                return null
-            }
-
-            // SAF access failed (e.g. after a File.renameTo) 鈥?fall back to File I/O.
-            val folderPath = if (relativeDirectory.isBlank()) {
-                contentUriToFilePath(rootTreeUri)
-            } else {
-                val base = contentUriToFilePath(rootTreeUri) ?: return null
-                java.io.File(base, relativeDirectory).absolutePath
-            } ?: return null
-            return findPreferredCoverViaFile(folderPath, trackPath)
+            return cacheEmbeddedCover(Uri.parse(trackPath), trackPath)
         }
 
         fun maxApplicationCacheBytes(): Long {
@@ -1570,12 +1537,26 @@ internal class FileCacheOperations(
         private fun cacheEmbeddedCover(trackPath: String, cacheKey: String): String? {
             val trackFile = java.io.File(trackPath)
             if (!trackFile.exists() || !trackFile.isFile) return null
+            return cacheEmbeddedCover(cacheKey) { retriever ->
+                retriever.setDataSource(trackPath)
+            }
+        }
 
+        private fun cacheEmbeddedCover(trackUri: Uri, cacheKey: String): String? {
+            return cacheEmbeddedCover(cacheKey) { retriever ->
+                retriever.setDataSource(context, trackUri)
+            }
+        }
+
+        private fun cacheEmbeddedCover(
+            cacheKey: String,
+            configureDataSource: (MediaMetadataRetriever) -> Unit
+        ): String? {
             val coverCacheDir = java.io.File(cacheDir, "nameless_audio_covers")
             if (!coverCacheDir.exists()) coverCacheDir.mkdirs()
             val outputFile = java.io.File(
                 coverCacheDir,
-                "cover_${kotlin.math.abs(cacheKey.hashCode())}.image"
+                "embedded_${kotlin.math.abs(cacheKey.hashCode())}.image"
             )
             if (outputFile.exists() && outputFile.length() > 0) {
                 touchCacheFile(outputFile)
@@ -1585,7 +1566,7 @@ internal class FileCacheOperations(
             var retriever: MediaMetadataRetriever? = null
             return try {
                 retriever = MediaMetadataRetriever()
-                retriever.setDataSource(trackPath)
+                configureDataSource(retriever)
                 val embeddedCover = retriever.embeddedPicture ?: return null
                 if (embeddedCover.isEmpty()) return null
                 outputFile.writeBytes(embeddedCover)
@@ -1593,9 +1574,7 @@ internal class FileCacheOperations(
                 enforceApplicationCacheLimit()
                 outputFile.absolutePath
             } catch (_: Exception) {
-                if (outputFile.exists()) {
-                    outputFile.delete()
-                }
+                if (outputFile.exists()) outputFile.delete()
                 null
             } finally {
                 try {

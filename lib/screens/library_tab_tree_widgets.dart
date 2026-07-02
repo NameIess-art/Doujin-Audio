@@ -135,11 +135,9 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final isRootFolder = widget.folder.depth == 0;
     final hasChildren = widget.folder.children.isNotEmpty;
-    final cardShape = RoundedRectangleBorder(
-      side: BorderSide(
-        color: cs.outlineVariant.withValues(alpha: isDark ? 0.26 : 0.42),
-      ),
-      borderRadius: BorderRadius.circular(LibraryLikeCardMetrics.cardRadius),
+    final cardShape = LibraryLikeCardMetrics.cardShape(
+      cs,
+      borderAlpha: isDark ? 0.26 : 0.42,
     );
     final rootDetail = isRootFolder
         ? categorySnapshot?.detailFor(
@@ -374,14 +372,16 @@ class _TrackNodeWidget extends ConsumerWidget {
     final isAlreadyPlaying = ref
         .watch(activeTrackPathsProvider)
         .contains(track.path);
-    final cardShape = RoundedRectangleBorder(
-      side: track.isSingle
-          ? BorderSide(
-              color: cs.outlineVariant.withValues(alpha: isDark ? 0.26 : 0.42),
-            )
-          : BorderSide.none,
-      borderRadius: BorderRadius.circular(14),
-    );
+    final cardShape = track.isSingle
+        ? LibraryLikeCardMetrics.cardShape(
+            cs,
+            borderAlpha: isDark ? 0.26 : 0.42,
+          )
+        : RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(
+              LibraryLikeCardMetrics.cardRadius,
+            ),
+          );
     final singleDetail = track.isSingle
         ? categorySnapshot?.detailFor(
             AudioDetailTarget.singleAudioFile(track.path),
@@ -800,7 +800,7 @@ class _LibraryFeaturedCardContent extends StatelessWidget {
     final fields = context.select<AudioProvider, List<CardInfoField>>(
       (provider) => provider.cardInfoFields,
     );
-    return LibraryLikeFeaturedCardContent(
+    return LibraryLikeWorkCardContent(
       title: title,
       lines: _audioDetailInfoLines(i18n, detail, detailLoading, fields),
       coverBuilder: coverBuilder,

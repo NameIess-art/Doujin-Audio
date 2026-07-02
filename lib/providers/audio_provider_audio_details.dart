@@ -283,7 +283,7 @@ extension AudioProviderAudioDetails on AudioProvider {
           rjCode: metadata.rjCode,
           language: _dlsiteMetadataLanguage,
         );
-        await _setFolderManualCover(nextDetail.target.targetPath, coverPath);
+        await setFolderManualCover(nextDetail.target.targetPath, coverPath);
       } catch (error) {
         coverError = error;
       }
@@ -427,6 +427,7 @@ extension AudioProviderAudioDetails on AudioProvider {
     String folderName,
   ) async {
     _rememberRetargetedPath(oldFolderPath, newFolderPath);
+    await _retargetFolderCoverSelection(oldFolderPath, newFolderPath);
     await _audioDatabaseRepository.retargetTimeSegmentLabelsWithinPath(
       oldRoot: oldFolderPath,
       newRoot: newFolderPath,
@@ -667,30 +668,6 @@ extension AudioProviderAudioDetails on AudioProvider {
       await _audioDatabaseRepository.upsertTracks([updatedTrack]);
       await _saveSessionState();
     }
-  }
-
-  Future<void> _setFolderManualCover(
-    String folderPath,
-    String coverPath,
-  ) async {
-    final rootFolder = getRootFolderPath(folderPath);
-    final targetPath = rootFolder.isNotEmpty ? rootFolder : folderPath;
-
-    final updatedTracks = <MusicTrack>[];
-    for (var i = 0; i < _library.length; i++) {
-      final track = _library[i];
-      if (!PathMatcher.isWithinOrEqual(track.path, targetPath)) continue;
-      final updatedTrack = _copyTrack(track, manualCoverPath: coverPath);
-      _library[i] = updatedTrack;
-      _libraryByPath[track.path] = updatedTrack;
-      updatedTracks.add(updatedTrack);
-    }
-    if (updatedTracks.isEmpty) return;
-    _invalidateResolvedCoverScopes([folderPath, targetPath]);
-    _markActiveSessionsDirty();
-    await _audioDatabaseRepository.upsertTracks(updatedTracks);
-    _syncNotificationState();
-    _notifyListeners();
   }
 
   void _retargetActiveSessions(String oldPath, String newPath) {

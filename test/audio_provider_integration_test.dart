@@ -1554,9 +1554,9 @@ void main() {
 
   // ── optimistic playback state dedup ───────────────────────────
 
-  group('file-system cover discovery', () {
+  group('folder image isolation', () {
     test(
-      'folder cover resolves recursively on Windows-style libraries',
+      'loose image files affect the folder but not the track cover',
       () async {
         final tempDir = await Directory.systemTemp.createTemp(
           'audio_provider_cover_',
@@ -1596,7 +1596,7 @@ void main() {
           await provider.coverPathFutureForFolder(workDir.path),
           coverPath,
         );
-        expect(await provider.coverPathFutureForTrack(track), coverPath);
+        expect(await provider.coverPathFutureForTrack(track), isNull);
       },
     );
   });
@@ -1676,10 +1676,9 @@ void main() {
       );
     });
 
-    test('content track cover resolves against its work folder scope', () async {
+    test('content track cover resolves only against the media file', () async {
       const libraryRoot =
           'content://com.android.externalstorage.documents/tree/primary%3AASMR';
-      const workScope = '$libraryRoot::WorkA';
       const groupKey = '$libraryRoot::WorkA/Disc1';
       const trackPath =
           'content://com.android.externalstorage.documents/tree/primary%3AASMR/document/primary%3AASMR%2FWorkA%2FDisc1%2F01.mp3';
@@ -1717,7 +1716,7 @@ void main() {
           final arguments = call.arguments as Map<Object?, Object?>;
           return arguments['path'] == trackPath &&
               arguments['groupKey'] == groupKey &&
-              arguments['rootFolder'] == workScope;
+              arguments['rootFolder'] == null;
         }),
         isTrue,
       );
@@ -1738,7 +1737,7 @@ void main() {
 
       expect(
         calls.any((call) {
-          if (call.method != FileCacheMethod.resolveTrackCover) {
+          if (call.method != FileCacheMethod.discoverRootImages) {
             return false;
           }
           final arguments = call.arguments as Map<Object?, Object?>;
@@ -1750,7 +1749,7 @@ void main() {
     });
 
     test(
-      'filesystem track cover scans recursively inside work folder only',
+      'filesystem track does not inherit an image from its work folder',
       () async {
         final workDir = await Directory.systemTemp.createTemp('cover_scope_');
         addTearDown(() async {
@@ -1790,57 +1789,15 @@ void main() {
           provider.trackByPath(trackPath),
         );
 
-        expect(resolved, coverFile.path);
+        expect(resolved, isNull);
+        expect(
+          await provider.coverPathFutureForFolder(workDir.path),
+          coverFile.path,
+        );
       },
     );
 
-    test(
-      'discoverImagesInRoot uses cache until cover generation changes',
-      () async {
-        final workDir = await Directory.systemTemp.createTemp('discover_root_');
-        addTearDown(() async {
-          if (await workDir.exists()) {
-            await workDir.delete(recursive: true);
-          }
-        });
-
-        final coverA = File(
-          '${workDir.path}${Platform.pathSeparator}cover_a.jpg',
-        );
-        await coverA.writeAsBytes(const <int>[1, 2, 3]);
-        final trackPath = '${workDir.path}${Platform.pathSeparator}01.mp3';
-        await File(trackPath).writeAsBytes(const <int>[4, 5, 6]);
-
-        provider.addWatchedFolder(workDir.path, notify: false);
-        provider.addTracks(
-          <MusicTrack>[
-            MusicTrack(
-              path: trackPath,
-              displayName: '01',
-              groupKey: workDir.path,
-              groupTitle: 'Work',
-              groupSubtitle: 'Work',
-              isSingle: false,
-            ),
-          ],
-          notify: false,
-          persist: false,
-        );
-
-        final first = await provider.discoverImagesInRoot(trackPath);
-        expect(first, contains(coverA.path));
-
-        await coverA.delete();
-        final second = await provider.discoverImagesInRoot(trackPath);
-        expect(second, contains(coverA.path));
-
-        await provider.setTrackManualCover(trackPath, null);
-        final third = await provider.discoverImagesInRoot(trackPath);
-        expect(third, isNot(contains(coverA.path)));
-      },
-    );
-
-    test('folder cover resolves from manual-cover scope cache', () async {
+    test('folder cover does not read a track manual-cover field', () async {
       final workDir = await Directory.systemTemp.createTemp('scope_cache_');
       addTearDown(() async {
         if (await workDir.exists()) {
@@ -1848,7 +1805,17 @@ void main() {
         }
       });
 
-      final cover = File('${workDir.path}${Platform.pathSeparator}manual.jpg');
+      final externalDir = await Directory.systemTemp.createTemp(
+        'scope_cache_external_',
+      );
+      addTearDown(() async {
+        if (await externalDir.exists()) {
+          await externalDir.delete(recursive: true);
+        }
+      });
+      final cover = File(
+        '${externalDir.path}${Platform.pathSeparator}manual.jpg',
+      );
       await cover.writeAsBytes(const <int>[1, 2, 3]);
       final trackPath = '${workDir.path}${Platform.pathSeparator}01.mp3';
       await File(trackPath).writeAsBytes(const <int>[4, 5, 6]);
@@ -1871,45 +1838,11 @@ void main() {
       );
 
       final resolved = await provider.coverPathFutureForFolder(workDir.path);
-      expect(resolved, cover.path);
+      expect(resolved, isNull);
     });
 
     test(
-      'discoverImagesInFolder scans the selected folder recursively',
-      () async {
-        final rootDir = await Directory.systemTemp.createTemp('folder_cover_');
-        addTearDown(() async {
-          if (await rootDir.exists()) {
-            await rootDir.delete(recursive: true);
-          }
-        });
-
-        final childDir = Directory(
-          '${rootDir.path}${Platform.pathSeparator}Disc1',
-        );
-        await childDir.create(recursive: true);
-        final coverA = File(
-          '${rootDir.path}${Platform.pathSeparator}cover_a.jpg',
-        );
-        final coverB = File(
-          '${childDir.path}${Platform.pathSeparator}cover_b.png',
-        );
-        final ignored = File(
-          '${rootDir.path}${Platform.pathSeparator}note.txt',
-        );
-        await coverA.writeAsBytes(const <int>[1, 2, 3]);
-        await coverB.writeAsBytes(const <int>[4, 5, 6]);
-        await ignored.writeAsString('ignore');
-
-        final images = await provider.discoverImagesInFolder(rootDir.path);
-
-        expect(images, hasLength(2));
-        expect(images, containsAll(<String>[coverA.path, coverB.path]));
-      },
-    );
-
-    test(
-      'setFolderManualCover updates all tracks under the folder scope',
+      'setFolderManualCover changes only the folder card selection',
       () async {
         final workDir = await Directory.systemTemp.createTemp('folder_manual_');
         addTearDown(() async {
@@ -1946,11 +1879,12 @@ void main() {
         await provider.setFolderManualCover(workDir.path, coverPath);
 
         final updatedTrack = provider.trackByPath(trackPath);
-        expect(updatedTrack?.manualCoverPath, coverPath);
+        expect(updatedTrack?.manualCoverPath, isNull);
         expect(
           await provider.coverPathFutureForFolder(workDir.path),
           coverPath,
         );
+        expect(await provider.coverPathFutureForTrack(updatedTrack), isNull);
       },
     );
   });
@@ -2163,6 +2097,10 @@ void main() {
         expect(provider.getRootFolderName(trackFile.path), 'New Folder');
         expect(
           provider.coverPathForTrack(resolvedTrack, trackPath: trackFile.path),
+          isNull,
+        );
+        expect(
+          await provider.coverPathFutureForFolder(newFolderPath),
           newCoverPath,
         );
       },
@@ -2293,6 +2231,10 @@ void main() {
             restoredTrack,
             trackPath: restoredSession.currentTrackPath,
           ),
+          isNull,
+        );
+        expect(
+          await restoredProvider.coverPathFutureForFolder(newFolder.path),
           newCoverPath,
         );
       },

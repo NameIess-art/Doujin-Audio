@@ -151,6 +151,9 @@ extension AudioProviderPersistence on AudioProvider {
     try {
       final db = _audioDatabaseRepository;
       final tracks = await db.loadAllTracks();
+      await AppCacheService.cleanupOrphanedPersistentImports(
+        tracks.map((track) => track.path),
+      );
       if (tracks.isNotEmpty) {
         _library.addAll(tracks);
         _rebuildLibraryIndexes();

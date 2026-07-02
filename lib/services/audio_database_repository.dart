@@ -86,6 +86,14 @@ class AudioDatabaseRepository {
     return _database.deleteAudioDetail(target);
   }
 
+  Future<String?> loadAppSetting(String key) {
+    return _database.loadAppSetting(key);
+  }
+
+  Future<void> saveAppSetting(String key, String? value) {
+    return _database.saveAppSetting(key, value);
+  }
+
   Future<List<TimeSegmentLabel>> loadTimeSegmentLabels(String trackKey) {
     return _database.loadTimeSegmentLabels(trackKey);
   }

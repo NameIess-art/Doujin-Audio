@@ -199,7 +199,7 @@ void main() {
       _buildApp(
         SizedBox(
           width: 260,
-          child: LibraryLikeFeaturedCardContent(
+          child: LibraryLikeWorkCardContent(
             title: title,
             lines: const [LibraryLikeInfoLineData('Info', info)],
             coverBuilder: (_) => const SizedBox(width: 120),
@@ -241,7 +241,7 @@ void main() {
       _buildApp(
         SizedBox(
           width: 260,
-          child: LibraryLikeFeaturedCardContent(
+          child: LibraryLikeWorkCardContent(
             title: title,
             lines: const [LibraryLikeInfoLineData('Info', info)],
             coverBuilder: (_) => const SizedBox(width: 120),
@@ -362,5 +362,4 @@ void main() {
     await tester.pump(const Duration(milliseconds: 180));
     expect(coordinator.isInteracting, isFalse);
   });
-
 }

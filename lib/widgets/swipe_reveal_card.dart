@@ -319,22 +319,30 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
     final cs = Theme.of(context).colorScheme;
     final revealProgress = (_revealedWidth / _actionWidth).clamp(0.0, 1.0);
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final baseColor = widget.color ?? (widget.destructive ? cs.errorContainer : cs.primaryContainer);
-    final isBgDark = ThemeData.estimateBrightnessForColor(baseColor) == Brightness.dark;
+    final baseColor =
+        widget.color ??
+        (widget.destructive ? cs.errorContainer : cs.primaryContainer);
+    final isBgDark =
+        ThemeData.estimateBrightnessForColor(baseColor) == Brightness.dark;
     final onColor = isBgDark ? Colors.white : Colors.black;
 
-    final paneStartColor = Color.lerp(baseColor, onColor, isDark ? 0.08 : 0.04)!;
+    final paneStartColor = Color.lerp(
+      baseColor,
+      onColor,
+      isDark ? 0.08 : 0.04,
+    )!;
     final paneEndColor = baseColor;
-    
+
     final accentColor = onColor;
-    final accentOnColor = baseColor;
     final accentContainerOnColor = onColor;
-    
+
     final tertiaryBg = onColor.withValues(alpha: 0.18);
     final tertiaryFg = onColor;
     final secondaryBg = onColor.withValues(alpha: 0.18);
     final secondaryFg = onColor;
-    final primaryBg = widget.destructive ? onColor : onColor.withValues(alpha: 0.3);
+    final primaryBg = widget.destructive
+        ? onColor
+        : onColor.withValues(alpha: 0.3);
     final primaryFg = widget.destructive ? baseColor : onColor;
     final showVerticalActions = widget.verticalActions && _actionCount > 1;
     final actionLabel = _hasTertiaryAction
@@ -572,8 +580,10 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                                                             .onSecondaryAction,
                                                       );
                                                     },
-                                                    backgroundColor: secondaryBg,
-                                                    foregroundColor: secondaryFg,
+                                                    backgroundColor:
+                                                        secondaryBg,
+                                                    foregroundColor:
+                                                        secondaryFg,
                                                     tooltip:
                                                         widget
                                                             .secondaryActionTooltip ??
@@ -615,79 +625,92 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                                           },
                                         ),
                                       )
-                                    : Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          if (_hasTertiaryAction) ...[
-                                            _SwipeRevealActionButton(
-                                              onPressed: () {
-                                                AppInteractionFeedback.trigger(
-                                                  AppInteractionFeedbackType
-                                                      .selection,
-                                                );
-                                                _runActionAfterPaneClose(
-                                                  widget.onTertiaryAction,
-                                                );
-                                              },
-                                              backgroundColor:
-                                                  cs.secondaryContainer,
-                                              foregroundColor:
-                                                  cs.onSecondaryContainer,
-                                              tooltip:
-                                                  widget
-                                                      .tertiaryActionTooltip ??
-                                                  widget.tertiaryActionLabel,
-                                              icon: widget.tertiaryActionIcon,
-                                              tonal: true,
-                                            ),
-                                            const SizedBox(width: 8),
-                                          ],
-                                          if (_hasSecondaryAction) ...[
-                                            _SwipeRevealActionButton(
-                                              onPressed: () {
-                                                AppInteractionFeedback.trigger(
-                                                  AppInteractionFeedbackType
-                                                      .selection,
-                                                );
-                                                _runActionAfterPaneClose(
-                                                  widget.onSecondaryAction,
-                                                );
-                                              },
-                                              backgroundColor:
-                                                  cs.primaryContainer,
-                                              foregroundColor:
-                                                  cs.onPrimaryContainer,
-                                              tooltip:
-                                                  widget
-                                                      .secondaryActionTooltip ??
-                                                  widget.secondaryActionLabel,
-                                              icon: widget.secondaryActionIcon,
-                                              tonal: true,
-                                            ),
-                                            const SizedBox(width: 8),
-                                          ],
-                                          _SwipeRevealActionButton(
-                                            onPressed: () {
-                                              AppInteractionFeedback.trigger(
-                                                widget.destructive
-                                                    ? AppInteractionFeedbackType
-                                                          .destructive
-                                                    : AppInteractionFeedbackType
-                                                          .confirmation,
-                                              );
-                                              _runActionAfterPaneClose(
-                                                widget.onRemove,
-                                              );
-                                            },
-                                            backgroundColor: accentColor,
-                                            foregroundColor: accentOnColor,
-                                            tooltip:
-                                                widget.primaryActionTooltip ??
-                                                widget.removeTooltip,
-                                            icon: widget.primaryActionIcon,
-                                            tonal: !widget.destructive,
-                                          ),
-                                        ],
+                                    : LayoutBuilder(
+                                        builder: (context, constraints) {
+                                          final buttonSize =
+                                              constraints.maxHeight.isFinite
+                                              ? (constraints.maxHeight - 20)
+                                                    .clamp(34.0, 54.0)
+                                              : 54.0;
+                                          return Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              if (_hasTertiaryAction) ...[
+                                                _SwipeRevealActionButton(
+                                                  onPressed: () {
+                                                    AppInteractionFeedback.trigger(
+                                                      AppInteractionFeedbackType
+                                                          .selection,
+                                                    );
+                                                    _runActionAfterPaneClose(
+                                                      widget.onTertiaryAction,
+                                                    );
+                                                  },
+                                                  backgroundColor: tertiaryBg,
+                                                  foregroundColor: tertiaryFg,
+                                                  tooltip:
+                                                      widget
+                                                          .tertiaryActionTooltip ??
+                                                      widget
+                                                          .tertiaryActionLabel,
+                                                  icon:
+                                                      widget.tertiaryActionIcon,
+                                                  tonal: true,
+                                                  size: buttonSize,
+                                                ),
+                                                const SizedBox(width: 8),
+                                              ],
+                                              if (_hasSecondaryAction) ...[
+                                                _SwipeRevealActionButton(
+                                                  onPressed: () {
+                                                    AppInteractionFeedback.trigger(
+                                                      AppInteractionFeedbackType
+                                                          .selection,
+                                                    );
+                                                    _runActionAfterPaneClose(
+                                                      widget.onSecondaryAction,
+                                                    );
+                                                  },
+                                                  backgroundColor: secondaryBg,
+                                                  foregroundColor: secondaryFg,
+                                                  tooltip:
+                                                      widget
+                                                          .secondaryActionTooltip ??
+                                                      widget
+                                                          .secondaryActionLabel,
+                                                  icon: widget
+                                                      .secondaryActionIcon,
+                                                  tonal: true,
+                                                  size: buttonSize,
+                                                ),
+                                                const SizedBox(width: 8),
+                                              ],
+                                              _SwipeRevealActionButton(
+                                                onPressed: () {
+                                                  AppInteractionFeedback.trigger(
+                                                    widget.destructive
+                                                        ? AppInteractionFeedbackType
+                                                              .destructive
+                                                        : AppInteractionFeedbackType
+                                                              .confirmation,
+                                                  );
+                                                  _runActionAfterPaneClose(
+                                                    widget.onRemove,
+                                                  );
+                                                },
+                                                backgroundColor: primaryBg,
+                                                foregroundColor: primaryFg,
+                                                tooltip:
+                                                    widget
+                                                        .primaryActionTooltip ??
+                                                    widget.removeTooltip,
+                                                icon: widget.primaryActionIcon,
+                                                tonal: !widget.destructive,
+                                                size: buttonSize,
+                                              ),
+                                            ],
+                                          );
+                                        },
                                       ),
                               ),
                             ),

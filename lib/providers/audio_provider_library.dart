@@ -252,12 +252,13 @@ extension AudioProviderLibrary on AudioProvider {
             PathMatcher.isWithinOrEqual(track.path, normalizedFolderPath) ||
             PathMatcher.isWithinOrEqual(track.groupKey, normalizedFolderPath),
       );
+      _notifyLibraryAndPlaybackChanged();
     } else {
       unawaited(
         _restoreExcludedFolder(normalizedLibraryPath, normalizedFolderPath),
       );
+      _notifyLibraryChanged();
     }
-    _notifyLibraryChanged();
   }
 
   void setLibraryTrackExcluded(
@@ -291,10 +292,11 @@ extension AudioProviderLibrary on AudioProvider {
         (track) =>
             PathMatcher.equalsNormalized(track.path, normalizedTrackPath),
       );
+      _notifyLibraryAndPlaybackChanged();
     } else {
       unawaited(_restoreExcludedTrack(libraryPath, normalizedTrackPath));
+      _notifyLibraryChanged();
     }
-    _notifyLibraryChanged();
   }
 
   Future<void> _restoreExcludedTrack(

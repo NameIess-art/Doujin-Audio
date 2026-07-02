@@ -333,6 +333,82 @@ class LibraryLikeWorkCardContent extends StatelessWidget {
   }
 }
 
+class LibraryLikeMetadataWorkCardContent extends StatelessWidget {
+  const LibraryLikeMetadataWorkCardContent({
+    super.key,
+    required this.title,
+    required this.fields,
+    required this.metadata,
+    required this.circleLabel,
+    required this.tagsLabel,
+    required this.releaseDateLabel,
+    required this.salesCountLabel,
+    required this.ratingLabel,
+    required this.coverBuilder,
+    required this.onPlay,
+    required this.playTooltip,
+    this.listSeparator = '\uFF0C',
+    this.loading = false,
+    this.expanded = false,
+    this.showExpandIndicator = false,
+    this.accentColor,
+    this.enableMarquee = true,
+    this.enableTitleMarquee = true,
+    this.playLoading = false,
+    this.extraTrailing,
+  });
+
+  final String title;
+  final Iterable<CardInfoField> fields;
+  final LibraryLikeInfoMetadata metadata;
+  final String circleLabel;
+  final String tagsLabel;
+  final String releaseDateLabel;
+  final String salesCountLabel;
+  final String ratingLabel;
+  final String listSeparator;
+  final bool loading;
+  final Widget Function(double coverWidth) coverBuilder;
+  final VoidCallback onPlay;
+  final bool expanded;
+  final bool showExpandIndicator;
+  final String playTooltip;
+  final Color? accentColor;
+  final bool enableMarquee;
+  final bool enableTitleMarquee;
+  final bool playLoading;
+  final Widget? extraTrailing;
+
+  @override
+  Widget build(BuildContext context) {
+    return LibraryLikeWorkCardContent(
+      title: title,
+      lines: loading
+          ? const <LibraryLikeInfoLineData>[]
+          : buildLibraryLikeInfoLines(
+              fields: fields,
+              metadata: metadata,
+              circleLabel: circleLabel,
+              tagsLabel: tagsLabel,
+              releaseDateLabel: releaseDateLabel,
+              salesCountLabel: salesCountLabel,
+              ratingLabel: ratingLabel,
+              listSeparator: listSeparator,
+            ),
+      coverBuilder: coverBuilder,
+      onPlay: onPlay,
+      expanded: expanded,
+      showExpandIndicator: showExpandIndicator,
+      playTooltip: playTooltip,
+      accentColor: accentColor,
+      enableMarquee: enableMarquee,
+      enableTitleMarquee: enableTitleMarquee,
+      playLoading: playLoading,
+      extraTrailing: extraTrailing,
+    );
+  }
+}
+
 class LibraryLikeSingleAudioCardContent extends StatelessWidget {
   const LibraryLikeSingleAudioCardContent({
     super.key,

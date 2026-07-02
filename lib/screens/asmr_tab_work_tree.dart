@@ -174,12 +174,33 @@ class _AsmrWorkTreeCardState extends State<_AsmrWorkTreeCard> {
                         )
                         .isBusy ??
                     false;
-                return _AsmrRootCardContent(
-                  work: widget.work,
-                  expanded: _expanded,
-                  hasChildren:
-                      (visibleTree?.isNotEmpty ?? false) || isTreeLoading,
+                final i18n = context.watch<AppLanguageProvider>();
+                final fields = context
+                    .select<AudioProvider, List<CardInfoField>>(
+                      (provider) => provider.cardInfoFields,
+                    );
+                return LibraryLikeMetadataWorkCardContent(
+                  title: widget.work.title,
+                  fields: fields,
+                  metadata: _workMetadata(widget.work),
+                  circleLabel: i18n.tr('asmr_circle_label'),
+                  tagsLabel: i18n.tr('asmr_tags_label'),
+                  releaseDateLabel: i18n.tr('card_info_release_date'),
+                  salesCountLabel: i18n.tr('card_info_sales_count'),
+                  ratingLabel: i18n.tr('card_info_rating'),
+                  listSeparator: '\u3001',
+                  coverBuilder: (coverWidth) => _AsmrWorkCover(
+                    url: _asmrWorkListCoverUrl(widget.work),
+                    width: coverWidth,
+                  ),
                   onPlay: () => unawaited(_playWork(context)),
+                  expanded: _expanded,
+                  showExpandIndicator:
+                      (visibleTree?.isNotEmpty ?? false) || isTreeLoading,
+                  playTooltip: i18n.tr('asmr_add_to_playlist'),
+                  accentColor: asmrBlue,
+                  enableMarquee: false,
+                  enableTitleMarquee: false,
                   playLoading: playBusy,
                 );
               },
@@ -220,42 +241,6 @@ class _AsmrWorkTreeCardState extends State<_AsmrWorkTreeCard> {
           ),
         ),
       ),
-    );
-  }
-}
-
-class _AsmrRootCardContent extends StatelessWidget {
-  const _AsmrRootCardContent({
-    required this.work,
-    required this.expanded,
-    required this.hasChildren,
-    required this.onPlay,
-    required this.playLoading,
-  });
-
-  final AsmrWork work;
-  final bool expanded;
-  final bool hasChildren;
-  final VoidCallback onPlay;
-  final bool playLoading;
-
-  @override
-  Widget build(BuildContext context) {
-    final asmrBlue = AppDesignTokens.of(context).asmrAccent;
-    final i18n = context.watch<AppLanguageProvider>();
-    return LibraryLikeWorkCardContent(
-      title: work.title,
-      lines: _workInfoLines(context, work),
-      coverBuilder: (coverWidth) =>
-          _AsmrWorkCover(url: _asmrWorkListCoverUrl(work), width: coverWidth),
-      onPlay: onPlay,
-      expanded: expanded,
-      showExpandIndicator: true,
-      playTooltip: i18n.tr('asmr_add_to_playlist'),
-      accentColor: asmrBlue,
-      enableMarquee: false,
-      enableTitleMarquee: false,
-      playLoading: playLoading,
     );
   }
 }
@@ -573,31 +558,15 @@ UiOperationScope _trackPlayScope(AsmrWork work, AsmrTrackFile node) {
   return UiOperationScope('asmr:play:${work.id}:${node.relativePath}');
 }
 
-List<LibraryLikeInfoLineData> _workInfoLines(
-  BuildContext context,
-  AsmrWork work,
-) {
-  final i18n = context.read<AppLanguageProvider>();
-  final fields = context.select<AudioProvider, List<CardInfoField>>(
-    (provider) => provider.cardInfoFields,
-  );
-  return buildLibraryLikeInfoLines(
-    fields: fields,
-    metadata: LibraryLikeInfoMetadata(
-      rjCode: work.rjCode,
-      voiceActors: work.voiceActors,
-      circleName: work.circleName,
-      tags: work.tags,
-      releaseDate: work.releaseDate,
-      salesCount: work.dlCount,
-      rating: work.rating,
-    ),
-    circleLabel: i18n.tr('asmr_circle_label'),
-    tagsLabel: i18n.tr('asmr_tags_label'),
-    releaseDateLabel: i18n.tr('card_info_release_date'),
-    salesCountLabel: i18n.tr('card_info_sales_count'),
-    ratingLabel: i18n.tr('card_info_rating'),
-    listSeparator: '、',
+LibraryLikeInfoMetadata _workMetadata(AsmrWork work) {
+  return LibraryLikeInfoMetadata(
+    rjCode: work.rjCode,
+    voiceActors: work.voiceActors,
+    circleName: work.circleName,
+    tags: work.tags,
+    releaseDate: work.releaseDate,
+    salesCount: work.dlCount,
+    rating: work.rating,
   );
 }
 

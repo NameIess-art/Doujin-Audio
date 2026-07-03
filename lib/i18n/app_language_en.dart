@@ -367,7 +367,8 @@ const Map<String, String> appLanguageEn = {
   'theme_light': 'Light',
   'theme_dark': 'Dark',
   'differentiate_asmr_theme': 'Distinct ASMR.ONE theme',
-  'differentiate_asmr_theme_subtitle': 'Use a distinct theme color for ASMR.ONE pages when enabled',
+  'differentiate_asmr_theme_subtitle':
+      'Use a distinct theme color for ASMR.ONE pages when enabled',
   'bottom_navigation_style': 'Floating menu bar',
   'bottom_navigation_style_subtitle': 'Use capsule appearance.',
   'blur_player_background': 'Blur Player Background',
@@ -502,6 +503,12 @@ const Map<String, String> appLanguageEn = {
   'download_update': 'Download update',
   'downloading_update': 'Downloading update: {percent}%',
   'no_updates_available': 'You are already on the latest version.',
+  'update_no_compatible_release':
+      'No compatible version is available on the 1.x channel.',
+  'update_missing_asset':
+      'The latest version is missing an installer for this platform.',
+  'update_missing_checksum':
+      'The latest version is missing its SHA-256 checksum file.',
   'update_check_failed': 'Update check failed. Please try again later.',
   'update_check_failed_next_step':
       'Check your network connection or GitHub access, then retry.',
@@ -543,7 +550,8 @@ const Map<String, String> appLanguageEn = {
   'startup_page_library': 'Library',
   'startup_page_playlist': 'Playlist',
   'haptic_feedback_enabled': 'Haptic feedback',
-  'haptic_feedback_enabled_subtitle': 'Provide haptic feedback for interactions.',
+  'haptic_feedback_enabled_subtitle':
+      'Provide haptic feedback for interactions.',
   'dlsite_metadata_language': 'DLsite metadata language',
   'dlsite_metadata_language_subtitle': 'Language for fetching DLsite metadata.',
   'timer_title': 'Timer',

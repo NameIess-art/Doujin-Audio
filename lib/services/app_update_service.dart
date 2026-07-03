@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
+import 'package:pub_semver/pub_semver.dart' as semver;
 
 import 'app_cache_service.dart';
 import 'app_log_service.dart';
@@ -20,6 +21,38 @@ class AppVersionInfo {
   final int buildNumber;
 }
 
+enum AppUpdateStatus {
+  updateAvailable,
+  upToDate,
+  noCompatibleRelease,
+  missingAsset,
+  missingChecksum,
+}
+
+class ReleaseChannelConfig {
+  const ReleaseChannelConfig({
+    required this.major,
+    required this.tagPrefix,
+    required this.androidAssetPrefix,
+    required this.windowsAssetPrefix,
+  });
+
+  final int major;
+  final String tagPrefix;
+  final String androidAssetPrefix;
+  final String windowsAssetPrefix;
+
+  String get platformAssetPrefix =>
+      Platform.isWindows ? windowsAssetPrefix : androidAssetPrefix;
+
+  static const ReleaseChannelConfig v1 = ReleaseChannelConfig(
+    major: 1,
+    tagPrefix: 'v1.',
+    androidAssetPrefix: 'NamelessAudio-v1-android-arm64-',
+    windowsAssetPrefix: 'NamelessAudio-v1-windows-x64-',
+  );
+}
+
 class AppUpdateInfo {
   const AppUpdateInfo({
     required this.currentVersion,
@@ -30,6 +63,7 @@ class AppUpdateInfo {
     required this.checksumAssetUrl,
     required this.releaseUrl,
     required this.isUpdateAvailable,
+    this.status = AppUpdateStatus.updateAvailable,
     this.releaseName,
     this.publishedAt,
   });
@@ -38,12 +72,22 @@ class AppUpdateInfo {
   final String latestVersionName;
   final String tagName;
   final String? releaseName;
-  final String assetName;
-  final String assetUrl;
+  final String? assetName;
+  final String? assetUrl;
   final String? checksumAssetUrl;
   final String releaseUrl;
   final DateTime? publishedAt;
   final bool isUpdateAvailable;
+  final AppUpdateStatus status;
+
+  bool get canDownload =>
+      isUpdateAvailable &&
+      assetName != null &&
+      assetName!.isNotEmpty &&
+      assetUrl != null &&
+      assetUrl!.isNotEmpty &&
+      checksumAssetUrl != null &&
+      checksumAssetUrl!.isNotEmpty;
 }
 
 class UpdateInstallResult {
@@ -63,8 +107,9 @@ class AppUpdateService {
 
   static const String owner = 'NameIess-art';
   static const String repo = 'nameless-audio';
-  static const String latestReleaseApi =
-      'https://api.github.com/repos/$owner/$repo/releases/latest';
+  static const ReleaseChannelConfig releaseChannel = ReleaseChannelConfig.v1;
+  static const String releasesApi =
+      'https://api.github.com/repos/$owner/$repo/releases?per_page=30';
   static const String latestReleasePage =
       'https://github.com/$owner/$repo/releases/latest';
   static const String releasesPage = 'https://github.com/$owner/$repo/releases';
@@ -93,7 +138,7 @@ class AppUpdateService {
     HttpClient client,
     AppVersionInfo currentVersion,
   ) async {
-    final request = await client.getUrl(Uri.parse(latestReleaseApi));
+    final request = await client.getUrl(Uri.parse(releasesApi));
     request.headers.set(
       HttpHeaders.acceptHeader,
       'application/vnd.github+json',
@@ -104,18 +149,29 @@ class AppUpdateService {
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw const HttpException('GitHub release request failed.');
     }
-    final data = jsonDecode(body) as Map<String, dynamic>;
-    final assets = (data['assets'] as List<dynamic>? ?? const [])
+    final releases = (jsonDecode(body) as List<dynamic>)
+        .whereType<Map<String, dynamic>>()
+        .toList(growable: false);
+    final compatibleRelease = _selectCompatibleRelease(
+      releases,
+      currentVersion,
+    );
+    if (compatibleRelease == null) {
+      return _noCompatibleRelease(currentVersion);
+    }
+    final assets = (compatibleRelease['assets'] as List<dynamic>? ?? const [])
         .whereType<Map<String, dynamic>>()
         .toList(growable: false);
     return _buildUpdateInfo(
       currentVersion: currentVersion,
-      tagName: (data['tag_name'] as String? ?? '').trim(),
-      releaseName: data['name'] as String?,
+      tagName: (compatibleRelease['tag_name'] as String? ?? '').trim(),
+      releaseName: compatibleRelease['name'] as String?,
       releaseUrl:
-          data['html_url'] as String? ??
-          'https://github.com/$owner/$repo/releases/latest',
-      publishedAt: DateTime.tryParse(data['published_at'] as String? ?? ''),
+          compatibleRelease['html_url'] as String? ??
+          'https://github.com/$owner/$repo/releases',
+      publishedAt: DateTime.tryParse(
+        compatibleRelease['published_at'] as String? ?? '',
+      ),
       assets: assets,
     );
   }
@@ -125,6 +181,9 @@ class AppUpdateService {
     AppVersionInfo currentVersion,
   ) async {
     final tagName = await _resolveLatestReleaseTag(client);
+    if (!_isCompatibleTag(tagName, currentVersion)) {
+      return _noCompatibleRelease(currentVersion);
+    }
     final assets = await _fetchExpandedReleaseAssets(client, tagName);
     return _buildUpdateInfo(
       currentVersion: currentVersion,
@@ -133,6 +192,92 @@ class AppUpdateService {
       releaseUrl: 'https://github.com/$owner/$repo/releases/tag/$tagName',
       assets: assets,
     );
+  }
+
+  static AppUpdateInfo _noCompatibleRelease(AppVersionInfo currentVersion) {
+    return AppUpdateInfo(
+      currentVersion: currentVersion,
+      latestVersionName: currentVersion.versionName,
+      tagName: '',
+      assetName: null,
+      assetUrl: null,
+      checksumAssetUrl: null,
+      releaseUrl: releasesPage,
+      isUpdateAvailable: false,
+      status: AppUpdateStatus.noCompatibleRelease,
+    );
+  }
+
+  static Map<String, dynamic>? _selectCompatibleRelease(
+    List<Map<String, dynamic>> releases,
+    AppVersionInfo currentVersion,
+  ) {
+    final candidates = releases
+        .where((release) {
+          if (release['draft'] == true) return false;
+          final tagName = (release['tag_name'] as String? ?? '').trim();
+          if (!_isCompatibleTag(tagName, currentVersion)) return false;
+          final version = _parseVersionFromTag(tagName);
+          if (version == null) return false;
+          final current = _parseVersion(currentVersion.versionName);
+          final currentIsPrerelease = current?.isPreRelease == true;
+          if (!currentIsPrerelease && version.isPreRelease) return false;
+          if (!currentIsPrerelease && release['prerelease'] == true) {
+            return false;
+          }
+          return true;
+        })
+        .toList(growable: false);
+    if (candidates.isEmpty) return null;
+    candidates.sort((left, right) {
+      final leftVersion = _parseVersionFromTag(left['tag_name'] as String?);
+      final rightVersion = _parseVersionFromTag(right['tag_name'] as String?);
+      if (leftVersion == null && rightVersion == null) return 0;
+      if (leftVersion == null) return 1;
+      if (rightVersion == null) return -1;
+      return rightVersion.compareTo(leftVersion);
+    });
+    return candidates.first;
+  }
+
+  @visibleForTesting
+  static Map<String, dynamic>? selectCompatibleReleaseForTesting(
+    List<Map<String, dynamic>> releases,
+    AppVersionInfo currentVersion,
+  ) {
+    return _selectCompatibleRelease(releases, currentVersion);
+  }
+
+  @visibleForTesting
+  static AppUpdateInfo buildUpdateInfoForTesting({
+    required AppVersionInfo currentVersion,
+    required String tagName,
+    required String releaseUrl,
+    required List<Map<String, dynamic>> assets,
+    String? releaseName,
+    DateTime? publishedAt,
+  }) {
+    return _buildUpdateInfo(
+      currentVersion: currentVersion,
+      tagName: tagName,
+      releaseUrl: releaseUrl,
+      assets: assets,
+      releaseName: releaseName,
+      publishedAt: publishedAt,
+    );
+  }
+
+  static bool _isCompatibleTag(String tagName, AppVersionInfo currentVersion) {
+    final version = _parseVersionFromTag(tagName);
+    if (version == null || version.major != releaseChannel.major) {
+      return false;
+    }
+    if (!tagName.trim().startsWith(releaseChannel.tagPrefix)) {
+      return false;
+    }
+    final current = _parseVersion(currentVersion.versionName);
+    final currentIsPrerelease = current?.isPreRelease == true;
+    return currentIsPrerelease || !version.isPreRelease;
   }
 
   static Future<String> _resolveLatestReleaseTag(HttpClient client) async {
@@ -185,13 +330,35 @@ class AppUpdateService {
     final latestVersionName = _versionNameFromTag(tagName);
     final updateAsset = _selectUpdateAsset(assets);
     if (updateAsset == null) {
-      throw const FormatException(
-        'No update asset was found in the latest release.',
+      return AppUpdateInfo(
+        currentVersion: currentVersion,
+        latestVersionName: latestVersionName,
+        tagName: tagName,
+        releaseName: releaseName,
+        assetName: null,
+        assetUrl: null,
+        checksumAssetUrl: null,
+        releaseUrl: releaseUrl,
+        publishedAt: publishedAt,
+        isUpdateAvailable: false,
+        status: AppUpdateStatus.missingAsset,
       );
     }
     final assetUrl = updateAsset['browser_download_url'] as String? ?? '';
     if (assetUrl.isEmpty) {
-      throw const FormatException('Update asset does not have a download URL.');
+      return AppUpdateInfo(
+        currentVersion: currentVersion,
+        latestVersionName: latestVersionName,
+        tagName: tagName,
+        releaseName: releaseName,
+        assetName: null,
+        assetUrl: null,
+        checksumAssetUrl: null,
+        releaseUrl: releaseUrl,
+        publishedAt: publishedAt,
+        isUpdateAvailable: false,
+        status: AppUpdateStatus.missingAsset,
+      );
     }
     final assetName =
         updateAsset['name'] as String? ??
@@ -200,6 +367,15 @@ class AppUpdateService {
       (asset) => asset?['name'] == '$assetName.sha256',
       orElse: () => null,
     );
+    final newer = _isNewerVersion(
+      latestVersionName,
+      currentVersion.versionName,
+    );
+    final status = !newer
+        ? AppUpdateStatus.upToDate
+        : checksumAsset == null
+        ? AppUpdateStatus.missingChecksum
+        : AppUpdateStatus.updateAvailable;
     return AppUpdateInfo(
       currentVersion: currentVersion,
       latestVersionName: latestVersionName,
@@ -210,10 +386,8 @@ class AppUpdateService {
       checksumAssetUrl: checksumAsset?['browser_download_url'] as String?,
       releaseUrl: releaseUrl,
       publishedAt: publishedAt,
-      isUpdateAvailable: _isNewerVersion(
-        latestVersionName,
-        currentVersion.versionName,
-      ),
+      isUpdateAvailable: status == AppUpdateStatus.updateAvailable,
+      status: status,
     );
   }
 
@@ -240,11 +414,16 @@ class AppUpdateService {
     required void Function(double? progress) onProgress,
   }) async {
     final tempDir = await getTemporaryDirectory();
+    final assetName = info.assetName;
+    final assetUrl = info.assetUrl;
+    if (assetName == null || assetUrl == null || !info.canDownload) {
+      throw const FormatException('No downloadable update is available.');
+    }
     final updateDir = Directory(path.join(tempDir.path, 'updates'));
     if (!await updateDir.exists()) {
       await updateDir.create(recursive: true);
     }
-    final file = File(path.join(updateDir.path, _safeFileName(info.assetName)));
+    final file = File(path.join(updateDir.path, _safeFileName(assetName)));
     final partialFile = File('${file.path}.part');
     if (await file.exists()) {
       await file.delete();
@@ -264,9 +443,9 @@ class AppUpdateService {
       final expectedChecksum = await _downloadExpectedChecksum(
         client,
         checksumUrl,
-        info.assetName,
+        assetName,
       );
-      final request = await client.getUrl(Uri.parse(info.assetUrl));
+      final request = await client.getUrl(Uri.parse(assetUrl));
       request.headers.set(
         HttpHeaders.userAgentHeader,
         'Nameless Audio updater',
@@ -452,8 +631,9 @@ class AppUpdateService {
   ) {
     final apkAssets = assets
         .where((asset) {
-          final name = (asset['name'] as String? ?? '').toLowerCase();
-          return name.endsWith('.apk');
+          final name = asset['name'] as String? ?? '';
+          return name.startsWith(releaseChannel.androidAssetPrefix) &&
+              name.toLowerCase().endsWith('.apk');
         })
         .toList(growable: false);
     if (apkAssets.isEmpty) return null;
@@ -475,8 +655,9 @@ class AppUpdateService {
   ) {
     final zipAssets = assets
         .where((asset) {
-          final name = (asset['name'] as String? ?? '').toLowerCase();
-          return name.endsWith('.zip');
+          final name = asset['name'] as String? ?? '';
+          return name.startsWith(releaseChannel.windowsAssetPrefix) &&
+              name.toLowerCase().endsWith('.zip');
         })
         .toList(growable: false);
     if (zipAssets.isEmpty) return null;
@@ -640,34 +821,23 @@ class AppUpdateService {
   }
 
   static bool _isNewerVersion(String latest, String current) {
-    final latestParts = _versionParts(latest);
-    final currentParts = _versionParts(current);
-    final length = latestParts.length > currentParts.length
-        ? latestParts.length
-        : currentParts.length;
-    for (var i = 0; i < length; i++) {
-      final left = i < latestParts.length ? latestParts[i] : 0;
-      final right = i < currentParts.length ? currentParts[i] : 0;
-      if (left != right) return left > right;
-    }
-    return false;
+    final latestVersion = _parseVersion(latest);
+    final currentVersion = _parseVersion(current);
+    if (latestVersion == null || currentVersion == null) return false;
+    return latestVersion.compareTo(currentVersion) > 0;
   }
 
-  static List<int> _versionParts(String value) {
-    final base = value.split('+').first;
-    final parts = base
-        .split(RegExp(r'[^0-9]+'))
-        .where((part) => part.isNotEmpty)
-        .map((part) => int.tryParse(part) ?? 0)
-        .toList(growable: false);
-    if (parts.length == 3 &&
-        parts[0] == 0 &&
-        parts[1] == 9 &&
-        parts[2] >= 70 &&
-        parts[2] < 80) {
-      return [0, 9, 7, parts[2] - 70];
+  static semver.Version? _parseVersionFromTag(String? tagName) {
+    if (tagName == null) return null;
+    return _parseVersion(_versionNameFromTag(tagName));
+  }
+
+  static semver.Version? _parseVersion(String value) {
+    try {
+      return semver.Version.parse(value.split('+').first.trim());
+    } catch (_) {
+      return null;
     }
-    return parts;
   }
 
   static String _safeFileName(String value) {

@@ -125,6 +125,7 @@ class _SessionVolumeButtonState extends State<_SessionVolumeButton>
     return CompositedTransformTarget(
       link: _anchorLink,
       child: SizedBox(
+        key: const ValueKey('session_volume_button_anchor'),
         width: 48,
         height: 48,
         child: IgnorePointer(
@@ -246,6 +247,7 @@ class _VerticalVolumeSliderState extends State<_VerticalVolumeSlider> {
     final isBoosted = volume > 1.0;
 
     return ClipRRect(
+      key: const ValueKey('session_volume_capsule'),
       borderRadius: BorderRadius.circular(999),
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
@@ -255,7 +257,9 @@ class _VerticalVolumeSliderState extends State<_VerticalVolumeSlider> {
           decoration: BoxDecoration(
             color: cs.surfaceContainerHigh.withValues(alpha: 0.38),
             borderRadius: BorderRadius.circular(999),
-            border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.92)),
+            border: Border.all(
+              color: cs.outlineVariant.withValues(alpha: 0.92),
+            ),
             boxShadow: [
               BoxShadow(
                 color: cs.shadow.withValues(alpha: 0.18),
@@ -304,23 +308,31 @@ class _VerticalVolumeSliderState extends State<_VerticalVolumeSlider> {
                             max: _maxSessionVolume,
                             onChanged: (v) {
                               setState(() => _dragVolume = v);
-                              AppInteractionFeedback.continuous((v * 100).round());
-                              UiInteractionCoordinator.instance.scheduleThrottledCommit(
-                                key: 'session_volume:${widget.session.id}',
-                                commit: () => widget.provider.setSessionVolume(
-                                  widget.session.id,
-                                  v,
-                                  persist: false,
-                                ),
+                              AppInteractionFeedback.continuous(
+                                (v * 100).round(),
                               );
+                              UiInteractionCoordinator.instance
+                                  .scheduleThrottledCommit(
+                                    key: 'session_volume:${widget.session.id}',
+                                    commit: () =>
+                                        widget.provider.setSessionVolume(
+                                          widget.session.id,
+                                          v,
+                                          persist: false,
+                                        ),
+                                  );
                             },
                             onChangeEnd: (v) {
                               setState(() => _dragVolume = null);
                               AppInteractionFeedback.resetContinuous();
-                              UiInteractionCoordinator.instance.cancelThrottledCommit(
-                                'session_volume:${widget.session.id}',
+                              UiInteractionCoordinator.instance
+                                  .cancelThrottledCommit(
+                                    'session_volume:${widget.session.id}',
+                                  );
+                              widget.provider.setSessionVolume(
+                                widget.session.id,
+                                v,
                               );
-                              widget.provider.setSessionVolume(widget.session.id, v);
                             },
                           ),
                         ),
@@ -331,7 +343,10 @@ class _VerticalVolumeSliderState extends State<_VerticalVolumeSlider> {
               ),
               const SizedBox(height: 2),
               IconButton(
-                constraints: const BoxConstraints.tightFor(width: 40, height: 40),
+                constraints: const BoxConstraints.tightFor(
+                  width: 40,
+                  height: 40,
+                ),
                 padding: EdgeInsets.zero,
                 onPressed: () {
                   AppInteractionFeedback.trigger(

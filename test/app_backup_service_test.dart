@@ -52,10 +52,65 @@ void main() {
     final validation = await service.validateBackup(output.path);
 
     expect(validation.isValid, isTrue);
+    expect(validation.manifest?.formatVersion, AppBackupService.formatVersion);
+    expect(validation.manifest?.dataEpoch, AppBackupService.dataEpoch);
     expect(validation.manifest?.appVersion, '1.2.3+4');
     expect(validation.manifest?.platform, 'test');
     expect(closeCount, 1);
     expect(reopenCount, 1);
+  });
+
+  test('rejects a 0.x format backup', () async {
+    final archive = Archive()
+      ..addFile(
+        ArchiveFile.string(
+          AppBackupService.manifestEntry,
+          jsonEncode(<String, Object?>{
+            'formatVersion': 1,
+            'appVersion': '0.12.4+1204',
+            'createdAt': DateTime.now().toUtc().toIso8601String(),
+            'platform': 'test',
+            'databaseSchemaVersion': 18,
+            'entries': <String, Object?>{},
+          }),
+        ),
+      );
+    final file = File('${tempDirectory.path}/legacy.nalbackup');
+    await file.writeAsBytes(ZipEncoder().encode(archive));
+
+    final validation = await createService().validateBackup(file.path);
+
+    expect(validation.isValid, isFalse);
+    expect(validation.error, 'unsupported_format_version');
+  });
+
+  test('rejects backup from another data epoch', () async {
+    final service = createService();
+    final backup = await service.exportBackup(
+      '${tempDirectory.path}/other_epoch.nalbackup',
+    );
+    final archive = ZipDecoder().decodeBytes(await backup.readAsBytes());
+    final manifestFile = archive.findFile(AppBackupService.manifestEntry)!;
+    final manifest =
+        jsonDecode(utf8.decode(manifestFile.content as List<int>))
+            as Map<String, dynamic>;
+    manifest['dataEpoch'] = AppBackupService.dataEpoch + 1;
+    final bytes = utf8.encode(jsonEncode(manifest));
+    final updatedArchive = Archive();
+    for (final file in archive.files) {
+      if (file.name != AppBackupService.manifestEntry) {
+        updatedArchive.addFile(file);
+      }
+    }
+    updatedArchive.addFile(
+      ArchiveFile(AppBackupService.manifestEntry, bytes.length, bytes),
+    );
+    await backup.writeAsBytes(ZipEncoder().encode(updatedArchive), flush: true);
+
+    final validation = await service.validateBackup(backup.path);
+
+    expect(validation.isValid, isFalse);
+    expect(validation.error, 'unsupported_data_epoch');
   });
 
   test('rejects backup without a manifest', () async {

@@ -14,6 +14,7 @@ import 'app_update_service.dart';
 class BackupManifest {
   const BackupManifest({
     required this.formatVersion,
+    required this.dataEpoch,
     required this.appVersion,
     required this.createdAt,
     required this.platform,
@@ -32,6 +33,7 @@ class BackupManifest {
     );
     return BackupManifest(
       formatVersion: (json['formatVersion'] as num?)?.toInt() ?? 0,
+      dataEpoch: (json['dataEpoch'] as num?)?.toInt() ?? 0,
       appVersion: json['appVersion'] as String? ?? '',
       createdAt: DateTime.parse(json['createdAt'] as String),
       platform: json['platform'] as String? ?? '',
@@ -42,6 +44,7 @@ class BackupManifest {
   }
 
   final int formatVersion;
+  final int dataEpoch;
   final String appVersion;
   final DateTime createdAt;
   final String platform;
@@ -50,6 +53,7 @@ class BackupManifest {
 
   Map<String, Object?> toJson() => <String, Object?>{
     'formatVersion': formatVersion,
+    'dataEpoch': dataEpoch,
     'appVersion': appVersion,
     'createdAt': createdAt.toUtc().toIso8601String(),
     'platform': platform,
@@ -128,7 +132,8 @@ class AppBackupService {
                ? 'linux'
                : 'unknown');
 
-  static const int formatVersion = 1;
+  static const int formatVersion = 2;
+  static const int dataEpoch = 1;
   static const String databaseEntry = 'data/audio_player.db';
   static const String preferencesEntry = 'data/preferences.json';
   static const String manifestEntry = 'manifest.json';
@@ -162,6 +167,7 @@ class AppBackupService {
     };
     final manifest = BackupManifest(
       formatVersion: formatVersion,
+      dataEpoch: dataEpoch,
       appVersion: '${version.versionName}+${version.buildNumber}',
       createdAt: DateTime.now(),
       platform: _platformName,
@@ -211,6 +217,9 @@ class AppBackupService {
         return const BackupValidationResult.invalid(
           'unsupported_format_version',
         );
+      }
+      if (manifest.dataEpoch != dataEpoch) {
+        return const BackupValidationResult.invalid('unsupported_data_epoch');
       }
       if (manifest.databaseSchemaVersion > AppDatabase.schemaVersion) {
         return const BackupValidationResult.invalid(

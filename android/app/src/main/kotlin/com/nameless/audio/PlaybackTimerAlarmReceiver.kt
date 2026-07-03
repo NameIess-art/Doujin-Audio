@@ -34,8 +34,8 @@ class PlaybackTimerAlarmReceiver : BroadcastReceiver() {
 }
 
 object PlaybackTimerAlarmScheduler {
-    const val actionTimerExpired = "com.nameless.audio.action.TIMER_EXPIRED"
-    const val actionAutoResume = "com.nameless.audio.action.AUTO_RESUME"
+    const val actionTimerExpired = "com.nameless.audio.v1.action.TIMER_EXPIRED"
+    const val actionAutoResume = "com.nameless.audio.v1.action.AUTO_RESUME"
     const val extraGeneration = "generation"
 
     private const val logTag = "PlaybackTimerAlarm"

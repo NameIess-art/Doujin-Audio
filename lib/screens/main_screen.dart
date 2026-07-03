@@ -240,7 +240,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
               ),
               const SizedBox(height: 10),
               Text(
-                info.assetName,
+                info.assetName ?? '',
                 style: Theme.of(dialogContext).textTheme.bodySmall,
               ),
             ],
@@ -259,7 +259,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
         );
       },
     );
-    if (shouldDownload == true && mounted) {
+    if (shouldDownload == true && mounted && info.canDownload) {
       if (Platform.isAndroid) {
         await _ensureInstallPermissionThenRun(
           context,

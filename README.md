@@ -2,7 +2,9 @@
 
 Nameless Audio 是一款面向 ASMR、语音作品和大体量本地媒体库的跨平台播放器，使用 Flutter、Android 原生 Media3 / ExoPlayer 与 Windows libmpv 混合实现。
 
-当前版本：`0.12.4+1204`
+最新已发布版本：`0.12.4+1204`
+
+当前开发版本：`1.0.0-rc.1+1000001`
 
 最新发布页：[v0.12.4](https://github.com/NameIess-art/nameless-audio/releases/tag/v0.12.4)
 
@@ -17,7 +19,7 @@ Nameless Audio 是一款面向 ASMR、语音作品和大体量本地媒体库的
 
 Windows ZIP 包含应用运行所需的完整 Flutter 运行时、`libmpv-2.dll`、FFmpeg 和 FFprobe。不要只复制 EXE。
 
-> Android 自 `v0.8.0` 起使用 `com.nameless.audio`。更早版本无法直接覆盖安装，升级前请先导出 `.nalbackup`。
+> 1.x 当前是独立开发版，Android 包名为 `com.nameless.audio.v1`，Windows 程序名为 `nameless_audio_v1.exe`、数据身份为 `NamelessAudioV1`。1.x 仅支持全新安装，不能从 0.x 覆盖升级，也不能导入 0.x 备份。Windows 当前未代码签名，首次运行可能需要手动确认。
 
 ## 主要功能
 

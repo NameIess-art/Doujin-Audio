@@ -350,6 +350,21 @@ void main() {
   });
 
   test(
+    'unknown playback track does not infer a folder cover from its path',
+    () async {
+      final cache = CoverArtworkCacheService(libraryService: LibraryService());
+
+      expect(
+        await cache.futureForPlaybackTrack(
+          null,
+          trackPath: 'C:/library/work/unknown.flac',
+        ),
+        isNull,
+      );
+    },
+  );
+
+  test(
     'folder audio playback falls back to the selected folder cover only',
     () async {
       final directory = await Directory.systemTemp.createTemp(

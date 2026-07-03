@@ -1,0 +1,5 @@
+{
+  "minimumTotalLineCoveragePercent": 52,
+  "criticalModuleMinimumLineCoveragePercent": 80,
+  "criticalPathPrefixes": []
+}

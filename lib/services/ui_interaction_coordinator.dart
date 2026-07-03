@@ -173,6 +173,40 @@ class UiInteractionCoordinator extends ChangeNotifier {
             (commit) => commit.allowDuringInteraction,
           ));
 
+  @visibleForTesting
+  void flushPendingCommitsForTest() {
+    _frameScheduled = false;
+    _flushCommitFrame();
+  }
+
+  @visibleForTesting
+  void finishInteractionsForTest() {
+    for (final timer in _idleTimers.values) {
+      timer.cancel();
+    }
+    _idleTimers.clear();
+    _activeSources.clear();
+    _backgroundScheduler.setPaused(false);
+    flushPendingCommitsForTest();
+  }
+
+  @visibleForTesting
+  void resetForTest() {
+    for (final timer in _idleTimers.values) {
+      timer.cancel();
+    }
+    _idleTimers.clear();
+    _activeSources.clear();
+    _backgroundScheduler.setPaused(false);
+    _pendingCommits.clear();
+    for (final timer in _throttleTimers.values) {
+      timer.cancel();
+    }
+    _throttleTimers.clear();
+    _throttledCommits.clear();
+    _frameScheduled = false;
+  }
+
   @override
   void dispose() {
     for (final timer in _idleTimers.values) {

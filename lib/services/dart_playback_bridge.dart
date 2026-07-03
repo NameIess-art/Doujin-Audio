@@ -133,6 +133,10 @@ class DartPlaybackBridge implements NativePlaybackBridgeBase {
     bool repeatOne = false,
     bool autoPlay = false,
     double speed = 1.0,
+    NativeAudioEffects audioEffects = const NativeAudioEffects(
+      state: AudioEffectsState.flat,
+      channelSwapEnabled: false,
+    ),
     List<Map<String, Object?>>? queue,
     int? queueStartIndex,
     bool repeatAll = false,
@@ -170,6 +174,8 @@ class DartPlaybackBridge implements NativePlaybackBridgeBase {
       await session.runSerialized(() async {
         session.volume = _normalizeSessionVolume(volume);
         session.speed = _normalizeSessionSpeed(speed);
+        session.audioEffects = audioEffects.state;
+        session.channelSwapEnabled = audioEffects.channelSwapEnabled;
         session.logicalQueueIndex = queueStartIndex ?? 0;
         await session.setItem(
           item,

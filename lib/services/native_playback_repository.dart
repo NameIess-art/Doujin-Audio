@@ -43,6 +43,10 @@ class NativePlaybackRepository {
     bool repeatOne = false,
     bool autoPlay = false,
     double speed = 1.0,
+    NativeAudioEffects audioEffects = const NativeAudioEffects(
+      state: AudioEffectsState.flat,
+      channelSwapEnabled: false,
+    ),
     List<Map<String, Object?>>? queue,
     int? queueStartIndex,
     bool repeatAll = false,
@@ -62,6 +66,7 @@ class NativePlaybackRepository {
       repeatOne: repeatOne,
       autoPlay: autoPlay,
       speed: speed,
+      audioEffects: audioEffects,
       queue: queue,
       queueStartIndex: queueStartIndex,
       repeatAll: repeatAll,

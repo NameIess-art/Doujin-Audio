@@ -965,6 +965,100 @@ void main() {
     );
 
     test(
+      'paused console settings survive restart when native sync is unavailable',
+      () async {
+        SharedPreferences.setMockInitialValues(const <String, Object>{});
+        const track = MusicTrack(
+          path: 'https://example.com/paused-console.mp3',
+          displayName: 'paused track',
+          groupKey: 'paused-console',
+          groupTitle: 'Paused Console',
+          groupSubtitle: 'Paused Console',
+          isSingle: false,
+        );
+        final repository = AudioDatabaseRepository(
+          database: AppDatabase.test(db),
+        );
+        await repository.saveAllTracks(const <MusicTrack>[track]);
+
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+              final args = call.arguments as Map<Object?, Object?>?;
+              switch (call.method) {
+                case NativePlaybackMethod.prepareSession:
+                  final audioEffects =
+                      args!['audioEffects'] as Map<Object?, Object?>;
+                  return <String, Object?>{
+                    'ok': true,
+                    'value': <String, Object?>{
+                      'sessionId': args['sessionId'] as String,
+                      'uri': track.path,
+                      'path': track.path,
+                      'title': track.displayName,
+                      'playing': false,
+                      'playWhenReady': false,
+                      'processingState': 'ready',
+                      'positionMs': 0,
+                      'bufferedPositionMs': 0,
+                      'durationMs': const Duration(minutes: 3).inMilliseconds,
+                      'volume': 1.0,
+                      'speed': 1.0,
+                      'boostGain': 1.0,
+                      'channelSwap': audioEffects['channelSwapEnabled'] as bool,
+                      'audioEffects': audioEffects,
+                    },
+                  };
+                case NativePlaybackMethod.setAudioEffects:
+                  return <String, Object?>{
+                    'ok': false,
+                    'error': 'Unknown session.',
+                  };
+                case NativePlaybackMethod.snapshot:
+                  return <String, Object?>{
+                    'ok': true,
+                    'value': <String, Object?>{'sessions': <Object?>[]},
+                  };
+                case NativePlaybackMethod.setForegroundEnabled:
+                  return <String, Object?>{'ok': true, 'value': null};
+                default:
+                  return <String, Object?>{'ok': true, 'value': null};
+              }
+            });
+
+        provider.addTracks(
+          const <MusicTrack>[track],
+          notify: false,
+          persist: false,
+        );
+        await provider.spawnSession(track, autoPlay: false);
+        final session = provider.activeSessions.single;
+        expect(session.state.playing, isFalse);
+
+        await provider.setSessionSkipSilence(session.id, true);
+        await provider.setSessionChannelSwap(session.id, true);
+
+        final persisted = (await repository.loadAllSessions()).single;
+        expect(persisted.audioEffects.skipSilenceEnabled, isTrue);
+        expect(persisted.channelSwapEnabled, isTrue);
+
+        provider.dispose();
+        notificationService = PlaybackNotificationService();
+        provider = AudioProvider(
+          notificationService: notificationService,
+          audioDatabaseRepository: repository,
+        );
+        await provider.playbackStateStream.firstWhere(
+          (state) => state.isInitialized,
+        );
+
+        final restored = provider.activeSessions.single;
+        expect(restored.state.playing, isFalse);
+        expect(restored.audioEffects.skipSilenceEnabled, isTrue);
+        expect(restored.channelSwapEnabled, isTrue);
+      },
+    );
+
+    test(
       'restored sessions register natively without eagerly creating players',
       () async {
         const firstSessionId = 'restored_first';

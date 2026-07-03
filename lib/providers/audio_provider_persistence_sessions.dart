@@ -108,6 +108,10 @@ extension AudioProviderPersistenceSessions on AudioProvider {
             startPosition: session.lastKnownPosition,
             volume: session.volume,
             speed: session.speed,
+            audioEffects: NativeAudioEffects(
+              state: session.audioEffects,
+              channelSwapEnabled: session.channelSwapEnabled,
+            ),
             repeatOne: session.loopMode == SessionLoopMode.single,
             queue: _nativePlaybackQueueFor(
               session,
@@ -133,16 +137,6 @@ extension AudioProviderPersistenceSessions on AudioProvider {
                 volume: session.volume,
                 speed: session.speed,
                 audioEffects: session.audioEffects,
-                channelSwapEnabled: session.channelSwapEnabled,
-              ),
-            );
-          }
-          if (session.channelSwapEnabled ||
-              session.audioEffects.hasEnabledEffects) {
-            await _nativePlaybackRepository.setAudioEffects(
-              session.id,
-              NativeAudioEffects(
-                state: session.audioEffects,
                 channelSwapEnabled: session.channelSwapEnabled,
               ),
             );

@@ -244,7 +244,6 @@ extension AudioProviderPlaybackSessions on AudioProvider {
           generation: generation,
         );
         if (!prepared) return;
-        await _syncPreparedTrackEffects(session);
         if (!_isSessionLoadCurrent(session, generation)) return;
         session.loadedPath = target.resolvedPath;
         session.pendingNativeTrackPath = null;
@@ -395,6 +394,10 @@ extension AudioProviderPlaybackSessions on AudioProvider {
         startPosition: target.startPosition,
         volume: session.volume,
         speed: session.speed,
+        audioEffects: NativeAudioEffects(
+          state: session.audioEffects,
+          channelSwapEnabled: session.channelSwapEnabled,
+        ),
         repeatOne: session.loopMode == SessionLoopMode.single,
         queue: _nativePlaybackQueueFor(
           session,
@@ -431,20 +434,6 @@ extension AudioProviderPlaybackSessions on AudioProvider {
       );
     }
     return false;
-  }
-
-  Future<void> _syncPreparedTrackEffects(PlaybackSession session) async {
-    if (!session.channelSwapEnabled &&
-        !session.audioEffects.hasEnabledEffects) {
-      return;
-    }
-    await _nativePlaybackRepository.setAudioEffects(
-      session.id,
-      NativeAudioEffects(
-        state: session.audioEffects,
-        channelSwapEnabled: session.channelSwapEnabled,
-      ),
-    );
   }
 
   List<Uri>? _candidatePlaybackUrisForTrack(MusicTrack? track) {

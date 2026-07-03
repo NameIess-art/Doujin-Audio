@@ -16,7 +16,7 @@ internal object NativePlaybackCommandPayloads {
         }
     }
 
-    fun parseAudioEffects(rawEffects: Map<String, Any?>): NativeAudioEffects {
+    fun parseAudioEffects(rawEffects: Map<*, *>): NativeAudioEffects {
         return NativeAudioEffects(
             skipSilenceEnabled = rawEffects["skipSilenceEnabled"] as? Boolean ?: false,
             noiseReductionEnabled = rawEffects["noiseReductionEnabled"] as? Boolean ?: false,

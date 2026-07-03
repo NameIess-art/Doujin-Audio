@@ -26,7 +26,7 @@ void main() {
 
   tearDown(() => db.close());
 
-  test('1.x starts from schema version 1', () {
+  test('schema starts from version 1', () {
     expect(AppDatabase.schemaVersion, 1);
   });
 

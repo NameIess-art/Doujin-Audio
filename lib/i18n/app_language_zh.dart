@@ -442,7 +442,7 @@ const Map<String, String> appLanguageZh = {
   'download_update': '下载更新',
   'downloading_update': '正在下载更新：{percent}%',
   'no_updates_available': '当前已是最新版本。',
-  'update_no_compatible_release': '当前 1.x 通道暂无可用版本。',
+  'update_no_compatible_release': '当前暂无兼容的稳定版本。',
   'update_missing_asset': '最新版本缺少当前平台的安装包。',
   'update_missing_checksum': '最新版本缺少 SHA-256 校验文件。',
   'update_check_failed': '检查更新失败，请稍后重试。',

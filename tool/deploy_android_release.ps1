@@ -5,7 +5,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-$appId = 'com.nameless.audio.v1'
+$appId = 'com.nameless.audio'
 $mainActivity = 'com.nameless.audio.MainActivity'
 $apkPath = Join-Path $repoRoot 'build\app\outputs\flutter-apk\app-arm64-v8a-release.apk'
 $arm64SplitVersionCodeOffset = 2000

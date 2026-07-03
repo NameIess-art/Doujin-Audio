@@ -152,7 +152,10 @@ extension AudioProviderPlayback on AudioProvider {
   Future<void> setSessionChannelSwap(String sessionId, bool enabled) async {
     final session = _sessions[sessionId];
     if (session == null) return;
-    if (session.channelSwapEnabled == enabled) return;
+    if (session.channelSwapEnabled == enabled) {
+      await _persistSessionConsoleSettings(session);
+      return;
+    }
     final previous = session.channelSwapEnabled;
     session.channelSwapEnabled = enabled;
     _markActiveSessionsDirty();
@@ -175,7 +178,7 @@ extension AudioProviderPlayback on AudioProvider {
       response,
       fallbackAudioEffects: session.audioEffects,
     );
-    _scheduleSaveSessionState();
+    await _persistSessionConsoleSettings(session);
   }
 
   Future<void> setSessionSkipSilence(String sessionId, bool enabled) async {
@@ -305,7 +308,34 @@ extension AudioProviderPlayback on AudioProvider {
       return;
     }
     _applyAudioEffectsSnapshot(session, response, fallbackAudioEffects: next);
-    _scheduleSaveSessionState();
+    await _persistSessionConsoleSettings(session);
+  }
+
+  Future<void> _persistSessionConsoleSettings(PlaybackSession session) async {
+    await _rememberSessionConsoleSettings(session);
+    _saveSessionStateTimer?.cancel();
+    _saveSessionStateTimer = null;
+    await _saveSessionState();
+  }
+
+  Future<void> _rememberSessionConsoleSettings(PlaybackSession session) async {
+    final nextVolume = session.volume.clamp(0.0, _maxSessionVolume).toDouble();
+    final nextSpeed = _nearestPlaybackSpeed(session.speed);
+    final nextAudioEffects = session.audioEffects;
+    final changed =
+        (_settingsRepository.defaultSessionVolume - nextVolume).abs() >=
+            0.001 ||
+        (_settingsRepository.defaultSessionSpeed - nextSpeed).abs() >= 0.001 ||
+        _settingsRepository.defaultSessionChannelSwapEnabled !=
+            session.channelSwapEnabled ||
+        _settingsRepository.defaultSessionAudioEffects != nextAudioEffects;
+    if (!changed) return;
+    _settingsRepository.defaultSessionVolume = nextVolume;
+    _settingsRepository.defaultSessionSpeed = nextSpeed;
+    _settingsRepository.defaultSessionChannelSwapEnabled =
+        session.channelSwapEnabled;
+    _settingsRepository.defaultSessionAudioEffects = nextAudioEffects;
+    await _savePlaybackSettings();
   }
 
   void _applyAudioEffectsSnapshot(
@@ -315,15 +345,21 @@ extension AudioProviderPlayback on AudioProvider {
   }) {
     final snapshot = response.valueOrNull;
     if (snapshot == null) return;
-    final shouldKeepFallback =
-        fallbackAudioEffects != null &&
-        fallbackAudioEffects != AudioEffectsState.flat &&
-        snapshot.audioEffects == AudioEffectsState.flat;
-    session.audioEffects = shouldKeepFallback
-        ? fallbackAudioEffects
-        : snapshot.audioEffects;
+    if (snapshot.hasAudioEffectsPayload) {
+      final shouldKeepFallback =
+          fallbackAudioEffects != null &&
+          fallbackAudioEffects != AudioEffectsState.flat &&
+          snapshot.audioEffects == AudioEffectsState.flat;
+      session.audioEffects = shouldKeepFallback
+          ? fallbackAudioEffects
+          : snapshot.audioEffects;
+    } else if (fallbackAudioEffects != null) {
+      session.audioEffects = fallbackAudioEffects;
+    }
     session.eqCapabilities = snapshot.eqCapabilities;
-    session.channelSwapEnabled = snapshot.channelSwapEnabled;
+    if (snapshot.hasChannelSwapPayload) {
+      session.channelSwapEnabled = snapshot.channelSwapEnabled;
+    }
     _markActiveSessionsDirty();
     _notifyPlaybackChanged();
   }
@@ -434,7 +470,7 @@ extension AudioProviderPlayback on AudioProvider {
         _deferredVolumeReloadSessionIds.remove(session.id);
       }
       if (persist) {
-        _scheduleSaveSessionState();
+        await _persistSessionConsoleSettings(session);
       }
       return;
     }
@@ -454,7 +490,7 @@ extension AudioProviderPlayback on AudioProvider {
       reloadSource: persist,
     );
     if (persist) {
-      _scheduleSaveSessionState();
+      await _persistSessionConsoleSettings(session);
     }
   }
 
@@ -469,7 +505,7 @@ extension AudioProviderPlayback on AudioProvider {
     final nextSpeed = _nearestPlaybackSpeed(speed);
     if ((session.speed - nextSpeed).abs() < 0.001) {
       if (persist) {
-        _scheduleSaveSessionState();
+        await _persistSessionConsoleSettings(session);
       }
       return;
     }
@@ -499,7 +535,7 @@ extension AudioProviderPlayback on AudioProvider {
       return;
     }
     if (persist) {
-      _scheduleSaveSessionState();
+      await _persistSessionConsoleSettings(session);
     }
   }
 

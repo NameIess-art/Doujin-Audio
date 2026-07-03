@@ -155,7 +155,7 @@ jobs:
       - name: Prepare Android release assets
         run: |
           set -euo pipefail
-          apk="NamelessAudio-v1-android-arm64-${GITHUB_REF_NAME}.apk"
+          apk="NamelessAudio-android-arm64-${GITHUB_REF_NAME}.apk"
           cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk "$apk"
           sha256sum "$apk" > "$apk.sha256"
 
@@ -165,7 +165,7 @@ jobs:
         run: |
           set -euo pipefail
           : "${ANDROID_SIGNING_CERT_SHA256:?ANDROID_SIGNING_CERT_SHA256 is required}"
-          apk="NamelessAudio-v1-android-arm64-${GITHUB_REF_NAME}.apk"
+          apk="NamelessAudio-android-arm64-${GITHUB_REF_NAME}.apk"
           test -s "$apk"
           test -s "$apk.sha256"
           sha256sum --check "$apk.sha256"
@@ -187,8 +187,8 @@ jobs:
           gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 ||
             gh release create "$GITHUB_REF_NAME" --generate-notes --title "$GITHUB_REF_NAME" --latest=false
           gh release upload "$GITHUB_REF_NAME" \
-            "NamelessAudio-v1-android-arm64-${GITHUB_REF_NAME}.apk" \
-            "NamelessAudio-v1-android-arm64-${GITHUB_REF_NAME}.apk.sha256"
+            "NamelessAudio-android-arm64-${GITHUB_REF_NAME}.apk" \
+            "NamelessAudio-android-arm64-${GITHUB_REF_NAME}.apk.sha256"
 
   release-windows:
     if: startsWith(github.ref, 'refs/tags/')
@@ -261,7 +261,7 @@ jobs:
       - name: Create Windows release assets
         shell: pwsh
         run: |
-          $zipName = "NamelessAudio-v1-windows-x64-${{ github.ref_name }}.zip"
+          $zipName = "NamelessAudio-windows-x64-${{ github.ref_name }}.zip"
           Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath $zipName -Force
           $hash = (Get-FileHash -LiteralPath $zipName -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  $zipName" | Set-Content -LiteralPath "$zipName.sha256" -Encoding ascii
@@ -269,7 +269,7 @@ jobs:
       - name: Verify Windows release assets
         shell: pwsh
         run: |
-          $zipName = "NamelessAudio-v1-windows-x64-${{ github.ref_name }}.zip"
+          $zipName = "NamelessAudio-windows-x64-${{ github.ref_name }}.zip"
           if (-not (Test-Path -LiteralPath $zipName -PathType Leaf)) {
             throw "Missing release ZIP: $zipName"
           }
@@ -286,5 +286,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release upload "${{ github.ref_name }}" `
-            "NamelessAudio-v1-windows-x64-${{ github.ref_name }}.zip" `
-            "NamelessAudio-v1-windows-x64-${{ github.ref_name }}.zip.sha256"
+            "NamelessAudio-windows-x64-${{ github.ref_name }}.zip" `
+            "NamelessAudio-windows-x64-${{ github.ref_name }}.zip.sha256"

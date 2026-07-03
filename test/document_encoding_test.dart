@@ -21,8 +21,8 @@ void main() {
 
     final readme = File('README.md').readAsStringSync();
     expect(readme, contains('Nameless Audio 是一款'));
-    expect(readme, contains('最新已发布版本'));
-    expect(readme, contains('当前开发版本'));
+    expect(readme, contains('当前版本'));
+    expect(readme, contains('发布页'));
     expect(readme, contains('GitHub Release'));
   });
 }

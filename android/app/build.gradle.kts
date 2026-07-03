@@ -65,7 +65,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.nameless.audio.v1"
+        applicationId = "com.nameless.audio"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode

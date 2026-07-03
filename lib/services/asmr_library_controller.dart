@@ -56,6 +56,7 @@ class AsmrCategoryViewState {
     required this.isLoadingMore,
     required this.isRefreshing,
     required this.isStale,
+    required this.hasAttemptedLoad,
     required this.hasMore,
     required this.totalCount,
     required this.activeQuery,
@@ -70,6 +71,7 @@ class AsmrCategoryViewState {
   final bool isLoadingMore;
   final bool isRefreshing;
   final bool isStale;
+  final bool hasAttemptedLoad;
   final bool hasMore;
   final int totalCount;
   final String activeQuery;
@@ -86,6 +88,7 @@ class AsmrCategoryViewState {
         isLoadingMore == other.isLoadingMore &&
         isRefreshing == other.isRefreshing &&
         isStale == other.isStale &&
+        hasAttemptedLoad == other.hasAttemptedLoad &&
         hasMore == other.hasMore &&
         totalCount == other.totalCount &&
         activeQuery == other.activeQuery &&
@@ -102,6 +105,7 @@ class AsmrCategoryViewState {
     isLoadingMore,
     isRefreshing,
     isStale,
+    hasAttemptedLoad,
     hasMore,
     totalCount,
     activeQuery,
@@ -241,6 +245,10 @@ class AsmrLibraryController extends ChangeNotifier {
         AsmrCategoryType.release,
       ];
   static const int _recommendationCandidatePagesPerRefresh = 2;
+  static const List<Duration> _transientRemoteLoadRetryDelays = <Duration>[
+    Duration(milliseconds: 350),
+    Duration(milliseconds: 900),
+  ];
 
   final AsmrApiService _apiService;
   final AsmrAuthService _authService;
@@ -365,6 +373,9 @@ class AsmrLibraryController extends ChangeNotifier {
       isLoadingMore: isLoadingMoreCategory(category),
       isRefreshing: isLoadingCategory(category) && works.isNotEmpty,
       isStale: isLoadingCategory(category) && works.isNotEmpty,
+      hasAttemptedLoad:
+          _queryByCategory.containsKey(category) ||
+          (_refreshRequestSerial[category] ?? 0) > 0,
       hasMore: hasMoreCategory(category),
       totalCount:
           category == AsmrCategoryType.favorites ||
@@ -952,28 +963,69 @@ class AsmrLibraryController extends ChangeNotifier {
     AsmrCategoryType category, {
     required String searchQuery,
     required int page,
-  }) {
+  }) async {
     final spec = _sortSpecFor(category);
     final pageSize = _pageSizes[category] ?? 40;
-    if (searchQuery.isNotEmpty) {
-      return _apiService.searchWorks(
-        keyword: searchQuery,
-        order: spec.order,
-        sort: spec.sort,
-        page: page,
-        pageSize: pageSize,
-        token: _authSession?.token,
-        language: _contentLanguage,
-      );
-    }
-    return _apiService.fetchWorks(
-      order: spec.order,
-      sort: spec.sort,
+    return _retryTransientRemoteLoad(
+      category: category,
       page: page,
-      pageSize: pageSize,
-      token: _authSession?.token,
-      language: _contentLanguage,
+      load: () {
+        if (searchQuery.isNotEmpty) {
+          return _apiService.searchWorks(
+            keyword: searchQuery,
+            order: spec.order,
+            sort: spec.sort,
+            page: page,
+            pageSize: pageSize,
+            token: _authSession?.token,
+            language: _contentLanguage,
+          );
+        }
+        return _apiService.fetchWorks(
+          order: spec.order,
+          sort: spec.sort,
+          page: page,
+          pageSize: pageSize,
+          token: _authSession?.token,
+          language: _contentLanguage,
+        );
+      },
     );
+  }
+
+  Future<AsmrWorkPage> _retryTransientRemoteLoad({
+    required AsmrCategoryType category,
+    required int page,
+    required Future<AsmrWorkPage> Function() load,
+  }) async {
+    for (var attempt = 0; ; attempt++) {
+      try {
+        return await load();
+      } catch (error) {
+        if (attempt >= _transientRemoteLoadRetryDelays.length ||
+            !_isTransientRemoteLoadError(error)) {
+          rethrow;
+        }
+        debugPrint(
+          'AsmrLibraryController transient load error '
+          '(${category.name}, page $page), retrying: $error',
+        );
+        await Future<void>.delayed(_transientRemoteLoadRetryDelays[attempt]);
+      }
+    }
+  }
+
+  bool _isTransientRemoteLoadError(Object error) {
+    if (error is HandshakeException ||
+        error is SocketException ||
+        error is TimeoutException) {
+      return true;
+    }
+    if (error is AsmrApiException) {
+      final statusCode = error.statusCode;
+      return statusCode == HttpStatus.tooManyRequests || statusCode >= 500;
+    }
+    return false;
   }
 
   ({String order, String sort}) _sortSpecFor(AsmrCategoryType category) {

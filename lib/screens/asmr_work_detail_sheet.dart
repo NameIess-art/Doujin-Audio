@@ -97,14 +97,19 @@ class _AsmrWorkDetailSheetState extends State<_AsmrWorkDetailSheet> {
                     ),
                     IconButton(
                       onPressed: () => Navigator.of(context).maybePop(),
-                      tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
+                      tooltip: MaterialLocalizations.of(
+                        context,
+                      ).closeButtonTooltip,
                       icon: const Icon(Icons.keyboard_arrow_down_rounded),
                     ),
                   ],
                 ),
                 const SizedBox(height: 4),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
                     color: effectiveWork.hasSubtitle
                         ? Colors.green.withValues(alpha: 0.2)
@@ -114,11 +119,11 @@ class _AsmrWorkDetailSheetState extends State<_AsmrWorkDetailSheet> {
                   child: Text(
                     effectiveWork.hasSubtitle ? '有字幕' : '无字幕',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: effectiveWork.hasSubtitle
-                              ? Colors.green
-                              : cs.onSurfaceVariant,
-                          fontWeight: FontWeight.w600,
-                        ),
+                      color: effectiveWork.hasSubtitle
+                          ? Colors.green
+                          : cs.onSurfaceVariant,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -129,7 +134,9 @@ class _AsmrWorkDetailSheetState extends State<_AsmrWorkDetailSheet> {
                     child: AsyncRemoteCoverImage(
                       url: coverUrl,
                       future: provider.coverPathFutureForRemoteCover(coverUrl),
-                      initialPath: provider.resolvedCoverPathForRemoteCover(coverUrl),
+                      initialPath: provider.resolvedCoverPathForRemoteCover(
+                        coverUrl,
+                      ),
                       retryFutureBuilder: () =>
                           provider.coverPathFutureForRemoteCover(coverUrl),
                       fit: BoxFit.cover,
@@ -210,13 +217,17 @@ class _AsmrWorkDetailSheetState extends State<_AsmrWorkDetailSheet> {
                       style: TextStyle(color: cs.error),
                     ),
                   ),
-                ] else if (snapshot.connectionState == ConnectionState.waiting) ...[
+                ] else if (snapshot.connectionState ==
+                    ConnectionState.waiting) ...[
                   Center(
                     child: Padding(
                       padding: const EdgeInsets.symmetric(vertical: 24),
                       child: SizedBox.square(
                         dimension: 24,
-                        child: CircularProgressIndicator(strokeWidth: 2.4, color: asmrBlue),
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.4,
+                          color: asmrBlue,
+                        ),
                       ),
                     ),
                   ),
@@ -241,9 +252,11 @@ class _AsmrWorkDetailSheetState extends State<_AsmrWorkDetailSheet> {
                   ),
                   _AsmrDetailRow(
                     label: i18n.tr('asmr_detail_rating'),
-                    values: [effectiveWork.rating <= 0
-                        ? i18n.tr('asmr_detail_unrated')
-                        : effectiveWork.rating.toStringAsFixed(2)],
+                    values: [
+                      effectiveWork.rating <= 0
+                          ? i18n.tr('asmr_detail_unrated')
+                          : effectiveWork.rating.toStringAsFixed(2),
+                    ],
                     labelStyle: labelStyle,
                     onCopy: (val) => _copyText(context, val),
                   ),
@@ -301,8 +314,11 @@ class _AsmrDetailRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final emptyText = context.read<AppLanguageProvider>().tr('audio_detail_empty');
-    final displayValues = values.isEmpty || (values.length == 1 && values.first.isEmpty) 
+    final emptyText = context.read<AppLanguageProvider>().tr(
+      'audio_detail_empty',
+    );
+    final displayValues =
+        values.isEmpty || (values.length == 1 && values.first.isEmpty)
         ? [emptyText]
         : values;
 
@@ -317,16 +333,24 @@ class _AsmrDetailRow extends StatelessWidget {
             Wrap(
               spacing: 8,
               runSpacing: 8,
-              children: displayValues.map((v) => _DetailCapsule(
-                text: v,
-                onLongPress: onCopy != null && v != emptyText ? () => onCopy!(v) : null,
-              )).toList(),
+              children: displayValues
+                  .map(
+                    (v) => _DetailCapsule(
+                      text: v,
+                      onSecondaryTap: onCopy != null && v != emptyText
+                          ? () => onCopy!(v)
+                          : null,
+                    ),
+                  )
+                  .toList(),
             )
           else
             Text(
               displayValues.join('\uFF0C'),
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: displayValues.first == emptyText ? cs.onSurfaceVariant : cs.onSurface,
+                color: displayValues.first == emptyText
+                    ? cs.onSurfaceVariant
+                    : cs.onSurface,
               ),
             ),
         ],
@@ -336,10 +360,10 @@ class _AsmrDetailRow extends StatelessWidget {
 }
 
 class _DetailCapsule extends StatelessWidget {
-  const _DetailCapsule({required this.text, this.onLongPress});
+  const _DetailCapsule({required this.text, this.onSecondaryTap});
 
   final String text;
-  final VoidCallback? onLongPress;
+  final VoidCallback? onSecondaryTap;
 
   @override
   Widget build(BuildContext context) {
@@ -348,15 +372,15 @@ class _DetailCapsule extends StatelessWidget {
       color: cs.surfaceContainerHighest,
       borderRadius: BorderRadius.circular(999),
       child: InkWell(
-        onLongPress: onLongPress,
+        onSecondaryTap: onSecondaryTap,
         borderRadius: BorderRadius.circular(999),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           child: Text(
             text,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: cs.onSurface,
-            ),
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: cs.onSurface),
           ),
         ),
       ),
@@ -390,11 +414,7 @@ class _AsmrDetailDescriptionBlock extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(label, style: labelStyle),
-                Icon(
-                  Icons.copy_rounded,
-                  size: 18,
-                  color: cs.onSurfaceVariant,
-                ),
+                Icon(Icons.copy_rounded, size: 18, color: cs.onSurfaceVariant),
               ],
             ),
             const SizedBox(height: 12),

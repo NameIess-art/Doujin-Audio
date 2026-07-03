@@ -250,6 +250,54 @@ void main() {
     );
   });
 
+  test('ASMR category marks first load attempt before empty state', () async {
+    await resetPrefs();
+    final api = _FakeAsmrApiService();
+    final controller = AsmrLibraryController(
+      apiService: api,
+      audioDatabaseRepository: _FakeAudioDatabaseRepository(
+        const <MusicTrack>[],
+      ),
+    );
+    await controller.initialize(defaultLanguage: AsmrContentLanguage.en);
+
+    expect(
+      controller.categoryViewState(AsmrCategoryType.release).hasAttemptedLoad,
+      isFalse,
+    );
+
+    await controller.refreshCategory(AsmrCategoryType.release);
+
+    expect(
+      controller.categoryViewState(AsmrCategoryType.release).hasAttemptedLoad,
+      isTrue,
+    );
+  });
+
+  test('ASMR category retries transient handshake failures', () async {
+    await resetPrefs();
+    final api = _FakeAsmrApiService(transientFetchFailuresRemaining: 1);
+    final controller = AsmrLibraryController(
+      apiService: api,
+      audioDatabaseRepository: _FakeAudioDatabaseRepository(
+        const <MusicTrack>[],
+      ),
+    );
+    await controller.initialize(defaultLanguage: AsmrContentLanguage.en);
+
+    await controller.refreshCategory(AsmrCategoryType.release);
+
+    expect(controller.lastError, isNull);
+    expect(
+      api.fetchWorkRequests.where((request) => request == 'release:desc:1'),
+      hasLength(2),
+    );
+    expect(
+      controller.worksFor(AsmrCategoryType.release).map((work) => work.id),
+      <int>[12],
+    );
+  });
+
   test(
     'ASMR refresh defers presentation notifications while interacting',
     () async {
@@ -1037,6 +1085,7 @@ class _FakeAsmrApiService extends AsmrApiService {
     List<AsmrReviewRecord> remoteReviewRecords = const <AsmrReviewRecord>[],
     this.failPutReviewCount = 0,
     this.failingFetchOrders = const <String>{},
+    this.transientFetchFailuresRemaining = 0,
     this.emptyCheckSessionUserName = false,
   }) : remoteReviewRecords = List<AsmrReviewRecord>.of(remoteReviewRecords),
        super(baseUri: Uri.parse('https://example.test'));
@@ -1055,6 +1104,7 @@ class _FakeAsmrApiService extends AsmrApiService {
   final Set<String> failingFetchOrders;
   final bool emptyCheckSessionUserName;
   int failPutReviewCount;
+  int transientFetchFailuresRemaining;
   int checkSessionAuthFailuresRemaining = 0;
   int fetchReviewAuthFailuresRemaining = 0;
   int? loginFailureStatusCode;
@@ -1112,6 +1162,12 @@ class _FakeAsmrApiService extends AsmrApiService {
     calls.add('works:$order:$sort:$page');
     fetchWorkOrders.add('$order:$sort');
     fetchWorkRequests.add('$order:$sort:$page');
+    if (transientFetchFailuresRemaining > 0) {
+      transientFetchFailuresRemaining--;
+      return Future<AsmrWorkPage>.error(
+        const HandshakeException('Connection terminated during handshake'),
+      );
+    }
     if (failingFetchOrders.contains(order)) {
       return Future<AsmrWorkPage>.error(
         HttpException('Simulated ASMR work fetch failure for $order'),

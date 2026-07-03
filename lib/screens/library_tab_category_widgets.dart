@@ -534,8 +534,6 @@ class _LibraryCategoryTermBoxState extends State<_LibraryCategoryTermBox> {
                             );
                             return GestureDetector(
                               behavior: HitTestBehavior.translucent,
-                              onLongPress: () =>
-                                  _copyCategoryTerm(context, term),
                               onSecondaryTap: () =>
                                   _copyCategoryTerm(context, term),
                               child: SizedBox(

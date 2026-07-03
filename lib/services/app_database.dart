@@ -111,7 +111,7 @@ class AppDatabase {
     int newVersion,
   ) async {
     if (oldVersion >= newVersion) return;
-    // Future 1.x migrations should be added here. Version 1 starts from the
+    // Future migrations should be added here. Schema version 1 starts from the
     // fully materialized current schema and intentionally has no 0.x upgrade path.
   }
 

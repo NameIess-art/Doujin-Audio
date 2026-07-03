@@ -15,7 +15,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-$appId = 'com.nameless.audio.v1'
+$appId = 'com.nameless.audio'
 $mainActivity = "$appId/com.nameless.audio.MainActivity"
 $debugApkPath = Join-Path $repoRoot 'build\app\outputs\flutter-apk\app-debug.apk'
 $arm64DebugApkPath = Join-Path $repoRoot 'build\app\outputs\flutter-apk\app-arm64-v8a-debug.apk'

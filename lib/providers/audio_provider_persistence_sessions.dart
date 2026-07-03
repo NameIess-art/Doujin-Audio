@@ -128,7 +128,14 @@ extension AudioProviderPersistenceSessions on AudioProvider {
           final preparedSnapshot = prepareResult.valueOrNull;
           if (AppPlatform.usesDesktopPlaybackBridge &&
               preparedSnapshot != null) {
-            _handleNativePlaybackSnapshot(preparedSnapshot);
+            _handleNativePlaybackSnapshot(
+              preparedSnapshot.copyWith(
+                volume: session.volume,
+                speed: session.speed,
+                audioEffects: session.audioEffects,
+                channelSwapEnabled: session.channelSwapEnabled,
+              ),
+            );
           }
           if (session.channelSwapEnabled ||
               session.audioEffects.hasEnabledEffects) {
@@ -156,7 +163,17 @@ extension AudioProviderPersistenceSessions on AudioProvider {
       final snapshotValue = snapshotResponse.valueOrNull;
       if (snapshotValue != null) {
         for (final snapshot in snapshotValue.sessions) {
-          _handleNativePlaybackSnapshot(snapshot);
+          final session = _sessions[snapshot.sessionId];
+          _handleNativePlaybackSnapshot(
+            session == null
+                ? snapshot
+                : snapshot.copyWith(
+                    volume: session.volume,
+                    speed: session.speed,
+                    audioEffects: session.audioEffects,
+                    channelSwapEnabled: session.channelSwapEnabled,
+                  ),
+          );
         }
       }
 

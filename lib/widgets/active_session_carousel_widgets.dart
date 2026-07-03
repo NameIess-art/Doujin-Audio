@@ -43,6 +43,8 @@ class _ActiveSessionCard extends ConsumerWidget {
           loading: currentSession.isLoading,
           trackPath: currentSession.currentTrackPath,
           channelSwapEnabled: currentSession.channelSwapEnabled,
+          audioEffects: currentSession.audioEffects,
+          speed: currentSession.speed,
           error: currentSession.playbackError,
         );
       }),
@@ -166,10 +168,12 @@ class _ActiveSessionCard extends ConsumerWidget {
     ColorScheme cs,
     bool isPlaying,
     ({
+      AudioEffectsState audioEffects,
       bool channelSwapEnabled,
       String? error,
       bool loading,
       bool playing,
+      double speed,
       String trackPath,
     })
     view,
@@ -222,45 +226,30 @@ class _ActiveSessionCard extends ConsumerWidget {
             mainAxisSize: MainAxisSize.min,
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              _ActiveSessionPlayPauseButton(
-                showPauseIcon: isPlaying || hasAsmrOnePlaybackError,
-                isLoading: view.loading,
-                enabled: view.trackPath.isNotEmpty && !view.loading,
-                activeColor: activeColor,
-                onPressed: () {
-                  AppInteractionFeedback.trigger(
-                    AppInteractionFeedbackType.confirmation,
-                  );
-                  provider.toggleSessionPlayPause(session.id);
-                },
-              ),
               Consumer(
                 builder: (context, ref, child) {
                   final settings = ref.watch(subtitleSettingsProvider);
                   final showSub = settings.isGlobalEnabled(session.id);
-                  if (!showSub && !view.channelSwapEnabled) {
-                    return const SizedBox.shrink();
-                  }
-                  return Padding(
-                    padding: const EdgeInsets.only(top: 1),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (showSub)
-                          Icon(
-                            Icons.subtitles_rounded,
-                            size: 10,
-                            color: activeColor,
-                          ),
-                        if (showSub && view.channelSwapEnabled)
-                          const SizedBox(width: 2),
-                        if (view.channelSwapEnabled)
-                          Icon(
-                            Icons.swap_horiz_rounded,
-                            size: 10,
-                            color: activeColor,
-                          ),
-                      ],
+                  final featureIcons = sessionFeatureBadgeIcons(
+                    showSubtitles: showSub,
+                    channelSwapEnabled: view.channelSwapEnabled,
+                    audioEffects: view.audioEffects,
+                    speed: view.speed,
+                  );
+                  return SessionFeatureBadgeStack(
+                    featureIcons: featureIcons,
+                    color: activeColor,
+                    child: _ActiveSessionPlayPauseButton(
+                      showPauseIcon: isPlaying || hasAsmrOnePlaybackError,
+                      isLoading: view.loading,
+                      enabled: view.trackPath.isNotEmpty && !view.loading,
+                      activeColor: activeColor,
+                      onPressed: () {
+                        AppInteractionFeedback.trigger(
+                          AppInteractionFeedbackType.confirmation,
+                        );
+                        provider.toggleSessionPlayPause(session.id);
+                      },
                     ),
                   );
                 },

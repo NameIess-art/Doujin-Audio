@@ -1024,7 +1024,7 @@ class _AudioDetailRow extends StatelessWidget {
                   .map(
                     (v) => _DetailCapsule(
                       text: v,
-                      onLongPress: onCopy != null && v != emptyText
+                      onSecondaryTap: onCopy != null && v != emptyText
                           ? () => onCopy!(v)
                           : null,
                     ),
@@ -1047,10 +1047,10 @@ class _AudioDetailRow extends StatelessWidget {
 }
 
 class _DetailCapsule extends StatelessWidget {
-  const _DetailCapsule({required this.text, this.onLongPress});
+  const _DetailCapsule({required this.text, this.onSecondaryTap});
 
   final String text;
-  final VoidCallback? onLongPress;
+  final VoidCallback? onSecondaryTap;
 
   @override
   Widget build(BuildContext context) {
@@ -1059,7 +1059,7 @@ class _DetailCapsule extends StatelessWidget {
       color: cs.surfaceContainerHighest,
       borderRadius: BorderRadius.circular(999),
       child: InkWell(
-        onLongPress: onLongPress,
+        onSecondaryTap: onSecondaryTap,
         borderRadius: BorderRadius.circular(999),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),

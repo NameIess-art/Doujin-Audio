@@ -503,8 +503,7 @@ const Map<String, String> appLanguageEn = {
   'download_update': 'Download update',
   'downloading_update': 'Downloading update: {percent}%',
   'no_updates_available': 'You are already on the latest version.',
-  'update_no_compatible_release':
-      'No compatible version is available on the 1.x channel.',
+  'update_no_compatible_release': 'No compatible stable version is available.',
   'update_missing_asset':
       'The latest version is missing an installer for this platform.',
   'update_missing_checksum':

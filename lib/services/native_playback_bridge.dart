@@ -21,7 +21,9 @@ class NativePlaybackSnapshot {
     this.speed = 1.0,
     required this.boostGain,
     required this.channelSwapEnabled,
+    this.hasChannelSwapPayload = true,
     this.audioEffects = AudioEffectsState.flat,
+    this.hasAudioEffectsPayload = true,
     this.eqCapabilities = EqCapabilities.unsupported,
     this.uri,
     this.path,
@@ -50,7 +52,9 @@ class NativePlaybackSnapshot {
   final double speed;
   final double boostGain;
   final bool channelSwapEnabled;
+  final bool hasChannelSwapPayload;
   final AudioEffectsState audioEffects;
+  final bool hasAudioEffectsPayload;
   final EqCapabilities eqCapabilities;
   final String? error;
   final int queueIndex;
@@ -79,7 +83,9 @@ class NativePlaybackSnapshot {
     double? speed,
     double? boostGain,
     bool? channelSwapEnabled,
+    bool? hasChannelSwapPayload,
     AudioEffectsState? audioEffects,
+    bool? hasAudioEffectsPayload,
     EqCapabilities? eqCapabilities,
     String? error,
     bool clearError = false,
@@ -104,7 +110,13 @@ class NativePlaybackSnapshot {
       speed: speed ?? this.speed,
       boostGain: boostGain ?? this.boostGain,
       channelSwapEnabled: channelSwapEnabled ?? this.channelSwapEnabled,
+      hasChannelSwapPayload:
+          hasChannelSwapPayload ??
+          (channelSwapEnabled != null ? true : this.hasChannelSwapPayload),
       audioEffects: audioEffects ?? this.audioEffects,
+      hasAudioEffectsPayload:
+          hasAudioEffectsPayload ??
+          (audioEffects != null ? true : this.hasAudioEffectsPayload),
       eqCapabilities: eqCapabilities ?? this.eqCapabilities,
       error: clearError ? null : (error ?? this.error),
       queueIndex: queueIndex ?? this.queueIndex,
@@ -121,6 +133,8 @@ class NativePlaybackSnapshot {
         'Native playback snapshot is missing sessionId.',
       );
     }
+    final hasChannelSwapPayload = map.containsKey('channelSwap');
+    final hasAudioEffectsPayload = map.containsKey('audioEffects');
     return NativePlaybackSnapshot(
       sessionId: sessionId,
       uri: map['uri'] as String?,
@@ -144,7 +158,9 @@ class NativePlaybackSnapshot {
       speed: (map['speed'] as num?)?.toDouble() ?? 1.0,
       boostGain: (map['boostGain'] as num?)?.toDouble() ?? 1.0,
       channelSwapEnabled: map['channelSwap'] as bool? ?? false,
+      hasChannelSwapPayload: hasChannelSwapPayload,
       audioEffects: AudioEffectsState.fromPlatformMap(map['audioEffects']),
+      hasAudioEffectsPayload: hasAudioEffectsPayload,
       eqCapabilities: EqCapabilities.fromJson(map['eqCapabilities']),
       error: map['error'] as String?,
       queueIndex: (map['queueIndex'] as num?)?.toInt() ?? 0,

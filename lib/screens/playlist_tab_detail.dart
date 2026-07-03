@@ -801,19 +801,30 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                                         session.id,
                                       ),
                                     );
-                                    final channelSwapEnabled =
-                                        transport?.channelSwapEnabled ??
-                                        session.channelSwapEnabled;
-                                    if (!channelSwapEnabled) {
+                                    final featureIcons =
+                                        sessionFeatureBadgeIcons(
+                                          showSubtitles: false,
+                                          channelSwapEnabled:
+                                              transport?.channelSwapEnabled ??
+                                              session.channelSwapEnabled,
+                                          audioEffects:
+                                              transport?.audioEffects ??
+                                              session.audioEffects,
+                                          speed:
+                                              transport?.speed ?? session.speed,
+                                        );
+                                    if (featureIcons.isEmpty) {
                                       return const SizedBox.shrink();
                                     }
                                     return Row(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
-                                        Icon(
-                                          Icons.swap_horiz_rounded,
+                                        SessionFeatureIconRow(
+                                          featureIcons: featureIcons,
                                           color: cs.onSurface,
-                                          size: 20,
+                                          iconSize: 20,
+                                          spacing: 8,
+                                          alignment: WrapAlignment.end,
                                         ),
                                         const SizedBox(width: 8),
                                       ],

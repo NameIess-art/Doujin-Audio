@@ -16,7 +16,7 @@ void main() {
   late Directory tempDir;
   late HttpServer server;
   late List<int> payload;
-  const assetName = 'NamelessAudio-v1-android-arm64-test.apk';
+  const assetName = 'NamelessAudio-android-arm64-test.apk';
 
   setUp(() async {
     tempDir = await Directory.systemTemp.createTemp('app_update_test_');
@@ -50,7 +50,7 @@ void main() {
         buildNumber: 1,
       ),
       latestVersionName: '1.0.1',
-      tagName: 'v1.0.1',
+      tagName: '1.0.1',
       assetName: assetName,
       assetUrl: '$base/update',
       checksumAssetUrl: checksumPath == null ? null : '$base/$checksumPath',
@@ -129,36 +129,36 @@ void main() {
     );
   });
 
-  test('RC channel accepts newer v1 RC and stable releases', () {
+  test('stable channel selects newer stable releases', () {
     final selected = AppUpdateService.selectCompatibleReleaseForTesting(
       <Map<String, dynamic>>[
         {'tag_name': 'v0.12.4', 'draft': false, 'prerelease': false},
-        {'tag_name': 'v1.0.0-rc.2', 'draft': false, 'prerelease': true},
-        {'tag_name': 'v1.0.0', 'draft': false, 'prerelease': false},
+        {'tag_name': '1.0.1-rc.1', 'draft': false, 'prerelease': true},
+        {'tag_name': '1.0.1', 'draft': false, 'prerelease': false},
       ],
-      const AppVersionInfo(versionName: '1.0.0-rc.1', buildNumber: 1000001),
+      const AppVersionInfo(versionName: '1.0.0', buildNumber: 1000000),
     );
 
-    expect(selected?['tag_name'], 'v1.0.0');
+    expect(selected?['tag_name'], '1.0.1');
   });
 
   test('stable channel ignores prereleases', () {
     final selected = AppUpdateService.selectCompatibleReleaseForTesting(
       <Map<String, dynamic>>[
-        {'tag_name': 'v1.0.2-rc.1', 'draft': false, 'prerelease': true},
-        {'tag_name': 'v1.0.1', 'draft': false, 'prerelease': false},
+        {'tag_name': '1.0.2-rc.1', 'draft': false, 'prerelease': true},
+        {'tag_name': '1.0.1', 'draft': false, 'prerelease': false},
       ],
       const AppVersionInfo(versionName: '1.0.0', buildNumber: 1000000),
     );
 
-    expect(selected?['tag_name'], 'v1.0.1');
+    expect(selected?['tag_name'], '1.0.1');
   });
 
   test('update info reports missing asset and missing checksum states', () {
-    const current = AppVersionInfo(versionName: '1.0.0-rc.1', buildNumber: 1);
+    const current = AppVersionInfo(versionName: '1.0.0', buildNumber: 1);
     final noAsset = AppUpdateService.buildUpdateInfoForTesting(
       currentVersion: current,
-      tagName: 'v1.0.0',
+      tagName: '1.0.1',
       releaseUrl: 'https://example.test/release',
       assets: const <Map<String, dynamic>>[],
     );
@@ -166,11 +166,11 @@ void main() {
     expect(noAsset.isUpdateAvailable, isFalse);
 
     final platformAssetName = Platform.isWindows
-        ? 'NamelessAudio-v1-windows-x64-v1.0.0.zip'
-        : 'NamelessAudio-v1-android-arm64-v1.0.0.apk';
+        ? 'NamelessAudio-windows-x64-1.0.0.zip'
+        : 'NamelessAudio-android-arm64-1.0.0.apk';
     final missingChecksum = AppUpdateService.buildUpdateInfoForTesting(
       currentVersion: current,
-      tagName: 'v1.0.0',
+      tagName: '1.0.1',
       releaseUrl: 'https://example.test/release',
       assets: <Map<String, dynamic>>[
         {
@@ -184,7 +184,7 @@ void main() {
 
     final ready = AppUpdateService.buildUpdateInfoForTesting(
       currentVersion: current,
-      tagName: 'v1.0.0',
+      tagName: '1.0.1',
       releaseUrl: 'https://example.test/release',
       assets: <Map<String, dynamic>>[
         {
@@ -220,7 +220,7 @@ void main() {
         "      Set-Content -LiteralPath \$ReadyPath -Value 'ready'",
       ),
     );
-    expect(script, contains(r'Start-Process -FilePath $ExePath'));
+    expect(script, contains(r'Start-Process -FilePath $targetExePath'));
   });
 
   test(
@@ -230,8 +230,11 @@ void main() {
         '${tempDir.path}${Platform.pathSeparator}install',
       )..createSync();
       final exe = File(
-        '${installDir.path}${Platform.pathSeparator}nameless_audio_v1.exe',
+        '${installDir.path}${Platform.pathSeparator}legacy_audio.exe',
       )..writeAsStringSync('old');
+      final targetExe = File(
+        '${installDir.path}${Platform.pathSeparator}nameless_audio.exe',
+      );
       final staleFile = File(
         '${installDir.path}${Platform.pathSeparator}stale.txt',
       )..writeAsStringSync('old file');
@@ -241,7 +244,7 @@ void main() {
       final archive = Archive()
         ..addFile(
           ArchiveFile(
-            'bundle/nameless_audio_v1.exe',
+            'bundle/nameless_audio.exe',
             payloadBytes.length,
             payloadBytes,
           ),
@@ -272,7 +275,8 @@ void main() {
 
       expect(result.exitCode, 0, reason: result.stderr.toString());
       expect(await ready.readAsString(), contains('ready'));
-      expect(await exe.length(), payloadBytes.length);
+      expect(await targetExe.length(), payloadBytes.length);
+      expect(exe.existsSync(), isFalse);
       expect(staleFile.existsSync(), isFalse);
       expect(
         tempDir.listSync().whereType<Directory>().where(

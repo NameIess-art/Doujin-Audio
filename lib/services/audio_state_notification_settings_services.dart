@@ -207,6 +207,10 @@ class SettingsRepository {
   bool blurPlayerBackgroundEnabled = true;
   bool uiBlurEffectEnabled = true;
   bool hapticFeedbackEnabled = true;
+  double defaultSessionVolume = 1.0;
+  double defaultSessionSpeed = 1.0;
+  bool defaultSessionChannelSwapEnabled = false;
+  AudioEffectsState defaultSessionAudioEffects = AudioEffectsState.flat;
   StartupPage startupPage = StartupPage.library;
   BottomNavigationStyle bottomNavigationStyle = BottomNavigationStyle.capsule;
   CoverImageResolution coverImageResolution = CoverImageResolution.balanced;

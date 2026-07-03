@@ -450,7 +450,7 @@ const Map<String, String> appLanguageJa = {
   'download_update': '更新をダウンロード',
   'downloading_update': '更新をダウンロード中：{percent}%',
   'no_updates_available': '現在は最新バージョンです。',
-  'update_no_compatible_release': '現在の 1.x チャンネルには利用可能なバージョンがありません。',
+  'update_no_compatible_release': '現在利用できる互換性のある安定版はありません。',
   'update_missing_asset': '最新バージョンにこのプラットフォーム用のインストーラーがありません。',
   'update_missing_checksum': '最新バージョンに SHA-256 チェックサムファイルがありません。',
   'update_check_failed': '更新確認に失敗しました。後でもう一度お試しください。',

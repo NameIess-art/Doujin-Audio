@@ -60,12 +60,12 @@ internal fun UnifiedPlaybackNotificationItem.stableNotificationSignature(): Stri
 }
 
 internal object UnifiedPlaybackNotificationController {
-    private const val channelId = "com.nameless.audio.v1.channel.playback"
+    private const val channelId = "com.nameless.audio.channel.playback"
     private const val channelName = "Playback"
     private const val channelDescription = "Playback notification controls"
-    const val groupKey = "com.nameless.audio.v1.PLAYBACK_GROUP"
+    const val groupKey = "com.nameless.audio.PLAYBACK_GROUP"
     const val dismissNotificationIdExtra = "notificationId"
-    private const val unifiedNotificationExtra = "com.nameless.audio.v1.UNIFIED_PLAYBACK_NOTIFICATION"
+    private const val unifiedNotificationExtra = "com.nameless.audio.UNIFIED_PLAYBACK_NOTIFICATION"
     const val summaryNotificationId = 1107
     const val foregroundServiceNotificationId = summaryNotificationId
     private const val prefsName = "music_player_notifications"

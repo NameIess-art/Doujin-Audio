@@ -573,7 +573,20 @@ class _AsmrTabState extends State<AsmrTab>
       (controller) =>
           controller?.totalCountFor(AsmrCategoryType.collected) ?? 0,
     );
+    final collectedState = context
+        .select<AsmrLibraryController?, AsmrCategoryViewState?>(
+          (controller) =>
+              controller?.categoryViewState(AsmrCategoryType.collected),
+        );
     final i18n = context.watch<AppLanguageProvider>();
+    final collectedSubtitle =
+        collectedState == null ||
+            (collectedState.works.isEmpty &&
+                !collectedState.hasAttemptedLoad &&
+                collectedState.lastError == null) ||
+            (collectedState.works.isEmpty && collectedState.isLoading)
+        ? i18n.tr('loading_dot')
+        : i18n.tr('asmr_collected_count', {'count': collectedCount});
     final currentCategory = _currentCategory;
     final currentScrollController = _scrollControllers[currentCategory]!;
     final isWindows =
@@ -757,9 +770,7 @@ class _AsmrTabState extends State<AsmrTab>
           child: TopPageHeader(
             key: _headerKey,
             title: 'ASMR.ONE',
-            subtitle: i18n.tr('asmr_collected_count', {
-              'count': collectedCount,
-            }),
+            subtitle: collectedSubtitle,
             subtitleFontSize: 11,
             fitSubtitleToWidth: true,
             trailing: SizedBox(

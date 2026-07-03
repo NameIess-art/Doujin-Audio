@@ -106,30 +106,6 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
     super.dispose();
   }
 
-  bool _isSingleLoop(SessionLoopMode mode) => mode == SessionLoopMode.single;
-
-  bool _isShuffleLoop(SessionLoopMode mode) {
-    return mode == SessionLoopMode.crossRandom ||
-        mode == SessionLoopMode.folderRandom;
-  }
-
-  bool _isCrossFolderLoop(SessionLoopMode mode) {
-    return mode == SessionLoopMode.crossRandom ||
-        mode == SessionLoopMode.crossSequential;
-  }
-
-  String _loopModeSummary(BuildContext context, SessionLoopMode mode) {
-    final i18n = context.read<AppLanguageProvider>();
-    if (_isSingleLoop(mode)) return i18n.tr('single_loop');
-    final scope = _isCrossFolderLoop(mode)
-        ? i18n.tr('cross_folder')
-        : i18n.tr('current_folder');
-    final order = _isShuffleLoop(mode)
-        ? i18n.tr('random_order')
-        : i18n.tr('sequential_order');
-    return '$order - $scope';
-  }
-
   void _syncSegmentTrack() {
     final track = widget.provider.trackByPath(widget.session.currentTrackPath);
     final nextKey = track == null
@@ -438,44 +414,18 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
             expandToParent: true,
           )
         : null;
-
     final contentColumn = Padding(
       padding: widget.detailPadding,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: MarqueeText(
-                  text: folderName,
-                  allowAndroidMarquee: true,
-                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                    color: cs.onSurface.withValues(alpha: 0.8),
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Consumer(
-                builder: (context, ref, child) {
-                  final transport = ref.watch(
-                    sessionDetailTransportProvider(session.id),
-                  );
-                  return Text(
-                    _loopModeSummary(
-                      context,
-                      transport?.loopMode ?? session.loopMode,
-                    ),
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: cs.onSurface.withValues(alpha: 0.7),
-                      fontWeight: FontWeight.w600,
-                      fontStyle: FontStyle.italic,
-                    ),
-                  );
-                },
-              ),
-            ],
+          MarqueeText(
+            text: folderName,
+            allowAndroidMarquee: true,
+            style: Theme.of(context).textTheme.labelLarge?.copyWith(
+              color: cs.onSurface.withValues(alpha: 0.8),
+              fontWeight: FontWeight.w700,
+            ),
           ),
           const SizedBox(height: 16),
           SizedBox(

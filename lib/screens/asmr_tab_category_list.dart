@@ -41,7 +41,10 @@ class _AsmrCategoryListState extends State<_AsmrCategoryList>
       ),
     );
     final works = state.works;
-    final showPlaceholder = works.isEmpty && state.isLoading;
+    final showPlaceholder =
+        works.isEmpty &&
+        (state.isLoading ||
+            (!state.hasAttemptedLoad && state.lastError == null));
     final i18n = context.watch<AppLanguageProvider>();
     final theme = Theme.of(context);
     final asmrBlue = AppDesignTokens.of(context).asmrAccent;
@@ -107,8 +110,8 @@ class _AsmrCategoryListState extends State<_AsmrCategoryList>
               triggerMode: GlassRefreshIndicatorTriggerMode.anywhere,
               onRefresh: widget.onRefresh,
               child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 650),
-                reverseDuration: const Duration(milliseconds: 220),
+                duration: const Duration(milliseconds: 750),
+                reverseDuration: const Duration(milliseconds: 750),
                 switchInCurve: Curves.easeOutCubic,
                 switchOutCurve: Curves.easeInCubic,
                 transitionBuilder: (child, animation) =>
@@ -163,7 +166,11 @@ class _AsmrCategoryListState extends State<_AsmrCategoryList>
                                 ? state.lastError.toString()
                                 : i18n.tr('asmr_empty_category');
                             return Padding(
-                              padding: const EdgeInsets.only(top: 80, left: 32, right: 32),
+                              padding: const EdgeInsets.only(
+                                top: 80,
+                                left: 32,
+                                right: 32,
+                              ),
                               child: Center(
                                 child: Text(
                                   errorText,

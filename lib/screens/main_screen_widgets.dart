@@ -36,6 +36,77 @@ class _MainDestination {
   final String labelKey;
 }
 
+class _GlobalUpdateOperationBanner extends ConsumerWidget {
+  const _GlobalUpdateOperationBanner();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final operation = ref.watch(
+      uiOperationForScopeProvider(UiOperationScope.settingsUpdate),
+    );
+    final isDownloadOperation = operation.labelKey == 'downloading_update';
+    if (!isDownloadOperation || (!operation.isBusy && !operation.hasError)) {
+      return const SizedBox.shrink();
+    }
+
+    final i18n = context.watch<AppLanguageProvider>();
+    final cs = Theme.of(context).colorScheme;
+    final top =
+        (Platform.isWindows ? 40.0 : MediaQuery.paddingOf(context).top) + 8;
+    final hasError = operation.hasError;
+    final progress = operation.progress;
+    final percent = progress == null ? '--' : '${(progress * 100).round()}';
+    final message = hasError
+        ? i18n.tr('update_download_failed_next_step')
+        : i18n.tr('downloading_update', {'percent': percent});
+    final detail = operation.error?.toString().trim();
+    final label = hasError && detail != null && detail.isNotEmpty
+        ? '$message $detail'
+        : message;
+
+    return Positioned(
+      top: top,
+      left: 12,
+      right: 12,
+      child: IgnorePointer(
+        ignoring: !hasError,
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 520),
+            child: Material(
+              color: Colors.transparent,
+              child: AppFeedbackSurface(
+                tone: hasError
+                    ? AppFeedbackTone.destructive
+                    : AppFeedbackTone.info,
+                icon: hasError
+                    ? Icons.error_outline_rounded
+                    : Icons.download_rounded,
+                title: hasError
+                    ? i18n.tr('update_download_failed')
+                    : i18n.tr('download_update'),
+                message: label,
+                trailing: hasError && Platform.isWindows
+                    ? IconButton(
+                        tooltip: i18n.tr('open_update_log'),
+                        color: cs.error,
+                        onPressed: () =>
+                            unawaited(AppUpdateService.openWindowsUpdateLog()),
+                        icon: const Icon(Icons.article_outlined),
+                      )
+                    : SizedBox(
+                        width: 72,
+                        child: LinearProgressIndicator(value: progress),
+                      ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _TimerPresentation {
   const _TimerPresentation({
     required this.duration,

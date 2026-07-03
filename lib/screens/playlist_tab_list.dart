@@ -384,65 +384,77 @@ class _SessionListCard extends StatelessWidget {
                             Column(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                IconButton(
-                                  tooltip: isPlaying
-                                      ? i18n.tr('pause')
-                                      : i18n.tr('play'),
-                                  onPressed: cardState.isLoading
-                                      ? null
-                                      : () {
-                                          AppInteractionFeedback.trigger(
-                                            AppInteractionFeedbackType
-                                                .selection,
-                                          );
-                                          provider.toggleSessionPlayPause(
-                                            sessionId,
-                                          );
-                                        },
-                                  style: IconButton.styleFrom(
-                                    foregroundColor: isPlaying
-                                        ? activeColor
-                                        : cs.onSurface,
-                                    minimumSize: const Size(44, 44),
-                                    maximumSize: const Size(44, 44),
-                                    padding: EdgeInsets.zero,
+                                SessionFeatureBadgeStack(
+                                  featureIcons: sessionFeatureBadgeIcons(
+                                    showSubtitles: showSubtitles,
+                                    channelSwapEnabled:
+                                        cardState.channelSwapEnabled,
+                                    audioEffects: cardState.audioEffects,
+                                    speed: cardState.speed,
                                   ),
-                                  icon: AnimatedSwitcher(
-                                    duration: const Duration(milliseconds: 120),
-                                    transitionBuilder: (child, animation) {
-                                      return ScaleTransition(
-                                        scale:
-                                            Tween<double>(
-                                              begin: 0.4,
-                                              end: 1.0,
-                                            ).animate(
-                                              CurvedAnimation(
-                                                parent: animation,
-                                                curve: Curves.easeOutBack,
+                                  color: isAsmrOne ? asmrBlue : localPlayRose,
+                                  child: IconButton(
+                                    tooltip: isPlaying
+                                        ? i18n.tr('pause')
+                                        : i18n.tr('play'),
+                                    onPressed: cardState.isLoading
+                                        ? null
+                                        : () {
+                                            AppInteractionFeedback.trigger(
+                                              AppInteractionFeedbackType
+                                                  .selection,
+                                            );
+                                            provider.toggleSessionPlayPause(
+                                              sessionId,
+                                            );
+                                          },
+                                    style: IconButton.styleFrom(
+                                      foregroundColor: isPlaying
+                                          ? activeColor
+                                          : cs.onSurface,
+                                      minimumSize: const Size(44, 44),
+                                      maximumSize: const Size(44, 44),
+                                      padding: EdgeInsets.zero,
+                                    ),
+                                    icon: AnimatedSwitcher(
+                                      duration: const Duration(
+                                        milliseconds: 120,
+                                      ),
+                                      transitionBuilder: (child, animation) {
+                                        return ScaleTransition(
+                                          scale:
+                                              Tween<double>(
+                                                begin: 0.4,
+                                                end: 1.0,
+                                              ).animate(
+                                                CurvedAnimation(
+                                                  parent: animation,
+                                                  curve: Curves.easeOutBack,
+                                                ),
                                               ),
-                                            ),
-                                        child: FadeTransition(
-                                          opacity: animation,
-                                          child: child,
-                                        ),
-                                      );
-                                    },
-                                    child: cardState.isLoading
-                                        ? const SizedBox(
-                                            key: ValueKey('loading'),
-                                            width: 22,
-                                            height: 22,
-                                            child: CircularProgressIndicator(
-                                              strokeWidth: 2.3,
-                                            ),
-                                          )
-                                        : Icon(
-                                            isPlaying
-                                                ? Icons.pause_rounded
-                                                : Icons.play_arrow_rounded,
-                                            key: ValueKey(isPlaying),
-                                            size: 28,
+                                          child: FadeTransition(
+                                            opacity: animation,
+                                            child: child,
                                           ),
+                                        );
+                                      },
+                                      child: cardState.isLoading
+                                          ? const SizedBox(
+                                              key: ValueKey('loading'),
+                                              width: 22,
+                                              height: 22,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2.3,
+                                              ),
+                                            )
+                                          : Icon(
+                                              isPlaying
+                                                  ? Icons.pause_rounded
+                                                  : Icons.play_arrow_rounded,
+                                              key: ValueKey(isPlaying),
+                                              size: 28,
+                                            ),
+                                    ),
                                   ),
                                 ),
                                 if (cardState.playbackError != null)
@@ -453,14 +465,6 @@ class _SessionListCard extends StatelessWidget {
                                         .labelSmall
                                         ?.copyWith(color: cs.error),
                                   ),
-                                _SessionFeatureBadges(
-                                  channelSwapEnabled:
-                                      cardState.channelSwapEnabled,
-                                  showSubtitles: showSubtitles,
-                                  activeColor: isAsmrOne
-                                      ? asmrBlue
-                                      : localPlayRose,
-                                ),
                               ],
                             ),
                             if (!cardPositionsLocked) ...[
@@ -490,38 +494,6 @@ class _SessionListCard extends StatelessWidget {
             ),
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _SessionFeatureBadges extends StatelessWidget {
-  const _SessionFeatureBadges({
-    required this.channelSwapEnabled,
-    required this.showSubtitles,
-    required this.activeColor,
-  });
-
-  final bool channelSwapEnabled;
-  final bool showSubtitles;
-  final Color activeColor;
-
-  @override
-  Widget build(BuildContext context) {
-    if (!showSubtitles && !channelSwapEnabled) {
-      return const SizedBox.shrink();
-    }
-    return Padding(
-      padding: const EdgeInsets.only(top: 1),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (showSubtitles)
-            Icon(Icons.subtitles_rounded, size: 10, color: activeColor),
-          if (showSubtitles && channelSwapEnabled) const SizedBox(width: 2),
-          if (channelSwapEnabled)
-            Icon(Icons.swap_horiz_rounded, size: 10, color: activeColor),
-        ],
       ),
     );
   }

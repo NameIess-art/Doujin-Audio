@@ -237,6 +237,8 @@ class PlaylistSessionCardState {
     required this.isPlaying,
     required this.isLoading,
     required this.channelSwapEnabled,
+    required this.audioEffects,
+    required this.speed,
     required this.playbackError,
     required this.queueColorValue,
   });
@@ -247,6 +249,8 @@ class PlaylistSessionCardState {
   final bool isPlaying;
   final bool isLoading;
   final bool channelSwapEnabled;
+  final AudioEffectsState audioEffects;
+  final double speed;
   final String? playbackError;
   final int? queueColorValue;
 
@@ -259,6 +263,8 @@ class PlaylistSessionCardState {
         other.isPlaying == isPlaying &&
         other.isLoading == isLoading &&
         other.channelSwapEnabled == channelSwapEnabled &&
+        other.audioEffects == audioEffects &&
+        other.speed == speed &&
         other.playbackError == playbackError &&
         other.queueColorValue == queueColorValue;
   }
@@ -271,6 +277,8 @@ class PlaylistSessionCardState {
     isPlaying,
     isLoading,
     channelSwapEnabled,
+    audioEffects,
+    speed,
     playbackError,
     queueColorValue,
   );
@@ -380,6 +388,8 @@ playlistSessionCardStatesFromPlaybackState(
         isPlaying: session.effectivePlaying,
         isLoading: session.isLoading,
         channelSwapEnabled: session.channelSwapEnabled,
+        audioEffects: session.audioEffects,
+        speed: session.speed,
         playbackError: session.playbackError,
         queueColorValue: session.playbackQueue?.colorValue,
       ),

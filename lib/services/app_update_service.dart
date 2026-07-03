@@ -45,11 +45,11 @@ class ReleaseChannelConfig {
   String get platformAssetPrefix =>
       Platform.isWindows ? windowsAssetPrefix : androidAssetPrefix;
 
-  static const ReleaseChannelConfig v1 = ReleaseChannelConfig(
+  static const ReleaseChannelConfig stable = ReleaseChannelConfig(
     major: 1,
-    tagPrefix: 'v1.',
-    androidAssetPrefix: 'NamelessAudio-v1-android-arm64-',
-    windowsAssetPrefix: 'NamelessAudio-v1-windows-x64-',
+    tagPrefix: '',
+    androidAssetPrefix: 'NamelessAudio-android-arm64-',
+    windowsAssetPrefix: 'NamelessAudio-windows-x64-',
   );
 }
 
@@ -107,7 +107,8 @@ class AppUpdateService {
 
   static const String owner = 'NameIess-art';
   static const String repo = 'nameless-audio';
-  static const ReleaseChannelConfig releaseChannel = ReleaseChannelConfig.v1;
+  static const ReleaseChannelConfig releaseChannel =
+      ReleaseChannelConfig.stable;
   static const String releasesApi =
       'https://api.github.com/repos/$owner/$repo/releases?per_page=30';
   static const String latestReleasePage =
@@ -270,9 +271,6 @@ class AppUpdateService {
   static bool _isCompatibleTag(String tagName, AppVersionInfo currentVersion) {
     final version = _parseVersionFromTag(tagName);
     if (version == null || version.major != releaseChannel.major) {
-      return false;
-    }
-    if (!tagName.trim().startsWith(releaseChannel.tagPrefix)) {
       return false;
     }
     final current = _parseVersion(currentVersion.versionName);
@@ -814,9 +812,6 @@ class AppUpdateService {
 
   static String _versionNameFromTag(String tagName) {
     final normalized = tagName.trim();
-    if (normalized.startsWith('v') || normalized.startsWith('V')) {
-      return normalized.substring(1);
-    }
     return normalized;
   }
 
@@ -964,7 +959,7 @@ function Invoke-RobocopyMirror([string]$Source, [string]$Destination) {
   }
 }
 
-function Install-WithDirectorySwap([string]$PayloadDir) {
+function Install-WithDirectorySwap([string]$PayloadDir, [string]$TargetExePath) {
   $installParent = Split-Path -Parent $InstallDir
   $installName = Split-Path -Leaf $InstallDir
   $stamp = Get-Date -Format 'yyyyMMddHHmmss'
@@ -977,8 +972,8 @@ function Install-WithDirectorySwap([string]$PayloadDir) {
     Rename-Item -LiteralPath $InstallDir -NewName (Split-Path -Leaf $backupDir)
     Write-UpdateLog "activating new install dir: $InstallDir"
     Rename-Item -LiteralPath $newDir -NewName $installName
-    if (-not (Test-Path -LiteralPath $ExePath)) {
-      throw "Updated executable is missing: $ExePath"
+    if (-not (Test-Path -LiteralPath $TargetExePath)) {
+      throw "Updated executable is missing: $TargetExePath"
     }
     return $backupDir
   } catch {
@@ -1007,13 +1002,27 @@ try {
   Add-Type -AssemblyName System.IO.Compression.FileSystem
   [System.IO.Compression.ZipFile]::ExtractToDirectory($ZipPath, $staging)
 
-  $exeName = Split-Path -Leaf $ExePath
-  $payloadExe = Get-ChildItem -LiteralPath $staging -Filter $exeName -Recurse -File |
+  $currentExeName = Split-Path -Leaf $ExePath
+  $payloadExeCandidates = Get-ChildItem -LiteralPath $staging -Filter 'nameless_audio*.exe' -Recurse -File
+  $payloadExe = $payloadExeCandidates |
+    Where-Object { $_.Name -ieq $currentExeName } |
     Select-Object -First 1
   if ($null -eq $payloadExe) {
-    throw "Cannot find $exeName inside update ZIP."
+    $payloadExe = $payloadExeCandidates |
+      Where-Object { $_.Name -ieq 'nameless_audio.exe' } |
+      Select-Object -First 1
+  }
+  if ($null -eq $payloadExe) {
+    $payloadExe = $payloadExeCandidates | Select-Object -First 1
+  }
+  if ($null -eq $payloadExe) {
+    throw "Cannot find Nameless Audio executable inside update ZIP."
+  }
+  if ($payloadExe.Name -ine $currentExeName) {
+    Write-UpdateLog "payload executable differs from current executable: $($payloadExe.Name)"
   }
   $payloadDir = $payloadExe.Directory.FullName
+  $targetExePath = Join-Path $InstallDir $payloadExe.Name
 
   if (-not (Test-UpdateTargetWritable)) {
     if (-not $Elevated) {
@@ -1032,17 +1041,17 @@ try {
   $backupDir = $null
   try {
     Write-UpdateLog 'installing by directory swap'
-    $backupDir = Install-WithDirectorySwap $payloadDir
+    $backupDir = Install-WithDirectorySwap $payloadDir $targetExePath
   } catch {
     Write-UpdateLog ("directory swap unavailable; falling back to in-place mirror: " + $_.Exception.Message)
     Invoke-RobocopyMirror $payloadDir $InstallDir
-    if (-not (Test-Path -LiteralPath $ExePath)) {
-      throw "Updated executable is missing: $ExePath"
+    if (-not (Test-Path -LiteralPath $targetExePath)) {
+      throw "Updated executable is missing: $targetExePath"
     }
   }
 
-  Write-UpdateLog "restarting $ExePath"
-  Start-Process -FilePath $ExePath -WorkingDirectory $InstallDir
+  Write-UpdateLog "restarting $targetExePath"
+  Start-Process -FilePath $targetExePath -WorkingDirectory $InstallDir
   if ($null -ne $backupDir -and (Test-Path -LiteralPath $backupDir)) {
     Remove-Item -LiteralPath $backupDir -Recurse -Force -ErrorAction SilentlyContinue
   }

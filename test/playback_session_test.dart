@@ -252,6 +252,58 @@ void main() {
     expect(session.audioEffects.skipSilenceEnabled, isTrue);
   });
 
+  test('partial native snapshots keep existing console audio settings', () {
+    final session =
+        PlaybackSession(
+            id: 'session_1',
+            currentTrackPath: '/audio/one.mp3',
+            loopMode: SessionLoopMode.folderSequential,
+            nonSingleLoopMode: SessionLoopMode.folderSequential,
+            volume: 0.7,
+            createdAt: DateTime(2026),
+            state: PlayerState(true, ProcessingState.ready),
+          )
+          ..channelSwapEnabled = true
+          ..audioEffects = const AudioEffectsState(
+            skipSilenceEnabled: true,
+            noiseReductionEnabled: true,
+            volumeNormalizationEnabled: true,
+            eqEnabled: true,
+            eqPresetId: 'voice_clear',
+            eqBandLevels: <int, double>{1000: 2.5},
+            panning: -0.4,
+          );
+    addTearDown(session.dispose);
+
+    final snapshot = NativePlaybackSnapshot.fromMap(<String, Object?>{
+      'sessionId': 'session_1',
+      'uri': 'file:///audio/one.mp3',
+      'playing': true,
+      'playWhenReady': true,
+      'processingState': 'ready',
+      'positionMs': 12000,
+      'bufferedPositionMs': 18000,
+      'volume': 0.8,
+      'speed': 1.5,
+      'boostGain': 1.0,
+    });
+    expect(snapshot.hasAudioEffectsPayload, isFalse);
+    expect(snapshot.hasChannelSwapPayload, isFalse);
+
+    session.applyNativeSnapshot(snapshot);
+
+    expect(session.volume, closeTo(0.8, 0.001));
+    expect(session.speed, closeTo(1.5, 0.001));
+    expect(session.channelSwapEnabled, isTrue);
+    expect(session.audioEffects.skipSilenceEnabled, isTrue);
+    expect(session.audioEffects.noiseReductionEnabled, isTrue);
+    expect(session.audioEffects.volumeNormalizationEnabled, isTrue);
+    expect(session.audioEffects.eqEnabled, isTrue);
+    expect(session.audioEffects.eqPresetId, 'voice_clear');
+    expect(session.audioEffects.eqBandLevels[1000], 2.5);
+    expect(session.audioEffects.panning, closeTo(-0.4, 0.001));
+  });
+
   test('full snapshot recalibrates position after progress heartbeat', () {
     final session = PlaybackSession(
       id: 'session_1',

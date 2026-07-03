@@ -75,21 +75,30 @@ extension AudioProviderPlaybackSessions on AudioProvider {
   PlaybackSession _createSessionForTrack(
     MusicTrack track, {
     SessionLoopMode loopMode = SessionLoopMode.folderSequential,
-    double volume = 1.0,
+    double? volume,
     List<MusicTrack>? customQueueTracks,
   }) {
-    return PlaybackSession(
+    final session = PlaybackSession(
       id: _nextSessionId(),
       currentTrackPath: track.path,
       loopMode: loopMode,
       nonSingleLoopMode: loopMode == SessionLoopMode.single
           ? SessionLoopMode.folderSequential
           : loopMode,
-      volume: volume,
+      volume: (volume ?? _settingsRepository.defaultSessionVolume)
+          .clamp(0.0, _maxSessionVolume)
+          .toDouble(),
       createdAt: DateTime.now(),
       state: PlayerState(false, ProcessingState.idle),
       customQueueTracks: customQueueTracks,
     );
+    session.speed = _nearestPlaybackSpeed(
+      _settingsRepository.defaultSessionSpeed,
+    );
+    session.channelSwapEnabled =
+        _settingsRepository.defaultSessionChannelSwapEnabled;
+    session.audioEffects = _settingsRepository.defaultSessionAudioEffects;
+    return session;
   }
 
   void _registerSession(PlaybackSession session) {
@@ -407,6 +416,7 @@ extension AudioProviderPlaybackSessions on AudioProvider {
         if (snapshot != null) {
           _handleNativePlaybackSnapshot(
             snapshot.copyWith(
+              volume: session.volume,
               audioEffects: session.audioEffects,
               eqCapabilities: session.eqCapabilities,
               channelSwapEnabled: session.channelSwapEnabled,

@@ -139,10 +139,14 @@ class PlaybackSession {
     if ((speed - snapshot.speed).abs() >= 0.001) {
       speed = snapshot.speed;
     }
-    audioEffects = snapshot.audioEffects;
+    if (snapshot.hasAudioEffectsPayload) {
+      audioEffects = snapshot.audioEffects;
+    }
     eqCapabilities = snapshot.eqCapabilities;
     nativeBoostGain = snapshot.boostGain;
-    channelSwapEnabled = snapshot.channelSwapEnabled;
+    if (snapshot.hasChannelSwapPayload) {
+      channelSwapEnabled = snapshot.channelSwapEnabled;
+    }
     if (snapshot.uri != null && loadedPath == null) {
       loadedPath = currentTrackPath;
     }

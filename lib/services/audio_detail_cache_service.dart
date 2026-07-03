@@ -35,6 +35,31 @@ class AudioDetailCacheService {
     });
   }
 
+  Future<List<AudioDetailLoadResult>> loadMany(
+    Iterable<AudioDetailTarget> targets,
+  ) async {
+    final orderedTargets = targets.toList(growable: false);
+    if (orderedTargets.isEmpty) return const <AudioDetailLoadResult>[];
+
+    final batchTargets = <AudioDetailTarget>[];
+    for (final target in orderedTargets) {
+      final key = AudioLibraryDetailKey.forTarget(target);
+      if (_resolved.containsKey(key) || _loadFutures.containsKey(key)) {
+        continue;
+      }
+      batchTargets.add(target);
+    }
+
+    if (batchTargets.isNotEmpty) {
+      final batchResults = await _repository.loadMany(batchTargets);
+      for (final result in batchResults) {
+        _storeLoadResult(result);
+      }
+    }
+
+    return Future.wait(orderedTargets.map(load));
+  }
+
   Future<AudioDetailSaveResult> save(AudioDetail detail) async {
     final result = await _repository.save(detail);
     _store(result.detail);
@@ -71,9 +96,14 @@ class AudioDetailCacheService {
   }
 
   void _store(AudioDetail detail) {
-    final loadResult = AudioDetailLoadResult(detail: detail);
-    _resolved[AudioLibraryDetailKey.forTarget(detail.target)] = loadResult;
+    _storeLoadResult(AudioDetailLoadResult(detail: detail));
     _loadFutures.remove(AudioLibraryDetailKey.forTarget(detail.target));
+  }
+
+  void _storeLoadResult(AudioDetailLoadResult loadResult) {
+    final key = AudioLibraryDetailKey.forTarget(loadResult.detail.target);
+    _resolved[key] = loadResult;
+    _loadFutures.remove(key);
   }
 
   void _remove(AudioDetailTarget target) {

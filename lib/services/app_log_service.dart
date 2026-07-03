@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:developer' as developer;
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as path;
@@ -14,6 +15,7 @@ abstract final class AppLogService {
   static String? _logDirectoryPath;
 
   static String? get logDirectoryPath => _logDirectoryPath;
+  static bool get _performanceLoggingEnabled => kDebugMode || kProfileMode;
 
   static Future<void> initialize() async {
     if (_initialized) return;
@@ -80,6 +82,42 @@ abstract final class AppLogService {
     _writeWithError('ERROR', message, error: error, stackTrace: stackTrace);
   }
 
+  static Future<T> measureAsync<T>(
+    String event,
+    Future<T> Function() action, {
+    Map<String, Object?> details = const <String, Object?>{},
+  }) async {
+    if (!_performanceLoggingEnabled) return action();
+    final task = developer.TimelineTask()..start(event, arguments: details);
+    final stopwatch = Stopwatch()..start();
+    try {
+      return await action();
+    } finally {
+      stopwatch.stop();
+      final elapsedMs = stopwatch.elapsedMilliseconds;
+      task.finish(arguments: <String, Object?>{'elapsedMs': elapsedMs});
+      _write('PERF', '$event elapsedMs=$elapsedMs${_formatDetails(details)}');
+    }
+  }
+
+  static T measureSync<T>(
+    String event,
+    T Function() action, {
+    Map<String, Object?> details = const <String, Object?>{},
+  }) {
+    if (!_performanceLoggingEnabled) return action();
+    final task = developer.TimelineTask()..start(event, arguments: details);
+    final stopwatch = Stopwatch()..start();
+    try {
+      return action();
+    } finally {
+      stopwatch.stop();
+      final elapsedMs = stopwatch.elapsedMilliseconds;
+      task.finish(arguments: <String, Object?>{'elapsedMs': elapsedMs});
+      _write('PERF', '$event elapsedMs=$elapsedMs${_formatDetails(details)}');
+    }
+  }
+
   static void logZoneError(Object error, StackTrace stackTrace) {
     AppLogService.error(
       'zone_uncaught_error',
@@ -131,6 +169,15 @@ abstract final class AppLogService {
       return uri.replace(query: '').toString();
     });
     return sanitized;
+  }
+
+  static String _formatDetails(Map<String, Object?> details) {
+    if (details.isEmpty) return '';
+    final encoded = details.entries
+        .where((entry) => entry.value != null)
+        .map((entry) => '${entry.key}=${entry.value}')
+        .join(' ');
+    return encoded.isEmpty ? '' : ' $encoded';
   }
 
   static void _writeWithError(

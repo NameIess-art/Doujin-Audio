@@ -509,6 +509,12 @@ class AppDatabase {
     return rows.map((row) => _trackSummaryFromRow(row)).toList();
   }
 
+  Future<List<MusicTrack>> loadStartupTracks() async {
+    final db = await database;
+    final rows = await _queryStartupTrackRows(db);
+    return rows.map(_trackStartupFromRow).toList();
+  }
+
   Future<MusicTrack?> loadTrackDetail(String path) async {
     final db = await database;
     final rows = await _queryFullTrackRows(db, path: path, limit: 1);
@@ -741,6 +747,38 @@ class AppDatabase {
     );
     if (rows.isEmpty) return null;
     return AudioDetail.fromRow(rows.first);
+  }
+
+  Future<List<AudioDetail>> loadAudioDetails(
+    Iterable<AudioDetailTarget> targets,
+  ) async {
+    final db = await database;
+    final pathsByType = <String, Set<String>>{};
+    for (final target in targets) {
+      pathsByType
+          .putIfAbsent(target.targetType.dbValue, () => <String>{})
+          .add(PathMatcher.normalize(target.targetPath));
+    }
+    if (pathsByType.isEmpty) return const <AudioDetail>[];
+
+    final details = <AudioDetail>[];
+    for (final entry in pathsByType.entries) {
+      final paths = entry.value.toList(growable: false);
+      if (paths.isEmpty) continue;
+      const chunkSize = 900;
+      for (var start = 0; start < paths.length; start += chunkSize) {
+        final end = (start + chunkSize).clamp(0, paths.length);
+        final chunk = paths.sublist(start, end);
+        final placeholders = List.filled(chunk.length, '?').join(', ');
+        final rows = await db.query(
+          'audio_details',
+          where: 'target_type = ? AND target_path IN ($placeholders)',
+          whereArgs: [entry.key, ...chunk],
+        );
+        details.addAll(rows.map(AudioDetail.fromRow));
+      }
+    }
+    return details;
   }
 
   Future<void> upsertAudioDetail(AudioDetail detail) async {
@@ -1121,6 +1159,38 @@ class AppDatabase {
     ''', path == null ? null : [path]);
   }
 
+  static Future<List<Map<String, dynamic>>> _queryStartupTrackRows(
+    DatabaseExecutor db,
+  ) {
+    return db.rawQuery('''
+      SELECT
+        t.path,
+        t.display_name,
+        t.group_key,
+        t.group_title,
+        t.group_subtitle,
+        t.is_single,
+        t.is_video,
+        t.duration_ms,
+        scan.scanned_at_ms,
+        scan.file_size_bytes,
+        scan.modified_at_ms,
+        playback.last_played_position_ms,
+        playback.last_played_at_ms,
+        playback.is_favorite,
+        assets.cover_cache_path,
+        assets.lyrics_path,
+        assets.manual_cover_path,
+        assets.remote_cover_url,
+        remote.remote_metadata_kind
+      FROM tracks t
+      LEFT JOIN track_scan_info scan ON scan.path = t.path
+      LEFT JOIN track_playback_state playback ON playback.path = t.path
+      LEFT JOIN track_assets assets ON assets.path = t.path
+      LEFT JOIN track_remote_metadata remote ON remote.path = t.path
+    ''');
+  }
+
   static Future<Map<String, List<String>>> _loadTrackTags(
     DatabaseExecutor db, {
     Iterable<String>? paths,
@@ -1236,6 +1306,33 @@ class AppDatabase {
         groupSubtitle: row['group_subtitle'] as String,
         isSingle: (row['is_single'] as int) == 1,
         isVideo: (row['is_video'] as int? ?? 0) == 1,
+        duration: Duration(
+          milliseconds: (row['duration_ms'] as num?)?.toInt() ?? 0,
+        ),
+      );
+
+  static MusicTrack _trackStartupFromRow(Map<String, dynamic> row) =>
+      MusicTrack(
+        path: row['path'] as String,
+        displayName: row['display_name'] as String,
+        groupKey: row['group_key'] as String,
+        groupTitle: row['group_title'] as String,
+        groupSubtitle: row['group_subtitle'] as String,
+        isSingle: (row['is_single'] as int) == 1,
+        isVideo: (row['is_video'] as int? ?? 0) == 1,
+        scannedAt: _dateTimeFromMs(row['scanned_at_ms']),
+        fileSizeBytes: (row['file_size_bytes'] as num?)?.toInt(),
+        modifiedAt: _dateTimeFromMs(row['modified_at_ms']),
+        lastPlayedPosition: Duration(
+          milliseconds: (row['last_played_position_ms'] as num?)?.toInt() ?? 0,
+        ),
+        lastPlayedAt: _dateTimeFromMs(row['last_played_at_ms']),
+        isFavorite: (row['is_favorite'] as int? ?? 0) == 1,
+        coverCachePath: row['cover_cache_path'] as String?,
+        lyricsPath: row['lyrics_path'] as String?,
+        manualCoverPath: row['manual_cover_path'] as String?,
+        remoteCoverUrl: row['remote_cover_url'] as String?,
+        remoteMetadataKind: row['remote_metadata_kind'] as String?,
         duration: Duration(
           milliseconds: (row['duration_ms'] as num?)?.toInt() ?? 0,
         ),

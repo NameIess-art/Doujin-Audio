@@ -229,6 +229,9 @@ final mainOverlayUiProvider = Provider<MainOverlayUiState>((ref) {
   final playbackState =
       ref.watch(playbackStateProvider).valueOrNull ??
       ref.watch(playbackSessionServiceProvider).slice.state;
+  final libraryState =
+      ref.watch(libraryStateProvider).valueOrNull ??
+      ref.watch(libraryServiceProvider).slice.state;
   final settingsState =
       ref.watch(settingsStateProvider).valueOrNull ??
       ref.watch(settingsRepositoryProvider).slice.state;
@@ -237,6 +240,11 @@ final mainOverlayUiProvider = Provider<MainOverlayUiState>((ref) {
   final visibleSessions = settingsState.showPlaybackCard
       ? overlaySessions
       : const <PlaybackSession>[];
+  final startupReady =
+      settingsState.isInitialized &&
+      (settingsState.startupPage == StartupPage.library
+          ? libraryState.isInitialized
+          : true);
   return MainOverlayUiState(
     overlaySessions: overlaySessions,
     visibleSessions: visibleSessions,
@@ -244,6 +252,7 @@ final mainOverlayUiProvider = Provider<MainOverlayUiState>((ref) {
     activeSessionCount: playbackState.activeSessions.length,
     showPlaybackCard: settingsState.showPlaybackCard,
     isInitialized: playbackState.isInitialized,
+    startupReady: startupReady,
   );
 });
 

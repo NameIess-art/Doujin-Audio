@@ -258,6 +258,43 @@ void main() {
     expect(detail?.toJson(), track.toJson());
   });
 
+  test(
+    'loadStartupTracks keeps UI fields without eager metadata JSON',
+    () async {
+      const track = MusicTrack(
+        path: '/library/startup.flac',
+        displayName: 'Startup',
+        groupKey: '/library',
+        groupTitle: 'Library',
+        groupSubtitle: '1 track',
+        isSingle: false,
+        lastPlayedPosition: Duration(minutes: 3),
+        isFavorite: true,
+        tags: <String>['focus'],
+        coverCachePath: '/cache/startup.png',
+        manualCoverPath: '/manual/startup.png',
+        remoteCoverUrl: 'https://example.com/startup.jpg',
+        remoteMetadataKind: 'asmr.one',
+        remoteMetadata: <String, Object?>{'workId': 456},
+      );
+      await appDatabase.insertTracks([track]);
+
+      final startup = (await appDatabase.loadStartupTracks()).single;
+      final detail = await appDatabase.loadTrackDetail(track.path);
+
+      expect(startup.path, track.path);
+      expect(startup.coverCachePath, track.coverCachePath);
+      expect(startup.manualCoverPath, track.manualCoverPath);
+      expect(startup.remoteCoverUrl, track.remoteCoverUrl);
+      expect(startup.remoteMetadataKind, track.remoteMetadataKind);
+      expect(startup.remoteMetadata, isNull);
+      expect(startup.tags, isEmpty);
+      expect(startup.isFavorite, isTrue);
+      expect(startup.lastPlayedPosition, const Duration(minutes: 3));
+      expect(detail?.toJson(), track.toJson());
+    },
+  );
+
   test('sessions persist custom queue tracks', () async {
     const queueTrack = MusicTrack(
       path: 'https://example.com/track.mp3',

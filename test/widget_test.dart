@@ -488,6 +488,8 @@ Future<_AppShellHarness> _pumpAppShell(
     notificationStateService: notificationCoordinatorService,
     settingsRepository: settingsRepository,
   );
+  settingsRepository.syncSlice(isInitialized: true);
+  libraryService.syncSlice(isInitialized: true, detailRevision: 0);
   if (includePlaybackSession) {
     final session = PlaybackSession(
       id: 'orientation_session',

@@ -70,6 +70,13 @@ class _FakeAudioDetailRepository implements AudioDetailRepository {
   }
 
   @override
+  Future<List<AudioDetailLoadResult>> loadMany(
+    Iterable<AudioDetailTarget> targets,
+  ) {
+    return Future.wait(targets.map(load));
+  }
+
+  @override
   Future<AudioDetailSaveResult> save(AudioDetail detail) async {
     _loadResult = detail;
     return AudioDetailSaveResult(

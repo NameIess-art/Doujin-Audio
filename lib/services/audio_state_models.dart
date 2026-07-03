@@ -370,6 +370,7 @@ class SettingsState {
     this.coverImageResolution = CoverImageResolution.balanced,
     this.asmrDownloadDestinationRoot,
     this.asmrDownloadConflictPolicy = AsmrDownloadConflictPolicy.overwrite,
+    this.isInitialized = false,
   });
 
   final String converterFormat;
@@ -394,6 +395,7 @@ class SettingsState {
   final CoverImageResolution coverImageResolution;
   final String? asmrDownloadDestinationRoot;
   final AsmrDownloadConflictPolicy asmrDownloadConflictPolicy;
+  final bool isInitialized;
 
   @override
   bool operator ==(Object other) {
@@ -419,7 +421,8 @@ class SettingsState {
         other.bottomNavigationStyle == bottomNavigationStyle &&
         other.coverImageResolution == coverImageResolution &&
         other.asmrDownloadDestinationRoot == asmrDownloadDestinationRoot &&
-        other.asmrDownloadConflictPolicy == asmrDownloadConflictPolicy;
+        other.asmrDownloadConflictPolicy == asmrDownloadConflictPolicy &&
+        other.isInitialized == isInitialized;
   }
 
   @override
@@ -446,6 +449,7 @@ class SettingsState {
     coverImageResolution,
     asmrDownloadDestinationRoot,
     asmrDownloadConflictPolicy,
+    isInitialized,
   ]);
 }
 

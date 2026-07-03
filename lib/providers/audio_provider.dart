@@ -221,6 +221,9 @@ class AudioProvider with ChangeNotifier {
 
   int _sessionSeed = 0;
   bool _isInitialized = false;
+  bool _settingsInitialized = false;
+  bool _libraryInitialized = false;
+  bool _playbackInitialized = false;
   final Set<String> _deferredVolumeReloadSessionIds = <String>{};
   final Map<String, String> _retargetedPathAliases = <String, String>{};
   final Map<String, _TimeSegmentLoopRuntime> _timeSegmentLoopsBySessionId =
@@ -894,6 +897,7 @@ class AudioProvider with ChangeNotifier {
   void _syncLibraryStateSlice({bool preserveSliceInitialized = false}) {
     _libraryService.syncSlice(
       isInitialized:
+          _libraryInitialized ||
           _isInitialized ||
           (preserveSliceInitialized &&
               _libraryService.slice.state.isInitialized),
@@ -912,16 +916,20 @@ class AudioProvider with ChangeNotifier {
       focusedSessionId: _notificationFocusSessionId,
       multiThreadPlaybackEnabled: _multiThreadPlaybackEnabled,
       coverGeneration: _coverArtworkCacheService.generation,
-      isInitialized: _isInitialized,
+      isInitialized: _playbackInitialized || _isInitialized,
     );
   }
 
   void _syncTimerStateSlice() {
-    _timerService.syncSlice(isInitialized: _isInitialized);
+    _timerService.syncSlice(
+      isInitialized: _playbackInitialized || _isInitialized,
+    );
   }
 
   void _syncSettingsStateSlice() {
-    _settingsRepository.syncSlice();
+    _settingsRepository.syncSlice(
+      isInitialized: _settingsInitialized || _isInitialized,
+    );
     AppInteractionFeedback.hapticFeedbackEnabled =
         _settingsRepository.hapticFeedbackEnabled;
   }

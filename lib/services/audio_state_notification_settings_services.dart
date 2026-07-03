@@ -221,7 +221,7 @@ class SettingsRepository {
     const SettingsState(),
   );
 
-  void syncSlice() {
+  void syncSlice({bool isInitialized = false}) {
     slice.update(
       SettingsState(
         converterFormat: converterFormat,
@@ -246,6 +246,7 @@ class SettingsRepository {
         coverImageResolution: coverImageResolution,
         asmrDownloadDestinationRoot: asmrDownloadDestinationRoot,
         asmrDownloadConflictPolicy: asmrDownloadConflictPolicy,
+        isInitialized: isInitialized,
       ),
     );
   }

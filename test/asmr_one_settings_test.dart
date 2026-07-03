@@ -915,6 +915,33 @@ void main() {
     expect(categoryIndex, greaterThan(pullIndex));
   });
 
+  test(
+    'ASMR initialize restores account without blocking category load',
+    () async {
+      await resetPrefs();
+      final api = _FakeAsmrApiService();
+      final tokenStore = _MemoryAsmrTokenStore();
+      await tokenStore.writeToken('cached-token');
+      await tokenStore.writeCredentials('alice', 'password');
+      final controller = AsmrLibraryController(
+        apiService: api,
+        authService: AsmrAuthService(apiService: api, tokenStore: tokenStore),
+        audioDatabaseRepository: _FakeAudioDatabaseRepository(
+          const <MusicTrack>[],
+        ),
+      );
+
+      await controller.initialize(defaultLanguage: AsmrContentLanguage.en);
+
+      expect(controller.isAsmrAccountLoggedIn, isTrue);
+      expect(api.calls, isEmpty);
+
+      await controller.refreshCategory(AsmrCategoryType.release);
+
+      expect(api.calls, <String>['works:release:desc:1']);
+    },
+  );
+
   test('ASMR sync drains changes added while a batch is running', () async {
     await resetPrefs();
     final api = _FakeAsmrApiService();

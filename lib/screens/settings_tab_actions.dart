@@ -152,11 +152,21 @@ extension _SettingsTabActions on _SettingsTabState {
 
     if (!info.isUpdateAvailable) {
       if (!context.mounted) return;
+      final messageKey = switch (info.status) {
+        AppUpdateStatus.noCompatibleRelease => 'update_no_compatible_release',
+        AppUpdateStatus.missingAsset => 'update_missing_asset',
+        AppUpdateStatus.missingChecksum => 'update_missing_checksum',
+        _ => 'no_updates_available',
+      };
       showAppSnackBar(
         context,
-        i18n.tr('no_updates_available'),
-        tone: AppFeedbackTone.success,
-        icon: Icons.verified_rounded,
+        i18n.tr(messageKey),
+        tone: info.status == AppUpdateStatus.upToDate
+            ? AppFeedbackTone.success
+            : AppFeedbackTone.warning,
+        icon: info.status == AppUpdateStatus.upToDate
+            ? Icons.verified_rounded
+            : Icons.info_outline_rounded,
       );
       return;
     }
@@ -184,7 +194,7 @@ extension _SettingsTabActions on _SettingsTabState {
               ),
               const SizedBox(height: 10),
               Text(
-                info.assetName,
+                info.assetName ?? '',
                 style: Theme.of(dialogContext).textTheme.bodySmall,
               ),
             ],
@@ -203,7 +213,7 @@ extension _SettingsTabActions on _SettingsTabState {
         );
       },
     );
-    if (shouldDownload == true && context.mounted) {
+    if (shouldDownload == true && context.mounted && info.canDownload) {
       if (Platform.isAndroid) {
         await _ensureInstallPermissionThenRun(
           context,

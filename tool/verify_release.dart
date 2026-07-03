@@ -12,11 +12,11 @@ void main(List<String> args) {
   final workflow = File('.github/workflows/flutter.yml').readAsStringSync();
 
   final versionMatch = RegExp(
-    r'^version:\s*([0-9]+\.[0-9]+\.[0-9]+)\+([0-9]+)\s*$',
+    r'^version:\s*([0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?)\+([0-9]+)\s*$',
     multiLine: true,
   ).firstMatch(pubspec);
   if (versionMatch == null) {
-    _fail('pubspec.yaml must declare version as x.y.z+build.');
+    _fail('pubspec.yaml must declare version as x.y.z[-prerelease]+build.');
   }
 
   final versionName = versionMatch.group(1)!;
@@ -24,25 +24,37 @@ void main(List<String> args) {
   final expectedTag = 'v$versionName';
   final expectedVersion = '$versionName+$buildNumber';
 
-  if (!readme.contains('`$expectedVersion`')) {
-    _fail('README.md does not contain current version `$expectedVersion`.');
+  if (!readme.contains('当前开发版本：`$expectedVersion`')) {
+    _fail(
+      'README.md does not contain current development version `$expectedVersion`.',
+    );
   }
-  if (!readme.contains('/releases/tag/$expectedTag')) {
-    _fail('README.md does not link to release tag $expectedTag.');
+  if (!readme.contains('最新已发布版本：`0.12.4+1204`') ||
+      !readme.contains('/releases/tag/v0.12.4')) {
+    _fail('README.md must keep v0.12.4 as the latest published release.');
   }
   if (tag != null && tag.isNotEmpty && tag != expectedTag) {
     _fail('Git tag $tag does not match pubspec version $expectedTag.');
   }
+  if (tag != null && tag.isNotEmpty && !tag.startsWith('v1.')) {
+    _fail('1.x release workflow only accepts v1.* tags.');
+  }
 
   for (final assetPattern in <String>[
-    'NamelessAudio-android-arm64-\${GITHUB_REF_NAME}.apk',
-    'NamelessAudio-windows-x64-\${{ github.ref_name }}.zip',
+    'NamelessAudio-v1-android-arm64-\${GITHUB_REF_NAME}.apk',
+    'NamelessAudio-v1-windows-x64-\${{ github.ref_name }}.zip',
   ]) {
     if (!workflow.contains(assetPattern)) {
       _fail(
         'Release workflow is missing expected asset pattern: $assetPattern',
       );
     }
+  }
+  if (!workflow.contains('--latest=false')) {
+    _fail('Release workflow must not replace the old latest release.');
+  }
+  if (workflow.contains('--clobber')) {
+    _fail('Release workflow must not overwrite existing assets.');
   }
 
   stdout.writeln(

@@ -19,7 +19,12 @@ class LibrarySnapshotCacheService {
   }) : _libraryService = libraryService,
        _detailCacheService = detailCacheService,
        _interactionCoordinator =
-           interactionCoordinator ?? UiInteractionCoordinator.instance;
+           interactionCoordinator ?? UiInteractionCoordinator.instance {
+    if (_libraryService.library.isEmpty &&
+        _libraryService.watchedFolders.isEmpty) {
+      _cachedTreeRevision = _libraryService.structureRevision;
+    }
+  }
 
   final LibraryService _libraryService;
   final AudioDetailCacheService _detailCacheService;

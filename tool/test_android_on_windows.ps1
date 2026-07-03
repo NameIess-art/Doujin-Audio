@@ -15,8 +15,8 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-$appId = 'com.nameless.audio'
-$mainActivity = "$appId/.MainActivity"
+$appId = 'com.nameless.audio.v1'
+$mainActivity = "$appId/com.nameless.audio.MainActivity"
 $debugApkPath = Join-Path $repoRoot 'build\app\outputs\flutter-apk\app-debug.apk'
 $arm64DebugApkPath = Join-Path $repoRoot 'build\app\outputs\flutter-apk\app-arm64-v8a-debug.apk'
 $arm64ReleaseApkPath = Join-Path $repoRoot 'build\app\outputs\flutter-apk\app-arm64-v8a-release.apk'
@@ -478,7 +478,7 @@ function Install-Arm64DebugApk {
 function Get-ProjectBuildNumber {
     $pubspecPath = Join-Path $repoRoot 'pubspec.yaml'
     foreach ($line in Get-Content -LiteralPath $pubspecPath) {
-        if ($line -match '^\s*version\s*:\s*[0-9]+\.[0-9]+\.[0-9]+\+([0-9]+)\s*$') {
+        if ($line -match '^\s*version\s*:\s*[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?\+([0-9]+)\s*(?:#.*)?$') {
             return [int64]$Matches[1]
         }
     }

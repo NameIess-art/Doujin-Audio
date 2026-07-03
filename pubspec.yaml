@@ -1,7 +1,7 @@
 name: nameless_audio
 description: Local audio player for multi-session ASMR and voice library playback.
 publish_to: 'none'
-version: 0.12.4+1204
+version: 1.0.0-rc.1+1000001
 
 environment:
   sdk: ^3.11.1
@@ -42,6 +42,7 @@ dependencies:
   flutter_animate: ^4.5.2
   crypto: ^3.0.6
   archive: ^4.0.9
+  pub_semver: ^2.2.0
 
 dev_dependencies:
   flutter_test:

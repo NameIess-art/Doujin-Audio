@@ -16,7 +16,7 @@ void main() {
   late Directory tempDir;
   late HttpServer server;
   late List<int> payload;
-  const assetName = 'NamelessAudio-test.apk';
+  const assetName = 'NamelessAudio-v1-android-arm64-test.apk';
 
   setUp(() async {
     tempDir = await Directory.systemTemp.createTemp('app_update_test_');
@@ -83,10 +83,13 @@ void main() {
       AppUpdateService.downloadUpdate(info(), onProgress: (_) {}),
       throwsFormatException,
     );
+    final updatesDir = Directory(
+      '${tempDir.path}${Platform.pathSeparator}updates',
+    );
     expect(
-      Directory(
-        '${tempDir.path}${Platform.pathSeparator}updates',
-      ).listSync().whereType<File>(),
+      updatesDir.existsSync()
+          ? updatesDir.listSync().whereType<File>()
+          : const Iterable<File>.empty(),
       isEmpty,
     );
   });
@@ -126,6 +129,79 @@ void main() {
     );
   });
 
+  test('RC channel accepts newer v1 RC and stable releases', () {
+    final selected = AppUpdateService.selectCompatibleReleaseForTesting(
+      <Map<String, dynamic>>[
+        {'tag_name': 'v0.12.4', 'draft': false, 'prerelease': false},
+        {'tag_name': 'v1.0.0-rc.2', 'draft': false, 'prerelease': true},
+        {'tag_name': 'v1.0.0', 'draft': false, 'prerelease': false},
+      ],
+      const AppVersionInfo(versionName: '1.0.0-rc.1', buildNumber: 1000001),
+    );
+
+    expect(selected?['tag_name'], 'v1.0.0');
+  });
+
+  test('stable channel ignores prereleases', () {
+    final selected = AppUpdateService.selectCompatibleReleaseForTesting(
+      <Map<String, dynamic>>[
+        {'tag_name': 'v1.0.2-rc.1', 'draft': false, 'prerelease': true},
+        {'tag_name': 'v1.0.1', 'draft': false, 'prerelease': false},
+      ],
+      const AppVersionInfo(versionName: '1.0.0', buildNumber: 1000000),
+    );
+
+    expect(selected?['tag_name'], 'v1.0.1');
+  });
+
+  test('update info reports missing asset and missing checksum states', () {
+    const current = AppVersionInfo(versionName: '1.0.0-rc.1', buildNumber: 1);
+    final noAsset = AppUpdateService.buildUpdateInfoForTesting(
+      currentVersion: current,
+      tagName: 'v1.0.0',
+      releaseUrl: 'https://example.test/release',
+      assets: const <Map<String, dynamic>>[],
+    );
+    expect(noAsset.status, AppUpdateStatus.missingAsset);
+    expect(noAsset.isUpdateAvailable, isFalse);
+
+    final platformAssetName = Platform.isWindows
+        ? 'NamelessAudio-v1-windows-x64-v1.0.0.zip'
+        : 'NamelessAudio-v1-android-arm64-v1.0.0.apk';
+    final missingChecksum = AppUpdateService.buildUpdateInfoForTesting(
+      currentVersion: current,
+      tagName: 'v1.0.0',
+      releaseUrl: 'https://example.test/release',
+      assets: <Map<String, dynamic>>[
+        {
+          'name': platformAssetName,
+          'browser_download_url': 'https://example.test/$platformAssetName',
+        },
+      ],
+    );
+    expect(missingChecksum.status, AppUpdateStatus.missingChecksum);
+    expect(missingChecksum.isUpdateAvailable, isFalse);
+
+    final ready = AppUpdateService.buildUpdateInfoForTesting(
+      currentVersion: current,
+      tagName: 'v1.0.0',
+      releaseUrl: 'https://example.test/release',
+      assets: <Map<String, dynamic>>[
+        {
+          'name': platformAssetName,
+          'browser_download_url': 'https://example.test/$platformAssetName',
+        },
+        {
+          'name': '$platformAssetName.sha256',
+          'browser_download_url':
+              'https://example.test/$platformAssetName.sha256',
+        },
+      ],
+    );
+    expect(ready.status, AppUpdateStatus.updateAvailable);
+    expect(ready.canDownload, isTrue);
+  });
+
   test('Windows updater verifies ZIP before requesting app exit', () {
     final script = AppUpdateService.windowsUpdateScriptForTesting;
 
@@ -154,7 +230,7 @@ void main() {
         '${tempDir.path}${Platform.pathSeparator}install',
       )..createSync();
       final exe = File(
-        '${installDir.path}${Platform.pathSeparator}nameless_audio.exe',
+        '${installDir.path}${Platform.pathSeparator}nameless_audio_v1.exe',
       )..writeAsStringSync('old');
       final staleFile = File(
         '${installDir.path}${Platform.pathSeparator}stale.txt',
@@ -165,7 +241,7 @@ void main() {
       final archive = Archive()
         ..addFile(
           ArchiveFile(
-            'bundle/nameless_audio.exe',
+            'bundle/nameless_audio_v1.exe',
             payloadBytes.length,
             payloadBytes,
           ),

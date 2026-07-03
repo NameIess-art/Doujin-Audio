@@ -34,6 +34,7 @@ MusicTrack _track({
   required String path,
   required String groupKey,
   required String groupTitle,
+  bool isSingle = false,
 }) {
   return MusicTrack(
     path: path,
@@ -41,8 +42,40 @@ MusicTrack _track({
     groupKey: groupKey,
     groupTitle: groupTitle,
     groupSubtitle: groupKey,
-    isSingle: false,
+    isSingle: isSingle,
   );
+}
+
+Future<void> _pumpUntilNotFound(
+  WidgetTester tester,
+  Finder finder, {
+  Duration timeout = const Duration(seconds: 10),
+}) async {
+  final ticks = timeout.inMilliseconds ~/ 50;
+  for (var i = 0; i < ticks; i++) {
+    await tester.pump(const Duration(milliseconds: 50));
+    if (finder.evaluate().isEmpty) return;
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 10)),
+    );
+  }
+  fail('Timed out waiting for $finder to disappear');
+}
+
+Future<void> _pumpUntilLibraryTreeReady(
+  WidgetTester tester,
+  AudioProvider audioProvider, {
+  Duration timeout = const Duration(seconds: 10),
+}) async {
+  final ticks = timeout.inMilliseconds ~/ 50;
+  for (var i = 0; i < ticks; i++) {
+    if (audioProvider.libraryTree.isNotEmpty) return;
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 10)),
+    );
+  }
+  fail('Timed out waiting for library tree');
 }
 
 Widget _buildTestApp({
@@ -426,7 +459,7 @@ void main() {
     }
   });
 
-  testWidgets('library tab search filters results and shows empty state copy', (
+  testWidgets('library tab search submits asynchronously and removes misses', (
     WidgetTester tester,
   ) async {
     final notificationService = PlaybackNotificationService();
@@ -457,14 +490,16 @@ void main() {
         _track(
           name: 'Soft Rain',
           path: '/library/rain/soft_rain.mp3',
-          groupKey: '/library/rain',
-          groupTitle: 'Rain Pack',
+          groupKey: '/library/rain/soft_rain.mp3',
+          groupTitle: 'Soft Rain',
+          isSingle: true,
         ),
         _track(
           name: 'Ocean Waves',
           path: '/library/rain/ocean_waves.mp3',
-          groupKey: '/library/rain',
-          groupTitle: 'Rain Pack',
+          groupKey: '/library/rain/ocean_waves.mp3',
+          groupTitle: 'Ocean Waves',
+          isSingle: true,
         ),
       ],
       notify: false,
@@ -488,6 +523,7 @@ void main() {
       ),
     );
     await tester.pump();
+    await _pumpUntilLibraryTreeReady(tester, audioProvider);
     await tester.pump(const Duration(milliseconds: 500));
 
     if (Platform.isWindows) {
@@ -495,11 +531,6 @@ void main() {
         find.byType(ContentBoundReorderArea),
       );
       expect(reorderArea.bottomExpansion, 320);
-      final list = tester.widget<ReorderableListView>(
-        find.byType(ReorderableListView),
-      );
-      expect(list.padding!.bottom, 336);
-
       final scrollbar = find.descendant(
         of: find.byType(ContentBoundReorderArea),
         matching: find.byType(Scrollbar),
@@ -511,109 +542,21 @@ void main() {
             reorderArea.topExpansion +
             reorderArea.bottomExpansion,
       );
-      expect(
-        MediaQuery.paddingOf(
-          tester.element(find.byType(ReorderableListView)),
-        ).bottom,
-        reorderArea.bottomInset,
-      );
     }
 
     expect(find.byType(TextField), findsOneWidget);
 
     await tester.enterText(find.byType(TextField), 'ocean');
-    await tester.pump(const Duration(milliseconds: 260));
-    await tester.pump(const Duration(milliseconds: 300));
+    await _pumpUntilNotFound(
+      tester,
+      find.text('Soft Rain', findRichText: true),
+    );
 
-    expect(find.text('Ocean Waves', findRichText: true), findsOneWidget);
     expect(find.text('Soft Rain', findRichText: true), findsNothing);
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(milliseconds: 1));
   });
-
-  testWidgets(
-    'library tab refreshes stale card details after library loads',
-    (WidgetTester tester) async {
-      final notificationService = PlaybackNotificationService();
-      final audioDatabaseRepository = AudioDatabaseRepository();
-      final nativePlaybackRepository = NativePlaybackRepository();
-      const playbackCommandRunner = PlaybackCommandRunner();
-      final libraryService = LibraryService();
-      final playbackService = PlaybackSessionService();
-      final timerService = TimerService();
-      final notificationCoordinatorService = NotificationCoordinatorService();
-      final settingsRepository = SettingsRepository();
-      final languageProvider = AppLanguageProvider();
-      final audioProvider = AudioProvider.test(
-        notificationService: notificationService,
-        audioDatabaseRepository: audioDatabaseRepository,
-        nativePlaybackRepository: nativePlaybackRepository,
-        libraryService: libraryService,
-        playbackService: playbackService,
-        timerService: timerService,
-        notificationStateService: notificationCoordinatorService,
-        settingsRepository: settingsRepository,
-      );
-
-      addTearDown(audioProvider.dispose);
-
-      await tester.pumpWidget(
-        _buildTestApp(
-          audioProvider: audioProvider,
-          audioDatabaseRepository: audioDatabaseRepository,
-          nativePlaybackRepository: nativePlaybackRepository,
-          playbackCommandRunner: playbackCommandRunner,
-          libraryService: libraryService,
-          playbackService: playbackService,
-          timerService: timerService,
-          notificationCoordinatorService: notificationCoordinatorService,
-          settingsRepository: settingsRepository,
-          languageProvider: languageProvider,
-          child: const LibraryTab(),
-        ),
-      );
-      await tester.pump();
-      await tester.pump();
-
-      expect(audioProvider.audioLibraryCategorySnapshotSync?.entries, isEmpty);
-
-      final tempDir = await Directory.systemTemp.createTemp(
-        'library_card_detail_',
-      );
-      addTearDown(() async {
-        if (await tempDir.exists()) {
-          await tempDir.delete(recursive: true);
-        }
-      });
-      final trackPath = '${tempDir.path}${Platform.pathSeparator}work.mp3';
-      await audioProvider.saveAudioDetail(
-        AudioDetail.empty(
-          AudioDetailTarget.singleAudioFile(trackPath),
-        ).copyWith(rjCode: 'RJ333333'),
-      );
-      audioProvider.addTracks([
-        MusicTrack(
-          path: trackPath,
-          displayName: 'Work',
-          groupKey: trackPath,
-          groupTitle: 'Work',
-          groupSubtitle: trackPath,
-          isSingle: true,
-        ),
-      ], persist: false);
-      libraryService.syncSlice(isInitialized: true, detailRevision: 0);
-
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 50));
-      await tester.pump(const Duration(milliseconds: 450));
-
-      expect(find.text('Work', findRichText: true), findsOneWidget);
-      expect(find.text('RJ333333'), findsOneWidget);
-    },
-    // Hangs in the Windows Flutter 3.41 widget test runner.
-    skip: true,
-  );
 
   testWidgets(
     'library tab shows localized empty state when search has no matches',

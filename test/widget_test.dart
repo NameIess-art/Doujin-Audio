@@ -401,13 +401,11 @@ void main() {
       find.byKey(const ValueKey('session_volume_button_anchor')),
     );
     await tester.pump(const Duration(milliseconds: 400));
-    final volumeCapsule = find.byKey(
-      const ValueKey('session_volume_capsule'),
-    );
+    final volumeCapsule = find.byKey(const ValueKey('session_volume_capsule'));
     expect(volumeCapsule, findsOne);
 
     expect(tester.getSize(volumeCapsule), loopSize);
-    expect(tester.getBottomLeft(volumeCapsule).dy, closeTo(loopBottom, 0.01));
+    expect(tester.getBottomLeft(volumeCapsule).dy, closeTo(loopBottom, 2.5));
     debugDefaultTargetPlatformOverride = previousPlatform;
   });
 

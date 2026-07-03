@@ -255,10 +255,11 @@ class CoverArtworkCacheService {
     MusicTrack? track, {
     String? trackPath,
   }) {
-    final pathValue = track?.path ?? trackPath;
-    if (pathValue == null || pathValue.isEmpty) return null;
+    if (track == null) return null;
+    final pathValue = track.path;
+    if (pathValue.isEmpty) return null;
     if (PathMatcher.isRemoteUri(pathValue)) return null;
-    if (track?.isVideo == true || _isStandaloneAudioTrack(track)) return null;
+    if (track.isVideo || _isStandaloneAudioTrack(track)) return null;
     return coverScopeFolderForTrack(track, trackPath: trackPath);
   }
 

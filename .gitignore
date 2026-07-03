@@ -59,9 +59,14 @@ analyze_output.txt
 /NamelessAudio-*.zip.sha256
 
 # Local-only helper scripts and scratch work
-/script/
+/script/*
+!/script/deploy_arm64.bat
 /scratch/
 /migrate_working_dir/
+diff.patch
+test.json
+work.json
+work2.json
 
 # Local planning notes and unreferenced presentation assets
 /docs/plans/

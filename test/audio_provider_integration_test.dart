@@ -431,7 +431,7 @@ void main() {
           groupKey: tempDir.path,
           groupTitle: 'Folder',
           groupSubtitle: tempDir.path,
-          isSingle: false,
+          isSingle: true,
         );
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
             .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
@@ -2231,7 +2231,7 @@ void main() {
             restoredTrack,
             trackPath: restoredSession.currentTrackPath,
           ),
-          isNull,
+          newCoverPath,
         );
         expect(
           await restoredProvider.coverPathFutureForFolder(newFolder.path),
@@ -2625,6 +2625,10 @@ void main() {
           <MusicTrack>[track],
           persist: false,
         );
+        for (var i = 0; i < 100 && provider.libraryTree.isEmpty; i++) {
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+        }
+        expect(provider.libraryTree, isNotEmpty);
 
         final beforeRevision = provider.libraryContentRevision;
         var notificationCount = 0;

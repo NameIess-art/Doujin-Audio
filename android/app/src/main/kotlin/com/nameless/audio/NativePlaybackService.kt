@@ -47,10 +47,10 @@ internal fun exclusivePlaybackSessionIdsToPause(
 
 class NativePlaybackService : MediaSessionService() {
     companion object {
-        const val ACTION_START = "com.nameless.audio.native.START"
+        const val ACTION_START = "com.nameless.audio.v1.native.START"
         private const val EXTRA_REQUIRE_FOREGROUND_BOOTSTRAP =
             "require_foreground_bootstrap"
-        private const val PLAYBACK_CHANNEL_ID = "com.nameless.audio.channel.playback"
+        private const val PLAYBACK_CHANNEL_ID = "com.nameless.audio.v1.channel.playback"
         private const val PLAYBACK_CHANNEL_NAME = "Playback"
         private const val PLAYBACK_CHANNEL_DESCRIPTION = "Playback notification controls"
         private const val FOREGROUND_NOTIFICATION_ID =

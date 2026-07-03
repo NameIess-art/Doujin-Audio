@@ -17,7 +17,7 @@ import 'path_matcher.dart';
 class AppDatabase {
   AppDatabase._();
 
-  static const int schemaVersion = 18;
+  static const int schemaVersion = 1;
   static const String fileName = 'audio_player.db';
   static bool _platformDatabaseInitialized = false;
 
@@ -26,6 +26,11 @@ class AppDatabase {
 
   static AppDatabase? _instance;
   static AppDatabase get instance => _instance ??= AppDatabase._();
+
+  @visibleForTesting
+  static void setInstanceForTest(AppDatabase? database) {
+    _instance = database;
+  }
 
   static void initializeForPlatform() {
     if (!AppPlatform.usesDesktopDatabase) return;
@@ -50,7 +55,6 @@ class AppDatabase {
       version: schemaVersion,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
-      onOpen: _ensureCompatibilityColumns,
     );
     return db;
   }
@@ -106,153 +110,9 @@ class AppDatabase {
     int oldVersion,
     int newVersion,
   ) async {
-    if (oldVersion < 2) {
-      await db.execute('''
-        CREATE TABLE sessions (
-          id TEXT PRIMARY KEY,
-          track_path TEXT NOT NULL,
-          loop_mode INTEGER NOT NULL,
-          volume REAL NOT NULL,
-          position_ms INTEGER NOT NULL DEFAULT 0,
-          sort_order INTEGER NOT NULL DEFAULT 0
-        )
-      ''');
-    }
-    if (oldVersion < 3) {
-      await db.execute('''
-        ALTER TABLE sessions
-        ADD COLUMN channel_swap INTEGER NOT NULL DEFAULT 0
-      ''');
-    }
-    if (oldVersion < 4) {
-      await _addColumnIfMissing(db, 'tracks', 'scanned_at_ms', 'INTEGER');
-      await _addColumnIfMissing(db, 'tracks', 'file_size_bytes', 'INTEGER');
-      await _addColumnIfMissing(db, 'tracks', 'modified_at_ms', 'INTEGER');
-      await _addColumnIfMissing(
-        db,
-        'tracks',
-        'last_played_position_ms',
-        'INTEGER NOT NULL DEFAULT 0',
-      );
-      await _addColumnIfMissing(db, 'tracks', 'last_played_at_ms', 'INTEGER');
-      await _addColumnIfMissing(
-        db,
-        'tracks',
-        'is_favorite',
-        'INTEGER NOT NULL DEFAULT 0',
-      );
-      await _addColumnIfMissing(
-        db,
-        'tracks',
-        'tags_json',
-        "TEXT NOT NULL DEFAULT '[]'",
-      );
-      await _addColumnIfMissing(db, 'tracks', 'cover_cache_path', 'TEXT');
-      await _addColumnIfMissing(db, 'tracks', 'lyrics_path', 'TEXT');
-      await _addColumnIfMissing(db, 'sessions', 'created_at_ms', 'INTEGER');
-      await _addColumnIfMissing(db, 'sessions', 'updated_at_ms', 'INTEGER');
-      await _addColumnIfMissing(db, 'sessions', 'last_played_at_ms', 'INTEGER');
-    }
-    if (oldVersion < 5) {
-      await _addColumnIfMissing(
-        db,
-        'tracks',
-        'scan_generation',
-        'INTEGER NOT NULL DEFAULT 0',
-      );
-    }
-    if (oldVersion < 6) {
-      await _addColumnIfMissing(db, 'tracks', 'manual_cover_path', 'TEXT');
-    }
-    if (oldVersion < 7) {
-      await _addColumnIfMissing(
-        db,
-        'tracks',
-        'duration_ms',
-        'INTEGER NOT NULL DEFAULT 0',
-      );
-      await _addColumnIfMissing(
-        db,
-        'sessions',
-        'duration_ms',
-        'INTEGER NOT NULL DEFAULT 0',
-      );
-    }
-    if (oldVersion < 8) {
-      await _createAudioDetailsTable(db);
-    }
-    if (oldVersion < 9) {
-      await _addColumnIfMissing(
-        db,
-        'tracks',
-        'is_video',
-        'INTEGER NOT NULL DEFAULT 0',
-      );
-    }
-    if (oldVersion < 10) {
-      await _createLibraryEntriesTable(db);
-    }
-    if (oldVersion < 11) {
-      await _addColumnIfMissing(
-        db,
-        'sessions',
-        'custom_queue_tracks_json',
-        'TEXT',
-      );
-    }
-    if (oldVersion < 12) {
-      await _createTimeSegmentLabelsTable(db);
-    }
-    if (oldVersion < 13) {
-      await _addColumnIfMissing(
-        db,
-        'audio_details',
-        'release_date_ms',
-        'INTEGER NOT NULL DEFAULT 0',
-      );
-      await _addColumnIfMissing(db, 'audio_details', 'sales_count', 'INTEGER');
-      await _addColumnIfMissing(db, 'audio_details', 'rating', 'REAL');
-    }
-    if (oldVersion < 14) {
-      await _addColumnIfMissing(
-        db,
-        'sessions',
-        'speed',
-        'REAL NOT NULL DEFAULT 1.0',
-      );
-    }
-    if (oldVersion < 15) {
-      await _addColumnIfMissing(db, 'sessions', 'audio_effects_json', 'TEXT');
-    }
-    if (oldVersion < 16) {
-      await _addColumnIfMissing(db, 'sessions', 'playback_queue_json', 'TEXT');
-      await _addColumnIfMissing(
-        db,
-        'sessions',
-        'current_queue_index',
-        'INTEGER NOT NULL DEFAULT 0',
-      );
-    }
-    if (oldVersion < 17) {
-      await _addRemoteTrackMetadataColumns(db);
-    }
-    if (oldVersion < 18) {
-      await _createTrackDetailTables(db);
-      await _createSessionDetailTables(db);
-      await _migrateSplitTrackTables(db);
-      await _migrateSplitSessionTables(db);
-    }
-    await _createTrackDetailTables(db);
-    await _createSessionDetailTables(db);
-    await _createAsmrTables(db);
-    await _createTrackIndexes(db);
-  }
-
-  static Future<void> _ensureCompatibilityColumns(Database db) async {
-    await _createTrackDetailTables(db);
-    await _createSessionDetailTables(db);
-    await _createAsmrTables(db);
-    await _createTrackIndexes(db);
+    if (oldVersion >= newVersion) return;
+    // Future 1.x migrations should be added here. Version 1 starts from the
+    // fully materialized current schema and intentionally has no 0.x upgrade path.
   }
 
   @visibleForTesting
@@ -268,128 +128,6 @@ class AppDatabase {
     final exists = columns.any((row) => row['name'] == column);
     if (exists) return;
     await db.execute('ALTER TABLE $table ADD COLUMN $column $definition');
-  }
-
-  static Future<bool> _hasColumn(
-    Database db,
-    String table,
-    String column,
-  ) async {
-    final columns = await db.rawQuery('PRAGMA table_info($table)');
-    return columns.any((row) => row['name'] == column);
-  }
-
-  static Future<void> _migrateSplitTrackTables(Database db) async {
-    if (!await _hasColumn(db, 'tracks', 'scanned_at_ms')) return;
-    await db.execute('''
-      INSERT OR REPLACE INTO track_scan_info (
-        path,
-        scanned_at_ms,
-        file_size_bytes,
-        modified_at_ms,
-        scan_generation
-      )
-      SELECT
-        path,
-        scanned_at_ms,
-        file_size_bytes,
-        modified_at_ms,
-        COALESCE(scan_generation, 0)
-      FROM tracks
-    ''');
-    await db.execute('''
-      INSERT OR REPLACE INTO track_playback_state (
-        path,
-        last_played_position_ms,
-        last_played_at_ms,
-        is_favorite
-      )
-      SELECT
-        path,
-        COALESCE(last_played_position_ms, 0),
-        last_played_at_ms,
-        COALESCE(is_favorite, 0)
-      FROM tracks
-    ''');
-    await db.execute('''
-      INSERT OR REPLACE INTO track_assets (
-        path,
-        cover_cache_path,
-        lyrics_path,
-        manual_cover_path,
-        remote_cover_url
-      )
-      SELECT
-        path,
-        cover_cache_path,
-        lyrics_path,
-        manual_cover_path,
-        remote_cover_url
-      FROM tracks
-    ''');
-    await db.execute('''
-      INSERT OR REPLACE INTO track_remote_metadata (
-        path,
-        remote_metadata_kind,
-        remote_metadata_json
-      )
-      SELECT path, remote_metadata_kind, remote_metadata_json
-      FROM tracks
-    ''');
-
-    final rows = await db.query('tracks', columns: ['path', 'tags_json']);
-    final batch = db.batch();
-    for (final row in rows) {
-      final path = row['path'] as String?;
-      if (path == null || path.isEmpty) continue;
-      final tags = _decodeTags(row['tags_json']);
-      for (var i = 0; i < tags.length; i++) {
-        batch.insert('track_tags', {
-          'path': path,
-          'tag': tags[i],
-          'sort_order': i,
-        }, conflictAlgorithm: ConflictAlgorithm.replace);
-      }
-    }
-    await batch.commit(noResult: true);
-  }
-
-  static Future<void> _migrateSplitSessionTables(Database db) async {
-    if (!await _hasColumn(db, 'sessions', 'volume')) return;
-    await db.execute('''
-      INSERT OR REPLACE INTO session_playback_state (
-        session_id,
-        volume,
-        speed,
-        position_ms,
-        duration_ms,
-        current_queue_index,
-        channel_swap
-      )
-      SELECT
-        id,
-        COALESCE(volume, 1.0),
-        COALESCE(speed, 1.0),
-        COALESCE(position_ms, 0),
-        COALESCE(duration_ms, 0),
-        COALESCE(current_queue_index, 0),
-        COALESCE(channel_swap, 0)
-      FROM sessions
-    ''');
-
-    final rows = await db.query('sessions');
-    final batch = db.batch();
-    for (final row in rows) {
-      final session = _sessionFromLegacyRow(row);
-      _writeSessionDetailsToBatch(batch, session);
-    }
-    await batch.commit(noResult: true);
-  }
-
-  static Future<void> _addRemoteTrackMetadataColumns(Database db) async {
-    await _addColumnIfMissing(db, 'tracks', 'remote_cover_url', 'TEXT');
-    await _addColumnIfMissing(db, 'tracks', 'remote_metadata_kind', 'TEXT');
-    await _addColumnIfMissing(db, 'tracks', 'remote_metadata_json', 'TEXT');
   }
 
   static Future<void> _createTrackDetailTables(Database db) async {
@@ -1850,27 +1588,6 @@ class AppDatabase {
     'sort_order': sortOrder,
   };
 
-  static PersistedSession _sessionFromLegacyRow(Map<String, dynamic> row) {
-    return PersistedSession(
-      id: row['id'] as String,
-      trackPath: row['track_path'] as String,
-      loopModeIndex: row['loop_mode'] as int,
-      volume: (row['volume'] as num?)?.toDouble() ?? 1.0,
-      speed: (row['speed'] as num?)?.toDouble() ?? 1.0,
-      positionMs: (row['position_ms'] as num?)?.toInt() ?? 0,
-      durationMs: (row['duration_ms'] as num?)?.toInt() ?? 0,
-      customQueueTracks: _decodeTracks(row['custom_queue_tracks_json']),
-      playbackQueue: _decodePlaybackQueue(row['playback_queue_json']),
-      currentQueueIndex: (row['current_queue_index'] as num?)?.toInt() ?? 0,
-      channelSwapEnabled: (row['channel_swap'] as int? ?? 0) == 1,
-      audioEffects: AudioEffectsState.fromJson(row['audio_effects_json']),
-      createdAtMs: (row['created_at_ms'] as num?)?.toInt(),
-      updatedAtMs: (row['updated_at_ms'] as num?)?.toInt(),
-      lastPlayedAtMs: (row['last_played_at_ms'] as num?)?.toInt(),
-      sortOrder: (row['sort_order'] as num?)?.toInt() ?? 0,
-    );
-  }
-
   static PersistedSession _sessionFromRow(
     Map<String, dynamic> row, {
     required List<MusicTrack>? customQueueTracks,
@@ -2007,17 +1724,6 @@ DateTime? _dateTimeFromMs(Object? value) {
   return null;
 }
 
-List<String> _decodeTags(Object? value) {
-  if (value is! String || value.isEmpty) return const <String>[];
-  try {
-    return (json.decode(value) as List<dynamic>).whereType<String>().toList(
-      growable: false,
-    );
-  } catch (_) {
-    return const <String>[];
-  }
-}
-
 String? _encodeJsonMap(Map<String, Object?>? value) {
   if (value == null || value.isEmpty) return null;
   return json.encode(value);
@@ -2029,32 +1735,6 @@ Map<String, Object?>? _decodeJsonMap(Object? value) {
     final raw = json.decode(value);
     if (raw is! Map) return null;
     return raw.cast<String, Object?>();
-  } catch (_) {
-    return null;
-  }
-}
-
-List<MusicTrack>? _decodeTracks(Object? value) {
-  if (value is! String || value.isEmpty) return null;
-  try {
-    final raw = json.decode(value);
-    if (raw is! List<dynamic>) return null;
-    final tracks = raw
-        .whereType<Map<String, dynamic>>()
-        .map(MusicTrack.fromJson)
-        .toList(growable: false);
-    return tracks.isEmpty ? null : tracks;
-  } catch (_) {
-    return null;
-  }
-}
-
-PlaybackQueueDefinition? _decodePlaybackQueue(Object? value) {
-  if (value is! String || value.isEmpty) return null;
-  try {
-    final raw = json.decode(value);
-    if (raw is! Map<String, dynamic>) return null;
-    return PlaybackQueueDefinition.fromJson(raw);
   } catch (_) {
     return null;
   }

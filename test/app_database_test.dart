@@ -26,6 +26,10 @@ void main() {
 
   tearDown(() => db.close());
 
+  test('1.x starts from schema version 1', () {
+    expect(AppDatabase.schemaVersion, 1);
+  });
+
   test(
     'saveAllTracks and loadAllTracks round-trip the music library',
     () async {

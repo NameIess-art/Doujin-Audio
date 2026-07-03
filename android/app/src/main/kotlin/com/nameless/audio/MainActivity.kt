@@ -11,7 +11,7 @@ class MainActivity : FlutterFragmentActivity() {
     companion object {
         const val notificationSessionIdExtra = "notificationSessionId"
         const val openSessionFromNotificationAction =
-            "com.nameless.audio.OPEN_SESSION_FROM_NOTIFICATION"
+            "com.nameless.audio.v1.OPEN_SESSION_FROM_NOTIFICATION"
     }
 
     private var notificationsMethodChannel: MethodChannel? = null

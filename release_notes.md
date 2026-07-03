@@ -1,3 +1,11 @@
+# Unreleased 1.0 RC
+
+## 正式化准备
+
+- 开发版本切换为 `1.0.0-rc.1+1000001`，Android 使用独立包名 `com.nameless.audio.v1`，Windows 使用独立程序名与数据身份。
+- 1.x 数据 epoch 从 1 开始，数据库 schema 重置为 1；不提供 0.x 原地升级和旧备份导入路径。
+- 应用内更新通道准备切换到 `v1.*` GitHub Releases，并要求平台安装包与同名 SHA-256 校验文件匹配。
+
 # Nameless Audio v0.12.1
 
 ## 体验与性能

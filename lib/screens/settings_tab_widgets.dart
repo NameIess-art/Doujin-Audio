@@ -162,9 +162,13 @@ class _UpdateSubtitle extends StatelessWidget {
     }
     final info = updateInfo;
     if (info != null) {
-      final key = info.isUpdateAvailable
-          ? 'update_available_subtitle'
-          : 'check_updates_subtitle_latest';
+      final key = switch (info.status) {
+        AppUpdateStatus.updateAvailable => 'update_available_subtitle',
+        AppUpdateStatus.noCompatibleRelease => 'update_no_compatible_release',
+        AppUpdateStatus.missingAsset => 'update_missing_asset',
+        AppUpdateStatus.missingChecksum => 'update_missing_checksum',
+        _ => 'check_updates_subtitle_latest',
+      };
       return Text(
         i18n.tr(key, {'version': info.latestVersionName}),
         maxLines: 2,

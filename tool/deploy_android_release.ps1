@@ -5,7 +5,8 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-$appId = 'com.nameless.audio'
+$appId = 'com.nameless.audio.v1'
+$mainActivity = 'com.nameless.audio.MainActivity'
 $apkPath = Join-Path $repoRoot 'build\app\outputs\flutter-apk\app-arm64-v8a-release.apk'
 $arm64SplitVersionCodeOffset = 2000
 
@@ -52,7 +53,7 @@ function Invoke-AdbInstall {
 function Get-ProjectBuildNumber {
     $pubspecPath = Join-Path $repoRoot 'pubspec.yaml'
     foreach ($line in Get-Content -LiteralPath $pubspecPath) {
-        if ($line -match '^\s*version\s*:\s*[0-9]+\.[0-9]+\.[0-9]+\+([0-9]+)\s*$') {
+        if ($line -match '^\s*version\s*:\s*[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?\+([0-9]+)\s*(?:#.*)?$') {
             return [int64]$Matches[1]
         }
     }
@@ -155,7 +156,7 @@ That one-time migration uninstalls the old app and deletes its local data.
     }
 
     Run-Command 'adb' @(
-        '-s', $device, 'shell', 'am', 'start', '-n', "$appId/.MainActivity"
+        '-s', $device, 'shell', 'am', 'start', '-n', "$appId/$mainActivity"
     )
     Write-Host '[OK] Nameless Audio release deployment completed.'
 } catch {

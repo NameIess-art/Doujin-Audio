@@ -90,12 +90,12 @@ BEGIN
         BLOCK "040904e4"
         BEGIN
             VALUE "CompanyName", "com.nameless" "\0"
-            VALUE "FileDescription", "nameless_audio" "\0"
+            VALUE "FileDescription", "NamelessAudioV1" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "nameless_audio" "\0"
+            VALUE "InternalName", "NamelessAudioV1" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2026 com.nameless. All rights reserved." "\0"
-            VALUE "OriginalFilename", "nameless_audio.exe" "\0"
-            VALUE "ProductName", "nameless_audio" "\0"
+            VALUE "OriginalFilename", "nameless_audio_v1.exe" "\0"
+            VALUE "ProductName", "NamelessAudioV1" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

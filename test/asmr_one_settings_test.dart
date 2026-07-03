@@ -1,8 +1,10 @@
 import 'dart:io';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/models/asmr_models.dart';
 import 'package:nameless_audio/models/music_track.dart';
+import 'package:nameless_audio/services/app_database.dart';
 import 'package:nameless_audio/services/audio_database_repository.dart';
 import 'package:nameless_audio/services/app_preferences.dart';
 import 'package:nameless_audio/services/asmr_api_service.dart';
@@ -11,14 +13,30 @@ import 'package:nameless_audio/services/asmr_library_controller.dart';
 import 'package:nameless_audio/services/asmr_preferences.dart';
 import 'package:nameless_audio/services/ui_interaction_coordinator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 void main() {
+  late Database db;
+
   Future<void> resetPrefs([Map<String, Object> values = const {}]) async {
     FlutterSecureStorage.setMockInitialValues(<String, String>{});
     SharedPreferences.setMockInitialValues(values);
     await AppPreferences.init();
     await AsmrPreferences.clearForTest();
   }
+
+  setUpAll(() async {
+    sqfliteFfiInit();
+    databaseFactory = databaseFactoryFfi;
+    db = await databaseFactoryFfi.openDatabase(inMemoryDatabasePath);
+    await AppDatabase.createSchemaForTest(db);
+    AppDatabase.setInstanceForTest(AppDatabase.test(db));
+  });
+
+  tearDownAll(() async {
+    AppDatabase.setInstanceForTest(null);
+    await db.close();
+  });
 
   test(
     'ASMR visible categories default to requested five categories',
@@ -232,9 +250,9 @@ void main() {
     );
   });
 
-  testWidgets(
+  test(
     'ASMR refresh defers presentation notifications while interacting',
-    (tester) async {
+    () async {
       await resetPrefs();
       final api = _FakeAsmrApiService();
       final controller = AsmrLibraryController(
@@ -244,6 +262,7 @@ void main() {
         ),
       );
       final coordinator = UiInteractionCoordinator.instance;
+      coordinator.resetForTest();
       final source = Object();
       final notifications = <bool>[];
       controller.addListener(
@@ -254,14 +273,12 @@ void main() {
 
       coordinator.beginInteraction(source);
       await controller.refreshCategory(AsmrCategoryType.release);
-      await tester.pump();
 
       expect(notifications, isEmpty);
       expect(controller.worksFor(AsmrCategoryType.release), isEmpty);
       expect(controller.isLoadingCategory(AsmrCategoryType.release), isTrue);
 
-      coordinator.cancelInteraction(source);
-      await tester.pump();
+      coordinator.finishInteractionsForTest();
 
       expect(notifications, isNotEmpty);
       expect(
@@ -269,6 +286,7 @@ void main() {
         <int>[12],
       );
       expect(controller.isLoadingCategory(AsmrCategoryType.release), isFalse);
+      coordinator.resetForTest();
     },
   );
 
@@ -1090,20 +1108,24 @@ class _FakeAsmrApiService extends AsmrApiService {
     int pageSize = 40,
     String? token,
     AsmrContentLanguage language = AsmrContentLanguage.zh,
-  }) async {
+  }) {
     calls.add('works:$order:$sort:$page');
     fetchWorkOrders.add('$order:$sort');
     fetchWorkRequests.add('$order:$sort:$page');
     if (failingFetchOrders.contains(order)) {
-      throw HttpException('Simulated ASMR work fetch failure for $order');
+      return Future<AsmrWorkPage>.error(
+        HttpException('Simulated ASMR work fetch failure for $order'),
+      );
     }
     final explicitWorks = recommendationWorks;
     if (explicitWorks != null) {
-      return AsmrWorkPage(
-        works: explicitWorks,
-        currentPage: page,
-        pageSize: pageSize,
-        totalCount: explicitWorks.length,
+      return SynchronousFuture<AsmrWorkPage>(
+        AsmrWorkPage(
+          works: explicitWorks,
+          currentPage: page,
+          pageSize: pageSize,
+          totalCount: explicitWorks.length,
+        ),
       );
     }
     if (largeRecommendationPool) {
@@ -1115,43 +1137,47 @@ class _FakeAsmrApiService extends AsmrApiService {
         _ => 4000,
       };
       final pageOffset = (page - 1) * pageSize;
-      return AsmrWorkPage(
+      return SynchronousFuture<AsmrWorkPage>(
+        AsmrWorkPage(
+          works: <AsmrWork>[
+            for (var index = 1; index <= pageSize; index++)
+              _work(
+                id: offset + pageOffset + index,
+                title: 'Candidate ${offset + pageOffset + index}',
+              ),
+          ],
+          currentPage: page,
+          pageSize: pageSize,
+          totalCount: pageSize * recommendationPageCount,
+        ),
+      );
+    }
+    return SynchronousFuture<AsmrWorkPage>(
+      AsmrWorkPage(
         works: <AsmrWork>[
-          for (var index = 1; index <= pageSize; index++)
+          if (order == 'create_date')
+            _work(id: 9, title: 'General New', tags: <String>['rain']),
+          if (order == 'dl_count')
             _work(
-              id: offset + pageOffset + index,
-              title: 'Candidate ${offset + pageOffset + index}',
+              id: 10,
+              title: 'Sleep Match',
+              circleName: 'Dream Circle',
+              tags: <String>['sleep'],
+              rating: 4.7,
+              dlCount: 9000,
+              reviewCount: 300,
             ),
+          if (order == 'rate_average_2dp')
+            _work(id: 11, title: 'Highly Rated', rating: 4.9),
+          if (order == 'review_count')
+            _work(id: 13, title: 'Most Reviewed', reviewCount: 1200),
+          if (order == 'release')
+            _work(id: 12, title: 'Latest', releaseDate: DateTime(2026, 5)),
         ],
         currentPage: page,
         pageSize: pageSize,
-        totalCount: pageSize * recommendationPageCount,
-      );
-    }
-    return AsmrWorkPage(
-      works: <AsmrWork>[
-        if (order == 'create_date')
-          _work(id: 9, title: 'General New', tags: <String>['rain']),
-        if (order == 'dl_count')
-          _work(
-            id: 10,
-            title: 'Sleep Match',
-            circleName: 'Dream Circle',
-            tags: <String>['sleep'],
-            rating: 4.7,
-            dlCount: 9000,
-            reviewCount: 300,
-          ),
-        if (order == 'rate_average_2dp')
-          _work(id: 11, title: 'Highly Rated', rating: 4.9),
-        if (order == 'review_count')
-          _work(id: 13, title: 'Most Reviewed', reviewCount: 1200),
-        if (order == 'release')
-          _work(id: 12, title: 'Latest', releaseDate: DateTime(2026, 5)),
-      ],
-      currentPage: page,
-      pageSize: pageSize,
-      totalCount: pageSize,
+        totalCount: pageSize,
+      ),
     );
   }
 
@@ -1164,15 +1190,17 @@ class _FakeAsmrApiService extends AsmrApiService {
     int pageSize = 40,
     String? token,
     AsmrContentLanguage language = AsmrContentLanguage.zh,
-  }) async {
+  }) {
     searchKeywords.add(keyword);
-    return AsmrWorkPage(
-      works: <AsmrWork>[
-        _work(id: 21, title: 'Search Sleep', tags: <String>['sleep']),
-      ],
-      currentPage: page,
-      pageSize: pageSize,
-      totalCount: 1,
+    return SynchronousFuture<AsmrWorkPage>(
+      AsmrWorkPage(
+        works: <AsmrWork>[
+          _work(id: 21, title: 'Search Sleep', tags: <String>['sleep']),
+        ],
+        currentPage: page,
+        pageSize: pageSize,
+        totalCount: 1,
+      ),
     );
   }
 

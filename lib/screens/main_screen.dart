@@ -803,9 +803,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
         (value) => value.valueOrNull?.autoCheckUpdates ?? false,
       ),
     );
-    if (autoCheckUpdates &&
-        overlayUi.isInitialized &&
-        !_autoUpdateCheckQueued) {
+    if (autoCheckUpdates && overlayUi.startupReady && !_autoUpdateCheckQueued) {
       _autoUpdateCheckQueued = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         unawaited(_checkForUpdatesOnLaunch());
@@ -835,7 +833,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
         unawaited(_maybePromptForBackgroundPlaybackReliability());
       });
     }
-    if (!_isDataReady && overlayUi.isInitialized) {
+    if (!_isDataReady && overlayUi.startupReady) {
       _currentIndex = startupPage.index;
       _isDataReady = true;
     }

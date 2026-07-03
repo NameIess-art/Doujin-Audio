@@ -20,6 +20,9 @@ extension AudioProviderPersistence on AudioProvider {
 
   Future<void> _resetRuntimeStateForPersistenceReload() async {
     _isInitialized = false;
+    _settingsInitialized = false;
+    _libraryInitialized = false;
+    _playbackInitialized = false;
     _cachedPrefs = null;
 
     _saveSessionStateTimer?.cancel();
@@ -154,7 +157,10 @@ extension AudioProviderPersistence on AudioProvider {
   Future<void> _loadLibrary() async {
     try {
       final db = _audioDatabaseRepository;
-      final tracks = await db.loadAllTracks();
+      final tracks = await AppLogService.measureAsync(
+        'audio_provider_load_library_tracks',
+        db.loadStartupTracks,
+      );
       await AppCacheService.cleanupOrphanedPersistentImports(
         tracks.map((track) => track.path),
       );
@@ -274,6 +280,8 @@ extension AudioProviderPersistence on AudioProvider {
         _loadConverterSettings(),
         _loadTimerSettings(),
       ]);
+      _settingsInitialized = true;
+      _syncSettingsStateSlice();
 
       await _loadLibraryEntries();
       await _ensureLibraryEntriesForLoadedTracks();
@@ -283,6 +291,8 @@ extension AudioProviderPersistence on AudioProvider {
       _syncLibraryNodeOrder(persist: false);
       _markLibraryStructureDirty();
       await _ensureLibraryTreeSnapshot(notifyOnCommit: false);
+      _libraryInitialized = true;
+      _syncLibraryStateSlice(preserveSliceInitialized: true);
 
       // Phase 4: Notification state + first UI update.
       if (!_notificationsEnabled) {
@@ -291,13 +301,22 @@ extension AudioProviderPersistence on AudioProvider {
       _notifyListeners();
 
       // Phase 5: Load sessions (heavy — native calls per session).
-      await _loadSessions();
+      await AppLogService.measureAsync(
+        'audio_provider_load_sessions',
+        _loadSessions,
+      );
 
       // Phase 6: Post-session operations (sequenced to avoid timer/session races).
       if (!_multiThreadPlaybackEnabled) {
-        await _enforceSingleThreadPlayback();
+        await AppLogService.measureAsync(
+          'audio_provider_enforce_single_thread_playback',
+          _enforceSingleThreadPlayback,
+        );
       }
-      await loadTimerRuntimeFromSystem();
+      await AppLogService.measureAsync(
+        'audio_provider_load_timer_runtime',
+        loadTimerRuntimeFromSystem,
+      );
     } catch (error, stackTrace) {
       _logAudioProviderPersistenceFailure(error, stackTrace);
     } finally {
@@ -305,6 +324,9 @@ extension AudioProviderPersistence on AudioProvider {
       scheduleUiWarmup(currentPageIndex: 0);
       _syncKeepCpuAwake();
       await _ensureLibraryTreeSnapshot(notifyOnCommit: false);
+      _settingsInitialized = true;
+      _libraryInitialized = true;
+      _playbackInitialized = true;
       _isInitialized = true;
       _notifyListeners();
     }

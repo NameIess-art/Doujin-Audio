@@ -6,6 +6,7 @@ import '../models/audio_detail.dart';
 import '../models/audio_library_category.dart';
 import '../models/library_node.dart';
 import '../models/music_track.dart';
+import 'app_log_service.dart';
 import 'audio_detail_cache_service.dart';
 import 'audio_state_services.dart';
 import 'library_organizer.dart';
@@ -76,7 +77,11 @@ class LibrarySnapshotCacheService {
       watchedFolders: List<String>.unmodifiable(_libraryService.watchedFolders),
       nodeOrder: List<String>.unmodifiable(_libraryService.libraryNodeOrder),
     );
-    final future = compute(_buildLibraryTreeFromPayload, payload);
+    final future = AppLogService.measureAsync(
+      'library_tree_snapshot_build',
+      () => compute(_buildLibraryTreeFromPayload, payload),
+      details: <String, Object?>{'tracks': payload.tracks.length},
+    );
     _treeFuture = future;
     _treeFutureRevision = revision;
     _treeCommitCallbacks
@@ -135,9 +140,12 @@ class LibrarySnapshotCacheService {
       return inFlight;
     }
 
-    final future = _buildCategorySnapshot(
-      structureRevision: structureRevision,
-      detailRevision: detailRevision,
+    final future = AppLogService.measureAsync(
+      'library_category_snapshot_build',
+      () => _buildCategorySnapshot(
+        structureRevision: structureRevision,
+        detailRevision: detailRevision,
+      ),
     );
     _categoryFuture = future;
     _categoryFutureStructureRevision = structureRevision;
@@ -227,40 +235,47 @@ class LibrarySnapshotCacheService {
           : const <LibraryNode>[];
     }
 
-    final entryFutures = <Future<AudioLibraryCategoryEntry>>[];
+    final requests = <_CategoryDetailRequest>[];
     for (final node in tree) {
       if (node is FolderNode) {
         final target = AudioDetailTarget.libraryRootFolder(node.path);
-        entryFutures.add(
-          _loadCategoryDetail(target).then(
-            (detail) => AudioLibraryCategoryEntry(
-              target: target,
-              title: node.name,
-              path: node.path,
-              isFolder: true,
-              detail: detail,
-              tracks: List<MusicTrack>.unmodifiable(node.allTracks),
-            ),
+        requests.add(
+          _CategoryDetailRequest(
+            target: target,
+            title: node.name,
+            path: node.path,
+            isFolder: true,
+            tracks: List<MusicTrack>.unmodifiable(node.allTracks),
           ),
         );
       } else if (node is TrackNode && node.track.isSingle) {
         final target = AudioDetailTarget.singleAudioFile(node.track.path);
-        entryFutures.add(
-          _loadCategoryDetail(target).then(
-            (detail) => AudioLibraryCategoryEntry(
-              target: target,
-              title: node.track.displayName,
-              path: node.track.path,
-              isFolder: false,
-              detail: detail,
-              tracks: List<MusicTrack>.unmodifiable([node.track]),
-            ),
+        requests.add(
+          _CategoryDetailRequest(
+            target: target,
+            title: node.track.displayName,
+            path: node.track.path,
+            isFolder: false,
+            tracks: List<MusicTrack>.unmodifiable([node.track]),
           ),
         );
       }
     }
 
-    final entries = await Future.wait(entryFutures);
+    final details = await _loadCategoryDetails(
+      requests.map((request) => request.target),
+    );
+    final entries = <AudioLibraryCategoryEntry>[
+      for (var i = 0; i < requests.length; i++)
+        AudioLibraryCategoryEntry(
+          target: requests[i].target,
+          title: requests[i].title,
+          path: requests[i].path,
+          isFolder: requests[i].isFolder,
+          detail: details[i],
+          tracks: requests[i].tracks,
+        ),
+    ];
     return _categorySnapshotFromEntries(
       entries,
       structureRevision: structureRevision,
@@ -268,11 +283,18 @@ class LibrarySnapshotCacheService {
     );
   }
 
-  Future<AudioDetail> _loadCategoryDetail(AudioDetailTarget target) async {
+  Future<List<AudioDetail>> _loadCategoryDetails(
+    Iterable<AudioDetailTarget> targets,
+  ) async {
+    final orderedTargets = targets.toList(growable: false);
+    if (orderedTargets.isEmpty) return const <AudioDetail>[];
     try {
-      return (await _detailCacheService.load(target)).detail;
+      final results = await _detailCacheService.loadMany(orderedTargets);
+      return results.map((result) => result.detail).toList(growable: false);
     } catch (_) {
-      return AudioDetail.empty(target);
+      return <AudioDetail>[
+        for (final target in orderedTargets) AudioDetail.empty(target),
+      ];
     }
   }
 
@@ -374,6 +396,22 @@ class _LibraryTreeBuildPayload {
   final List<MusicTrack> tracks;
   final List<String> watchedFolders;
   final List<String> nodeOrder;
+}
+
+class _CategoryDetailRequest {
+  const _CategoryDetailRequest({
+    required this.target,
+    required this.title,
+    required this.path,
+    required this.isFolder,
+    required this.tracks,
+  });
+
+  final AudioDetailTarget target;
+  final String title;
+  final String path;
+  final bool isFolder;
+  final List<MusicTrack> tracks;
 }
 
 LibraryTreeSnapshot _buildLibraryTreeFromPayload(

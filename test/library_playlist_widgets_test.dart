@@ -66,10 +66,15 @@ Future<void> _pumpUntilLibraryTreeReady(
   WidgetTester tester,
   AudioProvider audioProvider, {
   Duration timeout = const Duration(seconds: 10),
+  bool waitForCategorySnapshot = false,
 }) async {
   final ticks = timeout.inMilliseconds ~/ 50;
   for (var i = 0; i < ticks; i++) {
-    if (audioProvider.libraryTree.isNotEmpty) return;
+    if (audioProvider.libraryTree.isNotEmpty &&
+        (!waitForCategorySnapshot ||
+            audioProvider.audioLibraryCategorySnapshotSync != null)) {
+      return;
+    }
     await tester.pump(const Duration(milliseconds: 50));
     await tester.runAsync(
       () => Future<void>.delayed(const Duration(milliseconds: 10)),
@@ -523,7 +528,11 @@ void main() {
       ),
     );
     await tester.pump();
-    await _pumpUntilLibraryTreeReady(tester, audioProvider);
+    await _pumpUntilLibraryTreeReady(
+      tester,
+      audioProvider,
+      waitForCategorySnapshot: true,
+    );
     await tester.pump(const Duration(milliseconds: 500));
 
     if (Platform.isWindows) {

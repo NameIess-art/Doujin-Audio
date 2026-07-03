@@ -69,6 +69,34 @@ class AudioDetailRepository {
     return AudioDetailLoadResult(detail: normalized, restoredFromBackup: true);
   }
 
+  Future<List<AudioDetailLoadResult>> loadMany(
+    Iterable<AudioDetailTarget> targets,
+  ) async {
+    final normalizedTargets = targets
+        .map(_normalizeTarget)
+        .toList(growable: false);
+    if (normalizedTargets.isEmpty) return const <AudioDetailLoadResult>[];
+
+    final databaseDetails = await _databaseRepository.loadAudioDetails(
+      normalizedTargets,
+    );
+    final detailsByKey = <String, AudioDetail>{
+      for (final detail in databaseDetails)
+        _detailKeyForTarget(detail.target): detail,
+    };
+    final results = <AudioDetailLoadResult>[];
+    for (final target in normalizedTargets) {
+      final key = _detailKeyForTarget(target);
+      final databaseDetail = detailsByKey[key];
+      if (databaseDetail != null) {
+        results.add(AudioDetailLoadResult(detail: databaseDetail));
+        continue;
+      }
+      results.add(await load(target));
+    }
+    return results;
+  }
+
   Future<AudioDetailSaveResult> save(AudioDetail detail) async {
     final normalized = detail
         .copyWith(target: _normalizeTarget(detail.target))
@@ -347,6 +375,10 @@ class AudioDetailRepository {
       targetType: target.targetType,
       targetPath: PathMatcher.normalize(target.targetPath),
     );
+  }
+
+  String _detailKeyForTarget(AudioDetailTarget target) {
+    return '${target.targetType.dbValue}|${PathMatcher.normalize(target.targetPath)}';
   }
 
   int _singleFileBackupEntryIndex(

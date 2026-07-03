@@ -98,6 +98,7 @@ class MainOverlayUiState {
     required this.activeSessionCount,
     required this.showPlaybackCard,
     required this.isInitialized,
+    required this.startupReady,
   });
 
   final List<PlaybackSession> overlaySessions;
@@ -106,6 +107,7 @@ class MainOverlayUiState {
   final int activeSessionCount;
   final bool showPlaybackCard;
   final bool isInitialized;
+  final bool startupReady;
 
   bool get hasPlayingSession => playingSessionCount > 0;
   bool get hasNowPlaying => visibleSessions.isNotEmpty;
@@ -118,7 +120,8 @@ class MainOverlayUiState {
         other.playingSessionCount == playingSessionCount &&
         other.activeSessionCount == activeSessionCount &&
         other.showPlaybackCard == showPlaybackCard &&
-        other.isInitialized == isInitialized;
+        other.isInitialized == isInitialized &&
+        other.startupReady == startupReady;
   }
 
   @override
@@ -129,6 +132,7 @@ class MainOverlayUiState {
     activeSessionCount,
     showPlaybackCard,
     isInitialized,
+    startupReady,
   );
 }
 

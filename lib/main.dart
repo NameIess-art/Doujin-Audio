@@ -82,7 +82,10 @@ Future<void> _runAudioPlayerApp() async {
     ),
   );
 
-  await initFutures;
+  await AppLogService.measureAsync(
+    'app_bootstrap_pre_run_app',
+    () => initFutures,
+  );
 
   final notificationService = PlaybackNotificationService();
   final audioDatabaseRepository = AudioDatabaseRepository();

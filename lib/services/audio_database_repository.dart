@@ -20,6 +20,10 @@ class AudioDatabaseRepository {
     return _database.loadTrackSummaries();
   }
 
+  Future<List<MusicTrack>> loadStartupTracks() {
+    return _database.loadStartupTracks();
+  }
+
   Future<MusicTrack?> loadTrackDetail(String path) {
     return _database.loadTrackDetail(path);
   }
@@ -76,6 +80,12 @@ class AudioDatabaseRepository {
 
   Future<AudioDetail?> loadAudioDetail(AudioDetailTarget target) {
     return _database.loadAudioDetail(target);
+  }
+
+  Future<List<AudioDetail>> loadAudioDetails(
+    Iterable<AudioDetailTarget> targets,
+  ) {
+    return _database.loadAudioDetails(targets);
   }
 
   Future<void> upsertAudioDetail(AudioDetail detail) {

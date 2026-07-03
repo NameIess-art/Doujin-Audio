@@ -450,6 +450,65 @@ void main() {
     expect(api.fetchWorkRequests, contains('release:desc:2'));
   });
 
+  test('ASMR recommendation starts candidate sources concurrently', () async {
+    await resetPrefs();
+    final firstPageRequests = <String>{
+      'create_date:desc:1',
+      'dl_count:desc:1',
+      'rate_average_2dp:desc:1',
+      'release:desc:1',
+    };
+    final blockers = <String, Completer<void>>{};
+    final allFirstPagesStarted = Completer<void>();
+    final api = _FakeAsmrApiService(
+      largeRecommendationPool: true,
+      beforeFetchWorkResponse: (request) async {
+        if (!firstPageRequests.contains(request)) {
+          return;
+        }
+        final blocker = Completer<void>();
+        blockers[request] = blocker;
+        if (blockers.length == firstPageRequests.length &&
+            !allFirstPagesStarted.isCompleted) {
+          allFirstPagesStarted.complete();
+        }
+        await blocker.future;
+      },
+    );
+    final controller = AsmrLibraryController(
+      apiService: api,
+      audioDatabaseRepository: _FakeAudioDatabaseRepository(
+        const <MusicTrack>[],
+      ),
+    );
+    await controller.initialize(defaultLanguage: AsmrContentLanguage.en);
+
+    final refresh = controller.refreshCategory(AsmrCategoryType.recommendation);
+
+    try {
+      await allFirstPagesStarted.future.timeout(const Duration(seconds: 1));
+
+      expect(api.fetchWorkRequests, containsAll(firstPageRequests));
+      expect(api.fetchWorkRequests, isNot(contains('create_date:desc:2')));
+      expect(api.fetchWorkRequests, isNot(contains('dl_count:desc:2')));
+      expect(api.fetchWorkRequests, isNot(contains('rate_average_2dp:desc:2')));
+      expect(api.fetchWorkRequests, isNot(contains('release:desc:2')));
+    } finally {
+      for (final blocker in blockers.values) {
+        if (!blocker.isCompleted) {
+          blocker.complete();
+        }
+      }
+    }
+
+    await refresh;
+    expect(controller.lastError, isNull);
+    expect(api.fetchWorkRequests, contains('create_date:desc:2'));
+    expect(api.fetchWorkRequests, contains('dl_count:desc:2'));
+    expect(api.fetchWorkRequests, contains('rate_average_2dp:desc:2'));
+    expect(api.fetchWorkRequests, contains('release:desc:2'));
+  });
+
   test(
     'ASMR recommendation stops candidate paging after refresh window',
     () async {
@@ -1154,6 +1213,7 @@ class _FakeAsmrApiService extends AsmrApiService {
     this.failingFetchOrders = const <String>{},
     this.transientFetchFailuresRemaining = 0,
     this.emptyCheckSessionUserName = false,
+    this.beforeFetchWorkResponse,
   }) : remoteReviewRecords = List<AsmrReviewRecord>.of(remoteReviewRecords),
        super(baseUri: Uri.parse('https://example.test'));
 
@@ -1170,6 +1230,7 @@ class _FakeAsmrApiService extends AsmrApiService {
   final List<AsmrReviewRecord> remoteReviewRecords;
   final Set<String> failingFetchOrders;
   final bool emptyCheckSessionUserName;
+  final Future<void> Function(String request)? beforeFetchWorkResponse;
   int failPutReviewCount;
   int transientFetchFailuresRemaining;
   int checkSessionAuthFailuresRemaining = 0;
@@ -1226,9 +1287,10 @@ class _FakeAsmrApiService extends AsmrApiService {
     String? token,
     AsmrContentLanguage language = AsmrContentLanguage.zh,
   }) {
+    final request = '$order:$sort:$page';
     calls.add('works:$order:$sort:$page');
     fetchWorkOrders.add('$order:$sort');
-    fetchWorkRequests.add('$order:$sort:$page');
+    fetchWorkRequests.add(request);
     if (transientFetchFailuresRemaining > 0) {
       transientFetchFailuresRemaining--;
       return Future<AsmrWorkPage>.error(
@@ -1240,15 +1302,34 @@ class _FakeAsmrApiService extends AsmrApiService {
         HttpException('Simulated ASMR work fetch failure for $order'),
       );
     }
+    final beforeResponse = beforeFetchWorkResponse;
+    if (beforeResponse != null) {
+      return () async {
+        await beforeResponse(request);
+        return _buildFetchWorksPage(
+          order: order,
+          page: page,
+          pageSize: pageSize,
+        );
+      }();
+    }
+    return SynchronousFuture<AsmrWorkPage>(
+      _buildFetchWorksPage(order: order, page: page, pageSize: pageSize),
+    );
+  }
+
+  AsmrWorkPage _buildFetchWorksPage({
+    required String order,
+    required int page,
+    required int pageSize,
+  }) {
     final explicitWorks = recommendationWorks;
     if (explicitWorks != null) {
-      return SynchronousFuture<AsmrWorkPage>(
-        AsmrWorkPage(
-          works: explicitWorks,
-          currentPage: page,
-          pageSize: pageSize,
-          totalCount: explicitWorks.length,
-        ),
+      return AsmrWorkPage(
+        works: explicitWorks,
+        currentPage: page,
+        pageSize: pageSize,
+        totalCount: explicitWorks.length,
       );
     }
     if (largeRecommendationPool) {
@@ -1260,47 +1341,43 @@ class _FakeAsmrApiService extends AsmrApiService {
         _ => 4000,
       };
       final pageOffset = (page - 1) * pageSize;
-      return SynchronousFuture<AsmrWorkPage>(
-        AsmrWorkPage(
-          works: <AsmrWork>[
-            for (var index = 1; index <= pageSize; index++)
-              _work(
-                id: offset + pageOffset + index,
-                title: 'Candidate ${offset + pageOffset + index}',
-              ),
-          ],
-          currentPage: page,
-          pageSize: pageSize,
-          totalCount: pageSize * recommendationPageCount,
-        ),
-      );
-    }
-    return SynchronousFuture<AsmrWorkPage>(
-      AsmrWorkPage(
+      return AsmrWorkPage(
         works: <AsmrWork>[
-          if (order == 'create_date')
-            _work(id: 9, title: 'General New', tags: <String>['rain']),
-          if (order == 'dl_count')
+          for (var index = 1; index <= pageSize; index++)
             _work(
-              id: 10,
-              title: 'Sleep Match',
-              circleName: 'Dream Circle',
-              tags: <String>['sleep'],
-              rating: 4.7,
-              dlCount: 9000,
-              reviewCount: 300,
+              id: offset + pageOffset + index,
+              title: 'Candidate ${offset + pageOffset + index}',
             ),
-          if (order == 'rate_average_2dp')
-            _work(id: 11, title: 'Highly Rated', rating: 4.9),
-          if (order == 'review_count')
-            _work(id: 13, title: 'Most Reviewed', reviewCount: 1200),
-          if (order == 'release')
-            _work(id: 12, title: 'Latest', releaseDate: DateTime(2026, 5)),
         ],
         currentPage: page,
         pageSize: pageSize,
-        totalCount: pageSize,
-      ),
+        totalCount: pageSize * recommendationPageCount,
+      );
+    }
+    return AsmrWorkPage(
+      works: <AsmrWork>[
+        if (order == 'create_date')
+          _work(id: 9, title: 'General New', tags: <String>['rain']),
+        if (order == 'dl_count')
+          _work(
+            id: 10,
+            title: 'Sleep Match',
+            circleName: 'Dream Circle',
+            tags: <String>['sleep'],
+            rating: 4.7,
+            dlCount: 9000,
+            reviewCount: 300,
+          ),
+        if (order == 'rate_average_2dp')
+          _work(id: 11, title: 'Highly Rated', rating: 4.9),
+        if (order == 'review_count')
+          _work(id: 13, title: 'Most Reviewed', reviewCount: 1200),
+        if (order == 'release')
+          _work(id: 12, title: 'Latest', releaseDate: DateTime(2026, 5)),
+      ],
+      currentPage: page,
+      pageSize: pageSize,
+      totalCount: pageSize,
     );
   }
 

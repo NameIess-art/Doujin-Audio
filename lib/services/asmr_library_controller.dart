@@ -213,6 +213,16 @@ class _AsmrFilteredWorksCacheKey {
   int get hashCode => Object.hash(category, query, revision);
 }
 
+class _RecommendationCandidatePageResult {
+  const _RecommendationCandidatePageResult({
+    this.pages = const <AsmrWorkPage>[],
+    this.error,
+  });
+
+  final List<AsmrWorkPage> pages;
+  final Object? error;
+}
+
 class AsmrLibraryController extends ChangeNotifier {
   AsmrLibraryController({
     AsmrApiService? apiService,
@@ -924,26 +934,26 @@ class AsmrLibraryController extends ChangeNotifier {
     required String searchQuery,
     required int requestId,
   }) async {
-    final pageGroups = <List<AsmrWorkPage>>[];
-    Object? firstError;
-    for (final sourceCategory in _recommendationCandidateCategories) {
-      try {
-        pageGroups.add(
-          await _loadRecommendationCandidatePages(
-            sourceCategory,
-            searchQuery: searchQuery,
-          ),
-        );
-      } catch (error) {
-        firstError ??= error;
-        debugPrint(
-          'AsmrLibraryController recommendation candidate load error '
-          '($sourceCategory): $error',
-        );
-      }
-    }
+    final localTracksFuture = _loadLocalTracksForRecommendation();
+    final pageResults =
+        await Future.wait(<Future<_RecommendationCandidatePageResult>>[
+          for (final sourceCategory in _recommendationCandidateCategories)
+            _loadRecommendationCandidatePageResult(
+              sourceCategory,
+              searchQuery: searchQuery,
+            ),
+        ]);
     if (_refreshRequestSerial[category] != requestId) {
       return;
+    }
+    Object? firstError;
+    final pageGroups = <List<AsmrWorkPage>>[];
+    for (final result in pageResults) {
+      final error = result.error;
+      if (error != null) {
+        firstError ??= error;
+      }
+      pageGroups.add(result.pages);
     }
     final candidatesById = <int, AsmrWork>{};
     for (final page in pageGroups.expand((group) => group)) {
@@ -954,7 +964,7 @@ class AsmrLibraryController extends ChangeNotifier {
     if (candidatesById.isEmpty && firstError != null) {
       throw firstError;
     }
-    final localTracks = await _loadLocalTracksForRecommendation();
+    final localTracks = await localTracksFuture;
     if (_refreshRequestSerial[category] != requestId) {
       return;
     }
@@ -980,6 +990,27 @@ class AsmrLibraryController extends ChangeNotifier {
     _hasMoreByCategory[category] = false;
     for (final work in ranked) {
       _workCache[work.id] = work;
+    }
+  }
+
+  Future<_RecommendationCandidatePageResult>
+  _loadRecommendationCandidatePageResult(
+    AsmrCategoryType category, {
+    required String searchQuery,
+  }) async {
+    try {
+      return _RecommendationCandidatePageResult(
+        pages: await _loadRecommendationCandidatePages(
+          category,
+          searchQuery: searchQuery,
+        ),
+      );
+    } catch (error) {
+      debugPrint(
+        'AsmrLibraryController recommendation candidate load error '
+        '($category): $error',
+      );
+      return _RecommendationCandidatePageResult(error: error);
     }
   }
 

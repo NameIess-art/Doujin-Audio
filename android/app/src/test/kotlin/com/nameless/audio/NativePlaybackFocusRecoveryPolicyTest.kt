@@ -1,6 +1,7 @@
 package com.nameless.audio
 
 import android.media.AudioManager
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -137,7 +138,7 @@ class NativePlaybackFocusRecoveryPolicyTest {
     }
 
     @Test
-    fun `keeps intended playback alive unless ended or failed`() {
+    fun `keeps intended playback alive unless ended or unrecoverable`() {
         assertTrue(
             shouldKeepAliveForIntendedPlayback(
                 playbackState = Player.STATE_READY,
@@ -160,6 +161,65 @@ class NativePlaybackFocusRecoveryPolicyTest {
             shouldRecoverIntendedPlayback(
                 playbackState = Player.STATE_READY,
                 hasPlayerError = true
+            )
+        )
+        assertTrue(
+            shouldKeepAliveForIntendedPlayback(
+                playbackState = Player.STATE_IDLE,
+                hasPlayerError = true,
+                hasRecoverablePlaybackError = true
+            )
+        )
+        assertTrue(
+            shouldRecoverIntendedPlayback(
+                playbackState = Player.STATE_IDLE,
+                hasPlayerError = true,
+                hasRecoverablePlaybackError = true
+            )
+        )
+        assertFalse(
+            shouldRecoverIntendedPlayback(
+                playbackState = Player.STATE_ENDED,
+                hasPlayerError = true,
+                hasRecoverablePlaybackError = true
+            )
+        )
+    }
+
+    @Test
+    fun `classifies transient network and audio write errors as recoverable`() {
+        assertTrue(
+            isRecoverablePlaybackErrorCode(
+                PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED
+            )
+        )
+        assertTrue(
+            isRecoverablePlaybackErrorCode(
+                PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT
+            )
+        )
+        assertTrue(
+            isRecoverablePlaybackErrorCode(
+                PlaybackException.ERROR_CODE_AUDIO_TRACK_WRITE_FAILED
+            )
+        )
+    }
+
+    @Test
+    fun `does not treat permanent source errors as recoverable`() {
+        assertFalse(
+            isRecoverablePlaybackErrorCode(
+                PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND
+            )
+        )
+        assertFalse(
+            isRecoverablePlaybackErrorCode(
+                PlaybackException.ERROR_CODE_IO_NO_PERMISSION
+            )
+        )
+        assertFalse(
+            isRecoverablePlaybackErrorCode(
+                PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED
             )
         )
     }

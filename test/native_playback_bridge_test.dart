@@ -196,6 +196,39 @@ void main() {
     expect(result.valueOrNull?.eqCapabilities.supported, isTrue);
   });
 
+  test('prepareSession forwards audio effects atomically', () async {
+    Map<Object?, Object?>? arguments;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          expect(call.method, NativePlaybackMethod.prepareSession);
+          arguments = call.arguments as Map<Object?, Object?>;
+          return <String, Object?>{'ok': false, 'error': 'test'};
+        });
+
+    await NativePlaybackBridge.instance.prepareSession(
+      sessionId: 'session-1',
+      uri: Uri.file('/audio/one.mp3'),
+      title: 'one',
+      audioEffects: const NativeAudioEffects(
+        state: AudioEffectsState(
+          skipSilenceEnabled: true,
+          eqEnabled: true,
+          eqBandLevels: <int, double>{1000: 2.5},
+        ),
+        channelSwapEnabled: true,
+      ),
+    );
+
+    final effects = arguments!['audioEffects'] as Map<Object?, Object?>;
+    expect(effects['skipSilenceEnabled'], isTrue);
+    expect(effects['eqEnabled'], isTrue);
+    expect(effects['channelSwapEnabled'], isTrue);
+    expect((effects['eqBandLevels'] as List<Object?>).single, <String, Object?>{
+      'frequencyHz': 1000,
+      'gainDb': 2.5,
+    });
+  });
+
   test(
     'snapshot decodes bundle payload and failure keeps the error message',
     () async {

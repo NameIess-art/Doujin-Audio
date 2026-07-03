@@ -485,6 +485,9 @@ class NativePlaybackService : MediaSessionService() {
         val autoPlay = args["autoPlay"] as? Boolean ?: false
         val volume = (args["volume"] as? Number)?.toFloat() ?: 1f
         val speed = (args["speed"] as? Number)?.toFloat() ?: 1f
+        val audioEffects = NativePlaybackCommandPayloads.parseAudioEffects(
+            args["audioEffects"] as? Map<*, *> ?: emptyMap<Any?, Any?>()
+        )
         val repeatOne = args["repeatOne"] as? Boolean ?: false
         val queue = NativePlaybackCommandPayloads.parseQueue(args["queue"]).ifEmpty {
             listOf(NativeMediaItemDescriptor(path, uri, title, subtitle, artUri))
@@ -507,6 +510,7 @@ class NativePlaybackService : MediaSessionService() {
         }
         pendingAudioFocusResumeSessionIds.remove(sessionId)
         return try {
+            nativeSession.applyAudioEffects(audioEffects)
             nativeSession.configure(
                 descriptor = queue[queueStartIndex],
                 queue = queue,

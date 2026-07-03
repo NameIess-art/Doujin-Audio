@@ -156,7 +156,6 @@ extension AudioProviderPlayback on AudioProvider {
       await _persistSessionConsoleSettings(session);
       return;
     }
-    final previous = session.channelSwapEnabled;
     session.channelSwapEnabled = enabled;
     _markActiveSessionsDirty();
     _notifyPlaybackChanged(); // Optimistic update
@@ -164,13 +163,11 @@ extension AudioProviderPlayback on AudioProvider {
     final response = await _syncSessionAudioEffects(session);
 
     if (response.isFailure) {
-      session.channelSwapEnabled = previous;
-      _markActiveSessionsDirty();
       AppLogService.warning(
         'AudioProvider.setSessionChannelSwap error: '
         '${response.errorOrNull}',
       );
-      _notifyPlaybackChanged();
+      await _persistSessionConsoleSettings(session);
       return;
     }
     _applyAudioEffectsSnapshot(
@@ -275,13 +272,35 @@ extension AudioProviderPlayback on AudioProvider {
         );
       }
     }
-    return _nativePlaybackRepository.setAudioEffects(
+    var response = await _nativePlaybackRepository.setAudioEffects(
       session.id,
       NativeAudioEffects(
         state: session.audioEffects,
         channelSwapEnabled: session.channelSwapEnabled,
       ),
     );
+    if (response.isOk || needsPrepare || !_sessions.containsKey(session.id)) {
+      return response;
+    }
+
+    session.loadedPath = null;
+    await _prepareAndPlay(
+      session,
+      nextPath: session.currentTrackPath,
+      autoPlay: false,
+      showLoading: false,
+    );
+    if (session.loadedPath == null || !_sessions.containsKey(session.id)) {
+      return response;
+    }
+    response = await _nativePlaybackRepository.setAudioEffects(
+      session.id,
+      NativeAudioEffects(
+        state: session.audioEffects,
+        channelSwapEnabled: session.channelSwapEnabled,
+      ),
+    );
+    return response;
   }
 
   Future<void> _updateSessionAudioEffects(
@@ -299,12 +318,10 @@ extension AudioProviderPlayback on AudioProvider {
 
     final response = await _syncSessionAudioEffects(session);
     if (response.isFailure) {
-      session.audioEffects = previous;
-      _markActiveSessionsDirty();
       AppLogService.warning(
         'AudioProvider.$errorLabel error: ${response.errorOrNull}',
       );
-      _notifyPlaybackChanged();
+      await _persistSessionConsoleSettings(session);
       return;
     }
     _applyAudioEffectsSnapshot(session, response, fallbackAudioEffects: next);

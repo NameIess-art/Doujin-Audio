@@ -268,6 +268,10 @@ abstract interface class NativePlaybackBridgeBase {
     bool repeatOne = false,
     bool autoPlay = false,
     double speed = 1.0,
+    NativeAudioEffects audioEffects = const NativeAudioEffects(
+      state: AudioEffectsState.flat,
+      channelSwapEnabled: false,
+    ),
     List<Map<String, Object?>>? queue,
     int? queueStartIndex,
     bool repeatAll = false,
@@ -476,6 +480,10 @@ class NativePlaybackBridge implements NativePlaybackBridgeBase {
     bool repeatOne = false,
     bool autoPlay = false,
     double speed = 1.0,
+    NativeAudioEffects audioEffects = const NativeAudioEffects(
+      state: AudioEffectsState.flat,
+      channelSwapEnabled: false,
+    ),
     List<Map<String, Object?>>? queue,
     int? queueStartIndex,
     bool repeatAll = false,
@@ -496,6 +504,7 @@ class NativePlaybackBridge implements NativePlaybackBridgeBase {
       'startPositionMs': startPosition.inMilliseconds,
       'volume': volume,
       'speed': speed,
+      'audioEffects': audioEffects.toPlatformMap(),
       'repeatOne': repeatOne,
       'autoPlay': autoPlay,
 

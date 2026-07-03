@@ -2778,6 +2778,56 @@ void main() {
         expect(provider.isCoverPathLoadingForFolder(missingFolder), isFalse);
       },
     );
+
+    test('playlist cover warmup skips resolved and duplicate tracks', () async {
+      provider.dispose();
+      final cache = _PlaybackCoverWarmupRecordingCacheService(
+        resolvedPaths: const <String>{'/library/resolved.flac'},
+      );
+      provider = AudioProvider.test(
+        notificationService: notificationService,
+        audioDatabaseRepository: AudioDatabaseRepository(
+          database: AppDatabase.test(db),
+        ),
+        coverArtworkCacheService: cache,
+      );
+      const unresolved = MusicTrack(
+        path: '/library/unresolved.flac',
+        displayName: 'Unresolved',
+        groupKey: '/library',
+        groupTitle: 'Library',
+        groupSubtitle: 'Library',
+        isSingle: false,
+      );
+      const duplicate = MusicTrack(
+        path: '/library/unresolved.flac',
+        displayName: 'Duplicate',
+        groupKey: '/library',
+        groupTitle: 'Library',
+        groupSubtitle: 'Library',
+        isSingle: false,
+      );
+      const resolved = MusicTrack(
+        path: '/library/resolved.flac',
+        displayName: 'Resolved',
+        groupKey: '/library',
+        groupTitle: 'Library',
+        groupSubtitle: 'Library',
+        isSingle: false,
+      );
+
+      provider.warmupPlaybackCoversForTracks(<MusicTrack?>[
+        unresolved,
+        duplicate,
+        resolved,
+        null,
+      ]);
+      for (var i = 0; i < 10 && cache.requestedPaths.isEmpty; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+
+      expect(cache.requestedPaths, <String>[unresolved.path]);
+    });
   });
 
   group('library folder restore', () {
@@ -3427,6 +3477,34 @@ class _RecordingCoverArtworkCacheService extends CoverArtworkCacheService {
   @override
   Future<String?> futureForTrack(MusicTrack? track, {String? trackPath}) async {
     return track?.remoteCoverUrl == expectedRemoteCoverUrl ? coverPath : null;
+  }
+}
+
+class _PlaybackCoverWarmupRecordingCacheService
+    extends CoverArtworkCacheService {
+  _PlaybackCoverWarmupRecordingCacheService({
+    this.resolvedPaths = const <String>{},
+  }) : super(libraryService: LibraryService());
+
+  final Set<String> resolvedPaths;
+  final List<String> requestedPaths = <String>[];
+
+  @override
+  String? resolvedForPlaybackTrack(MusicTrack? track, {String? trackPath}) {
+    final path = track?.path ?? trackPath;
+    return path != null && resolvedPaths.contains(path)
+        ? '/resolved.image'
+        : null;
+  }
+
+  @override
+  Future<String?> futureForPlaybackTrack(
+    MusicTrack? track, {
+    String? trackPath,
+  }) async {
+    final path = track?.path ?? trackPath;
+    if (path != null) requestedPaths.add(path);
+    return path == null ? null : '/cover.image';
   }
 }
 

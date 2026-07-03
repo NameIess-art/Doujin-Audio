@@ -7,6 +7,7 @@ import 'package:nameless_audio/services/audio_database_repository.dart';
 import 'package:nameless_audio/services/audio_state_services.dart';
 import 'package:nameless_audio/services/cover_artwork_cache_service.dart';
 import 'package:nameless_audio/services/file_cache_platform_gateway.dart';
+import 'package:nameless_audio/services/path_matcher.dart';
 
 void main() {
   test('folder cover future reuses the same in-flight lookup', () async {
@@ -508,6 +509,114 @@ void main() {
     expect(await cache.futureForFolder(directory.path), isNull);
     cache.invalidateFolder(directory.path);
     expect(await cache.futureForFolder(directory.path), cover.path);
+  });
+
+  test('resolved track cover cache trims old non-active entries', () async {
+    final tracks = List<MusicTrack>.generate(
+      601,
+      (index) =>
+          _track(path: '/library/track_$index.flac', groupKey: '/library'),
+    );
+    final cache = CoverArtworkCacheService(
+      libraryService: LibraryService()..library.addAll(tracks),
+      fileCacheGateway: _FakeFileCachePlatformGateway(
+        coversByPath: <String, String>{
+          for (final track in tracks) track.path: '/cache/${track.path}.image',
+        },
+      ),
+      isActiveCoverKey: (key) =>
+          key == PathMatcher.normalize(tracks.first.path),
+    );
+
+    for (final track in tracks) {
+      await cache.futureForTrack(track);
+    }
+
+    expect(cache.resolvedForTrack(tracks.first), isNotNull);
+    expect(cache.resolvedForTrack(tracks[1]), isNull);
+    expect(cache.resolvedForTrack(tracks.last), isNotNull);
+  });
+
+  test('resolved folder cover cache trims old non-active entries', () async {
+    final root = await Directory.systemTemp.createTemp(
+      'cover_cache_folder_trim_',
+    );
+    addTearDown(() async {
+      if (await root.exists()) await root.delete(recursive: true);
+    });
+    final folders = <Directory>[];
+    for (var index = 0; index < 301; index++) {
+      final folder = Directory(
+        '${root.path}${Platform.pathSeparator}folder_$index',
+      );
+      await folder.create();
+      await File(
+        '${folder.path}${Platform.pathSeparator}cover.jpg',
+      ).writeAsBytes(<int>[0xff, 0xd8, 0xff, 0xd9]);
+      folders.add(folder);
+    }
+    final activeFolderKey = PathMatcher.normalize(folders.first.path);
+    final cache = CoverArtworkCacheService(
+      libraryService: LibraryService(),
+      isActiveCoverKey: (key) => key == activeFolderKey,
+    );
+
+    for (final folder in folders) {
+      await cache.futureForFolder(folder.path);
+    }
+
+    expect(cache.resolvedForFolder(folders.first.path), isNotNull);
+    expect(cache.resolvedForFolder(folders[1].path), isNull);
+    expect(cache.resolvedForFolder(folders.last.path), isNotNull);
+  });
+
+  test('resolved remote cover cache trims old non-active entries', () async {
+    final urls = List<String>.generate(
+      301,
+      (index) => 'https://example.com/cover_$index.jpg',
+    );
+    final activeRemoteKey = remoteCoverSearchKey(urls.first);
+    final cache = CoverArtworkCacheService(
+      libraryService: LibraryService(),
+      remoteCoverDownloader: (url) async => '/cache/${url.hashCode}.image',
+      isActiveCoverKey: (key) => key == activeRemoteKey,
+    );
+
+    for (final url in urls) {
+      await cache.futureForRemoteCover(url);
+    }
+
+    expect(cache.resolvedForRemoteCover(urls.first), isNotNull);
+    expect(cache.resolvedForRemoteCover(urls[1]), isNull);
+    expect(cache.resolvedForRemoteCover(urls.last), isNotNull);
+  });
+
+  test('manual cover validity cache trims old non-active entries', () async {
+    final tracks = List<MusicTrack>.generate(
+      1201,
+      (index) => _track(
+        path: '/library/manual_$index.flac',
+        groupKey: '/library',
+        manualCoverPath: 'content://manual/$index',
+        isSingle: true,
+      ),
+    );
+    final activeTrackKey = PathMatcher.normalize(tracks.first.path);
+    final activeManualKey = tracks.first.manualCoverPath;
+    final cache = CoverArtworkCacheService(
+      libraryService: LibraryService()..library.addAll(tracks),
+      isActiveCoverKey: (key) =>
+          key == activeTrackKey || key == activeManualKey,
+    );
+
+    for (final track in tracks) {
+      await Future<void>.delayed(Duration.zero);
+      await cache.futureForTrack(track);
+    }
+
+    expect(cache.manualCoverPathValidityCacheSize, lessThanOrEqualTo(1200));
+    expect(cache.resolvedForTrack(tracks.first), tracks.first.manualCoverPath);
+    expect(cache.resolvedForTrack(tracks.last), tracks.last.manualCoverPath);
   });
 
   test('scope invalidation only bumps generation for affected cache keys', () {

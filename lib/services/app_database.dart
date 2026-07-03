@@ -19,6 +19,7 @@ class AppDatabase {
 
   static const int schemaVersion = 1;
   static const String fileName = 'audio_player.db';
+  static const int _sqliteInClauseBatchSize = 900;
   static bool _platformDatabaseInitialized = false;
 
   @visibleForTesting
@@ -650,15 +651,34 @@ class AppDatabase {
       LEFT JOIN playback_queues queue ON queue.session_id = s.id
       ORDER BY s.sort_order ASC
     ''');
+    if (rows.isEmpty) return const <PersistedSession>[];
+    final sessionIds = rows.map((row) => row['id'] as String).toList();
+    final eqBandsBySession = await _loadSessionEqBandsBySession(db, sessionIds);
+    final queueEntriesBySession = await _loadPlaybackQueueEntriesBySession(
+      db,
+      sessionIds,
+    );
+    final queueTracksByEntry = await _loadQueueTracksByEntry(db, sessionIds);
     final sessions = <PersistedSession>[];
     for (final row in rows) {
       final id = row['id'] as String;
       sessions.add(
         _sessionFromRow(
           row,
-          customQueueTracks: await _loadSessionCustomQueueTracks(db, id),
-          playbackQueue: await _loadPlaybackQueue(db, id, row),
-          audioEffects: await _loadSessionAudioEffects(db, id, row),
+          customQueueTracks: _customQueueTracksForSession(
+            id,
+            queueTracksByEntry,
+          ),
+          playbackQueue: _playbackQueueForSession(
+            id,
+            row,
+            queueEntriesBySession,
+            queueTracksByEntry,
+          ),
+          audioEffects: _sessionAudioEffectsFromRow(
+            row,
+            eqBandsBySession[id] ?? const <int, double>{},
+          ),
         ),
       );
     }
@@ -1709,23 +1729,104 @@ class AppDatabase {
     sortOrder: (row['sort_order'] as num?)?.toInt() ?? 0,
   );
 
-  static Future<AudioEffectsState> _loadSessionAudioEffects(
+  static Future<Map<String, Map<int, double>>> _loadSessionEqBandsBySession(
     DatabaseExecutor db,
-    String sessionId,
-    Map<String, dynamic> row,
+    List<String> sessionIds,
   ) async {
-    final bandRows = await db.query(
-      'session_eq_bands',
-      where: 'session_id = ?',
-      whereArgs: [sessionId],
-    );
-    final levels = <int, double>{};
-    for (final band in bandRows) {
-      final frequency = (band['frequency_hz'] as num?)?.toInt();
-      final gain = (band['gain_db'] as num?)?.toDouble();
-      if (frequency == null || gain == null) continue;
-      levels[frequency] = gain;
+    final levelsBySession = <String, Map<int, double>>{};
+    for (final ids in _sessionIdChunks(sessionIds)) {
+      final placeholders = List.filled(ids.length, '?').join(', ');
+      final rows = await db.rawQuery('''
+        SELECT session_id, frequency_hz, gain_db
+        FROM session_eq_bands
+        WHERE session_id IN ($placeholders)
+        ORDER BY session_id ASC, frequency_hz ASC
+      ''', ids);
+      for (final row in rows) {
+        final sessionId = row['session_id'] as String?;
+        final frequency = (row['frequency_hz'] as num?)?.toInt();
+        final gain = (row['gain_db'] as num?)?.toDouble();
+        if (sessionId == null || frequency == null || gain == null) continue;
+        levelsBySession.putIfAbsent(
+          sessionId,
+          () => <int, double>{},
+        )[frequency] = gain;
+      }
     }
+    return levelsBySession;
+  }
+
+  static Future<Map<String, List<Map<String, dynamic>>>>
+  _loadPlaybackQueueEntriesBySession(
+    DatabaseExecutor db,
+    List<String> sessionIds,
+  ) async {
+    final entriesBySession = <String, List<Map<String, dynamic>>>{};
+    for (final ids in _sessionIdChunks(sessionIds)) {
+      final placeholders = List.filled(ids.length, '?').join(', ');
+      final rows = await db.rawQuery('''
+        SELECT session_id, entry_id, kind, title, work_root_path, sort_order
+        FROM playback_queue_entries
+        WHERE session_id IN ($placeholders)
+        ORDER BY session_id ASC, sort_order ASC
+      ''', ids);
+      for (final row in rows) {
+        final sessionId = row['session_id'] as String?;
+        if (sessionId == null) continue;
+        entriesBySession
+            .putIfAbsent(sessionId, () => <Map<String, dynamic>>[])
+            .add(row);
+      }
+    }
+    return entriesBySession;
+  }
+
+  static Future<Map<String, List<Map<String, dynamic>>>>
+  _loadQueueTracksByEntry(DatabaseExecutor db, List<String> sessionIds) async {
+    final tracksByEntry = <String, List<Map<String, dynamic>>>{};
+    for (final ids in _sessionIdChunks(sessionIds)) {
+      final placeholders = List.filled(ids.length, '?').join(', ');
+      final rows = await db.rawQuery('''
+        SELECT
+          session_id,
+          entry_id,
+          track_path,
+          display_name,
+          group_key,
+          group_title,
+          group_subtitle,
+          is_single,
+          is_video,
+          duration_ms,
+          file_size_bytes,
+          remote_cover_url,
+          remote_metadata_kind,
+          remote_metadata_json,
+          duplicate_index,
+          sort_order
+        FROM playback_queue_entry_tracks
+        WHERE session_id IN ($placeholders)
+        ORDER BY session_id ASC, entry_id ASC, sort_order ASC
+      ''', ids);
+      for (final row in rows) {
+        final sessionId = row['session_id'] as String?;
+        final entryId = row['entry_id'] as String?;
+        if (sessionId == null || entryId == null) continue;
+        tracksByEntry
+            .putIfAbsent(
+              _queueEntryKey(sessionId, entryId),
+              () => <Map<String, dynamic>>[],
+            )
+            .add(row);
+      }
+    }
+    return tracksByEntry;
+  }
+
+  static AudioEffectsState _sessionAudioEffectsFromRow(
+    Map<String, dynamic> row,
+    Map<int, double> levels,
+  ) {
     return AudioEffectsState(
       skipSilenceEnabled: (row['skip_silence_enabled'] as int? ?? 0) == 1,
       noiseReductionEnabled: (row['noise_reduction_enabled'] as int? ?? 0) == 1,
@@ -1740,42 +1841,33 @@ class AppDatabase {
     );
   }
 
-  static Future<List<MusicTrack>?> _loadSessionCustomQueueTracks(
-    DatabaseExecutor db,
+  static List<MusicTrack>? _customQueueTracksForSession(
     String sessionId,
-  ) async {
-    final rows = await db.query(
-      'playback_queue_entry_tracks',
-      where: 'session_id = ? AND entry_id = ?',
-      whereArgs: [sessionId, '__custom_queue__'],
-      orderBy: 'sort_order ASC',
-    );
+    Map<String, List<Map<String, dynamic>>> queueTracksByEntry,
+  ) {
+    final rows =
+        queueTracksByEntry[_queueEntryKey(sessionId, '__custom_queue__')];
+    if (rows == null) return null;
     if (rows.isEmpty) return null;
     return rows.map(_queueTrackFromRow).toList(growable: false);
   }
 
-  static Future<PlaybackQueueDefinition?> _loadPlaybackQueue(
-    DatabaseExecutor db,
+  static PlaybackQueueDefinition? _playbackQueueForSession(
     String sessionId,
     Map<String, dynamic> sessionRow,
-  ) async {
+    Map<String, List<Map<String, dynamic>>> queueEntriesBySession,
+    Map<String, List<Map<String, dynamic>>> queueTracksByEntry,
+  ) {
     final queueName = sessionRow['queue_name'] as String?;
     if (queueName == null) return null;
-    final entryRows = await db.query(
-      'playback_queue_entries',
-      where: 'session_id = ?',
-      whereArgs: [sessionId],
-      orderBy: 'sort_order ASC',
-    );
+    final entryRows =
+        queueEntriesBySession[sessionId] ?? const <Map<String, dynamic>>[];
     final entries = <PlaybackQueueEntry>[];
     for (final entryRow in entryRows) {
       final entryId = entryRow['entry_id'] as String;
-      final trackRows = await db.query(
-        'playback_queue_entry_tracks',
-        where: 'session_id = ? AND entry_id = ?',
-        whereArgs: [sessionId, entryId],
-        orderBy: 'sort_order ASC',
-      );
+      final trackRows =
+          queueTracksByEntry[_queueEntryKey(sessionId, entryId)] ??
+          const <Map<String, dynamic>>[];
       entries.add(
         PlaybackQueueEntry(
           id: entryId,
@@ -1795,6 +1887,25 @@ class AppDatabase {
       entries: entries,
     );
   }
+
+  static Iterable<List<String>> _sessionIdChunks(
+    List<String> sessionIds,
+  ) sync* {
+    for (
+      var start = 0;
+      start < sessionIds.length;
+      start += _sqliteInClauseBatchSize
+    ) {
+      final end = (start + _sqliteInClauseBatchSize).clamp(
+        0,
+        sessionIds.length,
+      );
+      yield sessionIds.sublist(start, end);
+    }
+  }
+
+  static String _queueEntryKey(String sessionId, String entryId) =>
+      '$sessionId\n$entryId';
 
   static MusicTrack _queueTrackFromRow(Map<String, dynamic> row) => MusicTrack(
     path: row['track_path'] as String,

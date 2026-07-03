@@ -134,6 +134,10 @@ class _AsmrTabState extends State<AsmrTab>
           }
           _syncCategoryTabs(asmrController.visibleCategories);
           await _ensureCategoryLoaded(_currentCategory);
+          if (!mounted) {
+            return;
+          }
+          await asmrController.restoreAsmrAccountSession();
           if (!mounted || !asmrController.isAsmrAccountLoggedIn) {
             return;
           }

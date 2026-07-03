@@ -298,6 +298,8 @@ class AsmrLibraryController extends ChangeNotifier {
   AsmrSyncPhase _syncPhase = AsmrSyncPhase.idle;
   DateTime? _lastSyncAt;
   Object? _lastSyncError;
+  Future<void>? _initializeTask;
+  Future<void>? _authRestoreTask;
   Future<void>? _syncTask;
   bool _initialized = false;
   Object? _lastError;
@@ -444,9 +446,27 @@ class AsmrLibraryController extends ChangeNotifier {
     return filtered;
   }
 
-  Future<void> initialize({AsmrContentLanguage? defaultLanguage}) async {
-    if (_initialized) return;
+  Future<void> initialize({AsmrContentLanguage? defaultLanguage}) {
+    if (_initialized) return Future<void>.value();
+    final existing = _initializeTask;
+    if (existing != null) {
+      return existing;
+    }
+    late final Future<void> task;
+    task = _initializeLocalState(defaultLanguage: defaultLanguage).whenComplete(
+      () {
+        if (identical(_initializeTask, task)) {
+          _initializeTask = null;
+        }
+      },
+    );
+    _initializeTask = task;
+    return task;
+  }
 
+  Future<void> _initializeLocalState({
+    AsmrContentLanguage? defaultLanguage,
+  }) async {
     _visibleCategories = await AsmrPreferences.loadVisibleCategories();
     _contentLanguage = await AsmrPreferences.loadContentLanguage(
       defaultLanguage ?? AsmrContentLanguage.zh,
@@ -457,14 +477,53 @@ class AsmrLibraryController extends ChangeNotifier {
     _syncOperations = await AsmrPreferences.loadSyncOperations();
     await _seedSyncOutboxIfNeeded();
     _lastSyncAt = await AsmrPreferences.loadLastSyncAt();
-    _authSession = await _authService.restoreSession();
     for (final work in _favoriteWorks.followedBy(_historyWorks)) {
       _workCache[work.id] = work;
     }
     _updateLocalCategoryCounts();
     _initialized = true;
     _bumpGlobalRevision();
-    notifyListeners();
+    _commitPresentation('asmr_initialize', notifyListeners);
+    unawaited(restoreAsmrAccountSession());
+  }
+
+  Future<void> restoreAsmrAccountSession({bool force = false}) {
+    if (!force && _authSession != null) {
+      return Future<void>.value();
+    }
+    final existing = _authRestoreTask;
+    if (!force && existing != null) {
+      return existing;
+    }
+    late final Future<void> task;
+    task = _restoreAsmrAccountSessionInternal().whenComplete(() {
+      if (identical(_authRestoreTask, task)) {
+        _authRestoreTask = null;
+      }
+    });
+    _authRestoreTask = task;
+    return task;
+  }
+
+  Future<void> _restoreAsmrAccountSessionInternal() async {
+    final previousSession = _authSession;
+    final AsmrAuthSession? restored;
+    try {
+      restored = await _authService.restoreSession();
+    } catch (error) {
+      _lastSyncError = error;
+      _bumpGlobalRevision();
+      _commitPresentation('asmr_auth_restore_error', notifyListeners);
+      return;
+    }
+    if (previousSession?.token == restored?.token &&
+        previousSession?.userName == restored?.userName) {
+      return;
+    }
+    _authSession = restored;
+    _lastSyncError = null;
+    _bumpGlobalRevision();
+    _commitPresentation('asmr_auth_restore', notifyListeners);
   }
 
   Future<void> reloadPersistedStateAfterBackupRestore() async {
@@ -686,6 +745,7 @@ class AsmrLibraryController extends ChangeNotifier {
     AsmrCategoryType category, {
     String searchQuery = '',
   }) async {
+    await initialize();
     final normalizedQuery = normalizeSearchQuery(searchQuery);
     if (category == AsmrCategoryType.favorites ||
         category == AsmrCategoryType.history ||
@@ -758,6 +818,7 @@ class AsmrLibraryController extends ChangeNotifier {
     _lastError = null;
     _commitPresentation('asmr_loading_start_${category.name}', notifyListeners);
     try {
+      await initialize();
       switch (category) {
         case AsmrCategoryType.collected:
           await _loadWorks(

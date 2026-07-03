@@ -534,8 +534,16 @@ class _LibraryCategoryTermBoxState extends State<_LibraryCategoryTermBox> {
                             );
                             return GestureDetector(
                               behavior: HitTestBehavior.translucent,
-                              onSecondaryTap: () =>
-                                  _copyCategoryTerm(context, term),
+                              onLongPress:
+                                  defaultTargetPlatform ==
+                                      TargetPlatform.android
+                                  ? () => _copyCategoryTerm(context, term)
+                                  : null,
+                              onSecondaryTap:
+                                  defaultTargetPlatform ==
+                                      TargetPlatform.windows
+                                  ? () => _copyCategoryTerm(context, term)
+                                  : null,
                               child: SizedBox(
                                 height: 28,
                                 child: FilterChip(

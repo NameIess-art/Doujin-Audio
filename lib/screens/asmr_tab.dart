@@ -68,6 +68,9 @@ class _AsmrTabState extends State<AsmrTab>
   String _searchQuery = '';
   final GlobalKey _headerKey = GlobalKey();
   double _headerHeight = 0;
+  double? _lastHeaderMeasureWidth;
+  double? _lastHeaderMeasureTopPadding;
+  double? _lastHeaderMeasureTextScale;
 
   @override
   bool get wantKeepAlive => true;
@@ -85,6 +88,10 @@ class _AsmrTabState extends State<AsmrTab>
   double get _headerControlsFullHeight => 86.0;
 
   UiOperationService get _operations => UiOperationService.instance;
+
+  double _minimumExpandedHeaderHeight(BuildContext context) {
+    return 72 + MediaQuery.paddingOf(context).top;
+  }
 
   Future<T> _runAsmrOperation<T>({
     required UiOperationScope scope,
@@ -134,6 +141,26 @@ class _AsmrTabState extends State<AsmrTab>
         }),
       );
     });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final mediaQuery = MediaQuery.of(context);
+    final width = mediaQuery.size.width;
+    final topPadding = mediaQuery.padding.top;
+    final textScale = mediaQuery.textScaler.scale(1);
+    final metricsChanged =
+        _lastHeaderMeasureWidth == null ||
+        (width - _lastHeaderMeasureWidth!).abs() > 0.5 ||
+        (topPadding - _lastHeaderMeasureTopPadding!).abs() > 0.5 ||
+        (textScale - _lastHeaderMeasureTextScale!).abs() > 0.01;
+    _lastHeaderMeasureWidth = width;
+    _lastHeaderMeasureTopPadding = topPadding;
+    _lastHeaderMeasureTextScale = textScale;
+    if (metricsChanged) {
+      _headerHeight = 0;
+    }
   }
 
   void _syncCategoryTabs(List<AsmrCategoryType> categories) {
@@ -247,8 +274,11 @@ class _AsmrTabState extends State<AsmrTab>
           .read<AsmrLibraryController?>()
           ?.globalViewState;
       final hasControls = globalState != null;
-      final h = box.size.height - (hasControls ? _headerControlsFullHeight : 0);
-      if (h > 0 && (h - _headerHeight).abs() > 0.5) {
+      final measuredHeight =
+          box.size.height - (hasControls ? _headerControlsFullHeight : 0);
+      final minimumHeight = _minimumExpandedHeaderHeight(context);
+      final h = measuredHeight < minimumHeight ? minimumHeight : measuredHeight;
+      if (h > 0 && (_headerHeight == 0 || h > _headerHeight + 0.5)) {
         setState(() => _headerHeight = h);
       }
     }
@@ -600,7 +630,7 @@ class _AsmrTabState extends State<AsmrTab>
     final headerControlsFullHeight = _headerControlsFullHeight;
     final effectiveHeaderHeight = _headerHeight > 0
         ? _headerHeight
-        : 72 + MediaQuery.paddingOf(context).top;
+        : _minimumExpandedHeaderHeight(context);
     final topTotalHeight = effectiveHeaderHeight + 4;
     final headerContentHeight = topTotalHeight + headerControlsFullHeight;
 

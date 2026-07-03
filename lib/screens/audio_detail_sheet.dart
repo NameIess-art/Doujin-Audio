@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -1024,7 +1025,7 @@ class _AudioDetailRow extends StatelessWidget {
                   .map(
                     (v) => _DetailCapsule(
                       text: v,
-                      onSecondaryTap: onCopy != null && v != emptyText
+                      onCopy: onCopy != null && v != emptyText
                           ? () => onCopy!(v)
                           : null,
                     ),
@@ -1047,10 +1048,10 @@ class _AudioDetailRow extends StatelessWidget {
 }
 
 class _DetailCapsule extends StatelessWidget {
-  const _DetailCapsule({required this.text, this.onSecondaryTap});
+  const _DetailCapsule({required this.text, this.onCopy});
 
   final String text;
-  final VoidCallback? onSecondaryTap;
+  final VoidCallback? onCopy;
 
   @override
   Widget build(BuildContext context) {
@@ -1059,7 +1060,12 @@ class _DetailCapsule extends StatelessWidget {
       color: cs.surfaceContainerHighest,
       borderRadius: BorderRadius.circular(999),
       child: InkWell(
-        onSecondaryTap: onSecondaryTap,
+        onLongPress: defaultTargetPlatform == TargetPlatform.android
+            ? onCopy
+            : null,
+        onSecondaryTap: defaultTargetPlatform == TargetPlatform.windows
+            ? onCopy
+            : null,
         borderRadius: BorderRadius.circular(999),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),

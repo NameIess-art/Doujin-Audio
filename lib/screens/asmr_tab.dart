@@ -119,12 +119,18 @@ class _AsmrTabState extends State<AsmrTab>
         context.read<AppLanguageProvider>().language.name,
       );
       unawaited(
-        asmrController.initialize(defaultLanguage: defaultLanguage).then((_) {
+        asmrController.initialize(defaultLanguage: defaultLanguage).then((
+          _,
+        ) async {
           if (!mounted) {
             return;
           }
           _syncCategoryTabs(asmrController.visibleCategories);
-          unawaited(_ensureCategoryLoaded(_currentCategory));
+          await _ensureCategoryLoaded(_currentCategory);
+          if (!mounted || !asmrController.isAsmrAccountLoggedIn) {
+            return;
+          }
+          unawaited(asmrController.syncAsmrAccount());
         }),
       );
     });
@@ -285,10 +291,8 @@ class _AsmrTabState extends State<AsmrTab>
         category.name,
       ),
       labelKey: 'loading_dot',
-      task: () => controller.refreshCategoryWithSync(
-        category,
-        searchQuery: _searchQuery,
-      ),
+      task: () =>
+          controller.refreshCategory(category, searchQuery: _searchQuery),
     );
   }
 

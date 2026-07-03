@@ -465,9 +465,6 @@ class AsmrLibraryController extends ChangeNotifier {
     _initialized = true;
     _bumpGlobalRevision();
     notifyListeners();
-    if (_authSession != null) {
-      unawaited(syncAsmrAccount());
-    }
   }
 
   Future<void> reloadPersistedStateAfterBackupRestore() async {

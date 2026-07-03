@@ -18,6 +18,7 @@ import 'package:nameless_audio/screens/settings_tab.dart';
 import 'package:nameless_audio/services/asmr_metadata_service.dart';
 import 'package:nameless_audio/services/audio_database_repository.dart';
 import 'package:nameless_audio/services/audio_state_services.dart';
+import 'package:nameless_audio/services/cover_artwork_cache_service.dart';
 import 'package:nameless_audio/services/dlsite_metadata_service.dart';
 import 'package:nameless_audio/services/native_playback_repository.dart';
 import 'package:nameless_audio/services/playback_command_runner.dart';
@@ -173,6 +174,28 @@ class _FakeAsmrMetadataService extends AsmrMetadataService {
   }
 }
 
+class _RecordingPlaybackCoverCacheService extends CoverArtworkCacheService {
+  _RecordingPlaybackCoverCacheService()
+    : super(libraryService: LibraryService());
+
+  final List<String> requestedPaths = <String>[];
+
+  @override
+  String? resolvedForPlaybackTrack(MusicTrack? track, {String? trackPath}) {
+    return null;
+  }
+
+  @override
+  Future<String?> futureForPlaybackTrack(
+    MusicTrack? track, {
+    String? trackPath,
+  }) async {
+    final path = track?.path ?? trackPath;
+    if (path != null) requestedPaths.add(path);
+    return null;
+  }
+}
+
 void main() {
   test('active track path provider exposes current session paths', () {
     final playbackService = PlaybackSessionService();
@@ -270,6 +293,7 @@ void main() {
       coverGeneration: 0,
       isInitialized: true,
     );
+    audioProvider.scheduleUiWarmup(currentPageIndex: 2, immediate: true);
 
     await tester.pumpWidget(
       _buildTestApp(
@@ -315,6 +339,108 @@ void main() {
     await tester.pump();
 
     expect(find.byIcon(Icons.pause_rounded), findsOneWidget);
+  });
+
+  testWidgets('playlist build and reordering do not trigger cover futures', (
+    WidgetTester tester,
+  ) async {
+    final notificationService = PlaybackNotificationService();
+    final audioDatabaseRepository = AudioDatabaseRepository();
+    final nativePlaybackRepository = NativePlaybackRepository();
+    const playbackCommandRunner = PlaybackCommandRunner();
+    final libraryService = LibraryService();
+    final playbackService = PlaybackSessionService();
+    final timerService = TimerService();
+    final notificationCoordinatorService = NotificationCoordinatorService();
+    final settingsRepository = SettingsRepository()
+      ..cardPositionsLocked = false;
+    final languageProvider = AppLanguageProvider();
+    final coverCache = _RecordingPlaybackCoverCacheService();
+    final audioProvider = AudioProvider.test(
+      notificationService: notificationService,
+      audioDatabaseRepository: audioDatabaseRepository,
+      nativePlaybackRepository: nativePlaybackRepository,
+      libraryService: libraryService,
+      playbackService: playbackService,
+      timerService: timerService,
+      notificationStateService: notificationCoordinatorService,
+      settingsRepository: settingsRepository,
+      coverArtworkCacheService: coverCache,
+    );
+    final track = _track(
+      name: 'Warmup card',
+      path: '/library/warmup/card.mp3',
+      groupKey: '/library/warmup',
+      groupTitle: 'Warmup',
+    );
+    final session = PlaybackSession(
+      id: 'warmup-session',
+      currentTrackPath: track.path,
+      loopMode: SessionLoopMode.single,
+      nonSingleLoopMode: SessionLoopMode.single,
+      volume: 1,
+      createdAt: DateTime(2026),
+      state: PlayerState(false, ProcessingState.ready),
+    );
+
+    addTearDown(audioProvider.dispose);
+    addTearDown(session.dispose);
+    audioProvider.addTracks([track], notify: false, persist: false);
+    playbackService.syncSlice(
+      activeSessions: [session],
+      playingSessionCount: 0,
+      focusedSessionId: session.id,
+      multiThreadPlaybackEnabled: false,
+      coverGeneration: 0,
+      isInitialized: true,
+    );
+
+    await tester.pumpWidget(
+      _buildTestApp(
+        audioProvider: audioProvider,
+        audioDatabaseRepository: audioDatabaseRepository,
+        nativePlaybackRepository: nativePlaybackRepository,
+        playbackCommandRunner: playbackCommandRunner,
+        libraryService: libraryService,
+        playbackService: playbackService,
+        timerService: timerService,
+        notificationCoordinatorService: notificationCoordinatorService,
+        settingsRepository: settingsRepository,
+        languageProvider: languageProvider,
+        child: const PlaylistTab(),
+      ),
+    );
+    await tester.pump();
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 20)),
+    );
+
+    expect(coverCache.requestedPaths, isEmpty);
+    await tester.pump();
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 20)),
+    );
+    expect(coverCache.requestedPaths, isEmpty);
+
+    final reorderable = tester.widget<ReorderableListView>(
+      find.byType(ReorderableListView),
+    );
+    reorderable.onReorderStart?.call(0);
+    await tester.pump();
+    playbackService.syncSlice(
+      activeSessions: [session],
+      playingSessionCount: 0,
+      focusedSessionId: session.id,
+      multiThreadPlaybackEnabled: false,
+      coverGeneration: 1,
+      isInitialized: true,
+    );
+    await tester.pump();
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 20)),
+    );
+
+    expect(coverCache.requestedPaths, isEmpty);
   });
 
   TestWidgetsFlutterBinding.ensureInitialized();

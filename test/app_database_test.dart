@@ -405,6 +405,154 @@ void main() {
     },
   );
 
+  test(
+    'loadAllSessions restores multiple sessions with queues and effects',
+    () async {
+      const firstTrack = MusicTrack(
+        path: '/library/work-a/01.mp3',
+        displayName: 'A 01',
+        groupKey: '/library/work-a',
+        groupTitle: 'Work A',
+        groupSubtitle: 'A',
+        isSingle: false,
+      );
+      const secondTrack = MusicTrack(
+        path: '/library/work-a/02.mp3',
+        displayName: 'A 02',
+        groupKey: '/library/work-a',
+        groupTitle: 'Work A',
+        groupSubtitle: 'A',
+        isSingle: false,
+      );
+      const thirdTrack = MusicTrack(
+        path: '/library/work-b/01.mp3',
+        displayName: 'B 01',
+        groupKey: '/library/work-b',
+        groupTitle: 'Work B',
+        groupSubtitle: 'B',
+        isSingle: false,
+      );
+      const firstQueue = PlaybackQueueDefinition(
+        name: 'Queue A',
+        colorValue: 0xFFAA5500,
+        entries: <PlaybackQueueEntry>[
+          PlaybackQueueEntry(
+            id: 'a_entry_1',
+            kind: PlaybackQueueEntryKind.track,
+            title: 'A 01',
+            tracks: <MusicTrack>[firstTrack, firstTrack],
+          ),
+          PlaybackQueueEntry(
+            id: 'a_entry_2',
+            kind: PlaybackQueueEntryKind.track,
+            title: 'A 02',
+            tracks: <MusicTrack>[secondTrack],
+          ),
+        ],
+      );
+      const secondQueue = PlaybackQueueDefinition(
+        name: 'Queue B',
+        entries: <PlaybackQueueEntry>[
+          PlaybackQueueEntry(
+            id: 'b_entry_1',
+            kind: PlaybackQueueEntryKind.work,
+            title: 'Work B',
+            workRootPath: '/library/work-b',
+            tracks: <MusicTrack>[thirdTrack],
+          ),
+        ],
+      );
+
+      await appDatabase.saveAllSessions(<PersistedSession>[
+        const PersistedSession(
+          id: 'session_b',
+          trackPath: '/library/work-b/01.mp3',
+          loopModeIndex: 2,
+          volume: 0.6,
+          positionMs: 600,
+          durationMs: 3000,
+          customQueueTracks: <MusicTrack>[thirdTrack],
+          playbackQueue: secondQueue,
+          channelSwapEnabled: true,
+          audioEffects: AudioEffectsState(
+            volumeNormalizationEnabled: true,
+            eqEnabled: true,
+            eqBandLevels: <int, double>{400: -1.5, 1600: 2.0},
+          ),
+          sortOrder: 0,
+        ),
+        const PersistedSession(
+          id: 'session_a',
+          trackPath: '/library/work-a/01.mp3',
+          loopModeIndex: 1,
+          volume: 0.9,
+          positionMs: 1200,
+          durationMs: 5000,
+          customQueueTracks: <MusicTrack>[firstTrack, secondTrack, firstTrack],
+          playbackQueue: firstQueue,
+          currentQueueIndex: 2,
+          channelSwapEnabled: false,
+          audioEffects: AudioEffectsState(
+            skipSilenceEnabled: true,
+            eqEnabled: true,
+            eqPresetId: 'voice_clear',
+            eqBandLevels: <int, double>{1000: 2.5},
+          ),
+          sortOrder: 1,
+        ),
+        const PersistedSession(
+          id: 'session_c',
+          trackPath: '/library/work-a/02.mp3',
+          loopModeIndex: 1,
+          volume: 1,
+          positionMs: 0,
+          durationMs: 1000,
+          customQueueTracks: <MusicTrack>[firstTrack, secondTrack, firstTrack],
+          channelSwapEnabled: false,
+          sortOrder: 2,
+        ),
+      ]);
+
+      final loaded = await appDatabase.loadAllSessions();
+
+      expect(loaded.map((session) => session.id), <String>[
+        'session_b',
+        'session_a',
+        'session_c',
+      ]);
+      expect(loaded.first.channelSwapEnabled, isTrue);
+      expect(loaded.first.audioEffects.volumeNormalizationEnabled, isTrue);
+      expect(loaded.first.audioEffects.eqBandLevels, <int, double>{
+        400: -1.5,
+        1600: 2.0,
+      });
+      expect(
+        loaded.first.playbackQueue?.entries.single.workRootPath,
+        '/library/work-b',
+      );
+      expect(loaded.first.customQueueTracks, isNull);
+
+      final restoredQueue = loaded[1].playbackQueue!;
+      expect(restoredQueue.name, 'Queue A');
+      expect(restoredQueue.colorValue, 0xFFAA5500);
+      expect(restoredQueue.entries.map((entry) => entry.id), <String>[
+        'a_entry_1',
+        'a_entry_2',
+      ]);
+      expect(
+        restoredQueue.entries.first.tracks.map((track) => track.path),
+        <String>[firstTrack.path, firstTrack.path],
+      );
+      expect(
+        loaded.last.customQueueTracks?.map((track) => track.path),
+        <String>[firstTrack.path, secondTrack.path, firstTrack.path],
+      );
+      expect(loaded[1].currentQueueIndex, 2);
+      expect(loaded[1].audioEffects.eqPresetId, 'voice_clear');
+      expect(loaded[1].audioEffects.eqBandLevels[1000], 2.5);
+    },
+  );
+
   test('updateSessionOrder only changes session sort order', () async {
     await appDatabase.saveAllSessions(<PersistedSession>[
       const PersistedSession(

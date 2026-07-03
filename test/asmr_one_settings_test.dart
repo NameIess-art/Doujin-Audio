@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter/foundation.dart';
@@ -297,6 +298,43 @@ void main() {
       <int>[12],
     );
   });
+
+  test(
+    'ASMR category refresh does not wait for slow account restore',
+    () async {
+      await resetPrefs();
+      final api = _FakeAsmrApiService();
+      final auth = _BlockingAsmrAuthService();
+      final controller = AsmrLibraryController(
+        apiService: api,
+        authService: auth,
+        audioDatabaseRepository: _FakeAudioDatabaseRepository(
+          const <MusicTrack>[],
+        ),
+      );
+
+      await controller.initialize(defaultLanguage: AsmrContentLanguage.en);
+
+      expect(controller.initialized, isTrue);
+      expect(auth.restoreCount, 1);
+      expect(controller.isAsmrAccountLoggedIn, isFalse);
+
+      await controller.refreshCategory(AsmrCategoryType.release);
+
+      expect(api.fetchWorkRequests, <String>['release:desc:1']);
+      expect(
+        controller.worksFor(AsmrCategoryType.release).map((work) => work.id),
+        <int>[12],
+      );
+
+      auth.complete(
+        const AsmrAuthSession(token: 'token', userName: 'restored'),
+      );
+      await controller.restoreAsmrAccountSession();
+
+      expect(controller.isAsmrAccountLoggedIn, isTrue);
+    },
+  );
 
   test(
     'ASMR refresh defers presentation notifications while interacting',
@@ -933,12 +971,14 @@ void main() {
 
       await controller.initialize(defaultLanguage: AsmrContentLanguage.en);
 
-      expect(controller.isAsmrAccountLoggedIn, isTrue);
+      expect(controller.initialized, isTrue);
       expect(api.calls, isEmpty);
 
       await controller.refreshCategory(AsmrCategoryType.release);
 
       expect(api.calls, <String>['works:release:desc:1']);
+      await controller.restoreAsmrAccountSession();
+      expect(controller.isAsmrAccountLoggedIn, isTrue);
     },
   );
 
@@ -1376,6 +1416,26 @@ class _MemoryAsmrTokenStore implements AsmrTokenStore {
   @override
   Future<void> writeCredentials(String username, String password) async {
     credentials = <String, String>{'name': username, 'password': password};
+  }
+}
+
+class _BlockingAsmrAuthService extends AsmrAuthService {
+  _BlockingAsmrAuthService() : super(apiService: _FakeAsmrApiService());
+
+  final Completer<AsmrAuthSession?> _restoreCompleter =
+      Completer<AsmrAuthSession?>();
+  int restoreCount = 0;
+
+  @override
+  Future<AsmrAuthSession?> restoreSession() {
+    restoreCount++;
+    return _restoreCompleter.future;
+  }
+
+  void complete(AsmrAuthSession? session) {
+    if (!_restoreCompleter.isCompleted) {
+      _restoreCompleter.complete(session);
+    }
   }
 }
 

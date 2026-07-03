@@ -293,6 +293,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
   ValueListenable<int?>? _scrollToTopListenable;
   bool _isReordering = false;
   PlaylistListState? _reorderSnapshot;
+  String? _lastPlaybackCoverWarmupSignature;
 
   @override
   bool get wantKeepAlive => true;
@@ -341,6 +342,48 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     if (nextHeight > 0 && nextHeight != _headerHeight) {
       setState(() => _headerHeight = nextHeight);
     }
+  }
+
+  void _schedulePlaybackCoverWarmup(
+    PlaylistListState listState,
+    AudioProvider provider,
+  ) {
+    if (_isReordering || !listState.isInitialized || !listState.hasSessions) {
+      return;
+    }
+    final tracks = <MusicTrack?>[];
+    final signatureParts = <String>[
+      listState.coverGeneration.toString(),
+      listState.sessions.length.toString(),
+    ];
+    for (final session in listState.sessions.take(10)) {
+      signatureParts.add(session.id);
+      final cardState = listState.cardStateFor(session.id);
+      if (session.isPlaybackQueue) {
+        for (final entry in session.playbackQueue!.entries.take(4)) {
+          final track = entry.tracks.firstOrNull;
+          if (track == null) continue;
+          signatureParts.add(track.path);
+          tracks.add(track);
+        }
+        continue;
+      }
+      final trackPath = cardState?.trackPath ?? session.currentTrackPath;
+      signatureParts.add(trackPath);
+      tracks.add(provider.trackByPath(trackPath));
+    }
+    if (tracks.isEmpty) return;
+    final signature = signatureParts.join('|');
+    if (_lastPlaybackCoverWarmupSignature == signature) return;
+    _lastPlaybackCoverWarmupSignature = signature;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted ||
+          _isReordering ||
+          _lastPlaybackCoverWarmupSignature != signature) {
+        return;
+      }
+      provider.warmupPlaybackCoversForTracks(tracks);
+    });
   }
 
   Future<void> _confirmClearAll(
@@ -410,6 +453,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     final subtitleSettings = _isReordering
         ? ref.read(subtitleSettingsProvider)
         : ref.watch(subtitleSettingsProvider);
+    _schedulePlaybackCoverWarmup(listState, provider);
     final cardPositionsLocked = settingsState.cardPositionsLocked;
     final coverCacheWidth = coverCacheWidthForResolution(
       settingsState.coverImageResolution,
@@ -436,18 +480,6 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
       }
       final track = provider.trackByPath(cardState.trackPath);
       final coverPath = provider.resolvedPlaybackCoverPathForTrack(track);
-      if (!_isReordering && coverPath == null) {
-        unawaited(_coverFutureForTrack(provider, track));
-      }
-      if (!_isReordering && session.isPlaybackQueue) {
-        for (final entry in session.playbackQueue!.entries.take(4)) {
-          if (entry.tracks.isEmpty) continue;
-          final coverTrack = entry.tracks.first;
-          if (provider.resolvedPlaybackCoverPathForTrack(coverTrack) == null) {
-            unawaited(_coverFutureForTrack(provider, coverTrack));
-          }
-        }
-      }
       final child = RepaintBoundary(
         child: session.isPlaybackQueue
             ? _PlaybackQueueCard(

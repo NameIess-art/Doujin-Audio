@@ -28,6 +28,10 @@ const Set<String> _folderCoverImageExtensions = <String>{
   '.bmp',
   '.gif',
 };
+const int _resolvedTrackCoverLimit = 600;
+const int _resolvedFolderCoverLimit = 300;
+const int _resolvedRemoteCoverLimit = 300;
+const int _manualCoverValidityLimit = 1200;
 
 class CoverArtworkCacheService {
   CoverArtworkCacheService({
@@ -77,6 +81,10 @@ class CoverArtworkCacheService {
   int _generation = 0;
 
   int get generation => _generation;
+
+  @visibleForTesting
+  int get manualCoverPathValidityCacheSize =>
+      _manualCoverPathValidityCache.length;
 
   String? resolvedForTrack(MusicTrack? track, {String? trackPath}) {
     final manualCoverPath = track?.isSingle == true
@@ -398,6 +406,54 @@ class CoverArtworkCacheService {
     _manualCoverValidationFutures.clear();
   }
 
+  void _trimResolvedCache<T>(
+    Map<String, T> cache,
+    int maxEntries, {
+    Map<String, Future<String?>>? futures,
+  }) {
+    while (cache.length > maxEntries) {
+      final keyToRemove = cache.keys.firstWhere(
+        (key) => !(_isActiveCoverKey?.call(key) ?? false),
+        orElse: () => '',
+      );
+      if (keyToRemove.isEmpty) return;
+      cache.remove(keyToRemove);
+      futures?.remove(keyToRemove);
+    }
+  }
+
+  void _trimResolvedTrackCovers() {
+    _trimResolvedCache(
+      _resolvedTrackCovers,
+      _resolvedTrackCoverLimit,
+      futures: _resolvedTrackCoverFutures,
+    );
+  }
+
+  void _trimResolvedFolderCovers() {
+    _trimResolvedCache(
+      _resolvedFolderCovers,
+      _resolvedFolderCoverLimit,
+      futures: _resolvedFolderCoverFutures,
+    );
+  }
+
+  void _trimResolvedRemoteCovers() {
+    _trimResolvedCache(
+      _resolvedRemoteCovers,
+      _resolvedRemoteCoverLimit,
+      futures: _resolvedRemoteCoverFutures,
+    );
+  }
+
+  void _trimManualCoverValidityCache() {
+    _trimResolvedCache(
+      _manualCoverPathValidityCache,
+      _manualCoverValidityLimit,
+      futures: _manualCoverValidationFutures,
+    );
+  }
+
   Future<void> _ensureFolderCoverSelections() {
     return _folderCoverSelectionsLoadFuture ??= () async {
       try {
@@ -436,18 +492,22 @@ class CoverArtworkCacheService {
         : null;
     if (cachedManualPath != null) {
       _resolvedTrackCovers[coverSearchKey] = cachedManualPath;
-      return _resolvedTrackCoverFutures.putIfAbsent(
+      final future = _resolvedTrackCoverFutures.putIfAbsent(
         coverSearchKey,
         () => SynchronousFuture<String?>(cachedManualPath),
       );
+      _trimResolvedTrackCovers();
+      return future;
     }
     final cachedCoverPath = _cachedManualCoverPath(track?.coverCachePath);
     if (cachedCoverPath != null) {
       _resolvedTrackCovers[coverSearchKey] = cachedCoverPath;
-      return _resolvedTrackCoverFutures.putIfAbsent(
+      final future = _resolvedTrackCoverFutures.putIfAbsent(
         coverSearchKey,
         () => SynchronousFuture<String?>(cachedCoverPath),
       );
+      _trimResolvedTrackCovers();
+      return future;
     }
 
     final manualPathFuture = track?.isSingle == true
@@ -469,6 +529,7 @@ class CoverArtworkCacheService {
         _resolvedTrackCoverFutures[coverSearchKey] = SynchronousFuture<String?>(
           manualPath,
         );
+        _trimResolvedTrackCovers();
         final removedTrackFuture = _trackCoverFutures.remove(coverSearchKey);
         if (removedTrackFuture != null) unawaited(removedTrackFuture);
         return manualPath;
@@ -479,6 +540,7 @@ class CoverArtworkCacheService {
         _resolvedTrackCoverFutures[coverSearchKey] = SynchronousFuture<String?>(
           coverCachePath,
         );
+        _trimResolvedTrackCovers();
         final removedTrackFuture = _trackCoverFutures.remove(coverSearchKey);
         if (removedTrackFuture != null) unawaited(removedTrackFuture);
         return coverCachePath;
@@ -523,6 +585,7 @@ class CoverArtworkCacheService {
         _resolvedTrackCoverFutures[coverSearchKey] = SynchronousFuture<String?>(
           coverPath,
         );
+        _trimResolvedTrackCovers();
       }
 
       if (previous != coverPath &&
@@ -567,6 +630,7 @@ class CoverArtworkCacheService {
       _resolvedFolderCovers[normalizedFolderPath] = coverPath;
       _resolvedFolderCoverFutures[normalizedFolderPath] =
           SynchronousFuture<String?>(coverPath);
+      _trimResolvedFolderCovers();
 
       return coverPath;
     });
@@ -606,6 +670,7 @@ class CoverArtworkCacheService {
         _resolvedRemoteCoverFutures[remoteKey] = SynchronousFuture<String?>(
           coverPath,
         );
+        _trimResolvedRemoteCovers();
       }
 
       if (previous != coverPath &&
@@ -695,6 +760,7 @@ class CoverArtworkCacheService {
     if (value == null || value.isEmpty) return SynchronousFuture<String?>(null);
     if (PathMatcher.isContentUri(value) || PathMatcher.isRemoteUri(value)) {
       _manualCoverPathValidityCache[value] = true;
+      _trimManualCoverValidityCache();
       return SynchronousFuture<String?>(value);
     }
     final cached = _manualCoverPathValidityCache[value];
@@ -704,6 +770,7 @@ class CoverArtworkCacheService {
     return _manualCoverValidationFutures.putIfAbsent(value, () async {
       final exists = await File(value).exists();
       _manualCoverPathValidityCache[value] = exists;
+      _trimManualCoverValidityCache();
       unawaited(_manualCoverValidationFutures.remove(value) ?? Future.value());
       return exists ? value : null;
     });

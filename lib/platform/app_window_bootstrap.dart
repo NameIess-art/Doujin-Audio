@@ -27,9 +27,12 @@ abstract final class AppWindowBootstrap {
       await Window.setEffect(effect: WindowEffect.sidebar);
     }
 
-    const windowOptions = WindowOptions(
-      size: Size(1100, 750),
-      minimumSize: Size(800, 600),
+    final minimumSize = AppPlatform.isWindows
+        ? const Size(800, 550)
+        : const Size(800, 600);
+    final windowOptions = WindowOptions(
+      size: const Size(1100, 750),
+      minimumSize: minimumSize,
       center: true,
       skipTaskbar: false,
       titleBarStyle: TitleBarStyle.hidden,

@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as path;
 import 'package:provider/provider.dart' hide Consumer;
+import 'package:window_manager/window_manager.dart';
 
 import '../i18n/app_language_provider.dart';
 import '../providers/audio_provider.dart';

@@ -403,10 +403,6 @@ extension _MainScreenLayout on _MainScreenState {
     final isWindows =
         Platform.isWindows ||
         MediaQuery.orientationOf(context) == Orientation.landscape;
-    final isAndroidLandscape =
-        Theme.of(context).platform == TargetPlatform.android &&
-        MediaQuery.orientationOf(context) == Orientation.landscape;
-
     final double expandedWidth = isWindows ? 260 : 292;
     final double collapsedWidth = isWindows ? 80 : 92;
     final double containerWidth = _isMenuCollapsed
@@ -570,21 +566,7 @@ extension _MainScreenLayout on _MainScreenState {
                   ),
                 );
 
-                Widget railLayout = rail;
-                const safeMinHeight = 420.0;
-                if (!isAndroidLandscape &&
-                    constraints.maxHeight < safeMinHeight) {
-                  railLayout = SingleChildScrollView(
-                    child: ConstrainedBox(
-                      constraints: BoxConstraints(
-                        minHeight: constraints.maxHeight,
-                        maxHeight: safeMinHeight,
-                      ),
-                      child: rail,
-                    ),
-                  );
-                }
-                return railLayout;
+                return rail;
               },
             ),
           ),

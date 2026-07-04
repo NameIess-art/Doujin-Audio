@@ -822,7 +822,18 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                                       size: 32,
                                     ),
                                   ),
-                                  const Spacer(),
+                                  Expanded(
+                                    child: GestureDetector(
+                                      key: const ValueKey(
+                                        'session_detail_window_drag_region',
+                                      ),
+                                      behavior: HitTestBehavior.translucent,
+                                      onPanStart: Platform.isWindows
+                                          ? (_) => windowManager.startDragging()
+                                          : null,
+                                      child: const SizedBox(height: 48),
+                                    ),
+                                  ),
                                   if (hasSubtitle &&
                                       settings.isShowEnabled(session.id) &&
                                       settings.isGlobalEnabled(session.id)) ...[

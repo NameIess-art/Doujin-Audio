@@ -144,7 +144,9 @@ extension _LibraryTabCategoryView on _LibraryTabState {
     required double bottomPadding,
     required double cacheExtent,
     required bool canPullRefresh,
+    required int structureRevision,
     required int detailRevision,
+    required int coverGeneration,
   }) {
     return FutureBuilder<AudioLibraryCategorySnapshot>(
       key: ValueKey('category_future_${_categoryType.name}_$detailRevision'),
@@ -161,6 +163,14 @@ extension _LibraryTabCategoryView on _LibraryTabState {
 
         final terms = _termsForCategory(snapshot);
         final entries = _filterCategoryEntries(snapshot);
+        _scheduleLibraryCoverWarmup(
+          provider: provider,
+          tracks: entries.map((entry) => entry.firstTrack),
+          structureRevision: structureRevision,
+          detailRevision: detailRevision,
+          coverGeneration: coverGeneration,
+          scope: _categoryType.name,
+        );
         final hasTermBox = _categoryType != AudioLibraryCategoryType.all;
         final itemCount = entries.length + (hasTermBox ? 1 : 0) + 1;
 
@@ -805,18 +815,6 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
       final useFeaturedCard =
           firstTrack.isVideo ||
           hasDisplayableCoverArtwork(firstTrack, resolvedCoverPath);
-      if (!firstTrack.isVideo && !useFeaturedCard) {
-        return FutureBuilder<String?>(
-          future: provider.coverPathFutureForTrack(firstTrack),
-          builder: (context, snapshot) {
-            final resolvedPath =
-                snapshot.data ?? provider.resolvedCoverPathForTrack(firstTrack);
-            return buildEntryCard(
-              hasDisplayableCoverArtwork(firstTrack, resolvedPath),
-            );
-          },
-        );
-      }
       return buildEntryCard(useFeaturedCard);
     }
 
@@ -904,20 +902,6 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
         useFeaturedCardOverride ??
         (firstTrack.isVideo ||
             hasDisplayableCoverArtwork(firstTrack, resolvedCoverPath));
-    if (useFeaturedCardOverride == null &&
-        !firstTrack.isVideo &&
-        !useFeaturedCard) {
-      return FutureBuilder<String?>(
-        future: provider.coverPathFutureForTrack(firstTrack),
-        builder: (context, snapshot) {
-          final resolvedPath =
-              snapshot.data ?? provider.resolvedCoverPathForTrack(firstTrack);
-          return buildSingleFileContent(
-            hasDisplayableCoverArtwork(firstTrack, resolvedPath),
-          );
-        },
-      );
-    }
     return buildSingleFileContent(useFeaturedCard);
   }
 }

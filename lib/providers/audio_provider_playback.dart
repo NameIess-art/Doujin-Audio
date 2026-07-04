@@ -62,6 +62,15 @@ extension AudioProviderPlayback on AudioProvider {
     if (session == null) return;
     if (session.currentTrackPath.isEmpty) return;
 
+    if (session.playbackError != null || session.isLoading) {
+      await _prepareAndPlay(
+        session,
+        nextPath: session.currentTrackPath,
+        forceStartAtZero: false,
+      );
+      return;
+    }
+
     if (session.effectivePlaying) {
       await _pauseSessionPlayback(session);
     } else if (session.state.processingState == ProcessingState.completed ||

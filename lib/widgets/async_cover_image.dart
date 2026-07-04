@@ -63,6 +63,7 @@ class AsyncCoverImage extends StatefulWidget {
   const AsyncCoverImage({
     super.key,
     required this.future,
+    this.requestKey,
     this.initialPath,
     required this.imageBuilder,
     required this.fallbackBuilder,
@@ -74,6 +75,7 @@ class AsyncCoverImage extends StatefulWidget {
   });
 
   final Future<String?> future;
+  final Object? requestKey;
   final String? initialPath;
   final Widget Function(BuildContext context, String path) imageBuilder;
   final WidgetBuilder fallbackBuilder;
@@ -113,7 +115,14 @@ class _AsyncCoverImageState extends State<AsyncCoverImage> {
     super.didUpdateWidget(oldWidget);
     if (!identical(oldWidget.future, widget.future)) {
       _retryAttempt = 0;
-      _bindFuture(widget.future);
+      final sameRequest =
+          widget.requestKey != null &&
+          oldWidget.requestKey == widget.requestKey;
+      _bindFuture(
+        widget.future,
+        keepState:
+            sameRequest && _resolvedPath != null && _resolvedPath!.isNotEmpty,
+      );
     }
   }
 
@@ -620,11 +629,13 @@ class AsyncRemoteCoverImage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (url.trim().isEmpty) {
+    final trimmedUrl = url.trim();
+    if (trimmedUrl.isEmpty) {
       return fallbackBuilder(context);
     }
     return AsyncCoverImage(
       future: future,
+      requestKey: trimmedUrl,
       initialPath: initialPath,
       retryFutureBuilder: retryFutureBuilder,
       loadingBuilder: loadingBuilder,

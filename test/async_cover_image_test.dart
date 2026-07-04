@@ -198,6 +198,73 @@ void main() {
     expect(calls, 2);
   });
 
+  testWidgets('AsyncCoverImage keeps image for a refreshed matching request', (
+    tester,
+  ) async {
+    final first = Completer<String?>();
+    final refreshed = Completer<String?>();
+
+    Widget buildCover(Future<String?> future) {
+      return MaterialApp(
+        home: SizedBox(
+          width: 120,
+          height: 90,
+          child: AsyncCoverImage(
+            future: future,
+            requestKey: 'https://example.com/cover.jpg',
+            duration: Duration.zero,
+            imageBuilder: (_, path) => Text('loaded:$path'),
+            fallbackBuilder: (_) => const Text('fallback'),
+            loadingBuilder: (_) => const Text('loading'),
+          ),
+        ),
+      );
+    }
+
+    await tester.pumpWidget(buildCover(first.future));
+    first.complete('cover.image');
+    await tester.pump();
+    expect(find.text('loaded:cover.image'), findsOneWidget);
+
+    await tester.pumpWidget(buildCover(refreshed.future));
+
+    expect(find.text('loaded:cover.image'), findsOneWidget);
+    expect(find.text('loading'), findsNothing);
+
+    refreshed.complete('cover.image');
+    await tester.pump();
+    expect(find.text('loaded:cover.image'), findsOneWidget);
+  });
+
+  testWidgets('AsyncCoverImage clears image when request key changes', (
+    tester,
+  ) async {
+    final first = Completer<String?>();
+    final replacement = Completer<String?>();
+
+    Widget buildCover(Future<String?> future, String requestKey) {
+      return MaterialApp(
+        home: AsyncCoverImage(
+          future: future,
+          requestKey: requestKey,
+          duration: Duration.zero,
+          imageBuilder: (_, path) => Text('loaded:$path'),
+          fallbackBuilder: (_) => const Text('fallback'),
+          loadingBuilder: (_) => const Text('loading'),
+        ),
+      );
+    }
+
+    await tester.pumpWidget(buildCover(first.future, 'first'));
+    first.complete('first.image');
+    await tester.pump();
+
+    await tester.pumpWidget(buildCover(replacement.future, 'replacement'));
+
+    expect(find.text('loaded:first.image'), findsNothing);
+    expect(find.text('loading'), findsOneWidget);
+  });
+
   testWidgets('RetryingImage rebuilds its provider after an image error', (
     tester,
   ) async {

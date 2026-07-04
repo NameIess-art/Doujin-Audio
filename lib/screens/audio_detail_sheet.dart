@@ -474,7 +474,19 @@ class _AudioDetailSheetState extends State<AudioDetailSheet> {
               ),
               const SizedBox(height: 12),
               if (_target.isLibraryRootFolder) ...[
-                _FolderCoverSelector(folderPath: _target.targetPath),
+                Selector<AudioProvider, int>(
+                  selector: (_, provider) => provider.coverGeneration,
+                  builder: (context, coverGeneration, _) {
+                    final provider = context.read<AudioProvider>();
+                    return _FolderCoverSelector(
+                      key: ValueKey('${_target.targetPath}:$coverGeneration'),
+                      folderPath: _target.targetPath,
+                      initialCoverPath: provider.resolvedCoverPathForFolder(
+                        _target.targetPath,
+                      ),
+                    );
+                  },
+                ),
                 const SizedBox(height: 12),
               ] else ...[
                 _SingleFileCoverPreview(filePath: _target.targetPath),
@@ -631,34 +643,43 @@ class _SingleFileCoverPreviewState extends State<_SingleFileCoverPreview> {
 }
 
 class _FolderCoverSelector extends StatefulWidget {
-  const _FolderCoverSelector({required this.folderPath});
+  const _FolderCoverSelector({
+    super.key,
+    required this.folderPath,
+    this.initialCoverPath,
+  });
 
   final String folderPath;
+  final String? initialCoverPath;
 
   @override
   State<_FolderCoverSelector> createState() => _FolderCoverSelectorState();
 }
 
 class _FolderCoverSelectorState extends State<_FolderCoverSelector> {
-  static const Duration _commitDelay = Duration(milliseconds: 1000);
-
   PageController? _pageController;
   List<String> _images = const <String>[];
+  String? _currentCoverPath;
   bool _loading = true;
   bool _saving = false;
   Object? _error;
   int _currentIndex = 0;
-  Timer? _commitTimer;
 
   @override
   void initState() {
     super.initState();
+    final initialCoverPath = widget.initialCoverPath;
+    if (initialCoverPath != null && initialCoverPath.isNotEmpty) {
+      _images = <String>[initialCoverPath];
+      _currentCoverPath = initialCoverPath;
+      _loading = false;
+      _pageController = PageController();
+    }
     unawaited(_load());
   }
 
   @override
   void dispose() {
-    _commitTimer?.cancel();
     _pageController?.dispose();
     super.dispose();
   }
@@ -666,9 +687,15 @@ class _FolderCoverSelectorState extends State<_FolderCoverSelector> {
   Future<void> _load() async {
     try {
       final provider = context.read<AudioProvider>();
-      final images = await provider.discoverCoverCandidatesInFolder(
+      final discoveredImages = await provider.discoverCoverCandidatesInFolder(
         widget.folderPath,
       );
+      final initialCoverPath = widget.initialCoverPath;
+      final images = <String>[
+        if (initialCoverPath != null && initialCoverPath.isNotEmpty)
+          initialCoverPath,
+        ...discoveredImages.where((path) => path != initialCoverPath),
+      ];
       if (!mounted) return;
       if (images.isEmpty) {
         setState(() {
@@ -693,6 +720,7 @@ class _FolderCoverSelectorState extends State<_FolderCoverSelector> {
       _pageController?.dispose();
       setState(() {
         _images = images;
+        _currentCoverPath = currentCover;
         _currentIndex = initialIndex;
         _pageController = controller;
         _loading = false;
@@ -711,13 +739,10 @@ class _FolderCoverSelectorState extends State<_FolderCoverSelector> {
     setState(() {
       _currentIndex = index;
     });
-    _commitTimer?.cancel();
-    _commitTimer = Timer(_commitDelay, () {
-      unawaited(_commitSelection(index));
-    });
   }
 
-  Future<void> _commitSelection(int index) async {
+  Future<void> _commitSelection() async {
+    final index = _currentIndex;
     if (!mounted || index < 0 || index >= _images.length) return;
     setState(() {
       _saving = true;
@@ -727,6 +752,10 @@ class _FolderCoverSelectorState extends State<_FolderCoverSelector> {
         widget.folderPath,
         _images[index],
       );
+      if (!mounted) return;
+      setState(() {
+        _currentCoverPath = _images[index];
+      });
     } catch (_) {
       if (!mounted) return;
       showAppSnackBar(
@@ -950,6 +979,20 @@ class _FolderCoverSelectorState extends State<_FolderCoverSelector> {
               ],
             ),
           ),
+        ),
+        const SizedBox(height: 12),
+        Center(
+          child: _currentCoverPath == _images[_currentIndex]
+              ? TextButton.icon(
+                  onPressed: null,
+                  icon: const Icon(Icons.check_circle_rounded),
+                  label: Text(i18n.tr('audio_detail_current_cover')),
+                )
+              : FilledButton.tonalIcon(
+                  onPressed: _saving ? null : _commitSelection,
+                  icon: const Icon(Icons.image_rounded),
+                  label: Text(i18n.tr('audio_detail_set_cover')),
+                ),
         ),
       ],
     );

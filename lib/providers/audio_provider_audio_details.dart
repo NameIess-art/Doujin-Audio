@@ -283,7 +283,11 @@ extension AudioProviderAudioDetails on AudioProvider {
           rjCode: metadata.rjCode,
           language: _dlsiteMetadataLanguage,
         );
-        await setFolderManualCover(nextDetail.target.targetPath, coverPath);
+        await setFolderManualCover(
+          nextDetail.target.targetPath,
+          coverPath,
+          newlySaved: true,
+        );
       } catch (error) {
         coverError = error;
       }
@@ -355,7 +359,14 @@ extension AudioProviderAudioDetails on AudioProvider {
       await _retargetSingleTrack(oldPath, newPath, safeName);
     }
 
-    final renamedDetail = detail.copyWith(target: newTarget);
+    final renamedDetail = detail.copyWith(
+      target: newTarget,
+      cardCoverPath: _retargetNullablePath(
+        detail.cardCoverPath,
+        oldPath,
+        newPath,
+      ),
+    );
     final saveResult = await saveAudioDetail(renamedDetail);
     await deleteAudioDetail(oldTarget);
     _notifyListeners();

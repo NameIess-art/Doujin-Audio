@@ -26,8 +26,8 @@ void main() {
 
   tearDown(() => db.close());
 
-  test('schema starts from version 1', () {
-    expect(AppDatabase.schemaVersion, 1);
+  test('schema starts from version 2', () {
+    expect(AppDatabase.schemaVersion, 2);
   });
 
   test(
@@ -667,6 +667,7 @@ void main() {
       circleName: 'Circle',
       voiceActors: const <String>['A', 'B'],
       tags: const <String>['tag'],
+      cardCoverPath: '/library/root/cover.jpg',
       releaseDate: DateTime(2024, 5, 6),
       salesCount: 1234,
       rating: 4.5,
@@ -680,6 +681,7 @@ void main() {
     expect(loaded?.rjCode, 'RJ123456');
     expect(loaded?.voiceActors, const <String>['A', 'B']);
     expect(loaded?.tags, const <String>['tag']);
+    expect(loaded?.cardCoverPath, '/library/root/cover.jpg');
     expect(loaded?.releaseDate, DateTime(2024, 5, 6));
     expect(loaded?.salesCount, 1234);
     expect(loaded?.rating, 4.5);
@@ -694,6 +696,7 @@ void main() {
     () {
       final target = AudioDetailTarget.libraryRootFolder('/library/root');
       final detail = AudioDetail.empty(target).copyWith(
+        cardCoverPath: '/library/root/cover.jpg',
         releaseDate: DateTime(2024, 5, 6),
         salesCount: 1234,
         rating: 4.5,
@@ -707,6 +710,7 @@ void main() {
       expect(restored.releaseDate, DateTime(2024, 5, 6));
       expect(restored.salesCount, 1234);
       expect(restored.rating, 4.5);
+      expect(restored.cardCoverPath, '/library/root/cover.jpg');
 
       final oldRestored = AudioDetail.fromBackupJson(target, {
         'schemaVersion': 1,
@@ -716,6 +720,7 @@ void main() {
       expect(oldRestored.releaseDate, isNull);
       expect(oldRestored.salesCount, isNull);
       expect(oldRestored.rating, isNull);
+      expect(oldRestored.cardCoverPath, isNull);
     },
   );
 

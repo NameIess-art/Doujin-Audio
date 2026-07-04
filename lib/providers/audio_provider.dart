@@ -708,6 +708,7 @@ class AudioProvider with ChangeNotifier {
         CoverArtworkCacheService(
           libraryService: _libraryService,
           databaseRepository: _audioDatabaseRepository,
+          audioDetailCacheService: _audioDetailCacheService,
           isActiveCoverKey: _isActiveCoverKey,
           onActiveCoverChanged: () {
             _syncNotificationState();

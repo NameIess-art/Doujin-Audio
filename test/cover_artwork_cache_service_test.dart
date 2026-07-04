@@ -3,7 +3,10 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/models/music_track.dart';
+import 'package:nameless_audio/models/audio_detail.dart';
 import 'package:nameless_audio/services/audio_database_repository.dart';
+import 'package:nameless_audio/services/audio_detail_cache_service.dart';
+import 'package:nameless_audio/services/audio_detail_repository.dart';
 import 'package:nameless_audio/services/audio_state_services.dart';
 import 'package:nameless_audio/services/app_cache_service.dart';
 import 'package:nameless_audio/services/cover_artwork_cache_service.dart';
@@ -225,8 +228,51 @@ void main() {
 
       await cache.setFolderCoverSelection(directory.path, folderCover);
 
+      expect(cache.resolvedForFolder(directory.path), folderCover);
       expect(await cache.futureForFolder(directory.path), folderCover);
       expect(await cache.futureForTrack(track), '/cache/track-cover.image');
+    },
+  );
+
+  test('new folder cover replaces a cached empty result immediately', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'cover_cache_new_folder_cover_',
+    );
+    addTearDown(() async {
+      if (await directory.exists()) await directory.delete(recursive: true);
+    });
+    final cache = CoverArtworkCacheService(libraryService: LibraryService());
+
+    expect(await cache.futureForFolder(directory.path), isNull);
+    final previousGeneration = cache.generation;
+    final folderCover = File(
+      '${directory.path}${Platform.pathSeparator}downloaded.jpg',
+    );
+    await folderCover.writeAsBytes(<int>[0xff, 0xd8, 0xff, 0xd9]);
+
+    await cache.setFolderCoverSelection(directory.path, folderCover.path);
+
+    expect(cache.generation, greaterThan(previousGeneration));
+    expect(cache.resolvedForFolder(directory.path), folderCover.path);
+    expect(await cache.futureForFolder(directory.path), folderCover.path);
+  });
+
+  test(
+    'newly saved content cover does not wait for directory discovery',
+    () async {
+      const folder =
+          'content://com.android.externalstorage.documents/tree/primary%3AMusic::Work';
+      const cover = '/cache/downloaded.image';
+      final cache = CoverArtworkCacheService(
+        libraryService: LibraryService(),
+        fileCacheGateway: _FakeFileCachePlatformGateway(coversByPath: const {}),
+      );
+      final previousGeneration = cache.generation;
+
+      await cache.setFolderCoverSelection(folder, cover, newlySaved: true);
+
+      expect(cache.generation, greaterThan(previousGeneration));
+      expect(cache.resolvedForFolder(folder), cover);
     },
   );
 
@@ -262,6 +308,44 @@ void main() {
     );
 
     expect(await restored.futureForFolder(directory.path), cover.path);
+  });
+
+  test('resolved folder card cover is reused from the persisted index', () async {
+    const root =
+        'content://com.android.externalstorage.documents/tree/primary%3AMusic::WorkA';
+    const trackPath = '$root/01.mp3';
+    const coverPath = 'content://covers/work-a.jpg';
+    final details = _MemoryAudioDetailCacheService();
+    final library = LibraryService()
+      ..library.add(_track(path: trackPath, groupKey: root));
+    final firstGateway = _FakeFileCachePlatformGateway(
+      coversByPath: const <String, String>{trackPath: coverPath},
+    );
+    final first = CoverArtworkCacheService(
+      libraryService: library,
+      audioDetailCacheService: details,
+      fileCacheGateway: firstGateway,
+    );
+
+    expect(await first.futureForFolder(root), coverPath);
+    expect(
+      await details.loadCardCoverPath(
+        AudioDetailTarget.libraryRootFolder(root),
+      ),
+      coverPath,
+    );
+
+    final restoredGateway = _FakeFileCachePlatformGateway(
+      coversByPath: const <String, String>{},
+    );
+    final restored = CoverArtworkCacheService(
+      libraryService: library,
+      audioDetailCacheService: details,
+      fileCacheGateway: restoredGateway,
+    );
+
+    expect(await restored.futureForFolder(root), coverPath);
+    expect(restoredGateway.resolveTrackCoverPaths, isEmpty);
   });
 
   test('content folder cover tries later tracks when the first misses', () async {
@@ -736,6 +820,33 @@ class _MemoryAudioDatabaseRepository extends AudioDatabaseRepository {
     } else {
       _settings[key] = value;
     }
+  }
+}
+
+class _MemoryAudioDetailCacheService extends AudioDetailCacheService {
+  _MemoryAudioDetailCacheService()
+    : super(
+        repository: AudioDetailRepository(
+          databaseRepository: _MemoryAudioDatabaseRepository(),
+        ),
+      );
+
+  final Map<String, String?> _cardCoverPaths = <String, String?>{};
+
+  String _key(AudioDetailTarget target) =>
+      '${target.targetType.dbValue}|${PathMatcher.normalize(target.targetPath)}';
+
+  @override
+  Future<String?> loadCardCoverPath(AudioDetailTarget target) async {
+    return _cardCoverPaths[_key(target)];
+  }
+
+  @override
+  Future<void> saveCardCoverPath(
+    AudioDetailTarget target,
+    String? coverPath,
+  ) async {
+    _cardCoverPaths[_key(target)] = coverPath;
   }
 }
 

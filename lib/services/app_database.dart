@@ -17,7 +17,7 @@ import 'path_matcher.dart';
 class AppDatabase {
   AppDatabase._();
 
-  static const int schemaVersion = 1;
+  static const int schemaVersion = 2;
   static const String fileName = 'audio_player.db';
   static const int _sqliteInClauseBatchSize = 900;
   static bool _platformDatabaseInitialized = false;
@@ -112,8 +112,9 @@ class AppDatabase {
     int newVersion,
   ) async {
     if (oldVersion >= newVersion) return;
-    // Future migrations should be added here. Schema version 1 starts from the
-    // fully materialized current schema and intentionally has no 0.x upgrade path.
+    if (oldVersion < 2) {
+      await _addColumnIfMissing(db, 'audio_details', 'card_cover_path', 'TEXT');
+    }
   }
 
   @visibleForTesting
@@ -413,6 +414,7 @@ class AppDatabase {
         circle_name TEXT NOT NULL DEFAULT '',
         voice_actors_json TEXT NOT NULL DEFAULT '[]',
         tags_json TEXT NOT NULL DEFAULT '[]',
+        card_cover_path TEXT,
         release_date_ms INTEGER NOT NULL DEFAULT 0,
         sales_count INTEGER,
         rating REAL,

@@ -196,6 +196,29 @@ class LibrarySnapshotCacheService {
     _categoryFuture = null;
   }
 
+  bool applyCurrentTopLevelOrder() {
+    if (_cachedTree.isEmpty) return false;
+    final nodesByPath = <String, LibraryNode>{
+      for (final node in _cachedTree) node.path: node,
+    };
+    final nodeOrder = _libraryService.libraryNodeOrder;
+    if (nodesByPath.length != _cachedTree.length ||
+        nodeOrder.length != _cachedTree.length ||
+        nodeOrder.any((path) => !nodesByPath.containsKey(path))) {
+      return false;
+    }
+
+    _cachedTree = List<LibraryNode>.unmodifiable(
+      nodeOrder.map((path) => nodesByPath[path]!),
+    );
+    _cachedTreeRevision = _libraryService.structureRevision;
+    _treeFuture = null;
+    _treeFutureRevision = -1;
+    _treeCommitCallbacks.clear();
+    _categoryFuture = null;
+    return true;
+  }
+
   void markDetailChanged([AudioDetail? detail]) {
     _categoryFuture = null;
     if (detail != null) {

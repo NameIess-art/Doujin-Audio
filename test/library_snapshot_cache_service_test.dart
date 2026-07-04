@@ -132,6 +132,40 @@ void main() {
     expect(service.treeSnapshotRevision, library.structureRevision);
     expect(committed, isTrue);
   });
+
+  test(
+    'top-level reorder updates the current tree cache synchronously',
+    () async {
+      final library = LibraryService();
+      library.library.addAll(<MusicTrack>[
+        _track(path: '/library/first/01.mp3', groupKey: '/library/first'),
+        _track(path: '/library/second/01.mp3', groupKey: '/library/second'),
+      ]);
+      library.syncLibraryNodeOrder();
+      library.markStructureChanged();
+      final service = LibrarySnapshotCacheService(
+        libraryService: library,
+        detailCacheService: AudioDetailCacheService(
+          repository: _FakeAudioDetailRepository(),
+        ),
+      );
+      await service.treeSnapshot(onCommitted: () {});
+      final initialOrder = service.tree.map((node) => node.path).toList();
+
+      library.reorderLibraryNodes(
+        0,
+        initialOrder.length,
+        currentTree: service.tree,
+      );
+
+      expect(service.applyCurrentTopLevelOrder(), isTrue);
+      expect(service.tree.map((node) => node.path), <String>[
+        initialOrder.last,
+        initialOrder.first,
+      ]);
+      expect(service.treeSnapshotRevision, library.structureRevision);
+    },
+  );
 }
 
 MusicTrack _track({required String path, required String groupKey}) {

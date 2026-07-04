@@ -2,6 +2,41 @@ part of 'playlist_tab.dart';
 
 const double _kSessionDetailBackgroundBlurSigma = 32;
 
+ThemeData _sessionDetailThemeForTrack(BuildContext context, MusicTrack? track) {
+  final base = Theme.of(context);
+  if (track?.remoteMetadataKind != 'asmr.one') {
+    return base;
+  }
+  final tokens = AppDesignTokens.of(context);
+  final scheme = base.colorScheme.copyWith(
+    primary: tokens.asmrAccent,
+    onPrimary: tokens.onAsmrAccent,
+    primaryContainer: tokens.asmrContainer,
+    onPrimaryContainer: tokens.onAsmrContainer,
+    secondary: tokens.asmrAccent,
+    onSecondary: tokens.onAsmrAccent,
+    secondaryContainer: tokens.asmrContainer,
+    onSecondaryContainer: tokens.onAsmrContainer,
+  );
+  return base.copyWith(
+    colorScheme: scheme,
+    sliderTheme: base.sliderTheme.copyWith(
+      activeTrackColor: tokens.asmrAccent,
+      thumbColor: tokens.asmrAccent,
+      overlayColor: tokens.asmrAccent.withValues(alpha: 0.15),
+    ),
+    textButtonTheme: TextButtonThemeData(
+      style: TextButton.styleFrom(foregroundColor: tokens.asmrAccent),
+    ),
+    filledButtonTheme: FilledButtonThemeData(
+      style: FilledButton.styleFrom(
+        backgroundColor: tokens.asmrAccent,
+        foregroundColor: tokens.onAsmrAccent,
+      ),
+    ),
+  );
+}
+
 class SessionDetailPage extends ConsumerStatefulWidget {
   const SessionDetailPage({
     super.key,
@@ -610,8 +645,9 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
     final onVerticalDragEnd = widget.onVerticalDragEnd;
     final onVerticalDragCancel = widget.onVerticalDragCancel;
 
-    final cs = Theme.of(context).colorScheme;
     final track = provider.trackByPath(session.currentTrackPath);
+    final detailTheme = _sessionDetailThemeForTrack(context, track);
+    final cs = detailTheme.colorScheme;
     final coverCacheWidth = coverCacheWidthForResolution(
       ref.watch(
         settingsStateProvider.select(
@@ -627,340 +663,345 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
       ),
     );
 
-    return Material(
-      color: cs.surface,
-      child: GestureDetector(
-        behavior: HitTestBehavior.translucent,
-        onHorizontalDragUpdate: onHorizontalDragUpdate,
-        onHorizontalDragEnd: onHorizontalDragEnd,
-        onHorizontalDragCancel: onHorizontalDragCancel,
-        onVerticalDragStart: (details) {
-          _isDismissGesture = widget.dismissAnimation.value > 0.01;
-          _segmentPanelDragDelta = 0;
-        },
-        onVerticalDragUpdate: (details) {
-          final delta = details.primaryDelta ?? 0;
-          final detailState = _detailContentKey.currentState;
-          final panelExpanded = detailState?.isSegmentPanelExpanded ?? false;
-          final detailFullyOpen = widget.dismissAnimation.value <= 0.01;
+    return Theme(
+      data: detailTheme,
+      child: Material(
+        color: cs.surface,
+        child: GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onHorizontalDragUpdate: onHorizontalDragUpdate,
+          onHorizontalDragEnd: onHorizontalDragEnd,
+          onHorizontalDragCancel: onHorizontalDragCancel,
+          onVerticalDragStart: (details) {
+            _isDismissGesture = widget.dismissAnimation.value > 0.01;
+            _segmentPanelDragDelta = 0;
+          },
+          onVerticalDragUpdate: (details) {
+            final delta = details.primaryDelta ?? 0;
+            final detailState = _detailContentKey.currentState;
+            final panelExpanded = detailState?.isSegmentPanelExpanded ?? false;
+            final detailFullyOpen = widget.dismissAnimation.value <= 0.01;
 
-          if (!_isDismissGesture && delta > 0 && !panelExpanded) {
-            _segmentPanelDragDelta += delta;
-            if (_segmentPanelDragDelta > 24) {
-              _isDismissGesture = true;
-              final dismissDelta = _segmentPanelDragDelta;
-              _segmentPanelDragDelta = 0;
-              onVerticalDragUpdate?.call(dismissDelta);
+            if (!_isDismissGesture && delta > 0 && !panelExpanded) {
+              _segmentPanelDragDelta += delta;
+              if (_segmentPanelDragDelta > 24) {
+                _isDismissGesture = true;
+                final dismissDelta = _segmentPanelDragDelta;
+                _segmentPanelDragDelta = 0;
+                onVerticalDragUpdate?.call(dismissDelta);
+              }
+              return;
             }
-            return;
-          }
 
-          if (_isDismissGesture) {
+            if (_isDismissGesture) {
+              onVerticalDragUpdate?.call(delta);
+              return;
+            }
+
+            if ((panelExpanded && delta > 0) ||
+                (!panelExpanded && delta < 0 && detailFullyOpen)) {
+              _segmentPanelDragDelta += delta;
+              return;
+            }
+
             onVerticalDragUpdate?.call(delta);
-            return;
-          }
-
-          if ((panelExpanded && delta > 0) ||
-              (!panelExpanded && delta < 0 && detailFullyOpen)) {
-            _segmentPanelDragDelta += delta;
-            return;
-          }
-
-          onVerticalDragUpdate?.call(delta);
-        },
-        onVerticalDragEnd: (details) {
-          final velocity = details.primaryVelocity ?? 0;
-          final detailState = _detailContentKey.currentState;
-          final panelExpanded = detailState?.isSegmentPanelExpanded ?? false;
-          if (_isDismissGesture) {
+          },
+          onVerticalDragEnd: (details) {
+            final velocity = details.primaryVelocity ?? 0;
+            final detailState = _detailContentKey.currentState;
+            final panelExpanded = detailState?.isSegmentPanelExpanded ?? false;
+            if (_isDismissGesture) {
+              _isDismissGesture = false;
+              _segmentPanelDragDelta = 0;
+              onVerticalDragEnd?.call(details);
+              return;
+            }
+            final shouldExpand =
+                !panelExpanded &&
+                widget.dismissAnimation.value <= 0.01 &&
+                (_segmentPanelDragDelta < -120 || velocity < -800);
+            final shouldCollapse =
+                panelExpanded &&
+                (_segmentPanelDragDelta > 120 || velocity > 800);
+            _segmentPanelDragDelta = 0;
+            if (shouldExpand) {
+              detailState?.expandSegmentPanel();
+              return;
+            }
+            if (shouldCollapse) {
+              detailState?.collapseSegmentPanel();
+              return;
+            }
+            onVerticalDragEnd?.call(details);
+          },
+          onVerticalDragCancel: () {
             _isDismissGesture = false;
             _segmentPanelDragDelta = 0;
-            onVerticalDragEnd?.call(details);
-            return;
-          }
-          final shouldExpand =
-              !panelExpanded &&
-              widget.dismissAnimation.value <= 0.01 &&
-              (_segmentPanelDragDelta < -120 || velocity < -800);
-          final shouldCollapse =
-              panelExpanded && (_segmentPanelDragDelta > 120 || velocity > 800);
-          _segmentPanelDragDelta = 0;
-          if (shouldExpand) {
-            detailState?.expandSegmentPanel();
-            return;
-          }
-          if (shouldCollapse) {
-            detailState?.collapseSegmentPanel();
-            return;
-          }
-          onVerticalDragEnd?.call(details);
-        },
-        onVerticalDragCancel: () {
-          _isDismissGesture = false;
-          _segmentPanelDragDelta = 0;
-          onVerticalDragCancel?.call();
-        },
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            // Dynamic Blurred Background
-            if (blurEnabled)
-              Positioned.fill(
-                child: ClipRect(
-                  child: RepaintBoundary(
-                    child: ImageFiltered(
-                      key: const ValueKey('session_detail_background_blur'),
-                      imageFilter: ImageFilter.blur(
-                        sigmaX: _kSessionDetailBackgroundBlurSigma,
-                        sigmaY: _kSessionDetailBackgroundBlurSigma,
-                        tileMode: TileMode.decal,
-                      ),
-                      child: AsyncCoverImage(
-                        future: coverPathFuture,
-                        initialPath: provider.resolvedPlaybackCoverPathForTrack(
-                          track,
+            onVerticalDragCancel?.call();
+          },
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              // Dynamic Blurred Background
+              if (blurEnabled)
+                Positioned.fill(
+                  child: ClipRect(
+                    child: RepaintBoundary(
+                      child: ImageFiltered(
+                        key: const ValueKey('session_detail_background_blur'),
+                        imageFilter: ImageFilter.blur(
+                          sigmaX: _kSessionDetailBackgroundBlurSigma,
+                          sigmaY: _kSessionDetailBackgroundBlurSigma,
+                          tileMode: TileMode.decal,
                         ),
-                        retryFutureBuilder: () =>
-                            _coverFutureForTrack(provider, track),
-                        fallbackBuilder: (_) => CoverFallbackArtwork(
-                          seed: track?.displayName ?? session.currentTrackPath,
-                          showIcon: false,
+                        child: AsyncCoverImage(
+                          future: coverPathFuture,
+                          initialPath: provider
+                              .resolvedPlaybackCoverPathForTrack(track),
+                          retryFutureBuilder: () =>
+                              _coverFutureForTrack(provider, track),
+                          fallbackBuilder: (_) => CoverFallbackArtwork(
+                            seed:
+                                track?.displayName ?? session.currentTrackPath,
+                            showIcon: false,
+                          ),
+                          imageBuilder: (context, coverPath) {
+                            return RetryingFileImage(
+                              path: coverPath,
+                              cacheWidth: coverCacheWidth,
+                              useDefaultCacheWidth: coverCacheWidth != null,
+                              fit: BoxFit.cover,
+                              color: cs.surface.withValues(alpha: 0.45),
+                              colorBlendMode: BlendMode.darken,
+                              fallbackBuilder: (_) => CoverFallbackArtwork(
+                                seed:
+                                    track?.displayName ??
+                                    session.currentTrackPath,
+                                showIcon: false,
+                              ),
+                            );
+                          },
                         ),
-                        imageBuilder: (context, coverPath) {
-                          return RetryingFileImage(
-                            path: coverPath,
-                            cacheWidth: coverCacheWidth,
-                            useDefaultCacheWidth: coverCacheWidth != null,
-                            fit: BoxFit.cover,
-                            color: cs.surface.withValues(alpha: 0.45),
-                            colorBlendMode: BlendMode.darken,
-                            fallbackBuilder: (_) => CoverFallbackArtwork(
-                              seed:
-                                  track?.displayName ??
-                                  session.currentTrackPath,
-                              showIcon: false,
-                            ),
-                          );
-                        },
                       ),
                     ),
                   ),
                 ),
-              ),
-            // Content
-            SafeArea(
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  return Column(
-                    children: [
-                      // Top Bar 鈥?outside drag GestureDetector so taps work
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
-                        child: Builder(
-                          builder: (context) {
-                            final cachedTrack = provider.getSubtitleTrackSync(
-                              session.currentTrackPath,
-                            );
-                            if (cachedTrack == null) {
-                              unawaited(
-                                provider.subtitleTrackForPath(
-                                  session.currentTrackPath,
-                                ),
+              // Content
+              SafeArea(
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    return Column(
+                      children: [
+                        // Top Bar 鈥?outside drag GestureDetector so taps work
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          child: Builder(
+                            builder: (context) {
+                              final cachedTrack = provider.getSubtitleTrackSync(
+                                session.currentTrackPath,
                               );
-                            }
-                            final hasSubtitle = cachedTrack != null;
-                            final settings = ref.watch(
-                              subtitleSettingsProvider,
-                            );
-
-                            return Row(
-                              children: [
-                                IconButton(
-                                  onPressed: onClose,
-                                  icon: Icon(
-                                    Icons.keyboard_arrow_down_rounded,
-                                    color: cs.onSurface,
-                                    size: 32,
+                              if (cachedTrack == null) {
+                                unawaited(
+                                  provider.subtitleTrackForPath(
+                                    session.currentTrackPath,
                                   ),
-                                ),
-                                const Spacer(),
-                                if (hasSubtitle &&
-                                    settings.isShowEnabled(session.id) &&
-                                    settings.isGlobalEnabled(session.id)) ...[
-                                  Icon(
-                                    Icons.subtitles_rounded,
-                                    color: cs.onSurface,
-                                    size: 20,
-                                  ),
-                                  const SizedBox(width: 8),
-                                ],
-                                Consumer(
-                                  builder: (context, ref, child) {
-                                    final transport = ref.watch(
-                                      sessionDetailTransportProvider(
-                                        session.id,
-                                      ),
-                                    );
-                                    final featureIcons =
-                                        sessionFeatureBadgeIcons(
-                                          showSubtitles: false,
-                                          channelSwapEnabled:
-                                              transport?.channelSwapEnabled ??
-                                              session.channelSwapEnabled,
-                                          audioEffects:
-                                              transport?.audioEffects ??
-                                              session.audioEffects,
-                                          speed:
-                                              transport?.speed ?? session.speed,
-                                        );
-                                    if (featureIcons.isEmpty) {
-                                      return const SizedBox.shrink();
-                                    }
-                                    return Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        SessionFeatureIconRow(
-                                          featureIcons: featureIcons,
-                                          color: cs.onSurface,
-                                          iconSize: 20,
-                                          spacing: 8,
-                                          alignment: WrapAlignment.end,
-                                        ),
-                                        const SizedBox(width: 8),
-                                      ],
-                                    );
-                                  },
-                                ),
-                              ],
-                            );
-                          },
-                        ),
-                      ),
-                      // Content area 鈥?keep session drag gestures on artwork only
-                      Expanded(
-                        child: Builder(
-                          builder: (context) {
-                            final isLandscape =
-                                MediaQuery.orientationOf(context) ==
-                                Orientation.landscape;
-                            final resolvedCoverPath = provider
-                                .resolvedPlaybackCoverPathForTrack(track);
-                            final useArtworkConsole =
-                                track?.isSingle == true &&
-                                track?.isVideo != true &&
-                                !hasDisplayableCoverArtwork(
-                                  track,
-                                  resolvedCoverPath,
                                 );
-
-                            Widget? artworkWidget = useArtworkConsole
-                                ? null
-                                : _SessionHeroArtwork(
-                                    sessionId: session.id,
-                                    height: constraints.maxHeight,
-                                    track: track,
-                                    coverPathFuture: coverPathFuture,
-                                  );
-
-                            if (isLandscape && artworkWidget != null) {
-                              artworkWidget = Center(
-                                child: AspectRatio(
-                                  aspectRatio: 1.0,
-                                  child: artworkWidget,
-                                ),
+                              }
+                              final hasSubtitle = cachedTrack != null;
+                              final settings = ref.watch(
+                                subtitleSettingsProvider,
                               );
-                            }
 
-                            final artwork = artworkWidget == null
-                                ? null
-                                : Padding(
-                                    padding: EdgeInsets.symmetric(
-                                      horizontal: isLandscape ? 48.0 : 32.0,
-                                      vertical: isLandscape ? 32.0 : 0.0,
+                              return Row(
+                                children: [
+                                  IconButton(
+                                    onPressed: onClose,
+                                    icon: Icon(
+                                      Icons.keyboard_arrow_down_rounded,
+                                      color: cs.onSurface,
+                                      size: 32,
                                     ),
-                                    child: artworkWidget,
-                                  );
-
-                            final detailPadding = EdgeInsets.fromLTRB(
-                              isLandscape ? 12 : 28,
-                              isLandscape ? 0 : 12,
-                              isLandscape ? 64 : 28,
-                              isLandscape ? 32 : 8,
-                            );
-                            final cachedTrack = provider.getSubtitleTrackSync(
-                              session.currentTrackPath,
-                            );
-                            if (cachedTrack == null) {
-                              unawaited(
-                                provider.subtitleTrackForPath(
-                                  session.currentTrackPath,
-                                ),
-                              );
-                            }
-                            final hasSubtitle = cachedTrack != null;
-                            final subtitleSettings = ref.watch(
-                              subtitleSettingsProvider,
-                            );
-
-                            return _SessionDetailContent(
-                              key: _detailContentKey,
-                              session: session,
-                              provider: provider,
-                              segmentPanelExpandedNotifier:
-                                  widget.segmentPanelExpandedNotifier,
-                              isLandscape: isLandscape,
-                              artworkWidget: artwork,
-                              useArtworkConsole: useArtworkConsole,
-                              detailPadding: detailPadding,
-                              hasSubtitle: hasSubtitle,
-                              subtitleEnabled: subtitleSettings.isShowEnabled(
-                                session.id,
-                              ),
-                              subtitleGlobalEnabled: subtitleSettings
-                                  .isGlobalEnabled(session.id),
-                              onToggleSubtitle: hasSubtitle
-                                  ? () {
-                                      ref
-                                          .read(
-                                            subtitleSettingsProvider.notifier,
-                                          )
-                                          .toggleShowSubtitles(session.id);
-                                    }
-                                  : null,
-                              onToggleGlobalSubtitle: hasSubtitle
-                                  ? () {
-                                      final notifier = ref.read(
-                                        subtitleSettingsProvider.notifier,
-                                      );
-                                      unawaited(
-                                        _toggleGlobalSubtitleDisplay(
-                                          notifier,
-                                          subtitleSettings,
+                                  ),
+                                  const Spacer(),
+                                  if (hasSubtitle &&
+                                      settings.isShowEnabled(session.id) &&
+                                      settings.isGlobalEnabled(session.id)) ...[
+                                    Icon(
+                                      Icons.subtitles_rounded,
+                                      color: cs.onSurface,
+                                      size: 20,
+                                    ),
+                                    const SizedBox(width: 8),
+                                  ],
+                                  Consumer(
+                                    builder: (context, ref, child) {
+                                      final transport = ref.watch(
+                                        sessionDetailTransportProvider(
                                           session.id,
                                         ),
                                       );
-                                    }
-                                  : null,
-                              onOpenTimer: () {
-                                unawaited(_openTimerSettingsPage());
-                              },
-                              onShowAudioDetail: () =>
-                                  _showAudioDetailForSession(
-                                    context,
-                                    provider,
-                                    session,
-                                    track,
+                                      final featureIcons =
+                                          sessionFeatureBadgeIcons(
+                                            showSubtitles: false,
+                                            channelSwapEnabled:
+                                                transport?.channelSwapEnabled ??
+                                                session.channelSwapEnabled,
+                                            audioEffects:
+                                                transport?.audioEffects ??
+                                                session.audioEffects,
+                                            speed:
+                                                transport?.speed ??
+                                                session.speed,
+                                          );
+                                      if (featureIcons.isEmpty) {
+                                        return const SizedBox.shrink();
+                                      }
+                                      return Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          SessionFeatureIconRow(
+                                            featureIcons: featureIcons,
+                                            color: cs.onSurface,
+                                            iconSize: 20,
+                                            spacing: 8,
+                                            alignment: WrapAlignment.end,
+                                          ),
+                                          const SizedBox(width: 8),
+                                        ],
+                                      );
+                                    },
                                   ),
-                            );
-                          },
+                                ],
+                              );
+                            },
+                          ),
                         ),
-                      ),
-                    ],
-                  );
-                },
+                        // Content area 鈥?keep session drag gestures on artwork only
+                        Expanded(
+                          child: Builder(
+                            builder: (context) {
+                              final isLandscape =
+                                  MediaQuery.orientationOf(context) ==
+                                  Orientation.landscape;
+                              final resolvedCoverPath = provider
+                                  .resolvedPlaybackCoverPathForTrack(track);
+                              final useArtworkConsole =
+                                  track?.isSingle == true &&
+                                  track?.isVideo != true &&
+                                  !hasDisplayableCoverArtwork(
+                                    track,
+                                    resolvedCoverPath,
+                                  );
+
+                              Widget? artworkWidget = useArtworkConsole
+                                  ? null
+                                  : _SessionHeroArtwork(
+                                      sessionId: session.id,
+                                      height: constraints.maxHeight,
+                                      track: track,
+                                      coverPathFuture: coverPathFuture,
+                                    );
+
+                              if (isLandscape && artworkWidget != null) {
+                                artworkWidget = Center(
+                                  child: AspectRatio(
+                                    aspectRatio: 1.0,
+                                    child: artworkWidget,
+                                  ),
+                                );
+                              }
+
+                              final artwork = artworkWidget == null
+                                  ? null
+                                  : Padding(
+                                      padding: EdgeInsets.symmetric(
+                                        horizontal: isLandscape ? 48.0 : 32.0,
+                                        vertical: isLandscape ? 32.0 : 0.0,
+                                      ),
+                                      child: artworkWidget,
+                                    );
+
+                              final detailPadding = EdgeInsets.fromLTRB(
+                                isLandscape ? 12 : 28,
+                                isLandscape ? 0 : 12,
+                                isLandscape ? 64 : 28,
+                                isLandscape ? 32 : 8,
+                              );
+                              final cachedTrack = provider.getSubtitleTrackSync(
+                                session.currentTrackPath,
+                              );
+                              if (cachedTrack == null) {
+                                unawaited(
+                                  provider.subtitleTrackForPath(
+                                    session.currentTrackPath,
+                                  ),
+                                );
+                              }
+                              final hasSubtitle = cachedTrack != null;
+                              final subtitleSettings = ref.watch(
+                                subtitleSettingsProvider,
+                              );
+
+                              return _SessionDetailContent(
+                                key: _detailContentKey,
+                                session: session,
+                                provider: provider,
+                                segmentPanelExpandedNotifier:
+                                    widget.segmentPanelExpandedNotifier,
+                                isLandscape: isLandscape,
+                                artworkWidget: artwork,
+                                useArtworkConsole: useArtworkConsole,
+                                detailPadding: detailPadding,
+                                hasSubtitle: hasSubtitle,
+                                subtitleEnabled: subtitleSettings.isShowEnabled(
+                                  session.id,
+                                ),
+                                subtitleGlobalEnabled: subtitleSettings
+                                    .isGlobalEnabled(session.id),
+                                onToggleSubtitle: hasSubtitle
+                                    ? () {
+                                        ref
+                                            .read(
+                                              subtitleSettingsProvider.notifier,
+                                            )
+                                            .toggleShowSubtitles(session.id);
+                                      }
+                                    : null,
+                                onToggleGlobalSubtitle: hasSubtitle
+                                    ? () {
+                                        final notifier = ref.read(
+                                          subtitleSettingsProvider.notifier,
+                                        );
+                                        unawaited(
+                                          _toggleGlobalSubtitleDisplay(
+                                            notifier,
+                                            subtitleSettings,
+                                            session.id,
+                                          ),
+                                        );
+                                      }
+                                    : null,
+                                onOpenTimer: () {
+                                  unawaited(_openTimerSettingsPage());
+                                },
+                                onShowAudioDetail: () =>
+                                    _showAudioDetailForSession(
+                                      context,
+                                      provider,
+                                      session,
+                                      track,
+                                    ),
+                              );
+                            },
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

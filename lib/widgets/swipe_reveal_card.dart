@@ -28,6 +28,7 @@ class SwipeRevealCard extends StatefulWidget {
     this.destructive = true,
     this.verticalActions = false,
     this.color,
+    this.closedColor,
   });
 
   final Widget child;
@@ -50,6 +51,7 @@ class SwipeRevealCard extends StatefulWidget {
   final bool destructive;
   final bool verticalActions;
   final Color? color;
+  final Color? closedColor;
 
   @override
   State<SwipeRevealCard> createState() => _SwipeRevealCardState();
@@ -741,7 +743,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                     builder: (context) {
                       final content = DecoratedBox(
                         decoration: ShapeDecoration(
-                          color: widget.color ?? cs.surface,
+                          color: widget.closedColor ?? cs.surface,
                           shape: widget.shape,
                         ),
                         child: Stack(

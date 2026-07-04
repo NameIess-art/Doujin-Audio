@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart' show ProviderScope;
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:nameless_audio/i18n/app_language_provider.dart';
@@ -17,7 +19,9 @@ import 'package:nameless_audio/services/audio_state_services.dart';
 import 'package:nameless_audio/services/native_playback_repository.dart';
 import 'package:nameless_audio/services/playback_command_runner.dart';
 import 'package:nameless_audio/services/playback_notification_service.dart';
+import 'package:nameless_audio/services/platform_channels.dart';
 import 'package:nameless_audio/services/ui_interaction_coordinator.dart';
+import 'package:nameless_audio/theme/app_design_tokens.dart';
 import 'package:nameless_audio/theme/theme_provider.dart';
 import 'package:nameless_audio/widgets/active_session_carousel.dart';
 import 'package:provider/provider.dart' as legacy_provider;
@@ -36,6 +40,17 @@ void main() {
     SharedPreferences.setMockInitialValues(const <String, Object>{
       AppPreferences.onboardingCompletedKey: true,
     });
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+          const MethodChannel(SubtitleOverlayChannel.name),
+          (call) async {
+            return switch (call.method) {
+              SubtitleOverlayMethod.canDrawOverlays => false,
+              SubtitleOverlayMethod.openOverlaySettings => false,
+              _ => null,
+            };
+          },
+        );
   });
 
   testWidgets('app shell renders portrait tab navigation', (tester) async {
@@ -70,6 +85,21 @@ void main() {
     expect(pageFades.where((widget) => widget.opacity == 0), hasLength(1));
     expect(pageFades.every((widget) => widget.child is Align), isTrue);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Windows settings hides haptic feedback option', (tester) async {
+    if (!Platform.isWindows) {
+      return;
+    }
+
+    final harness = await _pumpAppShell(tester);
+    await _tapSettingsDestination(tester);
+    await _pumpMainScreenAnimations(tester);
+
+    expect(
+      find.text(harness.language.tr('haptic_feedback_enabled')),
+      findsNothing,
+    );
   });
 
   testWidgets('app shell supports Android landscape navigation', (
@@ -284,6 +314,44 @@ void main() {
     );
   });
 
+  testWidgets('ASMR session detail uses ASMR accent theme', (tester) async {
+    final previousPlatform = debugDefaultTargetPlatformOverride;
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    addTearDown(() {
+      debugDefaultTargetPlatformOverride = previousPlatform;
+    });
+    tester.view.physicalSize = const Size(1080, 2400);
+    addTearDown(tester.view.resetPhysicalSize);
+    const track = MusicTrack(
+      path: 'https://asmr.one/media/work/detail-track.mp3',
+      displayName: 'ASMR detail track',
+      groupKey: 'asmr-work-123456',
+      groupTitle: 'ASMR detail work',
+      groupSubtitle: 'RJ123456',
+      isSingle: false,
+      remoteMetadataKind: 'asmr.one',
+    );
+    await _pumpAppShell(tester, playbackTrack: track);
+    unawaited(
+      tester
+          .state<NavigatorState>(find.byType(Navigator).first)
+          .push(buildSessionDetailRoute(sessionId: 'orientation_session')),
+    );
+    await tester.pumpAndSettle();
+
+    final detailThemeContext = tester.element(
+      find.byKey(const ValueKey('session_detail_background_blur')),
+    );
+    final expectedAccent =
+        Theme.of(detailThemeContext).brightness == Brightness.dark
+        ? AppDesignTokens.dark.asmrAccent
+        : AppDesignTokens.light.asmrAccent;
+    expect(Theme.of(detailThemeContext).colorScheme.primary, expectedAccent);
+    await _settleSessionDetailAsyncWork(tester);
+    await tester.pumpWidget(const SizedBox.shrink());
+    debugDefaultTargetPlatformOverride = previousPlatform;
+  });
+
   testWidgets(
     'session detail keeps route revealed through a rapid drag reversal',
     (tester) async {
@@ -367,6 +435,8 @@ void main() {
       expect(detailFinder, findsOne);
       expect(detailRoute.opaque, isTrue);
       expect(tester.takeException(), isNull);
+      await _settleSessionDetailAsyncWork(tester);
+      await tester.pumpWidget(const SizedBox.shrink());
     },
   );
 
@@ -406,6 +476,8 @@ void main() {
 
     expect(tester.getSize(volumeCapsule), loopSize);
     expect(tester.getBottomLeft(volumeCapsule).dy, closeTo(loopBottom, 2.5));
+    await _settleSessionDetailAsyncWork(tester);
+    await tester.pumpWidget(const SizedBox.shrink());
     debugDefaultTargetPlatformOverride = previousPlatform;
   });
 
@@ -453,6 +525,8 @@ void main() {
 
     expect(detailFinder, findsNothing);
     expect(tester.takeException(), isNull);
+    await _settleSessionDetailAsyncWork(tester);
+    await tester.pumpWidget(const SizedBox.shrink());
     debugDefaultTargetPlatformOverride = previousPlatform;
   });
 }
@@ -466,6 +540,7 @@ final class _AppShellHarness {
 Future<_AppShellHarness> _pumpAppShell(
   WidgetTester tester, {
   bool includePlaybackSession = true,
+  MusicTrack? playbackTrack,
 }) async {
   final themeProvider = ThemeProvider();
   final languageProvider = AppLanguageProvider();
@@ -491,9 +566,12 @@ Future<_AppShellHarness> _pumpAppShell(
   settingsRepository.syncSlice(isInitialized: true);
   libraryService.syncSlice(isInitialized: true, detailRevision: 0);
   if (includePlaybackSession) {
+    if (playbackTrack != null) {
+      audioProvider.addTracks([playbackTrack], notify: false, persist: false);
+    }
     final session = PlaybackSession(
       id: 'orientation_session',
-      currentTrackPath: '/audio/orientation.mp3',
+      currentTrackPath: playbackTrack?.path ?? '/audio/orientation.mp3',
       loopMode: SessionLoopMode.single,
       nonSingleLoopMode: SessionLoopMode.single,
       volume: 1,
@@ -552,6 +630,13 @@ Future<void> _pumpMainScreenAnimations(
     await tester.pump(const Duration(milliseconds: 180));
   }
   await tester.pump();
+}
+
+Future<void> _settleSessionDetailAsyncWork(WidgetTester tester) async {
+  await tester.runAsync(() async {
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+  });
+  await tester.pump(const Duration(milliseconds: 120));
 }
 
 Future<void> _tapSettingsDestination(WidgetTester tester) async {

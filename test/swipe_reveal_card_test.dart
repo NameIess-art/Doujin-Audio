@@ -9,6 +9,45 @@ import 'package:nameless_audio/widgets/swipe_reveal_card.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  testWidgets('closed card surface can differ from reveal action color', (
+    tester,
+  ) async {
+    final shape = RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(12),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: SizedBox(
+              width: 260,
+              height: 96,
+              child: SwipeRevealCard(
+                shape: shape,
+                color: Colors.blue,
+                closedColor: Colors.red,
+                actionLabel: 'Details',
+                removeTooltip: 'Details',
+                onRemove: () {},
+                child: const SizedBox.expand(child: Text('Closed content')),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final closedSurface = tester.widgetList<DecoratedBox>(
+      find.byWidgetPredicate((widget) {
+        if (widget is! DecoratedBox) return false;
+        final decoration = widget.decoration;
+        return decoration is ShapeDecoration && decoration.color == Colors.red;
+      }),
+    );
+    expect(closedSurface, isNotEmpty);
+  });
+
   testWidgets('Windows context menu prefers nested card under the pointer', (
     tester,
   ) async {

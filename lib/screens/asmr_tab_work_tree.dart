@@ -115,6 +115,7 @@ class _AsmrWorkTreeCardState extends State<_AsmrWorkTreeCard> {
       onSecondaryAction: () => unawaited(_toggleFavorite(context)),
       onRemove: () => unawaited(showAsmrWorkDetailSheet(context, widget.work)),
       onWillReveal: _expansionController.collapse,
+      closedColor: cs.surfaceContainerLow,
       child: Card(
         margin: EdgeInsets.zero,
         clipBehavior: Clip.hardEdge,

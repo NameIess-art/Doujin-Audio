@@ -254,6 +254,8 @@ const Map<String, String> appLanguageJa = {
   'metadata_scope_missing': '不足データ',
   'audio_detail_fetch_missing_query': 'RJ番号、フォルダ/ファイル名、または作品タイトルを入力してください。',
   'audio_detail_cover_swipe_hint': '左右にスワイプして切り替え',
+  'audio_detail_set_cover': 'カバーに設定',
+  'audio_detail_current_cover': '現在のカバー',
   'audio_detail_rename_file': 'ファイル名を変更',
   'audio_detail_rename_file_from_title': '作品タイトルを\nファイル名にする',
   'audio_detail_rename_folder_from_title': '作品タイトルを\nフォルダ名にする',

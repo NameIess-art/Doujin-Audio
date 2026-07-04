@@ -30,7 +30,16 @@ class AudioDetailCacheService {
         }
         return result;
       }();
-      unawaited(future.whenComplete(() => _loadFutures.remove(key)));
+      unawaited(
+        future.then<void>(
+          (_) {
+            _loadFutures.remove(key);
+          },
+          onError: (Object error, StackTrace stackTrace) {
+            _loadFutures.remove(key);
+          },
+        ),
+      );
       return future;
     });
   }
@@ -65,6 +74,23 @@ class AudioDetailCacheService {
     _store(result.detail);
     _bumpRevision();
     return result;
+  }
+
+  Future<String?> loadCardCoverPath(AudioDetailTarget target) async {
+    return (await load(target)).detail.cardCoverPath;
+  }
+
+  Future<void> saveCardCoverPath(
+    AudioDetailTarget target,
+    String? coverPath,
+  ) async {
+    final current = (await load(target)).detail;
+    final normalizedPath = coverPath?.trim();
+    final nextPath = normalizedPath == null || normalizedPath.isEmpty
+        ? null
+        : normalizedPath;
+    if (current.cardCoverPath == nextPath) return;
+    await save(current.copyWith(cardCoverPath: nextPath));
   }
 
   Future<void> delete(AudioDetailTarget target) async {

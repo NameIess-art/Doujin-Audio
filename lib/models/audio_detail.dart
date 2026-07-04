@@ -58,6 +58,7 @@ class AudioDetail {
     required this.circleName,
     required this.voiceActors,
     required this.tags,
+    this.cardCoverPath,
     this.releaseDate,
     this.salesCount,
     this.rating,
@@ -93,6 +94,7 @@ class AudioDetail {
       circleName: (row['circle_name'] as String?) ?? '',
       voiceActors: _decodeStringList(row['voice_actors_json']),
       tags: _decodeStringList(row['tags_json']),
+      cardCoverPath: row['card_cover_path'] as String?,
       releaseDate: _dateTimeFromMs(row['release_date_ms']),
       salesCount: _intOrNull(row['sales_count']),
       rating: _doubleOrNull(row['rating']),
@@ -132,6 +134,7 @@ class AudioDetail {
         (json['tags'] as List<dynamic>? ?? const <dynamic>[])
             .whereType<String>(),
       ),
+      cardCoverPath: json['cardCoverPath'] as String?,
       releaseDate: _dateTimeFromIso(json['releaseDate']),
       salesCount: _intOrNull(json['salesCount']),
       rating: _doubleOrNull(json['rating']),
@@ -146,6 +149,7 @@ class AudioDetail {
   final String circleName;
   final List<String> voiceActors;
   final List<String> tags;
+  final String? cardCoverPath;
   final DateTime? releaseDate;
   final int? salesCount;
   final double? rating;
@@ -186,6 +190,7 @@ class AudioDetail {
     String? circleName,
     List<String>? voiceActors,
     List<String>? tags,
+    Object? cardCoverPath = _copyUnset,
     Object? releaseDate = _copyUnset,
     Object? salesCount = _copyUnset,
     Object? rating = _copyUnset,
@@ -199,6 +204,9 @@ class AudioDetail {
       circleName: circleName ?? this.circleName,
       voiceActors: voiceActors ?? this.voiceActors,
       tags: tags ?? this.tags,
+      cardCoverPath: cardCoverPath == _copyUnset
+          ? this.cardCoverPath
+          : cardCoverPath as String?,
       releaseDate: releaseDate == _copyUnset
           ? this.releaseDate
           : releaseDate as DateTime?,
@@ -219,6 +227,9 @@ class AudioDetail {
       circleName: circleName.trim(),
       voiceActors: normalizeList(voiceActors),
       tags: normalizeList(tags),
+      cardCoverPath: cardCoverPath?.trim().isEmpty == true
+          ? null
+          : cardCoverPath?.trim(),
       releaseDate: releaseDate,
       salesCount: salesCount == null || salesCount! < 0 ? null : salesCount,
       rating: rating == null || rating! < 0
@@ -238,6 +249,7 @@ class AudioDetail {
       'circle_name': circleName,
       'voice_actors_json': json.encode(voiceActors),
       'tags_json': json.encode(tags),
+      'card_cover_path': cardCoverPath,
       'release_date_ms': releaseDate?.millisecondsSinceEpoch ?? 0,
       'sales_count': salesCount,
       'rating': rating,
@@ -257,6 +269,7 @@ class AudioDetail {
       'circleName': circleName,
       'voiceActors': voiceActors,
       'tags': tags,
+      'cardCoverPath': cardCoverPath,
       'releaseDate': releaseDate?.toIso8601String(),
       'salesCount': salesCount,
       'rating': rating,

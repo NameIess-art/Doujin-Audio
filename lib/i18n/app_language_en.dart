@@ -282,6 +282,8 @@ const Map<String, String> appLanguageEn = {
   'audio_detail_fetch_missing_query':
       'Fill in an RJ number, folder/file name, or work title first.',
   'audio_detail_cover_swipe_hint': 'Swipe left or right to change',
+  'audio_detail_set_cover': 'Set as cover',
+  'audio_detail_current_cover': 'Current cover',
   'audio_detail_rename_file': 'Rename file',
   'audio_detail_rename_file_from_title': 'Use work title\nas file name',
   'audio_detail_rename_folder_from_title': 'Use work title\nas folder name',

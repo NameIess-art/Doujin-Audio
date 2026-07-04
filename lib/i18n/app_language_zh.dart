@@ -254,6 +254,8 @@ const Map<String, String> appLanguageZh = {
   'metadata_scope_missing': '缺少数据',
   'audio_detail_fetch_missing_query': '请先填写RJ号、文件夹/文件名称或作品标题。',
   'audio_detail_cover_swipe_hint': '左右滑动切换',
+  'audio_detail_set_cover': '作为封面',
+  'audio_detail_current_cover': '当前封面',
   'audio_detail_rename_file': '重命名文件',
   'audio_detail_rename_file_from_title': '作品标题\n作为文件名',
   'audio_detail_rename_folder_from_title': '作品标题\n作为文件夹名',

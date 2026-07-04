@@ -44,6 +44,7 @@ void main() {
     final detail = AudioDetail.empty(target).copyWith(
       rjCode: 'rj123456',
       workTitle: ' Work ',
+      cardCoverPath: '${tempDir.path}${Platform.pathSeparator}cover.jpg',
       voiceActors: const <String>['A', 'A', ' B '],
       tags: const <String>['tag'],
     );
@@ -63,9 +64,17 @@ void main() {
     final backup = json.decode(await backupFile.readAsString());
     expect(backup, isA<Map<String, dynamic>>());
     expect((backup as Map<String, dynamic>)['rjCode'], 'RJ123456');
+    expect(
+      backup['cardCoverPath'],
+      '${tempDir.path}${Platform.pathSeparator}cover.jpg',
+    );
 
     final databaseDetail = await appDatabase.loadAudioDetail(target);
     expect(databaseDetail?.workTitle, 'Work');
+    expect(
+      databaseDetail?.cardCoverPath,
+      '${tempDir.path}${Platform.pathSeparator}cover.jpg',
+    );
   });
 
   test('load prefers normalized database path before local backup', () async {

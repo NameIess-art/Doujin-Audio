@@ -220,6 +220,26 @@ void main() {
     expect(detailState?.loopMode, SessionLoopMode.folderSequential);
   });
 
+  test('session detail uses pause icon while loading or retryable', () {
+    final detailSession = session(id: 'detail', path: '/tracks/detail.mp3');
+    addTearDown(detailSession.dispose);
+
+    SessionDetailViewState? view() => sessionDetailViewStateFromPlaybackState(
+      PlaybackStateSliceData(activeSessions: [detailSession]),
+      'detail',
+    );
+
+    expect(view()?.showPauseIcon, isFalse);
+
+    detailSession.isLoading = true;
+    expect(view()?.showPauseIcon, isTrue);
+
+    detailSession
+      ..isLoading = false
+      ..playbackError = 'load failed';
+    expect(view()?.showPauseIcon, isTrue);
+  });
+
   test('session detail view state ignores progress-only changes', () {
     final detailSession = session(
       id: 'detail',

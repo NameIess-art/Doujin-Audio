@@ -180,6 +180,8 @@ class SessionDetailViewState {
   final EqCapabilities eqCapabilities;
   final String? playbackError;
 
+  bool get showPauseIcon => isPlaying || isLoading || playbackError != null;
+
   @override
   bool operator ==(Object other) {
     return other is SessionDetailViewState &&

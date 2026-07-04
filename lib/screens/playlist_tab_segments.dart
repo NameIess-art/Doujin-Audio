@@ -38,7 +38,11 @@ class _TransportPlaybackControlPanel extends ConsumerWidget {
     return _PlaybackControlPanel(
       session: session,
       provider: provider,
-      isPlaying: transport?.isPlaying ?? session.effectivePlaying,
+      showPauseIcon:
+          transport?.showPauseIcon ??
+          (session.effectivePlaying ||
+              session.isLoading ||
+              session.playbackError != null),
       hasSiblings: hasSiblings,
       segmentPanelExpanded: segmentPanelExpanded,
       hasSubtitle: hasSubtitle,
@@ -58,7 +62,7 @@ class _PlaybackControlPanel extends StatelessWidget {
   const _PlaybackControlPanel({
     required this.session,
     required this.provider,
-    required this.isPlaying,
+    required this.showPauseIcon,
     required this.hasSiblings,
     required this.segmentPanelExpanded,
     required this.hasSubtitle,
@@ -74,7 +78,7 @@ class _PlaybackControlPanel extends StatelessWidget {
 
   final PlaybackSession session;
   final AudioProvider provider;
-  final bool isPlaying;
+  final bool showPauseIcon;
   final bool hasSiblings;
   final bool segmentPanelExpanded;
   final bool hasSubtitle;
@@ -94,7 +98,7 @@ class _PlaybackControlPanel extends StatelessWidget {
         _PlaybackPrimaryControls(
           session: session,
           provider: provider,
-          isPlaying: isPlaying && !session.isLoading && session.playbackError == null,
+          showPauseIcon: showPauseIcon,
         ),
         _PlaybackSecondaryControls(
           session: session,
@@ -120,12 +124,12 @@ class _PlaybackPrimaryControls extends StatelessWidget {
   const _PlaybackPrimaryControls({
     required this.session,
     required this.provider,
-    required this.isPlaying,
+    required this.showPauseIcon,
   });
 
   final PlaybackSession session;
   final AudioProvider provider;
-  final bool isPlaying;
+  final bool showPauseIcon;
 
   @override
   Widget build(BuildContext context) {
@@ -199,7 +203,7 @@ class _PlaybackPrimaryControls extends StatelessWidget {
                   color: enabled ? primaryColor : cs.surfaceContainerHighest,
                 ),
                 child: IconButton(
-                  tooltip: isPlaying ? i18n.tr('pause') : i18n.tr('play'),
+                  tooltip: showPauseIcon ? i18n.tr('pause') : i18n.tr('play'),
                   constraints: BoxConstraints.tightFor(
                     width: compact ? 80 : 92,
                     height: compact ? 80 : 92,
@@ -228,10 +232,10 @@ class _PlaybackPrimaryControls extends StatelessWidget {
                       );
                     },
                     child: Icon(
-                      isPlaying
+                      showPauseIcon
                           ? Icons.pause_rounded
                           : Icons.play_arrow_rounded,
-                      key: ValueKey(isPlaying),
+                      key: ValueKey(showPauseIcon),
                       size: playIconSize * 0.75,
                       color: enabled
                           ? onPrimaryColor

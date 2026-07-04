@@ -1,5 +1,6 @@
 package com.nameless.audio
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.net.wifi.WifiManager
 import android.os.PowerManager
@@ -9,18 +10,14 @@ internal class NativePlaybackWakeLock(
     private val logInfo: (String) -> Unit,
     private val logWarn: (String, Exception) -> Unit
 ) {
-    private companion object {
-        private const val WAKE_LOCK_TIMEOUT_MS = 10 * 60 * 1000L
-    }
-
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
 
     fun isHeld(): Boolean = wakeLock?.isHeld == true || wifiLock?.isHeld == true
 
-    fun acquire(forceRefresh: Boolean = false) {
+    @SuppressLint("WakelockTimeout")
+    fun acquire() {
         var acquiredAny = false
-        var refreshedAny = false
 
         if (wakeLock == null) {
             try {
@@ -38,12 +35,8 @@ internal class NativePlaybackWakeLock(
 
         wakeLock?.let { lock ->
             try {
-                if (forceRefresh && lock.isHeld) {
-                    lock.release()
-                    refreshedAny = true
-                }
                 if (!lock.isHeld) {
-                    lock.acquire(WAKE_LOCK_TIMEOUT_MS)
+                    lock.acquire()
                     acquiredAny = lock.isHeld
                 }
             } catch (e: Exception) {
@@ -67,10 +60,6 @@ internal class NativePlaybackWakeLock(
 
         wifiLock?.let { lock ->
             try {
-                if (forceRefresh && lock.isHeld) {
-                    lock.release()
-                    refreshedAny = true
-                }
                 if (!lock.isHeld) {
                     lock.acquire()
                     acquiredAny = acquiredAny || lock.isHeld
@@ -81,21 +70,18 @@ internal class NativePlaybackWakeLock(
         }
 
         if (acquiredAny) {
-            logInfo(
-                "wakelock_acquired refreshed=$refreshedAny " +
-                    "held=${wakeLock?.isHeld == true} wifiHeld=${wifiLock?.isHeld == true}"
-            )
+            logInfo("wakelock_acquired held=${wakeLock?.isHeld == true} wifiHeld=${wifiLock?.isHeld == true}")
         } else if (wakeLock?.isHeld == true || wifiLock?.isHeld == true) {
             logInfo("wakelock_acquire_skip already_held")
         }
     }
 
-    fun refresh(forceRefresh: Boolean = false) {
-        if (!forceRefresh && wakeLock?.isHeld == true && wifiLock?.isHeld == true) {
+    fun refresh() {
+        if (wakeLock?.isHeld == true && wifiLock?.isHeld == true) {
             logInfo("wakelock_refresh_skip already_held")
             return
         }
-        acquire(forceRefresh = forceRefresh)
+        acquire()
     }
 
     fun release() {

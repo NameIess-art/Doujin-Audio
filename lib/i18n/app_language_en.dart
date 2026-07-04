@@ -192,6 +192,7 @@ const Map<String, String> appLanguageEn = {
       'Check the destination folder and network connection, then retry.',
   'asmr_download_starting': 'Downloading',
   'asmr_download_confirm': 'Confirm download',
+  'asmr_download_added_to_list': 'Added to download list',
   'asmr_download_task_title': 'Download tasks',
   'asmr_download_cancel_and_clear':
       'Cancel download and clear downloaded content',
@@ -210,6 +211,7 @@ const Map<String, String> appLanguageEn = {
   'asmr_download_empty_folder': 'Empty folder',
   'asmr_download_status_preparing': 'Preparing',
   'asmr_download_status_downloading': 'Downloading',
+  'asmr_download_status_paused': 'Paused',
   'asmr_download_status_completed': 'Completed',
   'asmr_download_status_failed': 'Failed',
   'asmr_download_status_idle': 'Idle',
@@ -348,6 +350,7 @@ const Map<String, String> appLanguageEn = {
   'eq_preset_bass_boost': 'Bass Boost',
   'previous_track': 'Previous',
   'pause': 'Pause',
+  'resume': 'Resume',
   'next_track': 'Next',
   'collapse': 'Collapse',
   'expand': 'Expand',

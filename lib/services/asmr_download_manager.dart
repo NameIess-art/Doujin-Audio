@@ -17,7 +17,7 @@ import 'file_cache_platform_gateway.dart';
 import 'path_display.dart';
 import 'path_matcher.dart';
 
-enum AsmrDownloadTaskStatus { idle, preparing, downloading, completed, failed }
+enum AsmrDownloadTaskStatus { idle, preparing, downloading, paused, completed, failed }
 
 class AsmrDownloadTaskSnapshot {
   const AsmrDownloadTaskSnapshot({
@@ -89,6 +89,7 @@ class AsmrDownloadTaskSnapshot {
 
   AsmrDownloadTaskSnapshot copyWith({
     AsmrDownloadTaskStatus? status,
+    AsmrDownloadConflictPolicy? conflictPolicy,
     int? totalFiles,
     int? completedFiles,
     int? skippedFiles,
@@ -106,7 +107,7 @@ class AsmrDownloadTaskSnapshot {
       work: work,
       destinationRoot: destinationRoot,
       workFolderName: workFolderName,
-      conflictPolicy: conflictPolicy,
+      conflictPolicy: conflictPolicy ?? this.conflictPolicy,
       status: status ?? this.status,
       totalFiles: totalFiles ?? this.totalFiles,
       completedFiles: completedFiles ?? this.completedFiles,
@@ -268,6 +269,7 @@ class AsmrDownloadManager extends ChangeNotifier {
   final Map<int, List<_PlannedDownloadFile>> _plannedFilesMap = {};
 
   final Map<int, bool> _cancelRequested = {};
+  final Map<int, bool> _pauseRequested = {};
   final Map<int, Completer<void>> _downloadCompletions = {};
   final Map<int, HttpClient> _activeHttpClients = {};
   final Map<int, String> _cancelCleanupRoots = {};
@@ -398,6 +400,40 @@ class AsmrDownloadManager extends ChangeNotifier {
 
   Future<void> deleteTask(int workId) async {
     await cancelTask(workId);
+  }
+
+  Future<void> pauseTask(int workId) async {
+    final task = _tasks[workId];
+    if (task == null) return;
+
+    if (_activeTasks.contains(workId)) {
+      _pauseRequested[workId] = true;
+      _activeHttpClients[workId]?.close(force: true);
+    } else if (_queue.contains(workId)) {
+      _queue.remove(workId);
+      _tasks[workId] = task.copyWith(
+        status: AsmrDownloadTaskStatus.paused,
+        message: 'paused',
+      );
+      _notifyTaskChanged();
+    }
+  }
+
+  Future<void> resumeTask(int workId) async {
+    final task = _tasks[workId];
+    if (task == null || task.status != AsmrDownloadTaskStatus.paused) {
+      return;
+    }
+    _tasks[workId] = task.copyWith(
+      status: AsmrDownloadTaskStatus.idle,
+      message: 'queued',
+      conflictPolicy: AsmrDownloadConflictPolicy.skip,
+    );
+    if (!_queue.contains(workId)) {
+      _queue.add(workId);
+    }
+    _notifyTaskChanged();
+    _processQueue();
   }
 
   Future<void> startDownload({
@@ -548,7 +584,11 @@ class AsmrDownloadManager extends ChangeNotifier {
         );
       }
 
-      final plannedFiles = _plannedFilesMap[workId] ?? [];
+      var plannedFiles = _plannedFilesMap[workId];
+      if (plannedFiles == null) {
+        plannedFiles = _collectPlannedFiles(_tasks[workId]!.selectedRoots);
+        _plannedFilesMap[workId] = plannedFiles;
+      }
       for (final item in plannedFiles) {
         _throwIfCancelled(workId);
         _tasks[workId] = _tasks[workId]!.copyWith(
@@ -600,10 +640,17 @@ class AsmrDownloadManager extends ChangeNotifier {
     } on _DownloadCancelled {
       final currentTask = _tasks[workId];
       if (currentTask != null) {
-        _tasks[workId] = currentTask.copyWith(
-          status: AsmrDownloadTaskStatus.failed,
-          message: 'cancelled',
-        );
+        if (_pauseRequested[workId] == true) {
+          _tasks[workId] = currentTask.copyWith(
+            status: AsmrDownloadTaskStatus.paused,
+            message: 'paused',
+          );
+        } else {
+          _tasks[workId] = currentTask.copyWith(
+            status: AsmrDownloadTaskStatus.failed,
+            message: 'cancelled',
+          );
+        }
         _notifyTaskChanged();
       }
     } catch (error, stackTrace) {
@@ -628,6 +675,7 @@ class AsmrDownloadManager extends ChangeNotifier {
         await _deleteDownloadRoot(cleanupRoot);
       }
       _cancelRequested.remove(workId);
+      _pauseRequested.remove(workId);
       final completion = _downloadCompletions.remove(workId);
       if (completion != null && !completion.isCompleted) {
         completion.complete();
@@ -679,6 +727,28 @@ class AsmrDownloadManager extends ChangeNotifier {
     required AsmrDownloadConflictPolicy conflictPolicy,
   }) async {
     _throwIfCancelled(workId);
+
+    if (!PathMatcher.isContentUri(workRootPath)) {
+      final targetFile = File(
+        path.join(
+          workRootPath,
+          item.relativePath.replaceAll('/', path.separator),
+        ),
+      );
+      if (await targetFile.exists() && await targetFile.length() == item.size) {
+        if (conflictPolicy == AsmrDownloadConflictPolicy.skip) {
+           return _WriteResult.skipped(bytesDownloaded: item.size);
+        }
+      }
+    } else {
+      final docPath = _joinFolderPath(workRootPath, item.relativePath);
+      if (await _fileCacheGateway.documentPathExists(docPath)) {
+        if (conflictPolicy == AsmrDownloadConflictPolicy.skip) {
+           return _WriteResult.skipped(bytesDownloaded: item.size);
+        }
+      }
+    }
+
     final tempResult = await _downloadToTemporaryFile(item, workId: workId);
     if (tempResult == null) {
       return const _WriteResult.failure(bytesDownloaded: 0);
@@ -803,6 +873,9 @@ class AsmrDownloadManager extends ChangeNotifier {
     } on _DownloadCancelled {
       rethrow;
     } catch (error, stackTrace) {
+      if (_cancelRequested[workId] == true || _pauseRequested[workId] == true) {
+        throw const _DownloadCancelled();
+      }
       AppLogService.error(
         'asmr_download_transfer_failed',
         error: error,
@@ -1007,7 +1080,7 @@ class AsmrDownloadManager extends ChangeNotifier {
   }
 
   void _throwIfCancelled(int workId) {
-    if (_cancelRequested[workId] == true) {
+    if (_cancelRequested[workId] == true || _pauseRequested[workId] == true) {
       throw const _DownloadCancelled();
     }
   }

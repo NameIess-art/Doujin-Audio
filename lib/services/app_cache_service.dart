@@ -12,6 +12,8 @@ class AppCacheService {
       FileCachePlatformGateway.instance;
 
   static int _maxCacheBytes = defaultMaxCacheBytes;
+  static Future<void>? _enforceFuture;
+  static bool _enforceRequested = false;
 
   static int get maxCacheBytes => _maxCacheBytes;
 
@@ -105,7 +107,27 @@ class AppCacheService {
     }
   }
 
-  static Future<void> enforceLimit() async {
+  static Future<void> enforceLimit() {
+    _enforceRequested = true;
+    final inFlight = _enforceFuture;
+    if (inFlight != null) return inFlight;
+    final future = _drainEnforceRequests();
+    _enforceFuture = future;
+    return future;
+  }
+
+  static Future<void> _drainEnforceRequests() async {
+    try {
+      while (_enforceRequested) {
+        _enforceRequested = false;
+        await _enforceLimitOnce();
+      }
+    } finally {
+      _enforceFuture = null;
+    }
+  }
+
+  static Future<void> _enforceLimitOnce() async {
     if (Platform.isAndroid) {
       try {
         await _fileCache.enforceApplicationCacheLimit(_maxCacheBytes);
@@ -199,10 +221,13 @@ class AppCacheService {
         // Skip cache entries that disappear or become inaccessible mid-scan.
       }
     }
+    if (totalBytes <= maxBytes) return;
+
+    final trimTargetBytes = applicationCacheTrimTargetBytes(maxBytes);
     entries.sort((a, b) => a.modified.compareTo(b.modified));
     var remainingFiles = entries.length;
     for (final entry in entries) {
-      if (totalBytes <= maxBytes || remainingFiles <= 1) break;
+      if (totalBytes <= trimTargetBytes || remainingFiles <= 1) break;
       try {
         await entry.file.delete();
         totalBytes -= entry.size;
@@ -212,6 +237,11 @@ class AppCacheService {
       }
     }
   }
+}
+
+int applicationCacheTrimTargetBytes(int maxBytes) {
+  final normalizedMaxBytes = maxBytes < 1 ? 1 : maxBytes;
+  return (normalizedMaxBytes * 9 ~/ 10).clamp(1, normalizedMaxBytes);
 }
 
 class _CacheFileEntry {

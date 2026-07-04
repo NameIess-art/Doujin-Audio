@@ -165,6 +165,7 @@ class SessionDetailViewState {
     required this.speed,
     required this.audioEffects,
     required this.eqCapabilities,
+    required this.playbackError,
   });
 
   final String sessionId;
@@ -177,6 +178,7 @@ class SessionDetailViewState {
   final double speed;
   final AudioEffectsState audioEffects;
   final EqCapabilities eqCapabilities;
+  final String? playbackError;
 
   @override
   bool operator ==(Object other) {
@@ -190,7 +192,8 @@ class SessionDetailViewState {
         other.volume == volume &&
         other.speed == speed &&
         other.audioEffects == audioEffects &&
-        other.eqCapabilities == eqCapabilities;
+        other.eqCapabilities == eqCapabilities &&
+        other.playbackError == playbackError;
   }
 
   @override
@@ -205,6 +208,7 @@ class SessionDetailViewState {
     speed,
     audioEffects,
     eqCapabilities,
+    playbackError,
   );
 }
 
@@ -374,6 +378,7 @@ SessionDetailViewState? sessionDetailViewStateFromPlaybackState(
       speed: session.speed,
       audioEffects: session.audioEffects,
       eqCapabilities: session.eqCapabilities,
+      playbackError: session.playbackError,
     );
   }
   return null;

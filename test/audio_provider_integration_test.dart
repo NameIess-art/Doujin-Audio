@@ -780,7 +780,7 @@ void main() {
     );
 
     test(
-      'console settings are remembered for new sessions after restart',
+      'console settings stay scoped to their session and do not become defaults',
       () async {
         SharedPreferences.setMockInitialValues(const <String, Object>{});
         const track = MusicTrack(
@@ -789,6 +789,14 @@ void main() {
           groupKey: 'remembered-console',
           groupTitle: 'Remembered Console',
           groupSubtitle: 'Remembered Console',
+          isSingle: false,
+        );
+        const secondTrack = MusicTrack(
+          path: 'https://example.com/independent-console.mp3',
+          displayName: 'second track',
+          groupKey: 'independent-console',
+          groupTitle: 'Independent Console',
+          groupSubtitle: 'Independent Console',
           isSingle: false,
         );
 
@@ -815,8 +823,14 @@ void main() {
                       'speed': (args['speed'] as num?)?.toDouble() ?? 1.0,
                       'boostGain': 1.0,
                       'channelSwap':
-                          lastEffects?['channelSwapEnabled'] as bool? ?? false,
-                      'audioEffects': lastEffects,
+                          ((args['audioEffects']
+                                  as Map<
+                                    Object?,
+                                    Object?
+                                  >?)?['channelSwapEnabled']
+                              as bool?) ??
+                          false,
+                      'audioEffects': args['audioEffects'],
                     },
                   };
                 case NativePlaybackMethod.setVolume:
@@ -901,7 +915,11 @@ void main() {
               }
             });
 
-        provider.addTracks(<MusicTrack>[track], notify: false, persist: false);
+        provider.addTracks(
+          <MusicTrack>[track, secondTrack],
+          notify: false,
+          persist: false,
+        );
         await provider.spawnSession(track, autoPlay: false);
         final session = provider.activeSessions.single;
 
@@ -915,26 +933,7 @@ void main() {
         await provider.setSessionChannelSwap(session.id, true);
 
         final prefs = await SharedPreferences.getInstance();
-        final saved =
-            json.decode(prefs.getString('playback_settings_v1')!)
-                as Map<String, Object?>;
-        final savedAudioEffects =
-            saved['defaultSessionAudioEffects'] as Map<String, Object?>;
-        expect(saved['defaultSessionVolume'], 1.25);
-        expect(saved['defaultSessionSpeed'], 1.5);
-        expect(saved['defaultSessionChannelSwapEnabled'], isTrue);
-        expect(savedAudioEffects['skipSilenceEnabled'], isTrue);
-        expect(savedAudioEffects['noiseReductionEnabled'], isTrue);
-        expect(savedAudioEffects['volumeNormalizationEnabled'], isTrue);
-        expect(savedAudioEffects['eqEnabled'], isTrue);
-        expect(savedAudioEffects['panning'], -0.4);
-        expect(
-          (savedAudioEffects['eqBandLevels'] as List<Object?>)
-              .cast<Map<Object?, Object?>>()
-              .where((entry) => entry['frequencyHz'] == 1000)
-              .single['gainDb'],
-          2.5,
-        );
+        expect(prefs.getString('playback_settings_v1'), isNull);
 
         final persistedSession = (await AudioDatabaseRepository(
           database: AppDatabase.test(db),
@@ -951,6 +950,15 @@ void main() {
         expect(persistedSession.audioEffects.eqBandLevels[1000], 2.5);
         expect(persistedSession.audioEffects.panning, -0.4);
         expect(persistedSession.channelSwapEnabled, isTrue);
+
+        await provider.spawnSession(secondTrack, autoPlay: false);
+        final secondSession = provider.activeSessions.singleWhere(
+          (candidate) => candidate.currentTrackPath == secondTrack.path,
+        );
+        expect(secondSession.volume, 1.0);
+        expect(secondSession.speed, 1.0);
+        expect(secondSession.audioEffects, AudioEffectsState.flat);
+        expect(secondSession.channelSwapEnabled, isFalse);
 
         final restartDbDir = await Directory.systemTemp.createTemp(
           'remembered_console_restart_',
@@ -983,15 +991,10 @@ void main() {
         await restartProvider.spawnSession(track, autoPlay: false);
 
         final restoredSession = restartProvider.activeSessions.single;
-        expect(restoredSession.volume, 1.25);
-        expect(restoredSession.speed, 1.5);
-        expect(restoredSession.audioEffects.skipSilenceEnabled, isTrue);
-        expect(restoredSession.audioEffects.noiseReductionEnabled, isTrue);
-        expect(restoredSession.audioEffects.volumeNormalizationEnabled, isTrue);
-        expect(restoredSession.audioEffects.eqEnabled, isTrue);
-        expect(restoredSession.audioEffects.eqBandLevels[1000], 2.5);
-        expect(restoredSession.audioEffects.panning, -0.4);
-        expect(restoredSession.channelSwapEnabled, isTrue);
+        expect(restoredSession.volume, 1.0);
+        expect(restoredSession.speed, 1.0);
+        expect(restoredSession.audioEffects, AudioEffectsState.flat);
+        expect(restoredSession.channelSwapEnabled, isFalse);
       },
     );
 

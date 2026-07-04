@@ -85,19 +85,14 @@ extension AudioProviderPlaybackSessions on AudioProvider {
       nonSingleLoopMode: loopMode == SessionLoopMode.single
           ? SessionLoopMode.folderSequential
           : loopMode,
-      volume: (volume ?? _settingsRepository.defaultSessionVolume)
-          .clamp(0.0, _maxSessionVolume)
-          .toDouble(),
+      volume: (volume ?? 1.0).clamp(0.0, _maxSessionVolume).toDouble(),
       createdAt: DateTime.now(),
       state: PlayerState(false, ProcessingState.idle),
       customQueueTracks: customQueueTracks,
     );
-    session.speed = _nearestPlaybackSpeed(
-      _settingsRepository.defaultSessionSpeed,
-    );
-    session.channelSwapEnabled =
-        _settingsRepository.defaultSessionChannelSwapEnabled;
-    session.audioEffects = _settingsRepository.defaultSessionAudioEffects;
+    session.speed = 1.0;
+    session.channelSwapEnabled = false;
+    session.audioEffects = AudioEffectsState.flat;
     return session;
   }
 

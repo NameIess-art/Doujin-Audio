@@ -12,13 +12,6 @@ internal data class NativeAudioEffectsChange(
 )
 
 internal class NativeAudioEffectsController {
-    private val strictSilenceSkippingAudioProcessor = SilenceSkippingAudioProcessor(
-        STRICT_SKIP_SILENCE_MIN_DURATION_US,
-        0f,
-        0L,
-        0,
-        STRICT_SKIP_SILENCE_THRESHOLD_LEVEL
-    )
     private val channelMappingAudioProcessor = ChannelMappingAudioProcessor()
     private val volumeBalanceAudioProcessor = VolumeBalanceAudioProcessor()
 
@@ -34,7 +27,6 @@ internal class NativeAudioEffectsController {
     fun audioProcessors(): Array<AudioProcessor> {
         syncProcessors()
         return arrayOf(
-            strictSilenceSkippingAudioProcessor,
             channelMappingAudioProcessor,
             volumeBalanceAudioProcessor
         )
@@ -73,7 +65,7 @@ internal class NativeAudioEffectsController {
         syncEqualizer: (Int) -> Unit,
         syncDynamicsProcessing: (Int) -> Unit
     ) {
-        player.setSkipSilenceEnabled(false)
+        player.setSkipSilenceEnabled(skipSilenceEnabled)
         syncProcessors()
         syncEqualizer(player.audioSessionId)
         syncDynamicsProcessing(player.audioSessionId)
@@ -95,7 +87,6 @@ internal class NativeAudioEffectsController {
 
     private fun syncProcessors() {
         volumeBalanceAudioProcessor.panning = panning
-        strictSilenceSkippingAudioProcessor.setEnabled(skipSilenceEnabled)
         applyChannelMap()
     }
 

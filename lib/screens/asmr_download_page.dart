@@ -195,6 +195,13 @@ class _AsmrDownloadPageState extends State<AsmrDownloadPage> {
         ),
       );
       if (!mounted) return;
+      showAppSnackBar(
+        context,
+        i18n.tr('asmr_download_added_to_list'),
+        tone: AppFeedbackTone.success,
+        icon: Icons.checklist_rounded,
+        iconColor: asmrBlue,
+      );
       if (!mounted) return;
       unawaited(Navigator.of(context).maybePop());
     } catch (error) {
@@ -455,6 +462,33 @@ class _TaskCard extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 8),
+                  if (task.status != AsmrDownloadTaskStatus.completed && task.status != AsmrDownloadTaskStatus.failed)
+                    SizedBox(
+                      width: 32,
+                      height: 32,
+                      child: IconButton(
+                        padding: EdgeInsets.zero,
+                        icon: Icon(
+                          task.status == AsmrDownloadTaskStatus.paused
+                              ? Icons.play_arrow_rounded
+                              : Icons.pause_rounded,
+                        ),
+                        iconSize: 22,
+                        color: cs.onSurfaceVariant.withValues(alpha: 0.8),
+                        tooltip: task.status == AsmrDownloadTaskStatus.paused
+                            ? i18n.tr('resume')
+                            : i18n.tr('pause'),
+                        onPressed: () {
+                          final manager = context.read<AsmrDownloadManager>();
+                          if (task.status == AsmrDownloadTaskStatus.paused) {
+                            manager.resumeTask(task.work.id);
+                          } else {
+                            manager.pauseTask(task.work.id);
+                          }
+                        },
+                      ),
+                    ),
+                  const SizedBox(width: 4),
                   SizedBox(
                     width: 32,
                     height: 32,
@@ -772,6 +806,8 @@ String _statusText(AppLanguageProvider i18n, AsmrDownloadTaskStatus status) {
       return i18n.tr('asmr_download_status_preparing');
     case AsmrDownloadTaskStatus.downloading:
       return i18n.tr('asmr_download_status_downloading');
+    case AsmrDownloadTaskStatus.paused:
+      return i18n.tr('asmr_download_status_paused');
     case AsmrDownloadTaskStatus.completed:
       return i18n.tr('asmr_download_status_completed');
     case AsmrDownloadTaskStatus.failed:

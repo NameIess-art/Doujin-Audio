@@ -835,6 +835,29 @@ class _SessionSubtitlePanelState extends ConsumerState<_SessionSubtitlePanel> {
   Widget build(BuildContext context) {
     final detail = ref.watch(sessionDetailTransportProvider(widget.session.id));
     final playbackError = detail?.playbackError ?? widget.session.playbackError;
+    final isLoading = detail?.isLoading ?? widget.session.isLoading;
+
+    if (isLoading) {
+      return Container(
+        width: double.infinity,
+        height: 44,
+        padding: EdgeInsets.zero,
+        alignment: Alignment.topLeft,
+        child: ClipRect(
+          child: Text(
+            context.watch<AppLanguageProvider>().tr('playback_loading'),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              fontWeight: FontWeight.w600,
+              fontSize: 16,
+              height: 1.3,
+            ),
+          ),
+        ),
+      );
+    }
 
     if (playbackError != null) {
       return Container(
@@ -849,29 +872,6 @@ class _SessionSubtitlePanelState extends ConsumerState<_SessionSubtitlePanel> {
             overflow: TextOverflow.ellipsis,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
               color: Colors.redAccent,
-              fontWeight: FontWeight.w600,
-              fontSize: 16,
-              height: 1.3,
-            ),
-          ),
-        ),
-      );
-    }
-
-    final isLoading = detail?.isLoading ?? widget.session.isLoading;
-    if (isLoading) {
-      return Container(
-        width: double.infinity,
-        height: 44,
-        padding: EdgeInsets.zero,
-        alignment: Alignment.topLeft,
-        child: ClipRect(
-          child: Text(
-            '加载中...',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
               fontWeight: FontWeight.w600,
               fontSize: 16,
               height: 1.3,

@@ -66,7 +66,6 @@ extension AudioProviderPlayback on AudioProvider {
       await _prepareAndPlay(
         session,
         nextPath: session.currentTrackPath,
-        forceStartAtZero: false,
       );
       return;
     }

@@ -61,6 +61,7 @@ const Map<String, String> appLanguageJa = {
   'search_audio_placeholder': 'オーディオを検索...',
   'scanning_title': 'スキャン中...',
   'loading_dot': '読み込み中...',
+  'playback_loading': '読み込み中',
   'playback_failed_retry': '再生に失敗しました。タップして再試行',
   'asmr_playback_load_failed_retry': '読み込みに失敗しました。タップして再試行',
   'asmr_playback_network_failed_retry': 'ネットワーク接続に失敗しました。タップして再試行',

@@ -67,6 +67,7 @@ const Map<String, String> appLanguageEn = {
   'search_audio_placeholder': 'Search audio...',
   'scanning_title': 'Scanning...',
   'loading_dot': 'Loading...',
+  'playback_loading': 'Loading',
   'playback_failed_retry': 'Playback failed. Tap to retry',
   'asmr_playback_load_failed_retry': 'Loading failed. Tap to retry',
   'asmr_playback_network_failed_retry':

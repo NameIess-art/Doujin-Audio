@@ -835,8 +835,8 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                                 ScrollViewKeyboardDismissBehavior.onDrag,
                             onReorder: (oldIndex, newIndex) {
                               if (cardPositionsLocked) return;
-                              setState(() => _isReordering = false);
                               provider.reorderLibraryNodes(oldIndex, newIndex);
+                              setState(() => _isReordering = false);
                             },
                             onReorderStart: (index) {
                               if (cardPositionsLocked) return;

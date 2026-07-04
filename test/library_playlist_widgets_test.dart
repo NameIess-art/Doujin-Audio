@@ -197,6 +197,24 @@ class _RecordingPlaybackCoverCacheService extends CoverArtworkCacheService {
 }
 
 void main() {
+  test('equalizer badge only appears while equalizer is enabled', () {
+    final disabledIcons = sessionFeatureBadgeIcons(
+      showSubtitles: false,
+      channelSwapEnabled: false,
+      audioEffects: const AudioEffectsState(eqPresetId: 'voice_clear'),
+      speed: 1,
+    );
+    final enabledIcons = sessionFeatureBadgeIcons(
+      showSubtitles: false,
+      channelSwapEnabled: false,
+      audioEffects: const AudioEffectsState(eqEnabled: true),
+      speed: 1,
+    );
+
+    expect(disabledIcons, isNot(contains(Icons.tune_rounded)));
+    expect(enabledIcons, contains(Icons.tune_rounded));
+  });
+
   test('active track path provider exposes current session paths', () {
     final playbackService = PlaybackSessionService();
     addTearDown(playbackService.dispose);

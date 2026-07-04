@@ -691,6 +691,37 @@ void main() {
       expect(session.audioEffects.eqBandLevels, isEmpty);
     });
 
+    test('skip silence preparation preserves active playback intent', () async {
+      var playCalls = 0;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+            if (call.method == NativePlaybackMethod.play) {
+              playCalls++;
+            }
+            return <String, Object?>{'ok': true, 'value': null};
+          });
+      const track = MusicTrack(
+        path: '/music/skip-silence-playing.mp3',
+        displayName: 'Playing track',
+        groupKey: '/music',
+        groupTitle: 'Music',
+        groupSubtitle: 'Music',
+        isSingle: false,
+      );
+      provider.addTracks(<MusicTrack>[track], notify: false, persist: false);
+      await provider.spawnSession(track, autoPlay: false);
+      await Future<void>.delayed(Duration.zero);
+      final session = provider.activeSessions.single;
+      session
+        ..loadedPath = null
+        ..state = PlayerState(true, ProcessingState.ready);
+
+      await provider.setSessionSkipSilence(session.id, true);
+
+      expect(playCalls, 1);
+      expect(session.audioEffects.skipSilenceEnabled, isTrue);
+    });
+
     test(
       'audio effect toggles keep optimistic state when native omits effects',
       () async {

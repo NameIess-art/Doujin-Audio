@@ -69,8 +69,7 @@ List<IconData> sessionFeatureBadgeIcons({
   return <IconData>[
     if (showSubtitles) Icons.subtitles_rounded,
     if ((speed - 1.0).abs() >= 0.001) Icons.speed_rounded,
-    if (audioEffects.eqEnabled || audioEffects.eqPresetId != null)
-      Icons.tune_rounded,
+    if (audioEffects.eqEnabled) Icons.tune_rounded,
     if (audioEffects.skipSilenceEnabled)
       Icons.keyboard_double_arrow_right_rounded,
     if (audioEffects.noiseReductionEnabled) Icons.graphic_eq_rounded,

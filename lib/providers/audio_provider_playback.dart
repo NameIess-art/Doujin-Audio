@@ -251,6 +251,7 @@ extension AudioProviderPlayback on AudioProvider {
   Future<NativeResult<NativePlaybackSnapshot>> _syncSessionAudioEffects(
     PlaybackSession session,
   ) async {
+    final shouldKeepPlaying = session.effectivePlaying;
     final loadedPath = session.loadedPath;
     final needsPrepare =
         loadedPath == null ||
@@ -259,7 +260,7 @@ extension AudioProviderPlayback on AudioProvider {
       await _prepareAndPlay(
         session,
         nextPath: session.currentTrackPath,
-        autoPlay: false,
+        autoPlay: shouldKeepPlaying,
       );
       if (!_sessions.containsKey(session.id)) {
         return const NativeFailure(
@@ -287,7 +288,7 @@ extension AudioProviderPlayback on AudioProvider {
     await _prepareAndPlay(
       session,
       nextPath: session.currentTrackPath,
-      autoPlay: false,
+      autoPlay: shouldKeepPlaying,
       showLoading: false,
     );
     if (session.loadedPath == null || !_sessions.containsKey(session.id)) {

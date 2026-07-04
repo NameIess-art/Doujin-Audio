@@ -57,6 +57,7 @@ extension AudioProviderLibrary on AudioProvider {
       currentTree: buildLibraryTree(),
       onPersist: () => unawaited(_saveLibraryNodeOrder()),
     );
+    _librarySnapshotCacheService.applyCurrentTopLevelOrder();
     _notifyLibraryChanged();
   }
 

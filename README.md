@@ -1,4 +1,4 @@
-﻿# Nameless Audio
+# Nameless Audio
 
 Nameless Audio 是一款面向 ASMR、语音作品和本地媒体库的跨平台播放器，使用 Flutter、Android 原生 Media3 / ExoPlayer 与 Windows libmpv 混合实现。
 
@@ -36,6 +36,7 @@ Windows ZIP 包含完整 Flutter 运行时、`libmpv-2.dll`、FFmpeg 和 FFprobe
 
 - 支持 `.srt`、`.ass`、`.ssa`、`.vtt`、`.lrc` 字幕。
 - 会话详情、播放卡片和全局悬浮窗口同步当前字幕。
+- 当音频加载失败时，会在详情页字幕区域以红字提示报错信息。
 - Android 使用系统悬浮窗；Windows 使用可重复开启、拖动和交互的原生桌面字幕窗口。
 - 字幕悬浮窗支持字体、字号、文字颜色、背景颜色、背景透明度和边框深度设置，并提供实时预览。
 

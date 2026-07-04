@@ -44,8 +44,8 @@ internal const val VOLUME_NORMALIZATION_MBC_RATIO = 2.0f
 internal const val VOLUME_NORMALIZATION_MBC_THRESHOLD_DB = -12f
 internal const val VOLUME_NORMALIZATION_LIMITER_THRESHOLD_DB = -2f
 internal const val VOLUME_NORMALIZATION_OUTPUT_GAIN_DB = 0f
-internal const val STRICT_SKIP_SILENCE_MIN_DURATION_US = 900_000L
-internal const val STRICT_SKIP_SILENCE_THRESHOLD_LEVEL: Short = 4
+internal const val STRICT_SKIP_SILENCE_MIN_DURATION_US = 250_000L
+internal const val STRICT_SKIP_SILENCE_THRESHOLD_LEVEL: Short = 32
 
 internal fun shouldSyncAudioSessionState(
     lastSyncedAudioSessionId: Int,
@@ -351,7 +351,7 @@ internal class NativePlaybackSession(
         val change = audioEffects.apply(effects)
         playerOrNull()?.let { player ->
             applyAudioEffectsToPlayer(player)
-            if (change.panningActiveChanged || change.skipSilenceChanged) {
+            if (change.panningActiveChanged) {
                 reprepareCurrentMediaItem()
             }
         }

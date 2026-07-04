@@ -742,17 +742,17 @@ class _TimeSegmentDragTooltip extends StatelessWidget {
   }
 }
 
-class _SessionSubtitlePanel extends StatefulWidget {
+class _SessionSubtitlePanel extends ConsumerStatefulWidget {
   const _SessionSubtitlePanel({required this.session, required this.provider});
 
   final PlaybackSession session;
   final AudioProvider provider;
 
   @override
-  State<_SessionSubtitlePanel> createState() => _SessionSubtitlePanelState();
+  ConsumerState<_SessionSubtitlePanel> createState() => _SessionSubtitlePanelState();
 }
 
-class _SessionSubtitlePanelState extends State<_SessionSubtitlePanel> {
+class _SessionSubtitlePanelState extends ConsumerState<_SessionSubtitlePanel> {
   late final PlaybackPositionUiGate _positionGate;
   final SubtitleTextCache _subtitleTextCache = SubtitleTextCache();
   SubtitleTrack? _subtitleTrack;
@@ -833,6 +833,31 @@ class _SessionSubtitlePanelState extends State<_SessionSubtitlePanel> {
 
   @override
   Widget build(BuildContext context) {
+    final detail = ref.watch(sessionDetailTransportProvider(widget.session.id));
+    final playbackError = detail?.playbackError ?? widget.session.playbackError;
+
+    if (playbackError != null) {
+      return Container(
+        width: double.infinity,
+        height: 44,
+        padding: EdgeInsets.zero,
+        alignment: Alignment.topLeft,
+        child: ClipRect(
+          child: Text(
+            playbackError,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: Colors.redAccent,
+              fontWeight: FontWeight.w600,
+              fontSize: 16,
+              height: 1.3,
+            ),
+          ),
+        ),
+      );
+    }
+
     final subtitleText = _subtitleText;
     return AnimatedSize(
       duration: const Duration(milliseconds: 120),

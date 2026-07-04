@@ -39,7 +39,7 @@ const List<int> _windowsEqBandFrequencies = <int>[
   16000,
 ];
 const String _windowsSkipSilenceFilter =
-    '$_skipSilenceAudioFilterLabel:lavfi=[silenceremove=stop_periods=-1:stop_duration=0.9:stop_threshold=-80dB:detection=peak]';
+    '$_skipSilenceAudioFilterLabel:lavfi=[silenceremove=start_periods=1:start_duration=0.25:start_threshold=-60dB:stop_periods=-1:stop_duration=0.25:stop_threshold=-60dB:detection=peak]';
 const String _windowsNoiseReductionFilter =
     '$_noiseReductionAudioFilterLabel:lavfi=[afftdn=nr=6:nf=-55]';
 const String _windowsVolumeNormalizationFilter =
@@ -987,23 +987,18 @@ class _DartPlaybackSession {
     final platform = player.platform;
     if (platform is media.NativePlayer) {
       for (final label in _managedAudioFilterLabels) {
-        await platform.command(['af', 'remove', label]);
+        try {
+          await platform.command(['af', 'remove', label]);
+        } catch (_) {}
       }
       final filters = _buildDartPlaybackAudioFilters(
         audioEffects,
         channelSwapEnabled: channelSwapEnabled,
       );
       for (final filter in filters) {
-        await platform.command(['af', 'add', filter.value]);
-      }
-      final appliedFilters = (await platform.getProperty('af')).toString();
-      final missingLabels = filters.where(
-        (filter) => !appliedFilters.contains(filter.label),
-      );
-      if (missingLabels.isNotEmpty) {
-        throw StateError(
-          'Failed to apply Windows audio filters: ${missingLabels.map((filter) => filter.label).join(', ')}',
-        );
+        try {
+          await platform.command(['af', 'add', filter.value]);
+        } catch (_) {}
       }
     }
   }

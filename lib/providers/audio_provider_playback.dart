@@ -330,30 +330,9 @@ extension AudioProviderPlayback on AudioProvider {
   }
 
   Future<void> _persistSessionConsoleSettings(PlaybackSession session) async {
-    await _rememberSessionConsoleSettings(session);
     _saveSessionStateTimer?.cancel();
     _saveSessionStateTimer = null;
     await _saveSessionState();
-  }
-
-  Future<void> _rememberSessionConsoleSettings(PlaybackSession session) async {
-    final nextVolume = session.volume.clamp(0.0, _maxSessionVolume).toDouble();
-    final nextSpeed = _nearestPlaybackSpeed(session.speed);
-    final nextAudioEffects = session.audioEffects;
-    final changed =
-        (_settingsRepository.defaultSessionVolume - nextVolume).abs() >=
-            0.001 ||
-        (_settingsRepository.defaultSessionSpeed - nextSpeed).abs() >= 0.001 ||
-        _settingsRepository.defaultSessionChannelSwapEnabled !=
-            session.channelSwapEnabled ||
-        _settingsRepository.defaultSessionAudioEffects != nextAudioEffects;
-    if (!changed) return;
-    _settingsRepository.defaultSessionVolume = nextVolume;
-    _settingsRepository.defaultSessionSpeed = nextSpeed;
-    _settingsRepository.defaultSessionChannelSwapEnabled =
-        session.channelSwapEnabled;
-    _settingsRepository.defaultSessionAudioEffects = nextAudioEffects;
-    await _savePlaybackSettings();
   }
 
   void _applyAudioEffectsSnapshot(

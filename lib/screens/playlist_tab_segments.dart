@@ -878,18 +878,18 @@ class _SegmentPanelPageHeader extends StatelessWidget {
   }
 }
 
-class _AudioFeaturesPage extends StatelessWidget {
+class _AudioFeaturesPage extends ConsumerWidget {
   const _AudioFeaturesPage({required this.session, required this.provider});
 
   final PlaybackSession session;
   final AudioProvider provider;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final detail = ref.watch(sessionDetailTransportProvider(session.id));
+    final effects = detail?.audioEffects ?? session.audioEffects;
+    final channelSwapEnabled = detail?.channelSwapEnabled ?? session.channelSwapEnabled;
     final i18n = context.read<AppLanguageProvider>();
-    final liveProvider = context.read<AudioProvider>();
-    final liveSession = liveProvider.sessionById(session.id) ?? session;
-    final effects = liveSession.audioEffects;
     return ListView(
       padding: const EdgeInsets.only(top: 6),
       children: [
@@ -903,7 +903,7 @@ class _AudioFeaturesPage extends StatelessWidget {
               AppInteractionFeedbackType.selection,
             );
             unawaited(
-              liveProvider.setSessionSkipSilence(liveSession.id, value),
+              provider.setSessionSkipSilence(session.id, value),
             );
           },
         ),
@@ -918,7 +918,7 @@ class _AudioFeaturesPage extends StatelessWidget {
               AppInteractionFeedbackType.selection,
             );
             unawaited(
-              liveProvider.setSessionNoiseReduction(liveSession.id, value),
+              provider.setSessionNoiseReduction(session.id, value),
             );
           },
         ),
@@ -933,7 +933,7 @@ class _AudioFeaturesPage extends StatelessWidget {
               AppInteractionFeedbackType.selection,
             );
             unawaited(
-              liveProvider.setSessionVolumeNormalization(liveSession.id, value),
+              provider.setSessionVolumeNormalization(session.id, value),
             );
           },
         ),
@@ -942,13 +942,13 @@ class _AudioFeaturesPage extends StatelessWidget {
           title: i18n.tr('channel_swap'),
           subtitle: i18n.tr('channel_swap_desc'),
           icon: Icons.swap_horiz_rounded,
-          value: liveSession.channelSwapEnabled,
+          value: channelSwapEnabled,
           onChanged: (value) {
             AppInteractionFeedback.trigger(
               AppInteractionFeedbackType.selection,
             );
             unawaited(
-              liveProvider.setSessionChannelSwap(liveSession.id, value),
+              provider.setSessionChannelSwap(session.id, value),
             );
           },
         ),
@@ -1012,17 +1012,16 @@ class _FeatureSwitchTile extends StatelessWidget {
   }
 }
 
-class _VolumeBalancePage extends StatelessWidget {
+class _VolumeBalancePage extends ConsumerWidget {
   const _VolumeBalancePage({required this.session, required this.provider});
 
   final PlaybackSession session;
   final AudioProvider provider;
 
   @override
-  Widget build(BuildContext context) {
-    final liveProvider = context.read<AudioProvider>();
-    final liveSession = liveProvider.sessionById(session.id) ?? session;
-    final panning = liveSession.audioEffects.panning;
+  Widget build(BuildContext context, WidgetRef ref) {
+    final detail = ref.watch(sessionDetailTransportProvider(session.id));
+    final panning = detail?.audioEffects.panning ?? session.audioEffects.panning;
     final colorScheme = Theme.of(context).colorScheme;
 
     return Center(
@@ -1063,20 +1062,20 @@ class _VolumeBalancePage extends StatelessWidget {
                     onChanged: (value) {
                       AppInteractionFeedback.continuous((value * 10).round());
                       UiInteractionCoordinator.instance.scheduleThrottledCommit(
-                        key: 'session_panning:${liveSession.id}',
+                        key: 'session_panning:${session.id}',
                         commit: () => unawaited(
-                          liveProvider.setSessionPanning(liveSession.id, value),
+                          provider.setSessionPanning(session.id, value),
                         ),
                       );
                     },
                     onChangeEnd: (value) {
                       AppInteractionFeedback.resetContinuous();
                       UiInteractionCoordinator.instance.cancelThrottledCommit(
-                        'session_panning:${liveSession.id}',
+                        'session_panning:${session.id}',
                       );
                       unawaited(
-                        liveProvider.setSessionPanning(
-                          liveSession.id,
+                        provider.setSessionPanning(
+                          session.id,
                           value.abs() < 0.1 ? 0.0 : value,
                         ),
                       );
@@ -1099,28 +1098,25 @@ class _VolumeBalancePage extends StatelessWidget {
   }
 }
 
-class _EqualizerPage extends StatelessWidget {
+class _EqualizerPage extends ConsumerWidget {
   const _EqualizerPage({required this.session, required this.provider});
 
   final PlaybackSession session;
   final AudioProvider provider;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final detail = ref.watch(sessionDetailTransportProvider(session.id));
+    final effects = detail?.audioEffects ?? session.audioEffects;
+    final eqCapabilities = detail?.eqCapabilities ?? session.eqCapabilities;
+    
     final i18n = context.read<AppLanguageProvider>();
     final cs = Theme.of(context).colorScheme;
-    final liveProvider = context.read<AudioProvider>();
-    final liveSession = liveProvider.sessionById(session.id) ?? session;
-    final effects = liveSession.audioEffects;
-    final capabilities = liveSession.eqCapabilities;
     final presets = [
       ...AudioProvider.builtInEqPresets,
-      ...liveProvider.customEqPresets,
+      ...provider.customEqPresets,
     ];
-    final selectedPreset =
-        presets.any((preset) => preset.id == effects.eqPresetId)
-        ? effects.eqPresetId
-        : 'flat';
+    final selectedPresetId = effects.eqPresetId;
 
     return ListView(
       padding: const EdgeInsets.only(top: 2),
@@ -1132,7 +1128,7 @@ class _EqualizerPage extends StatelessWidget {
             style: const TextStyle(fontWeight: FontWeight.w900),
           ),
           subtitle: Text(
-            capabilities.supported
+            eqCapabilities.supported
                 ? i18n.tr('equalizer_supported')
                 : i18n.tr('equalizer_enable_hint'),
           ),
@@ -1141,11 +1137,11 @@ class _EqualizerPage extends StatelessWidget {
             AppInteractionFeedback.trigger(
               AppInteractionFeedbackType.selection,
             );
-            unawaited(liveProvider.setSessionEqEnabled(liveSession.id, value));
+            unawaited(provider.setSessionEqEnabled(session.id, value));
           },
         ),
         UnifiedDropdownButtonFormField<String>(
-          initialValue: selectedPreset,
+          initialValue: selectedPresetId,
           alignment: AlignmentDirectional.centerStart,
           decoration: InputDecoration(
             labelText: i18n.tr('eq_preset'),
@@ -1172,12 +1168,12 @@ class _EqualizerPage extends StatelessWidget {
               AppInteractionFeedbackType.selection,
             );
             unawaited(
-              liveProvider.applySessionEqPreset(liveSession.id, preset),
+              provider.applySessionEqPreset(session.id, preset),
             );
           },
         ),
         const SizedBox(height: 12),
-        if (!capabilities.supported)
+        if (!eqCapabilities.supported)
           Text(
             i18n.tr('equalizer_unavailable'),
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -1186,26 +1182,26 @@ class _EqualizerPage extends StatelessWidget {
             ),
           )
         else
-          ...capabilities.bands.map((band) {
+          ...eqCapabilities.bands.map((band) {
             final value = effects.eqBandLevels[band.frequencyHz] ?? 0.0;
             return _EqBandSlider(
               label: _formatFrequency(band.frequencyHz),
               value: value.clamp(
-                capabilities.minGainDb,
-                capabilities.maxGainDb,
+                eqCapabilities.minGainDb,
+                eqCapabilities.maxGainDb,
               ),
-              min: capabilities.minGainDb,
-              max: capabilities.maxGainDb,
+              min: eqCapabilities.minGainDb,
+              max: eqCapabilities.maxGainDb,
               onChanged: effects.eqEnabled
                   ? (nextValue) {
                       AppInteractionFeedback.continuous(
                         '${band.frequencyHz}:${(nextValue * 2).round()}',
                       );
                       UiInteractionCoordinator.instance.scheduleThrottledCommit(
-                        key: 'session_eq:${liveSession.id}:${band.frequencyHz}',
+                        key: 'session_eq:${session.id}:${band.frequencyHz}',
                         commit: () => unawaited(
-                          liveProvider.setSessionEqBandLevel(
-                            liveSession.id,
+                          provider.setSessionEqBandLevel(
+                            session.id,
                             band.frequencyHz,
                             nextValue,
                           ),
@@ -1216,11 +1212,11 @@ class _EqualizerPage extends StatelessWidget {
               onChangeEnd: (value) {
                 AppInteractionFeedback.resetContinuous();
                 UiInteractionCoordinator.instance.cancelThrottledCommit(
-                  'session_eq:${liveSession.id}:${band.frequencyHz}',
+                  'session_eq:${session.id}:${band.frequencyHz}',
                 );
                 unawaited(
-                  liveProvider.setSessionEqBandLevel(
-                    liveSession.id,
+                  provider.setSessionEqBandLevel(
+                    session.id,
                     band.frequencyHz,
                     value,
                   ),
@@ -1236,7 +1232,7 @@ class _EqualizerPage extends StatelessWidget {
                 onPressed: () {
                   final flat = AudioProvider.builtInEqPresets.first;
                   unawaited(
-                    liveProvider.applySessionEqPreset(liveSession.id, flat),
+                    provider.applySessionEqPreset(session.id, flat),
                   );
                 },
                 child: Text(i18n.tr('eq_reset')),
@@ -1249,8 +1245,8 @@ class _EqualizerPage extends StatelessWidget {
                     ? null
                     : () => _showSavePresetDialog(
                         context,
-                        provider: liveProvider,
-                        session: liveSession,
+                        provider: provider,
+                        session: session,
                       ),
                 child: Text(i18n.tr('eq_save_preset')),
               ),
@@ -1354,7 +1350,7 @@ class _EqBandSlider extends StatelessWidget {
   }
 }
 
-class _SpeedWheelPage extends StatefulWidget {
+class _SpeedWheelPage extends ConsumerStatefulWidget {
   const _SpeedWheelPage({
     super.key,
     required this.session,
@@ -1365,7 +1361,7 @@ class _SpeedWheelPage extends StatefulWidget {
   final AudioProvider provider;
 
   @override
-  State<_SpeedWheelPage> createState() => _SpeedWheelPageState();
+  ConsumerState<_SpeedWheelPage> createState() => _SpeedWheelPageState();
 }
 
 @visibleForTesting
@@ -1382,7 +1378,7 @@ int playbackSpeedWheelIndexAfterDesktopScroll({
   return (currentIndex + direction).clamp(0, itemCount - 1).toInt();
 }
 
-class _SpeedWheelPageState extends State<_SpeedWheelPage> {
+class _SpeedWheelPageState extends ConsumerState<_SpeedWheelPage> {
   late FixedExtentScrollController _controller;
   late int _selectedIndex;
   int? _pendingDesktopWheelIndex;
@@ -1491,6 +1487,16 @@ class _SpeedWheelPageState extends State<_SpeedWheelPage> {
 
   @override
   Widget build(BuildContext context) {
+    final detail = ref.watch(sessionDetailTransportProvider(widget.session.id));
+    final speed = detail?.speed ?? widget.session.speed;
+    
+    final nextIndex = _nearestSpeedIndex(speed);
+    if (nextIndex != _selectedIndex) {
+      _selectedIndex = nextIndex;
+      _controller.dispose();
+      _controller = FixedExtentScrollController(initialItem: _selectedIndex);
+    }
+
     final i18n = context.read<AppLanguageProvider>();
     final cs = Theme.of(context).colorScheme;
     final selectedSpeed = _speeds[_selectedIndex];

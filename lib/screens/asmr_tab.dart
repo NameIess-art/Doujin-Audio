@@ -607,25 +607,24 @@ class _AsmrTabState extends State<AsmrTab>
     final hasDownloadManager = context.select<AsmrDownloadManager?, bool>(
       (manager) => manager != null,
     );
+    final currentCategory = _currentCategory;
+    final currentCategoryState = context
+        .select<AsmrLibraryController?, AsmrCategoryViewState?>(
+          (controller) => controller?.categoryViewState(currentCategory),
+        );
     final collectedCount = context.select<AsmrLibraryController?, int>(
       (controller) =>
           controller?.totalCountFor(AsmrCategoryType.collected) ?? 0,
     );
-    final collectedState = context
-        .select<AsmrLibraryController?, AsmrCategoryViewState?>(
-          (controller) =>
-              controller?.categoryViewState(AsmrCategoryType.collected),
-        );
     final i18n = context.watch<AppLanguageProvider>();
     final collectedSubtitle =
-        collectedState == null ||
-            (collectedState.works.isEmpty &&
-                !collectedState.hasAttemptedLoad &&
-                collectedState.lastError == null) ||
-            (collectedState.works.isEmpty && collectedState.isLoading)
+        currentCategoryState == null ||
+            (currentCategoryState.works.isEmpty &&
+                !currentCategoryState.hasAttemptedLoad &&
+                currentCategoryState.lastError == null) ||
+            currentCategoryState.isLoading
         ? i18n.tr('loading_dot')
         : i18n.tr('asmr_collected_count', {'count': collectedCount});
-    final currentCategory = _currentCategory;
     final currentScrollController = _scrollControllers[currentCategory]!;
     final isWindows =
         Platform.isWindows ||

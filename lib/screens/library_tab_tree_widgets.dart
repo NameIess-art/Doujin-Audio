@@ -495,18 +495,6 @@ class _TrackNodeWidget extends ConsumerWidget {
     }
 
     if (track.isSingle) {
-      if (!track.isVideo && !useFeaturedSingleCard) {
-        return FutureBuilder<String?>(
-          future: provider.coverPathFutureForTrack(track),
-          builder: (context, snapshot) {
-            final resolvedPath =
-                snapshot.data ?? provider.resolvedCoverPathForTrack(track);
-            return buildSingleTrackCard(
-              hasDisplayableCoverArtwork(track, resolvedPath),
-            );
-          },
-        );
-      }
       return buildSingleTrackCard(useFeaturedSingleCard);
     }
 

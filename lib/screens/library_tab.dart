@@ -111,6 +111,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   ValueListenable<int?>? _scrollToTopTabListenable;
   int? _categorySnapshotRequestStructureRevision;
   int? _categorySnapshotRequestDetailRevision;
+  String? _lastLibraryCoverWarmupSignature;
 
   double get _headerControlsFullHeight =>
       _categoryType == AudioLibraryCategoryType.all ? 86.0 : 46.0;
@@ -417,6 +418,52 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     });
   }
 
+  void _scheduleLibraryCoverWarmup({
+    required AudioProvider provider,
+    required Iterable<MusicTrack?> tracks,
+    required int structureRevision,
+    required int detailRevision,
+    required int coverGeneration,
+    String scope = '',
+  }) {
+    if (_isReordering) return;
+    final warmupTracks = tracks
+        .whereType<MusicTrack>()
+        .where((track) => !track.isVideo)
+        .take(12)
+        .toList(growable: false);
+    if (warmupTracks.isEmpty) return;
+    final signature = <String>[
+      scope,
+      structureRevision.toString(),
+      detailRevision.toString(),
+      coverGeneration.toString(),
+      for (final track in warmupTracks) track.path,
+    ].join('|');
+    if (_lastLibraryCoverWarmupSignature == signature) return;
+    _lastLibraryCoverWarmupSignature = signature;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted ||
+          _isReordering ||
+          _lastLibraryCoverWarmupSignature != signature) {
+        return;
+      }
+      provider.warmupLibraryCoversForTracks(warmupTracks);
+    });
+  }
+
+  Iterable<MusicTrack?> _libraryCoverWarmupTracksForTree(
+    Iterable<LibraryNode> nodes,
+  ) sync* {
+    for (final node in nodes.take(12)) {
+      if (node is TrackNode) {
+        yield node.track;
+      } else if (node is FolderNode) {
+        yield node.firstTrack;
+      }
+    }
+  }
+
   @override
   void dispose() {
     _scrollToTopTabListenable?.removeListener(_handleScrollToTopSignal);
@@ -435,6 +482,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     final listState = ref.watch(libraryListUiProvider);
     final detailRevision = ref.watch(libraryDetailRevisionProvider);
     ref.watch(libraryCategoryRevisionProvider);
+    final coverGeneration = ref.watch(coverGenerationProvider);
     final settingsState =
         ref.watch(settingsStateProvider).valueOrNull ?? const SettingsState();
     final cardPositionsLocked = settingsState.cardPositionsLocked;
@@ -496,6 +544,18 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         _effectiveSearchQuery.isEmpty &&
         libraryRefreshBusy &&
         libraryHeaderState.hasWatchedSources;
+    if (_categoryType == AudioLibraryCategoryType.all &&
+        _effectiveSearchQuery.isEmpty &&
+        listState.isInitialized) {
+      _scheduleLibraryCoverWarmup(
+        provider: provider,
+        tracks: _libraryCoverWarmupTracksForTree(tree),
+        structureRevision: listState.structureRevision,
+        detailRevision: detailRevision,
+        coverGeneration: coverGeneration,
+        scope: 'all',
+      );
+    }
     final canPullRefresh = listState.canPullRefresh;
     Widget dynamicSearchBar() {
       return _CollapsingSearchBar(
@@ -712,7 +772,9 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                         bottomPadding: listBottomPadding,
                         cacheExtent: listCacheExtent,
                         canPullRefresh: canPullRefresh,
+                        structureRevision: listState.structureRevision,
                         detailRevision: detailRevision,
+                        coverGeneration: coverGeneration,
                       )
                     : _effectiveSearchQuery.isNotEmpty
                     ? ListView.builder(

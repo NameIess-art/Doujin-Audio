@@ -640,7 +640,7 @@ class _FolderCoverSelector extends StatefulWidget {
 }
 
 class _FolderCoverSelectorState extends State<_FolderCoverSelector> {
-  static const Duration _commitDelay = Duration(seconds: 1);
+  static const Duration _commitDelay = Duration(milliseconds: 1000);
 
   PageController? _pageController;
   List<String> _images = const <String>[];

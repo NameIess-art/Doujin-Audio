@@ -11,6 +11,12 @@ internal fun shouldEvictApplicationCacheEntry(
     return totalBytes > maxBytes && remainingFiles > 1
 }
 
+internal fun applicationCacheTrimTargetBytes(maxBytes: Long): Long {
+    val normalizedMaxBytes = maxBytes.coerceAtLeast(1L)
+    return (normalizedMaxBytes - normalizedMaxBytes / 10L)
+        .coerceIn(1L, normalizedMaxBytes)
+}
+
 internal class ApplicationCachePolicy(
     private val context: Context
 ) {
@@ -51,19 +57,22 @@ internal class ApplicationCachePolicy(
             .flatMap(::collectFiles)
             .distinctBy(File::getAbsolutePath)
         var totalBytes = files.sumOf { file -> file.length().coerceAtLeast(0L) }
-        var remainingFiles = files.size
-        files.sortedBy(File::lastModified).forEach { file ->
-            if (!shouldEvictApplicationCacheEntry(totalBytes, maxBytes, remainingFiles)) {
-                return@forEach
-            }
-            val size = file.length().coerceAtLeast(0L)
-            try {
-                if (file.delete()) {
-                    totalBytes -= size
-                    remainingFiles -= 1
+        if (totalBytes > maxBytes) {
+            val trimTargetBytes = applicationCacheTrimTargetBytes(maxBytes)
+            var remainingFiles = files.size
+            files.sortedBy(File::lastModified).forEach { file ->
+                if (!shouldEvictApplicationCacheEntry(totalBytes, trimTargetBytes, remainingFiles)) {
+                    return@forEach
                 }
-            } catch (_: Exception) {
-                // Cache eviction is best effort and must not interrupt playback.
+                val size = file.length().coerceAtLeast(0L)
+                try {
+                    if (file.delete()) {
+                        totalBytes -= size
+                        remainingFiles -= 1
+                    }
+                } catch (_: Exception) {
+                    // Cache eviction is best effort and must not interrupt playback.
+                }
             }
         }
         roots().forEach(::deleteEmptyDirectories)

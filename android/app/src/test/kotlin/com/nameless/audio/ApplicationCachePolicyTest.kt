@@ -6,6 +6,12 @@ import org.junit.Test
 
 class ApplicationCachePolicyTest {
     @Test
+    fun `trim target reserves ten percent for new writes`() {
+        assertTrue(applicationCacheTrimTargetBytes(100L) == 90L)
+        assertTrue(applicationCacheTrimTargetBytes(1L) == 1L)
+    }
+
+    @Test
     fun `evicts while cache exceeds limit and multiple entries remain`() {
         assertTrue(
             shouldEvictApplicationCacheEntry(

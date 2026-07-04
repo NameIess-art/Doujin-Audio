@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/models/music_track.dart';
 import 'package:nameless_audio/services/audio_database_repository.dart';
 import 'package:nameless_audio/services/audio_state_services.dart';
+import 'package:nameless_audio/services/app_cache_service.dart';
 import 'package:nameless_audio/services/cover_artwork_cache_service.dart';
 import 'package:nameless_audio/services/file_cache_platform_gateway.dart';
 import 'package:nameless_audio/services/path_matcher.dart';
@@ -27,6 +28,7 @@ void main() {
   });
 
   test('remote cover future reuses the same in-flight download', () async {
+    final cover = await _temporaryCoverFile('remote_inflight');
     final completer = Completer<String?>();
     var downloads = 0;
     final cache = CoverArtworkCacheService(
@@ -43,23 +45,24 @@ void main() {
     expect(identical(first, second), isTrue);
     expect(downloads, 1);
 
-    completer.complete('/cache/cover.image');
-    expect(await first, '/cache/cover.image');
+    completer.complete(cover.path);
+    expect(await first, cover.path);
     expect(
       cache.resolvedForRemoteCover(' https://example.com/cover.jpg '),
-      '/cache/cover.image',
+      cover.path,
     );
   });
 
   test(
     'tracks with the same remote cover share the resolved cache path',
     () async {
+      final cover = await _temporaryCoverFile('shared_remote');
       var downloads = 0;
       final cache = CoverArtworkCacheService(
         libraryService: LibraryService(),
         remoteCoverDownloader: (url) async {
           downloads += 1;
-          return '/cache/${url.hashCode}.image';
+          return cover.path;
         },
       );
       const first = MusicTrack(
@@ -99,12 +102,13 @@ void main() {
   });
 
   test('remote cover miss is not cached so retry can download again', () async {
+    final cover = await _temporaryCoverFile('remote_retry');
     var downloads = 0;
     final cache = CoverArtworkCacheService(
       libraryService: LibraryService(),
       remoteCoverDownloader: (_) async {
         downloads += 1;
-        return downloads == 1 ? null : '/cache/cover.image';
+        return downloads == 1 ? null : cover.path;
       },
     );
 
@@ -114,22 +118,23 @@ void main() {
     );
     expect(
       await cache.futureForRemoteCover('https://example.com/cover.jpg'),
-      '/cache/cover.image',
+      cover.path,
     );
     expect(downloads, 2);
     expect(
       cache.resolvedForRemoteCover('https://example.com/cover.jpg'),
-      '/cache/cover.image',
+      cover.path,
     );
   });
 
   test('playback cover miss remains retryable', () async {
+    final cover = await _temporaryCoverFile('playback_remote_retry');
     var downloads = 0;
     final cache = CoverArtworkCacheService(
       libraryService: LibraryService(),
       remoteCoverDownloader: (_) async {
         downloads += 1;
-        return downloads == 1 ? null : '/cache/cover.image';
+        return downloads == 1 ? null : cover.path;
       },
     );
     const track = MusicTrack(
@@ -143,8 +148,57 @@ void main() {
     );
 
     expect(await cache.futureForPlaybackTrack(track), isNull);
-    expect(await cache.futureForPlaybackTrack(track), '/cache/cover.image');
+    expect(await cache.futureForPlaybackTrack(track), cover.path);
     expect(downloads, 2);
+  });
+
+  test('evicted remote cover is downloaded again', () async {
+    final firstCover = await _temporaryCoverFile('remote_evicted_first');
+    final replacementCover = await _temporaryCoverFile(
+      'remote_evicted_replacement',
+    );
+    var downloads = 0;
+    final cache = CoverArtworkCacheService(
+      libraryService: LibraryService(),
+      remoteCoverDownloader: (_) async {
+        downloads += 1;
+        return downloads == 1 ? firstCover.path : replacementCover.path;
+      },
+    );
+    const url = 'https://example.com/evicted-cover.jpg';
+
+    expect(await cache.futureForRemoteCover(url), firstCover.path);
+    await firstCover.delete();
+
+    expect(await cache.futureForRemoteCover(url), replacementCover.path);
+    expect(downloads, 2);
+    expect(cache.resolvedForRemoteCover(url), replacementCover.path);
+  });
+
+  test('remote cover cache hit refreshes file recency', () async {
+    final cover = await _temporaryCoverFile('remote_touch');
+    final oldModified = DateTime(2020);
+    var downloads = 0;
+    final cache = CoverArtworkCacheService(
+      libraryService: LibraryService(),
+      remoteCoverDownloader: (_) async {
+        downloads += 1;
+        return cover.path;
+      },
+    );
+    const url = 'https://example.com/touched-cover.jpg';
+
+    await cache.futureForRemoteCover(url);
+    await cover.setLastModified(oldModified);
+    await cache.futureForRemoteCover(url);
+
+    expect(downloads, 1);
+    expect((await cover.lastModified()).isAfter(oldModified), isTrue);
+  });
+
+  test('cache trim target reserves ten percent for new writes', () {
+    expect(applicationCacheTrimTargetBytes(100), 90);
+    expect(applicationCacheTrimTargetBytes(1), 1);
   });
 
   test(
@@ -571,6 +625,7 @@ void main() {
   });
 
   test('resolved remote cover cache trims old non-active entries', () async {
+    final cover = await _temporaryCoverFile('remote_trim');
     final urls = List<String>.generate(
       301,
       (index) => 'https://example.com/cover_$index.jpg',
@@ -578,7 +633,7 @@ void main() {
     final activeRemoteKey = remoteCoverSearchKey(urls.first);
     final cache = CoverArtworkCacheService(
       libraryService: LibraryService(),
-      remoteCoverDownloader: (url) async => '/cache/${url.hashCode}.image',
+      remoteCoverDownloader: (_) async => cover.path,
       isActiveCoverKey: (key) => key == activeRemoteKey,
     );
 
@@ -630,6 +685,16 @@ void main() {
     cache.invalidateAll();
     expect(cache.generation, 3);
   });
+}
+
+Future<File> _temporaryCoverFile(String prefix) async {
+  final directory = await Directory.systemTemp.createTemp('${prefix}_');
+  addTearDown(() async {
+    if (await directory.exists()) await directory.delete(recursive: true);
+  });
+  final file = File('${directory.path}${Platform.pathSeparator}cover.image');
+  await file.writeAsBytes(<int>[0xff, 0xd8, 0xff, 0xd9]);
+  return file;
 }
 
 class _FakeFileCachePlatformGateway extends FileCachePlatformGateway {

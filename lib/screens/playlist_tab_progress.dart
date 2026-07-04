@@ -858,6 +858,29 @@ class _SessionSubtitlePanelState extends ConsumerState<_SessionSubtitlePanel> {
       );
     }
 
+    final isLoading = detail?.isLoading ?? widget.session.isLoading;
+    if (isLoading) {
+      return Container(
+        width: double.infinity,
+        height: 44,
+        padding: EdgeInsets.zero,
+        alignment: Alignment.topLeft,
+        child: ClipRect(
+          child: Text(
+            '加载中...',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              fontWeight: FontWeight.w600,
+              fontSize: 16,
+              height: 1.3,
+            ),
+          ),
+        ),
+      );
+    }
+
     final subtitleText = _subtitleText;
     return AnimatedSize(
       duration: const Duration(milliseconds: 120),

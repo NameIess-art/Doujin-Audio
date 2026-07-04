@@ -94,7 +94,7 @@ class _PlaybackControlPanel extends StatelessWidget {
         _PlaybackPrimaryControls(
           session: session,
           provider: provider,
-          isPlaying: isPlaying,
+          isPlaying: isPlaying && !session.isLoading && session.playbackError == null,
         ),
         _PlaybackSecondaryControls(
           session: session,
@@ -1381,9 +1381,8 @@ int playbackSpeedWheelIndexAfterDesktopScroll({
 class _SpeedWheelPageState extends ConsumerState<_SpeedWheelPage> {
   late FixedExtentScrollController _controller;
   late int _selectedIndex;
-  int? _pendingDesktopWheelIndex;
-  DateTime? _desktopWheelLockUntil;
-  bool _desktopWheelAppliedManually = false;
+  double _desktopScrollAccumulator = 0.0;
+  int _targetDesktopWheelIndex = -1;
 
   List<double> get _speeds => AudioProvider.playbackSpeedOptions;
 
@@ -1443,36 +1442,37 @@ class _SpeedWheelPageState extends ConsumerState<_SpeedWheelPage> {
 
   void _handleDesktopPointerSignal(PointerSignalEvent event) {
     if (!Platform.isWindows || event is! PointerScrollEvent) return;
-    final baseIndex = _pendingDesktopWheelIndex ?? _selectedIndex;
-    final nextIndex = playbackSpeedWheelIndexAfterDesktopScroll(
-      currentIndex: baseIndex,
-      scrollDeltaY: event.scrollDelta.dy,
-      itemCount: _speeds.length,
-      wheelLocked: _isDesktopWheelLocked,
-    );
-    if (nextIndex == baseIndex) return;
-    _pendingDesktopWheelIndex = nextIndex;
-    _desktopWheelAppliedManually = false;
-    _desktopWheelLockUntil = DateTime.now().add(
-      const Duration(milliseconds: 220),
-    );
-    GestureBinding.instance.pointerSignalResolver.register(event, (_) {
-      _desktopWheelAppliedManually = true;
-      _controller.animateToItem(
-        nextIndex,
-        duration: const Duration(milliseconds: 120),
-        curve: Curves.easeOutCubic,
-      );
-      _setSpeedIndex(nextIndex, persist: true);
-    });
-  }
+    GestureBinding.instance.pointerSignalResolver.register(event, (e) {
+      if (e is! PointerScrollEvent) return;
+      _desktopScrollAccumulator += e.scrollDelta.dy;
+      const threshold = 60.0;
+      final steps = (_desktopScrollAccumulator / threshold).truncate();
+      if (steps == 0) return;
+      _desktopScrollAccumulator -= steps * threshold;
 
-  bool get _isDesktopWheelLocked {
-    final lockUntil = _desktopWheelLockUntil;
-    if (lockUntil == null) return false;
-    final locked = DateTime.now().isBefore(lockUntil);
-    if (!locked) _desktopWheelLockUntil = null;
-    return locked;
+      final baseIndex = _targetDesktopWheelIndex != -1
+          ? _targetDesktopWheelIndex
+          : _selectedIndex;
+      final nextIndex =
+          (baseIndex + steps).clamp(0, _speeds.length - 1).toInt();
+      if (nextIndex == baseIndex) {
+        _desktopScrollAccumulator = 0.0;
+        return;
+      }
+      _targetDesktopWheelIndex = nextIndex;
+      _controller
+          .animateToItem(
+        nextIndex,
+        duration: const Duration(milliseconds: 150),
+        curve: Curves.easeOutCubic,
+      )
+          .then((_) {
+        if (!mounted) return;
+        if (_targetDesktopWheelIndex == nextIndex) {
+          _targetDesktopWheelIndex = -1;
+        }
+      });
+    });
   }
 
   void _resetSpeed() {
@@ -1522,8 +1522,6 @@ class _SpeedWheelPageState extends ConsumerState<_SpeedWheelPage> {
             onPointerSignal: _handleDesktopPointerSignal,
             child: NotificationListener<ScrollEndNotification>(
               onNotification: (_) {
-                if (_isDesktopWheelLocked) return false;
-                _pendingDesktopWheelIndex = null;
                 _setSpeedIndex(_selectedIndex, persist: true);
                 return false;
               },
@@ -1534,18 +1532,6 @@ class _SpeedWheelPageState extends ConsumerState<_SpeedWheelPage> {
                 diameterRatio: 1.35,
                 physics: const FixedExtentScrollPhysics(),
                 onSelectedItemChanged: (index) {
-                  final pendingIndex = _pendingDesktopWheelIndex;
-                  final wheelLocked = _isDesktopWheelLocked;
-                  if (pendingIndex != null) {
-                    if (index != pendingIndex) return;
-                    final appliedManually = _desktopWheelAppliedManually;
-                    _pendingDesktopWheelIndex = null;
-                    _desktopWheelAppliedManually = false;
-                    if (appliedManually) return;
-                    _setSpeedIndex(index, persist: true);
-                    return;
-                  }
-                  if (wheelLocked) return;
                   _setSpeedIndex(index, persist: false);
                 },
                 childDelegate: ListWheelChildBuilderDelegate(

@@ -116,10 +116,6 @@ extension AudioProviderPersistence on AudioProvider {
     _settingsRepository.blurPlayerBackgroundEnabled = true;
     _settingsRepository.uiBlurEffectEnabled = true;
     _settingsRepository.hapticFeedbackEnabled = true;
-    _settingsRepository.defaultSessionVolume = 1.0;
-    _settingsRepository.defaultSessionSpeed = 1.0;
-    _settingsRepository.defaultSessionChannelSwapEnabled = false;
-    _settingsRepository.defaultSessionAudioEffects = AudioEffectsState.flat;
     _settingsRepository.coverImageResolution = CoverImageResolution.balanced;
     _settingsRepository.asmrDownloadDestinationRoot = null;
     _settingsRepository.asmrDownloadConflictPolicy =
@@ -358,17 +354,6 @@ extension AudioProviderPersistence on AudioProvider {
           map['uiBlurEffectEnabled'] as bool? ?? true;
       _settingsRepository.hapticFeedbackEnabled =
           map['hapticFeedbackEnabled'] as bool? ?? true;
-      _settingsRepository.defaultSessionVolume =
-          ((map['defaultSessionVolume'] as num?)?.toDouble() ?? 1.0)
-              .clamp(0.0, _maxSessionVolume)
-              .toDouble();
-      _settingsRepository.defaultSessionSpeed = _nearestPlaybackSpeed(
-        (map['defaultSessionSpeed'] as num?)?.toDouble() ?? 1.0,
-      );
-      _settingsRepository.defaultSessionChannelSwapEnabled =
-          map['defaultSessionChannelSwapEnabled'] as bool? ?? false;
-      _settingsRepository.defaultSessionAudioEffects =
-          AudioEffectsState.fromJson(map['defaultSessionAudioEffects']);
       _settingsRepository.coverImageResolution = _decodeCoverImageResolution(
         map['coverImageResolution'],
       );
@@ -414,13 +399,6 @@ extension AudioProviderPersistence on AudioProvider {
             _settingsRepository.blurPlayerBackgroundEnabled,
         'uiBlurEffectEnabled': _settingsRepository.uiBlurEffectEnabled,
         'hapticFeedbackEnabled': _settingsRepository.hapticFeedbackEnabled,
-        'defaultSessionVolume': _settingsRepository.defaultSessionVolume,
-        'defaultSessionSpeed': _settingsRepository.defaultSessionSpeed,
-        'defaultSessionChannelSwapEnabled':
-            _settingsRepository.defaultSessionChannelSwapEnabled,
-        'defaultSessionAudioEffects': _settingsRepository
-            .defaultSessionAudioEffects
-            .toJson(),
         'coverImageResolution': _settingsRepository.coverImageResolution.name,
         'asmrDownloadDestinationRoot':
             _settingsRepository.asmrDownloadDestinationRoot,

@@ -11,6 +11,12 @@ void main() {
   test(
     'Windows FFmpeg skips blank frames and reuses a content frame cover',
     () async {
+      try {
+        await Process.run(WindowsFfmpegService.ffmpegPath, const ['-version']);
+      } on ProcessException {
+        markTestSkipped('FFmpeg is not available on this Windows runner.');
+        return;
+      }
       final tempDir = await Directory.systemTemp.createTemp(
         'windows_video_frame_',
       );

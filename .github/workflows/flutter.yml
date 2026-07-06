@@ -42,11 +42,11 @@ jobs:
 
       - name: Test
         if: matrix.os != 'ubuntu-latest'
-        run: flutter test
+        run: flutter test --concurrency=1
 
       - name: Test with coverage
         if: matrix.os == 'ubuntu-latest'
-        run: flutter test --coverage
+        run: flutter test --coverage --concurrency=1
 
       - name: Verify coverage baseline
         if: matrix.os == 'ubuntu-latest'

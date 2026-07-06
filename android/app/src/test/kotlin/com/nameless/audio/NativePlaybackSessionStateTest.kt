@@ -155,9 +155,9 @@ class NativePlaybackSessionStateTest {
     }
 
     @Test
-    fun `skip silence only targets near digital silence`() {
-        assertEquals(900_000L, STRICT_SKIP_SILENCE_MIN_DURATION_US)
-        assertEquals(4.toShort(), STRICT_SKIP_SILENCE_THRESHOLD_LEVEL)
+    fun `skip silence responds to short low level gaps`() {
+        assertEquals(250_000L, STRICT_SKIP_SILENCE_MIN_DURATION_US)
+        assertEquals(32.toShort(), STRICT_SKIP_SILENCE_THRESHOLD_LEVEL)
     }
 
     @Test

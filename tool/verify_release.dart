@@ -21,7 +21,7 @@ void main(List<String> args) {
 
   final versionName = versionMatch.group(1)!;
   final buildNumber = versionMatch.group(2)!;
-  final expectedTag = versionName;
+  final expectedTag = 'v$versionName';
   final expectedVersion = '$versionName+$buildNumber';
 
   if (!readme.contains('当前版本：`$expectedVersion`')) {

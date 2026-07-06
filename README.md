@@ -2,9 +2,9 @@
 
 Nameless Audio 是一款面向 ASMR、语音作品和本地媒体库的跨平台播放器，使用 Flutter、Android 原生 Media3 / ExoPlayer 与 Windows libmpv 混合实现。
 
-当前版本：`1.0.0+1000000`
+当前版本：`0.13.0+1300`
 
-发布页：[1.0.0](https://github.com/NameIess-art/nameless-audio/releases/tag/1.0.0)
+发布页：[v0.13.0](https://github.com/NameIess-art/nameless-audio/releases/tag/v0.13.0)
 
 [MIT License](LICENSE) · [隐私说明](PRIVACY.md) · [发行质量说明](docs/release-quality.md)
 
@@ -12,8 +12,8 @@ Nameless Audio 是一款面向 ASMR、语音作品和本地媒体库的跨平台
 
 | 平台 | 发布资产 | 说明 |
 |---|---|---|
-| Android arm64-v8a | `NamelessAudio-android-arm64-1.0.0.apk` | 适用于大多数 64 位 Android 手机 |
-| Windows x64 | `NamelessAudio-windows-x64-1.0.0.zip` | 解压完整 ZIP 后运行 `nameless_audio.exe` |
+| Android arm64-v8a | `NamelessAudio-android-arm64-v0.13.0.apk` | 适用于大多数 64 位 Android 手机 |
+| Windows x64 | `NamelessAudio-windows-x64-v0.13.0.zip` | 解压完整 ZIP 后运行 `nameless_audio.exe` |
 
 Windows ZIP 包含完整 Flutter 运行时、`libmpv-2.dll`、FFmpeg 和 FFprobe。不要只复制 EXE。
 
@@ -24,6 +24,7 @@ Windows ZIP 包含完整 Flutter 运行时、`libmpv-2.dll`、FFmpeg 和 FFprobe
 - 多会话播放：同时保留多个独立播放会话，分别控制曲目、进度、音量、循环、字幕、队列和音效。
 - 播放范围：支持单曲循环、当前文件夹顺序/随机、跨文件夹顺序/随机播放。
 - 传输控制：播放/暂停、上一首/下一首、快退/快进、进度拖动、播放失败重试。
+- 加载中或播放错误时，播放按钮显示暂停图标；点击可立即重试。
 - 控制台功能栏：均衡器、功能、播放速度、标签、声道平衡都可在播放详情页直接打开。
 - 均衡器：支持设备频段、自带预设、自定义频段增益和持久化。
 - 功能面板：支持跳过空白、轻度降噪、音量平衡、左右声道调换。
@@ -37,6 +38,7 @@ Windows ZIP 包含完整 Flutter 运行时、`libmpv-2.dll`、FFmpeg 和 FFprobe
 - 支持 `.srt`、`.ass`、`.ssa`、`.vtt`、`.lrc` 字幕。
 - 会话详情、播放卡片和全局悬浮窗口同步当前字幕。
 - 当音频加载失败时，会在详情页字幕区域以红字提示报错信息。
+- 当音频仍在加载时，详情页字幕区域会显示“加载中”。
 - Android 使用系统悬浮窗；Windows 使用可重复开启、拖动和交互的原生桌面字幕窗口。
 - 字幕悬浮窗支持字体、字号、文字颜色、背景颜色、背景透明度和边框深度设置，并提供实时预览。
 
@@ -45,6 +47,7 @@ Windows ZIP 包含完整 Flutter 运行时、`libmpv-2.dll`、FFmpeg 和 FFprobe
 - 支持导入文件夹、曲库和单独文件；Android 优先使用 SAF 并持久化目录授权。
 - 根据文件树构建层级媒体库，支持自然排序、搜索、刷新扫描、排除目录和手动拖动排序。
 - 支持封面发现、单独视频帧封面提取、作品详情编辑、封面候选选择、标题重命名和引用同步。
+- 卡片实际使用的封面文件位置会保存到数据库和目录内 `nameless-audio.json`，再次打开曲库时优先校验并复用该索引。
 - 可按分类、声优、社团、标签、RJ 号、发售日等信息整理本地作品。
 
 ### ASMR.ONE 与 DLsite
@@ -53,6 +56,7 @@ Windows ZIP 包含完整 Flutter 运行时、`libmpv-2.dll`、FFmpeg 和 FFprobe
 - 在线读取作品文件树，将单文件或文件夹加入播放会话。
 - 可选 ASMR.ONE 播放后缓存，播放过的在线音频可进入本地缓存。
 - 支持选择作品文件或目录下载到本地，保留目录结构并生成元数据。
+- ASMR.ONE 下载任务支持暂停和继续。
 - 支持按 RJ 号、文件名或作品标题读取 DLsite 元数据，并可批量匹配和写入。
 
 ### 后台播放与计时
@@ -75,10 +79,10 @@ Windows ZIP 包含完整 Flutter 运行时、`libmpv-2.dll`、FFmpeg 和 FFprobe
 每个更新资产必须同时发布同名 `.sha256` 校验文件：
 
 ```text
-NamelessAudio-android-arm64-1.0.0.apk
-NamelessAudio-android-arm64-1.0.0.apk.sha256
-NamelessAudio-windows-x64-1.0.0.zip
-NamelessAudio-windows-x64-1.0.0.zip.sha256
+NamelessAudio-android-arm64-v0.13.0.apk
+NamelessAudio-android-arm64-v0.13.0.apk.sha256
+NamelessAudio-windows-x64-v0.13.0.zip
+NamelessAudio-windows-x64-v0.13.0.zip.sha256
 ```
 
 Android 下载 APK 并交给系统安装器。Windows 下载 ZIP 后启动独立更新器，更新器会验证 ZIP、等待应用退出、切换安装目录并重启新版本。
@@ -110,7 +114,7 @@ Android 下载 APK 并交给系统安装器。Windows 下载 ZIP 后启动独立
 flutter pub get
 flutter analyze
 flutter test
-dart run tool/verify_release.dart --tag 1.0.0
+dart run tool/verify_release.dart --tag v0.13.0
 ```
 
 ### Android Release
@@ -127,7 +131,7 @@ flutter build apk --release --target-platform android-arm64 --split-per-abi
 
 ```powershell
 flutter build windows --release
-Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath dist\NamelessAudio-windows-x64-1.0.0.zip -Force
+Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath dist\NamelessAudio-windows-x64-v0.13.0.zip -Force
 ```
 
 ## 发布流程
@@ -140,9 +144,9 @@ Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath dist\
 4. 为两端资产生成 `.sha256` 并上传到同一个 GitHub Release。
 
 ```powershell
-dart run tool/verify_release.dart --tag 1.0.0
-git tag 1.0.0
-git push origin main 1.0.0
+dart run tool/verify_release.dart --tag v0.13.0
+git tag v0.13.0
+git push origin main v0.13.0
 ```
 
 完整变更见 [release_notes.md](release_notes.md)。

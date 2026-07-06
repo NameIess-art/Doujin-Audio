@@ -429,14 +429,10 @@ void main() {
       ),
     );
     await tester.pump();
-    await tester.runAsync(
-      () => Future<void>.delayed(const Duration(milliseconds: 20)),
-    );
+    await tester.pump(const Duration(milliseconds: 50));
 
     await tester.pump();
-    await tester.runAsync(
-      () => Future<void>.delayed(const Duration(milliseconds: 20)),
-    );
+    await tester.pump(const Duration(milliseconds: 50));
     final requestsBeforeReorder = coverCache.requestedPaths.length;
 
     final reorderable = tester.widget<ReorderableListView>(
@@ -453,9 +449,7 @@ void main() {
       isInitialized: true,
     );
     await tester.pump();
-    await tester.runAsync(
-      () => Future<void>.delayed(const Duration(milliseconds: 20)),
-    );
+    await tester.pump(const Duration(milliseconds: 50));
 
     expect(coverCache.requestedPaths, hasLength(requestsBeforeReorder));
   });

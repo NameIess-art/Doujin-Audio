@@ -428,11 +428,7 @@ void main() {
         child: const PlaylistTab(),
       ),
     );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 50));
-
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 50));
+    await tester.pumpAndSettle();
     final requestsBeforeReorder = coverCache.requestedPaths.length;
 
     final reorderable = tester.widget<ReorderableListView>(
@@ -449,7 +445,6 @@ void main() {
       isInitialized: true,
     );
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 50));
 
     expect(coverCache.requestedPaths, hasLength(requestsBeforeReorder));
   });

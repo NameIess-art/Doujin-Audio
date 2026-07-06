@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     show ProviderContainer, ProviderScope;
@@ -436,6 +437,9 @@ void main() {
     // Clear any previously requested paths to isolate this test action
     coverCache.requestedPaths.clear();
 
+    final oldOverride = debugDefaultTargetPlatformOverride;
+    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+
     final itemToDrag = find.byKey(ValueKey(session.id)).last;
     final gesture = await tester.startGesture(tester.getCenter(itemToDrag));
     await tester.pump(const Duration(milliseconds: 500)); // long press delay
@@ -452,6 +456,7 @@ void main() {
     
     expect(coverCache.requestedPaths, isEmpty);
     await gesture.up();
+    debugDefaultTargetPlatformOverride = oldOverride;
   });
 
   TestWidgetsFlutterBinding.ensureInitialized();

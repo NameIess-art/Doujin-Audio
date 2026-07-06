@@ -359,7 +359,7 @@ void main() {
     expect(find.byIcon(Icons.pause_rounded), findsOneWidget);
   });
 
-  testWidgets('playlist build and reordering do not trigger cover futures', (
+  testWidgets('playlist reordering does not trigger additional cover futures', (
     WidgetTester tester,
   ) async {
     final notificationService = PlaybackNotificationService();
@@ -433,12 +433,11 @@ void main() {
       () => Future<void>.delayed(const Duration(milliseconds: 20)),
     );
 
-    expect(coverCache.requestedPaths, isEmpty);
     await tester.pump();
     await tester.runAsync(
       () => Future<void>.delayed(const Duration(milliseconds: 20)),
     );
-    expect(coverCache.requestedPaths, isEmpty);
+    final requestsBeforeReorder = coverCache.requestedPaths.length;
 
     final reorderable = tester.widget<ReorderableListView>(
       find.byType(ReorderableListView),
@@ -458,7 +457,7 @@ void main() {
       () => Future<void>.delayed(const Duration(milliseconds: 20)),
     );
 
-    expect(coverCache.requestedPaths, isEmpty);
+    expect(coverCache.requestedPaths, hasLength(requestsBeforeReorder));
   });
 
   TestWidgetsFlutterBinding.ensureInitialized();

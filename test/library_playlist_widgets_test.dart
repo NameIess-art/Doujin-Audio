@@ -191,7 +191,11 @@ class _RecordingPlaybackCoverCacheService extends CoverArtworkCacheService {
     String? trackPath,
   }) async {
     final path = track?.path ?? trackPath;
-    if (path != null) requestedPaths.add(path);
+    if (path != null) {
+      print('REQUESTED PATH: $path');
+      print(StackTrace.current);
+      requestedPaths.add(path);
+    }
     return null;
   }
 }
@@ -429,13 +433,18 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    final requestsBeforeReorder = coverCache.requestedPaths.length;
+    await tester.pumpAndSettle();
+    
+    // Clear any previously requested paths to isolate this test action
+    coverCache.requestedPaths.clear();
 
     final reorderable = tester.widget<ReorderableListView>(
       find.byType(ReorderableListView),
     );
     reorderable.onReorderStart?.call(0);
+    // Must pump to apply the _isReordering state before we sync slice!
     await tester.pump();
+
     playbackService.syncSlice(
       activeSessions: [session],
       playingSessionCount: 0,
@@ -445,8 +454,7 @@ void main() {
       isInitialized: true,
     );
     await tester.pump();
-
-    expect(coverCache.requestedPaths, hasLength(requestsBeforeReorder));
+    expect(coverCache.requestedPaths, isEmpty);
   });
 
   TestWidgetsFlutterBinding.ensureInitialized();

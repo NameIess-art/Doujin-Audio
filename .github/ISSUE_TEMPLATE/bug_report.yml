@@ -14,7 +14,7 @@ body:
     id: version
     attributes:
       label: Version
-      placeholder: "0.12.4+1204 or 1.0.0+1000000"
+      placeholder: "0.13.0+1300"
     validations:
       required: true
   - type: dropdown

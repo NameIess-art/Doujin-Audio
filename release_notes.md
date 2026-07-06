@@ -1,22 +1,29 @@
-﻿# Nameless Audio 1.0.0
+# Nameless Audio v0.13.0
 
-## 重点变更
+## 播放与错误恢复
 
-- 版本修正为 `1.0.0+1000000`，发布标签使用 `1.0.0`。
-- Android 正式包名为 `com.nameless.audio`。
-- Windows 程序名为 `nameless_audio.exe`，产品身份为 `NamelessAudio`。
-- GitHub Release 资产命名统一为 `NamelessAudio-android-arm64-1.0.0.apk` 与 `NamelessAudio-windows-x64-1.0.0.zip`，并要求同名 `.sha256` 校验文件。
-- 应用内更新下载进度会在页面顶部持续显示；下载失败时保留错误信息，Windows 可直接打开更新日志。
-- Windows 更新器支持旧程序名到新程序名的迁移，安装后会按 ZIP 内实际可执行文件重启。
-- 播放详情页、播放列表卡片和底部播放卡片会显示已启用的字幕、速度、均衡器、跳过空白、降噪、音量平衡、声道平衡和左右声道互换图标。
-- Windows 复制入口改为右键复制，不再依赖长按复制。
-- `script/` 目录改为本地临时脚本目录，不再作为仓库内容跟踪。
+- 修复 Windows 开启“跳过空白”后进度条不更新的问题。
+- 音频加载中时，播放详情页字幕区域显示“加载中”。
+- 音频加载中或播放错误时，播放按钮显示暂停图标；点击错误状态按钮可立即重试。
+- 优化播放进度条、播放速度滚轮和播放详情页交互状态。
+
+## 本地媒体库与封面
+
+- 从作品详情获取信息并保存封面后，详情页和无封面的文件夹卡片会立即刷新。
+- 卡片实际使用的封面文件位置写入数据库和目录内 `nameless-audio.json`；再次加载时优先校验并复用索引，减少目录扫描和封面提取。
+- 文件夹或单文件重命名时同步更新封面索引，失效路径会回退到现有封面发现流程。
+
+## ASMR.ONE 与稳定性
+
+- ASMR.ONE 下载任务新增暂停和继续操作。
+- 改进加载错误、重试提示、缓存复用和后台封面预热稳定性。
+- 修复 CI 中 Windows 缺少 FFmpeg 及并行 Flutter 测试共享状态导致的错误失败。
 
 ## 发布资产
 
 ```text
-NamelessAudio-android-arm64-1.0.0.apk
-NamelessAudio-android-arm64-1.0.0.apk.sha256
-NamelessAudio-windows-x64-1.0.0.zip
-NamelessAudio-windows-x64-1.0.0.zip.sha256
+NamelessAudio-android-arm64-v0.13.0.apk
+NamelessAudio-android-arm64-v0.13.0.apk.sha256
+NamelessAudio-windows-x64-v0.13.0.zip
+NamelessAudio-windows-x64-v0.13.0.zip.sha256
 ```

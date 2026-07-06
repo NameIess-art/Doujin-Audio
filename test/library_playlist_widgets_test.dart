@@ -436,12 +436,9 @@ void main() {
     // Clear any previously requested paths to isolate this test action
     coverCache.requestedPaths.clear();
 
-    final reorderable = tester.widget<ReorderableListView>(
-      find.byType(ReorderableListView),
-    );
-    reorderable.onReorderStart?.call(0);
-    // Must pump to apply the _isReordering state before we sync slice!
-    await tester.pump();
+    final itemToDrag = find.byKey(ValueKey(session.id)).last;
+    final gesture = await tester.startGesture(tester.getCenter(itemToDrag));
+    await tester.pump(const Duration(milliseconds: 500)); // long press delay
 
     playbackService.syncSlice(
       activeSessions: [session],
@@ -452,7 +449,9 @@ void main() {
       isInitialized: true,
     );
     await tester.pump();
+    
     expect(coverCache.requestedPaths, isEmpty);
+    await gesture.up();
   });
 
   TestWidgetsFlutterBinding.ensureInitialized();

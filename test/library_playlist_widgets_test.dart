@@ -192,8 +192,6 @@ class _RecordingPlaybackCoverCacheService extends CoverArtworkCacheService {
   }) async {
     final path = track?.path ?? trackPath;
     if (path != null) {
-      print('REQUESTED PATH: $path');
-      print(StackTrace.current);
       requestedPaths.add(path);
     }
     return null;

@@ -240,12 +240,10 @@ class _AsmrCategoryButton extends StatelessWidget {
 class _AsmrMoreMenuButton extends StatelessWidget {
   const _AsmrMoreMenuButton({
     required this.onAccount,
-    required this.onCategories,
     required this.onLanguage,
   });
 
   final VoidCallback onAccount;
-  final VoidCallback onCategories;
   final VoidCallback onLanguage;
 
   @override
@@ -263,11 +261,6 @@ class _AsmrMoreMenuButton extends StatelessWidget {
           label: i18n.tr('asmr_account_menu'),
         ),
         UnifiedMenuEntry<_AsmrMoreAction>.action(
-          value: _AsmrMoreAction.categories,
-          icon: Icons.category_rounded,
-          label: i18n.tr('asmr_categories_title'),
-        ),
-        UnifiedMenuEntry<_AsmrMoreAction>.action(
           value: _AsmrMoreAction.language,
           icon: Icons.language_rounded,
           label: i18n.tr('asmr_language_title'),
@@ -278,9 +271,6 @@ class _AsmrMoreMenuButton extends StatelessWidget {
           case _AsmrMoreAction.account:
             onAccount();
             break;
-          case _AsmrMoreAction.categories:
-            onCategories();
-            break;
           case _AsmrMoreAction.language:
             onLanguage();
             break;
@@ -290,7 +280,7 @@ class _AsmrMoreMenuButton extends StatelessWidget {
   }
 }
 
-enum _AsmrMoreAction { account, categories, language }
+enum _AsmrMoreAction { account, language }
 
 String _asmrCategoryLabelKey(AsmrCategoryType category) {
   return switch (category) {

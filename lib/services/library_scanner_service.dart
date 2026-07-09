@@ -1232,6 +1232,7 @@ class LibraryScannerService {
 
 Map<String, Object?> _scanFileSystemFolderPayload(String folderPath) {
   final folder = Directory(folderPath);
+  final normalizedRoot = path.normalize(folderPath);
   if (!folder.existsSync()) {
     return const <String, Object?>{
       'tracks': <Object?>[],
@@ -1278,13 +1279,35 @@ Map<String, Object?> _scanFileSystemFolderPayload(String folderPath) {
       }
 
       final parentFolder = path.dirname(absolutePath);
-      final folderName = path.basename(parentFolder);
+      
+      final relative = PathMatcher.relativeWithin(absolutePath, normalizedRoot);
+      String groupKey = parentFolder;
+      String groupTitle = path.basename(parentFolder);
+      String groupSubtitle = parentFolder;
+
+      if (relative != null) {
+        final relativeDir = path.dirname(relative).replaceAll('\\', '/');
+        if (relativeDir == '.' || relativeDir.isEmpty) {
+          groupKey = normalizedRoot;
+          groupTitle = path.basename(normalizedRoot);
+          groupSubtitle = normalizedRoot;
+        } else {
+          final topLevel = relativeDir.split('/').first;
+          groupKey = path.join(normalizedRoot, topLevel);
+          groupTitle = topLevel;
+          groupSubtitle = groupKey;
+        }
+      } else {
+        final folderName = path.basename(parentFolder);
+        groupTitle = folderName.isEmpty ? parentFolder : folderName;
+      }
+
       tracks.add(<String, Object?>{
         'path': absolutePath,
         'displayName': path.basenameWithoutExtension(absolutePath),
-        'groupKey': parentFolder,
-        'groupTitle': folderName.isEmpty ? parentFolder : folderName,
-        'groupSubtitle': parentFolder,
+        'groupKey': groupKey,
+        'groupTitle': groupTitle,
+        'groupSubtitle': groupSubtitle,
         'isSingle': false,
         'isVideo': isVideoMediaFile(absolutePath),
         'scannedAtMs': DateTime.now().millisecondsSinceEpoch,

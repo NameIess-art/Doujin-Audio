@@ -589,7 +589,10 @@ class CoverArtworkCacheService {
         if (track?.isVideo == true) {
           coverPath = await _resolveVideoFramePathForTrack(track!);
         } else if (track != null) {
-          coverPath = await _resolvePlatformCoverPathForTrack(track);
+          coverPath = await _resolvePlatformCoverPathForTrack(
+            track,
+            rootFolder: coverScopeFolderForTrack(track, trackPath: pathValue),
+          );
         }
       }
 
@@ -900,6 +903,30 @@ class CoverArtworkCacheService {
     }
 
     if (AppPlatform.isWindows) {
+      if (rootFolder != null && rootFolder.isNotEmpty) {
+        try {
+          final folderCover = await WindowsFfmpegService.findPreferredCoverViaFile(
+            folderPath: rootFolder,
+            cacheKey: track.path,
+          );
+          if (folderCover != null) return folderCover;
+        } catch (e, stackTrace) {
+          AppLogService.warning(
+            'CoverArtworkCacheService._resolvePlatformCoverPathForTrack findPreferredCoverViaFile error',
+            error: e,
+            stackTrace: stackTrace,
+          );
+        }
+      }
+    }
+
+    final embeddedCover = await EmbeddedCoverArtworkService.resolveForTrack(
+      track,
+    );
+    if (embeddedCover != null) unawaited(AppCacheService.enforceLimit());
+    if (embeddedCover != null) return embeddedCover;
+
+    if (AppPlatform.isWindows) {
       try {
         final ffmpegCover = await WindowsFfmpegService.resolveAudioCover(
           audioPath: track.path,
@@ -914,12 +941,6 @@ class CoverArtworkCacheService {
         );
       }
     }
-
-    final embeddedCover = await EmbeddedCoverArtworkService.resolveForTrack(
-      track,
-    );
-    if (embeddedCover != null) unawaited(AppCacheService.enforceLimit());
-    if (embeddedCover != null) return embeddedCover;
 
     return null;
   }

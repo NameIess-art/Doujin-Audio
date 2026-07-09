@@ -124,11 +124,18 @@ class ShimmerContainer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    final baseColor = isDark
+        ? cs.surfaceContainerHigh
+        : cs.surfaceContainerHighest;
+
     return Container(
       width: width,
       height: height,
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: baseColor,
         borderRadius: BorderRadius.circular(borderRadius),
       ),
     );

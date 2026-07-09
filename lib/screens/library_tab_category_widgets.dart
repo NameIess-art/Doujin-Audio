@@ -848,20 +848,15 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
 
     Widget buildSingleFileContent(bool useFeaturedCard) {
       if (firstTrack != null && useFeaturedCard) {
-        return Theme(
-          data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-          child: SizedBox(
-            height: cardHeight,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 2, 12, 2),
-              child: _SingleMediaFileCardContent(
-                track: firstTrack,
-                title: entry.title,
-                detail: entry.detail,
-                detailLoading: false,
-                onPlay: () => _play(context, provider),
-              ),
-            ),
+        return ListTile(
+          contentPadding: const EdgeInsets.fromLTRB(12, 2, 12, 2),
+          minTileHeight: cardHeight,
+          title: _SingleMediaFileCardContent(
+            track: firstTrack,
+            title: entry.title,
+            detail: entry.detail,
+            detailLoading: false,
+            onPlay: () => _play(context, provider),
           ),
         );
       }
@@ -869,7 +864,6 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
       return Padding(
         padding: const EdgeInsets.fromLTRB(12, 12, 6, 12),
         child: Row(
-          crossAxisAlignment: CrossAxisAlignment.end,
           children: [
             Expanded(
               child: _SingleAudioFileCardContent(

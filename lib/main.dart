@@ -210,6 +210,12 @@ class MusicPlayerApp extends StatelessWidget {
               parent: AlwaysScrollableScrollPhysics(),
             ),
           ),
+          builder: (context, child) {
+            return TooltipVisibility(
+              visible: false,
+              child: child ?? const SizedBox(),
+            );
+          },
           home: const OnboardingGate(
             child: GlobalShortcuts(child: MainScreen()),
           ),

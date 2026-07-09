@@ -39,7 +39,26 @@ class EmbeddedCoverArtworkService {
           ),
         )
         .toString();
-    final picture = await _readFlacPicture(trackFile);
+    Uint8List? picture;
+    try {
+      final raf = await trackFile.open();
+      final header = await raf.read(12);
+      await raf.close();
+
+      if (header.length >= 3 && header[0] == 0x49 && header[1] == 0x44 && header[2] == 0x33) {
+        picture = await _readId3v2Picture(trackFile);
+        picture ??= await _readFlacPicture(trackFile);
+      } else if (header.length >= 4 && ascii.decode(header.sublist(0, 4), allowInvalid: true) == 'fLaC') {
+        picture = await _readFlacPicture(trackFile);
+      } else if (header.length >= 8 && ascii.decode(header.sublist(4, 8), allowInvalid: true) == 'ftyp') {
+        picture = await _readMp4Picture(trackFile);
+      } else {
+        picture = await _readId3v2Picture(trackFile) ??
+            await _readMp4Picture(trackFile) ??
+            await _readFlacPicture(trackFile);
+      }
+    } catch (_) {}
+
     if (picture == null || picture.isEmpty) return null;
 
     final cacheRoot = await getTemporaryDirectory();
@@ -63,6 +82,188 @@ class EmbeddedCoverArtworkService {
       return null;
     } finally {
       if (await partial.exists()) await partial.delete();
+    }
+  }
+
+  static Future<Uint8List?> _readId3v2Picture(File file) async {
+    RandomAccessFile? raf;
+    try {
+      raf = await file.open();
+      final header = await raf.read(10);
+      if (header.length != 10 || header[0] != 0x49 || header[1] != 0x44 || header[2] != 0x33) {
+        return null;
+      }
+      final majorVersion = header[3];
+      if (majorVersion < 2 || majorVersion > 4) return null;
+
+      final flags = header[5];
+      final extHeader = (flags & 0x40) != 0;
+
+      final tagSize = ((header[6] & 0x7f) << 21) |
+          ((header[7] & 0x7f) << 14) |
+          ((header[8] & 0x7f) << 7) |
+          (header[9] & 0x7f);
+
+      if (tagSize <= 0 || tagSize > 20 * 1024 * 1024) return null;
+
+      final tagData = await raf.read(tagSize);
+      if (tagData.length != tagSize) return null;
+
+      int offset = 0;
+      if (extHeader) {
+        if (majorVersion == 3) {
+          final extSize = ByteData.sublistView(tagData, offset, offset + 4).getUint32(0);
+          offset += extSize;
+        } else if (majorVersion == 4) {
+          final extSize = ((tagData[offset] & 0x7f) << 21) |
+              ((tagData[offset + 1] & 0x7f) << 14) |
+              ((tagData[offset + 2] & 0x7f) << 7) |
+              (tagData[offset + 3] & 0x7f);
+          offset += extSize;
+        }
+      }
+
+      while (offset < tagData.length) {
+        final idLength = majorVersion == 2 ? 3 : 4;
+        if (offset + idLength > tagData.length) break;
+
+        final frameId = ascii.decode(
+          Uint8List.sublistView(tagData, offset, offset + idLength),
+          allowInvalid: true,
+        );
+        offset += idLength;
+
+        if (frameId.codeUnits.any((c) => c == 0)) break;
+
+        int frameSize;
+        if (majorVersion == 2) {
+          if (offset + 3 > tagData.length) break;
+          frameSize = (tagData[offset] << 16) | (tagData[offset + 1] << 8) | tagData[offset + 2];
+          offset += 3;
+        } else if (majorVersion == 3) {
+          if (offset + 4 > tagData.length) break;
+          frameSize = ByteData.sublistView(tagData, offset, offset + 4).getUint32(0);
+          offset += 4;
+        } else {
+          if (offset + 4 > tagData.length) break;
+          frameSize = ((tagData[offset] & 0x7f) << 21) |
+              ((tagData[offset + 1] & 0x7f) << 14) |
+              ((tagData[offset + 2] & 0x7f) << 7) |
+              (tagData[offset + 3] & 0x7f);
+          offset += 4;
+        }
+
+        final flagsLength = majorVersion == 2 ? 0 : 2;
+        offset += flagsLength;
+
+        if (frameSize <= 0 || offset + frameSize > tagData.length) {
+          offset += frameSize;
+          continue;
+        }
+
+        if (frameId == 'APIC' || frameId == 'PIC') {
+          int frameOffset = offset;
+          final encoding = tagData[frameOffset];
+          frameOffset++;
+
+          if (majorVersion == 2) {
+            frameOffset += 3;
+          } else {
+            while (frameOffset < offset + frameSize && tagData[frameOffset] != 0) {
+              frameOffset++;
+            }
+            frameOffset++;
+          }
+
+          frameOffset++; // Picture type
+
+          if (encoding == 1 || encoding == 2) {
+            while (frameOffset < offset + frameSize - 1) {
+              if (tagData[frameOffset] == 0 && tagData[frameOffset + 1] == 0) {
+                frameOffset += 2;
+                break;
+              }
+              frameOffset++;
+            }
+          } else {
+            while (frameOffset < offset + frameSize && tagData[frameOffset] != 0) {
+              frameOffset++;
+            }
+            frameOffset++;
+          }
+
+          final pictureDataLength = (offset + frameSize) - frameOffset;
+          if (pictureDataLength > 0) {
+            return Uint8List.sublistView(tagData, frameOffset, offset + frameSize);
+          }
+        }
+        offset += frameSize;
+      }
+      return null;
+    } catch (_) {
+      return null;
+    } finally {
+      await raf?.close();
+    }
+  }
+
+  static Future<Uint8List?> _readMp4Picture(File file) async {
+    RandomAccessFile? raf;
+    try {
+      raf = await file.open();
+      final length = await file.length();
+
+      Future<Map<String, dynamic>?> readAtom(int start, int limit, String targetPath, int depth) async {
+        if (start >= limit) return null;
+        int current = start;
+        while (current < limit) {
+          await raf!.setPosition(current);
+          final header = await raf.read(8);
+          if (header.length < 8) return null;
+          int size = ByteData.sublistView(header, 0, 4).getUint32(0);
+          final type = ascii.decode(Uint8List.sublistView(header, 4, 8), allowInvalid: true);
+          
+          int headerSize = 8;
+          if (size == 1) {
+            final size64 = await raf.read(8);
+            if (size64.length < 8) return null;
+            size = ByteData.sublistView(size64, 0, 8).getUint64(0).toInt();
+            headerSize = 16;
+          } else if (size == 0) {
+            size = limit - current;
+          }
+          if (size < headerSize) break;
+
+          final targetTypes = targetPath.split('.');
+          if (type == targetTypes[depth]) {
+            if (depth == targetTypes.length - 1) {
+              return {'offset': current, 'size': size, 'headerSize': headerSize};
+            } else {
+              int childrenStart = current + headerSize;
+              if (type == 'meta') childrenStart += 4;
+              return await readAtom(childrenStart, current + size, targetPath, depth + 1);
+            }
+          }
+          current += size;
+        }
+        return null;
+      }
+
+      final covrAtom = await readAtom(0, length, 'moov.udta.meta.ilst.covr.data', 0);
+      if (covrAtom != null) {
+        int dataOffset = covrAtom['offset'] as int;
+        int dataSize = covrAtom['size'] as int;
+        int headerSize = covrAtom['headerSize'] as int;
+        if (dataSize > headerSize + 8) {
+          await raf.setPosition(dataOffset + headerSize + 8);
+          return await raf.read(dataSize - (headerSize + 8));
+        }
+      }
+      return null;
+    } catch (_) {
+      return null;
+    } finally {
+      await raf?.close();
     }
   }
 

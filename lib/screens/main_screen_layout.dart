@@ -40,7 +40,7 @@ extension _MainScreenLayout on _MainScreenState {
           alignment: Alignment.topCenter,
           child: isDesktop
               ? ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 980),
+                  constraints: const BoxConstraints(maxWidth: double.infinity),
                   child: Padding(
                     padding: isWindows ? EdgeInsets.zero : padding,
                     child: DecoratedBox(

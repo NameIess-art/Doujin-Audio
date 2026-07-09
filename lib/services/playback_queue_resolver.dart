@@ -208,6 +208,7 @@ class PlaybackQueueResolver {
     required TrackPathResolver trackPath,
   }) {
     if (currentTrack == null) return const <String>[];
+    if (currentTrack.isSingle) return <String>[currentPath];
     switch (loopMode) {
       case SessionLoopMode.single:
         return <String>[currentPath];

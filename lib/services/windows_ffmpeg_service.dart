@@ -11,6 +11,73 @@ class WindowsFfmpegService {
   static String? _resolvedFfmpegPath;
   static String? _resolvedFfprobePath;
 
+  static Future<String?> findPreferredCoverViaFile({
+    required String folderPath,
+    required String cacheKey,
+  }) async {
+    final dir = Directory(folderPath);
+    if (!await dir.exists()) return null;
+
+    final images = <File>[];
+    await for (final entity in dir.list(recursive: true, followLinks: false)) {
+      if (entity is File && _isSupportedImageEntry(entity.path)) {
+        images.add(entity);
+      }
+    }
+    if (images.isEmpty) return null;
+
+    images.sort((left, right) {
+      final leftName = path.basename(left.path).toLowerCase();
+      final rightName = path.basename(right.path).toLowerCase();
+      final priority = _compareCoverNames(leftName, rightName);
+      if (priority != 0) return priority;
+      return left.path.toLowerCase().compareTo(right.path.toLowerCase());
+    });
+
+    final preferred = images.first;
+    return _cacheFileAsCover(preferred, cacheKey);
+  }
+
+  static bool _isSupportedImageEntry(String filePath) {
+    final ext = path.extension(filePath).toLowerCase();
+    return const {'.jpg', '.jpeg', '.png', '.webp', '.bmp', '.gif'}.contains(ext);
+  }
+
+  static int _compareCoverNames(String left, String right) {
+    const preferred = ['cover', 'folder', 'front', 'album', 'artwork', 'poster'];
+    final leftBase = path.basenameWithoutExtension(left);
+    final rightBase = path.basenameWithoutExtension(right);
+
+    final leftIndex = preferred.indexOf(leftBase);
+    final rightIndex = preferred.indexOf(rightBase);
+
+    if (leftIndex >= 0 && rightIndex >= 0) return leftIndex.compareTo(rightIndex);
+    if (leftIndex >= 0) return -1;
+    if (rightIndex >= 0) return 1;
+    return 0;
+  }
+
+  static Future<String?> _cacheFileAsCover(File imageFile, String cacheKey) async {
+    try {
+      final cacheRoot = await getTemporaryDirectory();
+      final coverCacheDir = Directory(path.join(cacheRoot.path, 'nameless_audio_covers'));
+      await coverCacheDir.create(recursive: true);
+
+      final outputFile = File(
+        path.join(coverCacheDir.path, 'cover_${cacheKey.hashCode.abs()}.jpg'),
+      );
+      if (await outputFile.exists() && await outputFile.length() > 0) {
+        await outputFile.setLastModified(DateTime.now());
+        return outputFile.path;
+      }
+      await imageFile.copy(outputFile.path);
+      await outputFile.setLastModified(DateTime.now());
+      return outputFile.path;
+    } catch (_) {
+      return null;
+    }
+  }
+
   static String get ffmpegPath {
     if (_resolvedFfmpegPath != null) return _resolvedFfmpegPath!;
     _resolvePaths();

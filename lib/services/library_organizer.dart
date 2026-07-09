@@ -62,7 +62,9 @@ class LibraryOrganizer {
         continue;
       }
 
-      final dirPath = track.groupKey;
+      final dirPath = PathMatcher.isContentUri(track.path)
+          ? track.groupKey
+          : path.dirname(track.path);
       final matchedRoot = rootPathForTrack(track, watchedRoots);
 
       if (!rootNodes.containsKey(matchedRoot)) {

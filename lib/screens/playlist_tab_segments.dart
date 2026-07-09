@@ -507,6 +507,7 @@ class _TimeSegmentPanel extends StatefulWidget {
     required this.onDelete,
     required this.onToggleLoop,
     this.expandToParent = false,
+    this.onClose,
   });
 
   final PlaybackSession session;
@@ -529,6 +530,7 @@ class _TimeSegmentPanel extends StatefulWidget {
   final VoidCallback onDelete;
   final VoidCallback onToggleLoop;
   final bool expandToParent;
+  final VoidCallback? onClose;
 
   @override
   State<_TimeSegmentPanel> createState() => _TimeSegmentPanelState();
@@ -588,15 +590,31 @@ class _TimeSegmentPanelState extends State<_TimeSegmentPanel> {
         children: [
           const SizedBox(height: 4),
           const SizedBox(height: 8),
-          _SegmentPanelPageHeader(
-            pageIndex: _pageIndex,
-            onSelected: _animateToPanelPage,
-            labels: [
-              i18n.tr('equalizer'),
-              i18n.tr('audio_features'),
-              i18n.tr('playback_speed'),
-              i18n.tr('audio_detail_tags'),
-              i18n.tr('volume_balance'),
+          Stack(
+            alignment: Alignment.center,
+            children: [
+              _SegmentPanelPageHeader(
+                pageIndex: _pageIndex,
+                onSelected: _animateToPanelPage,
+                labels: [
+                  i18n.tr('equalizer'),
+                  i18n.tr('audio_features'),
+                  i18n.tr('playback_speed'),
+                  i18n.tr('audio_detail_tags'),
+                  i18n.tr('volume_balance'),
+                ],
+              ),
+              if (widget.onClose != null)
+                Positioned(
+                  right: 0,
+                  child: IconButton(
+                    padding: const EdgeInsets.all(4),
+                    constraints: const BoxConstraints(),
+                    iconSize: 20,
+                    icon: const Icon(Icons.close_rounded),
+                    onPressed: widget.onClose,
+                  ),
+                ),
             ],
           ),
           const SizedBox(height: 12),

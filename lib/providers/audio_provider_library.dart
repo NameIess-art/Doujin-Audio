@@ -1418,6 +1418,7 @@ extension AudioProviderLibrary on AudioProvider {
   List<MusicTrack> tracksInSameWork(String trackPath) {
     final track = trackByPath(trackPath);
     if (track == null) return const <MusicTrack>[];
+    if (track.isSingle) return <MusicTrack>[track];
     if (track.remoteMetadataKind == 'asmr.one' ||
         PathMatcher.isRemoteUri(track.path)) {
       return tracksInSameGroup(trackPath);

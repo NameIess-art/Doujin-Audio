@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -25,6 +26,7 @@ import '../widgets/marquee_text.dart';
 import '../widgets/library_like_cards.dart';
 import '../widgets/mobile_overlay_inset.dart';
 import '../widgets/scroll_activity_gate.dart';
+import '../widgets/shimmer_loading.dart';
 import '../widgets/swipe_reveal_card.dart';
 import '../widgets/top_page_header.dart';
 import '../widgets/unified_popup_menu.dart';
@@ -47,8 +49,8 @@ class AsmrTab extends StatefulWidget {
 
 class _AsmrTabState extends State<AsmrTab>
     with AutomaticKeepAliveClientMixin, TickerProviderStateMixin {
-  List<AsmrCategoryType> _categories = kDefaultVisibleAsmrCategories;
-  late TabController _tabController = TabController(
+  final List<AsmrCategoryType> _categories = kAsmrSelectableCategories;
+  late final TabController _tabController = TabController(
     length: _categories.length,
     vsync: this,
   );
@@ -67,6 +69,7 @@ class _AsmrTabState extends State<AsmrTab>
   ValueListenable<int?>? _scrollToTopTabListenable;
   String _searchQuery = '';
   final GlobalKey _headerKey = GlobalKey();
+  final ScrollController _categoryScrollController = ScrollController();
   double _headerHeight = 0;
   double? _lastHeaderMeasureWidth;
   double? _lastHeaderMeasureTopPadding;
@@ -132,7 +135,6 @@ class _AsmrTabState extends State<AsmrTab>
           if (!mounted) {
             return;
           }
-          _syncCategoryTabs(asmrController.visibleCategories);
           await _ensureCategoryLoaded(_currentCategory);
           if (!mounted) {
             return;
@@ -164,44 +166,6 @@ class _AsmrTabState extends State<AsmrTab>
     _lastHeaderMeasureTextScale = textScale;
     if (metricsChanged) {
       _headerHeight = 0;
-    }
-  }
-
-  void _syncCategoryTabs(List<AsmrCategoryType> categories) {
-    final nextCategories = categories.isEmpty
-        ? kDefaultVisibleAsmrCategories
-        : categories.toList(growable: false);
-    if (listEquals(_categories, nextCategories)) {
-      return;
-    }
-    final previousCategory = _currentCategory;
-    for (final category in nextCategories) {
-      _scrollControllers.putIfAbsent(
-        category,
-        () =>
-            ScrollController()
-              ..addListener(() => _handleCategoryScroll(category)),
-      );
-    }
-    final removed = _scrollControllers.keys
-        .where((category) => !nextCategories.contains(category))
-        .toList(growable: false);
-    for (final category in removed) {
-      _loadMoreDebounceTimers.remove(category)?.cancel();
-      _scrollControllers.remove(category)?.dispose();
-    }
-    _tabController
-      ..removeListener(_handleTabChanged)
-      ..dispose();
-    final nextIndex = nextCategories.indexOf(previousCategory);
-    _categories = nextCategories;
-    _tabController = TabController(
-      length: _categories.length,
-      initialIndex: nextIndex < 0 ? 0 : nextIndex,
-      vsync: this,
-    )..addListener(_handleTabChanged);
-    if (mounted) {
-      setState(() {});
     }
   }
 
@@ -447,93 +411,6 @@ class _AsmrTabState extends State<AsmrTab>
     );
   }
 
-  Future<void> _showCategoryDialog() async {
-    final controller = context.read<AsmrLibraryController>();
-    final i18n = context.read<AppLanguageProvider>();
-    final selected = controller.visibleCategories.toSet();
-    final result = await _showAsmrPanel<List<AsmrCategoryType>>(
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            return _AsmrPanelCard(
-              icon: Icons.category_rounded,
-              title: i18n.tr('asmr_categories_title'),
-              actions: [
-                _AsmrPanelAction(
-                  label: i18n.tr('close'),
-                  onPressed: () => Navigator.of(context).pop(),
-                ),
-                _AsmrPanelAction(
-                  label: i18n.tr('done'),
-                  filled: true,
-                  onPressed: selected.isEmpty
-                      ? null
-                      : () {
-                          final ordered = kAsmrSelectableCategories
-                              .where(selected.contains)
-                              .toList(growable: false);
-                          Navigator.of(context).pop(ordered);
-                        },
-                ),
-              ],
-              child: SingleChildScrollView(
-                child: GridView.count(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  crossAxisCount: 2,
-                  mainAxisExtent: 56,
-                  padding: EdgeInsets.zero,
-                  children: [
-                    for (final category in kAsmrSelectableCategories)
-                      CheckboxListTile(
-                        value: selected.contains(category),
-                        onChanged:
-                            !Platform.isWindows &&
-                                !selected.contains(category) &&
-                                selected.length >= 5
-                            ? null
-                            : (checked) {
-                                setDialogState(() {
-                                  if (checked == true) {
-                                    selected.add(category);
-                                  } else if (selected.length > 1) {
-                                    selected.remove(category);
-                                  }
-                                });
-                              },
-                        title: Text(
-                          i18n.tr(_asmrCategoryLabelKey(category)),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 4,
-                        ),
-                        controlAffinity: ListTileControlAffinity.leading,
-                        dense: true,
-                      ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-    if (!mounted || result == null) {
-      return;
-    }
-    await _runAsmrOperation<void>(
-      scope: const UiOperationScope('asmr:categories'),
-      labelKey: 'loading_dot',
-      task: () => controller.setVisibleCategories(result),
-    );
-    if (!mounted) {
-      return;
-    }
-    _syncCategoryTabs(controller.visibleCategories);
-    unawaited(_ensureCategoryLoaded(_currentCategory));
-  }
 
   Future<void> _showLanguageDialog() async {
     final controller = context.read<AsmrLibraryController>();
@@ -588,6 +465,7 @@ class _AsmrTabState extends State<AsmrTab>
     _tabController
       ..removeListener(_handleTabChanged)
       ..dispose();
+    _categoryScrollController.dispose();
     for (final controller in _scrollControllers.values) {
       controller.dispose();
     }
@@ -651,15 +529,36 @@ class _AsmrTabState extends State<AsmrTab>
                 child: AnimatedBuilder(
                   animation: _tabController,
                   builder: (context, _) {
-                    return Row(
-                      children: [
-                        for (
-                          var index = 0;
-                          index < _categories.length;
-                          index++
-                        ) ...[
-                          if (index > 0) const SizedBox(width: 8),
-                          Expanded(
+                    // Maximum 5 items visible on screen (screenWidth - padding - gaps).
+                    final screenWidth = MediaQuery.sizeOf(context).width;
+                    final totalHorizontalPadding = 24.0; // 12 padding on left and right
+                    final visibleItemsCount = AppPlatform.isWindows ? 9 : 5;
+                    final totalGapsWidth = 8.0 * (visibleItemsCount - 1);
+                    final itemWidth = (screenWidth - totalHorizontalPadding - totalGapsWidth) / visibleItemsCount;
+
+                    return Listener(
+                      onPointerSignal: (pointerSignal) {
+                        if (pointerSignal is PointerScrollEvent) {
+                          if (_categoryScrollController.hasClients) {
+                            final newOffset = _categoryScrollController.offset + pointerSignal.scrollDelta.dy;
+                            _categoryScrollController.jumpTo(
+                              newOffset.clamp(
+                                0.0,
+                                _categoryScrollController.position.maxScrollExtent,
+                              ),
+                            );
+                          }
+                        }
+                      },
+                      child: ListView.separated(
+                        controller: _categoryScrollController,
+                        scrollDirection: Axis.horizontal,
+                        physics: const BouncingScrollPhysics(),
+                        itemCount: _categories.length,
+                        separatorBuilder: (context, index) => const SizedBox(width: 8),
+                        itemBuilder: (context, index) {
+                          return SizedBox(
+                            width: itemWidth,
                             child: _AsmrCategoryButton(
                               label: i18n.tr(
                                 _asmrCategoryLabelKey(_categories[index]),
@@ -673,9 +572,9 @@ class _AsmrTabState extends State<AsmrTab>
                                 _tabController.animateTo(index);
                               },
                             ),
-                          ),
-                        ],
-                      ],
+                          );
+                        },
+                      ),
                     );
                   },
                 ),
@@ -833,7 +732,6 @@ class _AsmrTabState extends State<AsmrTab>
                     const _AsmrDownloadProgressInlineButton(),
                   _AsmrMoreMenuButton(
                     onAccount: _showAccountDialog,
-                    onCategories: _showCategoryDialog,
                     onLanguage: _showLanguageDialog,
                   ),
                 ],

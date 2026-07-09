@@ -454,9 +454,21 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
           buildTransportControls(),
           if (!widget.isLandscape && !widget.useArtworkConsole)
             AnimatedSwitcher(
-              duration: const Duration(milliseconds: 180),
+              duration: const Duration(milliseconds: 280),
               switchInCurve: Curves.easeOutCubic,
               switchOutCurve: Curves.easeInCubic,
+              transitionBuilder: (child, animation) {
+                return SlideTransition(
+                  position: Tween<Offset>(
+                    begin: const Offset(0.0, 0.2),
+                    end: Offset.zero,
+                  ).animate(animation),
+                  child: FadeTransition(
+                    opacity: animation,
+                    child: child,
+                  ),
+                );
+              },
               child: _segmentPanelExpanded
                   ? _buildSegmentPanel(
                       provider: provider,
@@ -479,58 +491,81 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
                   artworkConsole
                 else if (widget.artworkWidget != null)
                   widget.artworkWidget!,
-                if (_segmentPanelExpanded && !widget.useArtworkConsole)
-                  Positioned.fill(
-                    child: AnimatedOpacity(
-                      opacity: _segmentPanelExpanded ? 1.0 : 0.0,
-                      duration: const Duration(milliseconds: 180),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(24),
-                        child: BackdropFilter(
-                          filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-                          child: Container(
-                            color: cs.surface.withValues(alpha: 0.85),
-                            child: SafeArea(
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                  vertical: 16,
-                                ),
-                                child: _TimeSegmentPanel(
-                                  key: const ValueKey('segments_landscape'),
-                                  session: session,
-                                  provider: provider,
-                                  labels: _segmentLabels,
-                                  selectedId: _selectedSegmentId,
-                                  showEditor: _segmentEditorVisible,
-                                  loading: _segmentLoading,
-                                  nameController: _segmentNameController,
-                                  draftStart: _draftStart,
-                                  draftEnd: _draftEnd,
-                                  draftColorValue: _draftColorValue,
-                                  loopSegmentId: provider
-                                      .timeSegmentLoopLabelIdForSession(
-                                        session.id,
-                                        trackKey: _segmentTrackKey,
-                                      ),
-                                  onSelect: _selectSegment,
-                                  onAdd: _startNewSegment,
-                                  onSetStart: _setDraftStartToCurrent,
-                                  onSetEnd: _setDraftEndToCurrent,
-                                  onEditStart: () =>
-                                      _editDraftTime(isStart: true),
-                                  onEditEnd: () =>
-                                      _editDraftTime(isStart: false),
-                                  onDelete: _deleteSelectedSegment,
-                                  onToggleLoop: _toggleSelectedSegmentLoop,
+                Positioned.fill(
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 280),
+                    switchInCurve: Curves.easeOutCubic,
+                    switchOutCurve: Curves.easeInCubic,
+                    transitionBuilder: (child, animation) {
+                      return SlideTransition(
+                        position: Tween<Offset>(
+                          begin: const Offset(0.0, 0.2),
+                          end: Offset.zero,
+                        ).animate(animation),
+                        child: FadeTransition(
+                          opacity: animation,
+                          child: child,
+                        ),
+                      );
+                    },
+                    child: (_segmentPanelExpanded && !widget.useArtworkConsole)
+                        ? SizedBox.expand(
+                            key: const ValueKey('segments_landscape_container'),
+                            child: ClipRRect(
+                              borderRadius: const BorderRadius.only(
+                                topLeft: Radius.circular(24),
+                                topRight: Radius.circular(24),
+                                bottomRight: Radius.circular(24),
+                                bottomLeft: Radius.zero,
+                              ),
+                              child: BackdropFilter(
+                              filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+                              child: Container(
+                                color: cs.surface.withValues(alpha: 0.85),
+                                child: SafeArea(
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 16,
+                                    ),
+                                    child: _TimeSegmentPanel(
+                                      key: const ValueKey('segments_landscape'),
+                                      session: session,
+                                      provider: provider,
+                                      labels: _segmentLabels,
+                                      selectedId: _selectedSegmentId,
+                                      showEditor: _segmentEditorVisible,
+                                      loading: _segmentLoading,
+                                      nameController: _segmentNameController,
+                                      draftStart: _draftStart,
+                                      draftEnd: _draftEnd,
+                                      draftColorValue: _draftColorValue,
+                                      loopSegmentId: provider
+                                          .timeSegmentLoopLabelIdForSession(
+                                            session.id,
+                                            trackKey: _segmentTrackKey,
+                                          ),
+                                      onSelect: _selectSegment,
+                                      onAdd: _startNewSegment,
+                                      onSetStart: _setDraftStartToCurrent,
+                                      onSetEnd: _setDraftEndToCurrent,
+                                      onEditStart: () =>
+                                          _editDraftTime(isStart: true),
+                                      onEditEnd: () =>
+                                          _editDraftTime(isStart: false),
+                                      onDelete: _deleteSelectedSegment,
+                                      onToggleLoop: _toggleSelectedSegmentLoop,
+                                      onClose: collapseSegmentPanel,
+                                    ),
+                                  ),
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
-                        ),
-                      ),
-                    ),
+                          )
+                        : const SizedBox.shrink(key: ValueKey('segments_landscape_closed')),
                   ),
+                ),
               ],
             ),
           ),
@@ -597,6 +632,7 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
       onDelete: _deleteSelectedSegment,
       onToggleLoop: _toggleSelectedSegmentLoop,
       expandToParent: expandToParent,
+      onClose: collapseSegmentPanel,
     );
   }
 

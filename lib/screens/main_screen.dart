@@ -199,10 +199,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
     return false;
   }
 
-  void _scrollCurrentPageToTop() {
-    if (!Platform.isWindows) return;
-    ref.read(audioProviderFacadeProvider).triggerScrollToTop(_currentIndex);
-  }
+
 
   Future<bool> _ensureInstallPermissionThenRun(
     BuildContext context,
@@ -919,11 +916,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
                                 ],
                               ),
                       ),
-                      if (Platform.isWindows)
-                        _ScrollToTopButton(
-                          visible: _showScrollToTopButton,
-                          onPressed: _scrollCurrentPageToTop,
-                        ),
+
                       if (_timerOverlayPrimed) const _ImmediateTimerScrim(),
 
                       if (!_bootstrapDone)

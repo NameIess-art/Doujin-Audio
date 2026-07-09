@@ -79,14 +79,69 @@ class _AsmrWorkSkeletonCard extends StatelessWidget {
       borderRadius: BorderRadius.circular(14),
     );
 
+    const infoBlockHeight = LibraryLikeCardMetrics.infoBlockHeight;
+    const coverWidth =
+        infoBlockHeight * LibraryLikeCardMetrics.coverAspectRatio;
+
     return Card(
       margin: EdgeInsets.zero,
       shape: cardShape,
       color: fallbackColor,
       elevation: 0,
-      child: const SizedBox(
+      child: SizedBox(
         height: 158,
         width: double.infinity,
+        child: ShimmerLoader(
+          child: Padding(
+            padding: const EdgeInsets.all(12.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    ShimmerContainer(
+                      width: coverWidth,
+                      height: infoBlockHeight,
+                      borderRadius: LibraryLikeCardMetrics.coverRadius,
+                    ),
+                    const SizedBox(width: 10),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          SizedBox(height: 4),
+                          ShimmerContainer(height: 12, borderRadius: 6),
+                          SizedBox(height: 8),
+                          ShimmerContainer(
+                            width: 140,
+                            height: 12,
+                            borderRadius: 6,
+                          ),
+                          SizedBox(height: 8),
+                          ShimmerContainer(
+                            width: 100,
+                            height: 12,
+                            borderRadius: 6,
+                          ),
+                          SizedBox(height: 8),
+                          ShimmerContainer(
+                            width: 160,
+                            height: 12,
+                            borderRadius: 6,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const Spacer(),
+                const ShimmerContainer(width: 220, height: 16, borderRadius: 8),
+                const SizedBox(height: 4),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

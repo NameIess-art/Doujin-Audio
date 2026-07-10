@@ -1,7 +1,9 @@
 package com.nameless.audio
 
 import android.app.Activity
+import android.app.ActivityManager
 import android.app.AlarmManager
+import android.app.ApplicationExitInfo
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -29,6 +31,8 @@ internal class PowerMethodHandler(
             PowerMethods.CAN_SCHEDULE_EXACT_ALARMS -> result.success(canScheduleExactAlarms())
             PowerMethods.OPEN_EXACT_ALARM_SETTINGS -> result.success(openExactAlarmSettings())
             PowerMethods.GET_NATIVE_TIMER_RUNTIME_STATE -> result.success(getNativeTimerRuntimeState())
+            PowerMethods.GET_BACKGROUND_RUN_DIAGNOSTICS ->
+                result.success(getBackgroundRunDiagnostics())
             PowerMethods.EXECUTE_TIMER_EXPIRED_NOW -> {
                 PlaybackTimerAlarmScheduler.executeNow(
                     activity.applicationContext,
@@ -104,6 +108,10 @@ internal class PowerMethodHandler(
 
     private fun openBackgroundRunSettings(): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return openApplicationDetailsSettings()
+        if (Build.MANUFACTURER.equals("vivo", ignoreCase = true)) {
+            val openedVendorSettings = vivoBackgroundSettingsIntents().any(::openSettings)
+            if (openedVendorSettings) return true
+        }
         if (!isIgnoringBatteryOptimizations() && openBatteryOptimizationSettings()) return true
         return openSettings(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) ||
             openApplicationDetailsSettings()
@@ -145,6 +153,40 @@ internal class PowerMethodHandler(
         )
     }
 
+    private fun getBackgroundRunDiagnostics(): Map<String, Any?> {
+        val lastExit = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            (activity.getSystemService(Activity.ACTIVITY_SERVICE) as? ActivityManager)
+                ?.getHistoricalProcessExitReasons(activity.packageName, 0, 1)
+                ?.firstOrNull()
+        } else {
+            null
+        }
+        return mapOf(
+            "manufacturer" to Build.MANUFACTURER,
+            "batteryOptimizationExempt" to isIgnoringBatteryOptimizations(),
+            "vendorBackgroundSettingsAvailable" to
+                vivoBackgroundSettingsIntents().any(::canOpenSettings),
+            "lastExitReason" to lastExit?.reason,
+            "lastExitSubReason" to applicationExitSubReason(lastExit),
+            "lastExitDescription" to lastExit?.description,
+            "lastExitTimestampMs" to lastExit?.timestamp,
+            "cleanerForceStopDetected" to isCleanerForceStop(
+                reason = lastExit?.reason,
+                description = lastExit?.description
+            )
+        )
+    }
+
+    private fun vivoBackgroundSettingsIntents(): List<Intent> {
+        return vivoBackgroundSettingsTargets(Build.MANUFACTURER).map { target ->
+            Intent(target.first).apply { setPackage(target.second) }
+        }
+    }
+
+    private fun canOpenSettings(intent: Intent): Boolean {
+        return intent.resolveActivity(activity.packageManager) != null
+    }
+
     private fun openApplicationDetailsSettings(): Boolean {
         return openSettings(
             Intent(
@@ -163,4 +205,32 @@ internal class PowerMethodHandler(
             false
         }
     }
+}
+
+internal fun isCleanerForceStop(reason: Int?, description: String?): Boolean {
+    return reason == ApplicationExitInfo.REASON_USER_REQUESTED &&
+        description?.contains("cleaner", ignoreCase = true) == true
+}
+
+private fun applicationExitSubReason(exitInfo: ApplicationExitInfo?): Int? {
+    if (exitInfo == null) return null
+    return try {
+        exitInfo.javaClass
+            .getMethod("getSubReason")
+            .invoke(exitInfo) as? Int
+    } catch (_: ReflectiveOperationException) {
+        null
+    } catch (_: SecurityException) {
+        null
+    }
+}
+
+internal fun vivoBackgroundSettingsTargets(
+    manufacturer: String
+): List<Pair<String, String>> {
+    if (!manufacturer.equals("vivo", ignoreCase = true)) return emptyList()
+    return listOf(
+        "com.iqoo.powersaving.battery.high.power.jump" to "com.iqoo.powersaving",
+        "com.iqoo.secure.BGSTARTUPMANAGER" to "com.vivo.permissionmanager"
+    )
 }

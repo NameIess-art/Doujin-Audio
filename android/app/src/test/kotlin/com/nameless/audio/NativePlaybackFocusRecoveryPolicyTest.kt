@@ -1,8 +1,11 @@
 package com.nameless.audio
 
 import android.media.AudioManager
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -137,7 +140,7 @@ class NativePlaybackFocusRecoveryPolicyTest {
     }
 
     @Test
-    fun `keeps intended playback alive unless ended or failed`() {
+    fun `keeps intended playback alive through recoverable failures`() {
         assertTrue(
             shouldKeepAliveForIntendedPlayback(
                 playbackState = Player.STATE_READY,
@@ -159,7 +162,102 @@ class NativePlaybackFocusRecoveryPolicyTest {
         assertFalse(
             shouldRecoverIntendedPlayback(
                 playbackState = Player.STATE_READY,
-                hasPlayerError = true
+                hasPlayerError = true,
+                hasRecoverablePlaybackError = false
+            )
+        )
+        assertTrue(
+            shouldRecoverIntendedPlayback(
+                playbackState = Player.STATE_IDLE,
+                hasPlayerError = true,
+                hasRecoverablePlaybackError = true
+            )
+        )
+    }
+
+    @Test
+    fun `uses bounded recovery retry offsets`() {
+        assertEquals(2_000L, playbackRecoveryDelayMs(0, 0L, 0L))
+        assertEquals(8_000L, playbackRecoveryDelayMs(1, 0L, 0L))
+        assertEquals(30_000L, playbackRecoveryDelayMs(2, 0L, 0L))
+        assertEquals(120_000L, playbackRecoveryDelayMs(3, 0L, 0L))
+        assertEquals(240_000L, playbackRecoveryDelayMs(4, 0L, 0L))
+        assertEquals(480_000L, playbackRecoveryDelayMs(5, 0L, 0L))
+        assertNull(playbackRecoveryDelayMs(6, 0L, 0L))
+    }
+
+    @Test
+    fun `retry offsets are measured from the first failure`() {
+        assertEquals(
+            3_000L,
+            playbackRecoveryDelayMs(
+                attempt = 1,
+                recoveryStartedElapsedRealtimeMs = 10_000L,
+                nowElapsedRealtimeMs = 15_000L
+            )
+        )
+        assertEquals(
+            0L,
+            playbackRecoveryDelayMs(
+                attempt = 0,
+                recoveryStartedElapsedRealtimeMs = 10_000L,
+                nowElapsedRealtimeMs = 20_000L
+            )
+        )
+    }
+
+    @Test
+    fun `retries transient network and audio track failures`() {
+        assertTrue(
+            isRecoverablePlaybackErrorCode(
+                PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED
+            )
+        )
+        assertTrue(
+            isRecoverablePlaybackErrorCode(
+                PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT
+            )
+        )
+        assertTrue(
+            isRecoverablePlaybackErrorCode(
+                PlaybackException.ERROR_CODE_AUDIO_TRACK_WRITE_FAILED
+            )
+        )
+    }
+
+    @Test
+    fun `does not retry deterministic source failures`() {
+        assertFalse(
+            isRecoverablePlaybackErrorCode(
+                PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND
+            )
+        )
+        assertFalse(
+            isRecoverablePlaybackErrorCode(
+                PlaybackException.ERROR_CODE_IO_NO_PERMISSION
+            )
+        )
+        assertFalse(
+            isRecoverablePlaybackErrorCode(
+                PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED
+            )
+        )
+    }
+
+    @Test
+    fun `releases every idle player except the focused session`() {
+        assertEquals(
+            setOf("session-a", "session-c"),
+            idlePlaybackSessionIdsToRelease(
+                focusedSessionId = "session-b",
+                idleSessionIds = listOf("session-a", "session-b", "session-c")
+            )
+        )
+        assertEquals(
+            setOf("session-a", "session-b"),
+            idlePlaybackSessionIdsToRelease(
+                focusedSessionId = "playing-session",
+                idleSessionIds = listOf("session-a", "session-b")
             )
         )
     }

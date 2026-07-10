@@ -1,5 +1,8 @@
 part of 'main_screen.dart';
 
+const _backgroundCleanerPromptExitKey =
+    'background_cleaner_prompt_exit_timestamp_v1';
+
 extension _MainScreenNotifications on _MainScreenState {
   Future<bool> _areNotificationsEnabled() async {
     return _notificationsPlatformService.areNotificationsEnabled();
@@ -20,7 +23,43 @@ extension _MainScreenNotifications on _MainScreenState {
         _backgroundPlaybackPromptShownThisLaunch) {
       return;
     }
+    final diagnostics = await _powerPlatformService
+        .getBackgroundRunDiagnostics();
+    if (!mounted) return;
+    if (diagnostics?.cleanerForceStopDetected == true) {
+      final timestamp = diagnostics?.lastExitTimestampMs?.toString();
+      final lastPromptedTimestamp = await AppPreferences.getString(
+        _backgroundCleanerPromptExitKey,
+      );
+      if (!mounted) return;
+      if (timestamp == null || timestamp != lastPromptedTimestamp) {
+        if (timestamp != null) {
+          unawaited(
+            AppPreferences.setString(
+              _backgroundCleanerPromptExitKey,
+              timestamp,
+            ),
+          );
+        }
+        _backgroundPlaybackPromptShownThisLaunch = true;
+        final i18n = context.read<AppLanguageProvider>();
+        showAppSnackBar(
+          context,
+          i18n.tr('background_cleaner_detected_message'),
+          title: i18n.tr('background_cleaner_detected_title'),
+          tone: AppFeedbackTone.warning,
+          icon: Icons.battery_alert_rounded,
+          duration: const Duration(seconds: 8),
+          actionLabel: i18n.tr('go_settings'),
+          onAction: () {
+            unawaited(_powerPlatformService.openBackgroundRunSettings());
+          },
+        );
+        return;
+      }
+    }
     final ignoringBatteryOptimizations =
+        diagnostics?.batteryOptimizationExempt ??
         await _isIgnoringBatteryOptimizations();
     if (!mounted || ignoringBatteryOptimizations) {
       _backgroundPlaybackPromptShownThisLaunch = true;

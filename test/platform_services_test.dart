@@ -39,6 +39,7 @@ void main() {
       expect(await service.openBackgroundRunSettings(), isFalse);
       expect(await service.canScheduleExactAlarms(), isTrue);
       expect(await service.executeTimerExpiredNow(7), isFalse);
+      expect(await service.getBackgroundRunDiagnostics(), isNull);
       expect(calls, isEmpty);
     });
 
@@ -118,6 +119,33 @@ void main() {
       final result = await service.getNativeTimerRuntimeState();
 
       expect(result, containsPair('generation', 4));
+    });
+
+    test('decodes background run diagnostics', () async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            expect(call.method, PowerMethod.getBackgroundRunDiagnostics);
+            return <String, Object?>{
+              'manufacturer': 'vivo',
+              'batteryOptimizationExempt': true,
+              'vendorBackgroundSettingsAvailable': true,
+              'cleanerForceStopDetected': true,
+              'lastExitReason': 10,
+              'lastExitDescription': 'single-cleaner',
+              'lastExitTimestampMs': 123,
+            };
+          });
+      final service = PowerPlatformService(
+        channel: channel,
+        isAndroidOverride: true,
+      );
+
+      final diagnostics = await service.getBackgroundRunDiagnostics();
+
+      expect(diagnostics?.isVivo, isTrue);
+      expect(diagnostics?.batteryOptimizationExempt, isTrue);
+      expect(diagnostics?.cleanerForceStopDetected, isTrue);
+      expect(diagnostics?.lastExitTimestampMs, 123);
     });
   });
 

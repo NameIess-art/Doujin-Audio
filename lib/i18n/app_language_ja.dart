@@ -545,6 +545,9 @@ const Map<String, String> appLanguageJa = {
       'このアプリの通知がシステムで無効になっているため、再生通知は表示されません。アプリ通知とメディア通知を有効にしてください。',
   'notification_permission_enabled': '通知権限が有効になりました。',
   'background_play_permission_title': 'バックグラウンド再生を許可',
+  'background_cleaner_detected_title': 'バックグラウンド再生が強制停止されました',
+  'background_cleaner_detected_message':
+      '強制停止後はアプリを自動再起動できません。vivo の設定でバックグラウンドの高電力使用と自動起動を許可してください。',
   'background_play_permission_message':
       '画面オフ後も音声を再生し続けるために、アプリを電池制限の対象外に設定してください。設定画面を開きますか？',
   'manage_files_permission_title': 'すべてのファイルへのアクセスを許可',

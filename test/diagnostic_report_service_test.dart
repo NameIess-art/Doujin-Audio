@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/services/diagnostic_report_service.dart';
 import 'package:nameless_audio/services/permission_status_service.dart';
 import 'package:nameless_audio/services/app_update_service.dart';
+import 'package:nameless_audio/services/power_platform_service.dart';
 
 void main() {
   test('exports a local diagnostic report with sanitized logs', () async {
@@ -24,6 +25,14 @@ void main() {
           const AppVersionInfo(versionName: '1.2.3', buildNumber: 4),
       cacheBytesProvider: () async => 42,
       logFilesProvider: () async => <File>[logFile],
+      backgroundRunDiagnosticsProvider: () async =>
+          const BackgroundRunDiagnostics(
+            manufacturer: 'vivo',
+            batteryOptimizationExempt: true,
+            vendorBackgroundSettingsAvailable: true,
+            cleanerForceStopDetected: true,
+            lastExitDescription: 'single-cleaner',
+          ),
       platformName: 'test',
       platformVersion: 'test-version',
     );
@@ -43,6 +52,11 @@ void main() {
     );
     expect(report['appVersion'], '1.2.3+4');
     expect(report['dartVisibleCacheBytes'], 42);
+    expect(
+      (report['backgroundRun']
+          as Map<String, dynamic>)['cleanerForceStopDetected'],
+      isTrue,
+    );
     expect(report, isNot(contains('mediaFiles')));
     expect(log, contains('Bearer [REDACTED]'));
     expect(log, isNot(contains('token=secret')));

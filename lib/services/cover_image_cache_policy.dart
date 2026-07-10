@@ -52,3 +52,13 @@ void applyCoverImageCachePolicy(
     cache.clear();
   }
 }
+
+void compactCoverImageCacheForBackground({ImageCache? imageCache}) {
+  final cache = imageCache ?? PaintingBinding.instance.imageCache;
+  applyCoverImageCachePolicy(
+    CoverImageResolution.memorySaver,
+    imageCache: cache,
+    clear: true,
+  );
+  cache.clearLiveImages();
+}

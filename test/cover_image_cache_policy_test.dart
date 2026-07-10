@@ -42,4 +42,17 @@ void main() {
     expect(cache.maximumSize, 120);
     expect(cache.maximumSizeBytes, 32 * 1024 * 1024);
   });
+
+  test('background compaction switches to the memory saver budget', () {
+    final cache = ImageCache()
+      ..maximumSize = 500
+      ..maximumSizeBytes = 128 * 1024 * 1024;
+
+    compactCoverImageCacheForBackground(imageCache: cache);
+
+    expect(cache.maximumSize, 120);
+    expect(cache.maximumSizeBytes, 32 * 1024 * 1024);
+    expect(cache.currentSize, 0);
+    expect(cache.currentSizeBytes, 0);
+  });
 }

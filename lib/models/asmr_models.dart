@@ -517,8 +517,10 @@ class AsmrTrackFile {
     String? remoteCoverUrl,
     String? remoteMetadataKind,
     Map<String, Object?>? remoteMetadata,
+    Iterable<String> preferredPlaybackUrls = const <String>[],
   }) {
     final playbackUrls = <String>[
+      ...preferredPlaybackUrls.map((url) => url.trim()),
       streamUrl?.trim() ?? '',
       downloadUrl?.trim() ?? '',
       lowQualityUrl?.trim() ?? '',

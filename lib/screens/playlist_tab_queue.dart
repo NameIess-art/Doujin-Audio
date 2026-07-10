@@ -215,40 +215,51 @@ class _QueueCoverGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final Widget content;
+    if (items.length == 1) {
+      content = _buildCell(context, 0);
+    } else if (items.length == 2) {
+      content = Row(
+        children: [
+          Expanded(child: _buildCell(context, 0)),
+          Expanded(child: _buildCell(context, 1)),
+        ],
+      );
+    } else {
+      content = Column(
+        children: [
+          Expanded(
+            child: Row(
+              children: [
+                Expanded(child: _buildCell(context, 0)),
+                Expanded(child: _buildCell(context, 1)),
+              ],
+            ),
+          ),
+          Expanded(
+            child: Row(
+              children: [
+                Expanded(child: _buildCell(context, 2)),
+                Expanded(child: _buildCell(context, 3)),
+              ],
+            ),
+          ),
+        ],
+      );
+    }
     return ClipRRect(
+      key: const ValueKey('playback_queue_cover_grid'),
       borderRadius: BorderRadius.circular(10),
-      child: SizedBox(
-        width: 96,
-        height: 72,
-        child: Column(
-          children: [
-            Expanded(
-              child: Row(
-                children: [
-                  Expanded(child: _buildCell(context, 0)),
-                  Expanded(child: _buildCell(context, 1)),
-                ],
-              ),
-            ),
-            Expanded(
-              child: Row(
-                children: [
-                  Expanded(child: _buildCell(context, 2)),
-                  Expanded(child: _buildCell(context, 3)),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
+      child: SizedBox(width: 96, height: 72, child: content),
     );
   }
 
   Widget _buildCell(BuildContext context, int index) {
+    final Widget cell;
     if (index >= items.length) {
       final cs = Theme.of(context).colorScheme;
       final isDark = Theme.of(context).brightness == Brightness.dark;
-      return ColoredBox(
+      cell = ColoredBox(
         color: cs.surfaceContainerHighest.withValues(alpha: isDark ? 0.4 : 0.6),
         child: Center(
           child: Icon(
@@ -258,13 +269,18 @@ class _QueueCoverGrid extends StatelessWidget {
           ),
         ),
       );
+    } else {
+      final item = items[index];
+      cell = _QueueTrackCover(
+        key: ValueKey('$index:${item.track.path}'),
+        track: item.track,
+        coverPath: item.coverPath,
+        coverCacheWidth: coverCacheWidth,
+      );
     }
-    final item = items[index];
-    return _QueueTrackCover(
-      key: ValueKey('$index:${item.track.path}'),
-      track: item.track,
-      coverPath: item.coverPath,
-      coverCacheWidth: coverCacheWidth,
+    return SizedBox.expand(
+      key: ValueKey('playback_queue_cover_cell_$index'),
+      child: cell,
     );
   }
 }
@@ -806,15 +822,16 @@ class _QueueSourceAudioTile extends ConsumerWidget {
             onPressed: () =>
                 provider.addTrackToPlaybackQueue(queueSessionId, track),
           ),
-          IconButton(
-            tooltip: i18n.tr('add_work_to_queue'),
-            constraints: const BoxConstraints.tightFor(width: 40, height: 28),
-            padding: EdgeInsets.zero,
-            visualDensity: VisualDensity.compact,
-            icon: const Icon(Icons.library_add_rounded, size: 22),
-            onPressed: () =>
-                provider.addWorkToPlaybackQueue(queueSessionId, track),
-          ),
+          if (!track.isSingle)
+            IconButton(
+              tooltip: i18n.tr('add_work_to_queue'),
+              constraints: const BoxConstraints.tightFor(width: 40, height: 28),
+              padding: EdgeInsets.zero,
+              visualDensity: VisualDensity.compact,
+              icon: const Icon(Icons.library_add_rounded, size: 22),
+              onPressed: () =>
+                  provider.addWorkToPlaybackQueue(queueSessionId, track),
+            ),
         ],
       ),
     );

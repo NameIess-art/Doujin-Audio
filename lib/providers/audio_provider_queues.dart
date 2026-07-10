@@ -65,6 +65,10 @@ extension AudioProviderQueues on AudioProvider {
     String sessionId,
     MusicTrack track,
   ) async {
+    if (track.isSingle) {
+      await addTrackToPlaybackQueue(sessionId, track);
+      return;
+    }
     final workTracks = tracksInSameWork(track.path);
     final groupTracks = tracksInSameGroup(track.path);
     final tracks = workTracks.isNotEmpty

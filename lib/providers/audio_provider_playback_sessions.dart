@@ -440,6 +440,21 @@ extension AudioProviderPlaybackSessions on AudioProvider {
         .map((value) => Uri.tryParse(value.trim()))
         .whereType<Uri>()
         .where((uri) => uri.scheme == 'http' || uri.scheme == 'https')
+        .expand<Uri>((uri) {
+          final host = uri.host.toLowerCase();
+          final isAsmrOne =
+              host == 'api.asmr.one' ||
+              host == 'api.asmr-100.com' ||
+              host == 'api.asmr-200.com' ||
+              host == 'api.asmr-300.com';
+          if (!isAsmrOne) return <Uri>[uri];
+          return AsmrApiService.defaultDomains.map(
+            (domain) => Uri.parse(domain).replace(
+              path: uri.path,
+              query: uri.hasQuery ? uri.query : null,
+            ),
+          );
+        })
         .toSet()
         .toList(growable: false);
     return candidates.isEmpty ? null : candidates;

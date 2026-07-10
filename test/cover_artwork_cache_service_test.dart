@@ -56,6 +56,19 @@ void main() {
     );
   });
 
+  test('ASMR remote covers use the gateway language header', () {
+    expect(
+      remoteCoverRequestHeadersForUrl(
+        'https://api.asmr-300.com/api/cover/123.jpg',
+      )[HttpHeaders.acceptLanguageHeader],
+      'zh-CN,zh;q=0.9,en;q=0.8',
+    );
+    expect(
+      remoteCoverRequestHeadersForUrl('https://example.com/cover.jpg'),
+      isEmpty,
+    );
+  });
+
   test(
     'tracks with the same remote cover share the resolved cache path',
     () async {

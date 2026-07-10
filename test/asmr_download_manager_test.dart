@@ -9,6 +9,21 @@ import 'package:nameless_audio/models/asmr_models.dart';
 import 'package:nameless_audio/services/asmr_download_manager.dart';
 
 void main() {
+  test('ASMR media requests include the scoped gateway language header', () {
+    final headers = asmrMediaRequestHeadersForUrl(
+      'https://raw.kiko-play-niptan.one/media/stream/work/track.mp3',
+    );
+
+    expect(
+      headers[HttpHeaders.acceptLanguageHeader],
+      'zh-CN,zh;q=0.9,en;q=0.8',
+    );
+    expect(
+      asmrMediaRequestHeadersForUrl('https://example.com/track.mp3'),
+      isEmpty,
+    );
+  });
+
   test('destinationExists checks local download folders', () async {
     final tempDir = await Directory.systemTemp.createTemp(
       'asmr_download_destination_',
@@ -183,6 +198,114 @@ void main() {
     },
   );
 
+  test('downloads files from one work with bounded concurrency', () async {
+    final tempDir = await Directory.systemTemp.createTemp(
+      'asmr_download_parallel_',
+    );
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final allRequestsStarted = Completer<void>();
+    var requestCount = 0;
+    var activeRequests = 0;
+    var maxActiveRequests = 0;
+    unawaited(
+      server.forEach((request) async {
+        requestCount++;
+        activeRequests++;
+        if (activeRequests > maxActiveRequests) {
+          maxActiveRequests = activeRequests;
+        }
+        if (requestCount == 3 && !allRequestsStarted.isCompleted) {
+          allRequestsStarted.complete();
+        }
+        try {
+          await allRequestsStarted.future.timeout(
+            const Duration(milliseconds: 500),
+          );
+        } on TimeoutException {
+          // A serial downloader reaches this timeout before starting the next file.
+        }
+        request.response.headers.contentLength = 256;
+        request.response.add(List<int>.filled(256, requestCount));
+        await request.response.close();
+        activeRequests--;
+      }),
+    );
+    final manager = _manager();
+    try {
+      await manager.startDownload(
+        work: _work(),
+        selectedRoots: <AsmrTrackFile>[
+          for (var index = 0; index < 3; index++)
+            _file(
+              title: 'Track $index.mp3',
+              downloadUrl:
+                  'http://${server.address.host}:${server.port}/track-$index.mp3',
+              size: 256,
+            ),
+        ],
+        destinationRoot: tempDir.path,
+        conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+      );
+      await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
+
+      expect(requestCount, 3);
+      expect(maxActiveRequests, greaterThanOrEqualTo(2));
+    } finally {
+      manager.dispose();
+      await server.close(force: true);
+      if (await tempDir.exists()) await tempDir.delete(recursive: true);
+    }
+  });
+
+  test('local downloads stage beside the target without using cache', () async {
+    final tempDir = await Directory.systemTemp.createTemp(
+      'asmr_download_local_stage_',
+    );
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    unawaited(
+      server.forEach((request) async {
+        request.response.headers.contentLength = 256;
+        request.response.add(List<int>.filled(256, 7));
+        await request.response.close();
+      }),
+    );
+    var cacheDirectoryRequests = 0;
+    final manager = AsmrDownloadManager(
+      temporaryDirectoryProvider: () async {
+        cacheDirectoryRequests++;
+        return Directory.systemTemp;
+      },
+    );
+    try {
+      await manager.startDownload(
+        work: _work(),
+        selectedRoots: <AsmrTrackFile>[
+          _file(
+            downloadUrl:
+                'http://${server.address.host}:${server.port}/track.mp3',
+            size: 256,
+          ),
+        ],
+        destinationRoot: tempDir.path,
+        conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+      );
+      await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
+
+      expect(cacheDirectoryRequests, 0);
+      expect(
+        await File(
+          '${tempDir.path}${Platform.pathSeparator}RJ123456 - Work'
+          '${Platform.pathSeparator}Track.mp3',
+        ).length(),
+        256,
+      );
+    } finally {
+      manager.dispose();
+      await server.close(force: true);
+      if (await tempDir.exists()) await tempDir.delete(recursive: true);
+    }
+  });
+
   test('download backup includes ASMR.ONE extended metadata', () async {
     final tempDir = await Directory.systemTemp.createTemp(
       'asmr_download_backup_',
@@ -347,6 +470,12 @@ void main() {
         await manager.cancelTask(1).timeout(const Duration(seconds: 5));
 
         expect(await sentinel.readAsString(), 'keep');
+        expect(
+          await File(
+            '${workDir.path}${Platform.pathSeparator}Track.mp3.nameless.part',
+          ).exists(),
+          isFalse,
+        );
       } finally {
         manager.dispose();
         await server.close(force: true);
@@ -534,10 +663,14 @@ AsmrWork _work({DateTime? releaseDate, int dlCount = 0, double rating = 0}) {
   );
 }
 
-AsmrTrackFile _file({required String downloadUrl, int size = 1}) {
+AsmrTrackFile _file({
+  required String downloadUrl,
+  int size = 1,
+  String title = 'Track.mp3',
+}) {
   return AsmrTrackFile(
-    hash: 'track',
-    title: 'Track.mp3',
+    hash: title,
+    title: title,
     type: 'audio',
     streamUrl: null,
     downloadUrl: downloadUrl,
@@ -548,6 +681,6 @@ AsmrTrackFile _file({required String downloadUrl, int size = 1}) {
     workId: 1,
     workTitle: 'Work',
     sourceId: 'RJ123456',
-    relativePath: 'Track.mp3',
+    relativePath: title,
   );
 }

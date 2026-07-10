@@ -668,50 +668,54 @@ class PlaybackQueueAudioEditPage extends ConsumerWidget {
                     },
                     itemBuilder: (context, index) {
                       final entry = queueEntries[index];
-                      return _QueueAudioEditCard(
+                      return _AnimatedQueueEntryCard(
                         key: ValueKey(entry.id),
-                        provider: provider,
-                        track: entry.tracks.firstOrNull,
-                        title: entry.title,
-                        subtitle: i18n.tr('audio_count', {
-                          'count': entry.tracks.length,
-                        }),
-                        trailing: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            IconButton(
-                              tooltip: i18n.tr('remove'),
-                              constraints: const BoxConstraints.tightFor(
-                                width: 40,
-                                height: 32,
-                              ),
-                              padding: EdgeInsets.zero,
-                              visualDensity: VisualDensity.compact,
-                              icon: const Icon(
-                                Icons.remove_circle_outline_rounded,
-                                size: 22,
-                              ),
-                              onPressed: () =>
-                                  provider.removePlaybackQueueEntry(
-                                    sessionId,
-                                    entry.id,
-                                  ),
-                            ),
-                            ReorderableDragStartListener(
-                              index: index,
-                              child: Container(
-                                width: 40,
-                                height: 32,
-                                alignment: Alignment.center,
-                                child: const Icon(
-                                  Icons.drag_handle_rounded,
-                                  size: 22,
-                                ),
-                              ),
-                            ),
-                          ],
+                        onRemove: () => provider.removePlaybackQueueEntry(
+                          sessionId,
+                          entry.id,
                         ),
+                        builder: (context, triggerRemove) {
+                          return _QueueAudioEditCard(
+                            provider: provider,
+                            track: entry.tracks.firstOrNull,
+                            title: entry.title,
+                            subtitle: i18n.tr('audio_count', {
+                              'count': entry.tracks.length,
+                            }),
+                            trailing: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                IconButton(
+                                  tooltip: i18n.tr('remove'),
+                                  constraints: const BoxConstraints.tightFor(
+                                    width: 40,
+                                    height: 32,
+                                  ),
+                                  padding: EdgeInsets.zero,
+                                  visualDensity: VisualDensity.compact,
+                                  icon: const Icon(
+                                    Icons.remove_circle_outline_rounded,
+                                    size: 22,
+                                  ),
+                                  onPressed: triggerRemove,
+                                ),
+                                ReorderableDragStartListener(
+                                  index: index,
+                                  child: Container(
+                                    width: 40,
+                                    height: 32,
+                                    alignment: Alignment.center,
+                                    child: const Icon(
+                                      Icons.drag_handle_rounded,
+                                      size: 22,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
                       );
                     },
                   ),
@@ -1090,6 +1094,51 @@ class _QueueColorSlider extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _AnimatedQueueEntryCard extends StatefulWidget {
+  final Widget Function(BuildContext context, VoidCallback triggerRemove) builder;
+  final VoidCallback onRemove;
+
+  const _AnimatedQueueEntryCard({
+    super.key,
+    required this.builder,
+    required this.onRemove,
+  });
+
+  @override
+  State<_AnimatedQueueEntryCard> createState() =>
+      _AnimatedQueueEntryCardState();
+}
+
+class _AnimatedQueueEntryCardState extends State<_AnimatedQueueEntryCard> {
+  bool _isRemoving = false;
+
+  void _triggerRemove() {
+    if (_isRemoving) return;
+    setState(() {
+      _isRemoving = true;
+    });
+    Future.delayed(const Duration(milliseconds: 250), () {
+      if (mounted) widget.onRemove();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedOpacity(
+      opacity: _isRemoving ? 0.0 : 1.0,
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeOut,
+      child: AnimatedSize(
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeInOut,
+        child: _isRemoving
+            ? const SizedBox(width: double.infinity, height: 0)
+            : widget.builder(context, _triggerRemove),
       ),
     );
   }

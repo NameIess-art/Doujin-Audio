@@ -205,7 +205,7 @@ void main() {
   });
 
   test(
-    'loose folder image affects the folder but not the track cover',
+    'folder card cover is reused as the track cover for grouped audio',
     () async {
       final directory = await Directory.systemTemp.createTemp(
         'cover_cache_folder_selection_',
@@ -219,20 +219,52 @@ void main() {
       await File(trackPath).writeAsBytes(<int>[1]);
       await File(folderCover).writeAsBytes(<int>[0xff, 0xd8, 0xff, 0xd9]);
       final track = _track(path: trackPath, groupKey: directory.path);
+      final gateway = _FakeFileCachePlatformGateway(
+        coversByPath: <String, String>{trackPath: '/cache/track-cover.image'},
+      );
       final cache = CoverArtworkCacheService(
         libraryService: LibraryService()..library.add(track),
-        fileCacheGateway: _FakeFileCachePlatformGateway(
-          coversByPath: <String, String>{trackPath: '/cache/track-cover.image'},
-        ),
+        fileCacheGateway: gateway,
       );
 
       await cache.setFolderCoverSelection(directory.path, folderCover);
 
       expect(cache.resolvedForFolder(directory.path), folderCover);
       expect(await cache.futureForFolder(directory.path), folderCover);
-      expect(await cache.futureForTrack(track), '/cache/track-cover.image');
+      expect(await cache.futureForTrack(track), folderCover);
     },
   );
+
+  test('changing folder card cover invalidates grouped track covers', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'cover_cache_folder_track_sync_',
+    );
+    addTearDown(() async {
+      if (await directory.exists()) await directory.delete(recursive: true);
+    });
+    final trackPath = '${directory.path}${Platform.pathSeparator}track.flac';
+    final firstCover = '${directory.path}${Platform.pathSeparator}first.jpg';
+    final secondCover = '${directory.path}${Platform.pathSeparator}second.jpg';
+    await File(trackPath).writeAsBytes(<int>[1]);
+    await File(firstCover).writeAsBytes(<int>[0xff, 0xd8, 0xff, 0xd9]);
+    await File(secondCover).writeAsBytes(<int>[0xff, 0xd8, 0xff, 0xd9]);
+    final track = _track(path: trackPath, groupKey: directory.path);
+    final cache = CoverArtworkCacheService(
+      libraryService: LibraryService()..library.add(track),
+      fileCacheGateway: _FakeFileCachePlatformGateway(
+        coversByPath: <String, String>{trackPath: '/cache/track-cover.image'},
+      ),
+    );
+
+    await cache.setFolderCoverSelection(directory.path, firstCover);
+    expect(await cache.futureForTrack(track), firstCover);
+    expect(cache.resolvedForTrack(track), firstCover);
+
+    await cache.setFolderCoverSelection(directory.path, secondCover);
+
+    expect(cache.resolvedForTrack(track), secondCover);
+    expect(await cache.futureForTrack(track), secondCover);
+  });
 
   test('new folder cover replaces a cached empty result immediately', () async {
     final directory = await Directory.systemTemp.createTemp(
@@ -504,7 +536,7 @@ void main() {
   );
 
   test(
-    'folder audio playback falls back to the selected folder cover only',
+    'folder audio track and playback covers follow the selected folder cover',
     () async {
       final directory = await Directory.systemTemp.createTemp(
         'cover_cache_playback_folder_fallback_',
@@ -529,8 +561,8 @@ void main() {
 
       await cache.setFolderCoverSelection(directory.path, folderCover);
 
-      expect(await cache.futureForTrack(track), isNull);
-      expect(cache.resolvedForTrack(track), isNull);
+      expect(await cache.futureForTrack(track), folderCover);
+      expect(cache.resolvedForTrack(track), folderCover);
       final firstPlaybackFuture = cache.futureForPlaybackTrack(track);
       final secondPlaybackFuture = cache.futureForPlaybackTrack(track);
       expect(identical(firstPlaybackFuture, secondPlaybackFuture), isTrue);
@@ -540,7 +572,7 @@ void main() {
         isTrue,
       );
       expect(cache.resolvedForPlaybackTrack(track), folderCover);
-      expect(cache.resolvedForTrack(track), isNull);
+      expect(cache.resolvedForTrack(track), folderCover);
 
       cache.invalidateFolder(directory.path);
       expect(

@@ -22,6 +22,8 @@ extension AudioProviderNotificationSync on AudioProvider {
   }
 
   void _syncNotificationState({bool immediateUnifiedSync = false}) {
+    unawaited(_syncSystemMediaControlsState());
+
     if (!_notificationsEnabled) {
       _unifiedNotificationSyncTimer?.cancel();
       _unifiedNotificationSyncTimer = null;
@@ -49,6 +51,49 @@ extension AudioProviderNotificationSync on AudioProvider {
     } else {
       _scheduleUnifiedPlaybackNotificationSync();
     }
+  }
+
+  Future<void> _syncSystemMediaControlsState() async {
+    final mainSession = _focusedSessionFrom(
+      _multiThreadPlaybackEnabled
+          ? activeSessions
+          : _singleThreadNotificationSessions,
+    );
+    if (mainSession == null) {
+      await _systemMediaControlsService.clear();
+      return;
+    }
+
+    final trackPath = mainSession.currentTrackPath;
+    final track = trackByPath(trackPath);
+    final coverPath = coverPathForTrack(track, trackPath: trackPath);
+    if (coverPath == null) {
+      unawaited(
+        _resolveNotificationCoverPathForTrack(track, trackPath: trackPath),
+      );
+    }
+
+    final duration = mainSession.duration ?? track?.duration;
+    await _systemMediaControlsService.sync(
+      SystemMediaControlState(
+        sessionId: mainSession.id,
+        title: _notificationTitleForSession(mainSession),
+        artist: track?.groupTitle,
+        album: track?.groupSubtitle,
+        thumbnail: coverPath ?? track?.remoteCoverUrl,
+        playing: mainSession.state.playing,
+        hasPrevious: _hasAdjacentPathFor(mainSession, forward: false),
+        hasNext: _hasAdjacentPathFor(mainSession, forward: true),
+        position: mainSession.position,
+        duration: duration == Duration.zero ? null : duration,
+      ),
+      SystemMediaControlsCallbacks(
+        onToggle: toggleSessionPlaybackFromNotification,
+        onPrevious: skipNotificationSessionToPreviousById,
+        onNext: skipNotificationSessionToNextById,
+        onSeek: seekSession,
+      ),
+    );
   }
 
   void _scheduleUnifiedPlaybackNotificationSync() {

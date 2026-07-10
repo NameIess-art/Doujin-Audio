@@ -24,6 +24,7 @@ Windows ZIP 包含完整 Flutter 运行时、`libmpv-2.dll`、FFmpeg 和 FFprobe
 - 多会话播放：同时保留多个独立播放会话，分别控制曲目、进度、音量、循环、字幕、队列和音效。
 - 播放范围：支持单曲循环、当前文件夹顺序/随机、跨文件夹顺序/随机播放。
 - 传输控制：播放/暂停、上一首/下一首、快退/快进、进度拖动、播放失败重试。
+- Windows 支持系统媒体传输控制（SMTC），可在系统音量/任务栏媒体面板中显示标题、封面、播放状态，并响应播放/暂停、上一首和下一首。
 - 加载中或播放错误时，播放按钮显示暂停图标；点击可立即重试。
 - 控制台功能栏：均衡器、功能、播放速度、标签、声道平衡都可在播放详情页直接打开。
 - 均衡器：支持设备频段、自带预设、自定义频段增益和持久化。
@@ -46,7 +47,9 @@ Windows ZIP 包含完整 Flutter 运行时、`libmpv-2.dll`、FFmpeg 和 FFprobe
 
 - 支持导入文件夹、曲库和单独文件；Android 优先使用 SAF 并持久化目录授权。
 - 根据文件树构建层级媒体库，支持自然排序、搜索、刷新扫描、排除目录和手动拖动排序。
+- Android 原生目录扫描支持 chunk 事件回传；导入大型媒体库时按批次合并并提交到现有曲库状态，减少一次性累积大量扫描结果造成的内存峰值。
 - 支持封面发现、单独视频帧封面提取、作品详情编辑、封面候选选择、标题重命名和引用同步。
+- 封面显示按 300px、600px、900px 或原图策略解码，并根据分辨率设置调整 Flutter 图片缓存预算，切换分辨率时会清理旧尺寸缓存。
 - 文件夹或单文件重命名时会同步更新封面索引，失效路径自动回退到现有发现流程。
 - 卡片实际使用的封面文件位置会保存到数据库和目录内 `nameless-audio.json`，再次打开曲库时优先校验并复用该索引。
 - 可按分类、声优、社团、标签、RJ 号、发售日等信息整理本地作品。
@@ -63,6 +66,7 @@ Windows ZIP 包含完整 Flutter 运行时、`libmpv-2.dll`、FFmpeg 和 FFprobe
 ### 后台播放与计时
 
 - Android 使用原生 `MediaSessionService`、Media3 / ExoPlayer、媒体前台服务和锁屏控制。
+- Android 通知栏媒体控制、锁屏控制和前台媒体服务复用同一套原生 MediaSession 路径，不引入应用商店渠道或第二套后台播放流程。
 - 支持 CPU WakeLock、Wi-Fi Lock、服务恢复和息屏播放状态保护。
 - 睡眠计时器支持立即倒计时或播放后开始、结束淡出、暂停会话和指定时间自动恢复。
 - 开机、应用更新后可恢复计时状态。
@@ -128,9 +132,10 @@ flutter build apk --release --target-platform android-arm64 --split-per-abi
 
 ### Windows Release
 
-构建前确保 `assets/ffmpeg/ffmpeg.exe` 和 `assets/ffmpeg/ffprobe.exe` 存在。
+构建前确保 `assets/ffmpeg/ffmpeg.exe` 和 `assets/ffmpeg/ffprobe.exe` 存在。Windows SMTC 依赖 `smtc_windows`，本地和 CI 构建环境需要可用的 Rust toolchain / `rustup`。`smtc_windows` 当前的 cargokit 脚本在 Windows hidden `AppData` 路径下可能无法解析 pub cache 符号链接，执行构建前补丁脚本后再打包。
 
 ```powershell
+.\tool\patch_smtc_windows_cargokit.ps1
 flutter build windows --release
 Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath dist\NamelessAudio-windows-x64-v0.13.0.zip -Force
 ```

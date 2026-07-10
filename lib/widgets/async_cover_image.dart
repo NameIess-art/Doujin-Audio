@@ -2,13 +2,14 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
-import '../models/music_track.dart';
+import '../models/music_track.dart' show MusicTrack;
+import '../providers/audio_provider.dart' as ap;
 import '../services/audio_state_services.dart';
 import '../services/ui_interaction_coordinator.dart';
 import 'scroll_activity_gate.dart';
 
-const int kCoverImageCacheSize = 600;
 const Duration kCoverImageFadeDuration = Duration(milliseconds: 750);
 
 int? coverCacheWidthForResolution(CoverImageResolution resolution) {
@@ -22,6 +23,26 @@ int? coverCacheWidthForResolution(CoverImageResolution resolution) {
     case CoverImageResolution.original:
       return null;
   }
+}
+
+CoverImageResolution coverImageResolutionOf(BuildContext context) {
+  try {
+    return context.select<ap.AudioProvider, CoverImageResolution>(
+      (provider) => provider.coverImageResolution,
+    );
+  } on ProviderNotFoundException {
+    return CoverImageResolution.balanced;
+  }
+}
+
+int? coverCacheWidthForContext(
+  BuildContext context, {
+  int? cacheWidth,
+  bool useDefaultCacheWidth = true,
+}) {
+  if (cacheWidth != null) return cacheWidth;
+  if (!useDefaultCacheWidth) return null;
+  return coverCacheWidthForResolution(coverImageResolutionOf(context));
 }
 
 bool hasDisplayableCoverArtwork(MusicTrack? track, String? resolvedCoverPath) {
@@ -325,6 +346,7 @@ class AsyncLocalCoverImage extends StatelessWidget {
   const AsyncLocalCoverImage({
     super.key,
     required this.future,
+    this.requestKey,
     this.initialPath,
     this.retryFutureBuilder,
     required this.seed,
@@ -345,6 +367,7 @@ class AsyncLocalCoverImage extends StatelessWidget {
   });
 
   final Future<String?> future;
+  final Object? requestKey;
   final String? initialPath;
   final Future<String?> Function()? retryFutureBuilder;
   final String seed;
@@ -386,6 +409,7 @@ class AsyncLocalCoverImage extends StatelessWidget {
   Widget build(BuildContext context) {
     return AsyncCoverImage(
       future: future,
+      requestKey: requestKey,
       initialPath: initialPath,
       retryFutureBuilder: retryFutureBuilder,
       duration: duration,
@@ -570,10 +594,15 @@ class RetryingNetworkImage extends StatelessWidget {
     if (trimmedUrl.isEmpty) {
       return fallbackBuilder(context);
     }
+    final effectiveCacheWidth = coverCacheWidthForContext(
+      context,
+      cacheWidth: cacheWidth,
+      useDefaultCacheWidth: useDefaultCacheWidth,
+    );
     return RetryingImage(
       retryKey: trimmedUrl,
       imageProviderBuilder: () => ResizeImage.resizeIfNeeded(
-        cacheWidth ?? (useDefaultCacheWidth ? kCoverImageCacheSize : null),
+        effectiveCacheWidth,
         cacheHeight,
         NetworkImage(trimmedUrl),
       ),
@@ -698,13 +727,18 @@ class RetryingFileImage extends StatelessWidget {
     if (path.isEmpty) {
       return fallbackBuilder(context);
     }
+    final effectiveCacheWidth = coverCacheWidthForContext(
+      context,
+      cacheWidth: cacheWidth,
+      useDefaultCacheWidth: useDefaultCacheWidth,
+    );
     return RetryingImage(
       retryKey: path,
       imageProviderBuilder: () => resizeFileImageIfNeeded(
         path: path,
-        cacheWidth: cacheWidth,
+        cacheWidth: effectiveCacheWidth,
         cacheHeight: cacheHeight,
-        useDefaultCacheWidth: useDefaultCacheWidth,
+        useDefaultCacheWidth: false,
       ),
       fallbackBuilder: fallbackBuilder,
       loadingBuilder: loadingBuilder,
@@ -834,7 +868,10 @@ ImageProvider<Object> resizeFileImageIfNeeded({
 }) {
   final provider = FileImage(File(path));
   return ResizeImage.resizeIfNeeded(
-    cacheWidth ?? (useDefaultCacheWidth ? kCoverImageCacheSize : null),
+    cacheWidth ??
+        (useDefaultCacheWidth
+            ? coverCacheWidthForResolution(CoverImageResolution.balanced)
+            : null),
     cacheHeight,
     provider,
   );

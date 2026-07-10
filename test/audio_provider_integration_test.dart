@@ -2193,7 +2193,7 @@ void main() {
     });
 
     test(
-      'setFolderManualCover changes only the folder card selection',
+      'setFolderManualCover syncs the folder card cover to audio covers',
       () async {
         final workDir = await Directory.systemTemp.createTemp('folder_manual_');
         addTearDown(() async {
@@ -2209,7 +2209,10 @@ void main() {
         final trackPath = '${discDir.path}${Platform.pathSeparator}01.mp3';
         await File(trackPath).writeAsBytes(const <int>[1, 2, 3]);
         final coverPath = '${workDir.path}${Platform.pathSeparator}folder.jpg';
+        final replacementCoverPath =
+            '${workDir.path}${Platform.pathSeparator}folder-2.jpg';
         await File(coverPath).writeAsBytes(const <int>[4, 5, 6]);
+        await File(replacementCoverPath).writeAsBytes(const <int>[7, 8, 9]);
 
         provider.addWatchedFolder(workDir.path, notify: false);
         provider.addTracks(
@@ -2235,7 +2238,25 @@ void main() {
           await provider.coverPathFutureForFolder(workDir.path),
           coverPath,
         );
-        expect(await provider.coverPathFutureForTrack(updatedTrack), isNull);
+        expect(await provider.coverPathFutureForTrack(updatedTrack), coverPath);
+        expect(
+          await provider.playbackCoverPathFutureForTrack(updatedTrack),
+          coverPath,
+        );
+        expect(provider.coverPathForTrack(updatedTrack), coverPath);
+
+        await provider.setFolderManualCover(workDir.path, replacementCoverPath);
+
+        expect(
+          provider.coverPathForTrack(provider.trackByPath(trackPath)),
+          replacementCoverPath,
+        );
+        expect(
+          await provider.playbackCoverPathFutureForTrack(
+            provider.trackByPath(trackPath),
+          ),
+          replacementCoverPath,
+        );
       },
     );
   });

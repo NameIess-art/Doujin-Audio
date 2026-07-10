@@ -20,6 +20,7 @@ import 'services/asmr_library_controller.dart';
 import 'services/asmr_download_manager.dart';
 import 'services/audio_database_repository.dart';
 import 'services/audio_state_services.dart';
+import 'services/cover_image_cache_policy.dart';
 import 'services/native_playback_repository.dart';
 import 'services/playback_command_runner.dart';
 import 'services/playback_notification_service.dart';
@@ -55,10 +56,7 @@ Future<void> _runAudioPlayerApp() async {
   AppDatabase.initializeForPlatform();
   await AppWindowBootstrap.initializeMainWindow();
 
-  // Optimize image cache for mobile memory stability
-  PaintingBinding.instance.imageCache.maximumSizeBytes =
-      50 * 1024 * 1024; // 50MB
-  PaintingBinding.instance.imageCache.maximumSize = 200; // 200 images
+  applyCoverImageCachePolicy(CoverImageResolution.balanced);
 
   // Start essential services in parallel to minimize blocking before runApp
   final initFutures = Future.wait([

@@ -102,6 +102,10 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Patch smtc_windows cargokit
+        shell: pwsh
+        run: ./tool/patch_smtc_windows_cargokit.ps1
+
       - name: Build Windows release
         run: flutter build windows
 
@@ -212,6 +216,10 @@ jobs:
 
       - name: Install dependencies
         run: flutter pub get
+
+      - name: Patch smtc_windows cargokit
+        shell: pwsh
+        run: ./tool/patch_smtc_windows_cargokit.ps1
 
       - name: Verify release metadata
         run: dart run tool/verify_release.dart --tag "${{ github.ref_name }}"

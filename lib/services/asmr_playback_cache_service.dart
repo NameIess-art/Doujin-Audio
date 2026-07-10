@@ -41,7 +41,7 @@ class AsmrPlaybackCacheService {
         return null;
       }
       await temp.rename(target.path);
-      unawaited(AppCacheService.enforceLimit());
+      AppCacheService.scheduleEnforce();
       return target.path;
     } catch (error, stackTrace) {
       AppLogService.error(

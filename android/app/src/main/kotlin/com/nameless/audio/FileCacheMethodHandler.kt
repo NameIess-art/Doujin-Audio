@@ -22,12 +22,13 @@ internal class FileCacheMethodHandler(
                     result.error("invalid_args", "uri is required", null)
                     return
                 }
-                try {
-                    result.success(operations.cacheFromUri(uriString, name, index))
-                } catch (e: IllegalStateException) {
-                    result.error("open_failed", e.message ?: "cannot open input stream", null)
-                } catch (e: Exception) {
-                    result.error("cache_failed", e.message ?: "unknown error", null)
+                runAsync(
+                    result = result,
+                    errorCode = { e ->
+                        if (e is IllegalStateException) "open_failed" else "cache_failed"
+                    }
+                ) {
+                    operations.cacheFromUri(uriString, name, index)
                 }
             }
             FileCacheMethods.CLEAR_APPLICATION_CACHE -> runAsync(result) {

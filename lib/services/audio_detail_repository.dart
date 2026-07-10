@@ -78,24 +78,52 @@ class AudioDetailRepository {
         .toList(growable: false);
     if (normalizedTargets.isEmpty) return const <AudioDetailLoadResult>[];
 
-    final databaseDetails = await _databaseRepository.loadAudioDetails(
-      normalizedTargets,
-    );
-    final detailsByKey = <String, AudioDetail>{
-      for (final detail in databaseDetails)
-        _detailKeyForTarget(detail.target): detail,
+    final targetsByKey = <String, AudioDetailTarget>{
+      for (final target in normalizedTargets)
+        _detailKeyForTarget(target): target,
     };
-    final results = <AudioDetailLoadResult>[];
-    for (final target in normalizedTargets) {
-      final key = _detailKeyForTarget(target);
-      final databaseDetail = detailsByKey[key];
-      if (databaseDetail != null) {
-        results.add(AudioDetailLoadResult(detail: databaseDetail));
-        continue;
+    final databaseDetails = await _databaseRepository.loadAudioDetails(
+      targetsByKey.values,
+    );
+    final resultsByKey = <String, AudioDetailLoadResult>{
+      for (final detail in databaseDetails)
+        _detailKeyForTarget(detail.target): AudioDetailLoadResult(
+          detail: detail,
+        ),
+    };
+    final missingTargets = targetsByKey.entries
+        .where((entry) => !resultsByKey.containsKey(entry.key))
+        .toList(growable: false);
+    final restoredDetails = <AudioDetail>[];
+    const concurrency = 8;
+    for (var start = 0; start < missingTargets.length; start += concurrency) {
+      final end = (start + concurrency).clamp(0, missingTargets.length);
+      final chunk = missingTargets.sublist(start, end);
+      final backups = await Future.wait(
+        chunk.map((entry) => _readBackup(entry.value)),
+      );
+      for (var index = 0; index < chunk.length; index++) {
+        final entry = chunk[index];
+        final backup = backups[index];
+        if (backup == null) {
+          resultsByKey[entry.key] = AudioDetailLoadResult(
+            detail: AudioDetail.empty(entry.value),
+          );
+          continue;
+        }
+        final normalized = backup.normalizedForSave(_now());
+        restoredDetails.add(normalized);
+        resultsByKey[entry.key] = AudioDetailLoadResult(
+          detail: normalized,
+          restoredFromBackup: true,
+        );
       }
-      results.add(await load(target));
     }
-    return results;
+    await _databaseRepository.upsertAudioDetails(restoredDetails);
+    return <AudioDetailLoadResult>[
+      for (final target in normalizedTargets)
+        resultsByKey[_detailKeyForTarget(target)]!,
+    ];
   }
 
   Future<AudioDetailSaveResult> save(AudioDetail detail) async {

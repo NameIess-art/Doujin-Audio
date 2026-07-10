@@ -287,6 +287,8 @@ class AsmrDownloadManager extends ChangeNotifier {
   final Map<int, HttpClient> _activeHttpClients = {};
   final Map<int, bool> _workRootExistedBeforeTask = {};
   final Map<int, Set<String>> _createdOutputPaths = {};
+  final Map<int, int> _liveDownloadedBytes = {};
+  final Map<int, Map<String, int>> _liveFileDownloadedBytes = {};
 
   static const int _maxConcurrentDownloads = 3;
 
@@ -338,6 +340,21 @@ class AsmrDownloadManager extends ChangeNotifier {
     } else {
       _notifyTaskChanged();
     }
+  }
+
+  @visibleForTesting
+  void debugRecordDownloadChunkForTesting(
+    int workId,
+    String relativePath,
+    int chunkLength,
+    int fileDownloadedBytes,
+  ) {
+    _recordDownloadChunk(
+      workId,
+      relativePath,
+      chunkLength,
+      fileDownloadedBytes,
+    );
   }
 
   Future<void> initialize() async {
@@ -616,6 +633,8 @@ class AsmrDownloadManager extends ChangeNotifier {
       final fileDownloadedBytes = Map<String, int>.from(
         _tasks[workId]!.fileDownloadedBytes,
       );
+      _liveDownloadedBytes[workId] = downloadedBytes;
+      _liveFileDownloadedBytes[workId] = fileDownloadedBytes;
       final fileTotalBytes = _tasks[workId]!.fileTotalBytes;
 
       // Ensure folders
@@ -641,6 +660,7 @@ class AsmrDownloadManager extends ChangeNotifier {
           currentItemPath: item.relativePath,
           message: item.relativePath,
         );
+        _liveDownloadedBytes[workId] = downloadedBytes;
         _notifyProgressChanged();
 
         final result = await _downloadItem(
@@ -730,6 +750,9 @@ class AsmrDownloadManager extends ChangeNotifier {
         completion.complete();
       }
       _activeTasks.remove(workId);
+      _liveDownloadedBytes.remove(workId);
+      _liveFileDownloadedBytes.remove(workId);
+      AppCacheService.scheduleEnforce();
       _processQueue();
     }
   }
@@ -909,18 +932,12 @@ class AsmrDownloadManager extends ChangeNotifier {
           received += chunk.length;
           sink.add(chunk);
 
-          final task = _tasks[workId];
-          if (task != null) {
-            final updatedFileDownloadedBytes = Map<String, int>.from(
-              task.fileDownloadedBytes,
-            );
-            updatedFileDownloadedBytes[item.relativePath] = received;
-            _tasks[workId] = task.copyWith(
-              downloadedBytes: task.downloadedBytes + chunk.length,
-              fileDownloadedBytes: updatedFileDownloadedBytes,
-            );
-            _notifyProgressChanged();
-          }
+          _recordDownloadChunk(
+            workId,
+            item.relativePath,
+            chunk.length,
+            received,
+          );
         }
         await sink.flush();
       } finally {
@@ -935,7 +952,6 @@ class AsmrDownloadManager extends ChangeNotifier {
       }
 
       await tempFile.setLastModified(DateTime.now());
-      await AppCacheService.enforceLimit();
       leaseTransferred = true;
       return _TemporaryDownloadResult(
         file: tempFile,
@@ -1092,6 +1108,7 @@ class AsmrDownloadManager extends ChangeNotifier {
   void _notifyTaskChanged() {
     _deferredProgressNotifyTimer?.cancel();
     _deferredProgressNotifyTimer = null;
+    _publishLiveProgress();
     _refreshTaskIdsSnapshot();
     _markProgressNotified();
     notifyListeners();
@@ -1112,7 +1129,8 @@ class AsmrDownloadManager extends ChangeNotifier {
     int totalDownloadedBytes = 0;
     for (final task in _tasks.values) {
       if (task.status == AsmrDownloadTaskStatus.downloading) {
-        totalDownloadedBytes += task.downloadedBytes;
+        totalDownloadedBytes +=
+            _liveDownloadedBytes[task.work.id] ?? task.downloadedBytes;
       }
     }
 
@@ -1143,6 +1161,40 @@ class AsmrDownloadManager extends ChangeNotifier {
     _lastProgressNotifyBytes = totalDownloadedBytes;
   }
 
+  void _recordDownloadChunk(
+    int workId,
+    String relativePath,
+    int chunkLength,
+    int fileDownloadedBytes,
+  ) {
+    final task = _tasks[workId];
+    if (task == null || chunkLength <= 0) return;
+    _liveDownloadedBytes.update(
+      workId,
+      (value) => value + chunkLength,
+      ifAbsent: () => task.downloadedBytes + chunkLength,
+    );
+    final fileProgress = _liveFileDownloadedBytes.putIfAbsent(
+      workId,
+      () => Map<String, int>.from(task.fileDownloadedBytes),
+    );
+    fileProgress[relativePath] = fileDownloadedBytes;
+    _notifyProgressChanged();
+  }
+
+  void _publishLiveProgress() {
+    for (final entry in _liveDownloadedBytes.entries) {
+      final task = _tasks[entry.key];
+      if (task == null) continue;
+      _tasks[entry.key] = task.copyWith(
+        downloadedBytes: entry.value,
+        fileDownloadedBytes: Map<String, int>.unmodifiable(
+          _liveFileDownloadedBytes[entry.key] ?? task.fileDownloadedBytes,
+        ),
+      );
+    }
+  }
+
   @override
   void dispose() {
     _deferredProgressNotifyTimer?.cancel();
@@ -1152,6 +1204,8 @@ class AsmrDownloadManager extends ChangeNotifier {
     _activeHttpClients.clear();
     _workRootExistedBeforeTask.clear();
     _createdOutputPaths.clear();
+    _liveDownloadedBytes.clear();
+    _liveFileDownloadedBytes.clear();
     super.dispose();
   }
 

@@ -696,6 +696,32 @@ class AppDatabase {
     });
   }
 
+  Future<void> replaceTrackPaths(Map<String, MusicTrack> replacements) async {
+    if (replacements.isEmpty) return;
+    final normalizedDestinations = <String>{};
+    for (final entry in replacements.entries) {
+      if (entry.key.trim().isEmpty || entry.value.path.trim().isEmpty) {
+        throw ArgumentError('Track replacement paths must not be empty.');
+      }
+      if (!normalizedDestinations.add(
+        PathMatcher.normalize(entry.value.path),
+      )) {
+        throw ArgumentError('Track replacement paths must be unique.');
+      }
+    }
+
+    await _runDatabaseWrite((db) async {
+      await db.transaction((txn) async {
+        await _deleteTrackPaths(txn, replacements.keys.toList(growable: false));
+        final batch = txn.batch();
+        for (final track in replacements.values) {
+          _writeTrackToBatch(batch, track);
+        }
+        await batch.commit(noResult: true);
+      });
+    });
+  }
+
   Future<int> nextScanGeneration() async {
     return _runDatabaseRead((db) async {
       final rows = await db.rawQuery(
@@ -723,28 +749,38 @@ class AppDatabase {
       );
       final paths = rows.map((row) => row['path'] as String).toList();
       if (paths.isEmpty) return;
-      const chunkSize = _sqliteInClauseBatchSize;
       await db.transaction((txn) async {
-        for (var start = 0; start < paths.length; start += chunkSize) {
-          final end = (start + chunkSize).clamp(0, paths.length);
-          final chunk = paths.sublist(start, end);
-          final placeholders = List.filled(chunk.length, '?').join(', ');
-          for (final table in [
-            'track_tags',
-            'track_remote_metadata',
-            'track_assets',
-            'track_playback_state',
-            'track_scan_info',
-            'tracks',
-          ]) {
-            await txn.rawDelete(
-              'DELETE FROM $table WHERE path IN ($placeholders)',
-              chunk,
-            );
-          }
-        }
+        await _deleteTrackPaths(txn, paths);
       });
     });
+  }
+
+  static Future<void> _deleteTrackPaths(
+    DatabaseExecutor database,
+    List<String> paths,
+  ) async {
+    for (
+      var start = 0;
+      start < paths.length;
+      start += _sqliteInClauseBatchSize
+    ) {
+      final end = (start + _sqliteInClauseBatchSize).clamp(0, paths.length);
+      final chunk = paths.sublist(start, end);
+      final placeholders = List.filled(chunk.length, '?').join(', ');
+      for (final table in <String>[
+        'track_tags',
+        'track_remote_metadata',
+        'track_assets',
+        'track_playback_state',
+        'track_scan_info',
+        'tracks',
+      ]) {
+        await database.rawDelete(
+          'DELETE FROM $table WHERE path IN ($placeholders)',
+          chunk,
+        );
+      }
+    }
   }
 
   Future<void> deleteTracks(List<String> paths) async {
@@ -752,26 +788,8 @@ class AppDatabase {
     await _runDatabaseWrite((db) async {
       // Use a single DELETE ... WHERE path IN (...) instead of N individual
       // DELETE statements — much faster for large deletions.
-      const chunkSize = _sqliteInClauseBatchSize;
       await db.transaction((txn) async {
-        for (var start = 0; start < paths.length; start += chunkSize) {
-          final end = (start + chunkSize).clamp(0, paths.length);
-          final chunk = paths.sublist(start, end);
-          final placeholders = List.filled(chunk.length, '?').join(', ');
-          for (final table in [
-            'track_tags',
-            'track_remote_metadata',
-            'track_assets',
-            'track_playback_state',
-            'track_scan_info',
-            'tracks',
-          ]) {
-            await txn.rawDelete(
-              'DELETE FROM $table WHERE path IN ($placeholders)',
-              chunk,
-            );
-          }
-        }
+        await _deleteTrackPaths(txn, paths);
       });
     });
   }
@@ -990,6 +1008,24 @@ class AppDatabase {
         row,
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
+    });
+  }
+
+  Future<void> upsertAudioDetails(Iterable<AudioDetail> details) async {
+    final values = details.toList(growable: false);
+    if (values.isEmpty) return;
+    await _runDatabaseWrite((db) async {
+      final batch = db.batch();
+      for (final detail in values) {
+        final row = detail.toRow();
+        row['target_path'] = PathMatcher.normalize(detail.target.targetPath);
+        batch.insert(
+          'audio_details',
+          row,
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+      await batch.commit(noResult: true);
     });
   }
 

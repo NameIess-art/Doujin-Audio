@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as path;
@@ -255,6 +256,9 @@ class AsmrLibraryController extends ChangeNotifier {
         AsmrCategoryType.release,
       ];
   static const int _recommendationCandidatePagesPerRefresh = 2;
+  static const int _detailCacheLimit = 128;
+  static const int _trackCacheLimit = 32;
+  static const int _filteredWorksCacheLimit = 24;
   static const List<Duration> _transientRemoteLoadRetryDelays = <Duration>[
     Duration(milliseconds: 350),
     Duration(milliseconds: 900),
@@ -284,18 +288,16 @@ class AsmrLibraryController extends ChangeNotifier {
       <AsmrCategoryType, bool>{};
   final Map<AsmrCategoryType, String> _queryByCategory =
       <AsmrCategoryType, String>{};
-  final Map<int, AsmrWork> _workCache = <int, AsmrWork>{};
-  final Map<int, AsmrWorkDetail> _detailCache = <int, AsmrWorkDetail>{};
-  final Map<int, List<AsmrTrackFile>> _trackCache =
-      <int, List<AsmrTrackFile>>{};
-  final Map<int, List<AsmrTrackFile>> _visibleTrackCache =
-      <int, List<AsmrTrackFile>>{};
+  final LinkedHashMap<int, AsmrWorkDetail> _detailCache = LinkedHashMap();
+  final LinkedHashMap<int, List<AsmrTrackFile>> _trackCache = LinkedHashMap();
+  final LinkedHashMap<int, List<AsmrTrackFile>> _visibleTrackCache =
+      LinkedHashMap();
   final Set<int> _loadingTrackWorkIds = <int>{};
   final Map<AsmrCategoryType, int> _categoryRevisions =
       <AsmrCategoryType, int>{};
   final Map<int, int> _trackRevisions = <int, int>{};
-  final Map<_AsmrFilteredWorksCacheKey, List<AsmrWork>> _filteredWorksCache =
-      <_AsmrFilteredWorksCacheKey, List<AsmrWork>>{};
+  final LinkedHashMap<_AsmrFilteredWorksCacheKey, List<AsmrWork>>
+  _filteredWorksCache = LinkedHashMap();
 
   List<AsmrCategoryType> _visibleCategories = kDefaultVisibleAsmrCategories;
   AsmrContentLanguage _contentLanguage = AsmrContentLanguage.zh;
@@ -349,7 +351,7 @@ class AsmrLibraryController extends ChangeNotifier {
   String activeQueryFor(AsmrCategoryType category) =>
       _queryByCategory[category] ?? '';
   bool isTrackTreeLoading(int workId) => _loadingTrackWorkIds.contains(workId);
-  List<AsmrTrackFile>? trackTreeFor(int workId) => _trackCache[workId];
+  List<AsmrTrackFile>? trackTreeFor(int workId) => _cachedTrackTree(workId);
 
   AsmrLibraryGlobalViewState get globalViewState => AsmrLibraryGlobalViewState(
     initialized: _initialized,
@@ -402,7 +404,7 @@ class AsmrLibraryController extends ChangeNotifier {
   }
 
   AsmrTrackTreeViewState trackTreeViewState(int workId) {
-    final tree = _trackCache[workId];
+    final tree = _cachedTrackTree(workId);
     return AsmrTrackTreeViewState(
       workId: workId,
       tree: tree,
@@ -444,8 +446,9 @@ class AsmrLibraryController extends ChangeNotifier {
       query: normalizedQuery,
       revision: _categoryRevisionFor(category),
     );
-    final cached = _filteredWorksCache[cacheKey];
+    final cached = _filteredWorksCache.remove(cacheKey);
     if (cached != null) {
+      _filteredWorksCache[cacheKey] = cached;
       return cached;
     }
     final terms = extractSearchTerms(normalizedQuery);
@@ -453,6 +456,9 @@ class AsmrLibraryController extends ChangeNotifier {
         .where((work) => _matchesQuery(work, normalizedQuery, terms: terms))
         .toList(growable: false);
     _filteredWorksCache[cacheKey] = filtered;
+    while (_filteredWorksCache.length > _filteredWorksCacheLimit) {
+      _filteredWorksCache.remove(_filteredWorksCache.keys.first);
+    }
     return filtered;
   }
 
@@ -487,9 +493,6 @@ class AsmrLibraryController extends ChangeNotifier {
     _syncOperations = await AsmrPreferences.loadSyncOperations();
     await _seedSyncOutboxIfNeeded();
     _lastSyncAt = await AsmrPreferences.loadLastSyncAt();
-    for (final work in _favoriteWorks.followedBy(_historyWorks)) {
-      _workCache[work.id] = work;
-    }
     _updateLocalCategoryCounts();
     _initialized = true;
     _bumpGlobalRevision();
@@ -539,7 +542,6 @@ class AsmrLibraryController extends ChangeNotifier {
   Future<void> reloadPersistedStateAfterBackupRestore() async {
     _initialized = false;
     _worksByCategory.clear();
-    _workCache.clear();
     _detailCache.clear();
     _trackCache.clear();
     _visibleTrackCache.clear();
@@ -803,9 +805,6 @@ class AsmrLibraryController extends ChangeNotifier {
           query: normalizedQuery,
           pageResult: pageResult,
         );
-        for (final work in decorated) {
-          _workCache[work.id] = work;
-        }
         notifyListeners();
       });
     } catch (error) {
@@ -922,9 +921,6 @@ class AsmrLibraryController extends ChangeNotifier {
       _worksByCategory[category] = decorated;
       _bumpCategoryRevision(category);
       _applyPageResult(category, query: searchQuery, pageResult: pageResult);
-      for (final work in decorated) {
-        _workCache[work.id] = work;
-      }
       notifyListeners();
     });
   }
@@ -988,9 +984,6 @@ class AsmrLibraryController extends ChangeNotifier {
       ),
     );
     _hasMoreByCategory[category] = false;
-    for (final work in ranked) {
-      _workCache[work.id] = work;
-    }
   }
 
   Future<_RecommendationCandidatePageResult>
@@ -1153,8 +1146,9 @@ class AsmrLibraryController extends ChangeNotifier {
   }
 
   Future<AsmrWorkDetail> loadWorkDetail(AsmrWork work) async {
-    final cached = _detailCache[work.id];
+    final cached = _detailCache.remove(work.id);
     if (cached != null) {
+      _detailCache[work.id] = cached;
       return cached;
     }
     final detail = await _apiService.fetchWorkDetail(
@@ -1169,17 +1163,15 @@ class AsmrLibraryController extends ChangeNotifier {
       languageEditionLabels: detail.languageEditionLabels,
       userRating: detail.userRating,
     );
-    _detailCache[work.id] = merged;
-    _workCache[work.id] = merged.work;
+    _storeDetail(merged);
     return merged;
   }
 
   Future<List<MusicTrack>> loadPlayableTracks(AsmrWork work) async {
     final tree =
-        _trackCache[work.id] ??
+        _cachedTrackTree(work.id) ??
         await _apiService.fetchTrackTree(work.id, token: _authSession?.token);
-    _trackCache[work.id] = tree;
-    _visibleTrackCache.remove(work.id);
+    _storeTrackTree(work.id, tree);
     return _flattenTracks(work, tree);
   }
 
@@ -1282,7 +1274,7 @@ class AsmrLibraryController extends ChangeNotifier {
   }
 
   Future<List<AsmrTrackFile>> ensureTrackTree(AsmrWork work) async {
-    final cached = _trackCache[work.id];
+    final cached = _cachedTrackTree(work.id);
     if (cached != null) {
       return cached;
     }
@@ -1295,12 +1287,12 @@ class AsmrLibraryController extends ChangeNotifier {
         work.id,
         token: _authSession?.token,
       );
-      _trackCache[work.id] = tree;
-      _visibleTrackCache.remove(work.id);
+      _storeTrackTree(work.id, tree);
       _bumpTrackRevision(work.id);
       return tree;
     } finally {
       _loadingTrackWorkIds.remove(work.id);
+      _trimTrackCache();
       _bumpTrackRevision(work.id);
       notifyListeners();
     }
@@ -1313,15 +1305,10 @@ class AsmrLibraryController extends ChangeNotifier {
     final shouldFavorite = existingIndex < 0;
     final updatedWork = work.copyWith(isFavorite: shouldFavorite);
     final nextFavoriteWorks = shouldFavorite
-        ? <AsmrWork>[updatedWork, ..._favoriteWorks].fold<List<AsmrWork>>(
-            <AsmrWork>[],
-            (result, item) {
-              if (result.any((existing) => existing.id == item.id)) {
-                return result;
-              }
-              return <AsmrWork>[...result, item];
-            },
-          )
+        ? <AsmrWork>[
+            updatedWork,
+            ..._favoriteWorks.where((item) => item.id != work.id),
+          ]
         : _favoriteWorks
               .where((item) => item.id != work.id)
               .toList(growable: false);
@@ -1343,23 +1330,23 @@ class AsmrLibraryController extends ChangeNotifier {
     _favoriteWorks = nextFavoriteWorks;
     _syncOperations = nextSyncOperations;
     _favoriteIds = _favoriteWorks.map((item) => item.id).toSet();
-    _workCache[work.id] = updatedWork;
-    _detailCache.update(
-      work.id,
-      (detail) => AsmrWorkDetail(
-        work: updatedWork,
-        description: detail.description,
-        ageCategory: detail.ageCategory,
-        languageEditionLabels: detail.languageEditionLabels,
-        userRating: detail.userRating,
-      ),
-      ifAbsent: () => AsmrWorkDetail(
-        work: updatedWork,
-        description: '',
-        ageCategory: '',
-        languageEditionLabels: const <String>[],
-        userRating: null,
-      ),
+    final cachedDetail = _detailCache.remove(work.id);
+    _storeDetail(
+      cachedDetail == null
+          ? AsmrWorkDetail(
+              work: updatedWork,
+              description: '',
+              ageCategory: '',
+              languageEditionLabels: const <String>[],
+              userRating: null,
+            )
+          : AsmrWorkDetail(
+              work: updatedWork,
+              description: cachedDetail.description,
+              ageCategory: cachedDetail.ageCategory,
+              languageEditionLabels: cachedDetail.languageEditionLabels,
+              userRating: cachedDetail.userRating,
+            ),
     );
     for (final entry in _worksByCategory.entries) {
       _worksByCategory[entry.key] = entry.value
@@ -1400,7 +1387,6 @@ class AsmrLibraryController extends ChangeNotifier {
 
     _historyWorks = nextHistoryWorks;
     _syncOperations = nextSyncOperations;
-    _workCache[work.id] = work;
     _bumpGlobalRevision();
     if (isAsmrAccountLoggedIn) {
       unawaited(syncAsmrAccount());
@@ -1687,9 +1673,6 @@ class AsmrLibraryController extends ChangeNotifier {
     }
     _favoriteWorks = byId.values.toList(growable: false);
     _favoriteIds = _favoriteWorks.map((work) => work.id).toSet();
-    for (final work in _favoriteWorks) {
-      _workCache[work.id] = work;
-    }
     await AsmrPreferences.saveFavoriteWorks(_favoriteWorks);
   }
 
@@ -1759,9 +1742,6 @@ class AsmrLibraryController extends ChangeNotifier {
     }
 
     _historyWorks = merged.take(_historyLimit).toList(growable: false);
-    for (final work in _historyWorks) {
-      _workCache[work.id] = work;
-    }
     await AsmrPreferences.saveHistoryWorks(_historyWorks);
   }
 
@@ -1822,16 +1802,56 @@ class AsmrLibraryController extends ChangeNotifier {
     _globalRevision++;
   }
 
+  void _storeDetail(AsmrWorkDetail detail) {
+    _detailCache.remove(detail.work.id);
+    _detailCache[detail.work.id] = detail;
+    while (_detailCache.length > _detailCacheLimit) {
+      _detailCache.remove(_detailCache.keys.first);
+    }
+  }
+
+  List<AsmrTrackFile>? _cachedTrackTree(int workId) {
+    final cached = _trackCache.remove(workId);
+    if (cached != null) _trackCache[workId] = cached;
+    return cached;
+  }
+
+  void _storeTrackTree(int workId, List<AsmrTrackFile> tree) {
+    _trackCache.remove(workId);
+    _trackCache[workId] = tree;
+    _visibleTrackCache.remove(workId);
+    _trimTrackCache();
+  }
+
+  void _trimTrackCache() {
+    while (_trackCache.length > _trackCacheLimit) {
+      final evictedWorkId = _trackCache.keys.firstWhere(
+        (workId) => !_loadingTrackWorkIds.contains(workId),
+        orElse: () => -1,
+      );
+      if (evictedWorkId < 0) return;
+      _trackCache.remove(evictedWorkId);
+      _visibleTrackCache.remove(evictedWorkId);
+    }
+  }
+
   List<AsmrTrackFile> _visibleTrackTreeFor(
     int workId,
     List<AsmrTrackFile> tree,
   ) {
-    return _visibleTrackCache.putIfAbsent(
-      workId,
-      () => tree
-          .where((node) => node.hasBrowsableContent)
-          .toList(growable: false),
-    );
+    final cached = _visibleTrackCache.remove(workId);
+    if (cached != null) {
+      _visibleTrackCache[workId] = cached;
+      return cached;
+    }
+    final visible = tree
+        .where((node) => node.hasBrowsableContent)
+        .toList(growable: false);
+    _visibleTrackCache[workId] = visible;
+    while (_visibleTrackCache.length > _trackCacheLimit) {
+      _visibleTrackCache.remove(_visibleTrackCache.keys.first);
+    }
+    return visible;
   }
 
   static List<AsmrCategoryType> _sanitizeVisibleCategories(

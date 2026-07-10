@@ -32,6 +32,10 @@ class AudioDatabaseRepository {
     return _database.upsertTracks(tracks);
   }
 
+  Future<void> replaceTrackPaths(Map<String, MusicTrack> replacements) {
+    return _database.replaceTrackPaths(replacements);
+  }
+
   Future<void> insertTracks(List<MusicTrack> tracks) {
     return _database.insertTracks(tracks);
   }
@@ -86,6 +90,10 @@ class AudioDatabaseRepository {
 
   Future<void> upsertAudioDetail(AudioDetail detail) {
     return _database.upsertAudioDetail(detail);
+  }
+
+  Future<void> upsertAudioDetails(Iterable<AudioDetail> details) {
+    return _database.upsertAudioDetails(details);
   }
 
   Future<void> deleteAudioDetail(AudioDetailTarget target) {

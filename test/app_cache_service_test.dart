@@ -78,4 +78,57 @@ void main() {
       lease.release();
     }
   });
+
+  test('scheduled cache enforcement coalesces repeated requests', () async {
+    const channel = MethodChannel('plugins.flutter.io/path_provider');
+    final tempDirectory = await Directory.systemTemp.createTemp(
+      'scheduled_cache_enforcement_',
+    );
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          if (call.method == 'getTemporaryDirectory') {
+            return tempDirectory.path;
+          }
+          return null;
+        });
+    addTearDown(() async {
+      await AppCacheService.setMaxCacheBytes(
+        AppCacheService.defaultMaxCacheBytes,
+      );
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null);
+      if (await tempDirectory.exists()) {
+        await tempDirectory.delete(recursive: true);
+      }
+    });
+    await AppCacheService.setMaxCacheBytes(5);
+    final cacheDirectory = Directory(
+      '${tempDirectory.path}${Platform.pathSeparator}video_frames',
+    );
+    await cacheDirectory.create(recursive: true);
+    for (var index = 0; index < 3; index++) {
+      await File(
+        '${cacheDirectory.path}${Platform.pathSeparator}$index.jpg',
+      ).writeAsBytes(List<int>.filled(4, index));
+    }
+
+    for (var index = 0; index < 10; index++) {
+      AppCacheService.scheduleEnforce(
+        idleDelay: const Duration(milliseconds: 10),
+        maxDelay: const Duration(milliseconds: 40),
+      );
+    }
+    final activeLease = AppCacheService.protectPaths(<String>[
+      '${cacheDirectory.path}${Platform.pathSeparator}0.jpg',
+    ]);
+    await Future<void>.delayed(const Duration(milliseconds: 30));
+    expect(await AppCacheService.estimateDartCacheBytes(), 12);
+    activeLease.release();
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+
+    expect(
+      await AppCacheService.estimateDartCacheBytes(),
+      lessThanOrEqualTo(4),
+    );
+  });
 }

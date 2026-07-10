@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/services.dart';
@@ -14,6 +15,8 @@ class AppCacheService {
   static int _maxCacheBytes = defaultMaxCacheBytes;
   static Future<void>? _enforceFuture;
   static bool _enforceRequested = false;
+  static Timer? _scheduledEnforceTimer;
+  static DateTime? _scheduledEnforceStartedAt;
   static final Map<String, int> _protectedPaths = <String, int>{};
   static bool _enforceAfterLeaseRelease = false;
 
@@ -24,6 +27,10 @@ class AppCacheService {
         .where((value) => value.trim().isNotEmpty)
         .map((value) => path.normalize(value))
         .toSet();
+    if (normalized.isNotEmpty && _scheduledEnforceTimer != null) {
+      _cancelScheduledEnforce();
+      _enforceAfterLeaseRelease = true;
+    }
     for (final protectedPath in normalized) {
       _protectedPaths.update(
         protectedPath,
@@ -58,6 +65,7 @@ class AppCacheService {
   }
 
   static Future<int> clearAllCaches() async {
+    _cancelScheduledEnforce();
     var deletedBytes = 0;
     if (Platform.isAndroid && _protectedPaths.isEmpty) {
       try {
@@ -127,12 +135,44 @@ class AppCacheService {
   }
 
   static Future<void> enforceLimit() {
+    _cancelScheduledEnforce();
     _enforceRequested = true;
     final inFlight = _enforceFuture;
     if (inFlight != null) return inFlight;
     final future = _drainEnforceRequests();
     _enforceFuture = future;
     return future;
+  }
+
+  static void scheduleEnforce({
+    Duration idleDelay = const Duration(seconds: 2),
+    Duration maxDelay = const Duration(seconds: 30),
+  }) {
+    if (_protectedPaths.isNotEmpty) {
+      _enforceAfterLeaseRelease = true;
+      return;
+    }
+    final now = DateTime.now();
+    final startedAt = _scheduledEnforceStartedAt ??= now;
+    final remaining = maxDelay - now.difference(startedAt);
+    if (remaining <= Duration.zero) {
+      _cancelScheduledEnforce();
+      unawaited(enforceLimit());
+      return;
+    }
+    _scheduledEnforceTimer?.cancel();
+    final delay = idleDelay < remaining ? idleDelay : remaining;
+    _scheduledEnforceTimer = Timer(delay, () {
+      _scheduledEnforceTimer = null;
+      _scheduledEnforceStartedAt = null;
+      unawaited(enforceLimit());
+    });
+  }
+
+  static void _cancelScheduledEnforce() {
+    _scheduledEnforceTimer?.cancel();
+    _scheduledEnforceTimer = null;
+    _scheduledEnforceStartedAt = null;
   }
 
   static Future<void> _drainEnforceRequests() async {

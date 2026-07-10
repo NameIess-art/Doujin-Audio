@@ -90,6 +90,10 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   final Set<String> _selectedVoiceActorTerms = <String>{};
   final Set<String> _selectedCircleTerms = <String>{};
   final Map<AudioLibraryCategoryType, String> _termSearchQueries = {};
+  AudioLibraryCategorySnapshot? _lastCategoryFilterSnapshot;
+  AudioLibraryCategoryType? _lastCategoryFilterType;
+  String? _lastCategoryFilterKey;
+  List<AudioLibraryCategoryEntry> _lastCategoryFilterResult = const [];
   String get _termSearchQuery => _termSearchQueries[_categoryType] ?? '';
   set _termSearchQuery(String value) {
     if (value.isEmpty) {

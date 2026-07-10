@@ -41,7 +41,6 @@ internal class FileCacheOperations(
             context = context,
             cacheDir = cacheDir,
             touchCacheFile = ::touchCacheFile,
-            enforceApplicationCacheLimit = { enforceApplicationCacheLimit() },
             resolveFilePath = ::contentUriToFilePath
         )
     }
@@ -1563,7 +1562,6 @@ internal class FileCacheOperations(
             return try {
                 imageFile.copyTo(outputFile, overwrite = true)
                 touchCacheFile(outputFile)
-                enforceApplicationCacheLimit()
                 outputFile.absolutePath
             } catch (_: Exception) {
                 null
@@ -1607,7 +1605,6 @@ internal class FileCacheOperations(
                 if (embeddedCover.isEmpty()) return null
                 outputFile.writeBytes(embeddedCover)
                 touchCacheFile(outputFile)
-                enforceApplicationCacheLimit()
                 outputFile.absolutePath
             } catch (_: Exception) {
                 if (outputFile.exists()) outputFile.delete()
@@ -1973,7 +1970,6 @@ internal class FileCacheOperations(
                     }
                 } ?: return null
                 touchCacheFile(outputFile)
-                enforceApplicationCacheLimit()
                 outputFile.absolutePath
             } catch (_: Exception) {
                 if (outputFile.exists()) {
@@ -2006,7 +2002,6 @@ internal class FileCacheOperations(
                     }
                 } ?: return null
                 touchCacheFile(outputFile)
-                enforceApplicationCacheLimit()
                 outputFile.absolutePath
             } catch (_: Exception) {
                 if (outputFile.exists()) {

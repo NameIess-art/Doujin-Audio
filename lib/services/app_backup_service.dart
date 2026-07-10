@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:archive/archive.dart';
+import 'package:archive/archive_io.dart';
 import 'package:crypto/crypto.dart';
 
 import '../platform/app_platform.dart';
@@ -103,6 +103,27 @@ class _BackupRestoreFailed implements Exception {
   const _BackupRestoreFailed();
 }
 
+class _PreparedBackup {
+  const _PreparedBackup({
+    required this.validation,
+    this.temporaryDirectory,
+    this.databaseFile,
+    this.preferences,
+  });
+
+  final BackupValidationResult validation;
+  final Directory? temporaryDirectory;
+  final File? databaseFile;
+  final Map<String, Object?>? preferences;
+
+  Future<void> dispose() async {
+    final directory = temporaryDirectory;
+    if (directory != null && await directory.exists()) {
+      await directory.delete(recursive: true);
+    }
+  }
+}
+
 class AppBackupService {
   AppBackupService({
     AppDatabase? database,
@@ -179,125 +200,101 @@ class AppBackupService {
   }
 
   Future<File> exportBackup(String outputPath) async {
-    final databaseBytes = await _runDatabaseMaintenance<Uint8List>(
-      replacesDatabase: false,
-      action: (databasePath) => File(databasePath).readAsBytes(),
-    );
-
-    final preferencesBytes = Uint8List.fromList(
-      utf8.encode(jsonEncode(await _exportPreferences())),
-    );
-    final version = await _appVersionProvider();
-    final entryBytes = <String, Uint8List>{
-      databaseEntry: databaseBytes,
-      preferencesEntry: preferencesBytes,
-    };
-    final manifest = BackupManifest(
-      formatVersion: formatVersion,
-      dataEpoch: dataEpoch,
-      appVersion: '${version.versionName}+${version.buildNumber}',
-      createdAt: DateTime.now(),
-      platform: _platformName,
-      databaseSchemaVersion: AppDatabase.schemaVersion,
-      entries: entryBytes.map(
-        (name, bytes) => MapEntry(
-          name,
-          BackupEntryManifest(
-            sha256Hash: sha256.convert(bytes).toString(),
-            size: bytes.length,
-          ),
-        ),
-      ),
-    );
-
-    final archive = Archive();
-    for (final entry in entryBytes.entries) {
-      archive.addFile(ArchiveFile(entry.key, entry.value.length, entry.value));
-    }
-    final manifestBytes = utf8.encode(jsonEncode(manifest.toJson()));
-    archive.addFile(
-      ArchiveFile(manifestEntry, manifestBytes.length, manifestBytes),
-    );
-    final encoded = ZipEncoder().encode(archive);
     final output = File(outputPath);
-    await output.parent.create(recursive: true);
-    await output.writeAsBytes(encoded, flush: true);
-    return output;
+    final temporaryDirectory = await Directory.systemTemp.createTemp(
+      'nameless_audio_backup_export_',
+    );
+    final databaseSnapshot = File(
+      '${temporaryDirectory.path}${Platform.pathSeparator}audio_player.db',
+    );
+    try {
+      await _runDatabaseMaintenance<void>(
+        replacesDatabase: false,
+        action: (databasePath) =>
+            _copyFile(File(databasePath), databaseSnapshot),
+      );
+      final preferencesBytes = Uint8List.fromList(
+        utf8.encode(jsonEncode(await _exportPreferences())),
+      );
+      final version = await _appVersionProvider();
+      final manifest = BackupManifest(
+        formatVersion: formatVersion,
+        dataEpoch: dataEpoch,
+        appVersion: '${version.versionName}+${version.buildNumber}',
+        createdAt: DateTime.now(),
+        platform: _platformName,
+        databaseSchemaVersion: AppDatabase.schemaVersion,
+        entries: <String, BackupEntryManifest>{
+          databaseEntry: BackupEntryManifest(
+            sha256Hash: await _sha256File(databaseSnapshot),
+            size: await databaseSnapshot.length(),
+          ),
+          preferencesEntry: BackupEntryManifest(
+            sha256Hash: sha256.convert(preferencesBytes).toString(),
+            size: preferencesBytes.length,
+          ),
+        },
+      );
+
+      await output.parent.create(recursive: true);
+      final encoder = ZipFileEncoder()..create(output.path);
+      var encoderClosed = false;
+      try {
+        final databaseInput = InputFileStream(databaseSnapshot.path);
+        try {
+          final databaseArchiveFile = ArchiveFile.stream(
+            databaseEntry,
+            databaseInput,
+          )..compression = CompressionType.none;
+          encoder.addArchiveFile(databaseArchiveFile);
+        } finally {
+          await databaseInput.close();
+        }
+        encoder.addArchiveFile(
+          ArchiveFile.bytes(preferencesEntry, preferencesBytes),
+        );
+        encoder.addArchiveFile(
+          ArchiveFile.string(manifestEntry, jsonEncode(manifest.toJson())),
+        );
+        await encoder.close();
+        encoderClosed = true;
+      } catch (error, stackTrace) {
+        if (!encoderClosed) {
+          try {
+            await encoder.close();
+          } catch (_) {
+            // Preserve the primary export failure after releasing the handle.
+          }
+        }
+        if (await output.exists()) await output.delete();
+        Error.throwWithStackTrace(error, stackTrace);
+      }
+      return output;
+    } finally {
+      if (await temporaryDirectory.exists()) {
+        await temporaryDirectory.delete(recursive: true);
+      }
+    }
   }
 
   Future<BackupValidationResult> validateBackup(String backupPath) async {
+    final prepared = await _prepareBackup(backupPath);
     try {
-      final archive = ZipDecoder().decodeBytes(
-        await File(backupPath).readAsBytes(),
-        verify: true,
-      );
-      final manifestFile = archive.findFile(manifestEntry);
-      if (manifestFile == null) {
-        return const BackupValidationResult.invalid('missing_manifest');
-      }
-      final manifest = BackupManifest.fromJson(
-        (jsonDecode(utf8.decode(manifestFile.content as List<int>))
-                as Map<String, dynamic>)
-            .cast<String, Object?>(),
-      );
-      if (manifest.formatVersion != formatVersion) {
-        return const BackupValidationResult.invalid(
-          'unsupported_format_version',
-        );
-      }
-      if (manifest.dataEpoch != dataEpoch) {
-        return const BackupValidationResult.invalid('unsupported_data_epoch');
-      }
-      if (manifest.databaseSchemaVersion > AppDatabase.schemaVersion) {
-        return const BackupValidationResult.invalid(
-          'unsupported_database_version',
-        );
-      }
-      for (final entry in manifest.entries.entries) {
-        final file = archive.findFile(entry.key);
-        if (file == null) {
-          return BackupValidationResult.invalid('missing_entry:${entry.key}');
-        }
-        final bytes = file.content as List<int>;
-        if (bytes.length != entry.value.size ||
-            sha256.convert(bytes).toString() != entry.value.sha256Hash) {
-          return BackupValidationResult.invalid(
-            'checksum_mismatch:${entry.key}',
-          );
-        }
-      }
-      if (!manifest.entries.containsKey(databaseEntry) ||
-          !manifest.entries.containsKey(preferencesEntry)) {
-        return const BackupValidationResult.invalid('missing_required_entry');
-      }
-      return BackupValidationResult.valid(manifest);
-    } catch (error, stackTrace) {
-      AppLogService.warning(
-        'backup_validation_failed',
-        error: error,
-        stackTrace: stackTrace,
-      );
-      return const BackupValidationResult.invalid('invalid_backup');
+      return prepared.validation;
+    } finally {
+      await prepared.dispose();
     }
   }
 
   Future<BackupValidationResult> restoreBackup(String backupPath) async {
-    final validation = await validateBackup(backupPath);
-    if (!validation.isValid) return validation;
-
-    final archive = ZipDecoder().decodeBytes(
-      await File(backupPath).readAsBytes(),
-      verify: true,
-    );
-    final databaseBytes = archive.findFile(databaseEntry)!.content as List<int>;
-    final preferences =
-        (jsonDecode(
-                  utf8.decode(
-                    archive.findFile(preferencesEntry)!.content as List<int>,
-                  ),
-                )
-                as Map<String, dynamic>)
-            .cast<String, Object?>();
+    final prepared = await _prepareBackup(backupPath);
+    final validation = prepared.validation;
+    if (!validation.isValid) {
+      await prepared.dispose();
+      return validation;
+    }
+    final preparedDatabase = prepared.databaseFile!;
+    final preferences = prepared.preferences!;
     final originalPreferences = await _exportPreferences();
     try {
       return await _runDatabaseMaintenance<BackupValidationResult>(
@@ -312,7 +309,7 @@ class AppBackupService {
             if (await databaseFile.exists()) {
               await databaseFile.rename(rollbackFile.path);
             }
-            await replacementFile.writeAsBytes(databaseBytes, flush: true);
+            await _copyFile(preparedDatabase, replacementFile);
             await replacementFile.rename(databaseFile.path);
             await _restorePreferences(preferences);
             if (await rollbackFile.exists()) await rollbackFile.delete();
@@ -336,6 +333,153 @@ class AppBackupService {
       );
     } on _BackupRestoreFailed {
       return const BackupValidationResult.invalid('restore_failed');
+    } finally {
+      await prepared.dispose();
     }
+  }
+
+  Future<_PreparedBackup> _prepareBackup(String backupPath) async {
+    Directory? temporaryDirectory;
+    InputFileStream? input;
+    Archive? archive;
+    try {
+      temporaryDirectory = await Directory.systemTemp.createTemp(
+        'nameless_audio_backup_restore_',
+      );
+      input = InputFileStream(backupPath);
+      archive = ZipDecoder().decodeStream(input, verify: true);
+      final manifestFile = archive.findFile(manifestEntry);
+      if (manifestFile == null) {
+        return _invalidPrepared('missing_manifest', temporaryDirectory);
+      }
+      final manifest = BackupManifest.fromJson(
+        (jsonDecode(utf8.decode(manifestFile.content)) as Map<String, dynamic>)
+            .cast<String, Object?>(),
+      );
+      final compatibilityError = _manifestCompatibilityError(manifest);
+      if (compatibilityError != null) {
+        return _invalidPrepared(compatibilityError, temporaryDirectory);
+      }
+      if (!manifest.entries.containsKey(databaseEntry) ||
+          !manifest.entries.containsKey(preferencesEntry)) {
+        return _invalidPrepared('missing_required_entry', temporaryDirectory);
+      }
+
+      final databaseFile = File(
+        '${temporaryDirectory.path}${Platform.pathSeparator}audio_player.db',
+      );
+      Map<String, Object?>? preferences;
+      for (final entry in manifest.entries.entries) {
+        final archiveFile = archive.findFile(entry.key);
+        if (archiveFile == null) {
+          return _invalidPrepared(
+            'missing_entry:${entry.key}',
+            temporaryDirectory,
+          );
+        }
+        if (entry.key == preferencesEntry) {
+          final bytes = archiveFile.content;
+          if (!_matchesManifest(
+            bytes.length,
+            sha256.convert(bytes),
+            entry.value,
+          )) {
+            return _invalidPrepared(
+              'checksum_mismatch:${entry.key}',
+              temporaryDirectory,
+            );
+          }
+          preferences = (jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>)
+              .cast<String, Object?>();
+          continue;
+        }
+
+        final extracted = entry.key == databaseEntry
+            ? databaseFile
+            : File(
+                '${temporaryDirectory.path}${Platform.pathSeparator}'
+                'entry_${entry.key.hashCode}.tmp',
+              );
+        await _extractArchiveFile(archiveFile, extracted);
+        final matches = _matchesManifest(
+          await extracted.length(),
+          await _sha256Digest(extracted),
+          entry.value,
+        );
+        if (!matches) {
+          return _invalidPrepared(
+            'checksum_mismatch:${entry.key}',
+            temporaryDirectory,
+          );
+        }
+        if (entry.key != databaseEntry && await extracted.exists()) {
+          await extracted.delete();
+        }
+      }
+      return _PreparedBackup(
+        validation: BackupValidationResult.valid(manifest),
+        temporaryDirectory: temporaryDirectory,
+        databaseFile: databaseFile,
+        preferences: preferences,
+      );
+    } catch (error, stackTrace) {
+      AppLogService.warning(
+        'backup_validation_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      return _invalidPrepared('invalid_backup', temporaryDirectory);
+    } finally {
+      if (archive != null) {
+        await archive.clear();
+      } else if (input != null) {
+        await input.close();
+      }
+    }
+  }
+
+  String? _manifestCompatibilityError(BackupManifest manifest) {
+    if (manifest.formatVersion != formatVersion) {
+      return 'unsupported_format_version';
+    }
+    if (manifest.dataEpoch != dataEpoch) return 'unsupported_data_epoch';
+    if (manifest.databaseSchemaVersion > AppDatabase.schemaVersion) {
+      return 'unsupported_database_version';
+    }
+    return null;
+  }
+
+  _PreparedBackup _invalidPrepared(String error, Directory? directory) {
+    return _PreparedBackup(
+      validation: BackupValidationResult.invalid(error),
+      temporaryDirectory: directory,
+    );
+  }
+
+  bool _matchesManifest(int size, Digest digest, BackupEntryManifest manifest) {
+    return size == manifest.size && digest.toString() == manifest.sha256Hash;
+  }
+
+  Future<void> _copyFile(File source, File target) async {
+    await target.parent.create(recursive: true);
+    await source.openRead().pipe(target.openWrite());
+  }
+
+  Future<void> _extractArchiveFile(ArchiveFile source, File target) async {
+    await target.parent.create(recursive: true);
+    final output = OutputFileStream(target.path);
+    try {
+      source.writeContent(output);
+    } finally {
+      await output.close();
+    }
+  }
+
+  Future<String> _sha256File(File file) async {
+    return (await _sha256Digest(file)).toString();
+  }
+
+  Future<Digest> _sha256Digest(File file) async {
+    return sha256.bind(file.openRead()).first;
   }
 }

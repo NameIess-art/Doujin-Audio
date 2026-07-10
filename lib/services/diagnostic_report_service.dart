@@ -8,6 +8,7 @@ import 'app_database.dart';
 import 'app_log_service.dart';
 import 'app_update_service.dart';
 import 'permission_status_service.dart';
+import 'power_platform_service.dart';
 
 class DiagnosticReportService {
   DiagnosticReportService({
@@ -15,6 +16,8 @@ class DiagnosticReportService {
     Future<AppVersionInfo> Function()? appVersionProvider,
     Future<int> Function()? cacheBytesProvider,
     Future<List<File>> Function()? logFilesProvider,
+    Future<BackgroundRunDiagnostics?> Function()?
+    backgroundRunDiagnosticsProvider,
     String? platformName,
     String? platformVersion,
   }) : _permissionStatusService =
@@ -24,6 +27,9 @@ class DiagnosticReportService {
        _cacheBytesProvider =
            cacheBytesProvider ?? AppCacheService.estimateDartCacheBytes,
        _logFilesProvider = logFilesProvider ?? _defaultLogFiles,
+       _backgroundRunDiagnosticsProvider =
+           backgroundRunDiagnosticsProvider ??
+           PowerPlatformService().getBackgroundRunDiagnostics,
        _platformName = platformName ?? Platform.operatingSystem,
        _platformVersion = platformVersion ?? Platform.operatingSystemVersion;
 
@@ -31,6 +37,8 @@ class DiagnosticReportService {
   final Future<AppVersionInfo> Function() _appVersionProvider;
   final Future<int> Function() _cacheBytesProvider;
   final Future<List<File>> Function() _logFilesProvider;
+  final Future<BackgroundRunDiagnostics?> Function()
+  _backgroundRunDiagnosticsProvider;
   final String _platformName;
   final String _platformVersion;
 
@@ -38,6 +46,7 @@ class DiagnosticReportService {
     final version = await _appVersionProvider();
     final permissions = await _permissionStatusService.load();
     final cacheBytes = await _cacheBytesProvider();
+    final backgroundRunDiagnostics = await _backgroundRunDiagnosticsProvider();
     final report = <String, Object?>{
       'createdAt': DateTime.now().toUtc().toIso8601String(),
       'appVersion': '${version.versionName}+${version.buildNumber}',
@@ -46,6 +55,8 @@ class DiagnosticReportService {
       'databaseSchemaVersion': AppDatabase.schemaVersion,
       'dartVisibleCacheBytes': cacheBytes,
       'permissions': permissions.toJson(),
+      if (backgroundRunDiagnostics != null)
+        'backgroundRun': backgroundRunDiagnostics.toJson(),
       'privacy':
           'Generated locally. Credentials, media files, and URL query parameters are excluded.',
     };

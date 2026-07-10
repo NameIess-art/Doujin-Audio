@@ -68,6 +68,8 @@ Windows ZIP 包含完整 Flutter 运行时、`libmpv-2.dll`、FFmpeg 和 FFprobe
 - Android 使用原生 `MediaSessionService`、Media3 / ExoPlayer、媒体前台服务和锁屏控制。
 - Android 通知栏媒体控制、锁屏控制和前台媒体服务复用同一套原生 MediaSession 路径，不引入应用商店渠道或第二套后台播放流程。
 - 支持 CPU WakeLock、Wi-Fi Lock、服务恢复和息屏播放状态保护。
+- 播放遇到临时网络、I/O 或 AudioTrack 错误时，会在 10 分钟恢复窗口内按退避计划重试；网络恢复或亮屏会立即触发一次恢复。
+- Android 诊断报告包含最近一次进程退出原因；检测到 vivo/OriginOS 后台清理时会提示打开后台高耗电或自启动设置。系统真正执行“强行停止”后，Android 不允许应用自行重启。
 - 睡眠计时器支持立即倒计时或播放后开始、结束淡出、暂停会话和指定时间自动恢复。
 - 开机、应用更新后可恢复计时状态。
 

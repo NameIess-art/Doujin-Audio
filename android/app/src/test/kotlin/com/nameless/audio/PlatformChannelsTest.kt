@@ -63,6 +63,10 @@ class PlatformChannelsTest {
             NotificationsMethods.SYNC_UNIFIED_PLAYBACK_NOTIFICATIONS
         )
         assertEquals("getAppVersion", UpdateMethods.GET_APP_VERSION)
+        assertEquals(
+            "getBackgroundRunDiagnostics",
+            PowerMethods.GET_BACKGROUND_RUN_DIAGNOSTICS
+        )
         assertEquals("installApk", UpdateMethods.INSTALL_APK)
         assertEquals("openReleasePage", UpdateMethods.OPEN_RELEASE_PAGE)
     }

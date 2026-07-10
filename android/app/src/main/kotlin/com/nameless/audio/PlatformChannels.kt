@@ -37,6 +37,7 @@ internal object PowerMethods {
     const val EXECUTE_AUTO_RESUME_NOW = "executeAutoResumeNow"
     const val EXECUTE_TIMER_EXPIRED_NOW = "executeTimerExpiredNow"
     const val GET_NATIVE_TIMER_RUNTIME_STATE = "getNativeTimerRuntimeState"
+    const val GET_BACKGROUND_RUN_DIAGNOSTICS = "getBackgroundRunDiagnostics"
     const val IS_IGNORING_BATTERY_OPTIMIZATIONS = "isIgnoringBatteryOptimizations"
     const val OPEN_BACKGROUND_RUN_SETTINGS = "openBackgroundRunSettings"
     const val OPEN_BATTERY_OPTIMIZATION_SETTINGS = "openBatteryOptimizationSettings"

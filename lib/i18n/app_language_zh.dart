@@ -535,6 +535,9 @@ const Map<String, String> appLanguageZh = {
   'notification_permission_enabled': '通知权限已开启。',
   'background_play_permission_title': '允许后台播放',
   'background_play_permission_message': '为了在息屏后继续播放音频，需要将本应用设为不限制电量。前往系统设置开启吗？',
+  'background_cleaner_detected_title': '系统曾强制停止后台播放',
+  'background_cleaner_detected_message':
+      '真正的“强行停止”后应用无法自行重启。请在 vivo 电池设置中允许后台高耗电，并开启自启动。',
   'manage_files_permission_title': '开启管理所有文件权限',
   'manage_files_permission_message':
       '当前应用还没有开启“管理所有文件”权限，导入文件夹、曲库和读取本地资源可能会失败。现在前往系统设置开启吗？',

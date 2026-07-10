@@ -74,6 +74,8 @@ abstract final class PowerMethod {
   static const String canScheduleExactAlarms = 'canScheduleExactAlarms';
   static const String openExactAlarmSettings = 'openExactAlarmSettings';
   static const String getNativeTimerRuntimeState = 'getNativeTimerRuntimeState';
+  static const String getBackgroundRunDiagnostics =
+      'getBackgroundRunDiagnostics';
   static const String executeTimerExpiredNow = 'executeTimerExpiredNow';
   static const String executeAutoResumeNow = 'executeAutoResumeNow';
 }

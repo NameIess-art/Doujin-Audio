@@ -4,6 +4,57 @@ import 'package:flutter/services.dart';
 import '../platform/app_platform.dart';
 import 'platform_channels.dart';
 
+class BackgroundRunDiagnostics {
+  const BackgroundRunDiagnostics({
+    required this.manufacturer,
+    required this.batteryOptimizationExempt,
+    required this.vendorBackgroundSettingsAvailable,
+    required this.cleanerForceStopDetected,
+    this.lastExitReason,
+    this.lastExitSubReason,
+    this.lastExitDescription,
+    this.lastExitTimestampMs,
+  });
+
+  final String manufacturer;
+  final bool batteryOptimizationExempt;
+  final bool vendorBackgroundSettingsAvailable;
+  final bool cleanerForceStopDetected;
+  final int? lastExitReason;
+  final int? lastExitSubReason;
+  final String? lastExitDescription;
+  final int? lastExitTimestampMs;
+
+  bool get isVivo => manufacturer.toLowerCase() == 'vivo';
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'manufacturer': manufacturer,
+    'batteryOptimizationExempt': batteryOptimizationExempt,
+    'vendorBackgroundSettingsAvailable': vendorBackgroundSettingsAvailable,
+    'cleanerForceStopDetected': cleanerForceStopDetected,
+    'lastExitReason': lastExitReason,
+    'lastExitSubReason': lastExitSubReason,
+    'lastExitDescription': lastExitDescription,
+    'lastExitTimestampMs': lastExitTimestampMs,
+  };
+
+  factory BackgroundRunDiagnostics.fromMap(Map<dynamic, dynamic> map) {
+    return BackgroundRunDiagnostics(
+      manufacturer: map['manufacturer'] as String? ?? '',
+      batteryOptimizationExempt:
+          map['batteryOptimizationExempt'] as bool? ?? false,
+      vendorBackgroundSettingsAvailable:
+          map['vendorBackgroundSettingsAvailable'] as bool? ?? false,
+      cleanerForceStopDetected:
+          map['cleanerForceStopDetected'] as bool? ?? false,
+      lastExitReason: (map['lastExitReason'] as num?)?.toInt(),
+      lastExitSubReason: (map['lastExitSubReason'] as num?)?.toInt(),
+      lastExitDescription: map['lastExitDescription'] as String?,
+      lastExitTimestampMs: (map['lastExitTimestampMs'] as num?)?.toInt(),
+    );
+  }
+}
+
 class PowerPlatformService {
   PowerPlatformService({
     MethodChannel? channel,
@@ -133,6 +184,20 @@ class PowerPlatformService {
       return await _channel.invokeMapMethod<dynamic, dynamic>(
         PowerMethod.getNativeTimerRuntimeState,
       );
+    } on MissingPluginException {
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<BackgroundRunDiagnostics?> getBackgroundRunDiagnostics() async {
+    if (!_isAndroid) return null;
+    try {
+      final map = await _channel.invokeMapMethod<dynamic, dynamic>(
+        PowerMethod.getBackgroundRunDiagnostics,
+      );
+      return map == null ? null : BackgroundRunDiagnostics.fromMap(map);
     } on MissingPluginException {
       return null;
     } catch (_) {

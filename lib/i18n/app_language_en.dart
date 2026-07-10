@@ -608,6 +608,9 @@ const Map<String, String> appLanguageEn = {
       'System notifications are disabled for this app, so playback notifications cannot appear. Please enable app notifications and media notifications.',
   'notification_permission_enabled': 'Notifications are now enabled.',
   'background_play_permission_title': 'Allow Background Playback',
+  'background_cleaner_detected_title': 'Background playback was force-stopped',
+  'background_cleaner_detected_message':
+      'Android cannot restart an app after a true Force stop. Allow high background battery use and auto-start in vivo settings.',
   'background_play_permission_message':
       'To continue playing audio after the screen turns off, this app needs to be exempt from battery optimization. Open settings now?',
   'manage_files_permission_title': 'Allow file management access',

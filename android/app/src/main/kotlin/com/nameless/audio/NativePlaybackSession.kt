@@ -125,7 +125,6 @@ internal fun buildNativePlaybackProgressEvent(
 internal class NativePlaybackSession(
     val sessionId: String,
     private val createPlayer: (String, Array<AudioProcessor>) -> ExoPlayer,
-    private val evictPlayersIfNeeded: () -> Unit,
     private val logWarn: (String, NativePlaybackSession, RuntimeException) -> Unit,
     private val resolveUriToPath: ((String) -> String?)? = null
 ) : NativePlaybackSessionSnapshotSource {
@@ -324,8 +323,6 @@ internal class NativePlaybackSession(
         p.playWhenReady = autoPlay
         p.prepare()
         syncCurrentMediaItemFromPlayer()
-
-        evictPlayersIfNeeded()
     }
 
     fun applyChannelMap() {

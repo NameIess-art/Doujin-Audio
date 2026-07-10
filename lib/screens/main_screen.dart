@@ -199,8 +199,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
     return false;
   }
 
-
-
   Future<bool> _ensureInstallPermissionThenRun(
     BuildContext context,
     Future<void> Function() onGranted,
@@ -703,6 +701,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
     }
     unawaited(_consumePendingNotificationSession());
     final provider = ref.read(audioProviderFacadeProvider);
+    provider.syncKeepAliveAfterForegroundResume();
     unawaited(_permissionActionController.handleAppResumed());
     provider.resyncNotificationsAfterResume();
     unawaited(

@@ -357,6 +357,7 @@ extension AudioProviderPersistence on AudioProvider {
       _settingsRepository.coverImageResolution = _decodeCoverImageResolution(
         map['coverImageResolution'],
       );
+      applyCoverImageCachePolicy(_settingsRepository.coverImageResolution);
       _settingsRepository.asmrDownloadDestinationRoot =
           _decodeOptionalTrimmedString(map['asmrDownloadDestinationRoot']);
       _settingsRepository.asmrDownloadConflictPolicy =
@@ -750,6 +751,7 @@ extension AudioProviderPersistence on AudioProvider {
   Future<void> setCoverImageResolution(CoverImageResolution resolution) async {
     if (_settingsRepository.coverImageResolution == resolution) return;
     _settingsRepository.coverImageResolution = resolution;
+    applyCoverImageCachePolicy(resolution, clear: true);
     _notifySettingsChanged();
     unawaited(_savePlaybackSettings());
   }

@@ -36,6 +36,16 @@ class FileCachePlatformGateway {
     return _scanFolderLegacy(folderPath);
   }
 
+  Future<NativeScanResult> scanFolderChunked(
+    String folderPath,
+    FutureOr<bool> Function(FolderScanChunk chunk) onChunk,
+  ) async {
+    if (!_isAndroid()) return const NativeScanResult.notSupported();
+    final streamedScan = await _scanFolderStreamChunked(folderPath, onChunk);
+    if (streamedScan.ok || !streamedScan.notSupported) return streamedScan;
+    return const NativeScanResult.notSupported();
+  }
+
   Future<List<String>?> listChildFolders(String folderPath) async {
     if (!_isAndroid()) return null;
     try {
@@ -364,6 +374,129 @@ class FileCachePlatformGateway {
     } catch (error, stackTrace) {
       AppLogService.error(
         'streamed_library_scan_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      return NativeScanResult.failed(
+        code: 'scan_unknown_error',
+        message: error.toString(),
+      );
+    } finally {
+      await subscription?.cancel();
+      if (!completer.isCompleted) unawaited(_cancelFolderScan(sessionId));
+    }
+  }
+
+  Future<NativeScanResult> _scanFolderStreamChunked(
+    String folderPath,
+    FutureOr<bool> Function(FolderScanChunk chunk) onChunk,
+  ) async {
+    final sessionId =
+        '${DateTime.now().microsecondsSinceEpoch}-${_scanSessionSeed++}';
+    final paths = <String>{};
+    final completer = Completer<NativeScanResult>();
+    StreamSubscription<dynamic>? subscription;
+    Future<void> pendingChunk = Future<void>.value();
+
+    void complete(NativeScanResult result) {
+      if (!completer.isCompleted) completer.complete(result);
+    }
+
+    Future<void> completeAfterPending(NativeScanResult Function() result) {
+      pendingChunk = pendingChunk.whenComplete(() {
+        complete(result());
+      });
+      return pendingChunk;
+    }
+
+    try {
+      subscription = _scanEvents
+          .receiveBroadcastStream(<String, Object?>{'sessionId': sessionId})
+          .listen(
+            (event) {
+              if (event is! Map || completer.isCompleted) return;
+              final scanEvent = FolderScanSessionEvent.fromPayload(
+                event.cast<Object?, Object?>(),
+              );
+              if (scanEvent.sessionId != sessionId) return;
+              if (scanEvent.isChunk) {
+                final chunk = scanEvent.chunk;
+                pendingChunk = pendingChunk
+                    .then((_) async {
+                      if (completer.isCompleted) return;
+                      paths.addAll(chunk.paths);
+                      final keepGoing = await onChunk(chunk);
+                      if (!keepGoing) {
+                        complete(
+                          NativeScanResult.success(
+                            const <ScannedTrack>[],
+                            Set<String>.unmodifiable(paths),
+                          ),
+                        );
+                        unawaited(_cancelFolderScan(sessionId));
+                      }
+                    })
+                    .catchError((Object error, StackTrace stackTrace) {
+                      AppLogService.error(
+                        'chunked_library_scan_handler_failed',
+                        error: error,
+                        stackTrace: stackTrace,
+                      );
+                      complete(
+                        NativeScanResult.failed(
+                          code: 'scan_handler_error',
+                          message: error.toString(),
+                        ),
+                      );
+                      unawaited(_cancelFolderScan(sessionId));
+                    });
+              } else if (scanEvent.isDone) {
+                unawaited(
+                  completeAfterPending(
+                    () => NativeScanResult.success(
+                      const <ScannedTrack>[],
+                      Set<String>.unmodifiable(paths),
+                    ),
+                  ),
+                );
+              } else if (scanEvent.isError) {
+                unawaited(
+                  completeAfterPending(
+                    () => NativeScanResult.failed(
+                      code: scanEvent.errorCode,
+                      message: scanEvent.errorMessage,
+                    ),
+                  ),
+                );
+              }
+            },
+            onError: (Object error) => complete(
+              NativeScanResult.failed(
+                code: 'scan_event_error',
+                message: error.toString(),
+              ),
+            ),
+          );
+      final started = await _channel.invokeMethod<bool>(
+        FileCacheMethod.startFolderScan,
+        <String, Object?>{
+          'sessionId': sessionId,
+          'folder': folderPath,
+          'chunkSize': 120,
+        },
+      );
+      if (started != true) return const NativeScanResult.notSupported();
+      return await completer.future;
+    } on MissingPluginException {
+      return const NativeScanResult.notSupported();
+    } on PlatformException catch (error) {
+      if (error.code == 'notImplemented') {
+        return const NativeScanResult.notSupported();
+      }
+      return NativeScanResult.failed(code: error.code, message: error.message);
+    } catch (error, stackTrace) {
+      AppLogService.error(
+        'chunked_library_scan_failed',
         error: error,
         stackTrace: stackTrace,
       );

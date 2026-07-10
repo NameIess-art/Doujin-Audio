@@ -48,6 +48,7 @@ import '../services/native_result.dart';
 import '../services/native_playback_repository.dart';
 import '../services/playback_queue_resolver.dart';
 import '../services/power_platform_service.dart';
+import '../services/cover_image_cache_policy.dart';
 import '../services/timer_runtime_calculator.dart';
 import '../services/ui_interaction_coordinator.dart';
 import '../services/warmup_scheduler.dart';
@@ -71,6 +72,7 @@ import '../services/playback_notification_service.dart';
 import '../services/playback_command_runner.dart';
 import '../services/path_matcher.dart';
 import '../services/path_display.dart';
+import '../services/system_media_controls_service.dart';
 import '../services/subtitle_parser.dart';
 
 part 'audio_provider_notifications.dart';
@@ -135,6 +137,7 @@ class AudioProvider with ChangeNotifier {
   final TimerService _timerService;
   final NotificationCoordinatorService _notificationStateService;
   final SettingsRepository _settingsRepository;
+  final SystemMediaControlsService _systemMediaControlsService;
   final bool _skipDisposePersistence;
   SharedPreferences? _cachedPrefs;
 
@@ -562,6 +565,7 @@ class AudioProvider with ChangeNotifier {
     TimerService? timerService,
     NotificationCoordinatorService? notificationStateService,
     SettingsRepository? settingsRepository,
+    SystemMediaControlsService? systemMediaControlsService,
     bool deferRuntimeStart = false,
   }) {
     final resolvedAudioDatabaseRepository =
@@ -600,6 +604,8 @@ class AudioProvider with ChangeNotifier {
       notificationStateService:
           notificationStateService ?? NotificationCoordinatorService(),
       settingsRepository: settingsRepository ?? SettingsRepository(),
+      systemMediaControlsService:
+          systemMediaControlsService ?? SystemMediaControlsService(),
       skipDisposePersistence: false,
       startNativeRuntime: !deferRuntimeStart,
     );
@@ -625,6 +631,7 @@ class AudioProvider with ChangeNotifier {
     TimerService? timerService,
     NotificationCoordinatorService? notificationStateService,
     SettingsRepository? settingsRepository,
+    SystemMediaControlsService? systemMediaControlsService,
     bool skipPersistence = true,
   }) {
     final resolvedAudioDatabaseRepository =
@@ -663,6 +670,8 @@ class AudioProvider with ChangeNotifier {
       notificationStateService:
           notificationStateService ?? NotificationCoordinatorService(),
       settingsRepository: settingsRepository ?? SettingsRepository(),
+      systemMediaControlsService:
+          systemMediaControlsService ?? SystemMediaControlsService(),
       skipDisposePersistence: skipPersistence,
       startNativeRuntime: false,
     );
@@ -685,6 +694,7 @@ class AudioProvider with ChangeNotifier {
     required TimerService timerService,
     required NotificationCoordinatorService notificationStateService,
     required SettingsRepository settingsRepository,
+    required SystemMediaControlsService systemMediaControlsService,
     required bool skipDisposePersistence,
     required bool startNativeRuntime,
   }) : _notificationService = notificationService,
@@ -702,6 +712,7 @@ class AudioProvider with ChangeNotifier {
        _timerService = timerService,
        _notificationStateService = notificationStateService,
        _settingsRepository = settingsRepository,
+       _systemMediaControlsService = systemMediaControlsService,
        _skipDisposePersistence = skipDisposePersistence {
     _coverArtworkCacheService =
         coverArtworkCacheService ??
@@ -816,6 +827,7 @@ class AudioProvider with ChangeNotifier {
     unawaited(_timerService.dispose());
     unawaited(_notificationStateService.dispose());
     unawaited(_settingsRepository.dispose());
+    unawaited(_systemMediaControlsService.dispose());
     for (final session in _sessions.values) {
       session.dispose();
     }

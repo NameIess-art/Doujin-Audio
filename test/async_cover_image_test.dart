@@ -3,11 +3,22 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:provider/provider.dart';
 
 import 'package:nameless_audio/models/music_track.dart';
+import 'package:nameless_audio/providers/audio_provider.dart' as ap;
+import 'package:nameless_audio/services/audio_state_services.dart';
+import 'package:nameless_audio/services/playback_notification_service.dart';
 import 'package:nameless_audio/widgets/async_cover_image.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUp(() {
+    SharedPreferences.setMockInitialValues(const <String, Object>{});
+  });
+
   test('standalone audio without stored cover hides playlist artwork', () {
     const track = MusicTrack(
       path: 'C:/media/voice.mp3',
@@ -67,6 +78,57 @@ void main() {
 
     expect(find.byType(CoverFallbackArtwork), findsOneWidget);
     expect(find.byType(RetryingImage), findsNothing);
+  });
+
+  testWidgets('cover cache width falls back to balanced without provider', (
+    tester,
+  ) async {
+    int? cacheWidth;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) {
+            cacheWidth = coverCacheWidthForContext(context);
+            return const SizedBox.shrink();
+          },
+        ),
+      ),
+    );
+
+    expect(cacheWidth, 600);
+  });
+
+  testWidgets('cover cache width follows provider resolution setting', (
+    tester,
+  ) async {
+    final audioProvider = ap.AudioProvider.test(
+      notificationService: PlaybackNotificationService(),
+    );
+    addTearDown(audioProvider.dispose);
+
+    int? cacheWidth;
+    await audioProvider.setCoverImageResolution(CoverImageResolution.high);
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider<ap.AudioProvider>.value(
+        value: audioProvider,
+        child: MaterialApp(
+          home: Builder(
+            builder: (context) {
+              cacheWidth = coverCacheWidthForContext(context);
+              return const SizedBox.shrink();
+            },
+          ),
+        ),
+      ),
+    );
+    expect(cacheWidth, 900);
+
+    await audioProvider.setCoverImageResolution(CoverImageResolution.original);
+    await tester.pump();
+
+    expect(cacheWidth, isNull);
   });
 
   testWidgets('AsyncLocalCoverImage hides the fallback icon while loading', (

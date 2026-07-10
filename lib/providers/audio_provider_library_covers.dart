@@ -35,7 +35,9 @@ extension AudioProviderLibraryCovers on AudioProvider {
       imagePath,
       newlySaved: newlySaved,
     );
-    _notifyListeners();
+    _markActiveSessionsDirty();
+    _syncNotificationState();
+    _notifyLibraryAndPlaybackChanged();
   }
 
   Future<void> _retargetFolderCoverSelection(

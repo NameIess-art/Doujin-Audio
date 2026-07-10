@@ -1,0 +1,45 @@
+import 'package:flutter/painting.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:nameless_audio/services/audio_state_services.dart';
+import 'package:nameless_audio/services/cover_image_cache_policy.dart';
+
+void main() {
+  test('cover image cache budgets follow selected resolution', () {
+    expect(
+      coverImageCacheBudgetForResolution(
+        CoverImageResolution.memorySaver,
+      ).maximumSizeBytes,
+      32 * 1024 * 1024,
+    );
+    expect(
+      coverImageCacheBudgetForResolution(
+        CoverImageResolution.balanced,
+      ).maximumSize,
+      200,
+    );
+    expect(
+      coverImageCacheBudgetForResolution(
+        CoverImageResolution.high,
+      ).maximumSizeBytes,
+      96 * 1024 * 1024,
+    );
+    expect(
+      coverImageCacheBudgetForResolution(
+        CoverImageResolution.original,
+      ).maximumSize,
+      80,
+    );
+  });
+
+  test('applyCoverImageCachePolicy updates an ImageCache instance', () {
+    final cache = ImageCache();
+
+    applyCoverImageCachePolicy(
+      CoverImageResolution.memorySaver,
+      imageCache: cache,
+    );
+
+    expect(cache.maximumSize, 120);
+    expect(cache.maximumSizeBytes, 32 * 1024 * 1024);
+  });
+}

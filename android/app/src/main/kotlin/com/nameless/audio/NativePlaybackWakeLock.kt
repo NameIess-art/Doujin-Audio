@@ -35,10 +35,8 @@ internal class NativePlaybackWakeLock(
 
         wakeLock?.let { lock ->
             try {
-                if (!lock.isHeld) {
-                    lock.acquire()
-                    acquiredAny = lock.isHeld
-                }
+                lock.acquire()
+                acquiredAny = lock.isHeld
             } catch (e: Exception) {
                 logWarn("wakelock_acquire_failed", e)
             }
@@ -60,10 +58,8 @@ internal class NativePlaybackWakeLock(
 
         wifiLock?.let { lock ->
             try {
-                if (!lock.isHeld) {
-                    lock.acquire()
-                    acquiredAny = acquiredAny || lock.isHeld
-                }
+                lock.acquire()
+                acquiredAny = acquiredAny || lock.isHeld
             } catch (e: Exception) {
                 logWarn("wifilock_acquire_failed", e)
             }
@@ -77,10 +73,6 @@ internal class NativePlaybackWakeLock(
     }
 
     fun refresh() {
-        if (wakeLock?.isHeld == true && wifiLock?.isHeld == true) {
-            logInfo("wakelock_refresh_skip already_held")
-            return
-        }
         acquire()
     }
 

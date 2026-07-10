@@ -756,6 +756,7 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                         ),
                         child: AsyncCoverImage(
                           future: coverPathFuture,
+                          requestKey: session.id,
                           initialPath: provider
                               .resolvedPlaybackCoverPathForTrack(track),
                           retryFutureBuilder: () =>

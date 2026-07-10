@@ -666,6 +666,63 @@ class LibraryScannerService {
     return _platformGateway.scanFolder(folderPath);
   }
 
+  Future<int?> _importNativeFolderChunkedIncrementally({
+    required String sourceFolderPath,
+    required AudioProvider provider,
+    required String? libraryRoot,
+    required AppLanguageProvider i18n,
+    bool promoteRootTracksToSingles = false,
+    Future<bool> Function()? onChunkCommitted,
+  }) async {
+    var added = 0;
+    var failures = 0;
+    final baseFailureCount = provider.scanFailureCount;
+    final result = await _platformGateway.scanFolderChunked(sourceFolderPath, (
+      chunk,
+    ) async {
+      if (!provider.isScanning) return false;
+      failures += chunk.failureCount;
+      if (chunk.tracks.isEmpty) {
+        if (failures > 0) {
+          provider.setScanProgress(failureCount: baseFailureCount + failures);
+        }
+        return provider.isScanning;
+      }
+      added += await _mergeScannedTracksIncrementally(
+        sourceFolderPath: sourceFolderPath,
+        provider: provider,
+        scannedTracks: chunk.tracks,
+        libraryRoot: libraryRoot,
+        promoteRootTracksToSingles: promoteRootTracksToSingles,
+        i18n: i18n,
+        onChunkCommitted: onChunkCommitted,
+      );
+      if (failures > 0) {
+        provider.setScanProgress(failureCount: baseFailureCount + failures);
+      }
+      return provider.isScanning;
+    });
+    if (result.notSupported) return null;
+    if (!result.ok) {
+      provider.setScanProgress(failureCount: provider.scanFailureCount + 1);
+      debugPrint(
+        '[library-import] native chunked scan failed for $sourceFolderPath '
+        'code=${result.errorCode} message=${result.errorMessage}',
+      );
+      return 0;
+    }
+    if (!provider.isScanning) return added;
+    provider.removeTracksDeletedFromFolder(sourceFolderPath, result.paths);
+    if (libraryRoot != null) {
+      provider.removeLibraryEntriesDeletedFromFolder(
+        libraryRoot,
+        sourceFolderPath,
+        result.paths,
+      );
+    }
+    return added;
+  }
+
   Future<int> _importLibraryWithSingleScan(
     String libraryRoot,
     AudioProvider provider,
@@ -673,6 +730,18 @@ class LibraryScannerService {
     Future<bool> Function()? onChunkCommitted,
   }) async {
     provider.setScanProgress(currentFolder: _displaySourceName(libraryRoot));
+    final chunkedAdded = await _importNativeFolderChunkedIncrementally(
+      sourceFolderPath: libraryRoot,
+      provider: provider,
+      libraryRoot: libraryRoot,
+      promoteRootTracksToSingles: true,
+      i18n: i18n,
+      onChunkCommitted: onChunkCommitted,
+    );
+    if (chunkedAdded != null) {
+      return chunkedAdded;
+    }
+
     final nativeScan = await _scanFolderViaNative(libraryRoot);
     if (!nativeScan.ok) {
       if (nativeScan.notSupported || !PathMatcher.isContentUri(libraryRoot)) {
@@ -998,29 +1067,40 @@ class LibraryScannerService {
 
     try {
       provider.setScanProgress(currentFolder: _displaySourceName(folderPath));
-      final nativeScan = await _scanFolderViaNative(folderPath);
-      if (nativeScan.ok) {
-        added = await _mergeScannedTracksIncrementally(
-          sourceFolderPath: folderPath,
-          provider: provider,
-          scannedTracks: nativeScan.tracks,
-          libraryRoot: normalizedFolderPath,
-          onChunkCommitted: () => _flushRefreshBatch(provider),
-        );
-      } else if (nativeScan.notSupported ||
-          !PathMatcher.isContentUri(folderPath)) {
-        added = await _importFolderIncrementally(
-          folderPath,
-          provider,
-          normalizedFolderPath,
-          onChunkCommitted: () => _flushRefreshBatch(provider),
-        );
+      final chunkedAdded = await _importNativeFolderChunkedIncrementally(
+        sourceFolderPath: folderPath,
+        provider: provider,
+        libraryRoot: normalizedFolderPath,
+        i18n: i18n,
+        onChunkCommitted: () => _flushRefreshBatch(provider),
+      );
+      if (chunkedAdded != null) {
+        added = chunkedAdded;
       } else {
-        provider.setScanProgress(failureCount: provider.scanFailureCount + 1);
-        debugPrint(
-          '[library-import] native scan failed for content uri: $folderPath '
-          'code=${nativeScan.errorCode} message=${nativeScan.errorMessage}',
-        );
+        final nativeScan = await _scanFolderViaNative(folderPath);
+        if (nativeScan.ok) {
+          added = await _mergeScannedTracksIncrementally(
+            sourceFolderPath: folderPath,
+            provider: provider,
+            scannedTracks: nativeScan.tracks,
+            libraryRoot: normalizedFolderPath,
+            onChunkCommitted: () => _flushRefreshBatch(provider),
+          );
+        } else if (nativeScan.notSupported ||
+            !PathMatcher.isContentUri(folderPath)) {
+          added = await _importFolderIncrementally(
+            folderPath,
+            provider,
+            normalizedFolderPath,
+            onChunkCommitted: () => _flushRefreshBatch(provider),
+          );
+        } else {
+          provider.setScanProgress(failureCount: provider.scanFailureCount + 1);
+          debugPrint(
+            '[library-import] native scan failed for content uri: $folderPath '
+            'code=${nativeScan.errorCode} message=${nativeScan.errorMessage}',
+          );
+        }
       }
     } finally {
       await provider.endLibraryBatch();
@@ -1279,7 +1359,7 @@ Map<String, Object?> _scanFileSystemFolderPayload(String folderPath) {
       }
 
       final parentFolder = path.dirname(absolutePath);
-      
+
       final relative = PathMatcher.relativeWithin(absolutePath, normalizedRoot);
       String groupKey = parentFolder;
       String groupTitle = path.basename(parentFolder);

@@ -13,7 +13,7 @@ abstract final class AsmrPreferences {
   }
 
   static Future<void> clearForTest() async {
-    final db = await _database.database;
+    final db = await _database.databaseForTest;
     final batch = db.batch();
     batch.delete('asmr_sync_operations');
     batch.delete('asmr_visible_categories');
@@ -85,6 +85,18 @@ abstract final class AsmrPreferences {
     List<AsmrSyncOperation> operations,
   ) async {
     await _database.saveAsmrSyncOperations(operations);
+  }
+
+  static Future<void> saveWorkListAndSyncOperations(
+    String listType,
+    List<AsmrWork> works,
+    List<AsmrSyncOperation> operations,
+  ) {
+    return _database.saveAsmrWorkListAndSyncOperations(
+      listType,
+      works,
+      operations,
+    );
   }
 
   static Future<DateTime?> loadLastSyncAt() async {

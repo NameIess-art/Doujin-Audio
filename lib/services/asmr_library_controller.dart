@@ -1312,19 +1312,36 @@ class AsmrLibraryController extends ChangeNotifier {
     );
     final shouldFavorite = existingIndex < 0;
     final updatedWork = work.copyWith(isFavorite: shouldFavorite);
-    if (shouldFavorite) {
-      _favoriteWorks = <AsmrWork>[updatedWork, ..._favoriteWorks]
-          .fold<List<AsmrWork>>(<AsmrWork>[], (result, item) {
-            if (result.any((existing) => existing.id == item.id)) {
-              return result;
-            }
-            return <AsmrWork>[...result, item];
-          });
-    } else {
-      _favoriteWorks = _favoriteWorks
-          .where((item) => item.id != work.id)
-          .toList(growable: false);
-    }
+    final nextFavoriteWorks = shouldFavorite
+        ? <AsmrWork>[updatedWork, ..._favoriteWorks].fold<List<AsmrWork>>(
+            <AsmrWork>[],
+            (result, item) {
+              if (result.any((existing) => existing.id == item.id)) {
+                return result;
+              }
+              return <AsmrWork>[...result, item];
+            },
+          )
+        : _favoriteWorks
+              .where((item) => item.id != work.id)
+              .toList(growable: false);
+    final operation = AsmrSyncOperation(
+      type: shouldFavorite
+          ? AsmrSyncOperationType.favoriteAdd
+          : AsmrSyncOperationType.favoriteRemove,
+      workId: work.id,
+      sourceId: work.sourceId,
+      createdAt: DateTime.now(),
+    );
+    final nextSyncOperations = _syncOperationsAfterEnqueue(operation);
+    await AsmrPreferences.saveWorkListAndSyncOperations(
+      'favorites',
+      nextFavoriteWorks,
+      nextSyncOperations,
+    );
+
+    _favoriteWorks = nextFavoriteWorks;
+    _syncOperations = nextSyncOperations;
     _favoriteIds = _favoriteWorks.map((item) => item.id).toSet();
     _workCache[work.id] = updatedWork;
     _detailCache.update(
@@ -1354,17 +1371,7 @@ class AsmrLibraryController extends ChangeNotifier {
           .toList(growable: false);
       _bumpCategoryRevision(entry.key);
     }
-    await AsmrPreferences.saveFavoriteWorks(_favoriteWorks);
-    await _enqueueSyncOperation(
-      AsmrSyncOperation(
-        type: shouldFavorite
-            ? AsmrSyncOperationType.favoriteAdd
-            : AsmrSyncOperationType.favoriteRemove,
-        workId: work.id,
-        sourceId: work.sourceId,
-        createdAt: DateTime.now(),
-      ),
-    );
+    _bumpGlobalRevision();
     if (isAsmrAccountLoggedIn) {
       unawaited(syncAsmrAccount());
     }
@@ -1374,20 +1381,27 @@ class AsmrLibraryController extends ChangeNotifier {
   }
 
   Future<void> recordHistory(AsmrWork work) async {
-    _historyWorks = <AsmrWork>[
+    final nextHistoryWorks = <AsmrWork>[
       work,
       ..._historyWorks.where((item) => item.id != work.id),
     ].take(_historyLimit).toList(growable: false);
-    _workCache[work.id] = work;
-    await AsmrPreferences.saveHistoryWorks(_historyWorks);
-    await _enqueueSyncOperation(
-      AsmrSyncOperation(
-        type: AsmrSyncOperationType.historyListening,
-        workId: work.id,
-        sourceId: work.sourceId,
-        createdAt: DateTime.now(),
-      ),
+    final operation = AsmrSyncOperation(
+      type: AsmrSyncOperationType.historyListening,
+      workId: work.id,
+      sourceId: work.sourceId,
+      createdAt: DateTime.now(),
     );
+    final nextSyncOperations = _syncOperationsAfterEnqueue(operation);
+    await AsmrPreferences.saveWorkListAndSyncOperations(
+      'history',
+      nextHistoryWorks,
+      nextSyncOperations,
+    );
+
+    _historyWorks = nextHistoryWorks;
+    _syncOperations = nextSyncOperations;
+    _workCache[work.id] = work;
+    _bumpGlobalRevision();
     if (isAsmrAccountLoggedIn) {
       unawaited(syncAsmrAccount());
     }
@@ -1435,7 +1449,9 @@ class AsmrLibraryController extends ChangeNotifier {
     );
   }
 
-  Future<void> _enqueueSyncOperation(AsmrSyncOperation operation) async {
+  List<AsmrSyncOperation> _syncOperationsAfterEnqueue(
+    AsmrSyncOperation operation,
+  ) {
     final withoutSuperseded = _syncOperations
         .where((existing) {
           if (existing.workId != operation.workId) {
@@ -1450,9 +1466,7 @@ class AsmrLibraryController extends ChangeNotifier {
         })
         .toList(growable: true);
     withoutSuperseded.add(operation);
-    _syncOperations = withoutSuperseded;
-    await AsmrPreferences.saveSyncOperations(_syncOperations);
-    _bumpGlobalRevision();
+    return withoutSuperseded;
   }
 
   Future<void> _seedSyncOutboxIfNeeded() async {

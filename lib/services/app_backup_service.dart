@@ -99,6 +99,10 @@ class BackupValidationResult {
   final String? error;
 }
 
+class _BackupRestoreFailed implements Exception {
+  const _BackupRestoreFailed();
+}
+
 class AppBackupService {
   AppBackupService({
     AppDatabase? database,
@@ -109,7 +113,14 @@ class AppBackupService {
     Future<void> Function()? closeDatabase,
     Future<void> Function()? reopenDatabase,
     String? platformName,
-  }) : _exportPreferences =
+  }) : _database =
+           database != null ||
+               (databasePathProvider == null &&
+                   closeDatabase == null &&
+                   reopenDatabase == null)
+           ? (database ?? AppDatabase.instance)
+           : null,
+       _exportPreferences =
            exportPreferences ?? AppPreferences.exportSafeValues,
        _restorePreferences =
            restorePreferences ?? AppPreferences.restoreSafeValues,
@@ -145,17 +156,33 @@ class AppBackupService {
   final Future<void> Function() _closeDatabase;
   final Future<void> Function() _reopenDatabase;
   final String _platformName;
+  final AppDatabase? _database;
 
-  Future<File> exportBackup(String outputPath) async {
+  Future<T> _runDatabaseMaintenance<T>({
+    required bool replacesDatabase,
+    required Future<T> Function(String databasePath) action,
+  }) async {
+    final managedDatabase = _database;
+    if (managedDatabase != null) {
+      return managedDatabase.runExclusiveMaintenance<T>(
+        replacesDatabase: replacesDatabase,
+        action: action,
+      );
+    }
     final databasePath = await _databasePathProvider();
-    final databaseFile = File(databasePath);
     await _closeDatabase();
-    late final Uint8List databaseBytes;
     try {
-      databaseBytes = await databaseFile.readAsBytes();
+      return await action(databasePath);
     } finally {
       await _reopenDatabase();
     }
+  }
+
+  Future<File> exportBackup(String outputPath) async {
+    final databaseBytes = await _runDatabaseMaintenance<Uint8List>(
+      replacesDatabase: false,
+      action: (databasePath) => File(databasePath).readAsBytes(),
+    );
 
     final preferencesBytes = Uint8List.fromList(
       utf8.encode(jsonEncode(await _exportPreferences())),
@@ -272,40 +299,43 @@ class AppBackupService {
                 as Map<String, dynamic>)
             .cast<String, Object?>();
     final originalPreferences = await _exportPreferences();
-    final databasePath = await _databasePathProvider();
-    final databaseFile = File(databasePath);
-    final rollbackFile = File('$databasePath.restore-backup');
-    final replacementFile = File('$databasePath.restore-new');
-
-    await _closeDatabase();
     try {
-      if (await rollbackFile.exists()) await rollbackFile.delete();
-      if (await replacementFile.exists()) await replacementFile.delete();
-      if (await databaseFile.exists()) {
-        await databaseFile.rename(rollbackFile.path);
-      }
-      await replacementFile.writeAsBytes(databaseBytes, flush: true);
-      await replacementFile.rename(databaseFile.path);
-      await _restorePreferences(preferences);
-      await _reopenDatabase();
-      if (await rollbackFile.exists()) await rollbackFile.delete();
-      return validation;
-    } catch (error, stackTrace) {
-      AppLogService.error(
-        'backup_restore_failed',
-        error: error,
-        stackTrace: stackTrace,
+      return await _runDatabaseMaintenance<BackupValidationResult>(
+        replacesDatabase: true,
+        action: (databasePath) async {
+          final databaseFile = File(databasePath);
+          final rollbackFile = File('$databasePath.restore-backup');
+          final replacementFile = File('$databasePath.restore-new');
+          try {
+            if (await rollbackFile.exists()) await rollbackFile.delete();
+            if (await replacementFile.exists()) await replacementFile.delete();
+            if (await databaseFile.exists()) {
+              await databaseFile.rename(rollbackFile.path);
+            }
+            await replacementFile.writeAsBytes(databaseBytes, flush: true);
+            await replacementFile.rename(databaseFile.path);
+            await _restorePreferences(preferences);
+            if (await rollbackFile.exists()) await rollbackFile.delete();
+            return validation;
+          } catch (error, stackTrace) {
+            AppLogService.error(
+              'backup_restore_failed',
+              error: error,
+              stackTrace: stackTrace,
+            );
+            if (await databaseFile.exists()) await databaseFile.delete();
+            if (await rollbackFile.exists()) {
+              await rollbackFile.rename(databaseFile.path);
+            }
+            await _restorePreferences(originalPreferences);
+            throw const _BackupRestoreFailed();
+          } finally {
+            if (await replacementFile.exists()) await replacementFile.delete();
+          }
+        },
       );
-      await _closeDatabase();
-      if (await databaseFile.exists()) await databaseFile.delete();
-      if (await rollbackFile.exists()) {
-        await rollbackFile.rename(databaseFile.path);
-      }
-      await _restorePreferences(originalPreferences);
-      await _reopenDatabase();
+    } on _BackupRestoreFailed {
       return const BackupValidationResult.invalid('restore_failed');
-    } finally {
-      if (await replacementFile.exists()) await replacementFile.delete();
     }
   }
 }

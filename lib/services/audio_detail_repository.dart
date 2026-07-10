@@ -5,6 +5,7 @@ import 'package:path/path.dart' as path;
 
 import '../models/audio_detail.dart';
 import 'audio_database_repository.dart';
+import 'app_log_service.dart';
 import 'file_cache_platform_gateway.dart';
 import 'path_matcher.dart';
 import 'path_display.dart';
@@ -251,8 +252,12 @@ class AudioDetailRepository {
         }
         return null;
       }
-    } catch (_) {
-      // Invalid optional backup metadata should not block repository reads.
+    } catch (error, stackTrace) {
+      AppLogService.warning(
+        'audio_detail_backup_invalid',
+        error: error,
+        stackTrace: stackTrace,
+      );
     }
     return null;
   }
@@ -356,7 +361,12 @@ class AudioDetailRepository {
       final detail = AudioDetail.fromBackupJson(target, decoded);
       if (detail.target.targetType != target.targetType) return null;
       return detail.copyWith(target: target);
-    } catch (_) {
+    } catch (error, stackTrace) {
+      AppLogService.warning(
+        'audio_detail_backup_invalid',
+        error: error,
+        stackTrace: stackTrace,
+      );
       return null;
     }
   }

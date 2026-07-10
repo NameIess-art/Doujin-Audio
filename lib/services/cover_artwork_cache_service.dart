@@ -633,10 +633,7 @@ class CoverArtworkCacheService {
         if (track?.isVideo == true) {
           coverPath = await _resolveVideoFramePathForTrack(track!);
         } else if (track != null) {
-          coverPath = await _resolvePlatformCoverPathForTrack(
-            track,
-            rootFolder: coverScopeFolderForTrack(track, trackPath: pathValue),
-          );
+          coverPath = await _resolvePlatformCoverPathForTrack(track);
         }
       }
 
@@ -991,25 +988,6 @@ class CoverArtworkCacheService {
         error: e,
         stackTrace: stackTrace,
       );
-    }
-
-    if (AppPlatform.isWindows) {
-      if (rootFolder != null && rootFolder.isNotEmpty) {
-        try {
-          final folderCover =
-              await WindowsFfmpegService.findPreferredCoverViaFile(
-                folderPath: rootFolder,
-                cacheKey: track.path,
-              );
-          if (folderCover != null) return folderCover;
-        } catch (e, stackTrace) {
-          AppLogService.warning(
-            'CoverArtworkCacheService._resolvePlatformCoverPathForTrack findPreferredCoverViaFile error',
-            error: e,
-            stackTrace: stackTrace,
-          );
-        }
-      }
     }
 
     final embeddedCover = await EmbeddedCoverArtworkService.resolveForTrack(

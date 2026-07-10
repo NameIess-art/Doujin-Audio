@@ -17,56 +17,59 @@ extension _MainScreenNotifications on _MainScreenState {
   }
 
   Future<void> _maybePromptForBackgroundPlaybackReliability() async {
-    _backgroundPlaybackPromptQueued = false;
-    if (!mounted ||
-        !Platform.isAndroid ||
-        _backgroundPlaybackPromptShownThisLaunch) {
-      return;
-    }
-    final diagnostics = await _powerPlatformService
-        .getBackgroundRunDiagnostics();
-    if (!mounted) return;
-    if (diagnostics?.cleanerForceStopDetected == true) {
-      final timestamp = diagnostics?.lastExitTimestampMs?.toString();
-      final lastPromptedTimestamp = await AppPreferences.getString(
-        _backgroundCleanerPromptExitKey,
-      );
-      if (!mounted) return;
-      if (timestamp == null || timestamp != lastPromptedTimestamp) {
-        if (timestamp != null) {
-          unawaited(
-            AppPreferences.setString(
-              _backgroundCleanerPromptExitKey,
-              timestamp,
-            ),
-          );
-        }
-        _backgroundPlaybackPromptShownThisLaunch = true;
-        final i18n = context.read<AppLanguageProvider>();
-        showAppSnackBar(
-          context,
-          i18n.tr('background_cleaner_detected_message'),
-          title: i18n.tr('background_cleaner_detected_title'),
-          tone: AppFeedbackTone.warning,
-          icon: Icons.battery_alert_rounded,
-          duration: const Duration(seconds: 8),
-          actionLabel: i18n.tr('go_settings'),
-          onAction: () {
-            unawaited(_powerPlatformService.openBackgroundRunSettings());
-          },
-        );
+    try {
+      if (!mounted ||
+          !Platform.isAndroid ||
+          _backgroundPlaybackPromptShownThisLaunch) {
         return;
       }
-    }
-    final ignoringBatteryOptimizations =
-        diagnostics?.batteryOptimizationExempt ??
-        await _isIgnoringBatteryOptimizations();
-    if (!mounted || ignoringBatteryOptimizations) {
+      final diagnostics = await _powerPlatformService
+          .getBackgroundRunDiagnostics();
+      if (!mounted) return;
+      if (diagnostics?.cleanerForceStopDetected == true) {
+        final timestamp = diagnostics?.lastExitTimestampMs?.toString();
+        final lastPromptedTimestamp = await AppPreferences.getString(
+          _backgroundCleanerPromptExitKey,
+        );
+        if (!mounted) return;
+        if (timestamp == null || timestamp != lastPromptedTimestamp) {
+          if (timestamp != null) {
+            unawaited(
+              AppPreferences.setString(
+                _backgroundCleanerPromptExitKey,
+                timestamp,
+              ),
+            );
+          }
+          _backgroundPlaybackPromptShownThisLaunch = true;
+          final i18n = context.read<AppLanguageProvider>();
+          showAppSnackBar(
+            context,
+            i18n.tr('background_cleaner_detected_message'),
+            title: i18n.tr('background_cleaner_detected_title'),
+            tone: AppFeedbackTone.warning,
+            icon: Icons.battery_alert_rounded,
+            duration: const Duration(seconds: 8),
+            actionLabel: i18n.tr('go_settings'),
+            onAction: () {
+              unawaited(_powerPlatformService.openBackgroundRunSettings());
+            },
+          );
+          return;
+        }
+      }
+      final ignoringBatteryOptimizations =
+          diagnostics?.batteryOptimizationExempt ??
+          await _isIgnoringBatteryOptimizations();
+      if (!mounted || ignoringBatteryOptimizations) {
+        _backgroundPlaybackPromptShownThisLaunch = true;
+        return;
+      }
       _backgroundPlaybackPromptShownThisLaunch = true;
-      return;
+      await _promptOpenBatteryOptimizationSettings();
+    } finally {
+      _backgroundPlaybackPromptQueued = false;
     }
-    _backgroundPlaybackPromptShownThisLaunch = true;
-    await _promptOpenBatteryOptimizationSettings();
   }
 
   Future<void> _promptOpenBatteryOptimizationSettings() async {
@@ -201,6 +204,8 @@ extension _MainScreenNotifications on _MainScreenState {
       return;
     }
     _pendingNotificationSessionId = sessionId;
+    _pendingNotificationSessionStartedAt = now;
+    _pendingNotificationSessionRetryCount = 0;
     _notificationSessionNavigationTimer?.cancel();
     _notificationSessionNavigationTimer = Timer(
       const Duration(milliseconds: 60),
@@ -214,6 +219,22 @@ extension _MainScreenNotifications on _MainScreenState {
     if (sessionId == null || sessionId.isEmpty) return;
     final playbackService = ref.read(playbackSessionServiceProvider);
     if (playbackService.sessionById(sessionId) == null) {
+      _pendingNotificationSessionRetryCount++;
+      final startedAt = _pendingNotificationSessionStartedAt;
+      if (startedAt == null ||
+          DateTime.now().difference(startedAt) >= const Duration(seconds: 5)) {
+        _notificationSessionNavigationTimer?.cancel();
+        _notificationSessionNavigationTimer = null;
+        _pendingNotificationSessionId = null;
+        _pendingNotificationSessionStartedAt = null;
+        final retryCount = _pendingNotificationSessionRetryCount;
+        _pendingNotificationSessionRetryCount = 0;
+        AppLogService.warning(
+          'notification_session_navigation_timeout '
+          'sessionId=$sessionId retries=$retryCount',
+        );
+        return;
+      }
       _notificationSessionNavigationTimer?.cancel();
       _notificationSessionNavigationTimer = Timer(
         const Duration(milliseconds: 240),
@@ -223,6 +244,8 @@ extension _MainScreenNotifications on _MainScreenState {
     }
 
     _pendingNotificationSessionId = null;
+    _pendingNotificationSessionStartedAt = null;
+    _pendingNotificationSessionRetryCount = 0;
     _lastOpenedNotificationSessionId = sessionId;
     _lastOpenedNotificationAt = DateTime.now();
     _switchPage(1, withFeedback: false);

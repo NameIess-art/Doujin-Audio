@@ -311,6 +311,7 @@ class FileCachePlatformGateway {
         '${DateTime.now().microsecondsSinceEpoch}-${_scanSessionSeed++}';
     final tracks = <ScannedTrack>[];
     final paths = <String>{};
+    var failureCount = 0;
     final completer = Completer<NativeScanResult>();
     StreamSubscription<dynamic>? subscription;
 
@@ -331,11 +332,14 @@ class FileCachePlatformGateway {
               if (scanEvent.isChunk) {
                 tracks.addAll(scanEvent.chunk.tracks);
                 paths.addAll(scanEvent.chunk.paths);
+                failureCount += scanEvent.chunk.failureCount;
               } else if (scanEvent.isDone) {
                 complete(
                   NativeScanResult.success(
                     List<ScannedTrack>.unmodifiable(tracks),
                     Set<String>.unmodifiable(paths),
+                    failureCount: failureCount + scanEvent.chunk.failureCount,
+                    completenessKnown: scanEvent.complete,
                   ),
                 );
               } else if (scanEvent.isError) {
@@ -394,6 +398,7 @@ class FileCachePlatformGateway {
     final sessionId =
         '${DateTime.now().microsecondsSinceEpoch}-${_scanSessionSeed++}';
     final paths = <String>{};
+    var failureCount = 0;
     final completer = Completer<NativeScanResult>();
     StreamSubscription<dynamic>? subscription;
     Future<void> pendingChunk = Future<void>.value();
@@ -425,12 +430,16 @@ class FileCachePlatformGateway {
                     .then((_) async {
                       if (completer.isCompleted) return;
                       paths.addAll(chunk.paths);
+                      failureCount += chunk.failureCount;
                       final keepGoing = await onChunk(chunk);
                       if (!keepGoing) {
                         complete(
                           NativeScanResult.success(
                             const <ScannedTrack>[],
                             Set<String>.unmodifiable(paths),
+                            failureCount: failureCount,
+                            completenessKnown: true,
+                            wasCancelled: true,
                           ),
                         );
                         unawaited(_cancelFolderScan(sessionId));
@@ -456,6 +465,8 @@ class FileCachePlatformGateway {
                     () => NativeScanResult.success(
                       const <ScannedTrack>[],
                       Set<String>.unmodifiable(paths),
+                      failureCount: failureCount + scanEvent.chunk.failureCount,
+                      completenessKnown: scanEvent.complete,
                     ),
                   ),
                 );

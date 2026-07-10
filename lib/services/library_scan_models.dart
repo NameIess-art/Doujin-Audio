@@ -65,10 +65,25 @@ class NativeScanResult {
     this.errorCode,
     this.errorMessage,
     this.notSupported = false,
+    this.failureCount = 0,
+    this.completenessKnown = false,
+    this.wasCancelled = false,
   });
 
-  const NativeScanResult.success(List<ScannedTrack> tracks, Set<String> paths)
-    : this._(ok: true, tracks: tracks, paths: paths);
+  const NativeScanResult.success(
+    List<ScannedTrack> tracks,
+    Set<String> paths, {
+    int failureCount = 0,
+    bool completenessKnown = false,
+    bool wasCancelled = false,
+  }) : this._(
+         ok: true,
+         tracks: tracks,
+         paths: paths,
+         failureCount: failureCount,
+         completenessKnown: completenessKnown,
+         wasCancelled: wasCancelled,
+       );
 
   const NativeScanResult.failed({String? code, String? message})
     : this._(ok: false, errorCode: code, errorMessage: message);
@@ -81,6 +96,12 @@ class NativeScanResult {
   final String? errorCode;
   final String? errorMessage;
   final bool notSupported;
+  final int failureCount;
+  final bool completenessKnown;
+  final bool wasCancelled;
+
+  bool get isComplete =>
+      ok && completenessKnown && failureCount == 0 && !wasCancelled;
 }
 
 class NativeScanPayload {
@@ -110,6 +131,7 @@ class FolderScanSessionEvent {
     required this.chunk,
     this.errorCode,
     this.errorMessage,
+    this.complete = false,
   });
 
   final String sessionId;
@@ -117,6 +139,7 @@ class FolderScanSessionEvent {
   final FolderScanChunk chunk;
   final String? errorCode;
   final String? errorMessage;
+  final bool complete;
 
   bool get isChunk => type == 'chunk';
   bool get isDone => type == 'done';
@@ -143,6 +166,7 @@ class FolderScanSessionEvent {
       ),
       errorCode: payload['code']?.toString(),
       errorMessage: payload['message']?.toString(),
+      complete: payload['complete'] as bool? ?? false,
     );
   }
 }

@@ -37,6 +37,9 @@ object PlaybackTimerAlarmScheduler {
     const val actionTimerExpired = "com.nameless.audio.action.TIMER_EXPIRED"
     const val actionAutoResume = "com.nameless.audio.action.AUTO_RESUME"
     const val extraGeneration = "generation"
+    const val resultExecuted = "executed"
+    const val resultStale = "stale"
+    const val resultFailed = "failed"
 
     private const val logTag = "PlaybackTimerAlarm"
     private const val timerRequestCode = 32001
@@ -204,7 +207,8 @@ object PlaybackTimerAlarmScheduler {
         action: String,
         generation: Int?,
         pendingResult: BroadcastReceiver.PendingResult? = null,
-        deliveryWakeLock: PowerManager.WakeLock? = null
+        deliveryWakeLock: PowerManager.WakeLock? = null,
+        onComplete: ((String) -> Unit)? = null
     ) {
         val runtimeState = NativePlaybackStateStore.loadTimerRuntimeState(context)
         if (runtimeState != null &&
@@ -217,6 +221,7 @@ object PlaybackTimerAlarmScheduler {
                     "actual=$generation"
             )
             finishDelivery(pendingResult, deliveryWakeLock)
+            onComplete?.invoke(resultStale)
             return
         }
         logInfo(context, "execute_now action=$action generation=$generation")
@@ -224,9 +229,11 @@ object PlaybackTimerAlarmScheduler {
             context = context,
             action = action,
             runtimeState = runtimeState,
+            generation = generation,
             attempt = 0,
             pendingResult = pendingResult,
-            deliveryWakeLock = deliveryWakeLock
+            deliveryWakeLock = deliveryWakeLock,
+            onComplete = onComplete
         )
     }
 
@@ -234,10 +241,21 @@ object PlaybackTimerAlarmScheduler {
         context: Context,
         action: String,
         runtimeState: StoredPlaybackTimerRuntimeState?,
+        generation: Int?,
         attempt: Int,
         pendingResult: BroadcastReceiver.PendingResult?,
-        deliveryWakeLock: PowerManager.WakeLock?
+        deliveryWakeLock: PowerManager.WakeLock?,
+        onComplete: ((String) -> Unit)?
     ) {
+        val currentState = NativePlaybackStateStore.loadTimerRuntimeState(context)
+        if (currentState != null &&
+            generation != null &&
+            currentState.generation != generation
+        ) {
+            finishDelivery(pendingResult, deliveryWakeLock)
+            onComplete?.invoke(resultStale)
+            return
+        }
         val service = NativePlaybackService.ensureStarted(
             context,
             requireForegroundBootstrap = true
@@ -246,6 +264,7 @@ object PlaybackTimerAlarmScheduler {
             if (attempt >= maxServiceDeliveryAttempts) {
                 logInfo(context, "deliver_to_service_give_up action=$action attempt=$attempt")
                 finishDelivery(pendingResult, deliveryWakeLock)
+                onComplete?.invoke(resultFailed)
                 return
             }
             logInfo(context, "deliver_to_service_retry action=$action attempt=$attempt")
@@ -255,9 +274,11 @@ object PlaybackTimerAlarmScheduler {
                         context = context,
                         action = action,
                         runtimeState = runtimeState,
+                        generation = generation,
                         attempt = attempt + 1,
                         pendingResult = pendingResult,
-                        deliveryWakeLock = deliveryWakeLock
+                        deliveryWakeLock = deliveryWakeLock,
+                        onComplete = onComplete
                     )
                 },
                 serviceDeliveryRetryDelayMs
@@ -265,14 +286,38 @@ object PlaybackTimerAlarmScheduler {
             return
         }
 
-        try {
-            logInfo(context, "deliver_to_service_execute action=$action")
-            when (action) {
-                actionTimerExpired -> executeTimerExpired(context, service, runtimeState)
-                actionAutoResume -> executeAutoResume(context, service, runtimeState)
-            }
-        } finally {
+        val latestState = NativePlaybackStateStore.loadTimerRuntimeState(context)
+        if (latestState != null &&
+            generation != null &&
+            latestState.generation != generation
+        ) {
             finishDelivery(pendingResult, deliveryWakeLock)
+            onComplete?.invoke(resultStale)
+            return
+        }
+
+        val outcome = try {
+            logInfo(context, "deliver_to_service_execute action=$action")
+            val supported = when (action) {
+                actionTimerExpired -> {
+                    executeTimerExpired(context, service, latestState ?: runtimeState)
+                    true
+                }
+                actionAutoResume -> {
+                    executeAutoResume(context, service, latestState ?: runtimeState)
+                    true
+                }
+                else -> false
+            }
+            if (supported) resultExecuted else resultFailed
+        } catch (error: Throwable) {
+            logWarn(context, "deliver_to_service_failed action=$action", error)
+            resultFailed
+        }
+        try {
+            finishDelivery(pendingResult, deliveryWakeLock)
+        } finally {
+            onComplete?.invoke(outcome)
         }
     }
 

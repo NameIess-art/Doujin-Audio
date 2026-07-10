@@ -66,7 +66,7 @@ internal class FileCacheMethodHandler(
                         }
                     }
                 ) {
-                    val tracks = operations.scanFolder(folder)
+                    val tracks = operations.scanFolder(folder).tracks
                     val payload = ArrayList<HashMap<String, Any?>>(tracks.size)
                     for (track in tracks) {
                         payload.add(track.toScanPayload())

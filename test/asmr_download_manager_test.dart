@@ -13,7 +13,7 @@ void main() {
     final tempDir = await Directory.systemTemp.createTemp(
       'asmr_download_destination_',
     );
-    final manager = AsmrDownloadManager();
+    final manager = _manager();
     try {
       expect(await manager.destinationExists(tempDir.path), isTrue);
       await tempDir.delete(recursive: true);
@@ -69,7 +69,7 @@ void main() {
   test(
     'download progress notifications are throttled but completion is immediate',
     () async {
-      final manager = AsmrDownloadManager();
+      final manager = _manager();
       final notifications = <AsmrDownloadTaskSnapshot?>[];
       manager.addListener(() {
         notifications.add(manager.getTask(1));
@@ -145,7 +145,7 @@ void main() {
     final tempDir = await Directory.systemTemp.createTemp(
       'asmr_download_backup_',
     );
-    final manager = AsmrDownloadManager();
+    final manager = _manager();
     final work = _work(
       releaseDate: DateTime(2024, 5, 6),
       dlCount: 1234,
@@ -222,7 +222,7 @@ void main() {
           }
         }),
       );
-      final manager = AsmrDownloadManager();
+      final manager = _manager();
       try {
         await manager.startDownload(
           work: _work(),
@@ -257,6 +257,190 @@ void main() {
       }
     },
   );
+
+  test(
+    'canceling preserves a work directory that existed before the task',
+    () async {
+      final tempDir = await Directory.systemTemp.createTemp(
+        'asmr_download_existing_',
+      );
+      final workDir = Directory(
+        '${tempDir.path}${Platform.pathSeparator}RJ123456 - Work',
+      );
+      await workDir.create(recursive: true);
+      final sentinel = File('${workDir.path}${Platform.pathSeparator}keep.txt');
+      await sentinel.writeAsString('keep');
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      unawaited(
+        server.forEach((request) async {
+          request.response.headers.contentLength = 1024 * 1024;
+          final chunk = List<int>.filled(16 * 1024, 7);
+          try {
+            for (var i = 0; i < 64; i++) {
+              request.response.add(chunk);
+              await request.response.flush();
+              await Future<void>.delayed(const Duration(milliseconds: 10));
+            }
+          } finally {
+            await request.response.close().catchError((_) {});
+          }
+        }),
+      );
+      final manager = _manager();
+      try {
+        await manager.startDownload(
+          work: _work(),
+          selectedRoots: <AsmrTrackFile>[
+            _file(
+              downloadUrl:
+                  'http://${server.address.host}:${server.port}/track.mp3',
+              size: 1024 * 1024,
+            ),
+          ],
+          destinationRoot: tempDir.path,
+          conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+        );
+        await _waitForLiveTask(manager);
+        await Future<void>.delayed(const Duration(milliseconds: 80));
+        await manager.cancelTask(1).timeout(const Duration(seconds: 5));
+
+        expect(await sentinel.readAsString(), 'keep');
+      } finally {
+        manager.dispose();
+        await server.close(force: true);
+        if (await tempDir.exists()) await tempDir.delete(recursive: true);
+      }
+    },
+  );
+
+  test(
+    'cancel completion allows an immediate retry of the same work',
+    () async {
+      final tempDir = await Directory.systemTemp.createTemp(
+        'asmr_download_retry_',
+      );
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      var requestCount = 0;
+      final firstRequestStarted = Completer<void>();
+      unawaited(
+        server.forEach((request) async {
+          requestCount++;
+          if (requestCount == 1 && !firstRequestStarted.isCompleted) {
+            firstRequestStarted.complete();
+          }
+          const chunks = 64;
+          request.response.headers.contentLength = 1024 * 1024;
+          try {
+            for (var i = 0; i < chunks; i++) {
+              request.response.add(List<int>.filled(16 * 1024, 7));
+              await request.response.flush();
+              if (requestCount == 1) {
+                await Future<void>.delayed(const Duration(milliseconds: 10));
+              }
+            }
+          } catch (_) {
+            // The first request is expected to be closed by cancellation.
+          } finally {
+            await request.response.close().catchError((_) {});
+          }
+        }),
+      );
+      final manager = _manager();
+      try {
+        final file = _file(
+          downloadUrl: 'http://${server.address.host}:${server.port}/track.mp3',
+          size: 1024 * 1024,
+        );
+        await manager.startDownload(
+          work: _work(),
+          selectedRoots: <AsmrTrackFile>[file],
+          destinationRoot: tempDir.path,
+          conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+        );
+        await _waitForTaskStatus(
+          manager,
+          1,
+          AsmrDownloadTaskStatus.downloading,
+        );
+        await firstRequestStarted.future.timeout(const Duration(seconds: 5));
+        await manager.cancelTask(1);
+
+        await manager.startDownload(
+          work: _work(),
+          selectedRoots: <AsmrTrackFile>[file],
+          destinationRoot: tempDir.path,
+          conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+        );
+        await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
+
+        expect(requestCount, 2);
+        expect(
+          await File(
+            '${tempDir.path}${Platform.pathSeparator}RJ123456 - Work'
+            '${Platform.pathSeparator}Track.mp3',
+          ).length(),
+          1024 * 1024,
+        );
+      } finally {
+        manager.dispose();
+        await server.close(force: true);
+        if (await tempDir.exists()) await tempDir.delete(recursive: true);
+      }
+    },
+  );
+
+  test(
+    'truncated responses fail without committing the final media file',
+    () async {
+      final tempDir = await Directory.systemTemp.createTemp(
+        'asmr_download_truncated_',
+      );
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      unawaited(
+        server.forEach((request) async {
+          request.response.add(List<int>.filled(128, 3));
+          await request.response.close();
+        }),
+      );
+      final manager = _manager();
+      try {
+        await manager.startDownload(
+          work: _work(),
+          selectedRoots: <AsmrTrackFile>[
+            _file(
+              downloadUrl:
+                  'http://${server.address.host}:${server.port}/track.mp3',
+              size: 1024,
+            ),
+          ],
+          destinationRoot: tempDir.path,
+          conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+        );
+        await _waitForTaskStatus(
+          manager,
+          1,
+          AsmrDownloadTaskStatus.failed,
+          allowFailure: true,
+        );
+
+        final output = File(
+          '${tempDir.path}${Platform.pathSeparator}RJ123456 - Work'
+          '${Platform.pathSeparator}track.mp3',
+        );
+        expect(await output.exists(), isFalse);
+      } finally {
+        manager.dispose();
+        await server.close(force: true);
+        if (await tempDir.exists()) await tempDir.delete(recursive: true);
+      }
+    },
+  );
+}
+
+AsmrDownloadManager _manager() {
+  return AsmrDownloadManager(
+    temporaryDirectoryProvider: () async => Directory.systemTemp,
+  );
 }
 
 Future<void> _waitForLiveTask(AsmrDownloadManager manager) async {
@@ -271,13 +455,14 @@ Future<void> _waitForLiveTask(AsmrDownloadManager manager) async {
 Future<void> _waitForTaskStatus(
   AsmrDownloadManager manager,
   int workId,
-  AsmrDownloadTaskStatus status,
-) async {
+  AsmrDownloadTaskStatus status, {
+  bool allowFailure = false,
+}) async {
   final deadline = DateTime.now().add(const Duration(seconds: 5));
   while (DateTime.now().isBefore(deadline)) {
     final task = manager.getTask(workId);
     if (task?.status == status) return;
-    if (task?.status == AsmrDownloadTaskStatus.failed) {
+    if (!allowFailure && task?.status == AsmrDownloadTaskStatus.failed) {
       fail('Download task failed: ${task?.error ?? task?.message}');
     }
     await Future<void>.delayed(const Duration(milliseconds: 20));

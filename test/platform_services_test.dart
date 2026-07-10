@@ -38,7 +38,10 @@ void main() {
       expect(await service.isIgnoringBatteryOptimizations(), isTrue);
       expect(await service.openBackgroundRunSettings(), isFalse);
       expect(await service.canScheduleExactAlarms(), isTrue);
-      expect(await service.executeTimerExpiredNow(7), isFalse);
+      expect(
+        await service.executeTimerExpiredNow(7),
+        TimerExecutionResult.failed,
+      );
       expect(await service.getBackgroundRunDiagnostics(), isNull);
       expect(calls, isEmpty);
     });
@@ -101,7 +104,10 @@ void main() {
       );
       expect(await service.canScheduleExactAlarms(), isTrue);
       expect(await service.openExactAlarmSettings(), isFalse);
-      expect(await service.executeAutoResumeNow(3), isFalse);
+      expect(
+        await service.executeAutoResumeNow(3),
+        TimerExecutionResult.failed,
+      );
       expect(await service.getNativeTimerRuntimeState(), isNull);
     });
 

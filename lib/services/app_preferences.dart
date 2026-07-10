@@ -112,7 +112,7 @@ class AppPreferences {
         values[key] = value as Object;
       }
     }
-    
+
     // Also include ASMR.ONE credentials and token (if any) because they are now in secure storage
     final tokenStore = SecureAsmrTokenStore();
     final credentials = await tokenStore.readCredentials();
@@ -124,18 +124,26 @@ class AppPreferences {
     if (token != null) {
       values['asmr_one_jwt_token_v1'] = token;
     }
-    
+
     return values;
   }
 
-  static Future<void> restoreSafeValues(Map<String, Object?> values) async {
+  static Future<void> restoreSafeValues(
+    Map<String, Object?> values, {
+    AsmrTokenStore? tokenStore,
+  }) async {
     final prefs = await _prefs;
     for (final key in prefs.getKeys()) {
-      if (!_isSensitiveKey(key)) {
+      final normalizedKey = key.toLowerCase();
+      if (!_isSensitiveKey(key) ||
+          (normalizedKey.startsWith('asmr_') &&
+              normalizedKey.contains('token'))) {
         await prefs.remove(key);
       }
     }
-    final tokenStore = SecureAsmrTokenStore();
+    final resolvedTokenStore = tokenStore ?? SecureAsmrTokenStore();
+    await resolvedTokenStore.clearToken();
+    await resolvedTokenStore.clearCredentials();
     String? asmrName, asmrPass, asmrToken;
 
     for (final entry in values.entries) {
@@ -166,16 +174,16 @@ class AppPreferences {
     }
 
     if (asmrName != null && asmrPass != null) {
-      await tokenStore.writeCredentials(asmrName, asmrPass);
+      await resolvedTokenStore.writeCredentials(asmrName, asmrPass);
     }
     if (asmrToken != null) {
-      await tokenStore.writeToken(asmrToken);
+      await resolvedTokenStore.writeToken(asmrToken);
     }
   }
 
   static bool _isSensitiveKey(String key) {
     final normalized = key.toLowerCase();
-    
+
     // User requested to include ASMR.ONE credentials in the data backup.
     if (normalized == 'asmr_one_name_v1' || normalized == 'asmr_one_pass_v1') {
       return false;

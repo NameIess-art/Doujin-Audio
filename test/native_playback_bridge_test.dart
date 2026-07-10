@@ -274,4 +274,50 @@ void main() {
       expect(failure.errorOrNull, 'native unavailable');
     },
   );
+
+  test('a valid event resets the EventChannel reconnect backoff', () async {
+    const eventsChannel = EventChannel(NativePlaybackChannel.eventName);
+    final eventSinks = <MockStreamHandlerEventSink>[];
+    var listenCount = 0;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockStreamHandler(
+          eventsChannel,
+          MockStreamHandler.inline(
+            onListen: (_, events) {
+              listenCount++;
+              eventSinks.add(events);
+            },
+          ),
+        );
+    final bridge = NativePlaybackBridge.instance;
+    await bridge.stopListening();
+
+    try {
+      bridge.startListening();
+      await Future<void>.delayed(Duration.zero);
+      expect(listenCount, 1);
+
+      eventSinks[0].error(code: 'disconnect-1');
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      expect(listenCount, 2);
+
+      eventSinks[1].success(<String, Object?>{
+        'sessionId': 'session-1',
+        'playing': false,
+        'playWhenReady': false,
+        'processingState': 'ready',
+        'positionMs': 0,
+        'bufferedPositionMs': 0,
+        'volume': 1.0,
+        'channelSwap': false,
+      });
+      await Future<void>.delayed(Duration.zero);
+      eventSinks[1].error(code: 'disconnect-2');
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+
+      expect(listenCount, 3);
+    } finally {
+      await bridge.stopListening();
+    }
+  });
 }

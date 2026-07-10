@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -23,7 +24,13 @@ class AppDatabase {
   static bool _platformDatabaseInitialized = false;
 
   @visibleForTesting
-  AppDatabase.test(Database db) : _db = db;
+  AppDatabase.test(
+    Database db, {
+    Future<Database> Function()? databaseOpener,
+    Future<String> Function()? filePathProvider,
+  }) : _db = db,
+       _databaseOpener = databaseOpener,
+       _databasePathProvider = filePathProvider;
 
   static AppDatabase? _instance;
   static AppDatabase get instance => _instance ??= AppDatabase._();
@@ -42,14 +49,31 @@ class AppDatabase {
   }
 
   Database? _db;
+  Future<Database> Function()? _databaseOpener;
+  Future<String> Function()? _databasePathProvider;
+  Future<Database>? _openFuture;
+  Future<void>? _maintenanceBarrier;
+  Future<void> _maintenanceTail = Future<void>.value();
+  int _databaseEpoch = 0;
+  int _activeOperations = 0;
+  Completer<void>? _operationsDrained;
 
-  Future<Database> get database async {
+  Future<Database> get _database async {
+    final maintenance = _maintenanceBarrier;
+    if (maintenance != null) {
+      await maintenance;
+    }
     if (_db != null) return _db!;
-    _db = await _open();
-    return _db!;
+    return _openIgnoringMaintenance();
   }
 
+  Future<Database> get databaseForTest => _database;
+
   Future<Database> _open() async {
+    final databaseOpener = _databaseOpener;
+    if (databaseOpener != null) {
+      return databaseOpener();
+    }
     final dbPath = await getDatabasesPath();
     final db = await openDatabase(
       p.join(dbPath, fileName),
@@ -60,17 +84,126 @@ class AppDatabase {
     return db;
   }
 
-  Future<String> get filePath async =>
-      p.join(await getDatabasesPath(), fileName);
+  Future<String> get filePath async {
+    final filePathProvider = _databasePathProvider;
+    if (filePathProvider != null) {
+      return filePathProvider();
+    }
+    return p.join(await getDatabasesPath(), fileName);
+  }
 
   Future<void> close() async {
+    await _openFuture;
     final db = _db;
     _db = null;
     await db?.close();
   }
 
   Future<void> reopen() async {
-    await database;
+    await _database;
+  }
+
+  Future<T> runExclusiveMaintenance<T>({
+    required bool replacesDatabase,
+    required Future<T> Function(String databasePath) action,
+  }) async {
+    final previous = _maintenanceTail;
+    final turnDone = Completer<void>();
+    _maintenanceTail = turnDone.future;
+    await previous;
+
+    final barrier = Completer<void>();
+    _maintenanceBarrier = barrier.future;
+    try {
+      final opening = _openFuture;
+      if (opening != null) {
+        await opening;
+      }
+      if (_activeOperations > 0) {
+        _operationsDrained ??= Completer<void>();
+        await _operationsDrained!.future;
+      }
+      final db = _db;
+      _db = null;
+      await db?.close();
+      final result = await action(await filePath);
+      if (replacesDatabase) {
+        _databaseEpoch++;
+      }
+      await _openIgnoringMaintenance();
+      return result;
+    } finally {
+      try {
+        if (_db == null) {
+          await _openIgnoringMaintenance();
+        }
+      } finally {
+        _maintenanceBarrier = null;
+        barrier.complete();
+        turnDone.complete();
+      }
+    }
+  }
+
+  Future<Database> _openIgnoringMaintenance() async {
+    if (_db != null) return _db!;
+    final opening = _openFuture ??= _open().then((db) {
+      _db = db;
+      return db;
+    });
+    try {
+      return await opening;
+    } finally {
+      if (identical(_openFuture, opening)) {
+        _openFuture = null;
+      }
+    }
+  }
+
+  Future<void> _runDatabaseWrite(
+    Future<void> Function(Database db) operation,
+  ) async {
+    final submittedEpoch = _databaseEpoch;
+    var db = await _database;
+    final maintenance = _maintenanceBarrier;
+    if (maintenance != null) {
+      await maintenance;
+      db = await _database;
+    }
+    if (submittedEpoch != _databaseEpoch) {
+      return;
+    }
+    _activeOperations++;
+    try {
+      await operation(db);
+    } finally {
+      _activeOperations--;
+      if (_activeOperations == 0) {
+        _operationsDrained?.complete();
+        _operationsDrained = null;
+      }
+    }
+  }
+
+  Future<T> _runDatabaseRead<T>(
+    Future<T> Function(Database db) operation,
+  ) async {
+    var db = await _database;
+    final maintenance = _maintenanceBarrier;
+    if (maintenance != null) {
+      await maintenance;
+      db = await _database;
+    }
+    _activeOperations++;
+    try {
+      return await operation(db);
+    } finally {
+      _activeOperations--;
+      if (_activeOperations == 0) {
+        _operationsDrained?.complete();
+        _operationsDrained = null;
+      }
+    }
   }
 
   static Future<void> _onCreate(Database db, int version) async {
@@ -486,62 +619,64 @@ class AppDatabase {
   // ---- Tracks ----
 
   Future<List<MusicTrack>> loadAllTracks() async {
-    final db = await database;
-    final rows = await _queryFullTrackRows(db);
-    final tagsByPath = await _loadTrackTags(db);
-    return rows
-        .map((row) => _trackFromRow(row, tagsByPath[row['path'] as String]))
-        .toList();
+    return _runDatabaseRead((db) async {
+      final rows = await _queryFullTrackRows(db);
+      final tagsByPath = await _loadTrackTags(db);
+      return rows
+          .map((row) => _trackFromRow(row, tagsByPath[row['path'] as String]))
+          .toList();
+    });
   }
 
   Future<List<MusicTrack>> loadTrackSummaries() async {
-    final db = await database;
-    final rows = await db.query(
-      'tracks',
-      columns: [
-        'path',
-        'display_name',
-        'group_key',
-        'group_title',
-        'group_subtitle',
-        'is_single',
-        'is_video',
-        'duration_ms',
-      ],
-    );
-    return rows.map((row) => _trackSummaryFromRow(row)).toList();
+    return _runDatabaseRead((db) async {
+      final rows = await db.query(
+        'tracks',
+        columns: [
+          'path',
+          'display_name',
+          'group_key',
+          'group_title',
+          'group_subtitle',
+          'is_single',
+          'is_video',
+          'duration_ms',
+        ],
+      );
+      return rows.map((row) => _trackSummaryFromRow(row)).toList();
+    });
   }
 
   Future<List<MusicTrack>> loadStartupTracks() async {
-    final db = await database;
-    final rows = await _queryStartupTrackRows(db);
-    return rows.map(_trackStartupFromRow).toList();
+    return _runDatabaseRead((db) async {
+      final rows = await _queryStartupTrackRows(db);
+      return rows.map(_trackStartupFromRow).toList();
+    });
   }
 
   Future<MusicTrack?> loadTrackDetail(String path) async {
-    final db = await database;
-    final rows = await _queryFullTrackRows(db, path: path, limit: 1);
-    if (rows.isEmpty) return null;
-    final tagsByPath = await _loadTrackTags(db, paths: [path]);
-    return _trackFromRow(rows.first, tagsByPath[path]);
+    return _runDatabaseRead((db) async {
+      final rows = await _queryFullTrackRows(db, path: path, limit: 1);
+      if (rows.isEmpty) return null;
+      final tagsByPath = await _loadTrackTags(db, paths: [path]);
+      return _trackFromRow(rows.first, tagsByPath[path]);
+    });
   }
 
   Future<void> saveAllTracks(List<MusicTrack> tracks) async {
-    final db = await database;
-    final batch = db.batch();
-    // Clear and repopulate; for very large libraries this is still
-    // a single transaction and orders of magnitude faster than
-    // serialising the full list as JSON into SharedPreferences.
-    batch.delete('track_tags');
-    batch.delete('track_remote_metadata');
-    batch.delete('track_assets');
-    batch.delete('track_playback_state');
-    batch.delete('track_scan_info');
-    batch.delete('tracks');
-    for (final track in tracks) {
-      _writeTrackToBatch(batch, track);
-    }
-    await batch.commit(noResult: true);
+    await _runDatabaseWrite((db) async {
+      final batch = db.batch();
+      batch.delete('track_tags');
+      batch.delete('track_remote_metadata');
+      batch.delete('track_assets');
+      batch.delete('track_playback_state');
+      batch.delete('track_scan_info');
+      batch.delete('tracks');
+      for (final track in tracks) {
+        _writeTrackToBatch(batch, track);
+      }
+      await batch.commit(noResult: true);
+    });
   }
 
   Future<void> insertTracks(List<MusicTrack> tracks) async {
@@ -552,21 +687,23 @@ class AppDatabase {
     List<MusicTrack> tracks, {
     int? scanGeneration,
   }) async {
-    final db = await database;
-    final batch = db.batch();
-    for (final track in tracks) {
-      _writeTrackToBatch(batch, track, scanGeneration: scanGeneration);
-    }
-    await batch.commit(noResult: true);
+    await _runDatabaseWrite((db) async {
+      final batch = db.batch();
+      for (final track in tracks) {
+        _writeTrackToBatch(batch, track, scanGeneration: scanGeneration);
+      }
+      await batch.commit(noResult: true);
+    });
   }
 
   Future<int> nextScanGeneration() async {
-    final db = await database;
-    final rows = await db.rawQuery(
-      'SELECT COALESCE(MAX(scan_generation), 0) + 1 AS next_generation '
-      'FROM track_scan_info',
-    );
-    return (rows.first['next_generation'] as num?)?.toInt() ?? 1;
+    return _runDatabaseRead((db) async {
+      final rows = await db.rawQuery(
+        'SELECT COALESCE(MAX(scan_generation), 0) + 1 AS next_generation '
+        'FROM track_scan_info',
+      );
+      return (rows.first['next_generation'] as num?)?.toInt() ?? 1;
+    });
   }
 
   Future<void> markTracksScanned(
@@ -577,54 +714,84 @@ class AppDatabase {
   }
 
   Future<void> deleteTracksMissingFromGeneration(int generation) async {
-    final db = await database;
-    final rows = await db.query(
-      'track_scan_info',
-      columns: ['path'],
-      where: 'scan_generation != ?',
-      whereArgs: [generation],
-    );
-    await deleteTracks(rows.map((row) => row['path'] as String).toList());
+    await _runDatabaseWrite((db) async {
+      final rows = await db.query(
+        'track_scan_info',
+        columns: ['path'],
+        where: 'scan_generation != ?',
+        whereArgs: [generation],
+      );
+      final paths = rows.map((row) => row['path'] as String).toList();
+      if (paths.isEmpty) return;
+      const chunkSize = _sqliteInClauseBatchSize;
+      await db.transaction((txn) async {
+        for (var start = 0; start < paths.length; start += chunkSize) {
+          final end = (start + chunkSize).clamp(0, paths.length);
+          final chunk = paths.sublist(start, end);
+          final placeholders = List.filled(chunk.length, '?').join(', ');
+          for (final table in [
+            'track_tags',
+            'track_remote_metadata',
+            'track_assets',
+            'track_playback_state',
+            'track_scan_info',
+            'tracks',
+          ]) {
+            await txn.rawDelete(
+              'DELETE FROM $table WHERE path IN ($placeholders)',
+              chunk,
+            );
+          }
+        }
+      });
+    });
   }
 
   Future<void> deleteTracks(List<String> paths) async {
     if (paths.isEmpty) return;
-    final db = await database;
-    // Use a single DELETE ... WHERE path IN (...) instead of N individual
-    // DELETE statements — much faster for large deletions.
-    final placeholders = List.filled(paths.length, '?').join(', ');
-    await db.transaction((txn) async {
-      for (final table in [
-        'track_tags',
-        'track_remote_metadata',
-        'track_assets',
-        'track_playback_state',
-        'track_scan_info',
-        'tracks',
-      ]) {
-        await txn.rawDelete(
-          'DELETE FROM $table WHERE path IN ($placeholders)',
-          paths,
-        );
-      }
+    await _runDatabaseWrite((db) async {
+      // Use a single DELETE ... WHERE path IN (...) instead of N individual
+      // DELETE statements — much faster for large deletions.
+      const chunkSize = _sqliteInClauseBatchSize;
+      await db.transaction((txn) async {
+        for (var start = 0; start < paths.length; start += chunkSize) {
+          final end = (start + chunkSize).clamp(0, paths.length);
+          final chunk = paths.sublist(start, end);
+          final placeholders = List.filled(chunk.length, '?').join(', ');
+          for (final table in [
+            'track_tags',
+            'track_remote_metadata',
+            'track_assets',
+            'track_playback_state',
+            'track_scan_info',
+            'tracks',
+          ]) {
+            await txn.rawDelete(
+              'DELETE FROM $table WHERE path IN ($placeholders)',
+              chunk,
+            );
+          }
+        }
+      });
     });
   }
 
   Future<void> deleteAllTracks() async {
-    final db = await database;
-    final batch = db.batch();
-    batch.delete('track_tags');
-    batch.delete('track_remote_metadata');
-    batch.delete('track_assets');
-    batch.delete('track_playback_state');
-    batch.delete('track_scan_info');
-    batch.delete('tracks');
-    await batch.commit(noResult: true);
+    await _runDatabaseWrite((db) async {
+      final batch = db.batch();
+      batch.delete('track_tags');
+      batch.delete('track_remote_metadata');
+      batch.delete('track_assets');
+      batch.delete('track_playback_state');
+      batch.delete('track_scan_info');
+      batch.delete('tracks');
+      await batch.commit(noResult: true);
+    });
   }
 
   Future<List<PersistedSession>> loadAllSessions() async {
-    final db = await database;
-    final rows = await db.rawQuery('''
+    return _runDatabaseRead((db) async {
+      final rows = await db.rawQuery('''
       SELECT
         s.id,
         s.track_path,
@@ -653,202 +820,222 @@ class AppDatabase {
       LEFT JOIN playback_queues queue ON queue.session_id = s.id
       ORDER BY s.sort_order ASC
     ''');
-    if (rows.isEmpty) return const <PersistedSession>[];
-    final sessionIds = rows.map((row) => row['id'] as String).toList();
-    final eqBandsBySession = await _loadSessionEqBandsBySession(db, sessionIds);
-    final queueEntriesBySession = await _loadPlaybackQueueEntriesBySession(
-      db,
-      sessionIds,
-    );
-    final queueTracksByEntry = await _loadQueueTracksByEntry(db, sessionIds);
-    final sessions = <PersistedSession>[];
-    for (final row in rows) {
-      final id = row['id'] as String;
-      sessions.add(
-        _sessionFromRow(
-          row,
-          customQueueTracks: _customQueueTracksForSession(
-            id,
-            queueTracksByEntry,
-          ),
-          playbackQueue: _playbackQueueForSession(
-            id,
-            row,
-            queueEntriesBySession,
-            queueTracksByEntry,
-          ),
-          audioEffects: _sessionAudioEffectsFromRow(
-            row,
-            eqBandsBySession[id] ?? const <int, double>{},
-          ),
-        ),
+      if (rows.isEmpty) return const <PersistedSession>[];
+      final sessionIds = rows.map((row) => row['id'] as String).toList();
+      final eqBandsBySession = await _loadSessionEqBandsBySession(
+        db,
+        sessionIds,
       );
-    }
-    return sessions;
+      final queueEntriesBySession = await _loadPlaybackQueueEntriesBySession(
+        db,
+        sessionIds,
+      );
+      final queueTracksByEntry = await _loadQueueTracksByEntry(db, sessionIds);
+      final sessions = <PersistedSession>[];
+      for (final row in rows) {
+        final id = row['id'] as String;
+        sessions.add(
+          _sessionFromRow(
+            row,
+            customQueueTracks: _customQueueTracksForSession(
+              id,
+              queueTracksByEntry,
+            ),
+            playbackQueue: _playbackQueueForSession(
+              id,
+              row,
+              queueEntriesBySession,
+              queueTracksByEntry,
+            ),
+            audioEffects: _sessionAudioEffectsFromRow(
+              row,
+              eqBandsBySession[id] ?? const <int, double>{},
+            ),
+          ),
+        );
+      }
+      return sessions;
+    });
   }
 
   Future<void> saveAllSessions(List<PersistedSession> sessions) async {
-    final db = await database;
-    final batch = db.batch();
-    batch.delete('playback_queue_entry_tracks');
-    batch.delete('playback_queue_entries');
-    batch.delete('playback_queues');
-    batch.delete('session_eq_bands');
-    batch.delete('session_audio_effects');
-    batch.delete('session_playback_state');
-    batch.delete('sessions');
-    for (var i = 0; i < sessions.length; i++) {
-      _writeSessionToBatch(batch, sessions[i], i);
-    }
-    await batch.commit(noResult: true);
+    await _runDatabaseWrite((db) async {
+      final batch = db.batch();
+      batch.delete('playback_queue_entry_tracks');
+      batch.delete('playback_queue_entries');
+      batch.delete('playback_queues');
+      batch.delete('session_eq_bands');
+      batch.delete('session_audio_effects');
+      batch.delete('session_playback_state');
+      batch.delete('sessions');
+      for (var i = 0; i < sessions.length; i++) {
+        _writeSessionToBatch(batch, sessions[i], i);
+      }
+      await batch.commit(noResult: true);
+    });
   }
 
   Future<void> updateSessionOrder(List<String> sessionIds) async {
-    final db = await database;
-    final batch = db.batch();
-    for (var i = 0; i < sessionIds.length; i++) {
-      batch.update(
-        'sessions',
-        {'sort_order': i},
-        where: 'id = ?',
-        whereArgs: [sessionIds[i]],
-      );
-    }
-    await batch.commit(noResult: true);
+    await _runDatabaseWrite((db) async {
+      final batch = db.batch();
+      for (var i = 0; i < sessionIds.length; i++) {
+        batch.update(
+          'sessions',
+          {'sort_order': i},
+          where: 'id = ?',
+          whereArgs: [sessionIds[i]],
+        );
+      }
+      await batch.commit(noResult: true);
+    });
   }
 
   Future<void> updatePlaybackQueueEntryOrder(
     String sessionId,
     List<String> entryIds,
   ) async {
-    final db = await database;
-    final batch = db.batch();
-    for (var i = 0; i < entryIds.length; i++) {
-      batch.update(
-        'playback_queue_entries',
-        {'sort_order': i},
-        where: 'session_id = ? AND entry_id = ?',
-        whereArgs: [sessionId, entryIds[i]],
-      );
-    }
-    await batch.commit(noResult: true);
+    await _runDatabaseWrite((db) async {
+      final batch = db.batch();
+      for (var i = 0; i < entryIds.length; i++) {
+        batch.update(
+          'playback_queue_entries',
+          {'sort_order': i},
+          where: 'session_id = ? AND entry_id = ?',
+          whereArgs: [sessionId, entryIds[i]],
+        );
+      }
+      await batch.commit(noResult: true);
+    });
   }
 
   Future<void> upsertSessionPlaybackState(PersistedSession session) async {
-    final db = await database;
-    final batch = db.batch();
-    batch.insert(
-      'session_playback_state',
-      _sessionPlaybackStateRow(session),
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
-    await batch.commit(noResult: true);
+    await _runDatabaseWrite((db) async {
+      final batch = db.batch();
+      batch.insert(
+        'session_playback_state',
+        _sessionPlaybackStateRow(session),
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+      await batch.commit(noResult: true);
+    });
   }
 
   Future<void> deleteAllSessions() async {
-    final db = await database;
-    final batch = db.batch();
-    batch.delete('playback_queue_entry_tracks');
-    batch.delete('playback_queue_entries');
-    batch.delete('playback_queues');
-    batch.delete('session_eq_bands');
-    batch.delete('session_audio_effects');
-    batch.delete('session_playback_state');
-    batch.delete('sessions');
-    await batch.commit(noResult: true);
+    await _runDatabaseWrite((db) async {
+      final batch = db.batch();
+      batch.delete('playback_queue_entry_tracks');
+      batch.delete('playback_queue_entries');
+      batch.delete('playback_queues');
+      batch.delete('session_eq_bands');
+      batch.delete('session_audio_effects');
+      batch.delete('session_playback_state');
+      batch.delete('sessions');
+      await batch.commit(noResult: true);
+    });
   }
 
   Future<AudioDetail?> loadAudioDetail(AudioDetailTarget target) async {
-    final db = await database;
-    final normalizedTargetPath = PathMatcher.normalize(target.targetPath);
-    final rows = await db.query(
-      'audio_details',
-      where: 'target_type = ? AND target_path = ?',
-      whereArgs: [target.targetType.dbValue, normalizedTargetPath],
-      limit: 1,
-    );
-    if (rows.isEmpty) return null;
-    return AudioDetail.fromRow(rows.first);
+    return _runDatabaseRead((db) async {
+      final normalizedTargetPath = PathMatcher.normalize(target.targetPath);
+      final rows = await db.query(
+        'audio_details',
+        where: 'target_type = ? AND target_path = ?',
+        whereArgs: [target.targetType.dbValue, normalizedTargetPath],
+        limit: 1,
+      );
+      if (rows.isEmpty) return null;
+      return AudioDetail.fromRow(rows.first);
+    });
   }
 
   Future<List<AudioDetail>> loadAudioDetails(
     Iterable<AudioDetailTarget> targets,
   ) async {
-    final db = await database;
-    final pathsByType = <String, Set<String>>{};
-    for (final target in targets) {
-      pathsByType
-          .putIfAbsent(target.targetType.dbValue, () => <String>{})
-          .add(PathMatcher.normalize(target.targetPath));
-    }
-    if (pathsByType.isEmpty) return const <AudioDetail>[];
-
-    final details = <AudioDetail>[];
-    for (final entry in pathsByType.entries) {
-      final paths = entry.value.toList(growable: false);
-      if (paths.isEmpty) continue;
-      const chunkSize = 900;
-      for (var start = 0; start < paths.length; start += chunkSize) {
-        final end = (start + chunkSize).clamp(0, paths.length);
-        final chunk = paths.sublist(start, end);
-        final placeholders = List.filled(chunk.length, '?').join(', ');
-        final rows = await db.query(
-          'audio_details',
-          where: 'target_type = ? AND target_path IN ($placeholders)',
-          whereArgs: [entry.key, ...chunk],
-        );
-        details.addAll(rows.map(AudioDetail.fromRow));
+    return _runDatabaseRead((db) async {
+      final pathsByType = <String, Set<String>>{};
+      for (final target in targets) {
+        pathsByType
+            .putIfAbsent(target.targetType.dbValue, () => <String>{})
+            .add(PathMatcher.normalize(target.targetPath));
       }
-    }
-    return details;
+      if (pathsByType.isEmpty) return const <AudioDetail>[];
+
+      final details = <AudioDetail>[];
+      for (final entry in pathsByType.entries) {
+        final paths = entry.value.toList(growable: false);
+        if (paths.isEmpty) continue;
+        const chunkSize = 900;
+        for (var start = 0; start < paths.length; start += chunkSize) {
+          final end = (start + chunkSize).clamp(0, paths.length);
+          final chunk = paths.sublist(start, end);
+          final placeholders = List.filled(chunk.length, '?').join(', ');
+          final rows = await db.query(
+            'audio_details',
+            where: 'target_type = ? AND target_path IN ($placeholders)',
+            whereArgs: [entry.key, ...chunk],
+          );
+          details.addAll(rows.map(AudioDetail.fromRow));
+        }
+      }
+      return details;
+    });
   }
 
   Future<void> upsertAudioDetail(AudioDetail detail) async {
-    final db = await database;
-    final row = detail.toRow();
-    row['target_path'] = PathMatcher.normalize(detail.target.targetPath);
-    await db.insert(
-      'audio_details',
-      row,
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    await _runDatabaseWrite((db) async {
+      final row = detail.toRow();
+      row['target_path'] = PathMatcher.normalize(detail.target.targetPath);
+      await db.insert(
+        'audio_details',
+        row,
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    });
   }
 
   Future<void> deleteAudioDetail(AudioDetailTarget target) async {
-    final db = await database;
-    final normalizedTargetPath = PathMatcher.normalize(target.targetPath);
-    await db.delete(
-      'audio_details',
-      where: 'target_type = ? AND target_path = ?',
-      whereArgs: [target.targetType.dbValue, normalizedTargetPath],
-    );
+    await _runDatabaseWrite((db) async {
+      final normalizedTargetPath = PathMatcher.normalize(target.targetPath);
+      await db.delete(
+        'audio_details',
+        where: 'target_type = ? AND target_path = ?',
+        whereArgs: [target.targetType.dbValue, normalizedTargetPath],
+      );
+    });
   }
 
   // ---- Time segment labels ----
 
   Future<List<TimeSegmentLabel>> loadTimeSegmentLabels(String trackKey) async {
-    final db = await database;
-    final rows = await db.query(
-      'time_segment_labels',
-      where: 'track_key = ?',
-      whereArgs: [trackKey],
-      orderBy: 'start_ms ASC, created_at_ms ASC',
-    );
-    return rows.map(TimeSegmentLabel.fromRow).toList(growable: false);
+    return _runDatabaseRead((db) async {
+      final rows = await db.query(
+        'time_segment_labels',
+        where: 'track_key = ?',
+        whereArgs: [trackKey],
+        orderBy: 'start_ms ASC, created_at_ms ASC',
+      );
+      return rows.map(TimeSegmentLabel.fromRow).toList(growable: false);
+    });
   }
 
   Future<void> upsertTimeSegmentLabel(TimeSegmentLabel label) async {
-    final db = await database;
-    await db.insert(
-      'time_segment_labels',
-      label.toRow(),
-      conflictAlgorithm: ConflictAlgorithm.replace,
+    await _runDatabaseWrite(
+      (db) => db
+          .insert(
+            'time_segment_labels',
+            label.toRow(),
+            conflictAlgorithm: ConflictAlgorithm.replace,
+          )
+          .then((_) {}),
     );
   }
 
   Future<void> deleteTimeSegmentLabel(String id) async {
-    final db = await database;
-    await db.delete('time_segment_labels', where: 'id = ?', whereArgs: [id]);
+    await _runDatabaseWrite(
+      (db) => db
+          .delete('time_segment_labels', where: 'id = ?', whereArgs: [id])
+          .then((_) {}),
+    );
   }
 
   Future<void> retargetTimeSegmentLabels({
@@ -856,59 +1043,63 @@ class AppDatabase {
     required String newTrackKey,
   }) async {
     if (oldTrackKey == newTrackKey) return;
-    final db = await database;
-    await db.update(
-      'time_segment_labels',
-      {'track_key': newTrackKey},
-      where: 'track_key = ?',
-      whereArgs: [oldTrackKey],
-    );
+    await _runDatabaseWrite((db) async {
+      await db.update(
+        'time_segment_labels',
+        {'track_key': newTrackKey},
+        where: 'track_key = ?',
+        whereArgs: [oldTrackKey],
+      );
+    });
   }
 
   Future<void> retargetTimeSegmentLabelsWithinPath({
     required String oldRoot,
     required String newRoot,
   }) async {
-    final db = await database;
-    final rows = await db.query('time_segment_labels');
-    final batch = db.batch();
-    for (final row in rows) {
-      final id = row['id'] as String;
-      final trackKey = row['track_key'] as String;
-      if (!PathMatcher.isWithinOrEqual(trackKey, oldRoot)) continue;
-      final nextTrackKey = PathMatcher.replaceWithinOrEqual(
-        trackKey,
-        oldRoot,
-        newRoot,
-      );
-      if (nextTrackKey == trackKey) continue;
-      batch.update(
-        'time_segment_labels',
-        {'track_key': nextTrackKey},
-        where: 'id = ?',
-        whereArgs: [id],
-      );
-    }
-    await batch.commit(noResult: true);
+    await _runDatabaseWrite((db) async {
+      final rows = await db.query('time_segment_labels');
+      final batch = db.batch();
+      for (final row in rows) {
+        final id = row['id'] as String;
+        final trackKey = row['track_key'] as String;
+        if (!PathMatcher.isWithinOrEqual(trackKey, oldRoot)) continue;
+        final nextTrackKey = PathMatcher.replaceWithinOrEqual(
+          trackKey,
+          oldRoot,
+          newRoot,
+        );
+        if (nextTrackKey == trackKey) continue;
+        batch.update(
+          'time_segment_labels',
+          {'track_key': nextTrackKey},
+          where: 'id = ?',
+          whereArgs: [id],
+        );
+      }
+      await batch.commit(noResult: true);
+    });
   }
 
   // ---- Library entries ----
 
   Future<List<LibraryEntry>> loadAllLibraryEntries() async {
-    final db = await database;
-    final rows = await db.query('library_entries');
-    return rows.map(_libraryEntryFromRow).toList();
+    return _runDatabaseRead((db) async {
+      final rows = await db.query('library_entries');
+      return rows.map(_libraryEntryFromRow).toList();
+    });
   }
 
   Future<List<LibraryEntry>> loadLibraryEntries(String libraryPath) async {
-    final db = await database;
-    final normalizedLibraryPath = PathMatcher.normalize(libraryPath);
-    final rows = await db.query(
-      'library_entries',
-      where: 'library_path = ?',
-      whereArgs: [normalizedLibraryPath],
-    );
-    return rows.map(_libraryEntryFromRow).toList();
+    return _runDatabaseRead((db) async {
+      final normalizedLibraryPath = PathMatcher.normalize(libraryPath);
+      final rows = await db.query(
+        'library_entries',
+        where: 'library_path = ?',
+        whereArgs: [normalizedLibraryPath],
+      );
+      return rows.map(_libraryEntryFromRow).toList();
+    });
   }
 
   Future<void> upsertLibraryEntries(
@@ -916,36 +1107,39 @@ class AppDatabase {
     int? scanGeneration,
   }) async {
     if (entries.isEmpty) return;
-    final db = await database;
-    final batch = db.batch();
-    for (final entry in entries) {
-      batch.insert(
-        'library_entries',
-        _libraryEntryToRow(entry, scanGeneration: scanGeneration),
-        conflictAlgorithm: ConflictAlgorithm.replace,
-      );
-    }
-    await batch.commit(noResult: true);
+    await _runDatabaseWrite((db) async {
+      final batch = db.batch();
+      for (final entry in entries) {
+        batch.insert(
+          'library_entries',
+          _libraryEntryToRow(entry, scanGeneration: scanGeneration),
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+      await batch.commit(noResult: true);
+    });
   }
 
   Future<int> nextLibraryEntryScanGeneration(String libraryPath) async {
-    final db = await database;
-    final normalizedLibraryPath = PathMatcher.normalize(libraryPath);
-    final rows = await db.rawQuery(
-      'SELECT COALESCE(MAX(scan_generation), 0) + 1 AS next_generation '
-      'FROM library_entries WHERE library_path = ?',
-      [normalizedLibraryPath],
-    );
-    return (rows.first['next_generation'] as num?)?.toInt() ?? 1;
+    return _runDatabaseRead((db) async {
+      final normalizedLibraryPath = PathMatcher.normalize(libraryPath);
+      final rows = await db.rawQuery(
+        'SELECT COALESCE(MAX(scan_generation), 0) + 1 AS next_generation '
+        'FROM library_entries WHERE library_path = ?',
+        [normalizedLibraryPath],
+      );
+      return (rows.first['next_generation'] as num?)?.toInt() ?? 1;
+    });
   }
 
   Future<void> deleteLibraryEntriesForLibrary(String libraryPath) async {
-    final db = await database;
-    await db.delete(
-      'library_entries',
-      where: 'library_path = ?',
-      whereArgs: [PathMatcher.normalize(libraryPath)],
-    );
+    await _runDatabaseWrite((db) async {
+      await db.delete(
+        'library_entries',
+        where: 'library_path = ?',
+        whereArgs: [PathMatcher.normalize(libraryPath)],
+      );
+    });
   }
 
   Future<void> deleteLibraryEntries(
@@ -954,16 +1148,17 @@ class AppDatabase {
   ) async {
     final normalizedPaths = paths.map(PathMatcher.normalize).toSet();
     if (normalizedPaths.isEmpty) return;
-    final db = await database;
-    final batch = db.batch();
-    for (final entryPath in normalizedPaths) {
-      batch.delete(
-        'library_entries',
-        where: 'library_path = ? AND path = ?',
-        whereArgs: [PathMatcher.normalize(libraryPath), entryPath],
-      );
-    }
-    await batch.commit(noResult: true);
+    await _runDatabaseWrite((db) async {
+      final batch = db.batch();
+      for (final entryPath in normalizedPaths) {
+        batch.delete(
+          'library_entries',
+          where: 'library_path = ? AND path = ?',
+          whereArgs: [PathMatcher.normalize(libraryPath), entryPath],
+        );
+      }
+      await batch.commit(noResult: true);
+    });
   }
 
   Future<void> setLibraryEntriesState(
@@ -974,169 +1169,170 @@ class AppDatabase {
     final normalizedLibraryPath = PathMatcher.normalize(libraryPath);
     final paths = entryPaths.map(PathMatcher.normalize).toSet();
     if (paths.isEmpty) return;
-    final db = await database;
-    final batch = db.batch();
-    for (final entryPath in paths) {
-      batch.update(
-        'library_entries',
-        {'state': state.dbValue},
-        where: 'library_path = ? AND path = ?',
-        whereArgs: [normalizedLibraryPath, entryPath],
-      );
-    }
-    await batch.commit(noResult: true);
+    await _runDatabaseWrite((db) async {
+      final batch = db.batch();
+      for (final entryPath in paths) {
+        batch.update(
+          'library_entries',
+          {'state': state.dbValue},
+          where: 'library_path = ? AND path = ?',
+          whereArgs: [normalizedLibraryPath, entryPath],
+        );
+      }
+      await batch.commit(noResult: true);
+    });
   }
 
   // ---- ASMR.ONE app data ----
 
   Future<List<String>> loadAsmrVisibleCategoryNames() async {
-    final db = await database;
-    final rows = await db.query(
-      'asmr_visible_categories',
-      orderBy: 'sort_order ASC',
-    );
-    return rows
-        .map((row) => row['category'] as String?)
-        .whereType<String>()
-        .toList(growable: false);
+    return _runDatabaseRead((db) async {
+      final rows = await db.query(
+        'asmr_visible_categories',
+        orderBy: 'sort_order ASC',
+      );
+      return rows
+          .map((row) => row['category'] as String?)
+          .whereType<String>()
+          .toList(growable: false);
+    });
   }
 
   Future<void> saveAsmrVisibleCategoryNames(List<String> categories) async {
-    final db = await database;
-    final batch = db.batch();
-    batch.delete('asmr_visible_categories');
-    for (var i = 0; i < categories.length; i++) {
-      batch.insert('asmr_visible_categories', {
-        'category': categories[i],
-        'sort_order': i,
-      }, conflictAlgorithm: ConflictAlgorithm.replace);
-    }
-    await batch.commit(noResult: true);
+    await _runDatabaseWrite((db) async {
+      final batch = db.batch();
+      batch.delete('asmr_visible_categories');
+      for (var i = 0; i < categories.length; i++) {
+        batch.insert('asmr_visible_categories', {
+          'category': categories[i],
+          'sort_order': i,
+        }, conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+      await batch.commit(noResult: true);
+    });
   }
 
   Future<String?> loadAppSetting(String key) async {
-    final db = await database;
-    final rows = await db.query(
-      'app_kv_settings',
-      columns: ['value'],
-      where: 'key = ?',
-      whereArgs: [key],
-      limit: 1,
-    );
-    if (rows.isEmpty) return null;
-    return rows.first['value'] as String?;
+    return _runDatabaseRead((db) async {
+      final rows = await db.query(
+        'app_kv_settings',
+        columns: ['value'],
+        where: 'key = ?',
+        whereArgs: [key],
+        limit: 1,
+      );
+      if (rows.isEmpty) return null;
+      return rows.first['value'] as String?;
+    });
   }
 
   Future<void> saveAppSetting(String key, String? value) async {
-    final db = await database;
-    if (value == null) {
-      await db.delete('app_kv_settings', where: 'key = ?', whereArgs: [key]);
-      return;
-    }
-    await db.insert('app_kv_settings', {
-      'key': key,
-      'value': value,
-    }, conflictAlgorithm: ConflictAlgorithm.replace);
+    await _runDatabaseWrite((db) async {
+      if (value == null) {
+        await db.delete('app_kv_settings', where: 'key = ?', whereArgs: [key]);
+        return;
+      }
+      await db.insert('app_kv_settings', {
+        'key': key,
+        'value': value,
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
+    });
   }
 
   Future<List<AsmrWork>> loadAsmrWorkList(String listType) async {
-    final db = await database;
-    final rows = await db.rawQuery(
-      '''
+    return _runDatabaseRead((db) async {
+      final rows = await db.rawQuery(
+        '''
       SELECT w.*
       FROM asmr_work_lists l
       INNER JOIN asmr_works w ON w.id = l.work_id
       WHERE l.list_type = ?
       ORDER BY l.sort_order ASC
     ''',
-      [listType],
-    );
-    if (rows.isEmpty) return const <AsmrWork>[];
-    final ids = rows.map((row) => row['id'] as int).toList(growable: false);
-    final voiceActorsById = await _loadAsmrWorkTextValues(
-      db,
-      table: 'asmr_work_voice_actors',
-      idColumn: 'work_id',
-      valueColumn: 'name',
-      ids: ids,
-    );
-    final tagsById = await _loadAsmrWorkTextValues(
-      db,
-      table: 'asmr_work_tags',
-      idColumn: 'work_id',
-      valueColumn: 'tag',
-      ids: ids,
-    );
-    return rows
-        .map(
-          (row) => _asmrWorkFromRow(
-            row,
-            voiceActors: voiceActorsById[row['id'] as int],
-            tags: tagsById[row['id'] as int],
-          ),
-        )
-        .toList(growable: false);
+        [listType],
+      );
+      if (rows.isEmpty) return const <AsmrWork>[];
+      final ids = rows.map((row) => row['id'] as int).toList(growable: false);
+      final voiceActorsById = await _loadAsmrWorkTextValues(
+        db,
+        table: 'asmr_work_voice_actors',
+        idColumn: 'work_id',
+        valueColumn: 'name',
+        ids: ids,
+      );
+      final tagsById = await _loadAsmrWorkTextValues(
+        db,
+        table: 'asmr_work_tags',
+        idColumn: 'work_id',
+        valueColumn: 'tag',
+        ids: ids,
+      );
+      return rows
+          .map(
+            (row) => _asmrWorkFromRow(
+              row,
+              voiceActors: voiceActorsById[row['id'] as int],
+              tags: tagsById[row['id'] as int],
+            ),
+          )
+          .toList(growable: false);
+    });
   }
 
   Future<void> saveAsmrWorkList(String listType, List<AsmrWork> works) async {
-    final db = await database;
-    final batch = db.batch();
-    batch.delete(
-      'asmr_work_lists',
-      where: 'list_type = ?',
-      whereArgs: [listType],
-    );
-    for (var i = 0; i < works.length; i++) {
-      _writeAsmrWorkToBatch(batch, works[i]);
-      batch.insert('asmr_work_lists', {
-        'list_type': listType,
-        'work_id': works[i].id,
-        'sort_order': i,
-      }, conflictAlgorithm: ConflictAlgorithm.replace);
-    }
-    await batch.commit(noResult: true);
+    await _runDatabaseWrite((db) async {
+      final batch = db.batch();
+      _replaceAsmrWorkListInBatch(batch, listType, works);
+      await batch.commit(noResult: true);
+    });
   }
 
   Future<List<AsmrSyncOperation>> loadAsmrSyncOperations() async {
-    final db = await database;
-    final rows = await db.query(
-      'asmr_sync_operations',
-      orderBy: 'sort_order ASC',
-    );
-    return rows
-        .map(
-          (row) => AsmrSyncOperation(
-            type: AsmrSyncOperationType.fromName(row['type'] as String?),
-            workId: (row['work_id'] as num?)?.toInt() ?? 0,
-            sourceId: row['source_id'] as String? ?? '',
-            createdAt:
-                _dateTimeFromMs(row['created_at_ms']) ??
-                DateTime.fromMillisecondsSinceEpoch(0),
-            retryCount: (row['retry_count'] as num?)?.toInt() ?? 0,
-          ),
-        )
-        .where((operation) => operation.workId > 0)
-        .toList(growable: false);
+    return _runDatabaseRead((db) async {
+      final rows = await db.query(
+        'asmr_sync_operations',
+        orderBy: 'sort_order ASC',
+      );
+      return rows
+          .map(
+            (row) => AsmrSyncOperation(
+              type: AsmrSyncOperationType.fromName(row['type'] as String?),
+              workId: (row['work_id'] as num?)?.toInt() ?? 0,
+              sourceId: row['source_id'] as String? ?? '',
+              createdAt:
+                  _dateTimeFromMs(row['created_at_ms']) ??
+                  DateTime.fromMillisecondsSinceEpoch(0),
+              retryCount: (row['retry_count'] as num?)?.toInt() ?? 0,
+            ),
+          )
+          .where((operation) => operation.workId > 0)
+          .toList(growable: false);
+    });
   }
 
   Future<void> saveAsmrSyncOperations(
     List<AsmrSyncOperation> operations,
   ) async {
-    final db = await database;
-    final batch = db.batch();
-    batch.delete('asmr_sync_operations');
-    for (var i = 0; i < operations.length; i++) {
-      final operation = operations[i];
-      batch.insert('asmr_sync_operations', {
-        'type': operation.type.name,
-        'work_id': operation.workId,
-        'source_id': operation.sourceId,
-        'created_at_ms': operation.createdAt.millisecondsSinceEpoch,
-        'retry_count': operation.retryCount,
-        'sort_order': i,
+    await _runDatabaseWrite((db) async {
+      final batch = db.batch();
+      _replaceAsmrSyncOperationsInBatch(batch, operations);
+      await batch.commit(noResult: true);
+    });
+  }
+
+  Future<void> saveAsmrWorkListAndSyncOperations(
+    String listType,
+    List<AsmrWork> works,
+    List<AsmrSyncOperation> operations,
+  ) async {
+    await _runDatabaseWrite((db) async {
+      await db.transaction((txn) async {
+        final batch = txn.batch();
+        _replaceAsmrWorkListInBatch(batch, listType, works);
+        _replaceAsmrSyncOperationsInBatch(batch, operations);
+        await batch.commit(noResult: true);
       });
-    }
-    await batch.commit(noResult: true);
+    });
   }
 
   // ---- Internals ----
@@ -1498,6 +1694,44 @@ class AppDatabase {
         'tag': work.tags[i],
         'sort_order': i,
       }, conflictAlgorithm: ConflictAlgorithm.replace);
+    }
+  }
+
+  static void _replaceAsmrWorkListInBatch(
+    Batch batch,
+    String listType,
+    List<AsmrWork> works,
+  ) {
+    batch.delete(
+      'asmr_work_lists',
+      where: 'list_type = ?',
+      whereArgs: [listType],
+    );
+    for (var i = 0; i < works.length; i++) {
+      _writeAsmrWorkToBatch(batch, works[i]);
+      batch.insert('asmr_work_lists', {
+        'list_type': listType,
+        'work_id': works[i].id,
+        'sort_order': i,
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
+    }
+  }
+
+  static void _replaceAsmrSyncOperationsInBatch(
+    Batch batch,
+    List<AsmrSyncOperation> operations,
+  ) {
+    batch.delete('asmr_sync_operations');
+    for (var i = 0; i < operations.length; i++) {
+      final operation = operations[i];
+      batch.insert('asmr_sync_operations', {
+        'type': operation.type.name,
+        'work_id': operation.workId,
+        'source_id': operation.sourceId,
+        'created_at_ms': operation.createdAt.millisecondsSinceEpoch,
+        'retry_count': operation.retryCount,
+        'sort_order': i,
+      });
     }
   }
 

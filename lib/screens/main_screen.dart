@@ -88,6 +88,8 @@ class _MainScreenState extends ConsumerState<MainScreen>
   bool? _lastShowCard;
   Timer? _notificationSessionNavigationTimer;
   String? _pendingNotificationSessionId;
+  DateTime? _pendingNotificationSessionStartedAt;
+  int _pendingNotificationSessionRetryCount = 0;
   String? _lastOpenedNotificationSessionId;
   DateTime? _lastOpenedNotificationAt;
   int _metricsEpoch = 0;
@@ -197,6 +199,16 @@ class _MainScreenState extends ConsumerState<MainScreen>
       });
     }
     return false;
+  }
+
+  void _scrollCurrentPageToTop() {
+    if (!Platform.isWindows) return;
+    ref.read(audioProviderFacadeProvider).triggerScrollToTop(_currentIndex);
+    if (_showScrollToTopButton && mounted) {
+      setState(() {
+        _showScrollToTopButton = false;
+      });
+    }
   }
 
   Future<bool> _ensureInstallPermissionThenRun(
@@ -420,6 +432,10 @@ class _MainScreenState extends ConsumerState<MainScreen>
     UiInteractionCoordinator.instance.cancelInteraction(_pageSwitchInteraction);
     _metricsRecoveryTimer?.cancel();
     _notificationSessionNavigationTimer?.cancel();
+    _notificationSessionNavigationTimer = null;
+    _pendingNotificationSessionId = null;
+    _pendingNotificationSessionStartedAt = null;
+    _pendingNotificationSessionRetryCount = 0;
     _globalSubtitleOverlayTimer?.cancel();
     unawaited(_stopGlobalSubtitleOverlay(immediate: true));
     _permissionActionController.dispose();
@@ -842,7 +858,8 @@ class _MainScreenState extends ConsumerState<MainScreen>
         _ensureNotificationPermission();
       });
     }
-    if (hasPlayingSession &&
+    if (Platform.isAndroid &&
+        hasPlayingSession &&
         !_backgroundPlaybackPromptShownThisLaunch &&
         !_backgroundPlaybackPromptQueued) {
       _backgroundPlaybackPromptQueued = true;
@@ -915,6 +932,12 @@ class _MainScreenState extends ConsumerState<MainScreen>
                                 ],
                               ),
                       ),
+
+                      if (Platform.isWindows)
+                        _ScrollToTopButton(
+                          visible: _showScrollToTopButton,
+                          onPressed: _scrollCurrentPageToTop,
+                        ),
 
                       if (_timerOverlayPrimed) const _ImmediateTimerScrim(),
 

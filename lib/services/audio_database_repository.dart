@@ -1,5 +1,3 @@
-import 'package:sqflite/sqflite.dart';
-
 import '../models/audio_detail.dart';
 import '../models/library_entry.dart';
 import '../models/music_track.dart';
@@ -11,8 +9,6 @@ class AudioDatabaseRepository {
     : _database = database ?? AppDatabase.instance;
 
   final AppDatabase _database;
-
-  Future<Database> get database => _database.database;
 
   Future<List<MusicTrack>> loadAllTracks() => _database.loadAllTracks();
 

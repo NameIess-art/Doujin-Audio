@@ -226,7 +226,10 @@ class LibraryScannerService {
     required AudioProvider provider,
     required AppLanguageProvider i18n,
   }) async {
-    final childFolders = await _listImmediateChildFolders(libraryRoot);
+    final childFolderResult = await _listImmediateChildFoldersResult(
+      libraryRoot,
+    );
+    final childFolders = childFolderResult.folders;
     final visibleChildFolders = childFolders
         .where(
           (folderPath) =>
@@ -242,6 +245,7 @@ class LibraryScannerService {
       folderPaths: childFolders,
       removeWatchedFolders: [libraryRoot],
       addWatchedFolders: visibleChildFolders,
+      additionalFailureCount: childFolderResult.complete ? 0 : 1,
       progressPrefix: '',
     );
   }
@@ -271,6 +275,7 @@ class LibraryScannerService {
     List<String> folderPaths = const <String>[],
     List<String> removeWatchedFolders = const <String>[],
     List<String> addWatchedFolders = const <String>[],
+    int additionalFailureCount = 0,
     required String progressPrefix,
   }) async {
     final nativeScan = await _scanFolderViaNative(sourceFolderPath);
@@ -287,6 +292,8 @@ class LibraryScannerService {
         removeWatchedFolders: removeWatchedFolders,
         addWatchedFolders: addWatchedFolders,
         promoteRootTracksToSingles: promoteRootTracksToSingles,
+        allowRemoval: nativeScan.isComplete && additionalFailureCount == 0,
+        failureCount: nativeScan.failureCount + additionalFailureCount,
         progressPrefix: progressPrefix,
       );
     }
@@ -314,6 +321,8 @@ class LibraryScannerService {
               .toList(growable: false);
       final allFolderPaths = LinkedHashSet<String>.from(folderPaths)
         ..addAll(discoveredFolders);
+      final failureCount =
+          ((payload['failureCount'] as int?) ?? 0) + additionalFailureCount;
       final retainedEntryPaths = <String>{
         ...discoveredPaths,
         ...allFolderPaths,
@@ -330,7 +339,8 @@ class LibraryScannerService {
         removeWatchedFolders: removeWatchedFolders,
         addWatchedFolders: addWatchedFolders,
         promoteRootTracksToSingles: promoteRootTracksToSingles,
-        failureCount: (payload['failureCount'] as int?) ?? 0,
+        allowRemoval: failureCount == 0,
+        failureCount: failureCount,
         progressPrefix: progressPrefix,
       );
     }
@@ -347,10 +357,10 @@ class LibraryScannerService {
           sourceFolderPath: sourceFolderPath,
           libraryRoot: libraryRoot,
           progressLabel: label,
-          failureCount: 1,
+          failureCount: 1 + additionalFailureCount,
         ),
       ],
-      failureCount: 1,
+      failureCount: 1 + additionalFailureCount,
     );
   }
 
@@ -366,6 +376,7 @@ class LibraryScannerService {
     required List<String> removeWatchedFolders,
     required List<String> addWatchedFolders,
     required bool promoteRootTracksToSingles,
+    required bool allowRemoval,
     required String progressPrefix,
     int failureCount = 0,
   }) async {
@@ -382,6 +393,7 @@ class LibraryScannerService {
       i18nManuallySelectedFiles: i18n.tr('manually_selected_files'),
       exclusionMatcher: mergeContext.exclusionMatcher,
       sourceFolderPath: sourceFolderPath,
+      allowRemoval: allowRemoval,
       retainedTrackPaths: retainedTrackPaths,
       retainedEntryPaths: retainedEntryPaths,
       entrySnapshot: mergeContext.entrySnapshot,
@@ -411,7 +423,9 @@ class LibraryScannerService {
       sourceLabel: _displaySourceName(sourceFolderPath),
       tracks: result.trackBatch,
       folderPaths: folderPaths,
-      removeWatchedFolders: removeWatchedFolders,
+      removeWatchedFolders: allowRemoval
+          ? removeWatchedFolders
+          : const <String>[],
       addWatchedFolders: addWatchedFolders,
       removeTrackPaths: result.removedTrackPaths,
       removeEntryPaths: result.removedEntryPaths,
@@ -537,7 +551,10 @@ class LibraryScannerService {
       return 0;
     }
     final folder = Directory(folderPath);
-    if (!await folder.exists()) return 0;
+    if (!await folder.exists()) {
+      provider.setScanProgress(failureCount: provider.scanFailureCount + 1);
+      return 0;
+    }
 
     final payload = await Isolate.run(
       () => _scanFileSystemFolderPayload(folderPath),
@@ -644,7 +661,7 @@ class LibraryScannerService {
       );
     }
 
-    if (provider.isScanning) {
+    if (provider.isScanning && failures == 0) {
       provider.removeTracksDeletedFromFolder(folderPath, discoveredPaths);
       if (libraryRoot != null) {
         provider.removeLibraryEntriesDeletedFromFolder(
@@ -712,13 +729,15 @@ class LibraryScannerService {
       return 0;
     }
     if (!provider.isScanning) return added;
-    provider.removeTracksDeletedFromFolder(sourceFolderPath, result.paths);
-    if (libraryRoot != null) {
-      provider.removeLibraryEntriesDeletedFromFolder(
-        libraryRoot,
-        sourceFolderPath,
-        result.paths,
-      );
+    if (result.isComplete) {
+      provider.removeTracksDeletedFromFolder(sourceFolderPath, result.paths);
+      if (libraryRoot != null) {
+        provider.removeLibraryEntriesDeletedFromFolder(
+          libraryRoot,
+          sourceFolderPath,
+          result.paths,
+        );
+      }
     }
     return added;
   }
@@ -745,7 +764,7 @@ class LibraryScannerService {
     final nativeScan = await _scanFolderViaNative(libraryRoot);
     if (!nativeScan.ok) {
       if (nativeScan.notSupported || !PathMatcher.isContentUri(libraryRoot)) {
-        final added = await _importFolderIncrementally(
+        return _importFolderIncrementally(
           libraryRoot,
           provider,
           libraryRoot,
@@ -753,24 +772,6 @@ class LibraryScannerService {
           i18n: i18n,
           onChunkCommitted: onChunkCommitted,
         );
-        final candidatePaths = provider.library
-            .where(
-              (track) =>
-                  PathMatcher.isWithinOrEqual(track.path, libraryRoot) &&
-                  !PathMatcher.isContentUri(track.path),
-            )
-            .map((track) => PathMatcher.normalize(track.path))
-            .toList(growable: false);
-        final existingPaths = candidatePaths.isEmpty
-            ? const <String>{}
-            : await Isolate.run(() => _checkExistingPaths(candidatePaths));
-        provider.removeTracksDeletedFromFolder(libraryRoot, existingPaths);
-        provider.removeLibraryEntriesDeletedFromFolder(
-          libraryRoot,
-          libraryRoot,
-          existingPaths,
-        );
-        return added;
       }
       provider.setScanProgress(failureCount: provider.scanFailureCount + 1);
       debugPrint(
@@ -790,25 +791,37 @@ class LibraryScannerService {
       onChunkCommitted: onChunkCommitted,
     );
     final scannedPaths = nativeScan.paths;
-    provider.removeTracksDeletedFromFolder(libraryRoot, scannedPaths);
-    provider.removeLibraryEntriesDeletedFromFolder(
-      libraryRoot,
-      libraryRoot,
-      scannedPaths,
-    );
+    if (nativeScan.isComplete) {
+      provider.removeTracksDeletedFromFolder(libraryRoot, scannedPaths);
+      provider.removeLibraryEntriesDeletedFromFolder(
+        libraryRoot,
+        libraryRoot,
+        scannedPaths,
+      );
+    }
     return added;
   }
 
   Future<List<String>> _listImmediateChildFolders(String folderPath) async {
+    return (await _listImmediateChildFoldersResult(folderPath)).folders;
+  }
+
+  Future<({List<String> folders, bool complete})>
+  _listImmediateChildFoldersResult(String folderPath) async {
     if (Platform.isAndroid) {
       final folders = await _platformGateway.listChildFolders(folderPath);
-      if (folders != null && folders.isNotEmpty) {
-        return folders;
+      if (folders != null) {
+        return (folders: folders, complete: true);
+      }
+      if (PathMatcher.isContentUri(folderPath)) {
+        return (folders: const <String>[], complete: false);
       }
     }
 
     final directory = Directory(folderPath);
-    if (!await directory.exists()) return const <String>[];
+    if (!await directory.exists()) {
+      return (folders: const <String>[], complete: false);
+    }
 
     final childFolders = <String>[];
     try {
@@ -817,11 +830,11 @@ class LibraryScannerService {
         childFolders.add(path.normalize(entity.path));
       }
     } catch (_) {
-      return const <String>[];
+      return (folders: const <String>[], complete: false);
     }
 
     childFolders.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
-    return childFolders;
+    return (folders: childFolders, complete: true);
   }
 
   String _displaySourceName(String source) {
@@ -1317,7 +1330,8 @@ Map<String, Object?> _scanFileSystemFolderPayload(String folderPath) {
     return const <String, Object?>{
       'tracks': <Object?>[],
       'folderPaths': <Object?>[],
-      'failureCount': 0,
+      'discoveredPaths': <String>{},
+      'failureCount': 1,
     };
   }
 
@@ -1405,10 +1419,7 @@ Map<String, Object?> _scanFileSystemFolderPayload(String folderPath) {
   };
 }
 
-Set<String> _checkExistingPaths(List<String> paths) {
-  final existing = <String>{};
-  for (final p in paths) {
-    if (File(p).existsSync()) existing.add(p);
-  }
-  return existing;
+@visibleForTesting
+Map<String, Object?> scanFileSystemFolderPayloadForTest(String folderPath) {
+  return _scanFileSystemFolderPayload(folderPath);
 }

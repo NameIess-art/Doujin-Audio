@@ -205,23 +205,31 @@ class PowerPlatformService {
     }
   }
 
-  Future<bool> executeTimerExpiredNow(int generation) {
+  Future<TimerExecutionResult> executeTimerExpiredNow(int generation) {
     return _executeTimerAction(PowerMethod.executeTimerExpiredNow, generation);
   }
 
-  Future<bool> executeAutoResumeNow(int generation) {
+  Future<TimerExecutionResult> executeAutoResumeNow(int generation) {
     return _executeTimerAction(PowerMethod.executeAutoResumeNow, generation);
   }
 
-  Future<bool> _executeTimerAction(String method, int generation) async {
-    if (!_isAndroid) return false;
+  Future<TimerExecutionResult> _executeTimerAction(
+    String method,
+    int generation,
+  ) async {
+    if (!_isAndroid) return TimerExecutionResult.failed;
     try {
-      await _channel.invokeMethod<bool>(method, {'generation': generation});
-      return true;
+      final result = await _channel.invokeMethod<String>(method, {
+        'generation': generation,
+      });
+      return TimerExecutionResult.values.firstWhere(
+        (value) => value.name == result,
+        orElse: () => TimerExecutionResult.failed,
+      );
     } on MissingPluginException {
-      return false;
+      return TimerExecutionResult.failed;
     } catch (_) {
-      return false;
+      return TimerExecutionResult.failed;
     }
   }
 
@@ -250,3 +258,5 @@ class PowerPlatformService {
     }
   }
 }
+
+enum TimerExecutionResult { executed, stale, failed }

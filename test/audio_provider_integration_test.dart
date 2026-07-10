@@ -1418,6 +1418,45 @@ void main() {
       );
     });
 
+    test(
+      'single files cannot expand into an imported-files work entry',
+      () async {
+        const selected = MusicTrack(
+          path: '/imports/selected.mp3',
+          displayName: 'Selected',
+          groupKey: '__single_files__',
+          groupTitle: 'Imported files',
+          groupSubtitle: 'Manually selected files',
+          isSingle: true,
+        );
+        const other = MusicTrack(
+          path: '/imports/other.mp3',
+          displayName: 'Other',
+          groupKey: '__single_files__',
+          groupTitle: 'Imported files',
+          groupSubtitle: 'Manually selected files',
+          isSingle: true,
+        );
+        provider.addTracks(
+          const <MusicTrack>[selected, other],
+          notify: false,
+          persist: false,
+        );
+        final queueSession = provider.createPlaybackQueue('Queue 1');
+
+        await provider.addWorkToPlaybackQueue(queueSession.id, selected);
+
+        final entry = provider
+            .sessionById(queueSession.id)!
+            .playbackQueue!
+            .entries
+            .single;
+        expect(entry.kind, PlaybackQueueEntryKind.track);
+        expect(entry.title, selected.displayName);
+        expect(entry.tracks, <MusicTrack>[selected]);
+      },
+    );
+
     test('work entry stores all tracks as one queue entry', () async {
       const first = MusicTrack(
         path: '/library/work/01.mp3',

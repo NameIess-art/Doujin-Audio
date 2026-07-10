@@ -985,6 +985,118 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
   });
 
+  testWidgets(
+    'single-file queue cover fills the card and switcher shows an audio entry',
+    (WidgetTester tester) async {
+      final notificationService = PlaybackNotificationService();
+      final audioDatabaseRepository = AudioDatabaseRepository();
+      final nativePlaybackRepository = NativePlaybackRepository();
+      const playbackCommandRunner = PlaybackCommandRunner();
+      final libraryService = LibraryService();
+      final playbackService = PlaybackSessionService();
+      final timerService = TimerService();
+      final notificationCoordinatorService = NotificationCoordinatorService();
+      final settingsRepository = SettingsRepository();
+      final languageProvider = AppLanguageProvider();
+      final audioProvider = AudioProvider.test(
+        notificationService: notificationService,
+        audioDatabaseRepository: audioDatabaseRepository,
+        nativePlaybackRepository: nativePlaybackRepository,
+        libraryService: libraryService,
+        playbackService: playbackService,
+        timerService: timerService,
+        notificationStateService: notificationCoordinatorService,
+        settingsRepository: settingsRepository,
+      );
+      const track = MusicTrack(
+        path: '/imports/standalone.mp4',
+        displayName: 'Standalone clip',
+        groupKey: '__single_files__',
+        groupTitle: 'Imported files',
+        groupSubtitle: 'Manually selected files',
+        isSingle: true,
+        isVideo: true,
+      );
+      audioProvider.addTracks(
+        const <MusicTrack>[track],
+        notify: false,
+        persist: false,
+      );
+      final queueSession = audioProvider.createPlaybackQueue('Queue 1');
+      queueSession
+        ..currentTrackPath = track.path
+        ..currentQueueIndex = 0
+        ..customQueueTracks = const <MusicTrack>[track]
+        ..playbackQueue = const PlaybackQueueDefinition(
+          name: 'Queue 1',
+          entries: <PlaybackQueueEntry>[
+            PlaybackQueueEntry(
+              id: 'legacy-single-work',
+              kind: PlaybackQueueEntryKind.work,
+              title: 'Imported files',
+              tracks: <MusicTrack>[track],
+            ),
+          ],
+        );
+      playbackService.syncSlice(
+        activeSessions: <PlaybackSession>[queueSession],
+        playingSessionCount: 0,
+        focusedSessionId: queueSession.id,
+        multiThreadPlaybackEnabled: false,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
+      addTearDown(audioProvider.dispose);
+
+      await tester.pumpWidget(
+        _buildTestApp(
+          audioProvider: audioProvider,
+          audioDatabaseRepository: audioDatabaseRepository,
+          nativePlaybackRepository: nativePlaybackRepository,
+          playbackCommandRunner: playbackCommandRunner,
+          libraryService: libraryService,
+          playbackService: playbackService,
+          timerService: timerService,
+          notificationCoordinatorService: notificationCoordinatorService,
+          settingsRepository: settingsRepository,
+          languageProvider: languageProvider,
+          child: const PlaylistTab(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final grid = find.byKey(const ValueKey('playback_queue_cover_grid'));
+      final firstCell = find.byKey(
+        const ValueKey('playback_queue_cover_cell_0'),
+      );
+      expect(tester.getSize(grid), const Size(96, 72));
+      expect(tester.getSize(firstCell), const Size(96, 72));
+
+      unawaited(
+        Navigator.of(
+          tester.element(find.byType(PlaylistTab)),
+        ).push(buildSessionDetailRoute(sessionId: queueSession.id)),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip(languageProvider.tr('switch_audio')));
+      await tester.pumpAndSettle();
+
+      final sheet = find.byType(BottomSheet);
+      expect(sheet, findsOneWidget);
+      expect(
+        find.descendant(of: sheet, matching: find.text(track.displayName)),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: sheet,
+          matching: find.text(languageProvider.tr('imported_files')),
+        ),
+        findsNothing,
+      );
+    },
+  );
+
   testWidgets('settings detail section configures card info fields', (
     WidgetTester tester,
   ) async {

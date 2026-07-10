@@ -11,7 +11,32 @@ import androidx.media3.common.audio.AudioProcessor
 import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.audio.SilenceSkippingAudioProcessor
 import androidx.media3.common.audio.SonicAudioProcessor
+import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.ResolvingDataSource
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+
 internal fun nativePlaybackWakeMode(): Int = C.WAKE_MODE_NETWORK
+
+private const val ASMR_ACCEPT_LANGUAGE = "zh-CN,zh;q=0.9,en;q=0.8"
+
+internal fun nativePlaybackRequestHeadersForHost(host: String?): Map<String, String> {
+    val normalized = host?.trim()?.lowercase().orEmpty()
+    val isAsmrMediaHost = normalized == "asmr.one" ||
+        normalized.endsWith(".asmr.one") ||
+        normalized == "asmr-100.com" ||
+        normalized.endsWith(".asmr-100.com") ||
+        normalized == "asmr-200.com" ||
+        normalized.endsWith(".asmr-200.com") ||
+        normalized == "asmr-300.com" ||
+        normalized.endsWith(".asmr-300.com") ||
+        normalized == "kiko-play-niptan.one" ||
+        normalized.endsWith(".kiko-play-niptan.one")
+    if (!isAsmrMediaHost) return emptyMap()
+    return mapOf(
+        "Accept-Language" to ASMR_ACCEPT_LANGUAGE
+    )
+}
 
 internal interface NativePlayerEventCallbacks {
     fun onPlaybackStateChanged(sessionId: String, playbackState: Int)
@@ -51,8 +76,17 @@ internal class NativePlayerFactory(
                 .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
                 .build()
         }
+        val httpDataSourceFactory = DefaultHttpDataSource.Factory()
+            .setAllowCrossProtocolRedirects(true)
+        val defaultDataSourceFactory = DefaultDataSource.Factory(context, httpDataSourceFactory)
+        val resolvingDataSourceFactory = ResolvingDataSource.Factory(defaultDataSourceFactory) { dataSpec ->
+            val headers = nativePlaybackRequestHeadersForHost(dataSpec.uri.host)
+            if (headers.isEmpty()) dataSpec else dataSpec.withAdditionalHeaders(headers)
+        }
+        val mediaSourceFactory = DefaultMediaSourceFactory(resolvingDataSourceFactory)
 
         return ExoPlayer.Builder(context, renderersFactory)
+            .setMediaSourceFactory(mediaSourceFactory)
             .setWakeMode(nativePlaybackWakeMode())
             .build()
             .also { player ->

@@ -368,8 +368,9 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
         : track?.remoteMetadataKind == 'asmr.one'
         ? i18n.tr('asmr_online_playback')
         : i18n.tr('imported_files');
-    final hasSiblings =
-        provider.tracksInSameWork(session.currentTrackPath).length > 1;
+    final hasSiblings = session.isPlaybackQueue
+        ? (session.customQueueTracks?.isNotEmpty ?? false)
+        : provider.tracksInSameWork(session.currentTrackPath).length > 1;
     final selectedSegmentId = _segmentPanelExpanded ? _selectedSegmentId : null;
 
     Widget buildProgressBar() {
@@ -733,7 +734,8 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
                 ? null
                 : PathMatcher.normalize(groupRoot));
         final showWorkRoot =
-            entry.kind == PlaybackQueueEntryKind.work || isAsmrEntry;
+            firstTrack?.isSingle != true &&
+            (entry.kind == PlaybackQueueEntryKind.work || isAsmrEntry);
         final parent = showWorkRoot
             ? _QueueTreeNode.folder(
                 isAsmrEntry

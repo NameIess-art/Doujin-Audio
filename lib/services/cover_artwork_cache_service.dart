@@ -34,6 +34,7 @@ const int _resolvedTrackCoverLimit = 600;
 const int _resolvedFolderCoverLimit = 300;
 const int _resolvedRemoteCoverLimit = 300;
 const int _manualCoverValidityLimit = 1200;
+const String _asmrOneAcceptLanguage = 'zh-CN,zh;q=0.9,en;q=0.8';
 
 class CoverArtworkCacheService {
   CoverArtworkCacheService({
@@ -893,6 +894,9 @@ class CoverArtworkCacheService {
 
       client = HttpClient();
       final request = await client.getUrl(Uri.parse(remoteUrl));
+      for (final header in remoteCoverRequestHeadersForUrl(remoteUrl).entries) {
+        request.headers.set(header.key, header.value);
+      }
       final response = await request.close();
       if (response.statusCode < 200 || response.statusCode >= 300) {
         return null;
@@ -1149,6 +1153,21 @@ String? normalizeRemoteCoverUrl(String url) {
   final trimmed = url.trim();
   if (trimmed.isEmpty || !PathMatcher.isRemoteUri(trimmed)) return null;
   return PathMatcher.normalize(trimmed);
+}
+
+@visibleForTesting
+Map<String, String> remoteCoverRequestHeadersForUrl(String url) {
+  final host = Uri.tryParse(url)?.host.toLowerCase();
+  final isAsmrOne =
+      host == 'api.asmr.one' ||
+      host == 'api.asmr-100.com' ||
+      host == 'api.asmr-200.com' ||
+      host == 'api.asmr-300.com';
+  return isAsmrOne
+      ? const <String, String>{
+          HttpHeaders.acceptLanguageHeader: _asmrOneAcceptLanguage,
+        }
+      : const <String, String>{};
 }
 
 String normalizedRemoteUrlFromKey(String remoteKey) {

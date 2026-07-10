@@ -6,6 +6,24 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/services/asmr_api_service.dart';
 
 void main() {
+  test('official media hashes use API redirect endpoints before raw URLs', () {
+    expect(
+      AsmrApiService.mediaStreamUrlsForHash('1583603/1853944').first,
+      'https://api.asmr-300.com/api/media/stream/1583603/1853944',
+    );
+    expect(
+      AsmrApiService.mediaDownloadUrlsForHash('1583603/1853944').first,
+      'https://api.asmr-300.com/api/media/download/1583603/1853944',
+    );
+    expect(
+      AsmrApiService.isOfficialMediaUrl(
+        'https://raw.kiko-play-niptan.one/media/stream/file.mp3',
+      ),
+      isTrue,
+    );
+    expect(AsmrApiService.mediaStreamUrlsForHash('../file'), isEmpty);
+  });
+
   test(
     'ASMR API requests include the language accepted by the gateway',
     () async {

@@ -6,11 +6,64 @@ import '../models/asmr_models.dart';
 
 class AsmrApiService {
   AsmrApiService({HttpClient? httpClient, Uri? baseUri})
-    : _httpClient = httpClient ?? HttpClient(),
-      _baseUri = baseUri ?? Uri.parse('https://api.asmr-200.com');
+    : _httpClient = httpClient ?? HttpClient() {
+    if (baseUri != null) {
+      _candidateDomains = [baseUri.toString(), ...defaultDomains];
+    } else {
+      _candidateDomains = List.of(defaultDomains);
+    }
+  }
 
   final HttpClient _httpClient;
-  final Uri _baseUri;
+  late final List<String> _candidateDomains;
+  int _currentDomainIndex = 0;
+
+  static const List<String> defaultDomains = [
+    'https://api.asmr-300.com',
+    'https://api.asmr-200.com',
+    'https://api.asmr-100.com',
+    'https://api.asmr.one',
+  ];
+
+  static bool isOfficialMediaUrl(String? value) {
+    final host = Uri.tryParse(value?.trim() ?? '')?.host.toLowerCase() ?? '';
+    return host == 'api.asmr.one' ||
+        host == 'api.asmr-100.com' ||
+        host == 'api.asmr-200.com' ||
+        host == 'api.asmr-300.com' ||
+        host == 'kiko-play-niptan.one' ||
+        host.endsWith('.kiko-play-niptan.one');
+  }
+
+  static List<String> mediaStreamUrlsForHash(String hash) =>
+      _mediaUrlsForHash(hash, operation: 'stream');
+
+  static List<String> mediaDownloadUrlsForHash(String hash) =>
+      _mediaUrlsForHash(hash, operation: 'download');
+
+  static List<String> _mediaUrlsForHash(
+    String hash, {
+    required String operation,
+  }) {
+    final segments = hash
+        .trim()
+        .split('/')
+        .where((segment) => segment.isNotEmpty)
+        .toList(growable: false);
+    if (segments.isEmpty ||
+        segments.any((segment) => segment == '.' || segment == '..')) {
+      return const <String>[];
+    }
+    return defaultDomains
+        .map(
+          (domain) => Uri.parse(domain)
+              .replace(
+                pathSegments: <String>['api', 'media', operation, ...segments],
+              )
+              .toString(),
+        )
+        .toList(growable: false);
+  }
 
   static const String _acceptLanguage = 'zh-CN,zh;q=0.9,en;q=0.8';
 
@@ -237,30 +290,69 @@ class AsmrApiService {
     String? token,
     Object? body,
   }) async {
-    final uri = _baseUri.replace(path: path, queryParameters: queryParameters);
-    final request = await _httpClient.openUrl(method, uri);
-    request.headers.set(HttpHeaders.acceptHeader, 'application/json');
-    request.headers.set(HttpHeaders.acceptLanguageHeader, _acceptLanguage);
-    request.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
-    if (token != null && token.isNotEmpty) {
-      request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
+    final startDomainIndex = _currentDomainIndex;
+    int attempt = 0;
+    Object? lastError;
+    StackTrace? lastStackTrace;
+
+    while (attempt < _candidateDomains.length) {
+      final domainIndex =
+          (startDomainIndex + attempt) % _candidateDomains.length;
+      final domain = _candidateDomains[domainIndex];
+      final baseUri = Uri.parse(domain);
+      final uri = baseUri.replace(path: path, queryParameters: queryParameters);
+
+      try {
+        final request = await _httpClient.openUrl(method, uri);
+        request.headers.set(HttpHeaders.acceptHeader, 'application/json');
+        request.headers.set(HttpHeaders.acceptLanguageHeader, _acceptLanguage);
+        request.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
+        if (token != null && token.isNotEmpty) {
+          request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
+        }
+        if (body != null) {
+          request.add(utf8.encode(json.encode(body)));
+        }
+        final response = await request.close();
+        final responseBody = await utf8.decodeStream(response);
+        if (response.statusCode >= 500 && response.statusCode <= 599) {
+          throw AsmrApiException(
+            'ASMR API server error (${response.statusCode}).',
+            statusCode: response.statusCode,
+            uri: uri,
+          );
+        }
+        if (response.statusCode < 200 || response.statusCode >= 300) {
+          throw AsmrApiException(
+            'ASMR API request failed (${response.statusCode}).',
+            statusCode: response.statusCode,
+            uri: uri,
+          );
+        }
+
+        _currentDomainIndex = domainIndex;
+
+        if (responseBody.isEmpty) {
+          return null;
+        }
+        return json.decode(responseBody);
+      } catch (error, stackTrace) {
+        lastError = error;
+        lastStackTrace = stackTrace;
+        if (error is AsmrApiException && error.statusCode < 500) {
+          rethrow;
+        }
+      }
+      attempt++;
     }
-    if (body != null) {
-      request.add(utf8.encode(json.encode(body)));
-    }
-    final response = await request.close();
-    final responseBody = await utf8.decodeStream(response);
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw AsmrApiException(
-        'ASMR API request failed (${response.statusCode}).',
-        statusCode: response.statusCode,
-        uri: uri,
+
+    if (lastError != null) {
+      Error.throwWithStackTrace(
+        lastError,
+        lastStackTrace ?? StackTrace.current,
       );
     }
-    if (responseBody.isEmpty) {
-      return null;
-    }
-    return json.decode(responseBody);
+    throw const HttpException('All ASMR API candidates failed.');
   }
 }
 

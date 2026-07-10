@@ -1252,11 +1252,19 @@ class AsmrLibraryController extends ChangeNotifier {
           if (includeAudioNode != null && !includeAudioNode(node)) {
             continue;
           }
+          final usesOfficialMedia = <String?>[
+            node.streamUrl,
+            node.downloadUrl,
+            node.lowQualityUrl,
+          ].any(AsmrApiService.isOfficialMediaUrl);
           final track = node.toMusicTrack(
             groupTitleOverride: work.title,
             remoteCoverUrl: work.preferredCoverUrl,
             remoteMetadataKind: 'asmr.one',
             remoteMetadata: remoteMetadataForTrack(node),
+            preferredPlaybackUrls: usesOfficialMedia
+                ? AsmrApiService.mediaStreamUrlsForHash(node.hash)
+                : const <String>[],
           );
           if (track.path.isNotEmpty) {
             result.add(track);

@@ -11,11 +11,23 @@ import 'package:flutter/services.dart';
 import '../models/audio_detail.dart';
 import '../models/asmr_download.dart';
 import '../models/asmr_models.dart';
+import 'asmr_api_service.dart';
 import 'app_cache_service.dart';
 import 'app_log_service.dart';
 import 'file_cache_platform_gateway.dart';
 import 'path_display.dart';
 import 'path_matcher.dart';
+
+const String _asmrMediaAcceptLanguage = 'zh-CN,zh;q=0.9,en;q=0.8';
+
+@visibleForTesting
+Map<String, String> asmrMediaRequestHeadersForUrl(String url) {
+  return AsmrApiService.isOfficialMediaUrl(url)
+      ? const <String, String>{
+          HttpHeaders.acceptLanguageHeader: _asmrMediaAcceptLanguage,
+        }
+      : const <String, String>{};
+}
 
 enum AsmrDownloadTaskStatus {
   idle,
@@ -291,6 +303,7 @@ class AsmrDownloadManager extends ChangeNotifier {
   final Map<int, Map<String, int>> _liveFileDownloadedBytes = {};
 
   static const int _maxConcurrentDownloads = 3;
+  static const int _maxConcurrentFilesPerTask = 3;
 
   bool _initialized = false;
   Timer? _deferredProgressNotifyTimer;
@@ -654,40 +667,90 @@ class AsmrDownloadManager extends ChangeNotifier {
         plannedFiles = _collectPlannedFiles(_tasks[workId]!.selectedRoots);
         _plannedFilesMap[workId] = plannedFiles;
       }
-      for (final item in plannedFiles) {
-        _throwIfCancelled(workId);
-        _tasks[workId] = _tasks[workId]!.copyWith(
-          currentItemPath: item.relativePath,
-          message: item.relativePath,
-        );
-        _liveDownloadedBytes[workId] = downloadedBytes;
-        _notifyProgressChanged();
+      if (plannedFiles.isNotEmpty) {
+        final client = HttpClient()
+          ..maxConnectionsPerHost = _maxConcurrentFilesPerTask;
+        _activeHttpClients[workId] = client;
+        var nextFileIndex = 0;
+        var stopWorkers = false;
 
-        final result = await _downloadItem(
-          item,
-          workId: workId,
-          workRootPath: workRootPath,
-          conflictPolicy: conflictPolicy,
-        );
+        Future<void> downloadNextFiles() async {
+          try {
+            while (!stopWorkers) {
+              _throwIfCancelled(workId);
+              final fileIndex = nextFileIndex;
+              if (fileIndex >= plannedFiles!.length) return;
+              nextFileIndex++;
+              final item = plannedFiles[fileIndex];
+              _tasks[workId] = _tasks[workId]!.copyWith(
+                currentItemPath: item.relativePath,
+                message: item.relativePath,
+              );
+              _notifyProgressChanged();
 
-        if (result.saved) {
-          completed++;
-        } else if (result.skipped) {
-          skipped++;
-        } else {
-          failed++;
+              final result = await _downloadItem(
+                item,
+                workId: workId,
+                workRootPath: workRootPath,
+                conflictPolicy: conflictPolicy,
+                client: client,
+              );
+
+              if (result.saved) {
+                completed++;
+              } else if (result.skipped) {
+                skipped++;
+              } else {
+                failed++;
+              }
+              downloadedBytes += result.bytesDownloaded;
+              final publishedFileBytes =
+                  fileDownloadedBytes[item.relativePath] ?? 0;
+              final unpublishedBytes =
+                  result.bytesDownloaded - publishedFileBytes;
+              if (unpublishedBytes > 0) {
+                _liveDownloadedBytes.update(
+                  workId,
+                  (value) => value + unpublishedBytes,
+                  ifAbsent: () => downloadedBytes,
+                );
+              }
+              fileDownloadedBytes[item.relativePath] = result.bytesDownloaded;
+
+              _tasks[workId] = _tasks[workId]!.copyWith(
+                completedFiles: completed,
+                skippedFiles: skipped,
+                failedFiles: failed,
+                downloadedBytes:
+                    _liveDownloadedBytes[workId] ?? downloadedBytes,
+                fileDownloadedBytes: fileDownloadedBytes,
+              );
+              _notifyProgressChanged();
+            }
+          } catch (_) {
+            stopWorkers = true;
+            client.close(force: true);
+            rethrow;
+          }
         }
-        downloadedBytes += result.bytesDownloaded;
-        fileDownloadedBytes[item.relativePath] = result.bytesDownloaded;
 
-        _tasks[workId] = _tasks[workId]!.copyWith(
-          completedFiles: completed,
-          skippedFiles: skipped,
-          failedFiles: failed,
-          downloadedBytes: downloadedBytes,
-          fileDownloadedBytes: fileDownloadedBytes,
-        );
-        _notifyProgressChanged();
+        try {
+          final workerCount = plannedFiles.length.clamp(
+            1,
+            _maxConcurrentFilesPerTask,
+          );
+          await Future.wait<void>(
+            List<Future<void>>.generate(
+              workerCount,
+              (_) => downloadNextFiles(),
+            ),
+          );
+        } finally {
+          if (identical(_activeHttpClients[workId], client)) {
+            _activeHttpClients.remove(workId);
+          }
+          client.close(force: true);
+        }
       }
 
       _tasks[workId] = _tasks[workId]!.copyWith(
@@ -797,21 +860,25 @@ class AsmrDownloadManager extends ChangeNotifier {
     required int workId,
     required String workRootPath,
     required AsmrDownloadConflictPolicy conflictPolicy,
+    required HttpClient client,
   }) async {
     _throwIfCancelled(workId);
 
+    File? localTargetFile;
     if (!PathMatcher.isContentUri(workRootPath)) {
-      final targetFile = File(
+      localTargetFile = File(
         path.join(
           workRootPath,
           item.relativePath.replaceAll('/', path.separator),
         ),
       );
-      if (await targetFile.exists() && await targetFile.length() == item.size) {
+      if (await localTargetFile.exists() &&
+          await localTargetFile.length() == item.size) {
         if (conflictPolicy == AsmrDownloadConflictPolicy.skip) {
           return _WriteResult.skipped(bytesDownloaded: item.size);
         }
       }
+      await localTargetFile.parent.create(recursive: true);
     } else {
       final docPath = _joinFolderPath(workRootPath, item.relativePath);
       if (await _fileCacheGateway.documentPathExists(docPath)) {
@@ -821,7 +888,14 @@ class AsmrDownloadManager extends ChangeNotifier {
       }
     }
 
-    final tempResult = await _downloadToTemporaryFile(item, workId: workId);
+    final tempResult = await _downloadToTemporaryFile(
+      item,
+      workId: workId,
+      client: client,
+      localStagingFile: localTargetFile == null
+          ? null
+          : File('${localTargetFile.path}.nameless.part'),
+    );
     if (tempResult == null) {
       return const _WriteResult.failure(bytesDownloaded: 0);
     }
@@ -856,14 +930,8 @@ class AsmrDownloadManager extends ChangeNotifier {
         );
       }
 
-      final targetFile = File(
-        path.join(
-          workRootPath,
-          item.relativePath.replaceAll('/', path.separator),
-        ),
-      );
+      final targetFile = localTargetFile!;
       final targetExisted = await targetFile.exists();
-      await targetFile.parent.create(recursive: true);
       if (targetExisted) {
         if (conflictPolicy == AsmrDownloadConflictPolicy.skip) {
           return _WriteResult.skipped(
@@ -872,7 +940,7 @@ class AsmrDownloadManager extends ChangeNotifier {
         }
         await targetFile.delete();
       }
-      await tempResult.file.copy(targetFile.path);
+      await tempResult.file.rename(targetFile.path);
       if (!targetExisted) {
         _createdOutputPaths[workId]?.add(targetFile.path);
       }
@@ -892,26 +960,31 @@ class AsmrDownloadManager extends ChangeNotifier {
   Future<_TemporaryDownloadResult?> _downloadToTemporaryFile(
     _PlannedDownloadFile item, {
     required int workId,
+    required HttpClient client,
+    File? localStagingFile,
   }) async {
-    final tempDir = await _temporaryDirectoryProvider();
-    final downloadDir = Directory(path.join(tempDir.path, 'asmr_downloads'));
-    if (!await downloadDir.exists()) {
-      await downloadDir.create(recursive: true);
+    final File tempFile;
+    if (localStagingFile != null) {
+      tempFile = localStagingFile;
+    } else {
+      final tempDir = await _temporaryDirectoryProvider();
+      final downloadDir = Directory(path.join(tempDir.path, 'asmr_downloads'));
+      if (!await downloadDir.exists()) {
+        await downloadDir.create(recursive: true);
+      }
+      tempFile = File(
+        path.join(
+          downloadDir.path,
+          '${DateTime.now().microsecondsSinceEpoch}_${_safeFileName(item.node.title)}',
+        ),
+      );
     }
-    final tempFile = File(
-      path.join(
-        downloadDir.path,
-        '${DateTime.now().microsecondsSinceEpoch}_${_safeFileName(item.node.title)}',
-      ),
-    );
     if (await tempFile.exists()) {
       await tempFile.delete();
     }
     final cacheLease = AppCacheService.protectPaths(<String>[tempFile.path]);
     var leaseTransferred = false;
 
-    final client = HttpClient();
-    _activeHttpClients[workId] = client;
     var received = 0;
     try {
       _throwIfCancelled(workId);
@@ -920,6 +993,9 @@ class AsmrDownloadManager extends ChangeNotifier {
         HttpHeaders.userAgentHeader,
         'Nameless Audio downloader',
       );
+      for (final header in asmrMediaRequestHeadersForUrl(item.url).entries) {
+        request.headers.set(header.key, header.value);
+      }
       final response = await request.close();
       if (response.statusCode < 200 || response.statusCode >= 300) {
         return null;
@@ -974,12 +1050,16 @@ class AsmrDownloadManager extends ChangeNotifier {
       }
       return null;
     } finally {
-      if (identical(_activeHttpClients[workId], client)) {
-        _activeHttpClients.remove(workId);
-      }
-      client.close(force: true);
       if (!leaseTransferred) {
-        cacheLease.release();
+        try {
+          if (await tempFile.exists()) {
+            await tempFile.delete();
+          }
+        } catch (_) {
+          // Incomplete staging file cleanup is best effort.
+        } finally {
+          cacheLease.release();
+        }
       }
     }
   }
@@ -1075,6 +1155,12 @@ class AsmrDownloadManager extends ChangeNotifier {
 
   String? _downloadUrlFor(AsmrTrackFile node) {
     final candidates = <String?>[
+      if (<String?>[
+        node.streamUrl,
+        node.downloadUrl,
+        node.lowQualityUrl,
+      ].any(AsmrApiService.isOfficialMediaUrl))
+        ...AsmrApiService.mediaDownloadUrlsForHash(node.hash),
       node.downloadUrl,
       node.streamUrl,
       node.lowQualityUrl,

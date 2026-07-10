@@ -172,6 +172,43 @@ void main() {
     );
   });
 
+  test(
+    'ASMR playback prefers signed API media endpoints over raw URLs',
+    () async {
+      await resetPrefs();
+      const rawUrl =
+          'https://raw.kiko-play-niptan.one/media/stream/work/track.mp3';
+      const node = AsmrTrackFile(
+        hash: '1/2',
+        title: 'track.mp3',
+        type: 'audio',
+        streamUrl: rawUrl,
+        downloadUrl: null,
+        lowQualityUrl: null,
+        duration: Duration(minutes: 1),
+        size: 1024,
+        children: <AsmrTrackFile>[],
+        workId: 1,
+        workTitle: 'Work',
+        sourceId: 'RJ000001',
+        relativePath: 'track.mp3',
+      );
+      final controller = AsmrLibraryController(
+        apiService: _FakeAsmrApiService(trackTree: const <AsmrTrackFile>[node]),
+      );
+
+      final tracks = await controller.loadPlayableTracks(
+        _work(id: 1, title: 'Work'),
+      );
+
+      expect(
+        tracks.single.path,
+        'https://api.asmr-300.com/api/media/stream/1/2',
+      );
+      expect(tracks.single.remoteMetadata?['playbackUrls'], contains(rawUrl));
+    },
+  );
+
   test('ASMR detail cache keeps the most recently used 128 works', () async {
     await resetPrefs();
     final api = _FakeAsmrApiService();

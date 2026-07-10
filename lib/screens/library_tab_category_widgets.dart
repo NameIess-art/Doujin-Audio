@@ -309,7 +309,7 @@ class _LibraryCategoryTermBox extends StatefulWidget {
 }
 
 class _LibraryCategoryTermBoxState extends State<_LibraryCategoryTermBox> {
-  static const _searchDebounce = Duration(milliseconds: 120);
+  static const _searchDebounce = Duration(milliseconds: 180);
   bool _expanded = false;
   bool _wasExpandedBeforeSearch = false;
   late final TextEditingController _searchController;

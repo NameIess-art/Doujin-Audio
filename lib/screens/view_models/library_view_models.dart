@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import '../../models/library_node.dart';
 import '../../services/audio_state_services.dart';
+import '../../services/library_scan_models.dart';
 import '../../services/search_query_utils.dart';
 
 @immutable
@@ -63,10 +64,6 @@ class LibraryListState {
     required this.watchedLibraryCount,
     required this.isScanning,
     required this.isBackgroundScanning,
-    required this.scanCurrentFolder,
-    required this.scanFoundCount,
-    required this.scanDuplicateCount,
-    required this.scanFailureCount,
     required this.structureRevision,
     required this.isInitialized,
     this.isRefreshing = false,
@@ -81,10 +78,6 @@ class LibraryListState {
   final int watchedLibraryCount;
   final bool isScanning;
   final bool isBackgroundScanning;
-  final String scanCurrentFolder;
-  final int scanFoundCount;
-  final int scanDuplicateCount;
-  final int scanFailureCount;
   final int structureRevision;
   final bool isInitialized;
   final bool isRefreshing;
@@ -104,10 +97,6 @@ class LibraryListState {
         other.watchedLibraryCount == watchedLibraryCount &&
         other.isScanning == isScanning &&
         other.isBackgroundScanning == isBackgroundScanning &&
-        other.scanCurrentFolder == scanCurrentFolder &&
-        other.scanFoundCount == scanFoundCount &&
-        other.scanDuplicateCount == scanDuplicateCount &&
-        other.scanFailureCount == scanFailureCount &&
         other.structureRevision == structureRevision &&
         other.isInitialized == isInitialized &&
         other.isRefreshing == isRefreshing &&
@@ -124,15 +113,63 @@ class LibraryListState {
     watchedLibraryCount,
     isScanning,
     isBackgroundScanning,
-    scanCurrentFolder,
-    scanFoundCount,
-    scanDuplicateCount,
-    scanFailureCount,
     structureRevision,
     isInitialized,
     isRefreshing,
     operationProgress,
     operationError,
+  );
+}
+
+@immutable
+class LibraryScanUiState {
+  const LibraryScanUiState({
+    required this.isScanning,
+    required this.isBackgroundScanning,
+    required this.source,
+    required this.stage,
+    required this.processed,
+    required this.total,
+    required this.foundCount,
+    required this.duplicateCount,
+    required this.failureCount,
+  });
+
+  final bool isScanning;
+  final bool isBackgroundScanning;
+  final String source;
+  final FolderScanStage stage;
+  final int processed;
+  final int? total;
+  final int foundCount;
+  final int duplicateCount;
+  final int failureCount;
+
+  @override
+  bool operator ==(Object other) {
+    return other is LibraryScanUiState &&
+        other.isScanning == isScanning &&
+        other.isBackgroundScanning == isBackgroundScanning &&
+        other.source == source &&
+        other.stage == stage &&
+        other.processed == processed &&
+        other.total == total &&
+        other.foundCount == foundCount &&
+        other.duplicateCount == duplicateCount &&
+        other.failureCount == failureCount;
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    isScanning,
+    isBackgroundScanning,
+    source,
+    stage,
+    processed,
+    total,
+    foundCount,
+    duplicateCount,
+    failureCount,
   );
 }
 

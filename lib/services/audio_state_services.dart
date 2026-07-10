@@ -14,6 +14,7 @@ import '../models/music_track.dart';
 import '../models/playback_mode.dart';
 import '../models/playback_session.dart';
 import 'library_organizer.dart';
+import 'library_scan_models.dart';
 import 'native_playback_bridge.dart';
 import 'path_matcher.dart';
 import 'subtitle_parser.dart';

@@ -31,6 +31,11 @@ class LibraryService {
   int scanFoundCount = 0;
   int scanDuplicateCount = 0;
   int scanFailureCount = 0;
+  int scanGenerationSeed = 0;
+  int scanGeneration = 0;
+  FolderScanStage scanStage = FolderScanStage.idle;
+  int scanProcessed = 0;
+  int? scanTotal;
   int contentRevision = 0;
   int libraryBatchDepth = 0;
   bool libraryBatchChanged = false;
@@ -571,6 +576,10 @@ class LibraryService {
         scanFoundCount: scanFoundCount,
         scanDuplicateCount: scanDuplicateCount,
         scanFailureCount: scanFailureCount,
+        scanGeneration: scanGeneration,
+        scanStage: scanStage,
+        scanProcessed: scanProcessed,
+        scanTotal: scanTotal,
         structureRevision: structureRevision,
         treeSnapshotRevision: treeSnapshotRevision,
         contentRevision: contentRevision,

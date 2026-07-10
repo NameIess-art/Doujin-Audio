@@ -2886,6 +2886,28 @@ void main() {
   });
 
   group('library folder restore', () {
+    test('scan generations reject stale progress and stale completion', () {
+      final first = provider.tryBeginScan(source: '/music/first');
+      expect(first, greaterThan(0));
+      expect(provider.tryBeginScan(source: '/music/second'), 0);
+
+      provider.setScanProgress(
+        generation: first + 1,
+        foundCount: 99,
+        stage: FolderScanStage.enumerating,
+      );
+      expect(provider.scanFoundCount, 0);
+
+      provider.cancelScan();
+      final second = provider.tryBeginScan(source: '/music/second');
+      expect(second, greaterThan(first));
+      provider.finishScan(first);
+      expect(provider.isScanGenerationActive(second), isTrue);
+
+      provider.finishScan(second);
+      expect(provider.isScanning, isFalse);
+    });
+
     test(
       'background scan progress does not notify visible library UI',
       () async {

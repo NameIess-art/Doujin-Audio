@@ -159,15 +159,27 @@ final libraryListUiProvider = Provider<LibraryListState>((ref) {
     watchedLibraryCount: libraryState.watchedLibraryCount,
     isScanning: libraryState.isScanning,
     isBackgroundScanning: libraryState.isBackgroundScanning,
-    scanCurrentFolder: libraryState.scanCurrentFolder,
-    scanFoundCount: libraryState.scanFoundCount,
-    scanDuplicateCount: libraryState.scanDuplicateCount,
-    scanFailureCount: libraryState.scanFailureCount,
     structureRevision: libraryState.structureRevision,
     isInitialized: libraryState.isInitialized,
     isRefreshing: refreshOperation.isBusy || state.isScanning,
     operationProgress: refreshOperation.progress,
     operationError: refreshOperation.error,
+  );
+});
+
+final libraryScanUiProvider = Provider<LibraryScanUiState>((ref) {
+  final serviceState = ref.watch(libraryServiceProvider).slice.state;
+  final state = ref.watch(libraryStateProvider).valueOrNull ?? serviceState;
+  return LibraryScanUiState(
+    isScanning: state.isScanning,
+    isBackgroundScanning: state.isBackgroundScanning,
+    source: state.scanCurrentFolder,
+    stage: state.scanStage,
+    processed: state.scanProcessed,
+    total: state.scanTotal,
+    foundCount: state.scanFoundCount,
+    duplicateCount: state.scanDuplicateCount,
+    failureCount: state.scanFailureCount,
   );
 });
 

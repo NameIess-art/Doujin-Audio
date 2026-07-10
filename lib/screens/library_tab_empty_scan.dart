@@ -35,6 +35,7 @@ class _LibraryEmptyState extends StatelessWidget {
     required this.onImportLibrary,
     required this.onImportFolder,
     required this.onImportFile,
+    required this.isBusy,
     required this.bottomInset,
     this.topInset = 16,
     this.physics,
@@ -43,6 +44,7 @@ class _LibraryEmptyState extends StatelessWidget {
   final VoidCallback onImportLibrary;
   final VoidCallback onImportFolder;
   final VoidCallback onImportFile;
+  final bool isBusy;
   final double bottomInset;
   final double topInset;
   final ScrollPhysics? physics;
@@ -133,11 +135,16 @@ class _LibraryEmptyState extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     OutlinedButton.icon(
-                      onPressed: onImportFolder,
-                      icon: const Icon(
-                        Icons.create_new_folder_rounded,
-                        size: 18,
-                      ),
+                      onPressed: isBusy ? null : onImportFolder,
+                      icon: isBusy
+                          ? const SizedBox.square(
+                              dimension: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(
+                              Icons.create_new_folder_rounded,
+                              size: 18,
+                            ),
                       label: Text(i18n.tr('import_folder')),
                       style: OutlinedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(
@@ -149,7 +156,7 @@ class _LibraryEmptyState extends StatelessWidget {
                     ),
                     const SizedBox(height: 12),
                     OutlinedButton.icon(
-                      onPressed: onImportFile,
+                      onPressed: isBusy ? null : onImportFile,
                       icon: const Icon(Icons.upload_file_rounded, size: 18),
                       label: Text(i18n.tr('import_file')),
                       style: OutlinedButton.styleFrom(
@@ -162,7 +169,7 @@ class _LibraryEmptyState extends StatelessWidget {
                     ),
                     const SizedBox(height: 12),
                     OutlinedButton.icon(
-                      onPressed: onImportLibrary,
+                      onPressed: isBusy ? null : onImportLibrary,
                       icon: const Icon(Icons.library_add_rounded, size: 18),
                       label: Text(i18n.tr('import_library')),
                       style: OutlinedButton.styleFrom(

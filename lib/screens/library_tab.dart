@@ -8,7 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as path;
-import 'package:provider/provider.dart' hide Provider;
+import 'package:provider/provider.dart' hide Consumer, Provider;
 import 'package:lottie/lottie.dart';
 
 import '../i18n/app_language_provider.dart';
@@ -132,7 +132,12 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   }) {
     return ref
         .read(uiOperationServiceProvider)
-        .run<T>(scope: scope, labelKey: labelKey, task: (_) => task());
+        .run<T>(
+          scope: scope,
+          labelKey: labelKey,
+          task: (_) => task(),
+          cancelPrevious: false,
+        );
   }
 
   void _ensureFilteredSearchSnapshot({
@@ -205,8 +210,22 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   }) async {
     final i18n = context.read<AppLanguageProvider>();
     final provider = context.read<AudioProvider>();
-    if (provider.isScanning && !silent) {
+    final operations = ref.read(uiOperationServiceProvider);
+    final importBusy = <UiOperationScope>[
+      UiOperationScope.libraryRefresh,
+      UiOperationScope.libraryImportFolder,
+      UiOperationScope.libraryImportLibrary,
+      UiOperationScope.libraryImportFiles,
+    ].any(operations.isBusy);
+    if (provider.isScanning || importBusy) {
       showAppSnackBar(context, i18n.tr('scanning_title'));
+      return;
+    }
+    if (provider.isScanning ||
+        ref
+            .read(uiOperationServiceProvider)
+            .isBusy(UiOperationScope.libraryRefresh)) {
+      if (!silent) showAppSnackBar(context, i18n.tr('scanning_title'));
       return;
     }
     try {
@@ -285,10 +304,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     } catch (error, stackTrace) {
       AppLogService.error(logEvent, error: error, stackTrace: stackTrace);
       if (!mounted) return;
-      _showLibraryFailure(
-        messageKey: 'import_failed_next_step',
-        retry: _addFolder,
-      );
+      _showLibraryFailure(messageKey: 'import_failed_next_step', retry: retry);
     }
   }
 
@@ -493,8 +509,15 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     final libraryRefreshOperation = ref.watch(
       uiOperationForScopeProvider(UiOperationScope.libraryRefresh),
     );
+    final libraryImportBusy = <UiOperationScope>[
+      UiOperationScope.libraryImportFolder,
+      UiOperationScope.libraryImportLibrary,
+      UiOperationScope.libraryImportFiles,
+    ].any((scope) => ref.watch(uiOperationForScopeProvider(scope)).isBusy);
     final libraryRefreshBusy =
-        libraryRefreshOperation.isBusy || listState.isScanning;
+        libraryRefreshOperation.isBusy ||
+        libraryImportBusy ||
+        listState.isScanning;
     _ensureCategorySnapshot(
       provider: provider,
       structureRevision: listState.structureRevision,
@@ -647,6 +670,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         onImportLibrary: _addLibrary,
         onImportFolder: _addFolder,
         onImportFile: _addFiles,
+        isBusy: libraryRefreshBusy,
         bottomInset: relativeBottom,
         topInset: relativeTop,
         physics: canPullRefresh
@@ -890,13 +914,11 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                 top: headerContentHeight + 10,
                 left: 12,
                 right: 12,
-                child: _buildScanProgressCard(
-                  i18n,
-                  provider,
-                  listState.scanCurrentFolder,
-                  listState.scanFoundCount,
-                  listState.scanDuplicateCount,
-                  listState.scanFailureCount,
+                child: Consumer(
+                  builder: (context, ref, _) {
+                    final scanState = ref.watch(libraryScanUiProvider);
+                    return _buildScanProgressCard(i18n, provider, scanState);
+                  },
                 ),
               ),
 
@@ -942,6 +964,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                           tooltip: i18n.tr('refresh_watched_folder'),
                         ),
                       UnifiedPopupMenuButton<int>(
+                        enabled: !libraryRefreshBusy,
                         icon: Icons.add_circle_outline_rounded,
                         tooltip: i18n.tr('import_audio'),
                         entries: [

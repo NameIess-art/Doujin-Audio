@@ -21,6 +21,7 @@ import 'package:nameless_audio/services/audio_database_repository.dart';
 import 'package:nameless_audio/services/audio_state_services.dart';
 import 'package:nameless_audio/services/cover_artwork_cache_service.dart';
 import 'package:nameless_audio/services/dlsite_metadata_service.dart';
+import 'package:nameless_audio/services/library_scan_models.dart';
 import 'package:nameless_audio/services/native_playback_repository.dart';
 import 'package:nameless_audio/services/playback_command_runner.dart';
 import 'package:nameless_audio/services/playback_notification_service.dart';
@@ -693,6 +694,38 @@ void main() {
     }
 
     expect(find.byType(TextField), findsOneWidget);
+
+    final scanGeneration = audioProvider.tryBeginScan(source: 'Music');
+    audioProvider.setScanProgress(
+      generation: scanGeneration,
+      stage: FolderScanStage.enumerating,
+      processed: 120,
+      total: 500,
+      foundCount: 120,
+    );
+    await tester.pump(const Duration(milliseconds: 180));
+    expect(
+      find.byKey(const ValueKey('library_scan_progress_card')),
+      findsOneWidget,
+    );
+    final progress = tester.widget<LinearProgressIndicator>(
+      find.descendant(
+        of: find.byKey(const ValueKey('library_scan_progress_card')),
+        matching: find.byType(LinearProgressIndicator),
+      ),
+    );
+    expect(progress.value, closeTo(0.24, 0.001));
+    expect(
+      find.text(
+        languageProvider.tr('scan_processed_total', {
+          'processed': 120,
+          'total': 500,
+        }),
+      ),
+      findsOneWidget,
+    );
+    audioProvider.finishScan(scanGeneration);
+    await tester.pump();
 
     await tester.enterText(find.byType(TextField), 'ocean');
     await _pumpUntilNotFound(

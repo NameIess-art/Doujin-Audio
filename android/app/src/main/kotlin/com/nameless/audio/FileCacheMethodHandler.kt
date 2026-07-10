@@ -83,8 +83,9 @@ internal class FileCacheMethodHandler(
                     result.error("invalid_args", "sessionId and folder are required", null)
                     return
                 }
-                scanStreamHandler.startFolderScan(sessionId, folder, chunkSize)
-                result.success(true)
+                result.success(
+                    scanStreamHandler.startFolderScan(sessionId, folder, chunkSize)
+                )
             }
             FileCacheMethods.CANCEL_FOLDER_SCAN -> {
                 val sessionId = call.argument<String>("sessionId")

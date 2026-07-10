@@ -668,9 +668,15 @@ extension AudioProviderLibrary on AudioProvider {
       _scanFoundCount = 0;
       _scanDuplicateCount = 0;
       _scanFailureCount = 0;
+      _scanStage = FolderScanStage.preparing;
+      _scanProcessed = 0;
+      _scanTotal = null;
     } else {
       _scanProgressNotifyTimer?.cancel();
       _scanProgressNotifyTimer = null;
+      _scanGeneration = 0;
+      _scanStage = FolderScanStage.idle;
+      _scanTotal = null;
     }
     if (notify) {
       _notifyLibraryChanged();

@@ -18,6 +18,15 @@ import java.nio.charset.StandardCharsets
 import java.util.ArrayDeque
 import java.util.Locale
 
+internal interface FolderScanObserver {
+    fun isCancelled(): Boolean = false
+    fun onStage(stage: String) = Unit
+    fun onEntryProcessed(total: Int? = null) = Unit
+    fun onTrack(track: FileCacheOperations.ScannedTrack) = Unit
+}
+
+private object NoopFolderScanObserver : FolderScanObserver
+
 internal class FileCacheOperations(
     private val context: Context
 ) {
@@ -148,8 +157,11 @@ internal class FileCacheOperations(
             val treeRoot: Boolean
         )
 
-        fun scanFolder(folder: String): ScanFolderResult {
-            return mediaScanOrchestrator.scanFolder(folder)
+        fun scanFolder(
+            folder: String,
+            observer: FolderScanObserver = NoopFolderScanObserver
+        ): ScanFolderResult {
+            return mediaScanOrchestrator.scanFolder(folder, observer)
         }
 
         fun listChildFolders(folder: String): List<String> {
@@ -797,9 +809,11 @@ internal class FileCacheOperations(
 
         private fun scanDocumentTree(
             rootUri: Uri,
-            output: MutableMap<String, ScannedTrack>
+            output: MutableMap<String, ScannedTrack>,
+            observer: FolderScanObserver
         ): Int {
-            if (scanDocumentTreeViaDocumentsContract(rootUri, output)) return 0
+            if (scanDocumentTreeViaDocumentsContract(rootUri, output, observer)) return 0
+            if (observer.isCancelled()) return 0
 
             val treeRoot = DocumentFile.fromTreeUri(context, rootUri)
             val root = treeRoot ?: DocumentFile.fromSingleUri(context, rootUri) ?: return 1
@@ -820,6 +834,7 @@ internal class FileCacheOperations(
             )
 
             while (pending.isNotEmpty()) {
+                if (observer.isCancelled()) break
                 val current = pending.removeFirst()
                 val children = try {
                     current.dir.listFiles()
@@ -828,6 +843,8 @@ internal class FileCacheOperations(
                     emptyArray()
                 }
                 for (child in children) {
+                    if (observer.isCancelled()) break
+                    observer.onEntryProcessed()
                     val childName = normalizeDisplayName(child.name?.trim().orEmpty())
                     if (child.isDirectory) {
                         val nextRelative = when {
@@ -865,8 +882,8 @@ internal class FileCacheOperations(
                     }
                     val media = mediaNameInfoOrNull(safeName, child.type) ?: continue
                     val childUri = child.uri.toString()
-                    output.putIfAbsent(
-                        childUri,
+                    rememberScannedTrack(
+                        output,
                         ScannedTrack(
                             path = childUri,
                             title = media.title,
@@ -876,7 +893,8 @@ internal class FileCacheOperations(
                             isVideo = media.isVideo,
                             fileSizeBytes = child.length().takeIf { it >= 0 },
                             modifiedAtMs = child.lastModified().takeIf { it > 0 }
-                        )
+                        ),
+                        observer
                     )
                 }
             }
@@ -885,7 +903,8 @@ internal class FileCacheOperations(
 
         private fun scanDocumentTreeViaDocumentsContract(
             rootUri: Uri,
-            output: MutableMap<String, ScannedTrack>
+            output: MutableMap<String, ScannedTrack>,
+            observer: FolderScanObserver
         ): Boolean {
             val startDocumentId = startDocumentIdForTreeUri(rootUri) ?: return false
             val rootName = normalizeDisplayName(
@@ -914,6 +933,7 @@ internal class FileCacheOperations(
 
             return try {
                 while (pending.isNotEmpty()) {
+                    if (observer.isCancelled()) return true
                     val current = pending.removeFirst()
                     val childUri = DocumentsContract.buildChildDocumentsUriUsingTree(
                         rootUri,
@@ -938,6 +958,8 @@ internal class FileCacheOperations(
                         if (documentIdIndex < 0 || mimeIndex < 0) return false
 
                         while (cursor.moveToNext()) {
+                            if (observer.isCancelled()) return true
+                            observer.onEntryProcessed()
                             val documentId = cursor.getString(documentIdIndex) ?: continue
                             val mime = cursor.getString(mimeIndex)
                             val displayName = normalizeDisplayName(
@@ -999,8 +1021,8 @@ internal class FileCacheOperations(
                                 null
                             }
 
-                            output.putIfAbsent(
-                                documentUri,
+                            rememberScannedTrack(
+                                output,
                                 ScannedTrack(
                                     path = documentUri,
                                     title = media.title,
@@ -1010,7 +1032,8 @@ internal class FileCacheOperations(
                                     isVideo = media.isVideo,
                                     fileSizeBytes = fileSizeBytes,
                                     modifiedAtMs = modifiedAtMs
-                                )
+                                ),
+                                observer
                             )
                         }
                     }
@@ -1197,7 +1220,11 @@ internal class FileCacheOperations(
             }
         }
 
-        private fun scanFileSystem(root: File, output: MutableMap<String, ScannedTrack>): Int {
+        private fun scanFileSystem(
+            root: File,
+            output: MutableMap<String, ScannedTrack>,
+            observer: FolderScanObserver
+        ): Int {
             val rootPath = root.absolutePath
             val pending = ArrayDeque<FileScanNode>()
             var failures = 0
@@ -1211,6 +1238,7 @@ internal class FileCacheOperations(
             )
 
             while (pending.isNotEmpty()) {
+                if (observer.isCancelled()) break
                 val current = pending.removeFirst()
                 val children = try {
                     current.dir.listFiles()
@@ -1223,6 +1251,8 @@ internal class FileCacheOperations(
                 }
 
                 for (child in children) {
+                    if (observer.isCancelled()) break
+                    observer.onEntryProcessed()
                     if (child.isDirectory) {
                         val childPath = child.absolutePath
                         pending.add(
@@ -1238,8 +1268,8 @@ internal class FileCacheOperations(
                     if (!child.isFile) continue
                     val media = mediaNameInfoOrNull(child.name) ?: continue
                     val childPath = child.absolutePath
-                    output.putIfAbsent(
-                        childPath,
+                    rememberScannedTrack(
+                        output,
                         ScannedTrack(
                             path = childPath,
                             title = media.title,
@@ -1249,7 +1279,8 @@ internal class FileCacheOperations(
                             isVideo = media.isVideo,
                             fileSizeBytes = child.length().takeIf { it >= 0 },
                             modifiedAtMs = child.lastModified().takeIf { it > 0 }
-                        )
+                        ),
+                        observer
                     )
                 }
             }
@@ -1259,7 +1290,8 @@ internal class FileCacheOperations(
         private fun scanFileSystemAsDocumentTree(
             rootUri: Uri,
             root: File,
-            output: MutableMap<String, ScannedTrack>
+            output: MutableMap<String, ScannedTrack>,
+            observer: FolderScanObserver
         ): Int {
             val rootDocumentId = startDocumentIdForTreeUri(rootUri) ?: return 1
             val rootName = normalizeDisplayName(root.name.ifBlank { "Folder" })
@@ -1277,6 +1309,7 @@ internal class FileCacheOperations(
             )
 
             while (pending.isNotEmpty()) {
+                if (observer.isCancelled()) break
                 val current = pending.removeFirst()
                 val children = try {
                     current.dir.listFiles()
@@ -1289,6 +1322,8 @@ internal class FileCacheOperations(
                 }
 
                 for (child in children) {
+                    if (observer.isCancelled()) break
+                    observer.onEntryProcessed()
                     if (child.isDirectory) {
                         val childName = child.name.ifBlank { "Folder" }
                         val nextRelative = when {
@@ -1334,8 +1369,8 @@ internal class FileCacheOperations(
                         rootUri,
                         documentId
                     ).toString()
-                    output.putIfAbsent(
-                        documentUri,
+                    rememberScannedTrack(
+                        output,
                         ScannedTrack(
                             path = documentUri,
                             title = media.title,
@@ -1345,7 +1380,8 @@ internal class FileCacheOperations(
                             isVideo = media.isVideo,
                             fileSizeBytes = child.length().takeIf { it >= 0 },
                             modifiedAtMs = child.lastModified().takeIf { it > 0 }
-                        )
+                        ),
+                        observer
                     )
                 }
             }
@@ -1354,7 +1390,8 @@ internal class FileCacheOperations(
 
         private fun scanMediaStore(
             folderPath: String,
-            output: MutableMap<String, ScannedTrack>
+            output: MutableMap<String, ScannedTrack>,
+            observer: FolderScanObserver
         ): Int {
             val normalized = folderPath
                 .replace('\\', '/')
@@ -1415,6 +1452,8 @@ internal class FileCacheOperations(
                 }
 
                 while (cursor.moveToNext()) {
+                    if (observer.isCancelled()) break
+                    observer.onEntryProcessed(cursor.count.takeIf { it >= 0 })
                     val id = cursor.getLong(idIndex)
                     val displayName = normalizeDisplayName(cursor.getString(displayNameIndex) ?: "audio_file")
                     val media = mediaNameInfoOrNull(displayName) ?: continue
@@ -1434,8 +1473,8 @@ internal class FileCacheOperations(
                     val groupKey = "ms:${relative.ifBlank { relPrefix }}"
                     val playablePath = fullPath?.takeIf { it.isNotBlank() } ?: contentPath
 
-                    output.putIfAbsent(
-                        playablePath,
+                    rememberScannedTrack(
+                        output,
                         ScannedTrack(
                             path = playablePath,
                             title = media.title,
@@ -1445,11 +1484,22 @@ internal class FileCacheOperations(
                             isVideo = media.isVideo,
                             fileSizeBytes = fileSizeBytes,
                             modifiedAtMs = modifiedAtMs
-                        )
+                        ),
+                        observer
                     )
                 }
             }
             return 0
+        }
+
+        private fun rememberScannedTrack(
+            output: MutableMap<String, ScannedTrack>,
+            track: ScannedTrack,
+            observer: FolderScanObserver
+        ) {
+            if (output.putIfAbsent(track.path, track) == null) {
+                observer.onTrack(track)
+            }
         }
 
         private fun normalizeDisplayName(raw: String): String {

@@ -180,10 +180,16 @@ extension _MainScreenLayout on _MainScreenState {
           button: true,
           selected: selected,
           label: label,
-          child: GestureDetector(
-            onTap: () => _switchPage(index),
-            behavior: HitTestBehavior.opaque,
-            child: Column(
+          child: Material(
+            type: MaterialType.transparency,
+            child: InkResponse(
+              onTap: () => _switchPage(index),
+              containedInkWell: true,
+              highlightShape: BoxShape.rectangle,
+              radius: 32,
+              highlightColor: activeColor.withValues(alpha: 0.08),
+              splashColor: activeColor.withValues(alpha: 0.10),
+              child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Stack(
@@ -221,6 +227,7 @@ extension _MainScreenLayout on _MainScreenState {
                   ),
                 ),
               ],
+              ),
             ),
           ),
         ),

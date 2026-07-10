@@ -73,6 +73,13 @@ const Map<String, String> appLanguageEn = {
   'asmr_playback_network_failed_retry':
       'Network connection failed. Tap to retry',
   'scan_cancel': 'Cancel',
+  'scan_stage_preparing': 'Reading folder...',
+  'scan_stage_enumerating': 'Finding audio files...',
+  'scan_stage_merging': 'Loading track information...',
+  'scan_stage_saving': 'Saving library...',
+  'scan_stage_covers': 'Loading covers...',
+  'scan_processed': '{processed} items processed',
+  'scan_processed_total': '{processed} / {total} items processed',
   'scan_current_folder': 'Current folder',
   'scan_found': 'Found',
   'scan_duplicate': 'Duplicate',

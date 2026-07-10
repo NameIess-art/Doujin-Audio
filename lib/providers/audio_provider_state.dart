@@ -70,6 +70,7 @@ extension AudioProviderState on AudioProvider {
     }
     return _librarySnapshotCacheService.tree;
   }
+
   int get libraryTreeSnapshotRevision =>
       _librarySnapshotCacheService.treeSnapshotRevision;
 
@@ -87,6 +88,10 @@ extension AudioProviderState on AudioProvider {
   int get scanFoundCount => _scanFoundCount;
   int get scanDuplicateCount => _scanDuplicateCount;
   int get scanFailureCount => _scanFailureCount;
+  int get scanGeneration => _scanGeneration;
+  FolderScanStage get scanStage => _scanStage;
+  int get scanProcessed => _scanProcessed;
+  int? get scanTotal => _scanTotal;
   int get libraryContentRevision => _libraryService.contentRevision;
 
   void setScanProgress({
@@ -94,22 +99,36 @@ extension AudioProviderState on AudioProvider {
     int? foundCount,
     int? duplicateCount,
     int? failureCount,
+    int? generation,
+    FolderScanStage? stage,
+    int? processed,
+    int? total,
   }) {
+    if (generation != null && generation != _scanGeneration) return;
     var changed = false;
     final nextFolder = currentFolder ?? _scanCurrentFolder;
     final nextFoundCount = foundCount ?? _scanFoundCount;
     final nextDuplicateCount = duplicateCount ?? _scanDuplicateCount;
     final nextFailureCount = failureCount ?? _scanFailureCount;
+    final nextStage = stage ?? _scanStage;
+    final nextProcessed = processed ?? _scanProcessed;
+    final nextTotal = total ?? _scanTotal;
     changed =
         nextFolder != _scanCurrentFolder ||
         nextFoundCount != _scanFoundCount ||
         nextDuplicateCount != _scanDuplicateCount ||
-        nextFailureCount != _scanFailureCount;
+        nextFailureCount != _scanFailureCount ||
+        nextStage != _scanStage ||
+        nextProcessed != _scanProcessed ||
+        nextTotal != _scanTotal;
     if (!changed) return;
     if (currentFolder != null) _scanCurrentFolder = currentFolder;
     if (foundCount != null) _scanFoundCount = foundCount;
     if (duplicateCount != null) _scanDuplicateCount = duplicateCount;
     if (failureCount != null) _scanFailureCount = failureCount;
+    if (stage != null) _scanStage = stage;
+    if (processed != null) _scanProcessed = processed;
+    if (total != null) _scanTotal = total;
     if (_isBackgroundScanning) return;
     _scheduleScanProgressNotify();
   }
@@ -131,9 +150,41 @@ extension AudioProviderState on AudioProvider {
   void cancelScan() {
     if (!_isScanning) return;
     _isScanning = false;
+    _isBackgroundScanning = false;
+    _scanGeneration = 0;
+    _scanStage = FolderScanStage.idle;
+    _scanTotal = null;
     _scanProgressNotifyTimer?.cancel();
     _scanProgressNotifyTimer = null;
-    _notifyListeners();
+    _notifyLibraryChanged();
+    unawaited(AudioProvider._fileCacheGateway.cancelActiveFolderScan());
+  }
+
+  int tryBeginScan({required String source, bool background = false}) {
+    if (_isScanning) return 0;
+    _libraryService.scanGenerationSeed++;
+    final generation = _libraryService.scanGenerationSeed;
+    setScanning(true, background: background, notify: false);
+    _scanGeneration = generation;
+    _scanCurrentFolder = source;
+    _scanStage = FolderScanStage.preparing;
+    _scanProcessed = 0;
+    _scanTotal = null;
+    if (background) {
+      _syncLibraryStateSlice();
+    } else {
+      _notifyLibraryChanged();
+    }
+    return generation;
+  }
+
+  bool isScanGenerationActive(int generation) =>
+      _isScanning && generation != 0 && generation == _scanGeneration;
+
+  void finishScan(int generation) {
+    if (!isScanGenerationActive(generation)) return;
+    final wasBackground = _isBackgroundScanning;
+    setScanning(false, notify: !wasBackground);
   }
 }
 

@@ -42,6 +42,7 @@ import '../services/asmr_playback_cache_service.dart';
 import '../services/dlsite_metadata_service.dart';
 import '../services/file_cache_platform_gateway.dart';
 import '../services/library_snapshot_cache_service.dart';
+import '../services/library_scan_models.dart';
 import '../services/library_organizer.dart';
 import '../services/media_file_support.dart';
 import '../services/native_result.dart';
@@ -303,6 +304,14 @@ class AudioProvider with ChangeNotifier {
       _libraryService.scanDuplicateCount = value;
   int get _scanFailureCount => _libraryService.scanFailureCount;
   set _scanFailureCount(int value) => _libraryService.scanFailureCount = value;
+  int get _scanGeneration => _libraryService.scanGeneration;
+  set _scanGeneration(int value) => _libraryService.scanGeneration = value;
+  FolderScanStage get _scanStage => _libraryService.scanStage;
+  set _scanStage(FolderScanStage value) => _libraryService.scanStage = value;
+  int get _scanProcessed => _libraryService.scanProcessed;
+  set _scanProcessed(int value) => _libraryService.scanProcessed = value;
+  int? get _scanTotal => _libraryService.scanTotal;
+  set _scanTotal(int? value) => _libraryService.scanTotal = value;
   int get _libraryBatchDepth => _libraryService.libraryBatchDepth;
   set _libraryBatchDepth(int value) =>
       _libraryService.libraryBatchDepth = value;

@@ -567,6 +567,12 @@ class NativePlaybackService : MediaSessionService() {
         exclusive: Boolean = false
     ): Map<String, Any?> {
         val session = sessions[sessionId] ?: return errorResult("Unknown session.")
+        if (!requestAudioFocusIfNeeded()) {
+            clearPlaybackIntent(sessionId)
+            session.playerOrNull()?.pause()
+            publishSessionState(sessionId)
+            return errorResult("Audio focus was denied.")
+        }
         val pausedSessionIds = if (exclusive) {
             exclusivePlaybackSessionIdsToPause(
                 targetSessionId = sessionId,
@@ -680,6 +686,12 @@ class NativePlaybackService : MediaSessionService() {
             clearPlaybackIntent(sessionId)
             player.pause()
         } else {
+            if (!requestAudioFocusIfNeeded()) {
+                clearPlaybackIntent(sessionId)
+                player.pause()
+                publishSessionState(sessionId)
+                return errorResult("Audio focus was denied.")
+            }
             markPlaybackIntended(sessionId)
             session.applyFadeMultiplier(1f)
             player.play()
@@ -955,6 +967,7 @@ class NativePlaybackService : MediaSessionService() {
 
     fun resumeSessionsForTimer(sessionIds: List<String>): List<String> {
         if (sessionIds.isEmpty()) return emptyList()
+        if (!requestAudioFocusIfNeeded()) return emptyList()
         restorePersistedSessionsForTimer(sessionIds)
         notificationsDismissed = false
         playbackSuspended = false
@@ -1139,6 +1152,14 @@ class NativePlaybackService : MediaSessionService() {
         }
         errorRetryRunnables.remove(sessionId)?.let(mainHandler::removeCallbacks)
         logInfo("player_error_retry_executing sessionId=$sessionId trigger=$trigger")
+        if (!requestAudioFocusIfNeeded()) {
+            clearPlaybackRecovery(sessionId)
+            clearPlaybackIntent(sessionId)
+            session.playerOrNull()?.pause()
+            publishSessionState(sessionId)
+            syncForegroundState()
+            return
+        }
         try {
             focusSession(sessionId)
             session.applyFadeMultiplier(1f)
@@ -1438,6 +1459,11 @@ class NativePlaybackService : MediaSessionService() {
     private fun recoverIntendedPlaybackIfStalled(trigger: String) {
         val sessionIds = intendedPlaybackSessionIds.toList()
         if (sessionIds.isEmpty()) return
+        if (!requestAudioFocusIfNeeded()) {
+            intendedPlaybackSessionIds.removeAll(sessionIds.toSet())
+            publishAllSessionStates()
+            return
+        }
 
         var recoveredAny = false
         sessionIds.forEach { sessionId ->
@@ -1768,11 +1794,11 @@ class NativePlaybackService : MediaSessionService() {
         )
     }
 
-    private fun requestAudioFocusIfNeeded() {
-        if (audioFocusHeld) return
+    private fun requestAudioFocusIfNeeded(): Boolean {
+        if (audioFocusHeld) return true
         val manager = getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: run {
             logInfo("audio_focus_request_skip no_audio_manager")
-            return
+            return false
         }
         val result = try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -1808,6 +1834,7 @@ class NativePlaybackService : MediaSessionService() {
             "audio_focus_request_result result=${audioFocusRequestResultName(result)} " +
                 "held=$audioFocusHeld"
         )
+        return audioFocusHeld
     }
 
     private fun resumePendingAudioFocusSessionsIfPossible(trigger: String): Boolean {

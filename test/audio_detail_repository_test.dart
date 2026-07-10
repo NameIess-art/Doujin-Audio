@@ -160,6 +160,69 @@ void main() {
     expect(result.detail.isEmpty, isTrue);
   });
 
+  test('backup rejects invalid date, sales count, and rating fields', () {
+    final target = AudioDetailTarget.libraryRootFolder(tempDir.path);
+    Map<String, dynamic> backupWith(String field, Object value) =>
+        <String, dynamic>{
+          'schemaVersion': 1,
+          'type': 'audio-detail',
+          'targetType': 'library-root-folder',
+          'targetPath': tempDir.path,
+          field: value,
+        };
+
+    expect(
+      () => AudioDetail.fromBackupJson(
+        target,
+        backupWith('releaseDate', 'not-a-date'),
+      ),
+      throwsA(
+        isA<FormatException>().having(
+          (error) => error.message,
+          'message',
+          contains('releaseDate'),
+        ),
+      ),
+    );
+    expect(
+      () => AudioDetail.fromBackupJson(target, backupWith('salesCount', -1)),
+      throwsA(
+        isA<FormatException>().having(
+          (error) => error.message,
+          'message',
+          contains('salesCount'),
+        ),
+      ),
+    );
+    expect(
+      () => AudioDetail.fromBackupJson(target, backupWith('rating', 5.1)),
+      throwsA(
+        isA<FormatException>().having(
+          (error) => error.message,
+          'message',
+          contains('rating'),
+        ),
+      ),
+    );
+  });
+
+  test('save rejects invalid numeric metadata instead of normalizing it', () {
+    final target = AudioDetailTarget.libraryRootFolder(tempDir.path);
+
+    expect(
+      () => AudioDetail.empty(
+        target,
+      ).copyWith(salesCount: -1).normalizedForSave(fixedNow),
+      throwsFormatException,
+    );
+    expect(
+      () => AudioDetail.empty(
+        target,
+      ).copyWith(rating: 6.0).normalizedForSave(fixedNow),
+      throwsFormatException,
+    );
+  });
+
   test(
     'single imported audio details use database with local backup fallback',
     () async {

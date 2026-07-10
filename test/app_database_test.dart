@@ -3,6 +3,7 @@ import 'package:nameless_audio/models/audio_effects.dart';
 import 'package:nameless_audio/models/audio_detail.dart';
 import 'package:nameless_audio/models/library_entry.dart';
 import 'package:nameless_audio/models/music_track.dart';
+import 'package:nameless_audio/models/asmr_models.dart';
 import 'package:nameless_audio/models/playback_queue.dart';
 import 'package:nameless_audio/models/time_segment_label.dart';
 import 'package:nameless_audio/services/app_database.dart';
@@ -29,6 +30,96 @@ void main() {
   test('schema starts from version 2', () {
     expect(AppDatabase.schemaVersion, 2);
   });
+
+  test(
+    'ASMR work list and outbox roll back together on write failure',
+    () async {
+      const originalWork = AsmrWork(
+        id: 1,
+        title: 'Original',
+        circleName: 'Circle',
+        sourceId: 'RJ000001',
+        sourceType: 'asmr',
+        sourceUrl: '',
+        coverUrl: '',
+        thumbnailUrl: '',
+        mainCoverUrl: '',
+        releaseDate: null,
+        createDate: null,
+        duration: Duration.zero,
+        dlCount: 0,
+        reviewCount: 0,
+        rating: 0,
+        voiceActors: <String>[],
+        tags: <String>[],
+      );
+      const replacementWork = AsmrWork(
+        id: 2,
+        title: 'Replacement',
+        circleName: 'Circle',
+        sourceId: 'RJ000002',
+        sourceType: 'asmr',
+        sourceUrl: '',
+        coverUrl: '',
+        thumbnailUrl: '',
+        mainCoverUrl: '',
+        releaseDate: null,
+        createDate: null,
+        duration: Duration.zero,
+        dlCount: 0,
+        reviewCount: 0,
+        rating: 0,
+        voiceActors: <String>[],
+        tags: <String>[],
+      );
+      final originalOperation = AsmrSyncOperation(
+        type: AsmrSyncOperationType.favoriteAdd,
+        workId: originalWork.id,
+        sourceId: originalWork.sourceId,
+        createdAt: DateTime.fromMillisecondsSinceEpoch(1),
+      );
+      final replacementOperation = AsmrSyncOperation(
+        type: AsmrSyncOperationType.favoriteAdd,
+        workId: replacementWork.id,
+        sourceId: replacementWork.sourceId,
+        createdAt: DateTime.fromMillisecondsSinceEpoch(2),
+      );
+      await appDatabase.saveAsmrWorkListAndSyncOperations(
+        'favorites',
+        const <AsmrWork>[originalWork],
+        <AsmrSyncOperation>[originalOperation],
+      );
+      await db.execute('''
+      CREATE TRIGGER fail_sync_operation_insert
+      BEFORE INSERT ON asmr_sync_operations
+      BEGIN
+        SELECT RAISE(ABORT, 'forced sync write failure');
+      END
+    ''');
+
+      await expectLater(
+        appDatabase.saveAsmrWorkListAndSyncOperations(
+          'favorites',
+          const <AsmrWork>[replacementWork],
+          <AsmrSyncOperation>[replacementOperation],
+        ),
+        throwsA(isA<DatabaseException>()),
+      );
+
+      expect(
+        (await appDatabase.loadAsmrWorkList(
+          'favorites',
+        )).map((work) => work.id),
+        <int>[originalWork.id],
+      );
+      expect(
+        (await appDatabase.loadAsmrSyncOperations()).map(
+          (operation) => operation.workId,
+        ),
+        <int>[originalOperation.workId],
+      );
+    },
+  );
 
   test(
     'saveAllTracks and loadAllTracks round-trip the music library',
@@ -142,6 +233,43 @@ void main() {
 
       loaded = await appDatabase.loadAllTracks();
       expect(loaded, isEmpty);
+    },
+  );
+
+  test(
+    'deleteTracks batches more than SQLite variable limit atomically',
+    () async {
+      final tracks = List<MusicTrack>.generate(
+        1801,
+        (index) => MusicTrack(
+          path: '/library/$index.mp3',
+          displayName: '$index',
+          groupKey: '/library',
+          groupTitle: 'Library',
+          groupSubtitle: 'Library',
+          isSingle: false,
+          tags: const <String>['bulk'],
+        ),
+      );
+      await appDatabase.insertTracks(tracks);
+
+      await appDatabase.deleteTracks(
+        tracks.map((track) => track.path).toList(growable: false),
+      );
+
+      expect(await appDatabase.loadAllTracks(), isEmpty);
+      for (final table in <String>[
+        'track_tags',
+        'track_remote_metadata',
+        'track_assets',
+        'track_playback_state',
+        'track_scan_info',
+        'tracks',
+      ]) {
+        final rows = await db.rawQuery('SELECT COUNT(*) AS count FROM $table');
+        final count = (rows.single['count'] as num).toInt();
+        expect(count, 0, reason: table);
+      }
     },
   );
 

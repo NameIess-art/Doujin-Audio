@@ -37,17 +37,17 @@ internal class PowerMethodHandler(
                 PlaybackTimerAlarmScheduler.executeNow(
                     activity.applicationContext,
                     PlaybackTimerAlarmScheduler.actionTimerExpired,
-                    call.argument<Int>("generation")
+                    call.argument<Int>("generation"),
+                    onComplete = result::success
                 )
-                result.success(true)
             }
             PowerMethods.EXECUTE_AUTO_RESUME_NOW -> {
                 PlaybackTimerAlarmScheduler.executeNow(
                     activity.applicationContext,
                     PlaybackTimerAlarmScheduler.actionAutoResume,
-                    call.argument<Int>("generation")
+                    call.argument<Int>("generation"),
+                    onComplete = result::success
                 )
-                result.success(true)
             }
             PowerMethods.SYNC_PLAYBACK_TIMER_ALARMS -> {
                 PlaybackTimerAlarmScheduler.sync(

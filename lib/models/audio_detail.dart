@@ -135,11 +135,11 @@ class AudioDetail {
             .whereType<String>(),
       ),
       cardCoverPath: json['cardCoverPath'] as String?,
-      releaseDate: _dateTimeFromIso(json['releaseDate']),
-      salesCount: _intOrNull(json['salesCount']),
-      rating: _doubleOrNull(json['rating']),
-      createdAt: _dateTimeFromIso(json['createdAt']),
-      updatedAt: _dateTimeFromIso(json['updatedAt']),
+      releaseDate: _backupDate(json, 'releaseDate'),
+      salesCount: _backupSalesCount(json),
+      rating: _backupRating(json),
+      createdAt: _backupDate(json, 'createdAt'),
+      updatedAt: _backupDate(json, 'updatedAt'),
     );
   }
 
@@ -220,6 +220,12 @@ class AudioDetail {
   }
 
   AudioDetail normalizedForSave(DateTime now) {
+    if (salesCount != null && salesCount! < 0) {
+      throw const FormatException('Invalid audio detail field: salesCount');
+    }
+    if (rating != null && (!rating!.isFinite || rating! < 0 || rating! > 5)) {
+      throw const FormatException('Invalid audio detail field: rating');
+    }
     return AudioDetail(
       target: target,
       rjCode: rjCode.trim().toUpperCase(),
@@ -231,10 +237,8 @@ class AudioDetail {
           ? null
           : cardCoverPath?.trim(),
       releaseDate: releaseDate,
-      salesCount: salesCount == null || salesCount! < 0 ? null : salesCount,
-      rating: rating == null || rating! < 0
-          ? null
-          : rating!.clamp(0, 5).toDouble(),
+      salesCount: salesCount,
+      rating: rating,
       createdAt: createdAt ?? now,
       updatedAt: now,
     );
@@ -313,9 +317,48 @@ DateTime? _dateTimeFromMs(Object? value) {
   return null;
 }
 
-DateTime? _dateTimeFromIso(Object? value) {
-  if (value is! String || value.isEmpty) return null;
-  return DateTime.tryParse(value);
+DateTime? _backupDate(Map<String, dynamic> json, String field) {
+  if (!json.containsKey(field) || json[field] == null) return null;
+  final value = json[field];
+  if (value is! String || value.trim().isEmpty) {
+    throw FormatException('Invalid audio detail field: $field');
+  }
+  final parsed = DateTime.tryParse(value.trim());
+  if (parsed == null) {
+    throw FormatException('Invalid audio detail field: $field');
+  }
+  return parsed;
+}
+
+int? _backupSalesCount(Map<String, dynamic> json) {
+  const field = 'salesCount';
+  if (!json.containsKey(field) || json[field] == null) return null;
+  final value = json[field];
+  final parsed = switch (value) {
+    int number => number,
+    num number when number == number.toInt() => number.toInt(),
+    String text => int.tryParse(text.trim()),
+    _ => null,
+  };
+  if (parsed == null || parsed < 0) {
+    throw const FormatException('Invalid audio detail field: salesCount');
+  }
+  return parsed;
+}
+
+double? _backupRating(Map<String, dynamic> json) {
+  const field = 'rating';
+  if (!json.containsKey(field) || json[field] == null) return null;
+  final value = json[field];
+  final parsed = switch (value) {
+    num number => number.toDouble(),
+    String text => double.tryParse(text.trim()),
+    _ => null,
+  };
+  if (parsed == null || !parsed.isFinite || parsed < 0 || parsed > 5) {
+    throw const FormatException('Invalid audio detail field: rating');
+  }
+  return parsed;
 }
 
 int? _intOrNull(Object? value) {

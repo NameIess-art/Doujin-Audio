@@ -17,7 +17,14 @@ import 'file_cache_platform_gateway.dart';
 import 'path_display.dart';
 import 'path_matcher.dart';
 
-enum AsmrDownloadTaskStatus { idle, preparing, downloading, paused, completed, failed }
+enum AsmrDownloadTaskStatus {
+  idle,
+  preparing,
+  downloading,
+  paused,
+  completed,
+  failed,
+}
 
 class AsmrDownloadTaskSnapshot {
   const AsmrDownloadTaskSnapshot({
@@ -253,14 +260,20 @@ class AsmrDownloadTaskHeaderViewState {
 }
 
 class AsmrDownloadManager extends ChangeNotifier {
-  AsmrDownloadManager({FileCachePlatformGateway? fileCacheGateway})
-    : _fileCacheGateway = fileCacheGateway ?? FileCachePlatformGateway.instance;
+  AsmrDownloadManager({
+    FileCachePlatformGateway? fileCacheGateway,
+    Future<Directory> Function()? temporaryDirectoryProvider,
+  }) : _fileCacheGateway =
+           fileCacheGateway ?? FileCachePlatformGateway.instance,
+       _temporaryDirectoryProvider =
+           temporaryDirectoryProvider ?? getTemporaryDirectory;
 
   static const Duration _progressNotifyMinInterval = Duration(
     milliseconds: 120,
   );
   static const int _progressNotifyMinByteDelta = 128 * 1024;
   final FileCachePlatformGateway _fileCacheGateway;
+  final Future<Directory> Function() _temporaryDirectoryProvider;
 
   final Map<int, AsmrDownloadTaskSnapshot> _tasks = {};
   List<int> _taskIdsSnapshot = const <int>[];
@@ -272,7 +285,8 @@ class AsmrDownloadManager extends ChangeNotifier {
   final Map<int, bool> _pauseRequested = {};
   final Map<int, Completer<void>> _downloadCompletions = {};
   final Map<int, HttpClient> _activeHttpClients = {};
-  final Map<int, String> _cancelCleanupRoots = {};
+  final Map<int, bool> _workRootExistedBeforeTask = {};
+  final Map<int, Set<String>> _createdOutputPaths = {};
 
   static const int _maxConcurrentDownloads = 3;
 
@@ -378,6 +392,8 @@ class AsmrDownloadManager extends ChangeNotifier {
 
     if (_queue.contains(workId)) {
       _queue.remove(workId);
+      _workRootExistedBeforeTask.remove(workId);
+      _createdOutputPaths.remove(workId);
       _tasks.remove(workId);
       _notifyTaskChanged();
       return;
@@ -385,21 +401,44 @@ class AsmrDownloadManager extends ChangeNotifier {
 
     if (_activeTasks.contains(workId)) {
       _cancelRequested[workId] = true;
-      _cancelCleanupRoots[workId] = task.workRootPath;
+      _tasks[workId] = task.copyWith(message: 'canceling');
+      _notifyTaskChanged();
+      final completion = _downloadCompletions[workId]?.future;
+      final removeWholeRoot = _workRootExistedBeforeTask[workId] == false;
       _activeHttpClients[workId]?.close(force: true);
-      await _deleteDownloadRoot(task.workRootPath);
+      if (completion != null) {
+        await completion;
+      }
+      if (removeWholeRoot) {
+        await _deleteDownloadRoot(task.workRootPath);
+      }
       _tasks.remove(workId);
       _notifyTaskChanged();
       return;
     }
 
-    await _deleteDownloadRoot(task.workRootPath);
+    if (task.status == AsmrDownloadTaskStatus.failed) {
+      await _cleanupCancelledTask(workId, task.workRootPath);
+    }
+    _workRootExistedBeforeTask.remove(workId);
+    _createdOutputPaths.remove(workId);
     _tasks.remove(workId);
     _notifyTaskChanged();
   }
 
   Future<void> deleteTask(int workId) async {
-    await cancelTask(workId);
+    final task = _tasks[workId];
+    if (task == null) return;
+    final workRootPath = task.workRootPath;
+    if (_activeTasks.contains(workId) || _queue.contains(workId)) {
+      await cancelTask(workId);
+    } else {
+      _tasks.remove(workId);
+      _notifyTaskChanged();
+    }
+    await _deleteDownloadRoot(workRootPath);
+    _workRootExistedBeforeTask.remove(workId);
+    _createdOutputPaths.remove(workId);
   }
 
   Future<void> pauseTask(int workId) async {
@@ -463,6 +502,7 @@ class AsmrDownloadManager extends ChangeNotifier {
 
     final workFolderName = _buildWorkFolderName(work);
     final workRootPath = _joinFolderPath(normalizedDestination, workFolderName);
+    _workRootExistedBeforeTask[workId] = await _pathExists(workRootPath);
     final backup = _buildBackupDetail(work, workRootPath);
     final backupJson = const JsonEncoder.withIndent(
       '  ',
@@ -542,6 +582,7 @@ class AsmrDownloadManager extends ChangeNotifier {
     final backupBytes = utf8.encode(backupJson).length;
 
     try {
+      _createdOutputPaths.putIfAbsent(workId, () => <String>{});
       final rootReady = await _ensureFolderPath(
         basePath: normalizedDestination,
         relativePath: workFolderName,
@@ -551,7 +592,12 @@ class AsmrDownloadManager extends ChangeNotifier {
         throw const FileSystemException('Unable to create download folder.');
       }
 
+      final backupPath = _joinFolderPath(workRootPath, 'nameless-audio.json');
+      final backupExisted = await _pathExists(backupPath);
       await _writeWorkDetailBackup(backup, workRootPath);
+      if (!backupExisted) {
+        _createdOutputPaths[workId]?.add(backupPath);
+      }
       _throwIfCancelled(workId);
 
       _tasks[workId] = _tasks[workId]!.copyWith(
@@ -670,9 +716,12 @@ class AsmrDownloadManager extends ChangeNotifier {
       }
     } finally {
       _plannedFilesMap.remove(workId);
-      final cleanupRoot = _cancelCleanupRoots.remove(workId);
-      if (cleanupRoot != null) {
-        await _deleteDownloadRoot(cleanupRoot);
+      if (_cancelRequested[workId] == true && _pauseRequested[workId] != true) {
+        await _cleanupCancelledTask(workId, workRootPath);
+      }
+      if (_cancelRequested[workId] == true) {
+        _workRootExistedBeforeTask.remove(workId);
+        _createdOutputPaths.remove(workId);
       }
       _cancelRequested.remove(workId);
       _pauseRequested.remove(workId);
@@ -737,14 +786,14 @@ class AsmrDownloadManager extends ChangeNotifier {
       );
       if (await targetFile.exists() && await targetFile.length() == item.size) {
         if (conflictPolicy == AsmrDownloadConflictPolicy.skip) {
-           return _WriteResult.skipped(bytesDownloaded: item.size);
+          return _WriteResult.skipped(bytesDownloaded: item.size);
         }
       }
     } else {
       final docPath = _joinFolderPath(workRootPath, item.relativePath);
       if (await _fileCacheGateway.documentPathExists(docPath)) {
         if (conflictPolicy == AsmrDownloadConflictPolicy.skip) {
-           return _WriteResult.skipped(bytesDownloaded: item.size);
+          return _WriteResult.skipped(bytesDownloaded: item.size);
         }
       }
     }
@@ -757,6 +806,10 @@ class AsmrDownloadManager extends ChangeNotifier {
     try {
       _throwIfCancelled(workId);
       if (PathMatcher.isContentUri(workRootPath)) {
+        final targetPath = _joinFolderPath(workRootPath, item.relativePath);
+        final targetExisted = await _fileCacheGateway.documentPathExists(
+          targetPath,
+        );
         final saved = await _fileCacheGateway.copyFileToFolder(
           sourcePath: tempResult.file.path,
           folder: workRootPath,
@@ -772,6 +825,9 @@ class AsmrDownloadManager extends ChangeNotifier {
                   bytesDownloaded: tempResult.bytesDownloaded,
                 );
         }
+        if (!targetExisted) {
+          _createdOutputPaths[workId]?.add(targetPath);
+        }
         return _WriteResult.success(
           bytesDownloaded: tempResult.bytesDownloaded,
         );
@@ -783,8 +839,9 @@ class AsmrDownloadManager extends ChangeNotifier {
           item.relativePath.replaceAll('/', path.separator),
         ),
       );
+      final targetExisted = await targetFile.exists();
       await targetFile.parent.create(recursive: true);
-      if (await targetFile.exists()) {
+      if (targetExisted) {
         if (conflictPolicy == AsmrDownloadConflictPolicy.skip) {
           return _WriteResult.skipped(
             bytesDownloaded: tempResult.bytesDownloaded,
@@ -793,6 +850,9 @@ class AsmrDownloadManager extends ChangeNotifier {
         await targetFile.delete();
       }
       await tempResult.file.copy(targetFile.path);
+      if (!targetExisted) {
+        _createdOutputPaths[workId]?.add(targetFile.path);
+      }
       return _WriteResult.success(bytesDownloaded: tempResult.bytesDownloaded);
     } finally {
       try {
@@ -802,6 +862,7 @@ class AsmrDownloadManager extends ChangeNotifier {
       } catch (_) {
         // Temporary download cleanup is best effort after the primary result.
       }
+      tempResult.cacheLease.release();
     }
   }
 
@@ -809,7 +870,7 @@ class AsmrDownloadManager extends ChangeNotifier {
     _PlannedDownloadFile item, {
     required int workId,
   }) async {
-    final tempDir = await getTemporaryDirectory();
+    final tempDir = await _temporaryDirectoryProvider();
     final downloadDir = Directory(path.join(tempDir.path, 'asmr_downloads'));
     if (!await downloadDir.exists()) {
       await downloadDir.create(recursive: true);
@@ -823,6 +884,8 @@ class AsmrDownloadManager extends ChangeNotifier {
     if (await tempFile.exists()) {
       await tempFile.delete();
     }
+    final cacheLease = AppCacheService.protectPaths(<String>[tempFile.path]);
+    var leaseTransferred = false;
 
     final client = HttpClient();
     _activeHttpClients[workId] = client;
@@ -863,12 +926,21 @@ class AsmrDownloadManager extends ChangeNotifier {
       } finally {
         await sink.close();
       }
+      if ((response.contentLength > 0 && received != response.contentLength) ||
+          (item.size > 0 && received < item.size)) {
+        if (await tempFile.exists()) {
+          await tempFile.delete();
+        }
+        return null;
+      }
 
       await tempFile.setLastModified(DateTime.now());
       await AppCacheService.enforceLimit();
+      leaseTransferred = true;
       return _TemporaryDownloadResult(
         file: tempFile,
         bytesDownloaded: received,
+        cacheLease: cacheLease,
       );
     } on _DownloadCancelled {
       rethrow;
@@ -881,15 +953,18 @@ class AsmrDownloadManager extends ChangeNotifier {
         error: error,
         stackTrace: stackTrace,
       );
-      return _TemporaryDownloadResult(
-        file: tempFile,
-        bytesDownloaded: received,
-      );
+      if (await tempFile.exists()) {
+        await tempFile.delete();
+      }
+      return null;
     } finally {
       if (identical(_activeHttpClients[workId], client)) {
         _activeHttpClients.remove(workId);
       }
       client.close(force: true);
+      if (!leaseTransferred) {
+        cacheLease.release();
+      }
     }
   }
 
@@ -1075,7 +1150,8 @@ class AsmrDownloadManager extends ChangeNotifier {
       client.close(force: true);
     }
     _activeHttpClients.clear();
-    _cancelCleanupRoots.clear();
+    _workRootExistedBeforeTask.clear();
+    _createdOutputPaths.clear();
     super.dispose();
   }
 
@@ -1086,17 +1162,60 @@ class AsmrDownloadManager extends ChangeNotifier {
   }
 
   Future<void> _deleteDownloadRoot(String workRootPath) async {
-    try {
-      if (PathMatcher.isContentUri(workRootPath)) {
+    if (PathMatcher.isContentUri(workRootPath)) {
+      try {
         await _fileCacheGateway.deleteDocumentPath(workRootPath);
-        return;
+      } catch (_) {
+        // Temporary task directory cleanup is best effort.
       }
-      final directory = Directory(workRootPath);
-      if (await directory.exists()) {
+      return;
+    }
+    final directory = Directory(workRootPath);
+    for (var attempt = 0; attempt < 3; attempt++) {
+      try {
+        if (!await directory.exists()) return;
         await directory.delete(recursive: true);
+        return;
+      } catch (_) {
+        if (attempt < 2) {
+          await Future<void>.delayed(const Duration(milliseconds: 40));
+        }
       }
-    } catch (_) {
-      // Temporary task directory cleanup is best effort.
+    }
+  }
+
+  Future<bool> _pathExists(String targetPath) async {
+    if (PathMatcher.isContentUri(targetPath)) {
+      try {
+        return await _fileCacheGateway.documentPathExists(targetPath);
+      } catch (_) {
+        return false;
+      }
+    }
+    return FileSystemEntity.type(targetPath, followLinks: false).then(
+      (type) => type != FileSystemEntityType.notFound,
+      onError: (_) => false,
+    );
+  }
+
+  Future<void> _cleanupCancelledTask(int workId, String workRootPath) async {
+    if (_workRootExistedBeforeTask[workId] != true) {
+      await _deleteDownloadRoot(workRootPath);
+      return;
+    }
+    for (final createdPath in _createdOutputPaths[workId] ?? const <String>{}) {
+      try {
+        if (PathMatcher.isContentUri(createdPath)) {
+          await _fileCacheGateway.deleteDocumentPath(createdPath);
+        } else {
+          final file = File(createdPath);
+          if (await file.exists()) {
+            await file.delete();
+          }
+        }
+      } catch (_) {
+        // Cancellation cleanup is best effort and never removes pre-existing files.
+      }
     }
   }
 }
@@ -1140,10 +1259,12 @@ class _TemporaryDownloadResult {
   const _TemporaryDownloadResult({
     required this.file,
     required this.bytesDownloaded,
+    required this.cacheLease,
   });
 
   final File file;
   final int bytesDownloaded;
+  final CachePathLease cacheLease;
 }
 
 class _DownloadCancelled implements Exception {

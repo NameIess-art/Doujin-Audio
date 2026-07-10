@@ -14,8 +14,25 @@ class AppCacheService {
   static int _maxCacheBytes = defaultMaxCacheBytes;
   static Future<void>? _enforceFuture;
   static bool _enforceRequested = false;
+  static final Map<String, int> _protectedPaths = <String, int>{};
+  static bool _enforceAfterLeaseRelease = false;
 
   static int get maxCacheBytes => _maxCacheBytes;
+
+  static CachePathLease protectPaths(Iterable<String> paths) {
+    final normalized = paths
+        .where((value) => value.trim().isNotEmpty)
+        .map((value) => path.normalize(value))
+        .toSet();
+    for (final protectedPath in normalized) {
+      _protectedPaths.update(
+        protectedPath,
+        (count) => count + 1,
+        ifAbsent: () => 1,
+      );
+    }
+    return CachePathLease._(normalized);
+  }
 
   static String formatBytes(int bytes) {
     final mb = bytes / (1024 * 1024);
@@ -28,7 +45,7 @@ class AppCacheService {
 
   static Future<void> setMaxCacheBytes(int bytes) async {
     _maxCacheBytes = bytes <= 0 ? defaultMaxCacheBytes : bytes;
-    if (Platform.isAndroid) {
+    if (Platform.isAndroid && _protectedPaths.isEmpty) {
       try {
         await _fileCache.setApplicationCacheLimit(_maxCacheBytes);
       } on MissingPluginException {
@@ -42,7 +59,7 @@ class AppCacheService {
 
   static Future<int> clearAllCaches() async {
     var deletedBytes = 0;
-    if (Platform.isAndroid) {
+    if (Platform.isAndroid && _protectedPaths.isEmpty) {
       try {
         deletedBytes += await _fileCache.clearApplicationCache();
       } on MissingPluginException {
@@ -50,6 +67,8 @@ class AppCacheService {
       } catch (_) {
         // Fall back to Dart-visible cache directories below.
       }
+    } else if (Platform.isAndroid) {
+      _enforceAfterLeaseRelease = true;
     }
 
     for (final directory in await _dartCacheRoots()) {
@@ -128,7 +147,7 @@ class AppCacheService {
   }
 
   static Future<void> _enforceLimitOnce() async {
-    if (Platform.isAndroid) {
+    if (Platform.isAndroid && _protectedPaths.isEmpty) {
       try {
         await _fileCache.enforceApplicationCacheLimit(_maxCacheBytes);
         return;
@@ -137,6 +156,9 @@ class AppCacheService {
       } catch (_) {
         // Fall back to Dart-visible cache directories below.
       }
+    }
+    if (Platform.isAndroid && _protectedPaths.isNotEmpty) {
+      _enforceAfterLeaseRelease = true;
     }
     await _enforceDartCacheLimit(_maxCacheBytes);
   }
@@ -151,6 +173,7 @@ class AppCacheService {
       roots.add(Directory(path.join(tempDir.path, 'embedded_covers')));
       roots.add(Directory(path.join(tempDir.path, 'notification_covers')));
       roots.add(Directory(path.join(tempDir.path, 'video_frames')));
+      roots.add(Directory(path.join(tempDir.path, 'exports')));
     } catch (_) {
       // Temporary cache roots are optional and may be unavailable on startup.
     }
@@ -173,6 +196,7 @@ class AppCacheService {
     try {
       final type = await FileSystemEntity.type(entity.path, followLinks: false);
       if (type == FileSystemEntityType.file) {
+        if (_isProtected(entity.path)) return 0;
         final file = File(entity.path);
         final length = await file.length();
         await file.delete();
@@ -184,7 +208,10 @@ class AppCacheService {
         await for (final child in directory.list(followLinks: false)) {
           deletedBytes += await _deleteEntity(child);
         }
-        await directory.delete();
+        if (!_containsProtectedPath(directory.path) &&
+            await directory.list().isEmpty) {
+          await directory.delete();
+        }
         return deletedBytes;
       }
     } catch (_) {
@@ -212,6 +239,7 @@ class AppCacheService {
     var totalBytes = 0;
     for (final file in files) {
       try {
+        if (_isProtected(file.path)) continue;
         final stat = await file.stat();
         totalBytes += stat.size;
         entries.add(
@@ -236,6 +264,52 @@ class AppCacheService {
         // Cache eviction is best effort; a locked file can be retried later.
       }
     }
+  }
+
+  static bool _isProtected(String candidate) {
+    final normalized = path.normalize(candidate);
+    return _protectedPaths.keys.any(
+      (protectedPath) =>
+          protectedPath == normalized ||
+          path.isWithin(protectedPath, normalized),
+    );
+  }
+
+  static bool _containsProtectedPath(String directory) {
+    final normalized = path.normalize(directory);
+    return _protectedPaths.keys.any(
+      (protectedPath) =>
+          protectedPath == normalized ||
+          path.isWithin(normalized, protectedPath),
+    );
+  }
+
+  static void _releaseProtectedPaths(Set<String> paths) {
+    for (final protectedPath in paths) {
+      final count = _protectedPaths[protectedPath];
+      if (count == null || count <= 1) {
+        _protectedPaths.remove(protectedPath);
+      } else {
+        _protectedPaths[protectedPath] = count - 1;
+      }
+    }
+    if (_protectedPaths.isEmpty && _enforceAfterLeaseRelease) {
+      _enforceAfterLeaseRelease = false;
+      enforceLimit();
+    }
+  }
+}
+
+class CachePathLease {
+  CachePathLease._(this._paths);
+
+  final Set<String> _paths;
+  bool _released = false;
+
+  void release() {
+    if (_released) return;
+    _released = true;
+    AppCacheService._releaseProtectedPaths(_paths);
   }
 }
 

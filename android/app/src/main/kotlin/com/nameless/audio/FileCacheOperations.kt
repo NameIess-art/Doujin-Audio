@@ -104,6 +104,12 @@ internal class FileCacheOperations(
             val modifiedAtMs: Long? = null
         )
 
+        data class ScanFolderResult(
+            val tracks: List<ScannedTrack>,
+            val failureCount: Int,
+            val complete: Boolean
+        )
+
         private data class DocumentScanNode(
             val documentId: String,
             val relative: String,
@@ -143,7 +149,7 @@ internal class FileCacheOperations(
             val treeRoot: Boolean
         )
 
-        fun scanFolder(folder: String): List<ScannedTrack> {
+        fun scanFolder(folder: String): ScanFolderResult {
             return mediaScanOrchestrator.scanFolder(folder)
         }
 
@@ -154,30 +160,33 @@ internal class FileCacheOperations(
             if (uri != null) {
                 listChildFoldersViaDocumentsContract(uri)?.let { return it }
                 val treeRoot = DocumentFile.fromTreeUri(context, uri)
-                val root = treeRoot ?: DocumentFile.fromSingleUri(context, uri) ?: return emptyList()
-                if (!root.exists()) return emptyList()
+                val root = treeRoot ?: DocumentFile.fromSingleUri(context, uri)
+                    ?: throw IllegalStateException("Unable to resolve document folder.")
+                if (!root.exists()) {
+                    throw IllegalStateException("Document folder does not exist.")
+                }
                 return try {
                     root.listFiles()
                         .filter { it.isDirectory }
                         .map { it.uri.toString() }
                         .sortedBy { it.lowercase(Locale.US) }
-                } catch (_: Exception) {
-                    emptyList()
+                } catch (error: Exception) {
+                    throw IllegalStateException("Unable to list document folder.", error)
                 }
             }
 
             val root = File(folderTrimmed)
             if (!root.exists() || !root.isDirectory) {
-                return emptyList()
+                throw IllegalStateException("Filesystem folder does not exist.")
             }
             return try {
                 root.listFiles()
                     ?.filter { it.isDirectory }
                     ?.map { it.absolutePath }
                     ?.sortedBy { it.lowercase(Locale.US) }
-                    ?: emptyList()
-            } catch (_: Exception) {
-                emptyList()
+                    ?: throw IllegalStateException("Unable to list filesystem folder.")
+            } catch (error: Exception) {
+                throw IllegalStateException("Unable to list filesystem folder.", error)
             }
         }
 
@@ -787,16 +796,20 @@ internal class FileCacheOperations(
             }
         }
 
-        private fun scanDocumentTree(rootUri: Uri, output: MutableMap<String, ScannedTrack>) {
-            if (scanDocumentTreeViaDocumentsContract(rootUri, output)) return
+        private fun scanDocumentTree(
+            rootUri: Uri,
+            output: MutableMap<String, ScannedTrack>
+        ): Int {
+            if (scanDocumentTreeViaDocumentsContract(rootUri, output)) return 0
 
             val treeRoot = DocumentFile.fromTreeUri(context, rootUri)
-            val root = treeRoot ?: DocumentFile.fromSingleUri(context, rootUri) ?: return
-            if (!root.exists()) return
+            val root = treeRoot ?: DocumentFile.fromSingleUri(context, rootUri) ?: return 1
+            if (!root.exists()) return 1
 
             val rootName = normalizeDisplayName(root.name?.ifBlank { "Folder" } ?: "Folder")
             val rootUriString = root.uri.toString()
             val pending = ArrayDeque<DocumentFileScanNode>()
+            var failures = 0
             pending.add(
                 DocumentFileScanNode(
                     dir = root,
@@ -812,6 +825,7 @@ internal class FileCacheOperations(
                 val children = try {
                     current.dir.listFiles()
                 } catch (_: Exception) {
+                    failures++
                     emptyArray()
                 }
                 for (child in children) {
@@ -867,6 +881,7 @@ internal class FileCacheOperations(
                     )
                 }
             }
+            return failures
         }
 
         private fun scanDocumentTreeViaDocumentsContract(
@@ -1183,9 +1198,10 @@ internal class FileCacheOperations(
             }
         }
 
-        private fun scanFileSystem(root: File, output: MutableMap<String, ScannedTrack>) {
+        private fun scanFileSystem(root: File, output: MutableMap<String, ScannedTrack>): Int {
             val rootPath = root.absolutePath
             val pending = ArrayDeque<FileScanNode>()
+            var failures = 0
             pending.add(
                 FileScanNode(
                     dir = root,
@@ -1201,7 +1217,11 @@ internal class FileCacheOperations(
                     current.dir.listFiles()
                 } catch (_: Exception) {
                     null
-                } ?: continue
+                }
+                if (children == null) {
+                    failures++
+                    continue
+                }
 
                 for (child in children) {
                     if (child.isDirectory) {
@@ -1234,17 +1254,19 @@ internal class FileCacheOperations(
                     )
                 }
             }
+            return failures
         }
 
         private fun scanFileSystemAsDocumentTree(
             rootUri: Uri,
             root: File,
             output: MutableMap<String, ScannedTrack>
-        ) {
-            val rootDocumentId = startDocumentIdForTreeUri(rootUri) ?: return
+        ): Int {
+            val rootDocumentId = startDocumentIdForTreeUri(rootUri) ?: return 1
             val rootName = normalizeDisplayName(root.name.ifBlank { "Folder" })
             val rootUriString = rootUri.toString()
             val pending = ArrayDeque<FileDocumentScanNode>()
+            var failures = 0
             pending.add(
                 FileDocumentScanNode(
                     dir = root,
@@ -1261,7 +1283,11 @@ internal class FileCacheOperations(
                     current.dir.listFiles()
                 } catch (_: Exception) {
                     null
-                } ?: continue
+                }
+                if (children == null) {
+                    failures++
+                    continue
+                }
 
                 for (child in children) {
                     if (child.isDirectory) {
@@ -1324,13 +1350,17 @@ internal class FileCacheOperations(
                     )
                 }
             }
+            return failures
         }
 
-        private fun scanMediaStore(folderPath: String, output: MutableMap<String, ScannedTrack>) {
+        private fun scanMediaStore(
+            folderPath: String,
+            output: MutableMap<String, ScannedTrack>
+        ): Int {
             val normalized = folderPath
                 .replace('\\', '/')
                 .trimEnd('/')
-            if (normalized.isBlank()) return
+            if (normalized.isBlank()) return 1
 
             val projection = mutableListOf(
                 MediaStore.Audio.Media._ID,
@@ -1353,19 +1383,24 @@ internal class FileCacheOperations(
 
             val relPrefix = basePath?.let {
                 if (it.isEmpty()) null else "$it/"
-            } ?: return
+            } ?: return 1
 
             val selection = "${MediaStore.Audio.Media.RELATIVE_PATH} LIKE ?"
             val selectionArgs = arrayOf("$relPrefix%")
             val audioUri = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
 
-            contentResolver.query(
-                audioUri,
-                projection.toTypedArray(),
-                selection,
-                selectionArgs,
-                null
-            )?.use { cursor ->
+            val cursor = try {
+                contentResolver.query(
+                    audioUri,
+                    projection.toTypedArray(),
+                    selection,
+                    selectionArgs,
+                    null
+                )
+            } catch (_: Exception) {
+                return 1
+            } ?: return 1
+            cursor.use {
                 val idIndex = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
                 val displayNameIndex =
                     cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME)
@@ -1415,6 +1450,7 @@ internal class FileCacheOperations(
                     )
                 }
             }
+            return 0
         }
 
         private fun normalizeDisplayName(raw: String): String {

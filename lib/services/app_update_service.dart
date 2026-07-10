@@ -115,6 +115,12 @@ class AppUpdateService {
       'https://github.com/$owner/$repo/releases/latest';
   static const String releasesPage = 'https://github.com/$owner/$repo/releases';
   static const MethodChannel _channel = MethodChannel(UpdateChannel.name);
+  static String? _activeDownloadIdentity;
+  static Future<File>? _activeDownload;
+  static final Set<void Function(double? progress)> _downloadListeners =
+      <void Function(double? progress)>{};
+  static final Map<String, Future<UpdateInstallResult>> _activeInstalls =
+      <String, Future<UpdateInstallResult>>{};
 
   static Future<AppUpdateInfo> checkLatest() async {
     final currentVersion = await currentAppVersion();
@@ -411,6 +417,56 @@ class AppUpdateService {
     AppUpdateInfo info, {
     required void Function(double? progress) onProgress,
   }) async {
+    final identity =
+        '${info.assetUrl}|${info.checksumAssetUrl}|${info.assetName}';
+    final active = _activeDownload;
+    if (active != null) {
+      if (_activeDownloadIdentity == identity) {
+        _downloadListeners.add(onProgress);
+        try {
+          return await active;
+        } finally {
+          _downloadListeners.remove(onProgress);
+        }
+      }
+      try {
+        await active;
+      } catch (_) {
+        // A different failed download must still release the single-flight slot.
+      }
+      return downloadUpdate(info, onProgress: onProgress);
+    }
+
+    _activeDownloadIdentity = identity;
+    _downloadListeners.add(onProgress);
+    void broadcast(double? progress) {
+      for (final listener in List<void Function(double?)>.from(
+        _downloadListeners,
+      )) {
+        listener(progress);
+      }
+    }
+
+    late final Future<File> future;
+    future = _downloadUpdateOnce(info, onProgress: broadcast).whenComplete(() {
+      if (identical(_activeDownload, future)) {
+        _activeDownload = null;
+        _activeDownloadIdentity = null;
+        _downloadListeners.clear();
+      }
+    });
+    _activeDownload = future;
+    try {
+      return await future;
+    } finally {
+      _downloadListeners.remove(onProgress);
+    }
+  }
+
+  static Future<File> _downloadUpdateOnce(
+    AppUpdateInfo info, {
+    required void Function(double? progress) onProgress,
+  }) async {
     final tempDir = await getTemporaryDirectory();
     final assetName = info.assetName;
     final assetUrl = info.assetUrl;
@@ -423,15 +479,18 @@ class AppUpdateService {
     }
     final file = File(path.join(updateDir.path, _safeFileName(assetName)));
     final partialFile = File('${file.path}.part');
-    if (await file.exists()) {
-      await file.delete();
-    }
-    if (await partialFile.exists()) {
-      await partialFile.delete();
-    }
-
+    final cacheLease = AppCacheService.protectPaths(<String>[
+      file.path,
+      partialFile.path,
+    ]);
     final client = HttpClient();
     try {
+      if (await file.exists()) {
+        await file.delete();
+      }
+      if (await partialFile.exists()) {
+        await partialFile.delete();
+      }
       final checksumUrl = info.checksumAssetUrl;
       if (checksumUrl == null || checksumUrl.isEmpty) {
         throw const FormatException(
@@ -489,6 +548,7 @@ class AppUpdateService {
       rethrow;
     } finally {
       client.close(force: true);
+      cacheLease.release();
     }
   }
 
@@ -585,6 +645,20 @@ class AppUpdateService {
   }
 
   static Future<UpdateInstallResult> installUpdate(File file) async {
+    final installPath = path.normalize(file.absolute.path);
+    final active = _activeInstalls[installPath];
+    if (active != null) return active;
+    late final Future<UpdateInstallResult> future;
+    future = _installUpdateOnce(file).whenComplete(() {
+      if (identical(_activeInstalls[installPath], future)) {
+        _activeInstalls.remove(installPath);
+      }
+    });
+    _activeInstalls[installPath] = future;
+    return future;
+  }
+
+  static Future<UpdateInstallResult> _installUpdateOnce(File file) async {
     if (Platform.isWindows) return _installWindowsZip(file);
     final raw = await _channel.invokeMapMethod<String, Object?>(
       UpdateMethod.installApk,

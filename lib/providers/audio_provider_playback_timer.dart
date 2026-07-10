@@ -112,11 +112,11 @@ extension AudioProviderPlaybackTimer on AudioProvider {
   }
 
   Future<void> _handleTimerExpiredOnPlatform(int generation) async {
-    final handled = await _executeTimerActionOnPlatform(
+    final result = await _executeTimerActionOnPlatform(
       _powerPlatformService.executeTimerExpiredNow,
       generation,
     );
-    if (!handled) {
+    if (result == TimerExecutionResult.failed) {
       _applyLocalTimerExpiryFallback();
       return;
     }
@@ -168,11 +168,11 @@ extension AudioProviderPlaybackTimer on AudioProvider {
   }
 
   Future<void> _handleAutoResumeOnPlatform(int generation) async {
-    final handled = await _executeTimerActionOnPlatform(
+    final result = await _executeTimerActionOnPlatform(
       _powerPlatformService.executeAutoResumeNow,
       generation,
     );
-    if (!handled) {
+    if (result == TimerExecutionResult.failed) {
       await _resumeTimerPausedSessions();
       return;
     }
@@ -184,8 +184,8 @@ extension AudioProviderPlaybackTimer on AudioProvider {
     unawaited(_saveTimerRuntime());
   }
 
-  Future<bool> _executeTimerActionOnPlatform(
-    Future<bool> Function(int generation) action,
+  Future<TimerExecutionResult> _executeTimerActionOnPlatform(
+    Future<TimerExecutionResult> Function(int generation) action,
     int generation,
   ) async {
     try {
@@ -196,7 +196,7 @@ extension AudioProviderPlaybackTimer on AudioProvider {
         error: error,
         stackTrace: stackTrace,
       );
-      return false;
+      return TimerExecutionResult.failed;
     }
   }
 

@@ -1,4 +1,8 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
+import 'package:nameless_audio/models/music_track.dart';
+import 'package:nameless_audio/services/library_scanner_isolate.dart';
 import 'package:nameless_audio/services/library_scanner_service.dart';
 import 'package:nameless_audio/services/path_matcher.dart';
 
@@ -50,5 +54,77 @@ void main() {
     expect(event.errorCode, 'scan_provider_error');
     expect(event.errorMessage, 'provider failed');
     expect(event.chunk.failureCount, 1);
+  });
+
+  test('scan results are complete only when enumeration is proven clean', () {
+    const complete = NativeScanResult.success(
+      <ScannedTrack>[],
+      <String>{},
+      completenessKnown: true,
+    );
+    const partial = NativeScanResult.success(
+      <ScannedTrack>[],
+      <String>{},
+      failureCount: 1,
+      completenessKnown: true,
+    );
+    const legacy = NativeScanResult.success(<ScannedTrack>[], <String>{});
+
+    expect(complete.isComplete, isTrue);
+    expect(partial.isComplete, isFalse);
+    expect(legacy.isComplete, isFalse);
+  });
+
+  test('partial refresh never generates removal paths', () {
+    const existing = MusicTrack(
+      path: '/music/work/missing.mp3',
+      displayName: 'missing',
+      groupKey: '/music/work',
+      groupTitle: 'work',
+      groupSubtitle: '/music/work',
+      isSingle: false,
+    );
+
+    final partial = processScannedTracksInIsolate(
+      const ScanMergeIsolatePayload(
+        scannedTracks: <ScannedTrack>[],
+        library: <MusicTrack>[existing],
+        libraryRoot: '/music',
+        promoteRootTracksToSingles: false,
+        i18nImportedFiles: 'Imported',
+        i18nManuallySelectedFiles: 'Selected',
+        exclusionMatcher: null,
+        sourceFolderPath: '/music/work',
+        retainedTrackPaths: <String>{'/music/work/found.mp3'},
+      ),
+    );
+    final complete = processScannedTracksInIsolate(
+      const ScanMergeIsolatePayload(
+        scannedTracks: <ScannedTrack>[],
+        library: <MusicTrack>[existing],
+        libraryRoot: '/music',
+        promoteRootTracksToSingles: false,
+        i18nImportedFiles: 'Imported',
+        i18nManuallySelectedFiles: 'Selected',
+        exclusionMatcher: null,
+        sourceFolderPath: '/music/work',
+        retainedTrackPaths: <String>{'/music/work/found.mp3'},
+        allowRemoval: true,
+      ),
+    );
+
+    expect(partial.removedTrackPaths, isEmpty);
+    expect(complete.removedTrackPaths, <String>['/music/work/missing.mp3']);
+  });
+
+  test('a missing filesystem root is reported as an incomplete scan', () {
+    final missingPath =
+        '${Directory.systemTemp.path}${Platform.pathSeparator}'
+        'missing_scan_${DateTime.now().microsecondsSinceEpoch}';
+
+    final payload = scanFileSystemFolderPayloadForTest(missingPath);
+
+    expect(payload['failureCount'], 1);
+    expect(payload['discoveredPaths'], isEmpty);
   });
 }

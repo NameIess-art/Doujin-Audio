@@ -14,6 +14,7 @@ class ScanMergeIsolatePayload {
     required this.i18nManuallySelectedFiles,
     required this.exclusionMatcher,
     this.sourceFolderPath,
+    this.allowRemoval = false,
     this.retainedTrackPaths = const <String>{},
     this.retainedEntryPaths = const <String>{},
     this.entrySnapshot,
@@ -27,6 +28,7 @@ class ScanMergeIsolatePayload {
   final String i18nManuallySelectedFiles;
   final LibraryExclusionMatcher? exclusionMatcher;
   final String? sourceFolderPath;
+  final bool allowRemoval;
   final Set<String> retainedTrackPaths;
   final Set<String> retainedEntryPaths;
   final LibraryEntrySnapshot? entrySnapshot;
@@ -175,7 +177,7 @@ ScanMergeIsolateResult processScannedTracksInIsolate(
   final removedTrackPaths = <String>[];
   final removedEntryPaths = <String>[];
   final sourceFolderPath = payload.sourceFolderPath;
-  if (sourceFolderPath != null) {
+  if (payload.allowRemoval && sourceFolderPath != null) {
     final normalizedSourceFolder = PathMatcher.normalize(sourceFolderPath);
     if (payload.retainedTrackPaths.isNotEmpty) {
       for (final track in payload.library) {

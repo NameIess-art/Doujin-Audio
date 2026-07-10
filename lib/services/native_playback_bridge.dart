@@ -367,6 +367,9 @@ class NativePlaybackBridge implements NativePlaybackBridgeBase {
   Timer? _reconnectTimer;
   bool _listeningEnabled = false;
   int _reconnectAttempt = 0;
+  int _subscriptionGeneration = 0;
+  Future<void> _attachSerial = Future<void>.value();
+  bool _attachQueued = false;
   static const int _maxReconnectAttempts = 5;
 
   @override
@@ -382,18 +385,47 @@ class NativePlaybackBridge implements NativePlaybackBridgeBase {
   @override
   void startListening() {
     _listeningEnabled = true;
-    if (_eventSubscription != null) return;
+    if (_eventSubscription != null || _attachQueued) return;
     _reconnectAttempt = 0;
-    _attachEventListener();
+    unawaited(_queueAttach());
   }
 
-  void _attachEventListener() {
+  Future<void> _queueAttach() {
+    if (_attachQueued) return _attachSerial;
+    _attachQueued = true;
+    _attachSerial = _attachSerial
+        .then((_) => _attachEventListener())
+        .whenComplete(() {
+          _attachQueued = false;
+        });
+    return _attachSerial;
+  }
+
+  Future<void> _attachEventListener() async {
     if (!_listeningEnabled) return;
+    final generation = ++_subscriptionGeneration;
     _reconnectTimer?.cancel();
     _reconnectTimer = null;
-    _eventSubscription?.cancel();
-    _eventSubscription = _events.receiveBroadcastStream().listen(
+    final previous = _eventSubscription;
+    _eventSubscription = null;
+    try {
+      await previous?.cancel();
+    } catch (error, stackTrace) {
+      AppLogService.error(
+        'native_playback_event_subscription_cancel_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+    if (!_listeningEnabled || generation != _subscriptionGeneration) return;
+    late final StreamSubscription<dynamic> subscription;
+    subscription = _events.receiveBroadcastStream().listen(
       (event) {
+        if (generation != _subscriptionGeneration ||
+            !identical(_eventSubscription, subscription)) {
+          return;
+        }
+        _reconnectAttempt = 0;
         if (event is Map) {
           try {
             final eventType = event['eventType'];
@@ -422,17 +454,32 @@ class NativePlaybackBridge implements NativePlaybackBridgeBase {
           'native_playback_event_channel_failed',
           error: error,
         );
-        _scheduleReconnect();
+        unawaited(_handleEventDisconnect(generation, subscription));
       },
       onDone: () {
-        _scheduleReconnect();
+        unawaited(_handleEventDisconnect(generation, subscription));
       },
       cancelOnError: false,
     );
+    _eventSubscription = subscription;
   }
 
-  void _scheduleReconnect() {
+  Future<void> _handleEventDisconnect(
+    int generation,
+    StreamSubscription<dynamic> subscription,
+  ) async {
+    if (generation != _subscriptionGeneration ||
+        !identical(_eventSubscription, subscription)) {
+      return;
+    }
     _eventSubscription = null;
+    final reconnectGeneration = ++_subscriptionGeneration;
+    await subscription.cancel();
+    if (reconnectGeneration != _subscriptionGeneration) return;
+    _scheduleReconnect(reconnectGeneration);
+  }
+
+  void _scheduleReconnect(int generation) {
     if (!_listeningEnabled) return;
     if (_reconnectAttempt >= _maxReconnectAttempts) return;
     _reconnectAttempt++;
@@ -443,17 +490,23 @@ class NativePlaybackBridge implements NativePlaybackBridgeBase {
     );
     _reconnectTimer?.cancel();
     _reconnectTimer = Timer(delay, () {
-      if (!_listeningEnabled || _eventSubscription != null) return;
-      _attachEventListener();
+      if (!_listeningEnabled ||
+          generation != _subscriptionGeneration ||
+          _eventSubscription != null) {
+        return;
+      }
+      unawaited(_queueAttach());
     });
   }
 
   @override
   Future<void> stopListening() async {
     _listeningEnabled = false;
+    _subscriptionGeneration++;
     _reconnectAttempt = _maxReconnectAttempts;
     _reconnectTimer?.cancel();
     _reconnectTimer = null;
+    await _attachSerial;
     await _eventSubscription?.cancel();
     _eventSubscription = null;
   }

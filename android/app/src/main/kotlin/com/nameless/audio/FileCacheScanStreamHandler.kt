@@ -28,9 +28,10 @@ internal class FileCacheScanStreamHandler(
 
         Thread {
             try {
-                val tracks = operations.scanFolder(folder)
+                val scanResult = operations.scanFolder(folder)
+                val tracks = scanResult.tracks
                 for (start in tracks.indices step safeChunkSize) {
-                    if (cancelled.get()) return@Thread
+                    if (cancelled.get()) break
                     val end = minOf(start + safeChunkSize, tracks.size)
                     val chunk = ArrayList<HashMap<String, Any?>>(end - start)
                     val paths = ArrayList<String>(end - start)
@@ -46,22 +47,22 @@ internal class FileCacheScanStreamHandler(
                             "tracks" to chunk,
                             "paths" to paths,
                             "folders" to emptyList<String>(),
-                            "failureCount" to 0
+                            "failureCount" to 0,
+                            "complete" to false
                         )
                     )
                 }
-                if (!cancelled.get()) {
-                    send(
-                        hashMapOf(
-                            "sessionId" to sessionId,
-                            "type" to "done",
-                            "tracks" to emptyList<HashMap<String, Any?>>(),
-                            "paths" to emptyList<String>(),
-                            "folders" to emptyList<String>(),
-                            "failureCount" to 0
-                        )
+                send(
+                    hashMapOf(
+                        "sessionId" to sessionId,
+                        "type" to "done",
+                        "tracks" to emptyList<HashMap<String, Any?>>(),
+                        "paths" to emptyList<String>(),
+                        "folders" to emptyList<String>(),
+                        "failureCount" to scanResult.failureCount,
+                        "complete" to (scanResult.complete && !cancelled.get())
                     )
-                }
+                )
             } catch (e: Exception) {
                 if (!cancelled.get()) {
                     send(
@@ -73,7 +74,8 @@ internal class FileCacheScanStreamHandler(
                             "tracks" to emptyList<HashMap<String, Any?>>(),
                             "paths" to emptyList<String>(),
                             "folders" to emptyList<String>(),
-                            "failureCount" to 1
+                            "failureCount" to 1,
+                            "complete" to false
                         )
                     )
                 }
@@ -101,4 +103,3 @@ internal class FileCacheScanStreamHandler(
         }
     }
 }
-

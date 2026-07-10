@@ -38,6 +38,24 @@ class _DataSupportPageState extends State<DataSupportPage> {
     return File(path.join(exportDirectory.path, name));
   }
 
+  Future<void> _deleteTemporaryFile(File file) async {
+    try {
+      if (await file.exists()) {
+        await file.delete();
+      }
+      final parent = file.parent;
+      if (await parent.exists() && await parent.list().isEmpty) {
+        await parent.delete();
+      }
+    } catch (error, stackTrace) {
+      AppLogService.warning(
+        'temporary_export_cleanup_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+  }
+
   String _timestamp() {
     final now = DateTime.now();
     String two(int value) => value.toString().padLeft(2, '0');
@@ -54,22 +72,26 @@ class _DataSupportPageState extends State<DataSupportPage> {
         final temporary = await _temporaryFile(
           'NamelessAudio-${_timestamp()}.nalbackup',
         );
-        final backup = await _backupService.exportBackup(temporary.path);
-        final savedPath = await FilePicker.platform.saveFile(
-          dialogTitle: dialogTitle,
-          fileName: path.basename(backup.path),
-          type: FileType.custom,
-          allowedExtensions: const <String>['nalbackup'],
-          bytes: await backup.readAsBytes(),
-          lockParentWindow: true,
-        );
-        if (savedPath != null && mounted) {
-          _showSuccess(
-            'backup_exported',
-            titleKey: 'operation_completed',
-            detail: savedPath,
-            duration: const Duration(seconds: 5),
+        try {
+          final backup = await _backupService.exportBackup(temporary.path);
+          final savedPath = await FilePicker.platform.saveFile(
+            dialogTitle: dialogTitle,
+            fileName: path.basename(backup.path),
+            type: FileType.custom,
+            allowedExtensions: const <String>['nalbackup'],
+            bytes: await backup.readAsBytes(),
+            lockParentWindow: true,
           );
+          if (savedPath != null && mounted) {
+            _showSuccess(
+              'backup_exported',
+              titleKey: 'operation_completed',
+              detail: savedPath,
+              duration: const Duration(seconds: 5),
+            );
+          }
+        } finally {
+          await _deleteTemporaryFile(temporary);
         }
       },
     );
@@ -77,6 +99,8 @@ class _DataSupportPageState extends State<DataSupportPage> {
 
   Future<void> _restoreBackup() async {
     final i18n = context.read<AppLanguageProvider>();
+    final audioProvider = context.read<AudioProvider>();
+    final asmrController = context.read<AsmrLibraryController>();
     final confirmed = await showConfirmActionDialog(
       context: context,
       title: i18n.tr('restore_backup'),
@@ -102,46 +126,45 @@ class _DataSupportPageState extends State<DataSupportPage> {
         final temporary = await _temporaryFile(
           'restore-${_timestamp()}.nalbackup',
         );
-        final bytes = selected.bytes;
-        if (bytes != null) {
-          await temporary.writeAsBytes(bytes, flush: true);
-        } else if (selected.path != null) {
-          await File(selected.path!).copy(temporary.path);
-        } else {
-          throw const FileSystemException('Selected backup is not readable.');
-        }
+        try {
+          final bytes = selected.bytes;
+          if (bytes != null) {
+            await temporary.writeAsBytes(bytes, flush: true);
+          } else if (selected.path != null) {
+            await File(selected.path!).copy(temporary.path);
+          } else {
+            throw const FileSystemException('Selected backup is not readable.');
+          }
 
-        final result = await _backupService.restoreBackup(temporary.path);
-        if (!mounted) return;
-        if (!result.isValid) {
+          final result = await _backupService.restoreBackup(temporary.path);
+          if (!result.isValid) {
+            if (!mounted) return;
+            showAppSnackBar(
+              context,
+              i18n.tr('backup_invalid_next_step'),
+              tone: AppFeedbackTone.destructive,
+              title: i18n.tr('backup_invalid'),
+              icon: Icons.error_outline_rounded,
+              actionLabel: i18n.tr('export_diagnostics'),
+              onAction: _exportDiagnostics,
+              duration: const Duration(seconds: 6),
+            );
+            return;
+          }
+          await audioProvider.reloadPersistedStateAfterBackupRestore();
+          await asmrController.reloadPersistedStateAfterBackupRestore();
+          if (!mounted) return;
           showAppSnackBar(
             context,
-            i18n.tr('backup_invalid_next_step'),
-            tone: AppFeedbackTone.destructive,
-            title: i18n.tr('backup_invalid'),
-            icon: Icons.error_outline_rounded,
-            actionLabel: i18n.tr('export_diagnostics'),
-            onAction: _exportDiagnostics,
-            duration: const Duration(seconds: 6),
+            i18n.tr('backup_restored_loaded'),
+            tone: AppFeedbackTone.success,
+            title: i18n.tr('operation_completed'),
+            icon: Icons.check_circle_outline_rounded,
+            duration: const Duration(seconds: 4),
           );
-          return;
+        } finally {
+          await _deleteTemporaryFile(temporary);
         }
-        await context
-            .read<AudioProvider>()
-            .reloadPersistedStateAfterBackupRestore();
-        if (!mounted) return;
-        await context
-            .read<AsmrLibraryController>()
-            .reloadPersistedStateAfterBackupRestore();
-        if (!mounted) return;
-        showAppSnackBar(
-          context,
-          i18n.tr('backup_restored_loaded'),
-          tone: AppFeedbackTone.success,
-          title: i18n.tr('operation_completed'),
-          icon: Icons.check_circle_outline_rounded,
-          duration: const Duration(seconds: 4),
-        );
       },
     );
   }
@@ -157,22 +180,26 @@ class _DataSupportPageState extends State<DataSupportPage> {
         final temporary = await _temporaryFile(
           'NamelessAudio-diagnostic-${_timestamp()}.zip',
         );
-        final report = await _diagnosticService.exportReport(temporary.path);
-        final savedPath = await FilePicker.platform.saveFile(
-          dialogTitle: dialogTitle,
-          fileName: path.basename(report.path),
-          type: FileType.custom,
-          allowedExtensions: const <String>['zip'],
-          bytes: await report.readAsBytes(),
-          lockParentWindow: true,
-        );
-        if (savedPath != null && mounted) {
-          _showSuccess(
-            'diagnostics_exported',
-            titleKey: 'operation_completed',
-            detail: savedPath,
-            duration: const Duration(seconds: 5),
+        try {
+          final report = await _diagnosticService.exportReport(temporary.path);
+          final savedPath = await FilePicker.platform.saveFile(
+            dialogTitle: dialogTitle,
+            fileName: path.basename(report.path),
+            type: FileType.custom,
+            allowedExtensions: const <String>['zip'],
+            bytes: await report.readAsBytes(),
+            lockParentWindow: true,
           );
+          if (savedPath != null && mounted) {
+            _showSuccess(
+              'diagnostics_exported',
+              titleKey: 'operation_completed',
+              detail: savedPath,
+              duration: const Duration(seconds: 5),
+            );
+          }
+        } finally {
+          await _deleteTemporaryFile(temporary);
         }
       },
     );

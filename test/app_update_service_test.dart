@@ -78,6 +78,34 @@ void main() {
     expect(File('${file.path}.part').existsSync(), isFalse);
   });
 
+  test('concurrent callers share one update download', () async {
+    var assetRequests = 0;
+    server.listen((request) async {
+      if (request.uri.path == '/checksum') {
+        request.response.write('${sha256.convert(payload)}  $assetName');
+      } else {
+        assetRequests++;
+        await Future<void>.delayed(const Duration(milliseconds: 80));
+        request.response.add(payload);
+      }
+      await request.response.close();
+    });
+
+    final first = AppUpdateService.downloadUpdate(
+      info(checksumPath: 'checksum'),
+      onProgress: (_) {},
+    );
+    final second = AppUpdateService.downloadUpdate(
+      info(checksumPath: 'checksum'),
+      onProgress: (_) {},
+    );
+    final files = await Future.wait(<Future<File>>[first, second]);
+
+    expect(assetRequests, 1);
+    expect(files.first.path, files.last.path);
+    expect(await files.first.readAsBytes(), payload);
+  });
+
   test('refuses update without checksum asset', () async {
     await expectLater(
       AppUpdateService.downloadUpdate(info(), onProgress: (_) {}),

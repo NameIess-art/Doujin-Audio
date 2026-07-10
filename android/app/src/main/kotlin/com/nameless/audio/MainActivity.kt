@@ -15,6 +15,7 @@ class MainActivity : FlutterFragmentActivity() {
     }
 
     private var notificationsMethodChannel: MethodChannel? = null
+    private var fileCacheScanStreamHandler: FileCacheScanStreamHandler? = null
     private var pendingNotificationSessionId: String? = null
     private val subtitleOverlayCoordinator by lazy { SubtitleOverlayCoordinator(this) }
     private val audioPickerCoordinator by lazy { AudioPickerCoordinator(this) }
@@ -45,7 +46,9 @@ class MainActivity : FlutterFragmentActivity() {
         )
 
         val fileCacheOperations = FileCacheOperations(this)
+        fileCacheScanStreamHandler?.shutdown()
         val fileCacheScanStreamHandler = FileCacheScanStreamHandler(this, fileCacheOperations)
+        this.fileCacheScanStreamHandler = fileCacheScanStreamHandler
         EventChannel(messenger, PlatformChannelNames.FILE_CACHE_SCAN_EVENTS)
             .setStreamHandler(fileCacheScanStreamHandler)
         MethodChannel(messenger, PlatformChannelNames.FILE_CACHE)
@@ -74,6 +77,8 @@ class MainActivity : FlutterFragmentActivity() {
 
     override fun onDestroy() {
         notificationsMethodChannel = null
+        fileCacheScanStreamHandler?.shutdown()
+        fileCacheScanStreamHandler = null
         subtitleOverlayCoordinator.dispose()
         super.onDestroy()
     }

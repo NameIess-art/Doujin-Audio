@@ -56,6 +56,43 @@ void main() {
     expect(event.chunk.failureCount, 1);
   });
 
+  test('parses staged scan progress with a nullable total', () {
+    final known = FolderScanSessionEvent.fromPayload(<Object?, Object?>{
+      'sessionId': 'scan-3',
+      'generationId': 'scan-3',
+      'type': 'progress',
+      'stage': 'enumerating',
+      'processed': 120,
+      'total': 500,
+    });
+    final unknown = FolderScanSessionEvent.fromPayload(<Object?, Object?>{
+      'sessionId': 'scan-3',
+      'type': 'stageChanged',
+      'stage': 'preparing',
+      'processed': 0,
+    });
+
+    expect(known.isProgress, isTrue);
+    expect(known.generationId, 'scan-3');
+    expect(known.stage, FolderScanStage.enumerating);
+    expect(known.processed, 120);
+    expect(known.total, 500);
+    expect(unknown.isStageChanged, isTrue);
+    expect(unknown.total, isNull);
+  });
+
+  test('recognizes explicit completed cancelled and failed terminals', () {
+    FolderScanSessionEvent event(String type) =>
+        FolderScanSessionEvent.fromPayload(<Object?, Object?>{
+          'sessionId': 'scan-terminal',
+          'type': type,
+        });
+
+    expect(event('completed').isDone, isTrue);
+    expect(event('cancelled').isCancelled, isTrue);
+    expect(event('failed').isError, isTrue);
+  });
+
   test('scan results are complete only when enumeration is proven clean', () {
     const complete = NativeScanResult.success(
       <ScannedTrack>[],

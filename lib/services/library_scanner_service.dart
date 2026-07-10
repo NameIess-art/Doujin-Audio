@@ -39,6 +39,20 @@ class LibraryScanMergeContext {
   bool isExcluded(String entityPath) => exclusionMatcher.isExcluded(entityPath);
 }
 
+class _IncrementalNativeImport {
+  const _IncrementalNativeImport({required this.added, required this.result});
+
+  final int added;
+  final NativeScanResult result;
+}
+
+class _FolderImportOutcome {
+  const _FolderImportOutcome({required this.added, required this.complete});
+
+  final int added;
+  final bool complete;
+}
+
 class LibraryScannerService {
   LibraryScannerService({FileCachePlatformGateway? platformGateway})
     : _platformGateway = platformGateway ?? FileCachePlatformGateway.instance;
@@ -49,6 +63,35 @@ class LibraryScannerService {
 
   final FileCachePlatformGateway _platformGateway;
   DateTime? _lastBatchFlushTime;
+
+  void _rollbackScanAdditions({
+    required AudioProvider provider,
+    required Set<String> existingTrackPaths,
+    required Map<String, Set<String>> existingEntryPathsByRoot,
+  }) {
+    provider.removeTracksByPath(
+      provider.library
+          .where(
+            (track) => !existingTrackPaths.contains(
+              PathMatcher.normalize(track.path),
+            ),
+          )
+          .map((track) => track.path),
+    );
+    for (final entry in existingEntryPathsByRoot.entries) {
+      provider.removeLibraryEntriesByPaths(
+        entry.key,
+        provider
+            .libraryEntriesForLibrary(entry.key)
+            .where(
+              (candidate) => !entry.value.contains(
+                PathMatcher.normalize(candidate.path),
+              ),
+            )
+            .map((candidate) => candidate.path),
+      );
+    }
+  }
 
   bool _pathsOverlap(String first, String second) {
     return PathMatcher.isWithinOrEqual(first, second) ||
@@ -118,16 +161,38 @@ class LibraryScannerService {
       return;
     }
 
-    provider.setScanning(true, background: true, notify: false);
+    final generation = provider.tryBeginScan(
+      source: _displaySourceName(
+        watchedLibraries.isNotEmpty
+            ? watchedLibraries.first
+            : watchedFolders.first,
+      ),
+      background: true,
+    );
+    if (generation == 0) return;
+    final existingTrackPaths = provider.library
+        .map((track) => PathMatcher.normalize(track.path))
+        .toSet();
+    final rollbackRoots = <String>{...watchedLibraries, ...watchedFolders};
+    final existingEntryPathsByRoot = <String, Set<String>>{
+      for (final root in rollbackRoots)
+        root: provider
+            .libraryEntriesForLibrary(root)
+            .map((entry) => PathMatcher.normalize(entry.path))
+            .toSet(),
+    };
     var totalAdded = 0;
     var chunkDuplicateCount = 0;
     var chunkFailureCount = 0;
     var chunkIndex = 0;
     var batchOpen = true;
     var batchStarted = false;
+    final deferredCleanupChunks = <LibraryRefreshChunk>[];
 
     Future<void> applyFolderResult(LibraryRefreshFolderResult result) async {
-      if (!provider.isScanning || !batchOpen || result.chunks.isEmpty) {
+      if (!provider.isScanGenerationActive(generation) ||
+          !batchOpen ||
+          result.chunks.isEmpty) {
         return;
       }
       if (!batchStarted) {
@@ -135,20 +200,19 @@ class LibraryScannerService {
         batchStarted = true;
       }
       for (final chunk in result.chunks) {
-        if (!provider.isScanning || !batchOpen) break;
+        if (!provider.isScanGenerationActive(generation) || !batchOpen) break;
+        if (chunk.removeWatchedFolders.isNotEmpty ||
+            chunk.addWatchedFolders.isNotEmpty ||
+            chunk.removeTrackPaths.isNotEmpty ||
+            chunk.removeEntryPaths.isNotEmpty) {
+          deferredCleanupChunks.add(chunk);
+        }
         totalAdded += provider.applyStagedLibraryRefreshChunk(
           sourceFolderPath: chunk.sourceFolderPath,
           libraryRoot: chunk.libraryRoot,
           tracks: chunk.tracks,
           folderPaths: chunk.folderPaths,
-          removeWatchedFolders: chunk.removeWatchedFolders,
-          addWatchedFolders: chunk.addWatchedFolders,
-          removeTrackPaths: chunk.removeTrackPaths,
-          removeEntryPaths: chunk.removeEntryPaths,
         );
-        for (final childFolder in chunk.addWatchedFolders) {
-          unawaited(_prefillRjDetailForFolder(provider, childFolder));
-        }
         chunkDuplicateCount += chunk.duplicateCount;
         chunkFailureCount += chunk.failureCount;
         chunkIndex++;
@@ -157,6 +221,7 @@ class LibraryScannerService {
           foundCount: totalAdded,
           duplicateCount: chunkDuplicateCount,
           failureCount: chunkFailureCount,
+          generation: generation,
         );
         if (chunkIndex % 2 == 0) {
           batchOpen = await provider.flushStagedLibraryRefreshChunk();
@@ -168,7 +233,9 @@ class LibraryScannerService {
       final foldersToRefresh = LinkedHashSet<String>.from(watchedFolders);
       try {
         for (final libraryRoot in watchedLibraries) {
-          if (!provider.isScanning || !batchOpen) break;
+          if (!provider.isScanGenerationActive(generation) || !batchOpen) {
+            break;
+          }
           foldersToRefresh.removeWhere(
             (folderPath) =>
                 PathMatcher.isWithinOrEqual(folderPath, libraryRoot),
@@ -178,6 +245,7 @@ class LibraryScannerService {
               libraryRoot: libraryRoot,
               provider: provider,
               i18n: i18n,
+              generation: generation,
             ),
           );
         }
@@ -185,7 +253,9 @@ class LibraryScannerService {
         final totalFolders = foldersToRefresh.length;
         var processedFolders = 0;
         for (final folderPath in foldersToRefresh) {
-          if (!provider.isScanning || !batchOpen) break;
+          if (!provider.isScanGenerationActive(generation) || !batchOpen) {
+            break;
+          }
           processedFolders++;
           final libraryRoot = watchedLibraries.firstWhere(
             (root) => PathMatcher.isWithinOrEqual(folderPath, root),
@@ -200,16 +270,42 @@ class LibraryScannerService {
               provider: provider,
               i18n: i18n,
               progressPrefix: '[$processedFolders/$totalFolders]',
+              generation: generation,
             ),
           );
         }
       } finally {
         if (batchStarted && batchOpen) {
+          if (provider.isScanGenerationActive(generation)) {
+            for (final chunk in deferredCleanupChunks) {
+              provider.applyStagedLibraryRefreshChunk(
+                sourceFolderPath: chunk.sourceFolderPath,
+                libraryRoot: chunk.libraryRoot,
+                removeWatchedFolders: chunk.removeWatchedFolders,
+                addWatchedFolders: chunk.addWatchedFolders,
+                removeTrackPaths: chunk.removeTrackPaths,
+                removeEntryPaths: chunk.removeEntryPaths,
+              );
+              for (final childFolder in chunk.addWatchedFolders) {
+                unawaited(_prefillRjDetailForFolder(provider, childFolder));
+              }
+            }
+          }
           await provider.finishStagedLibraryRefresh();
         }
       }
     } finally {
-      provider.setScanning(false, notify: false);
+      final wasCancelled = !provider.isScanGenerationActive(generation);
+      if (wasCancelled) {
+        provider.beginLibraryBatch();
+        _rollbackScanAdditions(
+          provider: provider,
+          existingTrackPaths: existingTrackPaths,
+          existingEntryPathsByRoot: existingEntryPathsByRoot,
+        );
+        await provider.endLibraryBatch();
+      }
+      provider.finishScan(generation);
 
       if (!silent || forceShowResult || totalAdded > 0) {
         showSnack(
@@ -225,6 +321,7 @@ class LibraryScannerService {
     required String libraryRoot,
     required AudioProvider provider,
     required AppLanguageProvider i18n,
+    required int generation,
   }) async {
     final childFolderResult = await _listImmediateChildFoldersResult(
       libraryRoot,
@@ -247,6 +344,7 @@ class LibraryScannerService {
       addWatchedFolders: visibleChildFolders,
       additionalFailureCount: childFolderResult.complete ? 0 : 1,
       progressPrefix: '',
+      generation: generation,
     );
   }
 
@@ -256,6 +354,7 @@ class LibraryScannerService {
     required AudioProvider provider,
     required AppLanguageProvider i18n,
     required String progressPrefix,
+    required int generation,
   }) {
     return _scanFolderForRefresh(
       sourceFolderPath: folderPath,
@@ -263,6 +362,7 @@ class LibraryScannerService {
       provider: provider,
       i18n: i18n,
       progressPrefix: progressPrefix,
+      generation: generation,
     );
   }
 
@@ -277,6 +377,7 @@ class LibraryScannerService {
     List<String> addWatchedFolders = const <String>[],
     int additionalFailureCount = 0,
     required String progressPrefix,
+    required int generation,
   }) async {
     final nativeScan = await _scanFolderViaNative(sourceFolderPath);
     if (nativeScan.ok) {
@@ -295,6 +396,7 @@ class LibraryScannerService {
         allowRemoval: nativeScan.isComplete && additionalFailureCount == 0,
         failureCount: nativeScan.failureCount + additionalFailureCount,
         progressPrefix: progressPrefix,
+        generation: generation,
       );
     }
 
@@ -303,7 +405,7 @@ class LibraryScannerService {
       final payload = await Isolate.run(
         () => _scanFileSystemFolderPayload(sourceFolderPath),
       );
-      if (!provider.isScanning) {
+      if (!provider.isScanGenerationActive(generation)) {
         return LibraryRefreshFolderResult(
           sourceFolderPath: sourceFolderPath,
           libraryRoot: libraryRoot,
@@ -342,6 +444,7 @@ class LibraryScannerService {
         allowRemoval: failureCount == 0,
         failureCount: failureCount,
         progressPrefix: progressPrefix,
+        generation: generation,
       );
     }
 
@@ -378,6 +481,7 @@ class LibraryScannerService {
     required bool promoteRootTracksToSingles,
     required bool allowRemoval,
     required String progressPrefix,
+    required int generation,
     int failureCount = 0,
   }) async {
     final mergeContext = LibraryScanMergeContext(
@@ -398,10 +502,8 @@ class LibraryScannerService {
       retainedEntryPaths: retainedEntryPaths,
       entrySnapshot: mergeContext.entrySnapshot,
     );
-    final result = await Isolate.run(
-      () => processScannedTracksInIsolate(payload),
-    );
-    if (!provider.isScanning) {
+    final result = await compute(processScannedTracksInIsolate, payload);
+    if (!provider.isScanGenerationActive(generation)) {
       return LibraryRefreshFolderResult(
         sourceFolderPath: sourceFolderPath,
         libraryRoot: libraryRoot,
@@ -451,6 +553,7 @@ class LibraryScannerService {
     bool promoteRootTracksToSingles = false,
     AppLanguageProvider? i18n,
     Future<bool> Function()? onChunkCommitted,
+    int? generation,
   }) async {
     if (scannedTracks.isEmpty) {
       return 0;
@@ -475,11 +578,13 @@ class LibraryScannerService {
       exclusionMatcher: mergeContext?.exclusionMatcher,
     );
 
-    final result = await Isolate.run(
-      () => processScannedTracksInIsolate(payload),
-    );
+    final result = await compute(processScannedTracksInIsolate, payload);
 
-    if (!provider.isScanning) return 0;
+    bool isActive() => generation == null
+        ? provider.isScanning
+        : provider.isScanGenerationActive(generation);
+
+    if (!isActive()) return 0;
 
     var added = 0;
     final trackBatch = result.trackBatch;
@@ -499,7 +604,7 @@ class LibraryScannerService {
       const chunkSize = 200;
       final stopwatch = Stopwatch()..start();
       for (var i = 0; i < trackBatch.length; i += chunkSize) {
-        if (!provider.isScanning) break;
+        if (!isActive()) break;
         final end = (i + chunkSize < trackBatch.length)
             ? i + chunkSize
             : trackBatch.length;
@@ -515,6 +620,8 @@ class LibraryScannerService {
           foundCount: baseFoundCount + added,
           duplicateCount: baseDuplicateCount + duplicates,
           failureCount: baseFailureCount,
+          generation: generation,
+          stage: FolderScanStage.merging,
         );
 
         if (onChunkCommitted != null) {
@@ -532,6 +639,8 @@ class LibraryScannerService {
         foundCount: baseFoundCount,
         duplicateCount: baseDuplicateCount + duplicates,
         failureCount: baseFailureCount,
+        generation: generation,
+        stage: FolderScanStage.merging,
       );
     }
 
@@ -545,21 +654,31 @@ class LibraryScannerService {
     bool promoteRootTracksToSingles = false,
     AppLanguageProvider? i18n,
     Future<bool> Function()? onChunkCommitted,
+    int? generation,
   }) async {
+    bool isActive() => generation == null
+        ? provider.isScanning
+        : provider.isScanGenerationActive(generation);
     if (PathMatcher.isContentUri(folderPath)) {
-      provider.setScanProgress(failureCount: provider.scanFailureCount + 1);
+      provider.setScanProgress(
+        failureCount: provider.scanFailureCount + 1,
+        generation: generation,
+      );
       return 0;
     }
     final folder = Directory(folderPath);
     if (!await folder.exists()) {
-      provider.setScanProgress(failureCount: provider.scanFailureCount + 1);
+      provider.setScanProgress(
+        failureCount: provider.scanFailureCount + 1,
+        generation: generation,
+      );
       return 0;
     }
 
     final payload = await Isolate.run(
       () => _scanFileSystemFolderPayload(folderPath),
     );
-    if (!provider.isScanning) return 0;
+    if (!isActive()) return 0;
 
     final scannedTracks =
         ((payload['tracks'] as List<Object?>?) ?? const <Object?>[])
@@ -602,11 +721,12 @@ class LibraryScannerService {
       exclusionMatcher: mergeContext?.exclusionMatcher,
     );
 
-    final result = await Isolate.run(
-      () => processScannedTracksInIsolate(isolatePayload),
+    final result = await compute(
+      processScannedTracksInIsolate,
+      isolatePayload,
     );
 
-    if (!provider.isScanning) return 0;
+    if (!isActive()) return 0;
 
     final trackBatch = result.trackBatch;
     final entryBatch = result.entryBatch;
@@ -625,7 +745,7 @@ class LibraryScannerService {
       const chunkSize = 200;
       final stopwatch = Stopwatch()..start();
       for (var i = 0; i < trackBatch.length; i += chunkSize) {
-        if (!provider.isScanning) break;
+        if (!isActive()) break;
         final end = (i + chunkSize < trackBatch.length)
             ? i + chunkSize
             : trackBatch.length;
@@ -641,6 +761,8 @@ class LibraryScannerService {
           foundCount: baseFoundCount + added,
           duplicateCount: baseDuplicateCount + duplicates,
           failureCount: baseFailureCount + failures,
+          generation: generation,
+          stage: FolderScanStage.merging,
         );
 
         if (onChunkCommitted != null) {
@@ -658,10 +780,12 @@ class LibraryScannerService {
         foundCount: baseFoundCount,
         duplicateCount: baseDuplicateCount + duplicates,
         failureCount: baseFailureCount + failures,
+        generation: generation,
+        stage: FolderScanStage.merging,
       );
     }
 
-    if (provider.isScanning && failures == 0) {
+    if (isActive() && failures == 0) {
       provider.removeTracksDeletedFromFolder(folderPath, discoveredPaths);
       if (libraryRoot != null) {
         provider.removeLibraryEntriesDeletedFromFolder(
@@ -674,6 +798,7 @@ class LibraryScannerService {
         foundCount: baseFoundCount + added,
         duplicateCount: baseDuplicateCount + duplicates,
         failureCount: baseFailureCount + failures,
+        generation: generation,
       );
     }
     return added;
@@ -683,52 +808,75 @@ class LibraryScannerService {
     return _platformGateway.scanFolder(folderPath);
   }
 
-  Future<int?> _importNativeFolderChunkedIncrementally({
+  Future<_IncrementalNativeImport?> _importNativeFolderChunkedIncrementally({
     required String sourceFolderPath,
     required AudioProvider provider,
     required String? libraryRoot,
     required AppLanguageProvider i18n,
     bool promoteRootTracksToSingles = false,
     Future<bool> Function()? onChunkCommitted,
+    required int generation,
   }) async {
     var added = 0;
     var failures = 0;
     final baseFailureCount = provider.scanFailureCount;
-    final result = await _platformGateway.scanFolderChunked(sourceFolderPath, (
-      chunk,
-    ) async {
-      if (!provider.isScanning) return false;
-      failures += chunk.failureCount;
-      if (chunk.tracks.isEmpty) {
-        if (failures > 0) {
-          provider.setScanProgress(failureCount: baseFailureCount + failures);
+    final result = await _platformGateway.scanFolderChunked(
+      sourceFolderPath,
+      (chunk) async {
+        if (!provider.isScanGenerationActive(generation)) return false;
+        failures += chunk.failureCount;
+        if (chunk.tracks.isEmpty) {
+          if (failures > 0) {
+            provider.setScanProgress(
+              failureCount: baseFailureCount + failures,
+              generation: generation,
+            );
+          }
+          return provider.isScanGenerationActive(generation);
         }
-        return provider.isScanning;
-      }
-      added += await _mergeScannedTracksIncrementally(
-        sourceFolderPath: sourceFolderPath,
-        provider: provider,
-        scannedTracks: chunk.tracks,
-        libraryRoot: libraryRoot,
-        promoteRootTracksToSingles: promoteRootTracksToSingles,
-        i18n: i18n,
-        onChunkCommitted: onChunkCommitted,
-      );
-      if (failures > 0) {
-        provider.setScanProgress(failureCount: baseFailureCount + failures);
-      }
-      return provider.isScanning;
-    });
+        added += await _mergeScannedTracksIncrementally(
+          sourceFolderPath: sourceFolderPath,
+          provider: provider,
+          scannedTracks: chunk.tracks,
+          libraryRoot: libraryRoot,
+          promoteRootTracksToSingles: promoteRootTracksToSingles,
+          i18n: i18n,
+          onChunkCommitted: onChunkCommitted,
+          generation: generation,
+        );
+        if (failures > 0) {
+          provider.setScanProgress(
+            failureCount: baseFailureCount + failures,
+            generation: generation,
+          );
+        }
+        return provider.isScanGenerationActive(generation);
+      },
+      onProgress: (event) {
+        if (!provider.isScanGenerationActive(generation)) return;
+        provider.setScanProgress(
+          generation: generation,
+          stage: event.stage,
+          processed: event.processed,
+          total: event.total,
+        );
+      },
+    );
     if (result.notSupported) return null;
     if (!result.ok) {
-      provider.setScanProgress(failureCount: provider.scanFailureCount + 1);
+      provider.setScanProgress(
+        failureCount: provider.scanFailureCount + 1,
+        generation: generation,
+      );
       debugPrint(
         '[library-import] native chunked scan failed for $sourceFolderPath '
         'code=${result.errorCode} message=${result.errorMessage}',
       );
-      return 0;
+      return _IncrementalNativeImport(added: 0, result: result);
     }
-    if (!provider.isScanning) return added;
+    if (!provider.isScanGenerationActive(generation)) {
+      return _IncrementalNativeImport(added: added, result: result);
+    }
     if (result.isComplete) {
       provider.removeTracksDeletedFromFolder(sourceFolderPath, result.paths);
       if (libraryRoot != null) {
@@ -739,16 +887,20 @@ class LibraryScannerService {
         );
       }
     }
-    return added;
+    return _IncrementalNativeImport(added: added, result: result);
   }
 
-  Future<int> _importLibraryWithSingleScan(
+  Future<_FolderImportOutcome> _importLibraryWithSingleScan(
     String libraryRoot,
     AudioProvider provider,
     AppLanguageProvider i18n, {
     Future<bool> Function()? onChunkCommitted,
+    required int generation,
   }) async {
-    provider.setScanProgress(currentFolder: _displaySourceName(libraryRoot));
+    provider.setScanProgress(
+      currentFolder: _displaySourceName(libraryRoot),
+      generation: generation,
+    );
     final chunkedAdded = await _importNativeFolderChunkedIncrementally(
       sourceFolderPath: libraryRoot,
       provider: provider,
@@ -756,29 +908,46 @@ class LibraryScannerService {
       promoteRootTracksToSingles: true,
       i18n: i18n,
       onChunkCommitted: onChunkCommitted,
+      generation: generation,
     );
     if (chunkedAdded != null) {
-      return chunkedAdded;
+      return _FolderImportOutcome(
+        added: chunkedAdded.added,
+        complete:
+            provider.isScanGenerationActive(generation) &&
+            chunkedAdded.result.isComplete,
+      );
     }
 
     final nativeScan = await _scanFolderViaNative(libraryRoot);
     if (!nativeScan.ok) {
       if (nativeScan.notSupported || !PathMatcher.isContentUri(libraryRoot)) {
-        return _importFolderIncrementally(
+        final failuresBefore = provider.scanFailureCount;
+        final added = await _importFolderIncrementally(
           libraryRoot,
           provider,
           libraryRoot,
           promoteRootTracksToSingles: true,
           i18n: i18n,
           onChunkCommitted: onChunkCommitted,
+          generation: generation,
+        );
+        return _FolderImportOutcome(
+          added: added,
+          complete:
+              provider.isScanGenerationActive(generation) &&
+              provider.scanFailureCount == failuresBefore,
         );
       }
-      provider.setScanProgress(failureCount: provider.scanFailureCount + 1);
+      provider.setScanProgress(
+        failureCount: provider.scanFailureCount + 1,
+        generation: generation,
+      );
       debugPrint(
         '[library-import] native scan failed for content uri: $libraryRoot '
         'code=${nativeScan.errorCode} message=${nativeScan.errorMessage}',
       );
-      return 0;
+      return const _FolderImportOutcome(added: 0, complete: false);
     }
 
     final added = await _mergeScannedTracksIncrementally(
@@ -789,6 +958,7 @@ class LibraryScannerService {
       promoteRootTracksToSingles: true,
       i18n: i18n,
       onChunkCommitted: onChunkCommitted,
+      generation: generation,
     );
     final scannedPaths = nativeScan.paths;
     if (nativeScan.isComplete) {
@@ -799,7 +969,11 @@ class LibraryScannerService {
         scannedPaths,
       );
     }
-    return added;
+    return _FolderImportOutcome(
+      added: added,
+      complete:
+          provider.isScanGenerationActive(generation) && nativeScan.isComplete,
+    );
   }
 
   Future<List<String>> _listImmediateChildFolders(String folderPath) async {
@@ -1073,22 +1247,46 @@ class LibraryScannerService {
       }
     }
 
-    provider.setScanning(true);
+    final generation = provider.tryBeginScan(
+      source: _displaySourceName(folderPath),
+    );
+    if (generation == 0) {
+      showSnack(i18n.tr('scanning_title'));
+      return;
+    }
+    final existingTrackPaths = provider.library
+        .map((track) => PathMatcher.normalize(track.path))
+        .toSet();
+    final existingEntryPaths = provider
+        .libraryEntriesForLibrary(normalizedFolderPath)
+        .map((entry) => PathMatcher.normalize(entry.path))
+        .toSet();
     provider.beginLibraryBatch();
 
     var added = 0;
+    var completed = false;
 
     try {
-      provider.setScanProgress(currentFolder: _displaySourceName(folderPath));
-      final chunkedAdded = await _importNativeFolderChunkedIncrementally(
+      provider.setScanProgress(
+        currentFolder: _displaySourceName(folderPath),
+        generation: generation,
+      );
+      final chunkedImport = await _importNativeFolderChunkedIncrementally(
         sourceFolderPath: folderPath,
         provider: provider,
         libraryRoot: normalizedFolderPath,
         i18n: i18n,
-        onChunkCommitted: () => _flushRefreshBatch(provider),
+        onChunkCommitted: () async {
+          if (!provider.isScanGenerationActive(generation)) return false;
+          return _flushRefreshBatch(provider);
+        },
+        generation: generation,
       );
-      if (chunkedAdded != null) {
-        added = chunkedAdded;
+      if (chunkedImport != null) {
+        added = chunkedImport.added;
+        completed =
+            provider.isScanGenerationActive(generation) &&
+            chunkedImport.result.isComplete;
       } else {
         final nativeScan = await _scanFolderViaNative(folderPath);
         if (nativeScan.ok) {
@@ -1097,18 +1295,36 @@ class LibraryScannerService {
             provider: provider,
             scannedTracks: nativeScan.tracks,
             libraryRoot: normalizedFolderPath,
-            onChunkCommitted: () => _flushRefreshBatch(provider),
+            onChunkCommitted: () async {
+              if (!provider.isScanGenerationActive(generation)) return false;
+              return _flushRefreshBatch(provider);
+            },
+            generation: generation,
           );
+          completed =
+              provider.isScanGenerationActive(generation) &&
+              nativeScan.isComplete;
         } else if (nativeScan.notSupported ||
             !PathMatcher.isContentUri(folderPath)) {
+          final failuresBefore = provider.scanFailureCount;
           added = await _importFolderIncrementally(
             folderPath,
             provider,
             normalizedFolderPath,
-            onChunkCommitted: () => _flushRefreshBatch(provider),
+            onChunkCommitted: () async {
+              if (!provider.isScanGenerationActive(generation)) return false;
+              return _flushRefreshBatch(provider);
+            },
+            generation: generation,
           );
+          completed =
+              provider.isScanGenerationActive(generation) &&
+              provider.scanFailureCount == failuresBefore;
         } else {
-          provider.setScanProgress(failureCount: provider.scanFailureCount + 1);
+          provider.setScanProgress(
+            failureCount: provider.scanFailureCount + 1,
+            generation: generation,
+          );
           debugPrint(
             '[library-import] native scan failed for content uri: $folderPath '
             'code=${nativeScan.errorCode} message=${nativeScan.errorMessage}',
@@ -1116,16 +1332,38 @@ class LibraryScannerService {
         }
       }
     } finally {
+      completed = completed && provider.isScanGenerationActive(generation);
+      if (!completed) {
+        _rollbackScanAdditions(
+          provider: provider,
+          existingTrackPaths: existingTrackPaths,
+          existingEntryPathsByRoot: <String, Set<String>>{
+            normalizedFolderPath: existingEntryPaths,
+          },
+        );
+      }
       await provider.endLibraryBatch();
-      provider.addWatchedFolder(normalizedFolderPath, notify: false);
-      provider.recordLibraryEntriesForTracks(
-        normalizedFolderPath,
-        const <MusicTrack>[],
-      );
-      await _prefillRjDetailForFolder(provider, normalizedFolderPath);
-      provider.setScanning(false);
+      if (completed) {
+        provider.setScanProgress(
+          generation: generation,
+          stage: FolderScanStage.saving,
+        );
+        provider.addWatchedFolder(normalizedFolderPath, notify: false);
+        provider.recordLibraryEntriesForTracks(
+          normalizedFolderPath,
+          const <MusicTrack>[],
+        );
+      }
+      provider.finishScan(generation);
+      if (completed) {
+        unawaited(_prefillRjDetailForFolder(provider, normalizedFolderPath));
+      }
     }
-    showSnack(i18n.tr('import_done_added', {'count': added}));
+    showSnack(
+      completed
+          ? i18n.tr('import_done_added', {'count': added})
+          : i18n.tr('scan_failed_next_step'),
+    );
   }
 
   Future<void> addLibrary({
@@ -1158,9 +1396,6 @@ class LibraryScannerService {
     void Function(String) showSnack,
   ) async {
     final normalizedFolderPath = PathMatcher.normalize(folderPath);
-    final childFolders = await _listImmediateChildFolders(normalizedFolderPath);
-    final importTargets = childFolders;
-
     final promotedFolders = _watchedFoldersToPromote(
       provider,
       normalizedFolderPath,
@@ -1175,42 +1410,93 @@ class LibraryScannerService {
       showSnack(i18n.tr('library_item_exists'));
       return;
     }
-    for (final folderPath in promotedFolders) {
-      provider.removeWatchedFolder(folderPath, notify: false);
-    }
-
-    provider.addWatchedLibrary(normalizedFolderPath, notify: false);
-    provider.recordLibraryEntriesForTracks(
-      normalizedFolderPath,
-      const <MusicTrack>[],
-      folderPaths: childFolders,
+    final generation = provider.tryBeginScan(
+      source: _displaySourceName(normalizedFolderPath),
     );
-    provider.setScanning(true);
+    if (generation == 0) {
+      showSnack(i18n.tr('scanning_title'));
+      return;
+    }
+    final childFolders = await _listImmediateChildFolders(normalizedFolderPath);
+    final importTargets = childFolders;
+    final existingTrackPaths = provider.library
+        .map((track) => PathMatcher.normalize(track.path))
+        .toSet();
+    final existingEntryPaths = provider
+        .libraryEntriesForLibrary(normalizedFolderPath)
+        .map((entry) => PathMatcher.normalize(entry.path))
+        .toSet();
     provider.beginLibraryBatch();
     var added = 0;
+    var completed = false;
     try {
-      added = await _importLibraryWithSingleScan(
+      final outcome = await _importLibraryWithSingleScan(
         normalizedFolderPath,
         provider,
         i18n,
-        onChunkCommitted: () => _flushRefreshBatch(provider),
+        onChunkCommitted: () async {
+          if (!provider.isScanGenerationActive(generation)) return false;
+          return _flushRefreshBatch(provider);
+        },
+        generation: generation,
       );
-      for (final childFolder in importTargets) {
-        if (provider.isLibraryPathExcluded(normalizedFolderPath, childFolder)) {
-          continue;
+      added = outcome.added;
+      completed = outcome.complete;
+      if (completed) {
+        provider.setScanProgress(
+          generation: generation,
+          stage: FolderScanStage.saving,
+        );
+        for (final folderPath in promotedFolders) {
+          provider.removeWatchedFolder(folderPath, notify: false);
         }
-        provider.addWatchedFolder(childFolder, notify: false);
-        await _prefillRjDetailForFolder(provider, childFolder);
+        provider.addWatchedLibrary(normalizedFolderPath, notify: false);
+        provider.recordLibraryEntriesForTracks(
+          normalizedFolderPath,
+          const <MusicTrack>[],
+          folderPaths: childFolders,
+        );
+        for (final childFolder in importTargets) {
+          if (provider.isLibraryPathExcluded(
+            normalizedFolderPath,
+            childFolder,
+          )) {
+            continue;
+          }
+          provider.addWatchedFolder(childFolder, notify: false);
+        }
       }
     } finally {
+      completed = completed && provider.isScanGenerationActive(generation);
+      if (!completed) {
+        _rollbackScanAdditions(
+          provider: provider,
+          existingTrackPaths: existingTrackPaths,
+          existingEntryPathsByRoot: <String, Set<String>>{
+            normalizedFolderPath: existingEntryPaths,
+          },
+        );
+      }
       await provider.endLibraryBatch();
-      provider.setScanning(false);
+      provider.finishScan(generation);
+      if (completed) {
+        for (final childFolder in importTargets) {
+          if (!provider.isLibraryPathExcluded(
+            normalizedFolderPath,
+            childFolder,
+          )) {
+            unawaited(_prefillRjDetailForFolder(provider, childFolder));
+          }
+        }
+      }
     }
     showSnack(
-      i18n.tr('import_library_done', {
-        'count': added,
-        'folderCount': importTargets.length,
-      }),
+      completed
+          ? i18n.tr('import_library_done', {
+              'count': added,
+              'folderCount': importTargets.length,
+            })
+          : i18n.tr('scan_failed_next_step'),
     );
   }
 
@@ -1224,7 +1510,13 @@ class LibraryScannerService {
         final pickedFiles = await _pickAudioFilesViaNative();
         if (pickedFiles == null || pickedFiles.isEmpty) return;
 
-        provider.setScanning(true);
+        final generation = provider.tryBeginScan(
+          source: i18n.tr('imported_files'),
+        );
+        if (generation == 0) {
+          showSnack(i18n.tr('scanning_title'));
+          return;
+        }
         provider.beginLibraryBatch();
 
         try {
@@ -1241,7 +1533,7 @@ class LibraryScannerService {
           showSnack(i18n.tr('import_done_added', {'count': added}));
         } finally {
           await provider.endLibraryBatch();
-          provider.setScanning(false);
+          provider.finishScan(generation);
         }
         return;
       } on PlatformException {
@@ -1256,7 +1548,11 @@ class LibraryScannerService {
     );
     if (result == null) return;
 
-    provider.setScanning(true);
+    final generation = provider.tryBeginScan(source: i18n.tr('imported_files'));
+    if (generation == 0) {
+      showSnack(i18n.tr('scanning_title'));
+      return;
+    }
     provider.beginLibraryBatch();
 
     try {
@@ -1318,7 +1614,7 @@ class LibraryScannerService {
       showSnack(i18n.tr('import_done_added', {'count': added}));
     } finally {
       await provider.endLibraryBatch();
-      provider.setScanning(false);
+      provider.finishScan(generation);
     }
   }
 }

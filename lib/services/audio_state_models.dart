@@ -36,6 +36,10 @@ class LibraryState {
     this.scanFoundCount = 0,
     this.scanDuplicateCount = 0,
     this.scanFailureCount = 0,
+    this.scanGeneration = 0,
+    this.scanStage = FolderScanStage.idle,
+    this.scanProcessed = 0,
+    this.scanTotal,
     this.structureRevision = 0,
     this.treeSnapshotRevision = -1,
     this.contentRevision = 0,
@@ -53,6 +57,10 @@ class LibraryState {
   final int scanFoundCount;
   final int scanDuplicateCount;
   final int scanFailureCount;
+  final int scanGeneration;
+  final FolderScanStage scanStage;
+  final int scanProcessed;
+  final int? scanTotal;
   final int structureRevision;
   final int treeSnapshotRevision;
   final int contentRevision;
@@ -72,6 +80,10 @@ class LibraryState {
         other.scanFoundCount == scanFoundCount &&
         other.scanDuplicateCount == scanDuplicateCount &&
         other.scanFailureCount == scanFailureCount &&
+        other.scanGeneration == scanGeneration &&
+        other.scanStage == scanStage &&
+        other.scanProcessed == scanProcessed &&
+        other.scanTotal == scanTotal &&
         other.structureRevision == structureRevision &&
         other.treeSnapshotRevision == treeSnapshotRevision &&
         other.contentRevision == contentRevision &&
@@ -91,6 +103,10 @@ class LibraryState {
     scanFoundCount,
     scanDuplicateCount,
     scanFailureCount,
+    scanGeneration,
+    scanStage,
+    scanProcessed,
+    scanTotal,
     structureRevision,
     treeSnapshotRevision,
     contentRevision,

@@ -124,26 +124,58 @@ class FolderScanChunk {
   final int failureCount;
 }
 
+enum FolderScanStage {
+  idle,
+  preparing,
+  enumerating,
+  merging,
+  saving,
+  loadingCovers;
+
+  static FolderScanStage fromPayload(Object? value) {
+    return switch (value?.toString()) {
+      'preparing' => FolderScanStage.preparing,
+      'enumerating' => FolderScanStage.enumerating,
+      'merging' => FolderScanStage.merging,
+      'saving' => FolderScanStage.saving,
+      'loadingCovers' => FolderScanStage.loadingCovers,
+      _ => FolderScanStage.idle,
+    };
+  }
+}
+
 class FolderScanSessionEvent {
   const FolderScanSessionEvent({
     required this.sessionId,
     required this.type,
     required this.chunk,
+    required this.generationId,
+    required this.stage,
+    this.processed = 0,
+    this.total,
     this.errorCode,
     this.errorMessage,
     this.complete = false,
   });
 
   final String sessionId;
+  final String generationId;
   final String type;
+  final FolderScanStage stage;
+  final int processed;
+  final int? total;
   final FolderScanChunk chunk;
   final String? errorCode;
   final String? errorMessage;
   final bool complete;
 
   bool get isChunk => type == 'chunk';
-  bool get isDone => type == 'done';
-  bool get isError => type == 'error';
+  bool get isStarted => type == 'started';
+  bool get isStageChanged => type == 'stageChanged';
+  bool get isProgress => type == 'progress';
+  bool get isDone => type == 'done' || type == 'completed';
+  bool get isCancelled => type == 'cancelled';
+  bool get isError => type == 'error' || type == 'failed';
 
   factory FolderScanSessionEvent.fromPayload(Map<Object?, Object?> payload) {
     final rawTracks = payload['tracks'];
@@ -157,7 +189,14 @@ class FolderScanSessionEvent {
     ).map(PathMatcher.normalize).toList(growable: false);
     return FolderScanSessionEvent(
       sessionId: payload['sessionId']?.toString() ?? '',
+      generationId:
+          payload['generationId']?.toString() ??
+          payload['sessionId']?.toString() ??
+          '',
       type: payload['type']?.toString() ?? '',
+      stage: FolderScanStage.fromPayload(payload['stage']),
+      processed: (payload['processed'] as num?)?.toInt() ?? 0,
+      total: (payload['total'] as num?)?.toInt(),
       chunk: FolderScanChunk(
         tracks: parsedTracks.tracks,
         paths: eventPaths.isEmpty ? parsedTracks.paths : eventPaths,

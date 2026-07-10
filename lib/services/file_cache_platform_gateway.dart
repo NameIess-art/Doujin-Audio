@@ -28,6 +28,7 @@ class FileCachePlatformGateway {
   final bool Function() _isAndroid;
 
   int _scanSessionSeed = 0;
+  String? _activeScanSessionId;
 
   Future<NativeScanResult> scanFolder(String folderPath) async {
     if (!_isAndroid()) return const NativeScanResult.notSupported();
@@ -38,10 +39,15 @@ class FileCachePlatformGateway {
 
   Future<NativeScanResult> scanFolderChunked(
     String folderPath,
-    FutureOr<bool> Function(FolderScanChunk chunk) onChunk,
-  ) async {
+    FutureOr<bool> Function(FolderScanChunk chunk) onChunk, {
+    FutureOr<void> Function(FolderScanSessionEvent event)? onProgress,
+  }) async {
     if (!_isAndroid()) return const NativeScanResult.notSupported();
-    final streamedScan = await _scanFolderStreamChunked(folderPath, onChunk);
+    final streamedScan = await _scanFolderStreamChunked(
+      folderPath,
+      onChunk,
+      onProgress: onProgress,
+    );
     if (streamedScan.ok || !streamedScan.notSupported) return streamedScan;
     return const NativeScanResult.notSupported();
   }
@@ -314,6 +320,13 @@ class FileCachePlatformGateway {
     var failureCount = 0;
     final completer = Completer<NativeScanResult>();
     StreamSubscription<dynamic>? subscription;
+    if (_activeScanSessionId != null) {
+      return const NativeScanResult.failed(
+        code: 'scan_busy',
+        message: 'Another folder scan is already running.',
+      );
+    }
+    _activeScanSessionId = sessionId;
 
     void complete(NativeScanResult result) {
       if (!completer.isCompleted) completer.complete(result);
@@ -339,7 +352,17 @@ class FileCachePlatformGateway {
                     List<ScannedTrack>.unmodifiable(tracks),
                     Set<String>.unmodifiable(paths),
                     failureCount: failureCount + scanEvent.chunk.failureCount,
-                    completenessKnown: scanEvent.complete,
+                    completenessKnown: true,
+                  ),
+                );
+              } else if (scanEvent.isCancelled) {
+                complete(
+                  NativeScanResult.success(
+                    List<ScannedTrack>.unmodifiable(tracks),
+                    Set<String>.unmodifiable(paths),
+                    failureCount: failureCount,
+                    completenessKnown: true,
+                    wasCancelled: true,
                   ),
                 );
               } else if (scanEvent.isError) {
@@ -388,13 +411,15 @@ class FileCachePlatformGateway {
     } finally {
       await subscription?.cancel();
       if (!completer.isCompleted) unawaited(_cancelFolderScan(sessionId));
+      if (_activeScanSessionId == sessionId) _activeScanSessionId = null;
     }
   }
 
   Future<NativeScanResult> _scanFolderStreamChunked(
     String folderPath,
-    FutureOr<bool> Function(FolderScanChunk chunk) onChunk,
-  ) async {
+    FutureOr<bool> Function(FolderScanChunk chunk) onChunk, {
+    FutureOr<void> Function(FolderScanSessionEvent event)? onProgress,
+  }) async {
     final sessionId =
         '${DateTime.now().microsecondsSinceEpoch}-${_scanSessionSeed++}';
     final paths = <String>{};
@@ -402,6 +427,13 @@ class FileCachePlatformGateway {
     final completer = Completer<NativeScanResult>();
     StreamSubscription<dynamic>? subscription;
     Future<void> pendingChunk = Future<void>.value();
+    if (_activeScanSessionId != null) {
+      return const NativeScanResult.failed(
+        code: 'scan_busy',
+        message: 'Another folder scan is already running.',
+      );
+    }
+    _activeScanSessionId = sessionId;
 
     void complete(NativeScanResult result) {
       if (!completer.isCompleted) completer.complete(result);
@@ -424,6 +456,12 @@ class FileCachePlatformGateway {
                 event.cast<Object?, Object?>(),
               );
               if (scanEvent.sessionId != sessionId) return;
+              if (scanEvent.isStarted ||
+                  scanEvent.isStageChanged ||
+                  scanEvent.isProgress) {
+                onProgress?.call(scanEvent);
+                return;
+              }
               if (scanEvent.isChunk) {
                 final chunk = scanEvent.chunk;
                 pendingChunk = pendingChunk
@@ -466,7 +504,19 @@ class FileCachePlatformGateway {
                       const <ScannedTrack>[],
                       Set<String>.unmodifiable(paths),
                       failureCount: failureCount + scanEvent.chunk.failureCount,
-                      completenessKnown: scanEvent.complete,
+                      completenessKnown: true,
+                    ),
+                  ),
+                );
+              } else if (scanEvent.isCancelled) {
+                unawaited(
+                  completeAfterPending(
+                    () => NativeScanResult.success(
+                      const <ScannedTrack>[],
+                      Set<String>.unmodifiable(paths),
+                      failureCount: failureCount,
+                      completenessKnown: true,
+                      wasCancelled: true,
                     ),
                   ),
                 );
@@ -518,7 +568,13 @@ class FileCachePlatformGateway {
     } finally {
       await subscription?.cancel();
       if (!completer.isCompleted) unawaited(_cancelFolderScan(sessionId));
+      if (_activeScanSessionId == sessionId) _activeScanSessionId = null;
     }
+  }
+
+  Future<void> cancelActiveFolderScan() async {
+    final sessionId = _activeScanSessionId;
+    if (sessionId != null) await _cancelFolderScan(sessionId);
   }
 
   Future<void> _cancelFolderScan(String sessionId) async {

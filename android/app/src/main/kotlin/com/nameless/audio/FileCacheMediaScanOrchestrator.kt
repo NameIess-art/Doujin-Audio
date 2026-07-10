@@ -8,31 +8,42 @@ internal class FileCacheMediaScanOrchestrator(
     private val contentUriToFilePath: (String) -> String?,
     private val scanDocumentTree: (
         Uri,
-        MutableMap<String, FileCacheOperations.ScannedTrack>
+        MutableMap<String, FileCacheOperations.ScannedTrack>,
+        FolderScanObserver
     ) -> Int,
     private val scanFileSystemAsDocumentTree: (
         Uri,
         File,
-        MutableMap<String, FileCacheOperations.ScannedTrack>
+        MutableMap<String, FileCacheOperations.ScannedTrack>,
+        FolderScanObserver
     ) -> Int,
     private val scanFileSystem: (
         File,
-        MutableMap<String, FileCacheOperations.ScannedTrack>
+        MutableMap<String, FileCacheOperations.ScannedTrack>,
+        FolderScanObserver
     ) -> Int,
     private val scanMediaStore: (
         String,
-        MutableMap<String, FileCacheOperations.ScannedTrack>
+        MutableMap<String, FileCacheOperations.ScannedTrack>,
+        FolderScanObserver
     ) -> Int
 ) {
-    fun scanFolder(folder: String): FileCacheOperations.ScanFolderResult {
+    fun scanFolder(
+        folder: String,
+        observer: FolderScanObserver
+    ): FileCacheOperations.ScanFolderResult {
         val byPath = linkedMapOf<String, FileCacheOperations.ScannedTrack>()
         val folderTrimmed = folder.trim()
         val uri = resolveContentUri(folderTrimmed)
         var failureCount = 0
+        observer.onStage("preparing")
 
         if (uri != null) {
-            failureCount += scanDocumentTree(uri, byPath)
-            if (byPath.isNotEmpty()) return result(byPath, failureCount)
+            observer.onStage("enumerating")
+            failureCount += scanDocumentTree(uri, byPath, observer)
+            if (observer.isCancelled() || byPath.isNotEmpty()) {
+                return result(byPath, failureCount, observer)
+            }
 
             // Some ROMs keep the renamed directory readable before its SAF URI
             // becomes queryable, so direct scanning remains the compatibility fallback.
@@ -40,34 +51,42 @@ internal class FileCacheMediaScanOrchestrator(
             if (filePath != null) {
                 val root = File(filePath)
                 if (root.exists() && root.isDirectory) {
-                    failureCount += scanFileSystemAsDocumentTree(uri, root, byPath)
-                    if (byPath.isNotEmpty()) return result(byPath, failureCount)
-                    failureCount += scanMediaStore(filePath, byPath)
-                    return result(byPath, failureCount)
+                    failureCount += scanFileSystemAsDocumentTree(uri, root, byPath, observer)
+                    if (observer.isCancelled() || byPath.isNotEmpty()) {
+                        return result(byPath, failureCount, observer)
+                    }
+                    failureCount += scanMediaStore(filePath, byPath, observer)
+                    return result(byPath, failureCount, observer)
                 }
             }
-            return result(byPath, failureCount)
+            return result(byPath, failureCount, observer)
         }
 
         val root = File(folderTrimmed)
         if (root.exists() && root.isDirectory) {
-            failureCount += scanFileSystem(root, byPath)
-            if (byPath.isNotEmpty()) return result(byPath, failureCount)
+            observer.onStage("enumerating")
+            failureCount += scanFileSystem(root, byPath, observer)
+            if (observer.isCancelled() || byPath.isNotEmpty()) {
+                return result(byPath, failureCount, observer)
+            }
         } else {
             failureCount++
         }
-        failureCount += scanMediaStore(folderTrimmed, byPath)
-        return result(byPath, failureCount)
+        if (!observer.isCancelled()) {
+            failureCount += scanMediaStore(folderTrimmed, byPath, observer)
+        }
+        return result(byPath, failureCount, observer)
     }
 
     private fun result(
         tracks: Map<String, FileCacheOperations.ScannedTrack>,
-        failureCount: Int
+        failureCount: Int,
+        observer: FolderScanObserver
     ): FileCacheOperations.ScanFolderResult {
         return FileCacheOperations.ScanFolderResult(
             tracks = tracks.values.toList(),
             failureCount = failureCount,
-            complete = failureCount == 0
+            complete = failureCount == 0 && !observer.isCancelled()
         )
     }
 }

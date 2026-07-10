@@ -12,6 +12,8 @@ class AsmrApiService {
   final HttpClient _httpClient;
   final Uri _baseUri;
 
+  static const String _acceptLanguage = 'zh-CN,zh;q=0.9,en;q=0.8';
+
   Future<AsmrAuthSession> login({
     required String name,
     required String password,
@@ -238,6 +240,7 @@ class AsmrApiService {
     final uri = _baseUri.replace(path: path, queryParameters: queryParameters);
     final request = await _httpClient.openUrl(method, uri);
     request.headers.set(HttpHeaders.acceptHeader, 'application/json');
+    request.headers.set(HttpHeaders.acceptLanguageHeader, _acceptLanguage);
     request.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
     if (token != null && token.isNotEmpty) {
       request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
@@ -249,7 +252,7 @@ class AsmrApiService {
     final responseBody = await utf8.decodeStream(response);
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw AsmrApiException(
-        'ASMR API request failed (${response.statusCode}): $responseBody',
+        'ASMR API request failed (${response.statusCode}).',
         statusCode: response.statusCode,
         uri: uri,
       );

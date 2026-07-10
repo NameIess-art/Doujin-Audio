@@ -443,7 +443,7 @@ extension AudioProviderAudioDetails on AudioProvider {
       oldRoot: oldFolderPath,
       newRoot: newFolderPath,
     );
-    final updatedTracks = <MusicTrack>[];
+    final retargetedTracks = <String, MusicTrack>{};
     for (var i = 0; i < _library.length; i++) {
       final track = _library[i];
       if (!PathMatcher.isWithinOrEqual(track.path, oldFolderPath)) continue;
@@ -482,7 +482,7 @@ extension AudioProviderAudioDetails on AudioProvider {
         ),
       );
       _library[i] = updatedTrack;
-      updatedTracks.add(updatedTrack);
+      retargetedTracks[track.path] = updatedTrack;
     }
 
     for (var i = 0; i < _watchedFolders.length; i++) {
@@ -522,7 +522,7 @@ extension AudioProviderAudioDetails on AudioProvider {
     _invalidateResolvedCoverScopes([oldFolderPath, newFolderPath]);
     _syncGroupOrderFromLibrary();
     _rebuildLibraryIndexes();
-    await _audioDatabaseRepository.saveAllTracks(_library);
+    await _audioDatabaseRepository.replaceTrackPaths(retargetedTracks);
     await _audioDatabaseRepository.deleteLibraryEntriesForLibrary(
       oldFolderPath,
     );

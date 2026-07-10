@@ -141,6 +141,48 @@ void main() {
     },
   );
 
+  test(
+    'download chunks only publish immutable snapshots at the throttle',
+    () async {
+      final manager = _manager();
+      final work = _work();
+      final initial = AsmrDownloadTaskSnapshot(
+        work: work,
+        destinationRoot: 'C:\\Downloads',
+        workFolderName: 'RJ123456 - Work',
+        conflictPolicy: AsmrDownloadConflictPolicy.skip,
+        status: AsmrDownloadTaskStatus.downloading,
+        totalFiles: 1,
+        completedFiles: 0,
+        skippedFiles: 0,
+        failedFiles: 0,
+        totalBytes: 1024,
+        downloadedBytes: 0,
+        startedAt: DateTime(2026),
+      );
+      manager.debugSetCurrentTaskForTesting(initial);
+      var notifications = 0;
+      manager.addListener(() => notifications++);
+
+      for (var index = 0; index < 20; index++) {
+        manager.debugRecordDownloadChunkForTesting(
+          1,
+          'track.mp3',
+          1,
+          index + 1,
+        );
+      }
+
+      expect(identical(manager.getTask(1), initial), isTrue);
+      expect(notifications, 0);
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      expect(notifications, 1);
+      expect(manager.getTask(1)?.downloadedBytes, 20);
+      expect(manager.getTask(1)?.fileDownloadedBytes['track.mp3'], 20);
+      manager.dispose();
+    },
+  );
+
   test('download backup includes ASMR.ONE extended metadata', () async {
     final tempDir = await Directory.systemTemp.createTemp(
       'asmr_download_backup_',

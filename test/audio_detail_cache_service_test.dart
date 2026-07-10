@@ -49,6 +49,30 @@ void main() {
       expect(repository.deleteCount, 1);
     },
   );
+
+  test('resolved details use least-recently-used eviction', () async {
+    final first = AudioDetailTarget.libraryRootFolder('/library/first');
+    final second = AudioDetailTarget.libraryRootFolder('/library/second');
+    final third = AudioDetailTarget.libraryRootFolder('/library/third');
+    final repository = _FakeAudioDetailRepository(
+      loadResult: AudioDetail.empty(first),
+    );
+    final cache = AudioDetailCacheService(
+      repository: repository,
+      maxResolvedEntries: 2,
+    );
+
+    await cache.load(first);
+    await cache.load(second);
+    await cache.load(first);
+    await cache.load(third);
+    expect(repository.loadCount, 3);
+
+    await cache.load(second);
+    expect(repository.loadCount, 4);
+    await cache.load(third);
+    expect(repository.loadCount, 4);
+  });
 }
 
 class _FakeAudioDetailRepository implements AudioDetailRepository {
@@ -66,7 +90,7 @@ class _FakeAudioDetailRepository implements AudioDetailRepository {
   @override
   Future<AudioDetailLoadResult> load(AudioDetailTarget target) async {
     loadCount++;
-    return AudioDetailLoadResult(detail: _loadResult);
+    return AudioDetailLoadResult(detail: _loadResult.copyWith(target: target));
   }
 
   @override

@@ -33,19 +33,6 @@ extension _LibraryTabCategoryView on _LibraryTabState {
     }).toList();
   }
 
-  List<String> _entryTermsForCategory(AudioLibraryCategoryEntry entry) {
-    return switch (_categoryType) {
-      AudioLibraryCategoryType.tags => AudioLibraryCategorySnapshot.splitTerms(
-        entry.detail.tags,
-      ),
-      AudioLibraryCategoryType.voiceActors =>
-        AudioLibraryCategorySnapshot.splitTerms(entry.detail.voiceActors),
-      AudioLibraryCategoryType.circles =>
-        AudioLibraryCategorySnapshot.splitTerms([entry.detail.circleName]),
-      AudioLibraryCategoryType.all => const <String>[],
-    };
-  }
-
   IconData _categoryIcon() {
     return switch (_categoryType) {
       AudioLibraryCategoryType.tags => Icons.sell_rounded,
@@ -60,13 +47,9 @@ extension _LibraryTabCategoryView on _LibraryTabState {
     AudioLibraryCategoryEntry entry,
   ) {
     final values = switch (_categoryType) {
-      AudioLibraryCategoryType.tags => AudioLibraryCategorySnapshot.splitTerms(
-        entry.detail.tags,
-      ),
-      AudioLibraryCategoryType.voiceActors =>
-        AudioLibraryCategorySnapshot.splitTerms(entry.detail.voiceActors),
-      AudioLibraryCategoryType.circles =>
-        AudioLibraryCategorySnapshot.splitTerms([entry.detail.circleName]),
+      AudioLibraryCategoryType.tags => entry.tagTerms,
+      AudioLibraryCategoryType.voiceActors => entry.voiceActorTerms,
+      AudioLibraryCategoryType.circles => entry.circleTerms,
       AudioLibraryCategoryType.all => [
         if (entry.detail.rjCode.trim().isNotEmpty)
           entry.detail.rjCode.trim()
@@ -96,19 +79,30 @@ extension _LibraryTabCategoryView on _LibraryTabState {
     final selectedTerms = _selectedTermsForCurrentCategory;
     final normalizedQuery = _effectiveSearchQuery.trim().toLowerCase();
     final termKeywords = _termSearchKeywords;
+    final normalizedSelectedTerms =
+        selectedTerms.map((term) => term.toLowerCase()).toList(growable: false)
+          ..sort();
+    final filterKey = <String>[
+      normalizedQuery,
+      termKeywords.join('\n'),
+      normalizedSelectedTerms.join('\n'),
+    ].join('|');
+    if (identical(snapshot, _lastCategoryFilterSnapshot) &&
+        _categoryType == _lastCategoryFilterType &&
+        filterKey == _lastCategoryFilterKey) {
+      return _lastCategoryFilterResult;
+    }
 
-    return snapshot.entries
+    final result = snapshot.entries
         .where((entry) {
+          final entryTerms = entry.normalizedTermsForCategory(_categoryType);
           if (selectedTerms.isNotEmpty) {
-            final entryTerms = _entryTermsForCategory(entry).toSet();
-            if (!selectedTerms.any(entryTerms.contains)) return false;
+            if (!normalizedSelectedTerms.any(entryTerms.contains)) return false;
           }
           if (termKeywords.isNotEmpty) {
-            final entryTerms = _entryTermsForCategory(entry).toSet();
             bool hasMatchingTerm = false;
             for (final term in entryTerms) {
-              final t = term.toLowerCase();
-              if (termKeywords.any((k) => t.contains(k))) {
+              if (termKeywords.any(term.contains)) {
                 hasMatchingTerm = true;
                 break;
               }
@@ -122,6 +116,11 @@ extension _LibraryTabCategoryView on _LibraryTabState {
           return true;
         })
         .toList(growable: false);
+    _lastCategoryFilterSnapshot = snapshot;
+    _lastCategoryFilterType = _categoryType;
+    _lastCategoryFilterKey = filterKey;
+    _lastCategoryFilterResult = result;
+    return result;
   }
 
   String _termSearchHintText(AppLanguageProvider i18n) {
@@ -310,10 +309,13 @@ class _LibraryCategoryTermBox extends StatefulWidget {
 }
 
 class _LibraryCategoryTermBoxState extends State<_LibraryCategoryTermBox> {
+  static const _searchDebounce = Duration(milliseconds: 120);
   bool _expanded = false;
   bool _wasExpandedBeforeSearch = false;
   late final TextEditingController _searchController;
   late final String _prefKey;
+  late String _localSearchQuery;
+  Timer? _searchDebounceTimer;
 
   @override
   void initState() {
@@ -321,10 +323,13 @@ class _LibraryCategoryTermBoxState extends State<_LibraryCategoryTermBox> {
     _prefKey = 'library_category_terms_expanded_${widget.categoryType.name}';
     _expanded = AppPreferences.getBoolSync(_prefKey) ?? false;
     _searchController = TextEditingController(text: widget.searchQuery);
+    _localSearchQuery = widget.searchQuery;
   }
 
   void _onSearchQueryChangedLocally(String val) {
-    if (widget.searchQuery.isEmpty && val.isNotEmpty) {
+    final previous = _localSearchQuery;
+    _localSearchQuery = val;
+    if (previous.isEmpty && val.isNotEmpty) {
       _wasExpandedBeforeSearch = _expanded;
       if (!_expanded) {
         setState(() {
@@ -332,7 +337,7 @@ class _LibraryCategoryTermBoxState extends State<_LibraryCategoryTermBox> {
           AppPreferences.setBool(_prefKey, _expanded);
         });
       }
-    } else if (widget.searchQuery.isNotEmpty && val.isEmpty) {
+    } else if (previous.isNotEmpty && val.isEmpty) {
       if (!_wasExpandedBeforeSearch && _expanded) {
         setState(() {
           _expanded = false;
@@ -340,7 +345,15 @@ class _LibraryCategoryTermBoxState extends State<_LibraryCategoryTermBox> {
         });
       }
     }
-    widget.onSearchQueryChanged(val);
+    _searchDebounceTimer?.cancel();
+    if (val.isEmpty) {
+      widget.onSearchQueryChanged(val);
+    } else {
+      _searchDebounceTimer = Timer(
+        _searchDebounce,
+        () => widget.onSearchQueryChanged(_localSearchQuery),
+      );
+    }
   }
 
   void _onClearSearchLocally() {
@@ -354,11 +367,13 @@ class _LibraryCategoryTermBoxState extends State<_LibraryCategoryTermBox> {
     if (oldWidget.searchQuery != widget.searchQuery &&
         _searchController.text != widget.searchQuery) {
       _searchController.text = widget.searchQuery;
+      _localSearchQuery = widget.searchQuery;
     }
   }
 
   @override
   void dispose() {
+    _searchDebounceTimer?.cancel();
     _searchController.dispose();
     super.dispose();
   }
@@ -367,7 +382,7 @@ class _LibraryCategoryTermBoxState extends State<_LibraryCategoryTermBox> {
     setState(() {
       _expanded = !_expanded;
       AppPreferences.setBool(_prefKey, _expanded);
-      if (widget.searchQuery.isNotEmpty) {
+      if (_localSearchQuery.isNotEmpty) {
         _wasExpandedBeforeSearch = _expanded;
       }
     });
@@ -384,7 +399,7 @@ class _LibraryCategoryTermBoxState extends State<_LibraryCategoryTermBox> {
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: cs.outlineVariant),
       ),
-      child: widget.terms.isEmpty && widget.searchQuery.isEmpty
+      child: widget.terms.isEmpty && _localSearchQuery.isEmpty
           ? Text(
               widget.emptyText,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -429,7 +444,7 @@ class _LibraryCategoryTermBoxState extends State<_LibraryCategoryTermBox> {
                               filled: true,
                               fillColor: cs.surface,
                               isDense: true,
-                              suffixIcon: widget.searchQuery.isNotEmpty
+                              suffixIcon: _localSearchQuery.isNotEmpty
                                   ? GestureDetector(
                                       onTap: _onClearSearchLocally,
                                       behavior: HitTestBehavior.opaque,

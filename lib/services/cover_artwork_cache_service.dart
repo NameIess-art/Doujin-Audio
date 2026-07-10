@@ -900,7 +900,7 @@ class CoverArtworkCacheService {
       final bytes = await consolidateHttpClientResponseBytes(response);
       if (bytes.isEmpty) return null;
       await file.writeAsBytes(bytes, flush: true);
-      unawaited(AppCacheService.enforceLimit());
+      AppCacheService.scheduleEnforce();
       return file.path;
     } catch (error, stackTrace) {
       AppLogService.warning(
@@ -920,7 +920,10 @@ class CoverArtworkCacheService {
         path: track.path,
         modifiedAtMs: track.modifiedAt?.millisecondsSinceEpoch,
       );
-      if (nativeFrame != null && nativeFrame.isNotEmpty) return nativeFrame;
+      if (nativeFrame != null && nativeFrame.isNotEmpty) {
+        AppCacheService.scheduleEnforce();
+        return nativeFrame;
+      }
     } on MissingPluginException {
       // Windows generates the frame through its bundled FFmpeg below.
     } catch (e, stackTrace) {
@@ -935,7 +938,7 @@ class CoverArtworkCacheService {
       videoPath: track.path,
       modifiedAtMs: track.modifiedAt?.millisecondsSinceEpoch,
     );
-    if (framePath != null) unawaited(AppCacheService.enforceLimit());
+    if (framePath != null) AppCacheService.scheduleEnforce();
     return framePath;
   }
 
@@ -979,7 +982,10 @@ class CoverArtworkCacheService {
         groupKey: track.groupKey,
         rootFolder: rootFolder,
       );
-      if (nativeCover != null && nativeCover.isNotEmpty) return nativeCover;
+      if (nativeCover != null && nativeCover.isNotEmpty) {
+        AppCacheService.scheduleEnforce();
+        return nativeCover;
+      }
     } on MissingPluginException {
       // Continue with the Dart fallback below.
     } catch (e, stackTrace) {
@@ -993,7 +999,7 @@ class CoverArtworkCacheService {
     final embeddedCover = await EmbeddedCoverArtworkService.resolveForTrack(
       track,
     );
-    if (embeddedCover != null) unawaited(AppCacheService.enforceLimit());
+    if (embeddedCover != null) AppCacheService.scheduleEnforce();
     if (embeddedCover != null) return embeddedCover;
 
     if (AppPlatform.isWindows) {

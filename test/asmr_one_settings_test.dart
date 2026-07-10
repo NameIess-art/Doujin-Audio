@@ -172,6 +172,48 @@ void main() {
     );
   });
 
+  test('ASMR detail cache keeps the most recently used 128 works', () async {
+    await resetPrefs();
+    final api = _FakeAsmrApiService();
+    final controller = AsmrLibraryController(apiService: api);
+    final works = <AsmrWork>[
+      for (var id = 1; id <= 129; id++) _work(id: id, title: 'Work $id'),
+    ];
+
+    for (final work in works.take(128)) {
+      await controller.loadWorkDetail(work);
+    }
+    await controller.loadWorkDetail(works.first);
+    await controller.loadWorkDetail(works.last);
+    await controller.loadWorkDetail(works.first);
+    await controller.loadWorkDetail(works[1]);
+
+    expect(api.detailFetchWorkIds.where((id) => id == 1), hasLength(1));
+    expect(api.detailFetchWorkIds.where((id) => id == 2), hasLength(2));
+  });
+
+  test('ASMR track cache keeps the most recently used 32 works', () async {
+    await resetPrefs();
+    final api = _FakeAsmrApiService(
+      trackTree: <AsmrTrackFile>[_trackFile('track.mp3', 'track.mp3')],
+    );
+    final controller = AsmrLibraryController(apiService: api);
+    final works = <AsmrWork>[
+      for (var id = 1; id <= 33; id++) _work(id: id, title: 'Work $id'),
+    ];
+
+    for (final work in works.take(32)) {
+      await controller.ensureTrackTree(work);
+    }
+    await controller.ensureTrackTree(works.first);
+    await controller.ensureTrackTree(works.last);
+    await controller.ensureTrackTree(works.first);
+    await controller.ensureTrackTree(works[1]);
+
+    expect(api.trackFetchWorkIds.where((id) => id == 1), hasLength(1));
+    expect(api.trackFetchWorkIds.where((id) => id == 2), hasLength(2));
+  });
+
   test(
     'ASMR controller ranks recommendations from ordinary work lists',
     () async {
@@ -1223,6 +1265,8 @@ class _FakeAsmrApiService extends AsmrApiService {
   final List<String> reviewPuts = <String>[];
   final List<int> deletedReviewWorkIds = <int>[];
   final List<String> calls = <String>[];
+  final List<int> detailFetchWorkIds = <int>[];
+  final List<int> trackFetchWorkIds = <int>[];
   final bool largeRecommendationPool;
   final int recommendationPageCount;
   final List<AsmrWork>? recommendationWorks;
@@ -1405,10 +1449,29 @@ class _FakeAsmrApiService extends AsmrApiService {
   }
 
   @override
+  Future<AsmrWorkDetail> fetchWorkDetail(
+    int workId, {
+    String? token,
+    AsmrContentLanguage language = AsmrContentLanguage.zh,
+  }) async {
+    detailFetchWorkIds.add(workId);
+    return AsmrWorkDetail(
+      work: _work(id: workId, title: 'Work $workId'),
+      description: '',
+      ageCategory: '',
+      languageEditionLabels: const <String>[],
+      userRating: null,
+    );
+  }
+
+  @override
   Future<List<AsmrTrackFile>> fetchTrackTree(
     int workId, {
     String? token,
-  }) async => trackTree;
+  }) async {
+    trackFetchWorkIds.add(workId);
+    return trackTree;
+  }
 
   @override
   Future<List<AsmrReviewRecord>> fetchReviews({

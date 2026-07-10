@@ -236,6 +236,112 @@ void main() {
     },
   );
 
+  test('replaceTrackPaths only rewrites affected track rows', () async {
+    const original = MusicTrack(
+      path: '/library/old/a.flac',
+      displayName: 'A',
+      groupKey: '/library/old',
+      groupTitle: 'Old',
+      groupSubtitle: 'Old',
+      isSingle: false,
+      tags: <String>['asmr'],
+      coverCachePath: '/library/old/cover.jpg',
+      remoteMetadataKind: 'asmr.one',
+      remoteMetadata: <String, Object?>{'workId': 1},
+    );
+    const untouched = MusicTrack(
+      path: '/library/other/b.flac',
+      displayName: 'B',
+      groupKey: '/library/other',
+      groupTitle: 'Other',
+      groupSubtitle: 'Other',
+      isSingle: false,
+      tags: <String>['sleep'],
+    );
+    const replacement = MusicTrack(
+      path: '/library/new/a.flac',
+      displayName: 'A',
+      groupKey: '/library/new',
+      groupTitle: 'New',
+      groupSubtitle: 'New',
+      isSingle: false,
+      tags: <String>['asmr'],
+      coverCachePath: '/library/new/cover.jpg',
+      remoteMetadataKind: 'asmr.one',
+      remoteMetadata: <String, Object?>{'workId': 1},
+    );
+    await appDatabase.saveAllTracks(const <MusicTrack>[original, untouched]);
+
+    await appDatabase.replaceTrackPaths(<String, MusicTrack>{
+      original.path: replacement,
+    });
+
+    final loaded = await appDatabase.loadAllTracks();
+    expect(
+      loaded.map((track) => track.path),
+      unorderedEquals(<String>[replacement.path, untouched.path]),
+    );
+    expect(
+      (await appDatabase.loadTrackDetail(replacement.path))?.toJson(),
+      replacement.toJson(),
+    );
+    expect(
+      (await appDatabase.loadTrackDetail(untouched.path))?.toJson(),
+      untouched.toJson(),
+    );
+    expect(await appDatabase.loadTrackDetail(original.path), isNull);
+  });
+
+  test(
+    'replaceTrackPaths rejects duplicate destinations before writing',
+    () async {
+      const first = MusicTrack(
+        path: '/library/a.flac',
+        displayName: 'A',
+        groupKey: '/library',
+        groupTitle: 'Library',
+        groupSubtitle: 'Library',
+        isSingle: false,
+      );
+      const second = MusicTrack(
+        path: '/library/b.flac',
+        displayName: 'B',
+        groupKey: '/library',
+        groupTitle: 'Library',
+        groupSubtitle: 'Library',
+        isSingle: false,
+      );
+      await appDatabase.saveAllTracks(const <MusicTrack>[first, second]);
+
+      await expectLater(
+        appDatabase.replaceTrackPaths(<String, MusicTrack>{
+          first.path: const MusicTrack(
+            path: '/library/same.flac',
+            displayName: 'A',
+            groupKey: '/library',
+            groupTitle: 'Library',
+            groupSubtitle: 'Library',
+            isSingle: false,
+          ),
+          second.path: const MusicTrack(
+            path: '/library/same.flac',
+            displayName: 'B',
+            groupKey: '/library',
+            groupTitle: 'Library',
+            groupSubtitle: 'Library',
+            isSingle: false,
+          ),
+        }),
+        throwsArgumentError,
+      );
+
+      expect(
+        (await appDatabase.loadAllTracks()).map((track) => track.path),
+        <String>[first.path, second.path],
+      );
+    },
+  );
+
   test(
     'deleteTracks batches more than SQLite variable limit atomically',
     () async {

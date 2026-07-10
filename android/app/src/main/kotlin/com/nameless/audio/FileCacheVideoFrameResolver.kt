@@ -12,7 +12,6 @@ internal class FileCacheVideoFrameResolver(
     private val context: Context,
     private val cacheDir: File,
     private val touchCacheFile: (File) -> Unit,
-    private val enforceApplicationCacheLimit: () -> Unit,
     private val resolveFilePath: (String) -> String?
 ) {
     fun resolve(trackPath: String, modifiedAtMs: Long?): String? {
@@ -66,7 +65,6 @@ internal class FileCacheVideoFrameResolver(
                 output.flush()
             }
             touchCacheFile(outputFile)
-            enforceApplicationCacheLimit()
             bitmap.recycle()
             return outputFile.absolutePath
         } catch (_: Exception) {

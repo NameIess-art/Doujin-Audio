@@ -1,32 +1,38 @@
 import 'dart:async';
+import 'dart:collection';
 
 import '../models/audio_detail.dart';
 import 'audio_detail_repository.dart';
 
 class AudioDetailCacheService {
-  AudioDetailCacheService({required AudioDetailRepository repository})
-    : _repository = repository;
+  AudioDetailCacheService({
+    required AudioDetailRepository repository,
+    int maxResolvedEntries = 2000,
+  }) : assert(maxResolvedEntries > 0),
+       _repository = repository,
+       _maxResolvedEntries = maxResolvedEntries;
 
   final AudioDetailRepository _repository;
+  final int _maxResolvedEntries;
   final Map<String, Future<AudioDetailLoadResult>> _loadFutures =
       <String, Future<AudioDetailLoadResult>>{};
-  final Map<String, AudioDetailLoadResult> _resolved =
-      <String, AudioDetailLoadResult>{};
+  final LinkedHashMap<String, AudioDetailLoadResult> _resolved =
+      LinkedHashMap<String, AudioDetailLoadResult>();
   int _revision = 0;
 
   int get revision => _revision;
 
   Future<AudioDetailLoadResult> load(AudioDetailTarget target) {
     final key = AudioLibraryDetailKey.forTarget(target);
-    final cached = _resolved[key];
+    final cached = _takeResolved(key);
     if (cached != null) return Future<AudioDetailLoadResult>.value(cached);
     return _loadFutures.putIfAbsent(key, () {
       final future = () async {
         final result = await _repository.load(target);
         final resultKey = AudioLibraryDetailKey.forTarget(result.detail.target);
-        _resolved[resultKey] = result;
+        _storeResolved(resultKey, result);
         if (resultKey != key) {
-          _resolved[key] = result;
+          _storeResolved(key, result);
         }
         return result;
       }();
@@ -50,23 +56,56 @@ class AudioDetailCacheService {
     final orderedTargets = targets.toList(growable: false);
     if (orderedTargets.isEmpty) return const <AudioDetailLoadResult>[];
 
-    final batchTargets = <AudioDetailTarget>[];
+    final resolvedForRequest = <String, AudioDetailLoadResult>{};
+    final pendingForRequest = <String, Future<AudioDetailLoadResult>>{};
+    final batchTargetsByKey = <String, AudioDetailTarget>{};
     for (final target in orderedTargets) {
       final key = AudioLibraryDetailKey.forTarget(target);
-      if (_resolved.containsKey(key) || _loadFutures.containsKey(key)) {
+      final cached = _takeResolved(key);
+      if (cached != null) {
+        resolvedForRequest[key] = cached;
         continue;
       }
-      batchTargets.add(target);
+      final pending = _loadFutures[key];
+      if (pending != null) {
+        pendingForRequest[key] = pending;
+        continue;
+      }
+      batchTargetsByKey.putIfAbsent(key, () => target);
     }
 
-    if (batchTargets.isNotEmpty) {
-      final batchResults = await _repository.loadMany(batchTargets);
+    if (batchTargetsByKey.isNotEmpty) {
+      final batchResults = await _repository.loadMany(batchTargetsByKey.values);
       for (final result in batchResults) {
+        resolvedForRequest[AudioLibraryDetailKey.forTarget(
+              result.detail.target,
+            )] =
+            result;
         _storeLoadResult(result);
       }
     }
 
-    return Future.wait(orderedTargets.map(load));
+    return Future.wait(<Future<AudioDetailLoadResult>>[
+      for (final target in orderedTargets)
+        _resultForRequest(
+          target,
+          resolvedForRequest: resolvedForRequest,
+          pendingForRequest: pendingForRequest,
+        ),
+    ]);
+  }
+
+  Future<AudioDetailLoadResult> _resultForRequest(
+    AudioDetailTarget target, {
+    required Map<String, AudioDetailLoadResult> resolvedForRequest,
+    required Map<String, Future<AudioDetailLoadResult>> pendingForRequest,
+  }) {
+    final key = AudioLibraryDetailKey.forTarget(target);
+    final resolved = resolvedForRequest[key];
+    if (resolved != null) return Future<AudioDetailLoadResult>.value(resolved);
+    final pending = pendingForRequest[key];
+    if (pending != null) return pending;
+    return load(target);
   }
 
   Future<AudioDetailSaveResult> save(AudioDetail detail) async {
@@ -128,8 +167,22 @@ class AudioDetailCacheService {
 
   void _storeLoadResult(AudioDetailLoadResult loadResult) {
     final key = AudioLibraryDetailKey.forTarget(loadResult.detail.target);
-    _resolved[key] = loadResult;
+    _storeResolved(key, loadResult);
     _loadFutures.remove(key);
+  }
+
+  void _storeResolved(String key, AudioDetailLoadResult loadResult) {
+    _resolved.remove(key);
+    _resolved[key] = loadResult;
+    while (_resolved.length > _maxResolvedEntries) {
+      _resolved.remove(_resolved.keys.first);
+    }
+  }
+
+  AudioDetailLoadResult? _takeResolved(String key) {
+    final value = _resolved.remove(key);
+    if (value != null) _resolved[key] = value;
+    return value;
   }
 
   void _remove(AudioDetailTarget target) {

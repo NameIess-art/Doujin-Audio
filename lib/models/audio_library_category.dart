@@ -4,7 +4,7 @@ import 'music_track.dart';
 enum AudioLibraryCategoryType { all, tags, voiceActors, circles }
 
 class AudioLibraryCategoryEntry {
-  const AudioLibraryCategoryEntry({
+  AudioLibraryCategoryEntry({
     required this.target,
     required this.title,
     required this.path,
@@ -20,9 +20,24 @@ class AudioLibraryCategoryEntry {
   final AudioDetail detail;
   final List<MusicTrack> tracks;
 
+  late final List<String> tagTerms = AudioLibraryCategorySnapshot.splitTerms(
+    detail.tags,
+  );
+  late final List<String> voiceActorTerms =
+      AudioLibraryCategorySnapshot.splitTerms(detail.voiceActors);
+  late final List<String> circleTerms = AudioLibraryCategorySnapshot.splitTerms(
+    <String>[detail.circleName],
+  );
+
+  late final Set<String> normalizedTagTerms = _normalizeTerms(tagTerms);
+  late final Set<String> normalizedVoiceActorTerms = _normalizeTerms(
+    voiceActorTerms,
+  );
+  late final Set<String> normalizedCircleTerms = _normalizeTerms(circleTerms);
+
   MusicTrack? get firstTrack => tracks.isEmpty ? null : tracks.first;
 
-  String get searchableText => [
+  late final String searchableText = [
     title,
     path,
     detail.rjCode,
@@ -31,6 +46,28 @@ class AudioLibraryCategoryEntry {
     ...detail.voiceActors,
     ...detail.tags,
   ].where((value) => value.trim().isNotEmpty).join('\n').toLowerCase();
+
+  List<String> termsForCategory(AudioLibraryCategoryType type) {
+    return switch (type) {
+      AudioLibraryCategoryType.tags => tagTerms,
+      AudioLibraryCategoryType.voiceActors => voiceActorTerms,
+      AudioLibraryCategoryType.circles => circleTerms,
+      AudioLibraryCategoryType.all => const <String>[],
+    };
+  }
+
+  Set<String> normalizedTermsForCategory(AudioLibraryCategoryType type) {
+    return switch (type) {
+      AudioLibraryCategoryType.tags => normalizedTagTerms,
+      AudioLibraryCategoryType.voiceActors => normalizedVoiceActorTerms,
+      AudioLibraryCategoryType.circles => normalizedCircleTerms,
+      AudioLibraryCategoryType.all => const <String>{},
+    };
+  }
+
+  static Set<String> _normalizeTerms(Iterable<String> terms) {
+    return Set<String>.unmodifiable(terms.map((term) => term.toLowerCase()));
+  }
 }
 
 class AudioLibraryCategorySnapshot {

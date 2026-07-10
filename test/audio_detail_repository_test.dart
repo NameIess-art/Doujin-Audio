@@ -147,6 +147,46 @@ void main() {
     expect((await appDatabase.loadAudioDetail(target))?.rjCode, 'RJ654321');
   });
 
+  test('loadMany restores missing backups in caller order', () async {
+    final firstDir = Directory('${tempDir.path}${Platform.pathSeparator}first');
+    final secondDir = Directory(
+      '${tempDir.path}${Platform.pathSeparator}second',
+    );
+    await firstDir.create();
+    await secondDir.create();
+    final first = AudioDetailTarget.libraryRootFolder(firstDir.path);
+    final second = AudioDetailTarget.libraryRootFolder(secondDir.path);
+    await File(
+      '${firstDir.path}${Platform.pathSeparator}${AudioDetailRepository.backupFileName}',
+    ).writeAsString(
+      jsonEncode(
+        AudioDetail.empty(first).copyWith(workTitle: 'First').toBackupJson(),
+      ),
+    );
+    await File(
+      '${secondDir.path}${Platform.pathSeparator}${AudioDetailRepository.backupFileName}',
+    ).writeAsString(
+      jsonEncode(
+        AudioDetail.empty(second).copyWith(workTitle: 'Second').toBackupJson(),
+      ),
+    );
+
+    final results = await repository.loadMany(<AudioDetailTarget>[
+      second,
+      first,
+      second,
+    ]);
+
+    expect(results.map((result) => result.detail.workTitle), <String>[
+      'Second',
+      'First',
+      'Second',
+    ]);
+    expect(results.every((result) => result.restoredFromBackup), isTrue);
+    expect((await appDatabase.loadAudioDetail(first))?.workTitle, 'First');
+    expect((await appDatabase.loadAudioDetail(second))?.workTitle, 'Second');
+  });
+
   test('malformed backup returns an empty root detail', () async {
     final target = AudioDetailTarget.libraryRootFolder(tempDir.path);
     final backupFile = File(

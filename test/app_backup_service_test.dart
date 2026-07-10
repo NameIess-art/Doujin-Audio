@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:archive/archive.dart';
+import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/services/app_backup_service.dart';
 import 'package:nameless_audio/services/app_database.dart';
@@ -58,6 +59,66 @@ void main() {
     expect(validation.manifest?.platform, 'test');
     expect(closeCount, 1);
     expect(reopenCount, 1);
+  });
+
+  test('stores the database entry without buffering compression', () async {
+    final output = await createService().exportBackup(
+      '${tempDirectory.path}/stored_database.nalbackup',
+    );
+
+    final archive = ZipDecoder().decodeBytes(await output.readAsBytes());
+
+    expect(
+      archive.findFile(AppBackupService.databaseEntry)?.compression,
+      CompressionType.none,
+    );
+  });
+
+  test('restores legacy backups with a deflate-compressed database', () async {
+    final databaseBytes = utf8.encode('legacy compressed database');
+    final preferencesBytes = utf8.encode(
+      jsonEncode(<String, Object>{'language': 'ja', 'themeMode': 'light'}),
+    );
+    final manifest = <String, Object?>{
+      'formatVersion': AppBackupService.formatVersion,
+      'dataEpoch': AppBackupService.dataEpoch,
+      'appVersion': '1.2.3+4',
+      'createdAt': DateTime.now().toUtc().toIso8601String(),
+      'platform': 'test',
+      'databaseSchemaVersion': AppDatabase.schemaVersion,
+      'entries': <String, Object?>{
+        AppBackupService.databaseEntry: <String, Object?>{
+          'sha256': sha256.convert(databaseBytes).toString(),
+          'size': databaseBytes.length,
+        },
+        AppBackupService.preferencesEntry: <String, Object?>{
+          'sha256': sha256.convert(preferencesBytes).toString(),
+          'size': preferencesBytes.length,
+        },
+      },
+    };
+    final archive = Archive()
+      ..addFile(
+        ArchiveFile.bytes(AppBackupService.databaseEntry, databaseBytes),
+      )
+      ..addFile(
+        ArchiveFile.bytes(AppBackupService.preferencesEntry, preferencesBytes),
+      )
+      ..addFile(
+        ArchiveFile.string(
+          AppBackupService.manifestEntry,
+          jsonEncode(manifest),
+        ),
+      );
+    final backup = File('${tempDirectory.path}/legacy_compressed.nalbackup');
+    await backup.writeAsBytes(ZipEncoder().encode(archive), flush: true);
+    await databaseFile.writeAsString('current database');
+
+    final result = await createService().restoreBackup(backup.path);
+
+    expect(result.isValid, isTrue);
+    expect(await databaseFile.readAsString(), 'legacy compressed database');
+    expect(preferences, containsPair('language', 'ja'));
   });
 
   test('rejects a 0.x format backup', () async {

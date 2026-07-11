@@ -504,6 +504,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                 cardState: cardState,
                 track: track,
                 coverPath: coverPath,
+                coverGeneration: listState.coverGeneration,
                 coverCacheWidth: coverCacheWidth,
                 showSubtitles: subtitleSettings.isGlobalEnabled(session.id),
                 provider: provider,

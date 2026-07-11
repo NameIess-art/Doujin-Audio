@@ -224,6 +224,18 @@ class _RecommendationCandidatePageResult {
   final Object? error;
 }
 
+typedef _AsmrWorkRequestKey = ({int workId, int contentEpoch, int authEpoch});
+typedef _AsmrSyncRequestKey = ({int authEpoch, String token});
+typedef _AsmrSyncOperationKey = ({
+  AsmrSyncOperationType type,
+  int workId,
+  DateTime createdAt,
+});
+
+class _StaleAsmrRequest implements Exception {
+  const _StaleAsmrRequest();
+}
+
 class AsmrLibraryController extends ChangeNotifier {
   AsmrLibraryController({
     AsmrApiService? apiService,
@@ -272,6 +284,8 @@ class AsmrLibraryController extends ChangeNotifier {
       <AsmrCategoryType, Future<void>>{};
   final Map<AsmrCategoryType, String> _refreshTaskQueries =
       <AsmrCategoryType, String>{};
+  final Map<AsmrCategoryType, int> _refreshTaskContentEpochs =
+      <AsmrCategoryType, int>{};
   final Map<AsmrCategoryType, int> _refreshRequestSerial =
       <AsmrCategoryType, int>{};
   final Map<AsmrCategoryType, List<AsmrWork>> _worksByCategory =
@@ -293,6 +307,10 @@ class AsmrLibraryController extends ChangeNotifier {
   final LinkedHashMap<int, List<AsmrTrackFile>> _visibleTrackCache =
       LinkedHashMap();
   final Set<int> _loadingTrackWorkIds = <int>{};
+  final Map<_AsmrWorkRequestKey, Future<AsmrWorkDetail>> _detailTasks =
+      <_AsmrWorkRequestKey, Future<AsmrWorkDetail>>{};
+  final Map<_AsmrWorkRequestKey, Future<List<AsmrTrackFile>>> _trackTreeTasks =
+      <_AsmrWorkRequestKey, Future<List<AsmrTrackFile>>>{};
   final Map<AsmrCategoryType, int> _categoryRevisions =
       <AsmrCategoryType, int>{};
   final Map<int, int> _trackRevisions = <int, int>{};
@@ -312,10 +330,14 @@ class AsmrLibraryController extends ChangeNotifier {
   Object? _lastSyncError;
   Future<void>? _initializeTask;
   Future<void>? _authRestoreTask;
-  Future<void>? _syncTask;
+  final Map<_AsmrSyncRequestKey, Future<void>> _syncTasks =
+      <_AsmrSyncRequestKey, Future<void>>{};
+  Future<void> _stateMutationTail = Future<void>.value();
   bool _initialized = false;
   Object? _lastError;
   int _globalRevision = 0;
+  int _authEpoch = 0;
+  int _contentEpoch = 0;
 
   void _commitPresentation(String key, VoidCallback commit) {
     final coordinator = UiInteractionCoordinator.instance;
@@ -324,6 +346,40 @@ class AsmrLibraryController extends ChangeNotifier {
     } else {
       commit();
     }
+  }
+
+  Future<T> _runStateMutation<T>(Future<T> Function() mutation) {
+    final result = _stateMutationTail.then((_) => mutation());
+    _stateMutationTail = result.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace _) {},
+    );
+    return result;
+  }
+
+  _AsmrWorkRequestKey _workRequestKey(int workId) =>
+      (workId: workId, contentEpoch: _contentEpoch, authEpoch: _authEpoch);
+
+  bool _isWorkRequestCurrent(_AsmrWorkRequestKey key) =>
+      key.contentEpoch == _contentEpoch && key.authEpoch == _authEpoch;
+
+  bool _isSyncRequestCurrent(_AsmrSyncRequestKey key) =>
+      key.authEpoch == _authEpoch && _authSession?.token == key.token;
+
+  _AsmrSyncOperationKey _syncOperationKey(AsmrSyncOperation operation) => (
+    type: operation.type,
+    workId: operation.workId,
+    createdAt: operation.createdAt,
+  );
+
+  void _ensureSyncRequestCurrent(_AsmrSyncRequestKey key) {
+    if (!_isSyncRequestCurrent(key)) throw const _StaleAsmrRequest();
+  }
+
+  void _invalidateRemoteWorkCaches() {
+    _detailCache.clear();
+    _trackCache.clear();
+    _visibleTrackCache.clear();
   }
 
   bool get initialized => _initialized;
@@ -519,6 +575,7 @@ class AsmrLibraryController extends ChangeNotifier {
   }
 
   Future<void> _restoreAsmrAccountSessionInternal() async {
+    final requestEpoch = _authEpoch;
     final previousSession = _authSession;
     final AsmrAuthSession? restored;
     try {
@@ -529,10 +586,13 @@ class AsmrLibraryController extends ChangeNotifier {
       _commitPresentation('asmr_auth_restore_error', notifyListeners);
       return;
     }
+    if (requestEpoch != _authEpoch) return;
     if (previousSession?.token == restored?.token &&
         previousSession?.userName == restored?.userName) {
       return;
     }
+    _authEpoch++;
+    _invalidateRemoteWorkCaches();
     _authSession = restored;
     _lastSyncError = null;
     _bumpGlobalRevision();
@@ -550,14 +610,20 @@ class AsmrLibraryController extends ChangeNotifier {
   }
 
   Future<void> loginAsmrAccount(String name, String password) async {
+    final loginEpoch = ++_authEpoch;
+    _invalidateRemoteWorkCaches();
+    _authSession = null;
     _syncPhase = AsmrSyncPhase.syncing;
     _lastSyncError = null;
     _bumpGlobalRevision();
     notifyListeners();
     try {
-      _authSession = await _authService.login(name.trim(), password);
+      final session = await _authService.login(name.trim(), password);
+      if (loginEpoch != _authEpoch) return;
+      _authSession = session;
       await syncAsmrAccount(force: true);
     } catch (error) {
+      if (loginEpoch != _authEpoch) return;
       _authSession = null;
       _syncPhase = AsmrSyncPhase.failed;
       _lastSyncError = error;
@@ -568,71 +634,93 @@ class AsmrLibraryController extends ChangeNotifier {
   }
 
   Future<void> logoutAsmrAccount() async {
-    await _authService.logout();
+    _authEpoch++;
+    _invalidateRemoteWorkCaches();
     _authSession = null;
     _remoteProgressByWorkId = const <int, String>{};
     _syncPhase = AsmrSyncPhase.idle;
     _lastSyncError = null;
     _bumpGlobalRevision();
     notifyListeners();
+    await _authService.logout();
   }
 
   Future<void> syncAsmrAccount({bool force = false}) {
-    final existing = _syncTask;
+    final session = _authSession;
+    if (session == null || !session.isValid) return Future<void>.value();
+    final key = (authEpoch: _authEpoch, token: session.token);
+    final existing = _syncTasks[key];
     if (existing != null) {
       return existing;
     }
     late final Future<void> task;
-    task = _syncAsmrAccountInternal().whenComplete(() {
-      if (identical(_syncTask, task)) {
-        _syncTask = null;
+    task = _syncAsmrAccountInternal(key).whenComplete(() {
+      if (identical(_syncTasks[key], task)) {
+        _syncTasks.remove(key);
       }
     });
-    _syncTask = task;
+    _syncTasks[key] = task;
     return task;
   }
 
-  Future<void> _syncAsmrAccountInternal() async {
-    final session = _authSession;
-    if (session == null || !session.isValid) {
-      return;
-    }
+  Future<void> _syncAsmrAccountInternal(_AsmrSyncRequestKey key) async {
+    if (!_isSyncRequestCurrent(key)) return;
+    var activeKey = key;
     _syncPhase = AsmrSyncPhase.syncing;
     _lastSyncError = null;
     _bumpGlobalRevision();
     notifyListeners();
     try {
-      await _runAsmrAccountSync(session.token);
-      await _markAsmrAccountSyncSucceeded();
+      await _runAsmrAccountSync(key);
+      await _markAsmrAccountSyncSucceeded(key);
+    } on _StaleAsmrRequest {
+      return;
     } catch (error) {
+      if (!_isSyncRequestCurrent(key)) return;
       var failure = error;
-      final recovered = await _recoverAsmrAccountSession(error);
+      final recovered = await _recoverAsmrAccountSession(error, key);
       if (recovered != null) {
+        final recoveredKey = (authEpoch: _authEpoch, token: recovered.token);
+        activeKey = recoveredKey;
         try {
-          await _runAsmrAccountSync(recovered.token);
-          await _markAsmrAccountSyncSucceeded();
+          await _runAsmrAccountSync(recoveredKey);
+          await _markAsmrAccountSyncSucceeded(recoveredKey);
+          return;
+        } on _StaleAsmrRequest {
           return;
         } catch (retryError) {
+          if (!_isSyncRequestCurrent(recoveredKey)) return;
           failure = retryError;
         }
       }
+      if (!_isSyncRequestCurrent(activeKey)) return;
       if (AsmrApiException.isAuthenticationError(failure)) {
         await _authService.logout();
+        if (!_isSyncRequestCurrent(activeKey)) return;
+        _authEpoch++;
         _authSession = null;
+        _syncPhase = AsmrSyncPhase.failed;
+        _lastSyncError = failure;
+        _bumpGlobalRevision();
+        notifyListeners();
+        return;
       }
       _syncPhase = AsmrSyncPhase.failed;
       _lastSyncError = failure;
     } finally {
-      _updateLocalCategoryCounts();
-      _bumpCategoryRevision(AsmrCategoryType.favorites);
-      _bumpCategoryRevision(AsmrCategoryType.history);
-      _bumpGlobalRevision();
-      notifyListeners();
+      if (_isSyncRequestCurrent(activeKey)) {
+        _updateLocalCategoryCounts();
+        _bumpCategoryRevision(AsmrCategoryType.favorites);
+        _bumpCategoryRevision(AsmrCategoryType.history);
+        _bumpGlobalRevision();
+        notifyListeners();
+      }
     }
   }
 
-  Future<void> _runAsmrAccountSync(String token) async {
+  Future<void> _runAsmrAccountSync(_AsmrSyncRequestKey key) async {
     do {
+      _ensureSyncRequestCurrent(key);
       final batch = _syncOperations.toList(growable: false)
         ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
       if (batch.any(
@@ -640,19 +728,26 @@ class AsmrLibraryController extends ChangeNotifier {
             operation.type == AsmrSyncOperationType.historyListening ||
             operation.type == AsmrSyncOperationType.favoriteRemove,
       )) {
-        await _preflightProtectedRemoteProgress(token);
+        await _preflightProtectedRemoteProgress(key);
       }
-      final uploaded = await _flushSyncOperations(token, batch);
-      await _pullRemoteReviewState(token);
+      final uploaded = await _flushSyncOperations(key, batch);
+      _ensureSyncRequestCurrent(key);
+      await _pullRemoteReviewState(key);
+      _ensureSyncRequestCurrent(key);
       if (uploaded.isNotEmpty) {
-        _syncOperations = _syncOperations
-            .where(
-              (operation) => !uploaded.any(
-                (uploadedOperation) => identical(uploadedOperation, operation),
-              ),
-            )
-            .toList(growable: false);
-        await AsmrPreferences.saveSyncOperations(_syncOperations);
+        await _runStateMutation(() async {
+          _ensureSyncRequestCurrent(key);
+          final uploadedKeys = uploaded.map(_syncOperationKey).toSet();
+          final next = _syncOperations
+              .where(
+                (operation) =>
+                    !uploadedKeys.contains(_syncOperationKey(operation)),
+              )
+              .toList(growable: false);
+          await AsmrPreferences.saveSyncOperations(next);
+          _ensureSyncRequestCurrent(key);
+          _syncOperations = next;
+        });
       }
     } while (_syncOperations.isNotEmpty);
   }
@@ -673,20 +768,28 @@ class AsmrLibraryController extends ChangeNotifier {
     await refreshCategory(category, searchQuery: searchQuery);
   }
 
-  Future<void> _markAsmrAccountSyncSucceeded() async {
-    _lastSyncAt = DateTime.now();
-    await AsmrPreferences.saveLastSyncAt(_lastSyncAt!);
+  Future<void> _markAsmrAccountSyncSucceeded(_AsmrSyncRequestKey key) async {
+    _ensureSyncRequestCurrent(key);
+    final syncedAt = DateTime.now();
+    await AsmrPreferences.saveLastSyncAt(syncedAt);
+    _ensureSyncRequestCurrent(key);
+    _lastSyncAt = syncedAt;
     _syncPhase = AsmrSyncPhase.succeeded;
   }
 
-  Future<AsmrAuthSession?> _recoverAsmrAccountSession(Object error) async {
+  Future<AsmrAuthSession?> _recoverAsmrAccountSession(
+    Object error,
+    _AsmrSyncRequestKey key,
+  ) async {
     if (!AsmrApiException.isAuthenticationError(error)) {
       return null;
     }
     final recovered = await _authService.restoreSession();
+    _ensureSyncRequestCurrent(key);
     if (recovered == null || !recovered.isValid) {
       return null;
     }
+    _authEpoch++;
     _authSession = recovered;
     return recovered;
   }
@@ -707,6 +810,16 @@ class AsmrLibraryController extends ChangeNotifier {
       return;
     }
     _contentLanguage = language;
+    _contentEpoch++;
+    for (final category in AsmrCategoryType.values) {
+      _refreshRequestSerial[category] =
+          (_refreshRequestSerial[category] ?? 0) + 1;
+      _loadingByCategory[category] = false;
+      _loadingMoreByCategory[category] = false;
+    }
+    _refreshTasks.clear();
+    _refreshTaskQueries.clear();
+    _refreshTaskContentEpochs.clear();
     await AsmrPreferences.saveContentLanguage(language);
     _worksByCategory.clear();
     _detailCache.clear();
@@ -731,25 +844,35 @@ class AsmrLibraryController extends ChangeNotifier {
   }) {
     final existing = _refreshTasks[category];
     final normalizedQuery = normalizeSearchQuery(searchQuery);
-    if (existing != null && _refreshTaskQueries[category] == normalizedQuery) {
+    if (existing != null &&
+        _refreshTaskQueries[category] == normalizedQuery &&
+        _refreshTaskContentEpochs[category] == _contentEpoch) {
       return existing;
     }
     final requestId = (_refreshRequestSerial[category] ?? 0) + 1;
     _refreshRequestSerial[category] = requestId;
+    final requestEpoch = _contentEpoch;
+    final requestLanguage = _contentLanguage;
+    final requestToken = _authSession?.token;
     late final Future<void> task;
     task =
         _refreshCategoryInternal(
           category,
           searchQuery: normalizedQuery,
           requestId: requestId,
+          requestEpoch: requestEpoch,
+          language: requestLanguage,
+          token: requestToken,
         ).whenComplete(() {
           if (identical(_refreshTasks[category], task)) {
             _refreshTasks.remove(category);
             _refreshTaskQueries.remove(category);
+            _refreshTaskContentEpochs.remove(category);
           }
         });
     _refreshTasks[category] = task;
     _refreshTaskQueries[category] = normalizedQuery;
+    _refreshTaskContentEpochs[category] = _contentEpoch;
     return task;
   }
 
@@ -778,6 +901,9 @@ class AsmrLibraryController extends ChangeNotifier {
 
     _loadingMoreByCategory[category] = true;
     notifyListeners();
+    final requestEpoch = _contentEpoch;
+    final requestLanguage = _contentLanguage;
+    final requestToken = _authSession?.token;
     try {
       final requestId = _refreshRequestSerial[category] ?? 0;
       final page = (_currentPageByCategory[category] ?? 1) + 1;
@@ -785,8 +911,11 @@ class AsmrLibraryController extends ChangeNotifier {
         category,
         searchQuery: normalizedQuery,
         page: page,
+        language: requestLanguage,
+        token: requestToken,
       );
-      if (_refreshRequestSerial[category] != requestId) {
+      if (_contentEpoch != requestEpoch ||
+          _refreshRequestSerial[category] != requestId) {
         return;
       }
       final existingIds = (_worksByCategory[category] ?? const <AsmrWork>[])
@@ -808,12 +937,14 @@ class AsmrLibraryController extends ChangeNotifier {
         notifyListeners();
       });
     } catch (error) {
-      _lastError = error;
+      if (_contentEpoch == requestEpoch) _lastError = error;
     } finally {
-      _commitPresentation('asmr_loading_more_${category.name}', () {
-        _loadingMoreByCategory[category] = false;
-        notifyListeners();
-      });
+      if (_contentEpoch == requestEpoch) {
+        _commitPresentation('asmr_loading_more_${category.name}', () {
+          _loadingMoreByCategory[category] = false;
+          notifyListeners();
+        });
+      }
     }
   }
 
@@ -821,6 +952,9 @@ class AsmrLibraryController extends ChangeNotifier {
     AsmrCategoryType category, {
     required String searchQuery,
     required int requestId,
+    required int requestEpoch,
+    required AsmrContentLanguage language,
+    required String? token,
   }) async {
     final normalizedQuery = normalizeSearchQuery(searchQuery);
     _loadingByCategory[category] = true;
@@ -834,6 +968,8 @@ class AsmrLibraryController extends ChangeNotifier {
             category,
             searchQuery: normalizedQuery,
             requestId: requestId,
+            language: language,
+            token: token,
           );
           break;
         case AsmrCategoryType.recommendation:
@@ -841,6 +977,8 @@ class AsmrLibraryController extends ChangeNotifier {
             category,
             searchQuery: normalizedQuery,
             requestId: requestId,
+            language: language,
+            token: token,
           );
           break;
         case AsmrCategoryType.sales:
@@ -848,6 +986,8 @@ class AsmrLibraryController extends ChangeNotifier {
             category,
             searchQuery: normalizedQuery,
             requestId: requestId,
+            language: language,
+            token: token,
           );
           break;
         case AsmrCategoryType.rating:
@@ -855,6 +995,8 @@ class AsmrLibraryController extends ChangeNotifier {
             category,
             searchQuery: normalizedQuery,
             requestId: requestId,
+            language: language,
+            token: token,
           );
           break;
         case AsmrCategoryType.reviews:
@@ -862,6 +1004,8 @@ class AsmrLibraryController extends ChangeNotifier {
             category,
             searchQuery: normalizedQuery,
             requestId: requestId,
+            language: language,
+            token: token,
           );
           break;
         case AsmrCategoryType.release:
@@ -869,6 +1013,8 @@ class AsmrLibraryController extends ChangeNotifier {
             category,
             searchQuery: normalizedQuery,
             requestId: requestId,
+            language: language,
+            token: token,
           );
           break;
         case AsmrCategoryType.favorites:
@@ -889,9 +1035,10 @@ class AsmrLibraryController extends ChangeNotifier {
           break;
       }
     } catch (error) {
-      _lastError = error;
+      if (_contentEpoch == requestEpoch) _lastError = error;
     } finally {
-      if (_refreshRequestSerial[category] == requestId) {
+      if (_contentEpoch == requestEpoch &&
+          _refreshRequestSerial[category] == requestId) {
         _commitPresentation('asmr_loading_end_${category.name}', () {
           _loadingByCategory[category] = false;
           notifyListeners();
@@ -904,11 +1051,15 @@ class AsmrLibraryController extends ChangeNotifier {
     AsmrCategoryType category, {
     required String searchQuery,
     required int requestId,
+    required AsmrContentLanguage language,
+    required String? token,
   }) async {
     final pageResult = await _loadRemotePage(
       category,
       searchQuery: searchQuery,
       page: 1,
+      language: language,
+      token: token,
     );
     if (_refreshRequestSerial[category] != requestId) {
       return;
@@ -929,6 +1080,8 @@ class AsmrLibraryController extends ChangeNotifier {
     AsmrCategoryType category, {
     required String searchQuery,
     required int requestId,
+    required AsmrContentLanguage language,
+    required String? token,
   }) async {
     final localTracksFuture = _loadLocalTracksForRecommendation();
     final pageResults =
@@ -937,6 +1090,8 @@ class AsmrLibraryController extends ChangeNotifier {
             _loadRecommendationCandidatePageResult(
               sourceCategory,
               searchQuery: searchQuery,
+              language: language,
+              token: token,
             ),
         ]);
     if (_refreshRequestSerial[category] != requestId) {
@@ -990,12 +1145,16 @@ class AsmrLibraryController extends ChangeNotifier {
   _loadRecommendationCandidatePageResult(
     AsmrCategoryType category, {
     required String searchQuery,
+    required AsmrContentLanguage language,
+    required String? token,
   }) async {
     try {
       return _RecommendationCandidatePageResult(
         pages: await _loadRecommendationCandidatePages(
           category,
           searchQuery: searchQuery,
+          language: language,
+          token: token,
         ),
       );
     } catch (error) {
@@ -1010,12 +1169,16 @@ class AsmrLibraryController extends ChangeNotifier {
   Future<List<AsmrWorkPage>> _loadRecommendationCandidatePages(
     AsmrCategoryType category, {
     required String searchQuery,
+    required AsmrContentLanguage language,
+    required String? token,
   }) async {
     final pages = <AsmrWorkPage>[];
     var page = await _loadRemotePage(
       category,
       searchQuery: searchQuery,
       page: 1,
+      language: language,
+      token: token,
     );
     pages.add(page);
     while (page.hasMore &&
@@ -1024,6 +1187,8 @@ class AsmrLibraryController extends ChangeNotifier {
         category,
         searchQuery: searchQuery,
         page: pages.length + 1,
+        language: language,
+        token: token,
       );
       pages.add(page);
     }
@@ -1045,6 +1210,8 @@ class AsmrLibraryController extends ChangeNotifier {
     AsmrCategoryType category, {
     required String searchQuery,
     required int page,
+    required AsmrContentLanguage language,
+    required String? token,
   }) async {
     final spec = _sortSpecFor(category);
     final pageSize = _pageSizes[category] ?? 40;
@@ -1059,8 +1226,8 @@ class AsmrLibraryController extends ChangeNotifier {
             sort: spec.sort,
             page: page,
             pageSize: pageSize,
-            token: _authSession?.token,
-            language: _contentLanguage,
+            token: token,
+            language: language,
           );
         }
         return _apiService.fetchWorks(
@@ -1068,8 +1235,8 @@ class AsmrLibraryController extends ChangeNotifier {
           sort: spec.sort,
           page: page,
           pageSize: pageSize,
-          token: _authSession?.token,
-          language: _contentLanguage,
+          token: token,
+          language: language,
         );
       },
     );
@@ -1145,17 +1312,34 @@ class AsmrLibraryController extends ChangeNotifier {
     return work.copyWith(isFavorite: _favoriteIds.contains(work.id));
   }
 
-  Future<AsmrWorkDetail> loadWorkDetail(AsmrWork work) async {
+  Future<AsmrWorkDetail> loadWorkDetail(AsmrWork work) {
     final cached = _detailCache.remove(work.id);
     if (cached != null) {
       _detailCache[work.id] = cached;
-      return cached;
+      return SynchronousFuture<AsmrWorkDetail>(cached);
     }
+    final key = _workRequestKey(work.id);
+    final existing = _detailTasks[key];
+    if (existing != null) return existing;
+    late final Future<AsmrWorkDetail> task;
+    task = _loadWorkDetailOnce(work, key).whenComplete(() {
+      if (identical(_detailTasks[key], task)) _detailTasks.remove(key);
+    });
+    _detailTasks[key] = task;
+    return task;
+  }
+
+  Future<AsmrWorkDetail> _loadWorkDetailOnce(
+    AsmrWork work,
+    _AsmrWorkRequestKey key,
+  ) async {
+    final language = _contentLanguage;
     final detail = await _apiService.fetchWorkDetail(
       work.id,
       token: _authSession?.token,
-      language: _contentLanguage,
+      language: language,
     );
+    if (!_isWorkRequestCurrent(key)) return loadWorkDetail(work);
     final merged = AsmrWorkDetail(
       work: _decorateWork(detail.work),
       description: detail.description,
@@ -1168,10 +1352,7 @@ class AsmrLibraryController extends ChangeNotifier {
   }
 
   Future<List<MusicTrack>> loadPlayableTracks(AsmrWork work) async {
-    final tree =
-        _cachedTrackTree(work.id) ??
-        await _apiService.fetchTrackTree(work.id, token: _authSession?.token);
-    _storeTrackTree(work.id, tree);
+    final tree = await ensureTrackTree(work);
     return _flattenTracks(work, tree);
   }
 
@@ -1281,32 +1462,58 @@ class AsmrLibraryController extends ChangeNotifier {
     return result;
   }
 
-  Future<List<AsmrTrackFile>> ensureTrackTree(AsmrWork work) async {
+  Future<List<AsmrTrackFile>> ensureTrackTree(AsmrWork work) {
     final cached = _cachedTrackTree(work.id);
     if (cached != null) {
-      return cached;
+      return SynchronousFuture<List<AsmrTrackFile>>(cached);
     }
-    if (_loadingTrackWorkIds.add(work.id)) {
+    final key = _workRequestKey(work.id);
+    final existing = _trackTreeTasks[key];
+    if (existing != null) return existing;
+    if (!_trackTreeTasks.keys.any((candidate) => candidate.workId == work.id) &&
+        _loadingTrackWorkIds.add(work.id)) {
       _bumpTrackRevision(work.id);
       notifyListeners();
     }
-    try {
-      final tree = await _apiService.fetchTrackTree(
-        work.id,
-        token: _authSession?.token,
-      );
+    late final Future<List<AsmrTrackFile>> task;
+    task = _loadTrackTreeOnce(work, key).whenComplete(() {
+      if (identical(_trackTreeTasks[key], task)) {
+        _trackTreeTasks.remove(key);
+      }
+      if (!_trackTreeTasks.keys.any(
+        (candidate) => candidate.workId == work.id,
+      )) {
+        _loadingTrackWorkIds.remove(work.id);
+        _trimTrackCache();
+        _bumpTrackRevision(work.id);
+        notifyListeners();
+      }
+    });
+    _trackTreeTasks[key] = task;
+    return task;
+  }
+
+  Future<List<AsmrTrackFile>> _loadTrackTreeOnce(
+    AsmrWork work,
+    _AsmrWorkRequestKey key,
+  ) async {
+    final tree = await _apiService.fetchTrackTree(
+      work.id,
+      token: _authSession?.token,
+    );
+    if (_isWorkRequestCurrent(key)) {
       _storeTrackTree(work.id, tree);
       _bumpTrackRevision(work.id);
       return tree;
-    } finally {
-      _loadingTrackWorkIds.remove(work.id);
-      _trimTrackCache();
-      _bumpTrackRevision(work.id);
-      notifyListeners();
     }
+    return ensureTrackTree(work);
   }
 
-  Future<void> toggleFavorite(AsmrWork work) async {
+  Future<void> toggleFavorite(AsmrWork work) {
+    return _runStateMutation(() => _toggleFavoriteNow(work));
+  }
+
+  Future<void> _toggleFavoriteNow(AsmrWork work) async {
     final existingIndex = _favoriteWorks.indexWhere(
       (item) => item.id == work.id,
     );
@@ -1375,7 +1582,11 @@ class AsmrLibraryController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> recordHistory(AsmrWork work) async {
+  Future<void> recordHistory(AsmrWork work) {
+    return _runStateMutation(() => _recordHistoryNow(work));
+  }
+
+  Future<void> _recordHistoryNow(AsmrWork work) async {
     final nextHistoryWorks = <AsmrWork>[
       work,
       ..._historyWorks.where((item) => item.id != work.id),
@@ -1510,16 +1721,21 @@ class AsmrLibraryController extends ChangeNotifier {
   }
 
   Future<List<AsmrSyncOperation>> _flushSyncOperations(
-    String token,
+    _AsmrSyncRequestKey key,
     List<AsmrSyncOperation> batch,
   ) async {
     if (batch.isEmpty) {
       return const <AsmrSyncOperation>[];
     }
     final uploaded = <AsmrSyncOperation>[];
+    final failed = <AsmrSyncOperation>[];
     var hadFailure = false;
     for (final operation in batch) {
-      if (!_syncOperations.any((item) => identical(item, operation))) {
+      _ensureSyncRequestCurrent(key);
+      final operationKey = _syncOperationKey(operation);
+      if (!_syncOperations.any(
+        (item) => _syncOperationKey(item) == operationKey,
+      )) {
         continue;
       }
       try {
@@ -1528,8 +1744,9 @@ class AsmrLibraryController extends ChangeNotifier {
             await _apiService.putReviewProgress(
               workId: operation.workId,
               progress: 'marked',
-              token: token,
+              token: key.token,
             );
+            _ensureSyncRequestCurrent(key);
             _remoteProgressByWorkId = <int, String>{
               ..._remoteProgressByWorkId,
               operation.workId: 'marked',
@@ -1539,8 +1756,9 @@ class AsmrLibraryController extends ChangeNotifier {
             if (_remoteProgressByWorkId[operation.workId] == 'marked') {
               await _apiService.deleteReview(
                 workId: operation.workId,
-                token: token,
+                token: key.token,
               );
+              _ensureSyncRequestCurrent(key);
               _remoteProgressByWorkId = <int, String>{
                 ..._remoteProgressByWorkId,
               }..remove(operation.workId);
@@ -1549,8 +1767,9 @@ class AsmrLibraryController extends ChangeNotifier {
               await _apiService.putReviewProgress(
                 workId: operation.workId,
                 progress: 'listening',
-                token: token,
+                token: key.token,
               );
+              _ensureSyncRequestCurrent(key);
               _remoteProgressByWorkId = <int, String>{
                 ..._remoteProgressByWorkId,
                 operation.workId: 'listening',
@@ -1562,8 +1781,9 @@ class AsmrLibraryController extends ChangeNotifier {
               await _apiService.putReviewProgress(
                 workId: operation.workId,
                 progress: 'marked',
-                token: token,
+                token: key.token,
               );
+              _ensureSyncRequestCurrent(key);
               _remoteProgressByWorkId = <int, String>{
                 ..._remoteProgressByWorkId,
                 operation.workId: 'marked',
@@ -1572,8 +1792,9 @@ class AsmrLibraryController extends ChangeNotifier {
               await _apiService.putReviewProgress(
                 workId: operation.workId,
                 progress: 'listening',
-                token: token,
+                token: key.token,
               );
+              _ensureSyncRequestCurrent(key);
               _remoteProgressByWorkId = <int, String>{
                 ..._remoteProgressByWorkId,
                 operation.workId: 'listening',
@@ -1587,33 +1808,37 @@ class AsmrLibraryController extends ChangeNotifier {
           rethrow;
         }
         hadFailure = true;
-        final index = _syncOperations.indexWhere(
-          (item) => identical(item, operation),
-        );
-        if (index >= 0) {
-          final updated = _syncOperations.toList(growable: true);
-          updated[index] = operation.copyWith(
-            retryCount: operation.retryCount + 1,
-          );
-          _syncOperations = updated;
-        }
+        failed.add(operation);
       }
     }
     if (hadFailure) {
-      _syncOperations = _syncOperations
-          .where(
-            (operation) => !uploaded.any(
-              (uploadedOperation) => identical(uploadedOperation, operation),
-            ),
-          )
-          .toList(growable: false);
-      await AsmrPreferences.saveSyncOperations(_syncOperations);
+      await _runStateMutation(() async {
+        _ensureSyncRequestCurrent(key);
+        final uploadedKeys = uploaded.map(_syncOperationKey).toSet();
+        final failedKeys = failed.map(_syncOperationKey).toSet();
+        final next = _syncOperations
+            .where(
+              (operation) =>
+                  !uploadedKeys.contains(_syncOperationKey(operation)),
+            )
+            .map((operation) {
+              return !failedKeys.contains(_syncOperationKey(operation))
+                  ? operation
+                  : operation.copyWith(retryCount: operation.retryCount + 1);
+            })
+            .toList(growable: false);
+        await AsmrPreferences.saveSyncOperations(next);
+        _ensureSyncRequestCurrent(key);
+        _syncOperations = next;
+      });
       throw const HttpException('ASMR sync operations failed.');
     }
     return uploaded;
   }
 
-  Future<void> _preflightProtectedRemoteProgress(String token) async {
+  Future<void> _preflightProtectedRemoteProgress(
+    _AsmrSyncRequestKey key,
+  ) async {
     const protectedFilters = <String>[
       'marked',
       'listened',
@@ -1621,8 +1846,9 @@ class AsmrLibraryController extends ChangeNotifier {
       'postponed',
     ];
     final pages = await Future.wait(
-      protectedFilters.map((filter) => _fetchAllReviewRecords(token, filter)),
+      protectedFilters.map((filter) => _fetchAllReviewRecords(key, filter)),
     );
+    _ensureSyncRequestCurrent(key);
     _remoteProgressByWorkId = <int, String>{
       for (final record in pages.expand((records) => records))
         record.work.id: record.progress,
@@ -1639,52 +1865,59 @@ class AsmrLibraryController extends ChangeNotifier {
 
   Future<void> _mergeRemoteMarkedFavorites(
     List<AsmrReviewRecord> records,
-  ) async {
-    final pendingRemoves = _syncOperations
-        .where(
-          (operation) => operation.type == AsmrSyncOperationType.favoriteRemove,
-        )
-        .map((operation) => operation.workId)
-        .toSet();
-    final pendingAdds =
-        _syncOperations
-            .where(
-              (operation) =>
-                  operation.type == AsmrSyncOperationType.favoriteAdd,
-            )
-            .toList(growable: false)
-          ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
-    final sortedRecords =
-        records
-            .where((record) => record.progress == 'marked')
-            .toList(growable: false)
-          ..sort(_compareReviewRecordsNewestFirst);
-    final byId = <int, AsmrWork>{};
-    for (final operation in pendingAdds) {
-      final work = _favoriteWorks
-          .where((work) => work.id == operation.workId)
-          .firstOrNull;
-      if (work != null && !pendingRemoves.contains(work.id)) {
-        byId[work.id] = work.copyWith(isFavorite: true);
+    _AsmrSyncRequestKey key,
+  ) {
+    return _runStateMutation(() async {
+      _ensureSyncRequestCurrent(key);
+      final pendingRemoves = _syncOperations
+          .where(
+            (operation) =>
+                operation.type == AsmrSyncOperationType.favoriteRemove,
+          )
+          .map((operation) => operation.workId)
+          .toSet();
+      final pendingAdds =
+          _syncOperations
+              .where(
+                (operation) =>
+                    operation.type == AsmrSyncOperationType.favoriteAdd,
+              )
+              .toList(growable: false)
+            ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      final sortedRecords =
+          records
+              .where((record) => record.progress == 'marked')
+              .toList(growable: false)
+            ..sort(_compareReviewRecordsNewestFirst);
+      final byId = <int, AsmrWork>{};
+      for (final operation in pendingAdds) {
+        final work = _favoriteWorks
+            .where((work) => work.id == operation.workId)
+            .firstOrNull;
+        if (work != null && !pendingRemoves.contains(work.id)) {
+          byId[work.id] = work.copyWith(isFavorite: true);
+        }
       }
-    }
-    for (final work in _favoriteWorks) {
-      if (!pendingRemoves.contains(work.id)) {
-        byId[work.id] = work.copyWith(isFavorite: true);
+      for (final work in _favoriteWorks) {
+        if (!pendingRemoves.contains(work.id)) {
+          byId[work.id] = work.copyWith(isFavorite: true);
+        }
       }
-    }
-    for (final record in sortedRecords) {
-      final work = record.work;
-      if (!pendingRemoves.contains(work.id)) {
-        byId[work.id] = _decorateWork(work).copyWith(isFavorite: true);
+      for (final record in sortedRecords) {
+        final work = record.work;
+        if (!pendingRemoves.contains(work.id)) {
+          byId[work.id] = _decorateWork(work).copyWith(isFavorite: true);
+        }
       }
-    }
-    _favoriteWorks = byId.values.toList(growable: false);
-    _favoriteIds = _favoriteWorks.map((work) => work.id).toSet();
-    await AsmrPreferences.saveFavoriteWorks(_favoriteWorks);
+      final nextFavorites = byId.values.toList(growable: false);
+      await AsmrPreferences.saveFavoriteWorks(nextFavorites);
+      _ensureSyncRequestCurrent(key);
+      _favoriteWorks = nextFavorites;
+      _favoriteIds = nextFavorites.map((work) => work.id).toSet();
+    });
   }
 
-  Future<void> _pullRemoteReviewState(String token) async {
+  Future<void> _pullRemoteReviewState(_AsmrSyncRequestKey key) async {
     const filters = <String>[
       'marked',
       'listening',
@@ -1693,29 +1926,32 @@ class AsmrLibraryController extends ChangeNotifier {
       'postponed',
     ];
     final pages = await Future.wait(
-      filters.map((filter) => _fetchAllReviewRecords(token, filter)),
+      filters.map((filter) => _fetchAllReviewRecords(key, filter)),
     );
+    _ensureSyncRequestCurrent(key);
     final records = pages.expand((records) => records).toList(growable: false);
     _remoteProgressByWorkId = <int, String>{
       for (final record in records) record.work.id: record.progress,
     };
-    await _mergeRemoteMarkedFavorites(records);
-    await _mergeRemoteHistory(records);
+    await _mergeRemoteMarkedFavorites(records, key);
+    await _mergeRemoteHistory(records, key);
   }
 
   Future<List<AsmrReviewRecord>> _fetchAllReviewRecords(
-    String token,
+    _AsmrSyncRequestKey key,
     String filter,
   ) async {
     final records = <AsmrReviewRecord>[];
     var page = 1;
     while (true) {
+      _ensureSyncRequestCurrent(key);
       final pageRecords = await _apiService.fetchReviews(
-        token: token,
+        token: key.token,
         filter: filter,
         page: page,
         language: _contentLanguage,
       );
+      _ensureSyncRequestCurrent(key);
       if (pageRecords.isEmpty) {
         break;
       }
@@ -1725,32 +1961,38 @@ class AsmrLibraryController extends ChangeNotifier {
     return records;
   }
 
-  Future<void> _mergeRemoteHistory(List<AsmrReviewRecord> records) async {
-    final historyRecords = records
-        .where((record) => record.progress != 'marked')
-        .toList(growable: false);
-    if (historyRecords.isEmpty && _historyWorks.isEmpty) {
-      return;
-    }
-    historyRecords.sort(_compareReviewRecordsNewestFirst);
+  Future<void> _mergeRemoteHistory(
+    List<AsmrReviewRecord> records,
+    _AsmrSyncRequestKey key,
+  ) {
+    return _runStateMutation(() async {
+      _ensureSyncRequestCurrent(key);
+      final historyRecords = records
+          .where((record) => record.progress != 'marked')
+          .toList(growable: false);
+      if (historyRecords.isEmpty && _historyWorks.isEmpty) return;
+      historyRecords.sort(_compareReviewRecordsNewestFirst);
 
-    final merged = <AsmrWork>[];
-    final seenIds = <int>{};
+      final merged = <AsmrWork>[];
+      final seenIds = <int>{};
 
-    for (final work in _historyWorks) {
-      if (seenIds.add(work.id)) {
-        merged.add(_decorateWork(work));
+      for (final work in _historyWorks) {
+        if (seenIds.add(work.id)) {
+          merged.add(_decorateWork(work));
+        }
       }
-    }
 
-    for (final record in historyRecords) {
-      if (seenIds.add(record.work.id)) {
-        merged.add(_decorateWork(record.work));
+      for (final record in historyRecords) {
+        if (seenIds.add(record.work.id)) {
+          merged.add(_decorateWork(record.work));
+        }
       }
-    }
 
-    _historyWorks = merged.take(_historyLimit).toList(growable: false);
-    await AsmrPreferences.saveHistoryWorks(_historyWorks);
+      final nextHistory = merged.take(_historyLimit).toList(growable: false);
+      await AsmrPreferences.saveHistoryWorks(nextHistory);
+      _ensureSyncRequestCurrent(key);
+      _historyWorks = nextHistory;
+    });
   }
 
   static int _compareReviewRecordsNewestFirst(

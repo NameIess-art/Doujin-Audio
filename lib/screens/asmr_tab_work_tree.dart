@@ -42,16 +42,30 @@ class _AsmrWorkTreeCardState extends State<_AsmrWorkTreeCard> {
     final i18n = context.read<AppLanguageProvider>();
     final asmrBlue = AppDesignTokens.of(context).asmrAccent;
     final shouldFavorite = !widget.work.isFavorite;
-    unawaited(
-      UiOperationService.instance.run<void>(
-        scope: UiOperationScope.asmrWork(
-          AsmrOperationKind.favorite,
-          widget.work.id,
-        ),
+    final scope = UiOperationScope.asmrWork(
+      AsmrOperationKind.favorite,
+      widget.work.id,
+    );
+    final operations = UiOperationService.instance;
+    if (operations.isBusy(scope)) return;
+    try {
+      await operations.run<void>(
+        scope: scope,
         labelKey: 'loading_dot',
         task: (_) => controller.toggleFavorite(widget.work),
-      ),
-    );
+        cancelPrevious: false,
+      );
+    } catch (_) {
+      if (!context.mounted) return;
+      showAppSnackBar(
+        context,
+        i18n.tr('operation_failed_retry'),
+        tone: AppFeedbackTone.warning,
+        icon: Icons.error_outline_rounded,
+      );
+      return;
+    }
+    if (!context.mounted) return;
     showAppSnackBar(
       context,
       i18n.tr(shouldFavorite ? 'asmr_favorite_added' : 'asmr_favorite_removed'),

@@ -85,9 +85,8 @@ final uiOperationStateProvider = StreamProvider<UiOperationRegistryState>((
 
 final uiOperationForScopeProvider =
     Provider.family<UiOperationState, UiOperationScope>((ref, scope) {
-      final serviceState = ref.watch(uiOperationServiceProvider).state;
-      final asyncState = ref.watch(uiOperationStateProvider).valueOrNull;
-      return (asyncState ?? serviceState).forScope(scope);
+      ref.watch(uiOperationStateProvider);
+      return ref.watch(uiOperationServiceProvider).state.forScope(scope);
     });
 
 final libraryStateProvider = StreamProvider<LibraryState>((ref) {

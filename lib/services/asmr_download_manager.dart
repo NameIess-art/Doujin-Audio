@@ -531,6 +531,10 @@ class AsmrDownloadManager extends ChangeNotifier {
     }
 
     final workFolderName = _buildWorkFolderName(work);
+    final plannedFiles = _collectPlannedFiles(selectedRoots);
+    for (final file in plannedFiles) {
+      _validatedDownloadRelativePath(file.relativePath);
+    }
     final workRootPath = _joinFolderPath(normalizedDestination, workFolderName);
     _workRootExistedBeforeTask[workId] = await _pathExists(workRootPath);
     final backup = _buildBackupDetail(work, workRootPath);
@@ -538,7 +542,6 @@ class AsmrDownloadManager extends ChangeNotifier {
       '  ',
     ).convert(backup.toBackupJson());
     final backupBytes = utf8.encode(backupJson).length;
-    final plannedFiles = _collectPlannedFiles(selectedRoots);
     final totalFiles = plannedFiles.length + 1;
     final totalBytes = plannedFiles.fold<int>(backupBytes, (sum, item) {
       return sum + item.size;
@@ -753,6 +756,11 @@ class AsmrDownloadManager extends ChangeNotifier {
         }
       }
 
+      final finalDownloadedBytes = failed > 0
+          ? downloadedBytes
+          : _tasks[workId]!.totalBytes;
+      _liveDownloadedBytes[workId] = finalDownloadedBytes;
+      _liveFileDownloadedBytes[workId] = fileDownloadedBytes;
       _tasks[workId] = _tasks[workId]!.copyWith(
         status: failed > 0
             ? AsmrDownloadTaskStatus.failed
@@ -760,9 +768,8 @@ class AsmrDownloadManager extends ChangeNotifier {
         completedFiles: completed,
         skippedFiles: skipped,
         failedFiles: failed,
-        downloadedBytes:
-            backupBytes +
-            plannedFiles.fold<int>(0, (sum, item) => sum + item.size),
+        downloadedBytes: finalDownloadedBytes,
+        fileDownloadedBytes: fileDownloadedBytes,
         message: failed > 0 ? 'completed_with_failures' : 'completed',
       );
       _notifyTaskChanged();
@@ -867,10 +874,7 @@ class AsmrDownloadManager extends ChangeNotifier {
     File? localTargetFile;
     if (!PathMatcher.isContentUri(workRootPath)) {
       localTargetFile = File(
-        path.join(
-          workRootPath,
-          item.relativePath.replaceAll('/', path.separator),
-        ),
+        _resolveLocalPathWithin(workRootPath, item.relativePath),
       );
       if (await localTargetFile.exists() &&
           await localTargetFile.length() == item.size) {
@@ -1091,10 +1095,7 @@ class AsmrDownloadManager extends ChangeNotifier {
     required String relativePath,
     required bool overwrite,
   }) async {
-    final normalized = relativePath.trim().replaceAll('\\', '/');
-    if (normalized.isEmpty) {
-      return true;
-    }
+    final normalized = _validatedDownloadRelativePath(relativePath);
 
     if (PathMatcher.isContentUri(basePath)) {
       return _fileCacheGateway.ensureFolderPath(
@@ -1104,7 +1105,7 @@ class AsmrDownloadManager extends ChangeNotifier {
       );
     }
 
-    final folder = Directory(_joinFolderPath(basePath, normalized));
+    final folder = Directory(_resolveLocalPathWithin(basePath, normalized));
     try {
       await folder.create(recursive: true);
       return true;
@@ -1114,14 +1115,43 @@ class AsmrDownloadManager extends ChangeNotifier {
   }
 
   String _joinFolderPath(String basePath, String relativePath) {
+    final normalizedRelative = _validatedDownloadRelativePath(relativePath);
     if (PathMatcher.isContentUri(basePath)) {
-      final normalizedRelative = relativePath.trim().replaceAll('\\', '/');
-      if (normalizedRelative.isEmpty) {
-        return _trimRightSlash(basePath);
-      }
       return '${_trimRightSlash(basePath)}::$normalizedRelative';
     }
-    return path.join(basePath, relativePath);
+    return _resolveLocalPathWithin(basePath, normalizedRelative);
+  }
+
+  String _validatedDownloadRelativePath(String relativePath) {
+    final normalized = relativePath.trim().replaceAll('\\', '/');
+    if (normalized.isEmpty ||
+        path.posix.isAbsolute(normalized) ||
+        path.windows.isAbsolute(normalized) ||
+        normalized.startsWith('//') ||
+        RegExp(r'^[A-Za-z]:').hasMatch(normalized)) {
+      throw FormatException('Invalid download path: $relativePath');
+    }
+    final segments = normalized.split('/');
+    if (segments.any(
+      (segment) => segment.isEmpty || segment == '.' || segment == '..',
+    )) {
+      throw FormatException('Invalid download path: $relativePath');
+    }
+    return segments.join('/');
+  }
+
+  String _resolveLocalPathWithin(String basePath, String relativePath) {
+    final normalizedRelative = _validatedDownloadRelativePath(relativePath);
+    final root = path.normalize(path.absolute(basePath));
+    final target = path.normalize(
+      path.absolute(
+        path.join(root, normalizedRelative.replaceAll('/', path.separator)),
+      ),
+    );
+    if (!path.isWithin(root, target)) {
+      throw const FormatException('Download path escapes its destination.');
+    }
+    return target;
   }
 
   AudioDetail _buildBackupDetail(AsmrWork work, String workRootPath) {

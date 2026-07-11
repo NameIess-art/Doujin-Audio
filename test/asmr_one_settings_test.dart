@@ -1279,6 +1279,148 @@ void main() {
     expect(historyIds, contains(300));
     expect(historyIds, hasLength(60));
   });
+
+  test(
+    'concurrent favorite and history mutations do not lose updates',
+    () async {
+      await resetPrefs();
+      final controller = AsmrLibraryController(
+        apiService: _FakeAsmrApiService(),
+        audioDatabaseRepository: _FakeAudioDatabaseRepository(
+          const <MusicTrack>[],
+        ),
+      );
+      await controller.initialize(defaultLanguage: AsmrContentLanguage.en);
+      final favorite = _work(id: 401, title: 'Favorite');
+
+      await Future.wait<void>(<Future<void>>[
+        controller.toggleFavorite(favorite),
+        controller.toggleFavorite(favorite),
+      ]);
+      expect(controller.worksFor(AsmrCategoryType.favorites), isEmpty);
+
+      await Future.wait<void>(<Future<void>>[
+        controller.recordHistory(_work(id: 402, title: 'First')),
+        controller.recordHistory(_work(id: 403, title: 'Second')),
+      ]);
+      expect(
+        controller.worksFor(AsmrCategoryType.history).map((work) => work.id),
+        containsAll(<int>[402, 403]),
+      );
+    },
+  );
+
+  test('detail and track tree requests are single flight', () async {
+    await resetPrefs();
+    final detailStarted = Completer<void>();
+    final detailRelease = Completer<void>();
+    final trackStarted = Completer<void>();
+    final trackRelease = Completer<void>();
+    final api = _FakeAsmrApiService(
+      beforeFetchWorkDetail: (_, _) async {
+        if (!detailStarted.isCompleted) detailStarted.complete();
+        await detailRelease.future;
+      },
+      beforeFetchTrackTree: (_) async {
+        if (!trackStarted.isCompleted) trackStarted.complete();
+        await trackRelease.future;
+      },
+    );
+    final controller = AsmrLibraryController(
+      apiService: api,
+      audioDatabaseRepository: _FakeAudioDatabaseRepository(
+        const <MusicTrack>[],
+      ),
+    );
+    await controller.initialize(defaultLanguage: AsmrContentLanguage.en);
+    final work = _work(id: 404, title: 'Single flight');
+
+    final details = <Future<AsmrWorkDetail>>[
+      controller.loadWorkDetail(work),
+      controller.loadWorkDetail(work),
+    ];
+    await detailStarted.future;
+    expect(api.detailFetchWorkIds, <int>[404]);
+    detailRelease.complete();
+    await Future.wait(details);
+
+    final trees = <Future<List<AsmrTrackFile>>>[
+      controller.ensureTrackTree(work),
+      controller.ensureTrackTree(work),
+    ];
+    await trackStarted.future;
+    expect(api.trackFetchWorkIds, <int>[404]);
+    trackRelease.complete();
+    await Future.wait(trees);
+  });
+
+  test('language changes discard an in-flight detail result', () async {
+    await resetPrefs();
+    final started = Completer<void>();
+    final release = Completer<void>();
+    var calls = 0;
+    final api = _FakeAsmrApiService(
+      beforeFetchWorkDetail: (_, _) async {
+        calls++;
+        if (calls == 1) {
+          started.complete();
+          await release.future;
+        }
+      },
+    );
+    final controller = AsmrLibraryController(
+      apiService: api,
+      audioDatabaseRepository: _FakeAudioDatabaseRepository(
+        const <MusicTrack>[],
+      ),
+    );
+    await controller.initialize(defaultLanguage: AsmrContentLanguage.en);
+    final future = controller.loadWorkDetail(_work(id: 405, title: 'Language'));
+    await started.future;
+    await controller.setContentLanguage(AsmrContentLanguage.ja);
+    release.complete();
+
+    final detail = await future;
+    expect(detail.work.title, startsWith('ja:'));
+    expect(api.detailFetchWorkIds, <int>[405, 405]);
+  });
+
+  test('a new account does not reuse an old account sync task', () async {
+    await resetPrefs();
+    final oldSyncStarted = Completer<void>();
+    final releaseOldSync = Completer<void>();
+    final api = _FakeAsmrApiService();
+    api.onPutReviewWithToken = (workId, progress, token) async {
+      if (token == 'token-alice') {
+        if (!oldSyncStarted.isCompleted) oldSyncStarted.complete();
+        await releaseOldSync.future;
+      }
+    };
+    final controller = AsmrLibraryController(
+      apiService: api,
+      authService: AsmrAuthService(
+        apiService: api,
+        tokenStore: _MemoryAsmrTokenStore(),
+      ),
+      audioDatabaseRepository: _FakeAudioDatabaseRepository(
+        const <MusicTrack>[],
+      ),
+    );
+    await controller.initialize(defaultLanguage: AsmrContentLanguage.en);
+    await controller.loginAsmrAccount('alice', 'password');
+    await controller.toggleFavorite(_work(id: 406, title: 'Account'));
+    await oldSyncStarted.future;
+
+    await controller.logoutAsmrAccount();
+    await controller.loginAsmrAccount('bob', 'password');
+    expect(api.reviewPutTokens, contains('token-bob'));
+    expect(controller.asmrAccountName, 'bob');
+
+    releaseOldSync.complete();
+    await Future<void>.delayed(Duration.zero);
+    expect(controller.asmrAccountName, 'bob');
+    expect(controller.syncViewState.phase, AsmrSyncPhase.succeeded);
+  });
 }
 
 class _FakeAsmrApiService extends AsmrApiService {
@@ -1293,6 +1435,8 @@ class _FakeAsmrApiService extends AsmrApiService {
     this.transientFetchFailuresRemaining = 0,
     this.emptyCheckSessionUserName = false,
     this.beforeFetchWorkResponse,
+    this.beforeFetchWorkDetail,
+    this.beforeFetchTrackTree,
   }) : remoteReviewRecords = List<AsmrReviewRecord>.of(remoteReviewRecords),
        super(baseUri: Uri.parse('https://example.test'));
 
@@ -1312,6 +1456,9 @@ class _FakeAsmrApiService extends AsmrApiService {
   final Set<String> failingFetchOrders;
   final bool emptyCheckSessionUserName;
   final Future<void> Function(String request)? beforeFetchWorkResponse;
+  final Future<void> Function(int workId, AsmrContentLanguage language)?
+  beforeFetchWorkDetail;
+  final Future<void> Function(int workId)? beforeFetchTrackTree;
   int failPutReviewCount;
   int transientFetchFailuresRemaining;
   int checkSessionAuthFailuresRemaining = 0;
@@ -1320,6 +1467,9 @@ class _FakeAsmrApiService extends AsmrApiService {
   int loginCount = 0;
   String _lastLoginName = '';
   Future<void> Function(int workId, String progress)? onPutReview;
+  Future<void> Function(int workId, String progress, String token)?
+  onPutReviewWithToken;
+  final List<String> reviewPutTokens = <String>[];
 
   @override
   Future<AsmrAuthSession> login({
@@ -1492,8 +1642,9 @@ class _FakeAsmrApiService extends AsmrApiService {
     AsmrContentLanguage language = AsmrContentLanguage.zh,
   }) async {
     detailFetchWorkIds.add(workId);
+    await beforeFetchWorkDetail?.call(workId, language);
     return AsmrWorkDetail(
-      work: _work(id: workId, title: 'Work $workId'),
+      work: _work(id: workId, title: '${language.name}:Work $workId'),
       description: '',
       ageCategory: '',
       languageEditionLabels: const <String>[],
@@ -1507,6 +1658,7 @@ class _FakeAsmrApiService extends AsmrApiService {
     String? token,
   }) async {
     trackFetchWorkIds.add(workId);
+    await beforeFetchTrackTree?.call(workId);
     return trackTree;
   }
 
@@ -1543,6 +1695,8 @@ class _FakeAsmrApiService extends AsmrApiService {
     required String token,
   }) async {
     calls.add('put:$workId:$progress');
+    reviewPutTokens.add(token);
+    await onPutReviewWithToken?.call(workId, progress, token);
     final callback = onPutReview;
     onPutReview = null;
     if (callback != null) {

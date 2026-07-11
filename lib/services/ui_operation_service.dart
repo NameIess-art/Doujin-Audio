@@ -217,10 +217,7 @@ class UiOperationService {
     Map<UiOperationScope, UiOperationState>.unmodifiable(_operations),
   );
 
-  Stream<UiOperationRegistryState> get stream async* {
-    yield state;
-    yield* _controller.stream;
-  }
+  Stream<UiOperationRegistryState> get stream => _controller.stream;
 
   UiOperationState operationFor(UiOperationScope scope) {
     return _operations[scope] ?? UiOperationState.idle(scope);

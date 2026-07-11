@@ -548,7 +548,7 @@ extension AudioProviderPlaybackSessions on AudioProvider {
       currentTrack: scopeTrack,
       loopMode: session.loopMode,
       sortedLibraryTrackPaths: crossFolderTrackPaths,
-      tracksByGroup: _tracksByGroup,
+      folderTracks: tracksInSameWork(resolvedCurrentPath),
       customQueueTracks: session.customQueueTracks,
       isPlaybackQueue: session.isPlaybackQueue,
       currentQueueIndex: session.currentQueueIndex,

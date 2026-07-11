@@ -218,13 +218,6 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
       UiOperationScope.libraryImportFiles,
     ].any(operations.isBusy);
     if (provider.isScanning || importBusy) {
-      showAppSnackBar(context, i18n.tr('scanning_title'));
-      return;
-    }
-    if (provider.isScanning ||
-        ref
-            .read(uiOperationServiceProvider)
-            .isBusy(UiOperationScope.libraryRefresh)) {
       if (!silent) showAppSnackBar(context, i18n.tr('scanning_title'));
       return;
     }

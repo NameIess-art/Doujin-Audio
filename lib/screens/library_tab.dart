@@ -491,47 +491,77 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     super.build(context);
     final i18n = context.watch<AppLanguageProvider>();
     final provider = ref.read(audioProviderFacadeProvider);
-    final libraryHeaderState = ref.watch(libraryHeaderUiProvider);
-    final listState = ref.watch(libraryListUiProvider);
+    final libraryHeaderAudioCount = ref.watch(
+      libraryHeaderUiProvider.select((s) => s.audioCount),
+    );
+    final libraryHeaderHasWatchedSources = ref.watch(
+      libraryHeaderUiProvider.select((s) => s.hasWatchedSources),
+    );
+    final listStateRawTree = ref.watch(
+      libraryListUiProvider.select((s) => s.rawTree),
+    );
+    final listStateStructureRevision = ref.watch(
+      libraryListUiProvider.select((s) => s.structureRevision),
+    );
+    final listStateIsScanning = ref.watch(
+      libraryListUiProvider.select((s) => s.isScanning),
+    );
+    final listStateIsBackgroundScanning = ref.watch(
+      libraryListUiProvider.select((s) => s.isBackgroundScanning),
+    );
+    final listStateIsInitialized = ref.watch(
+      libraryListUiProvider.select((s) => s.isInitialized),
+    );
+    final listStateHasLibrary = ref.watch(
+      libraryListUiProvider.select((s) => s.hasLibrary),
+    );
+    final listStateCanPullRefresh = ref.watch(
+      libraryListUiProvider.select((s) => s.canPullRefresh),
+    );
     final detailRevision = ref.watch(libraryDetailRevisionProvider);
     ref.watch(libraryCategoryRevisionProvider);
     final coverGeneration = ref.watch(coverGenerationProvider);
     final settingsState =
         ref.watch(settingsStateProvider).valueOrNull ?? const SettingsState();
     final cardPositionsLocked = settingsState.cardPositionsLocked;
-    final libraryRefreshOperation = ref.watch(
-      uiOperationForScopeProvider(UiOperationScope.libraryRefresh),
+    final libraryRefreshOperationBusy = ref.watch(
+      uiOperationForScopeProvider(UiOperationScope.libraryRefresh)
+          .select((s) => s.isBusy),
     );
     final libraryImportBusy = <UiOperationScope>[
       UiOperationScope.libraryImportFolder,
       UiOperationScope.libraryImportLibrary,
       UiOperationScope.libraryImportFiles,
-    ].any((scope) => ref.watch(uiOperationForScopeProvider(scope)).isBusy);
+    ].any(
+      (scope) => ref.watch(
+        uiOperationForScopeProvider(scope).select((s) => s.isBusy),
+      ),
+    );
     final libraryRefreshBusy =
-        libraryRefreshOperation.isBusy ||
+        libraryRefreshOperationBusy ||
         libraryImportBusy ||
-        listState.isScanning;
+        listStateIsScanning;
     _ensureCategorySnapshot(
       provider: provider,
-      structureRevision: listState.structureRevision,
+      structureRevision: listStateStructureRevision,
       detailRevision: detailRevision,
     );
     final searchQuery = _effectiveSearchQuery;
     _ensureFilteredSearchSnapshot(
-      tree: listState.rawTree,
+      tree: listStateRawTree,
       query: searchQuery,
-      structureRevision: listState.structureRevision,
+      structureRevision: listStateStructureRevision,
     );
     final visibleSearchResult =
         _visibleSearchQuery == searchQuery &&
-            _visibleSearchRevision == listState.structureRevision
+            _visibleSearchRevision == listStateStructureRevision
         ? _visibleSearchResult
         : null;
     final tree = searchQuery.isEmpty
-        ? listState.rawTree
+        ? listStateRawTree
         : visibleSearchResult?.tree ?? const <LibraryNode>[];
     final matchCount = searchQuery.isEmpty
-        ? libraryHeaderState.audioCount
+        ? libraryHeaderAudioCount
         : visibleSearchResult?.matchCount ?? 0;
     final showSearchSkeleton =
         searchQuery.isNotEmpty && visibleSearchResult == null;
@@ -558,25 +588,25 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         .clamp(headerContentHeight, 1600.0)
         .toDouble();
     final hasLibrary =
-        listState.hasLibrary || libraryHeaderState.audioCount > 0;
+        listStateHasLibrary || libraryHeaderAudioCount > 0;
     final showLibrarySkeleton =
         !hasLibrary &&
         _effectiveSearchQuery.isEmpty &&
         libraryRefreshBusy &&
-        libraryHeaderState.hasWatchedSources;
+        libraryHeaderHasWatchedSources;
     if (_categoryType == AudioLibraryCategoryType.all &&
         _effectiveSearchQuery.isEmpty &&
-        listState.isInitialized) {
+        listStateIsInitialized) {
       _scheduleLibraryCoverWarmup(
         provider: provider,
         tracks: _libraryCoverWarmupTracksForTree(tree),
-        structureRevision: listState.structureRevision,
+        structureRevision: listStateStructureRevision,
         detailRevision: detailRevision,
         coverGeneration: coverGeneration,
         scope: 'all',
       );
     }
-    final canPullRefresh = listState.canPullRefresh;
+    final canPullRefresh = listStateCanPullRefresh;
     Widget dynamicSearchBar() {
       return _CollapsingSearchBar(
         controller: _scrollController,
@@ -587,7 +617,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
           children: [
             _buildLibraryCategoryTabs(i18n),
             if (_categoryType == AudioLibraryCategoryType.all)
-              _buildSearchBar(i18n, matchCount, libraryHeaderState.audioCount),
+              _buildSearchBar(i18n, matchCount, libraryHeaderAudioCount),
           ],
         ),
       );
@@ -700,7 +730,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
               notification.metrics.pixels < -68 &&
               !_refreshTriggeredInCurrentScroll &&
               canPullRefresh &&
-              !listState.isScanning &&
+              !listStateIsScanning &&
               _effectiveSearchQuery.isEmpty) {
             _refreshTriggeredInCurrentScroll = true;
             unawaited(
@@ -739,7 +769,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                 scrollController: _scrollController,
                 showScrollbar: isWindows,
                 scrollbarMainAxisMargin: isWindows ? 8 : 0,
-                child: !listState.isInitialized
+                child: !listStateIsInitialized
                     ? ShimmerLoader(
                         child: ListView.builder(
                           physics: const NeverScrollableScrollPhysics(),
@@ -793,7 +823,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                         bottomPadding: listBottomPadding,
                         cacheExtent: listCacheExtent,
                         canPullRefresh: canPullRefresh,
-                        structureRevision: listState.structureRevision,
+                        structureRevision: listStateStructureRevision,
                         detailRevision: detailRevision,
                         coverGeneration: coverGeneration,
                       )
@@ -902,7 +932,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
             ),
 
             // Scan progress card
-            if (listState.isScanning && !listState.isBackgroundScanning)
+            if (listStateIsScanning && !listStateIsBackgroundScanning)
               Positioned(
                 top: headerContentHeight + 10,
                 left: 12,
@@ -925,7 +955,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                 icon: Icons.library_music_rounded,
                 title: i18n.tr('music_library'),
                 subtitle: i18n.tr('audio_count', {
-                  'count': libraryHeaderState.audioCount,
+                  'count': libraryHeaderAudioCount,
                 }),
                 subtitleFontSize: 11,
                 fitSubtitleToWidth: true,

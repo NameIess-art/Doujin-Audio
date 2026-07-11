@@ -145,27 +145,21 @@ class _PermissionStatusPageState extends State<PermissionStatusPage>
             }
             final checking =
                 snapshot.connectionState == ConnectionState.waiting;
-            return ListView(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
-                children: [
-                  Text(
-                    i18n.tr('permission_center_subtitle'),
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+            return Stack(
+              children: [
+                ListView(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+                  children: [
+                    Text(
+                      i18n.tr('permission_center_subtitle'),
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 16),
-                  if (checking)
-                    const Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        LinearProgressIndicator(),
-                        SizedBox(height: 8),
-                      ],
+                    const SizedBox(height: 16),
+                    _PermissionSection(
+                      title: i18n.tr('permission_group_playback'),
                     ),
-                  _PermissionSection(
-                    title: i18n.tr('permission_group_playback'),
-                  ),
                   _PermissionTile(
                     title: i18n.tr('notification_permission_status'),
                     description: i18n.tr('permission_notification_description'),
@@ -255,7 +249,15 @@ class _PermissionStatusPageState extends State<PermissionStatusPage>
                     ),
                   ),
                 ],
-              );
+              ),
+              if (checking)
+                const Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  child: LinearProgressIndicator(),
+                ),
+            ]);
           },
         ),
       ),

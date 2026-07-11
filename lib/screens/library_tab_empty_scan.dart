@@ -135,7 +135,7 @@ class _LibraryEmptyState extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     OutlinedButton.icon(
-                      onPressed: isBusy ? null : onImportFolder,
+                      onPressed: isBusy ? () {} : onImportFolder,
                       icon: isBusy
                           ? const SizedBox.square(
                               dimension: 18,
@@ -147,6 +147,8 @@ class _LibraryEmptyState extends StatelessWidget {
                             ),
                       label: Text(i18n.tr('import_folder')),
                       style: OutlinedButton.styleFrom(
+                        foregroundColor: isBusy ? cs.onSurface.withValues(alpha: 0.38) : null,
+                        side: isBusy ? BorderSide(color: cs.onSurface.withValues(alpha: 0.12)) : null,
                         padding: const EdgeInsets.symmetric(
                           horizontal: 24,
                           vertical: 12,
@@ -156,10 +158,12 @@ class _LibraryEmptyState extends StatelessWidget {
                     ),
                     const SizedBox(height: 12),
                     OutlinedButton.icon(
-                      onPressed: isBusy ? null : onImportFile,
+                      onPressed: isBusy ? () {} : onImportFile,
                       icon: const Icon(Icons.upload_file_rounded, size: 18),
                       label: Text(i18n.tr('import_file')),
                       style: OutlinedButton.styleFrom(
+                        foregroundColor: isBusy ? cs.onSurface.withValues(alpha: 0.38) : null,
+                        side: isBusy ? BorderSide(color: cs.onSurface.withValues(alpha: 0.12)) : null,
                         padding: const EdgeInsets.symmetric(
                           horizontal: 24,
                           vertical: 12,
@@ -169,10 +173,12 @@ class _LibraryEmptyState extends StatelessWidget {
                     ),
                     const SizedBox(height: 12),
                     OutlinedButton.icon(
-                      onPressed: isBusy ? null : onImportLibrary,
+                      onPressed: isBusy ? () {} : onImportLibrary,
                       icon: const Icon(Icons.library_add_rounded, size: 18),
                       label: Text(i18n.tr('import_library')),
                       style: OutlinedButton.styleFrom(
+                        foregroundColor: isBusy ? cs.onSurface.withValues(alpha: 0.38) : null,
+                        side: isBusy ? BorderSide(color: cs.onSurface.withValues(alpha: 0.12)) : null,
                         padding: const EdgeInsets.symmetric(
                           horizontal: 24,
                           vertical: 12,

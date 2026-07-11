@@ -187,6 +187,7 @@ class _DlsiteMetadataBatchPageState extends State<DlsiteMetadataBatchPage> {
   Widget build(BuildContext context) {
     final i18n = context.watch<AppLanguageProvider>();
     return Scaffold(
+      backgroundColor: Theme.of(context).colorScheme.surface,
       body: Stack(
         children: [
           Positioned.fill(
@@ -469,6 +470,7 @@ class _DlsiteMetadataWorkPickerPageState
     final cs = Theme.of(context).colorScheme;
 
     return Scaffold(
+      backgroundColor: Theme.of(context).colorScheme.surface,
       appBar: AppBar(
         titleSpacing: 0,
         title: Container(

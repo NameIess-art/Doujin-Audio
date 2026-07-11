@@ -10,10 +10,17 @@ Nameless Audio 是一款面向 ASMR、语音作品和本地媒体库的跨平台
 
 ## 下载
 
+> **0.13.0 升级提示：**从 0.12.x 或更早版本升级到 0.13.0 及以上版本时，必须先卸载旧版本再重新安装。卸载会清除应用数据，建议先在“数据支持”中导出 `.nalbackup` 备份。
+
 | 平台 | 发布资产 | 说明 |
 |---|---|---|
-| Android arm64-v8a | `NamelessAudio-android-arm64-v0.13.0.apk` | 适用于大多数 64 位 Android 手机 |
+| Android universal | `NamelessAudio-android-universal-v0.13.0.apk` | 推荐普通用户下载，兼容 arm64-v8a、armeabi-v7a 和 x86_64 |
+| Android arm64-v8a | `NamelessAudio-android-arm64-v0.13.0.apk` | 适用于大多数现代 64 位 Android 手机，安装包较小 |
+| Android armeabi-v7a | `NamelessAudio-android-armv7-v0.13.0.apk` | 适用于旧款 32 位 ARM Android 设备 |
+| Android x86_64 | `NamelessAudio-android-x64-v0.13.0.apk` | 适用于 x86_64 Android 设备或模拟器 |
 | Windows x64 | `NamelessAudio-windows-x64-v0.13.0.zip` | 解压完整 ZIP 后运行 `nameless_audio.exe` |
+
+本项目仅通过 GitHub Release 正式分发，不提供应用商店 AAB 或 iOS 安装包。
 
 Windows ZIP 包含完整 Flutter 运行时、`libmpv-2.dll`、FFmpeg 和 FFprobe。不要只复制 EXE。
 
@@ -86,13 +93,19 @@ Windows ZIP 包含完整 Flutter 运行时、`libmpv-2.dll`、FFmpeg 和 FFprobe
 每个更新资产必须同时发布同名 `.sha256` 校验文件：
 
 ```text
+NamelessAudio-android-universal-v0.13.0.apk
+NamelessAudio-android-universal-v0.13.0.apk.sha256
 NamelessAudio-android-arm64-v0.13.0.apk
 NamelessAudio-android-arm64-v0.13.0.apk.sha256
+NamelessAudio-android-armv7-v0.13.0.apk
+NamelessAudio-android-armv7-v0.13.0.apk.sha256
+NamelessAudio-android-x64-v0.13.0.apk
+NamelessAudio-android-x64-v0.13.0.apk.sha256
 NamelessAudio-windows-x64-v0.13.0.zip
 NamelessAudio-windows-x64-v0.13.0.zip.sha256
 ```
 
-Android 下载 APK 并交给系统安装器。Windows 下载 ZIP 后启动独立更新器，更新器会验证 ZIP、等待应用退出、切换安装目录并重启新版本。
+Android 应用内自动更新始终下载 universal APK 并交给系统安装器；其他 ABI 拆分包供用户在 GitHub Release 手动选择。Windows 下载 ZIP 后启动独立更新器，更新器会验证 ZIP、等待应用退出、切换安装目录并重启新版本。
 
 ## 支持格式
 
@@ -129,7 +142,8 @@ dart run tool/verify_release.dart --tag v0.13.0
 Release 构建必须配置正式签名。缺少 `android/key.properties` 或对应 keystore 时构建会失败，不会回退到 debug 签名。
 
 ```powershell
-flutter build apk --release --target-platform android-arm64 --split-per-abi
+flutter build apk --release
+flutter build apk --release --split-per-abi --target-platform android-arm,android-arm64,android-x64
 ```
 
 ### Windows Release
@@ -147,9 +161,10 @@ Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath dist\
 推送与 `pubspec.yaml` 版本一致的标签会触发 GitHub Actions：
 
 1. 执行静态分析、Flutter 测试、Android JVM 测试和 Debug APK 构建。
-2. 使用仓库 Secrets 中的正式签名构建 Android arm64 APK。
+2. 使用仓库 Secrets 中的正式签名构建 Android universal、arm64、armv7 和 x64 APK。
 3. 下载并校验 FFmpeg，构建包含完整 libmpv 的 Windows ZIP。
-4. 为两端资产生成 `.sha256` 并上传到同一个 GitHub Release。
+4. 为全部资产生成 `.sha256`，逐个验证签名和 ABI 后暂存为 CI artifacts。
+5. 所有平台构建成功后创建草稿 Release，核对完整资产列表，再公开为 GitHub Latest。
 
 ```powershell
 dart run tool/verify_release.dart --tag v0.13.0

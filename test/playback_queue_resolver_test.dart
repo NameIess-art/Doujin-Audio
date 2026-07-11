@@ -156,6 +156,124 @@ void main() {
     expect(next?.queueIndex, 0);
   });
 
+  test('playback queue follows its listed order for single media files', () {
+    const audio = MusicTrack(
+      path: 'audio',
+      displayName: 'audio',
+      groupKey: '__single_files__',
+      groupTitle: 'Imported files',
+      groupSubtitle: '',
+      isSingle: true,
+    );
+    const video = MusicTrack(
+      path: 'video',
+      displayName: 'video',
+      groupKey: '__single_files__',
+      groupTitle: 'Imported files',
+      groupSubtitle: '',
+      isSingle: true,
+      isVideo: true,
+    );
+    const outro = MusicTrack(
+      path: 'outro',
+      displayName: 'outro',
+      groupKey: '__single_files__',
+      groupTitle: 'Imported files',
+      groupSubtitle: '',
+      isSingle: true,
+    );
+    final scope = resolver.resolveScope(
+      currentPath: video.path,
+      currentTrack: video,
+      loopMode: SessionLoopMode.single,
+      sortedLibraryTrackPaths: const <String>[],
+      tracksByGroup: const <String, List<MusicTrack>>{},
+      customQueueTracks: <MusicTrack>[audio, video, outro],
+      isPlaybackQueue: true,
+      currentQueueIndex: 1,
+    );
+
+    expect(
+      resolver.hasAdjacentInScope(
+        scope: scope,
+        loopMode: SessionLoopMode.single,
+      ),
+      isTrue,
+    );
+    expect(
+      resolver
+          .resolveAdvance(
+            scope: scope,
+            forward: true,
+            loopMode: SessionLoopMode.single,
+            nextInt: (_) => 0,
+          )
+          ?.path,
+      outro.path,
+    );
+    expect(
+      resolver
+          .resolveAdvance(
+            scope: scope,
+            forward: false,
+            loopMode: SessionLoopMode.single,
+            nextInt: (_) => 0,
+          )
+          ?.path,
+      audio.path,
+    );
+  });
+
+  test('playback queue recovers from a stale native queue index', () {
+    const first = MusicTrack(
+      path: 'first',
+      displayName: 'first',
+      groupKey: '__single_files__',
+      groupTitle: 'Imported files',
+      groupSubtitle: '',
+      isSingle: true,
+    );
+    const current = MusicTrack(
+      path: 'current',
+      displayName: 'current',
+      groupKey: '__single_files__',
+      groupTitle: 'Imported files',
+      groupSubtitle: '',
+      isSingle: true,
+      isVideo: true,
+    );
+    const next = MusicTrack(
+      path: 'next',
+      displayName: 'next',
+      groupKey: '__single_files__',
+      groupTitle: 'Imported files',
+      groupSubtitle: '',
+      isSingle: true,
+    );
+    final scope = resolver.resolveScope(
+      currentPath: current.path,
+      currentTrack: current,
+      loopMode: SessionLoopMode.folderSequential,
+      sortedLibraryTrackPaths: const <String>[],
+      tracksByGroup: const <String, List<MusicTrack>>{},
+      customQueueTracks: <MusicTrack>[first, current, next],
+      isPlaybackQueue: true,
+    );
+
+    expect(scope.currentIndex, 1);
+    expect(
+      resolver
+          .resolveAdvance(
+            scope: scope,
+            forward: true,
+            loopMode: SessionLoopMode.folderSequential,
+            nextInt: (_) => 0,
+          )
+          ?.path,
+      next.path,
+    );
+  });
+
   test('custom non-playback queue filters to current folder scope', () {
     final scope = resolver.resolveScope(
       currentPath: 'a1',

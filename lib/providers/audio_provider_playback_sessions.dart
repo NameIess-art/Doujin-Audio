@@ -45,6 +45,7 @@ extension AudioProviderPlaybackSessions on AudioProvider {
         autoPlay: autoPlay ?? _autoPlayAddedSessions,
       ),
     );
+    requestCarouselSnapTo(session.id);
   }
 
   Future<void> spawnSessionWithQueue(
@@ -70,6 +71,7 @@ extension AudioProviderPlaybackSessions on AudioProvider {
         autoPlay: autoPlay ?? _autoPlayAddedSessions,
       ),
     );
+    requestCarouselSnapTo(session.id);
   }
 
   PlaybackSession _createSessionForTrack(
@@ -537,7 +539,10 @@ extension AudioProviderPlaybackSessions on AudioProvider {
     final resolvedCurrentPath = _resolveRetargetedPath(currentPath);
     final currentTrack = trackByPath(resolvedCurrentPath);
     final sessionTrack = _sessionTrackForPath(session, resolvedCurrentPath);
-    final scopeTrack = session.customQueueTracks?.isNotEmpty == true
+    final queueTracks = session.isPlaybackQueue
+        ? session.playbackQueue!.expandedTracks
+        : session.customQueueTracks;
+    final scopeTrack = queueTracks?.isNotEmpty == true
         ? sessionTrack
         : currentTrack;
     final crossFolderTrackPaths = _isCrossFolderMode(session.loopMode)
@@ -548,8 +553,8 @@ extension AudioProviderPlaybackSessions on AudioProvider {
       currentTrack: scopeTrack,
       loopMode: session.loopMode,
       sortedLibraryTrackPaths: crossFolderTrackPaths,
-      folderTracks: tracksInSameWork(resolvedCurrentPath),
-      customQueueTracks: session.customQueueTracks,
+      tracksByGroup: _tracksByGroup,
+      customQueueTracks: queueTracks,
       isPlaybackQueue: session.isPlaybackQueue,
       currentQueueIndex: session.currentQueueIndex,
       trackPath: (track) => _resolveRetargetedPath(track.path),

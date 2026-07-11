@@ -161,32 +161,63 @@ void main() {
     final selected = AppUpdateService.selectCompatibleReleaseForTesting(
       <Map<String, dynamic>>[
         {'tag_name': 'v0.12.4', 'draft': false, 'prerelease': false},
-        {'tag_name': '1.0.1-rc.1', 'draft': false, 'prerelease': true},
-        {'tag_name': '1.0.1', 'draft': false, 'prerelease': false},
+        {'tag_name': 'v0.13.0-rc.1', 'draft': false, 'prerelease': true},
+        {'tag_name': 'v0.13.0', 'draft': false, 'prerelease': false},
       ],
-      const AppVersionInfo(versionName: '1.0.0', buildNumber: 1000000),
+      const AppVersionInfo(versionName: '0.12.4', buildNumber: 1204),
     );
 
-    expect(selected?['tag_name'], '1.0.1');
+    expect(selected?['tag_name'], 'v0.13.0');
   });
 
   test('stable channel ignores prereleases', () {
     final selected = AppUpdateService.selectCompatibleReleaseForTesting(
       <Map<String, dynamic>>[
-        {'tag_name': '1.0.2-rc.1', 'draft': false, 'prerelease': true},
-        {'tag_name': '1.0.1', 'draft': false, 'prerelease': false},
+        {'tag_name': 'v0.13.1-rc.1', 'draft': false, 'prerelease': true},
+        {'tag_name': 'v0.13.0', 'draft': false, 'prerelease': false},
       ],
-      const AppVersionInfo(versionName: '1.0.0', buildNumber: 1000000),
+      const AppVersionInfo(versionName: '0.12.4', buildNumber: 1204),
     );
 
-    expect(selected?['tag_name'], '1.0.1');
+    expect(selected?['tag_name'], 'v0.13.0');
+  });
+
+  test('Android updater selects only the universal APK', () {
+    final selected = AppUpdateService.selectApkAssetForTesting(
+      <Map<String, dynamic>>[
+        {'name': 'NamelessAudio-android-arm64-v0.13.0.apk'},
+        {'name': 'NamelessAudio-android-armv7-v0.13.0.apk'},
+        {'name': 'NamelessAudio-android-x64-v0.13.0.apk'},
+        {'name': 'NamelessAudio-android-universal-v0.13.0.apk'},
+      ],
+    );
+
+    expect(selected?['name'], 'NamelessAudio-android-universal-v0.13.0.apk');
+    expect(
+      AppUpdateService.selectApkAssetForTesting(<Map<String, dynamic>>[
+        {'name': 'NamelessAudio-android-arm64-v0.13.0.apk'},
+        {'name': 'NamelessAudio-android-armv7-v0.13.0.apk'},
+      ]),
+      isNull,
+    );
+  });
+
+  test('Windows updater selects the x64 ZIP from mixed release assets', () {
+    final selected = AppUpdateService.selectWindowsZipAssetForTesting(
+      <Map<String, dynamic>>[
+        {'name': 'NamelessAudio-android-universal-v0.13.0.apk'},
+        {'name': 'NamelessAudio-windows-x64-v0.13.0.zip'},
+      ],
+    );
+
+    expect(selected?['name'], 'NamelessAudio-windows-x64-v0.13.0.zip');
   });
 
   test('update info reports missing asset and missing checksum states', () {
-    const current = AppVersionInfo(versionName: '1.0.0', buildNumber: 1);
+    const current = AppVersionInfo(versionName: '0.12.4', buildNumber: 1204);
     final noAsset = AppUpdateService.buildUpdateInfoForTesting(
       currentVersion: current,
-      tagName: '1.0.1',
+      tagName: 'v0.13.0',
       releaseUrl: 'https://example.test/release',
       assets: const <Map<String, dynamic>>[],
     );
@@ -194,11 +225,11 @@ void main() {
     expect(noAsset.isUpdateAvailable, isFalse);
 
     final platformAssetName = Platform.isWindows
-        ? 'NamelessAudio-windows-x64-1.0.0.zip'
-        : 'NamelessAudio-android-arm64-1.0.0.apk';
+        ? 'NamelessAudio-windows-x64-v0.13.0.zip'
+        : 'NamelessAudio-android-universal-v0.13.0.apk';
     final missingChecksum = AppUpdateService.buildUpdateInfoForTesting(
       currentVersion: current,
-      tagName: '1.0.1',
+      tagName: 'v0.13.0',
       releaseUrl: 'https://example.test/release',
       assets: <Map<String, dynamic>>[
         {
@@ -212,7 +243,7 @@ void main() {
 
     final ready = AppUpdateService.buildUpdateInfoForTesting(
       currentVersion: current,
-      tagName: '1.0.1',
+      tagName: 'v0.13.0',
       releaseUrl: 'https://example.test/release',
       assets: <Map<String, dynamic>>[
         {

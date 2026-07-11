@@ -118,6 +118,7 @@ extension AudioProviderQueues on AudioProvider {
       ]),
     );
     await _syncPlaybackQueueSession(session, selectFirst: wasEmpty);
+    requestCarouselSnapTo(session.id);
   }
 
   Future<void> removePlaybackQueueEntry(

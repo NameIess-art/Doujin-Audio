@@ -647,6 +647,7 @@ class PlaybackQueueAudioEditPage extends ConsumerWidget {
     if (queue == null) return const SizedBox.shrink();
 
     return Scaffold(
+      backgroundColor: Theme.of(context).colorScheme.surface,
       appBar: AppBar(title: Text(i18n.tr('edit_queue_audio'))),
       body: LayoutBuilder(
         builder: (context, constraints) {
@@ -840,7 +841,6 @@ class _QueueSourceAudioTile extends ConsumerWidget {
 
 class _QueueAudioEditCard extends StatelessWidget {
   const _QueueAudioEditCard({
-    super.key,
     required this.provider,
     required this.track,
     required this.title,
@@ -1117,7 +1117,8 @@ class _QueueColorSlider extends StatelessWidget {
 }
 
 class _AnimatedQueueEntryCard extends StatefulWidget {
-  final Widget Function(BuildContext context, VoidCallback triggerRemove) builder;
+  final Widget Function(BuildContext context, VoidCallback triggerRemove)
+  builder;
   final VoidCallback onRemove;
 
   const _AnimatedQueueEntryCard({

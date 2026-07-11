@@ -11,7 +11,7 @@ void main() {
             .where((file) => file.path.endsWith('.md'))
             .toList()
           ..sort((a, b) => a.path.compareTo(b.path));
-    final files = [File('README.md'), ...docs];
+    final files = [File('README.md'), File('release_notes.md'), ...docs];
 
     expect(files, isNotEmpty);
     for (final file in files) {

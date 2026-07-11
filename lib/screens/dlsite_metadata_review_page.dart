@@ -226,6 +226,7 @@ class _DlsiteMetadataReviewPageState extends State<DlsiteMetadataReviewPage> {
     );
 
     return Scaffold(
+      backgroundColor: Theme.of(context).colorScheme.surface,
       appBar: AppBar(
         title: Text(
           widget.batchIndex == null || widget.batchTotal == null

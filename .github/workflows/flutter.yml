@@ -153,15 +153,31 @@ jobs:
           keyPassword=$ANDROID_KEY_PASSWORD
           EOF
 
-      - name: Build arm64 release APK
-        run: flutter build apk --release --target-platform android-arm64 --split-per-abi
+      - name: Build universal release APK
+        run: flutter build apk --release
+
+      - name: Preserve universal release APK
+        run: |
+          cp build/app/outputs/flutter-apk/app-release.apk \
+            "NamelessAudio-android-universal-${GITHUB_REF_NAME}.apk"
+
+      - name: Build split release APKs
+        run: >-
+          flutter build apk --release --split-per-abi
+          --target-platform android-arm,android-arm64,android-x64
 
       - name: Prepare Android release assets
         run: |
           set -euo pipefail
-          apk="NamelessAudio-android-arm64-${GITHUB_REF_NAME}.apk"
-          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk "$apk"
-          sha256sum "$apk" > "$apk.sha256"
+          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk \
+            "NamelessAudio-android-arm64-${GITHUB_REF_NAME}.apk"
+          cp build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk \
+            "NamelessAudio-android-armv7-${GITHUB_REF_NAME}.apk"
+          cp build/app/outputs/flutter-apk/app-x86_64-release.apk \
+            "NamelessAudio-android-x64-${GITHUB_REF_NAME}.apk"
+          for apk in NamelessAudio-android-*-${GITHUB_REF_NAME}.apk; do
+            sha256sum "$apk" > "$apk.sha256"
+          done
 
       - name: Verify Android release assets
         env:
@@ -169,35 +185,67 @@ jobs:
         run: |
           set -euo pipefail
           : "${ANDROID_SIGNING_CERT_SHA256:?ANDROID_SIGNING_CERT_SHA256 is required}"
-          apk="NamelessAudio-android-arm64-${GITHUB_REF_NAME}.apk"
-          test -s "$apk"
-          test -s "$apk.sha256"
-          sha256sum --check "$apk.sha256"
           apksigner="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)"
           test -x "$apksigner"
-          "$apksigner" verify --verbose --print-certs "$apk" | tee apk-signature.txt
-          actual_cert_sha256="$(
-            sed -n 's/^.*certificate SHA-256 digest: //p' apk-signature.txt |
-              head -n 1 |
-              tr '[:upper:]' '[:lower:]'
-          )"
           expected_cert_sha256="$(printf '%s' "$ANDROID_SIGNING_CERT_SHA256" | tr '[:upper:]' '[:lower:]')"
-          test "$actual_cert_sha256" = "$expected_cert_sha256"
+          for apk in NamelessAudio-android-*-${GITHUB_REF_NAME}.apk; do
+            test -s "$apk"
+            test -s "$apk.sha256"
+            sha256sum --check "$apk.sha256"
+            signature_file="${apk}.signature.txt"
+            "$apksigner" verify --verbose --print-certs "$apk" | tee "$signature_file"
+            actual_cert_sha256="$(
+              sed -n 's/^.*certificate SHA-256 digest: //p' "$signature_file" |
+                head -n 1 |
+                tr '[:upper:]' '[:lower:]'
+            )"
+            test "$actual_cert_sha256" = "$expected_cert_sha256"
+          done
 
-      - name: Upload Android release assets
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 ||
-            gh release create "$GITHUB_REF_NAME" --generate-notes --title "$GITHUB_REF_NAME" --latest=false
-          gh release upload "$GITHUB_REF_NAME" \
-            "NamelessAudio-android-arm64-${GITHUB_REF_NAME}.apk" \
-            "NamelessAudio-android-arm64-${GITHUB_REF_NAME}.apk.sha256"
+          has_abi() {
+            unzip -Z1 "$1" | grep "^lib/$2/" >/dev/null
+          }
+          universal="NamelessAudio-android-universal-${GITHUB_REF_NAME}.apk"
+          for abi in armeabi-v7a arm64-v8a x86_64; do
+            has_abi "$universal" "$abi"
+          done
+          while read -r variant expected_abi; do
+            apk="NamelessAudio-android-${variant}-${GITHUB_REF_NAME}.apk"
+            for abi in armeabi-v7a arm64-v8a x86_64; do
+              if [ "$abi" = "$expected_abi" ]; then
+                has_abi "$apk" "$abi"
+              elif has_abi "$apk" "$abi"; then
+                echo "Unexpected ABI $abi in $apk"
+                exit 1
+              fi
+            done
+          done <<'EOF'
+          arm64 arm64-v8a
+          armv7 armeabi-v7a
+          x64 x86_64
+          EOF
+
+      - name: Store verified Android release assets
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-android-${{ github.ref_name }}
+          if-no-files-found: error
+          retention-days: 7
+          path: |
+            NamelessAudio-android-universal-${{ github.ref_name }}.apk
+            NamelessAudio-android-universal-${{ github.ref_name }}.apk.sha256
+            NamelessAudio-android-arm64-${{ github.ref_name }}.apk
+            NamelessAudio-android-arm64-${{ github.ref_name }}.apk.sha256
+            NamelessAudio-android-armv7-${{ github.ref_name }}.apk
+            NamelessAudio-android-armv7-${{ github.ref_name }}.apk.sha256
+            NamelessAudio-android-x64-${{ github.ref_name }}.apk
+            NamelessAudio-android-x64-${{ github.ref_name }}.apk.sha256
 
   release-windows:
     if: startsWith(github.ref, 'refs/tags/')
     needs:
-      - release-android
+      - android
+      - windows-build
     runs-on: windows-latest
     permissions:
       contents: write
@@ -288,11 +336,83 @@ jobs:
             throw "Windows release checksum mismatch: expected $expected, got $actual"
           }
 
-      - name: Upload Windows release assets
-        shell: pwsh
+      - name: Store verified Windows release assets
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-windows-${{ github.ref_name }}
+          if-no-files-found: error
+          retention-days: 7
+          path: |
+            NamelessAudio-windows-x64-${{ github.ref_name }}.zip
+            NamelessAudio-windows-x64-${{ github.ref_name }}.zip.sha256
+
+  publish-release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs:
+      - release-android
+      - release-windows
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+
+      - name: Download verified Android assets
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-android-${{ github.ref_name }}
+          path: release-assets
+
+      - name: Download verified Windows assets
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-windows-${{ github.ref_name }}
+          path: release-assets
+
+      - name: Verify complete release payload
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          cat > expected-assets.txt <<EOF
+          NamelessAudio-android-universal-${tag}.apk
+          NamelessAudio-android-universal-${tag}.apk.sha256
+          NamelessAudio-android-arm64-${tag}.apk
+          NamelessAudio-android-arm64-${tag}.apk.sha256
+          NamelessAudio-android-armv7-${tag}.apk
+          NamelessAudio-android-armv7-${tag}.apk.sha256
+          NamelessAudio-android-x64-${tag}.apk
+          NamelessAudio-android-x64-${tag}.apk.sha256
+          NamelessAudio-windows-x64-${tag}.zip
+          NamelessAudio-windows-x64-${tag}.zip.sha256
+          EOF
+          find release-assets -maxdepth 1 -type f -printf '%f\n' | sort > actual-assets.txt
+          sort -o expected-assets.txt expected-assets.txt
+          diff -u expected-assets.txt actual-assets.txt
+          for checksum in release-assets/*.sha256; do
+            (cd release-assets && sha256sum --check "$(basename "$checksum")")
+          done
+
+      - name: Publish complete release as Latest
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release upload "${{ github.ref_name }}" `
-            "NamelessAudio-windows-x64-${{ github.ref_name }}.zip" `
-            "NamelessAudio-windows-x64-${{ github.ref_name }}.zip.sha256"
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            is_draft="$(gh release view "$tag" --json isDraft --jq .isDraft)"
+            if [ "$is_draft" != "true" ]; then
+              echo "Refusing to replace an existing public release for $tag"
+              exit 1
+            fi
+            gh release delete "$tag" --yes
+          fi
+          gh release create "$tag" \
+            --verify-tag \
+            --draft \
+            --title "Nameless Audio 0.13.0" \
+            --notes-file release_notes.md
+          gh release upload "$tag" release-assets/*
+          gh release view "$tag" --json assets --jq '.assets[].name' | sort > published-assets.txt
+          diff -u expected-assets.txt published-assets.txt
+          gh release edit "$tag" --draft=false --prerelease=false --latest

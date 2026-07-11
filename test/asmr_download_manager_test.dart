@@ -299,6 +299,7 @@ void main() {
         ).length(),
         256,
       );
+      expect(manager.getTask(1)?.progress, 1);
     } finally {
       manager.dispose();
       await server.close(force: true);
@@ -560,6 +561,47 @@ void main() {
     },
   );
 
+  test('rejects download paths that can escape the work directory', () async {
+    final tempDir = await Directory.systemTemp.createTemp(
+      'asmr_download_invalid_path_',
+    );
+    final manager = _manager();
+    try {
+      for (final invalidPath in <String>[
+        '../outside.mp3',
+        r'..\outside.mp3',
+        '/absolute.mp3',
+        r'C:\absolute.mp3',
+        '//server/share.mp3',
+        'folder//track.mp3',
+        './track.mp3',
+      ]) {
+        await expectLater(
+          manager.startDownload(
+            work: _work(),
+            selectedRoots: <AsmrTrackFile>[
+              _file(title: invalidPath, downloadUrl: 'http://localhost/file'),
+            ],
+            destinationRoot: tempDir.path,
+            conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+          ),
+          throwsFormatException,
+          reason: invalidPath,
+        );
+      }
+
+      expect(
+        await Directory(
+          '${tempDir.path}${Platform.pathSeparator}RJ123456 - Work',
+        ).exists(),
+        isFalse,
+      );
+    } finally {
+      manager.dispose();
+      if (await tempDir.exists()) await tempDir.delete(recursive: true);
+    }
+  });
+
   test(
     'truncated responses fail without committing the final media file',
     () async {
@@ -599,6 +641,10 @@ void main() {
           '${Platform.pathSeparator}track.mp3',
         );
         expect(await output.exists(), isFalse);
+        final task = manager.getTask(1);
+        expect(task?.failedFiles, 1);
+        expect(task?.downloadedBytes, lessThan(task!.totalBytes));
+        expect(task.progress, lessThan(1));
       } finally {
         manager.dispose();
         await server.close(force: true);

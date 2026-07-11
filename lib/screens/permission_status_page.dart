@@ -155,19 +155,14 @@ class _PermissionStatusPageState extends State<PermissionStatusPage>
                     ),
                   ),
                   const SizedBox(height: 16),
-                  Visibility(
-                    visible: checking,
-                    maintainSize: true,
-                    maintainAnimation: true,
-                    maintainState: true,
-                    child: const Column(
+                  if (checking)
+                    const Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         LinearProgressIndicator(),
                         SizedBox(height: 8),
                       ],
                     ),
-                  ),
                   _PermissionSection(
                     title: i18n.tr('permission_group_playback'),
                   ),

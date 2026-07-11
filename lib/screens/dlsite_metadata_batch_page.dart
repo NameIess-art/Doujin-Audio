@@ -78,6 +78,7 @@ class _DlsiteMetadataBatchPageState extends State<DlsiteMetadataBatchPage> {
             ),
           ),
         );
+    if (!mounted) return;
     if (result != null) {
       setState(() {
         _specificEntries = result;

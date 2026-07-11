@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
-
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     show ProviderContainer, ProviderScope;
@@ -16,6 +16,7 @@ import 'package:nameless_audio/screens/dlsite_metadata_review_page.dart';
 import 'package:nameless_audio/screens/library_tab.dart';
 import 'package:nameless_audio/screens/playlist_tab.dart';
 import 'package:nameless_audio/screens/settings_tab.dart';
+import 'package:nameless_audio/services/app_database.dart';
 import 'package:nameless_audio/services/asmr_metadata_service.dart';
 import 'package:nameless_audio/services/audio_database_repository.dart';
 import 'package:nameless_audio/services/audio_state_services.dart';
@@ -191,16 +192,18 @@ class _RecordingPlaybackCoverCacheService extends CoverArtworkCacheService {
   Future<String?> futureForPlaybackTrack(
     MusicTrack? track, {
     String? trackPath,
-  }) async {
+  }) {
     final path = track?.path ?? trackPath;
     if (path != null) {
       requestedPaths.add(path);
     }
-    return null;
+    return SynchronousFuture<String?>(null);
   }
 }
 
 void main() {
+  late Database testDatabase;
+
   test('equalizer badge only appears while equalizer is enabled', () {
     final disabledIcons = sessionFeatureBadgeIcons(
       showSubtitles: false,
@@ -460,9 +463,17 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   SharedPreferences.setMockInitialValues(const <String, Object>{});
 
-  setUpAll(() {
+  setUpAll(() async {
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfi;
+    testDatabase = await databaseFactoryFfi.openDatabase(inMemoryDatabasePath);
+    await AppDatabase.createSchemaForTest(testDatabase);
+    AppDatabase.setInstanceForTest(AppDatabase.test(testDatabase));
+  });
+
+  tearDownAll(() async {
+    AppDatabase.setInstanceForTest(null);
+    await testDatabase.close();
   });
 
   testWidgets('top page header tolerates transient multiple scroll positions', (
@@ -1535,7 +1546,8 @@ void main() {
     await tester.pump();
 
     await tester.tap(find.text(languageProvider.tr('audio_detail_fetch_info')));
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
 
     expect(
       find.text(languageProvider.tr('audio_detail_fetch_scope_title')),

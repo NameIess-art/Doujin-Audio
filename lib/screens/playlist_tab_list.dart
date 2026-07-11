@@ -185,6 +185,7 @@ class _SessionListCard extends StatelessWidget {
     required this.cardState,
     required this.track,
     required this.coverPath,
+    required this.coverGeneration,
     required this.coverCacheWidth,
     required this.showSubtitles,
     required this.provider,
@@ -197,6 +198,7 @@ class _SessionListCard extends StatelessWidget {
   final PlaylistSessionCardState cardState;
   final MusicTrack? track;
   final String? coverPath;
+  final int coverGeneration;
   final int? coverCacheWidth;
   final bool showSubtitles;
   final AudioProvider provider;
@@ -329,6 +331,7 @@ class _SessionListCard extends StatelessWidget {
                             sessionId: sessionId,
                             track: track,
                             coverPath: coverPath,
+                            coverGeneration: coverGeneration,
                             coverCacheWidth: coverCacheWidth,
                           ),
                           const SizedBox(width: 14),

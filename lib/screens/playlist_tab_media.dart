@@ -101,11 +101,12 @@ class _SessionHeroArtwork extends ConsumerWidget {
   }
 }
 
-class _SessionCoverThumbnail extends StatelessWidget {
+class _SessionCoverThumbnail extends StatefulWidget {
   const _SessionCoverThumbnail({
     required this.sessionId,
     required this.track,
     required this.coverPath,
+    required this.coverGeneration,
     required this.coverCacheWidth,
   });
 
@@ -115,25 +116,50 @@ class _SessionCoverThumbnail extends StatelessWidget {
   final String sessionId;
   final MusicTrack? track;
   final String? coverPath;
+  final int coverGeneration;
   final int? coverCacheWidth;
+
+  @override
+  State<_SessionCoverThumbnail> createState() => _SessionCoverThumbnailState();
+}
+
+class _SessionCoverThumbnailState extends State<_SessionCoverThumbnail> {
+  Future<String?>? _coverFuture;
+  String? _lastTrackPath;
+  int _lastCoverGeneration = -1;
+
+  Future<String?> _futureFor(AudioProvider provider) {
+    final trackPath = widget.track?.path;
+    if (_coverFuture == null ||
+        _lastTrackPath != trackPath ||
+        _lastCoverGeneration != widget.coverGeneration) {
+      _lastTrackPath = trackPath;
+      _lastCoverGeneration = widget.coverGeneration;
+      _coverFuture = _coverFutureForTrack(provider, widget.track);
+    }
+    return _coverFuture!;
+  }
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: _width,
-      height: _height,
+      width: _SessionCoverThumbnail._width,
+      height: _SessionCoverThumbnail._height,
       child: Material(
         type: MaterialType.transparency,
         borderRadius: BorderRadius.circular(LibraryLikeCardMetrics.coverRadius),
         clipBehavior: Clip.antiAlias,
         child: AsyncLocalCoverImage(
-          future: _coverFutureForTrack(context.read<AudioProvider>(), track),
-          initialPath: coverPath,
+          future: _futureFor(context.read<AudioProvider>()),
+          initialPath: widget.coverPath,
           retryFutureBuilder: () =>
-              _coverFutureForTrack(context.read<AudioProvider>(), track),
-          seed: track?.displayName ?? track?.path ?? sessionId,
-          cacheWidth: coverCacheWidth,
-          useDefaultCacheWidth: coverCacheWidth != null,
+              _coverFutureForTrack(context.read<AudioProvider>(), widget.track),
+          seed:
+              widget.track?.displayName ??
+              widget.track?.path ??
+              widget.sessionId,
+          cacheWidth: widget.coverCacheWidth,
+          useDefaultCacheWidth: widget.coverCacheWidth != null,
           fit: BoxFit.cover,
           compact: true,
           iconSize: 26,

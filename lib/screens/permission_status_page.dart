@@ -30,6 +30,7 @@ class _PermissionStatusPageState extends State<PermissionStatusPage>
   late final PermissionStatusService _statusService;
   late Future<PermissionStatusSnapshot> _snapshot;
   PermissionStatusSnapshot? _lastSnapshot;
+  bool _recentlyOpenedSettings = false;
 
   @override
   void initState() {
@@ -52,7 +53,14 @@ class _PermissionStatusPageState extends State<PermissionStatusPage>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) _refresh();
+    if (state == AppLifecycleState.resumed) {
+      _refresh();
+      if (_recentlyOpenedSettings) {
+        _recentlyOpenedSettings = false;
+        Future<void>.delayed(const Duration(milliseconds: 1000), _refresh);
+        Future<void>.delayed(const Duration(milliseconds: 2500), _refresh);
+      }
+    }
   }
 
   void _refresh() {
@@ -93,6 +101,7 @@ class _PermissionStatusPageState extends State<PermissionStatusPage>
       ),
     );
     if (confirmed != true) return;
+    _recentlyOpenedSettings = true;
     final opened = await _operationService.run<bool>(
       scope: UiOperationScope.settingsPermissionStatus,
       labelKey: 'permission_center',
@@ -100,6 +109,7 @@ class _PermissionStatusPageState extends State<PermissionStatusPage>
     );
     if (!mounted) return;
     if (!opened) {
+      _recentlyOpenedSettings = false;
       showAppSnackBar(
         context,
         context.read<AppLanguageProvider>().tr('system_settings_open_failed'),
@@ -107,7 +117,7 @@ class _PermissionStatusPageState extends State<PermissionStatusPage>
         icon: Icons.settings_applications_rounded,
       );
     }
-    Future<void>.delayed(const Duration(milliseconds: 600), _refresh);
+    Future<void>.delayed(const Duration(milliseconds: 800), _refresh);
   }
 
   @override
@@ -145,10 +155,19 @@ class _PermissionStatusPageState extends State<PermissionStatusPage>
                     ),
                   ),
                   const SizedBox(height: 16),
-                  if (checking) ...[
-                    const LinearProgressIndicator(),
-                    const SizedBox(height: 8),
-                  ],
+                  Visibility(
+                    visible: checking,
+                    maintainSize: true,
+                    maintainAnimation: true,
+                    maintainState: true,
+                    child: const Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        LinearProgressIndicator(),
+                        SizedBox(height: 8),
+                      ],
+                    ),
+                  ),
                   _PermissionSection(
                     title: i18n.tr('permission_group_playback'),
                   ),

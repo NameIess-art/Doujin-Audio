@@ -1379,6 +1379,49 @@ void main() {
   });
 
   group('playback queues', () {
+    test(
+      'duplicate single-file entries reprepare at the next queue index',
+      () async {
+        final preparedQueueIndexes = <int>[];
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+              if (call.method == NativePlaybackMethod.prepareSession) {
+                final arguments = call.arguments as Map<Object?, Object?>;
+                preparedQueueIndexes.add(arguments['queueStartIndex'] as int);
+              }
+              return <String, Object?>{'ok': true, 'value': null};
+            });
+        const track = MusicTrack(
+          path: '/imports/repeated.mp4',
+          displayName: 'Repeated clip',
+          groupKey: '__single_files__',
+          groupTitle: 'Imported files',
+          groupSubtitle: 'Manually selected files',
+          isSingle: true,
+          isVideo: true,
+        );
+        provider.addTracks(
+          const <MusicTrack>[track],
+          notify: false,
+          persist: false,
+        );
+        final queueSession = provider.createPlaybackQueue('Queue 1');
+
+        await provider.addTrackToPlaybackQueue(queueSession.id, track);
+        await provider.addTrackToPlaybackQueue(queueSession.id, track);
+        await provider.seekSessionToNext(queueSession.id);
+
+        expect(preparedQueueIndexes.last, 1);
+        expect(queueSession.currentQueueIndex, 1);
+
+        queueSession.setOptimisticPosition(const Duration(seconds: 5));
+        await provider.seekSessionToPrev(queueSession.id);
+
+        expect(preparedQueueIndexes.last, 0);
+        expect(queueSession.currentQueueIndex, 0);
+      },
+    );
+
     test('queue supports duplicate track entries and removal', () async {
       const track = MusicTrack(
         path: '/library/work/01.mp3',

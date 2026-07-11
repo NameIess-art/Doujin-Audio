@@ -411,7 +411,6 @@ class _AsmrTabState extends State<AsmrTab>
     );
   }
 
-
   Future<void> _showLanguageDialog() async {
     final controller = context.read<AsmrLibraryController>();
     final i18n = context.read<AppLanguageProvider>();
@@ -531,20 +530,28 @@ class _AsmrTabState extends State<AsmrTab>
                   builder: (context, _) {
                     // Maximum 5 items visible on screen (screenWidth - padding - gaps).
                     final screenWidth = MediaQuery.sizeOf(context).width;
-                    final totalHorizontalPadding = 24.0; // 12 padding on left and right
+                    const totalHorizontalPadding = 24.0;
                     final visibleItemsCount = AppPlatform.isWindows ? 9 : 5;
                     final totalGapsWidth = 8.0 * (visibleItemsCount - 1);
-                    final itemWidth = (screenWidth - totalHorizontalPadding - totalGapsWidth) / visibleItemsCount;
+                    final itemWidth =
+                        (screenWidth -
+                            totalHorizontalPadding -
+                            totalGapsWidth) /
+                        visibleItemsCount;
 
                     return Listener(
                       onPointerSignal: (pointerSignal) {
                         if (pointerSignal is PointerScrollEvent) {
                           if (_categoryScrollController.hasClients) {
-                            final newOffset = _categoryScrollController.offset + pointerSignal.scrollDelta.dy;
+                            final newOffset =
+                                _categoryScrollController.offset +
+                                pointerSignal.scrollDelta.dy;
                             _categoryScrollController.jumpTo(
                               newOffset.clamp(
                                 0.0,
-                                _categoryScrollController.position.maxScrollExtent,
+                                _categoryScrollController
+                                    .position
+                                    .maxScrollExtent,
                               ),
                             );
                           }
@@ -555,7 +562,8 @@ class _AsmrTabState extends State<AsmrTab>
                         scrollDirection: Axis.horizontal,
                         physics: const BouncingScrollPhysics(),
                         itemCount: _categories.length,
-                        separatorBuilder: (context, index) => const SizedBox(width: 8),
+                        separatorBuilder: (context, index) =>
+                            const SizedBox(width: 8),
                         itemBuilder: (context, index) {
                           return SizedBox(
                             width: itemWidth,

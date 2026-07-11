@@ -46,9 +46,9 @@ class ReleaseChannelConfig {
       Platform.isWindows ? windowsAssetPrefix : androidAssetPrefix;
 
   static const ReleaseChannelConfig stable = ReleaseChannelConfig(
-    major: 1,
+    major: 0,
     tagPrefix: '',
-    androidAssetPrefix: 'NamelessAudio-android-arm64-',
+    androidAssetPrefix: 'NamelessAudio-android-universal-',
     windowsAssetPrefix: 'NamelessAudio-windows-x64-',
   );
 }
@@ -701,26 +701,22 @@ class AppUpdateService {
   static Map<String, dynamic>? _selectApkAsset(
     List<Map<String, dynamic>> assets,
   ) {
-    final apkAssets = assets
-        .where((asset) {
-          final name = asset['name'] as String? ?? '';
-          return name.startsWith(releaseChannel.androidAssetPrefix) &&
-              name.toLowerCase().endsWith('.apk');
-        })
-        .toList(growable: false);
-    if (apkAssets.isEmpty) return null;
-    apkAssets.sort((left, right) {
-      int score(Map<String, dynamic> asset) {
-        final name = (asset['name'] as String? ?? '').toLowerCase();
-        if (name.contains('arm64')) return 0;
-        if (name.contains('release')) return 1;
-        return 2;
-      }
-
-      return score(left).compareTo(score(right));
-    });
-    return apkAssets.first;
+    return assets.cast<Map<String, dynamic>?>().firstWhere((asset) {
+      final name = asset?['name'] as String? ?? '';
+      return name.startsWith(releaseChannel.androidAssetPrefix) &&
+          name.toLowerCase().endsWith('.apk');
+    }, orElse: () => null);
   }
+
+  @visibleForTesting
+  static Map<String, dynamic>? selectApkAssetForTesting(
+    List<Map<String, dynamic>> assets,
+  ) => _selectApkAsset(assets);
+
+  @visibleForTesting
+  static Map<String, dynamic>? selectWindowsZipAssetForTesting(
+    List<Map<String, dynamic>> assets,
+  ) => _selectWindowsZipAsset(assets);
 
   static Map<String, dynamic>? _selectWindowsZipAsset(
     List<Map<String, dynamic>> assets,
@@ -886,7 +882,7 @@ class AppUpdateService {
 
   static String _versionNameFromTag(String tagName) {
     final normalized = tagName.trim();
-    return normalized;
+    return normalized.startsWith('v') ? normalized.substring(1) : normalized;
   }
 
   static bool _isNewerVersion(String latest, String current) {

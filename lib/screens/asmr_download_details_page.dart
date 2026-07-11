@@ -41,6 +41,7 @@ class AsmrDownloadDetailsPage extends StatelessWidget {
     final tracks = task.selectedRoots;
 
     return Scaffold(
+      backgroundColor: Theme.of(context).colorScheme.surface,
       body: Stack(
         children: [
           CustomScrollView(

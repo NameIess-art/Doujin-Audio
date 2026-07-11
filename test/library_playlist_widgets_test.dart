@@ -434,7 +434,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     await tester.pumpAndSettle();
-    
+
     // Clear any previously requested paths to isolate this test action
     coverCache.requestedPaths.clear();
 
@@ -453,7 +453,7 @@ void main() {
       isInitialized: true,
     );
     await tester.pump();
-    
+
     expect(coverCache.requestedPaths, isEmpty);
   });
 
@@ -1026,7 +1026,6 @@ void main() {
       queueSession
         ..currentTrackPath = track.path
         ..currentQueueIndex = 0
-        ..customQueueTracks = const <MusicTrack>[track]
         ..playbackQueue = const PlaybackQueueDefinition(
           name: 'Queue 1',
           entries: <PlaybackQueueEntry>[

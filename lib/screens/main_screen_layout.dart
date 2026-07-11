@@ -39,63 +39,58 @@ extension _MainScreenLayout on _MainScreenState {
         child: Align(
           alignment: Alignment.topCenter,
           child: isDesktop
-              ? ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: double.infinity),
-                  child: Padding(
-                    padding: isWindows ? EdgeInsets.zero : padding,
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: isWindows ? cs.surface : cs.surfaceContainerLow,
-                        borderRadius: isWindows
-                            ? const BorderRadius.only(
-                                topLeft: Radius.circular(12),
-                              )
-                            : radius,
-                        border: isWindows
-                            ? Border(
-                                left: BorderSide(
-                                  color: cs.outlineVariant.withValues(
-                                    alpha: 0.25,
-                                  ),
-                                ),
-                                top: BorderSide(
-                                  color: cs.outlineVariant.withValues(
-                                    alpha: 0.25,
-                                  ),
-                                ),
-                              )
-                            : Border.all(
+              ? Padding(
+                  padding: isWindows ? EdgeInsets.zero : padding,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: isWindows ? cs.surface : cs.surfaceContainerLow,
+                      borderRadius: isWindows
+                          ? const BorderRadius.only(
+                              topLeft: Radius.circular(12),
+                            )
+                          : radius,
+                      border: isWindows
+                          ? Border(
+                              left: BorderSide(
                                 color: cs.outlineVariant.withValues(
-                                  alpha: 0.85,
+                                  alpha: 0.25,
                                 ),
                               ),
-                        boxShadow: isWindows
-                            ? [
-                                BoxShadow(
-                                  color: cs.shadow.withValues(alpha: 0.04),
-                                  blurRadius: 16,
-                                  offset: const Offset(-2, -2),
+                              top: BorderSide(
+                                color: cs.outlineVariant.withValues(
+                                  alpha: 0.25,
                                 ),
-                              ]
-                            : [
-                                BoxShadow(
-                                  color: cs.shadow.withValues(alpha: 0.1),
-                                  blurRadius: 28,
-                                  offset: const Offset(0, 12),
-                                ),
-                              ],
-                      ),
-                      child: ClipRRect(
-                        borderRadius: isWindows
-                            ? const BorderRadius.only(
-                                topLeft: Radius.circular(12),
-                              )
-                            : radius,
-                        clipBehavior: Clip.hardEdge,
-                        child: ColoredBox(
-                          color: cs.surface,
-                          child: RepaintBoundary(child: page),
-                        ),
+                              ),
+                            )
+                          : Border.all(
+                              color: cs.outlineVariant.withValues(alpha: 0.85),
+                            ),
+                      boxShadow: isWindows
+                          ? [
+                              BoxShadow(
+                                color: cs.shadow.withValues(alpha: 0.04),
+                                blurRadius: 16,
+                                offset: const Offset(-2, -2),
+                              ),
+                            ]
+                          : [
+                              BoxShadow(
+                                color: cs.shadow.withValues(alpha: 0.1),
+                                blurRadius: 28,
+                                offset: const Offset(0, 12),
+                              ),
+                            ],
+                    ),
+                    child: ClipRRect(
+                      borderRadius: isWindows
+                          ? const BorderRadius.only(
+                              topLeft: Radius.circular(12),
+                            )
+                          : radius,
+                      clipBehavior: Clip.hardEdge,
+                      child: ColoredBox(
+                        color: cs.surface,
+                        child: RepaintBoundary(child: page),
                       ),
                     ),
                   ),
@@ -190,43 +185,45 @@ extension _MainScreenLayout on _MainScreenState {
               highlightColor: activeColor.withValues(alpha: 0.08),
               splashColor: activeColor.withValues(alpha: 0.10),
               child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    AnimatedContainer(
-                      duration: tokens.motionSlow,
-                      curve: Curves.easeOutQuint,
-                      width: selected ? 56 : 0,
-                      height: 26,
-                      decoration: BoxDecoration(
-                        color: selected
-                            ? activeColor.withValues(alpha: 0.11)
-                            : Colors.transparent,
-                        borderRadius: BorderRadius.circular(tokens.radiusCard),
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      AnimatedContainer(
+                        duration: tokens.motionSlow,
+                        curve: Curves.easeOutQuint,
+                        width: selected ? 56 : 0,
+                        height: 26,
+                        decoration: BoxDecoration(
+                          color: selected
+                              ? activeColor.withValues(alpha: 0.11)
+                              : Colors.transparent,
+                          borderRadius: BorderRadius.circular(
+                            tokens.radiusCard,
+                          ),
+                        ),
                       ),
-                    ),
-                    Icon(
-                      selected ? item.selectedIcon : item.icon,
-                      size: 20,
-                      color: selected ? activeColor : inactive,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 1),
-                Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    fontSize: 10,
-                    fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
-                    color: selected ? activeColor : inactive,
-                    letterSpacing: 0,
+                      Icon(
+                        selected ? item.selectedIcon : item.icon,
+                        size: 20,
+                        color: selected ? activeColor : inactive,
+                      ),
+                    ],
                   ),
-                ),
-              ],
+                  const SizedBox(height: 1),
+                  Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      fontSize: 10,
+                      fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
+                      color: selected ? activeColor : inactive,
+                      letterSpacing: 0,
+                    ),
+                  ),
+                ],
               ),
             ),
           ),

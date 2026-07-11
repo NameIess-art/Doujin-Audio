@@ -573,11 +573,17 @@ extension AudioProviderPlayback on AudioProvider {
 
   Future<void> switchSessionQueueTrack(String sessionId, int queueIndex) async {
     final session = _sessions[sessionId];
-    final tracks = session?.customQueueTracks;
-    if (session == null || tracks == null || tracks.isEmpty) {
+    if (session == null) return;
+    final tracks = session.isPlaybackQueue
+        ? session.playbackQueue!.expandedTracks
+        : session.customQueueTracks;
+    if (tracks == null || tracks.isEmpty) {
       return;
     }
     final index = queueIndex.clamp(0, tracks.length - 1);
+    if (index != session.currentQueueIndex) {
+      _forcePlaybackQueueDuplicateReload(session, tracks[index].path);
+    }
     session.currentQueueIndex = index;
     await _prepareAndPlay(
       session,
@@ -591,8 +597,12 @@ extension AudioProviderPlayback on AudioProvider {
   Future<void> seekSessionToNext(String sessionId) async {
     final session = _sessions[sessionId];
     if (session == null) return;
+    final previousQueueIndex = session.currentQueueIndex;
     final nextPath = _nextPathFor(session, forward: true);
     if (nextPath != null) {
+      if (session.currentQueueIndex != previousQueueIndex) {
+        _forcePlaybackQueueDuplicateReload(session, nextPath);
+      }
       await _prepareAndPlay(
         session,
         nextPath: nextPath,
@@ -605,7 +615,8 @@ extension AudioProviderPlayback on AudioProvider {
   Future<void> seekSessionToPrev(String sessionId) async {
     final session = _sessions[sessionId];
     if (session == null) return;
-    if (session.position.inSeconds > 3) {
+    final previousQueueIndex = session.currentQueueIndex;
+    if (!session.isPlaybackQueue && session.position.inSeconds > 3) {
       session.setOptimisticPosition(Duration.zero);
       session.lastPersistedPositionBucket = 0;
       _refreshNotificationSubtitleForSession(
@@ -619,12 +630,25 @@ extension AudioProviderPlayback on AudioProvider {
     }
     final prevPath = _nextPathFor(session, forward: false);
     if (prevPath != null) {
+      if (session.currentQueueIndex != previousQueueIndex) {
+        _forcePlaybackQueueDuplicateReload(session, prevPath);
+      }
       await _prepareAndPlay(
         session,
         nextPath: prevPath,
         forceStartAtZero: true,
         showLoading: false,
       );
+    }
+  }
+
+  void _forcePlaybackQueueDuplicateReload(
+    PlaybackSession session,
+    String nextPath,
+  ) {
+    if (session.isPlaybackQueue &&
+        PathMatcher.equalsNormalized(nextPath, session.currentTrackPath)) {
+      session.loadedPath = null;
     }
   }
 

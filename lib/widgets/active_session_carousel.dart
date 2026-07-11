@@ -115,13 +115,13 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
     if (!mounted) return;
     final sessionId = _carouselSnapListenable.value;
     if (sessionId == null || sessionId == _lastCarouselSnapSessionId) return;
-    _lastCarouselSnapSessionId = sessionId;
     final sessions =
         widget.sessions ??
         (ref.read(playbackStateProvider).valueOrNull?.activeSessions ??
             const <PlaybackSession>[]);
     final targetIndex = sessions.indexWhere((s) => s.id == sessionId);
     if (targetIndex < 0 || !_pageController.hasClients) return;
+    _lastCarouselSnapSessionId = sessionId;
     _pageController.animateToPage(
       targetIndex,
       duration: const Duration(milliseconds: 350),
@@ -182,6 +182,22 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
     final sessions = widget.sessions ?? playbackState.activeSessions;
     if (sessions.isEmpty) {
       return const SizedBox.shrink();
+    }
+
+    final snapSessionId = _carouselSnapListenable.value;
+    if (snapSessionId != null && snapSessionId != _lastCarouselSnapSessionId) {
+      final targetIndex = sessions.indexWhere((s) => s.id == snapSessionId);
+      if (targetIndex >= 0) {
+        _lastCarouselSnapSessionId = snapSessionId;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted || !_pageController.hasClients) return;
+          _pageController.animateToPage(
+            targetIndex,
+            duration: const Duration(milliseconds: 350),
+            curve: Curves.easeOutCubic,
+          );
+        });
+      }
     }
 
     _ensureValidPage(sessions.length);

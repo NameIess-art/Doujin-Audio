@@ -238,6 +238,7 @@ class _AsmrDownloadPageState extends State<AsmrDownloadPage> {
     final hasDestination = (_destinationRoot?.trim().isNotEmpty ?? false);
 
     return Scaffold(
+      backgroundColor: Theme.of(context).colorScheme.surface,
       appBar: AppBar(
         title: Text(i18n.tr('asmr_download_title')),
         actions: [
@@ -374,6 +375,7 @@ class AsmrDownloadTaskPage extends StatelessWidget {
     final headerHeight = MediaQuery.paddingOf(context).top + 56;
 
     return Scaffold(
+      backgroundColor: Theme.of(context).colorScheme.surface,
       body: Stack(
         children: [
           if (taskIds.isEmpty)

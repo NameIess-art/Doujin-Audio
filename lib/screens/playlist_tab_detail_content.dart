@@ -369,7 +369,7 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
         ? i18n.tr('asmr_online_playback')
         : i18n.tr('imported_files');
     final hasSiblings = session.isPlaybackQueue
-        ? (session.customQueueTracks?.isNotEmpty ?? false)
+        ? session.playbackQueue!.expandedTracks.isNotEmpty
         : provider.tracksInSameWork(session.currentTrackPath).length > 1;
     final selectedSegmentId = _segmentPanelExpanded ? _selectedSegmentId : null;
 
@@ -464,10 +464,7 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
                     begin: const Offset(0.0, 0.2),
                     end: Offset.zero,
                   ).animate(animation),
-                  child: FadeTransition(
-                    opacity: animation,
-                    child: child,
-                  ),
+                  child: FadeTransition(opacity: animation, child: child),
                 );
               },
               child: _segmentPanelExpanded
@@ -503,10 +500,7 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
                           begin: const Offset(0.0, 0.2),
                           end: Offset.zero,
                         ).animate(animation),
-                        child: FadeTransition(
-                          opacity: animation,
-                          child: child,
-                        ),
+                        child: FadeTransition(opacity: animation, child: child),
                       );
                     },
                     child: (_segmentPanelExpanded && !widget.useArtworkConsole)
@@ -517,54 +511,61 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
                                 topLeft: Radius.circular(24),
                                 topRight: Radius.circular(24),
                                 bottomRight: Radius.circular(24),
-                                bottomLeft: Radius.zero,
                               ),
                               child: BackdropFilter(
-                              filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-                              child: Container(
-                                color: cs.surface.withValues(alpha: 0.85),
-                                child: SafeArea(
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 16,
-                                      vertical: 16,
+                                filter: ImageFilter.blur(
+                                  sigmaX: 16,
+                                  sigmaY: 16,
+                                ),
+                                child: Container(
+                                  color: cs.surface.withValues(alpha: 0.85),
+                                  child: SafeArea(
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 16,
+                                        vertical: 16,
+                                      ),
+                                      child: _TimeSegmentPanel(
+                                        key: const ValueKey(
+                                          'segments_landscape',
+                                        ),
+                                        session: session,
+                                        provider: provider,
+                                        labels: _segmentLabels,
+                                        selectedId: _selectedSegmentId,
+                                        showEditor: _segmentEditorVisible,
+                                        loading: _segmentLoading,
+                                        nameController: _segmentNameController,
+                                        draftStart: _draftStart,
+                                        draftEnd: _draftEnd,
+                                        draftColorValue: _draftColorValue,
+                                        loopSegmentId: provider
+                                            .timeSegmentLoopLabelIdForSession(
+                                              session.id,
+                                              trackKey: _segmentTrackKey,
+                                            ),
+                                        onSelect: _selectSegment,
+                                        onAdd: _startNewSegment,
+                                        onSetStart: _setDraftStartToCurrent,
+                                        onSetEnd: _setDraftEndToCurrent,
+                                        onEditStart: () =>
+                                            _editDraftTime(isStart: true),
+                                        onEditEnd: () =>
+                                            _editDraftTime(isStart: false),
+                                        onDelete: _deleteSelectedSegment,
+                                        onToggleLoop:
+                                            _toggleSelectedSegmentLoop,
+                                        onClose: collapseSegmentPanel,
+                                      ),
                                     ),
-                                    child: _TimeSegmentPanel(
-                                      key: const ValueKey('segments_landscape'),
-                                      session: session,
-                                      provider: provider,
-                                      labels: _segmentLabels,
-                                      selectedId: _selectedSegmentId,
-                                      showEditor: _segmentEditorVisible,
-                                      loading: _segmentLoading,
-                                      nameController: _segmentNameController,
-                                      draftStart: _draftStart,
-                                      draftEnd: _draftEnd,
-                                      draftColorValue: _draftColorValue,
-                                      loopSegmentId: provider
-                                          .timeSegmentLoopLabelIdForSession(
-                                            session.id,
-                                            trackKey: _segmentTrackKey,
-                                          ),
-                                      onSelect: _selectSegment,
-                                      onAdd: _startNewSegment,
-                                      onSetStart: _setDraftStartToCurrent,
-                                      onSetEnd: _setDraftEndToCurrent,
-                                      onEditStart: () =>
-                                          _editDraftTime(isStart: true),
-                                      onEditEnd: () =>
-                                          _editDraftTime(isStart: false),
-                                      onDelete: _deleteSelectedSegment,
-                                      onToggleLoop: _toggleSelectedSegmentLoop,
-                                      onClose: collapseSegmentPanel,
-                                    ),
-                                  ),
                                   ),
                                 ),
                               ),
                             ),
                           )
-                        : const SizedBox.shrink(key: ValueKey('segments_landscape_closed')),
+                        : const SizedBox.shrink(
+                            key: ValueKey('segments_landscape_closed'),
+                          ),
                   ),
                 ),
               ],
@@ -640,7 +641,7 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
   void _showTrackSwitcher(BuildContext context) {
     final i18n = context.read<AppLanguageProvider>();
     final tracks = widget.session.isPlaybackQueue
-        ? widget.session.customQueueTracks ?? const <MusicTrack>[]
+        ? widget.session.playbackQueue!.expandedTracks
         : widget.provider.tracksForSessionSwitcher(widget.session.id);
     if (tracks.isEmpty) return;
     final workRoot = widget.provider.workRootForTrack(

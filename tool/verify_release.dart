@@ -9,6 +9,7 @@ void main(List<String> args) {
           : null);
   final pubspec = File('pubspec.yaml').readAsStringSync();
   final readme = File('README.md').readAsStringSync();
+  final releaseNotes = File('release_notes.md').readAsStringSync();
   final workflow = File('.github/workflows/flutter.yml').readAsStringSync();
 
   final versionMatch = RegExp(
@@ -24,10 +25,8 @@ void main(List<String> args) {
   final expectedTag = 'v$versionName';
   final expectedVersion = '$versionName+$buildNumber';
 
-  if (!readme.contains('当前版本：`$expectedVersion`')) {
-    _fail(
-      'README.md does not contain current development version `$expectedVersion`.',
-    );
+  if (!readme.contains('`$expectedVersion`')) {
+    _fail('README.md does not contain current version `$expectedVersion`.');
   }
   if (!readme.contains('/releases/tag/$expectedTag')) {
     _fail('README.md release link must match tag $expectedTag.');
@@ -36,27 +35,70 @@ void main(List<String> args) {
     _fail('Git tag $tag does not match pubspec version $expectedTag.');
   }
 
-  for (final assetPattern in <String>[
-    'NamelessAudio-android-arm64-\${GITHUB_REF_NAME}.apk',
+  const androidVariants = <String>['universal', 'arm64', 'armv7', 'x64'];
+  final documentedAssets = <String>[
+    for (final variant in androidVariants)
+      'NamelessAudio-android-$variant-$expectedTag.apk',
+    'NamelessAudio-windows-x64-$expectedTag.zip',
+  ];
+  for (final asset in documentedAssets) {
+    if (!readme.contains(asset)) {
+      _fail('README.md is missing release asset: $asset');
+    }
+    if (!readme.contains('$asset.sha256')) {
+      _fail('README.md is missing checksum asset: $asset.sha256');
+    }
+  }
+
+  final workflowAssets = <String>[
+    for (final variant in androidVariants)
+      'NamelessAudio-android-$variant-\${{ github.ref_name }}.apk',
     'NamelessAudio-windows-x64-\${{ github.ref_name }}.zip',
+  ];
+  for (final asset in workflowAssets) {
+    if (!workflow.contains(asset) || !workflow.contains('$asset.sha256')) {
+      _fail('Release workflow is missing asset/checksum pattern: $asset');
+    }
+  }
+
+  for (final required in <String>[
+    'publish-release:',
+    '--notes-file release_notes.md',
+    '--draft',
+    '--draft=false',
+    '--latest',
+    'actions/upload-artifact@',
+    'actions/download-artifact@',
   ]) {
-    if (!workflow.contains(assetPattern)) {
+    if (!workflow.contains(required)) {
       _fail(
-        'Release workflow is missing expected asset pattern: $assetPattern',
+        'Release workflow is missing required atomic publish step: $required',
       );
     }
   }
-  if (!workflow.contains('--latest=false')) {
-    _fail(
-      'Release workflow must not replace the latest release automatically.',
-    );
+  if (workflow.contains('--latest=false')) {
+    _fail('Stable release workflow must publish the release as Latest.');
   }
   if (workflow.contains('--clobber')) {
-    _fail('Release workflow must not overwrite existing assets.');
+    _fail('Release workflow must not overwrite existing public assets.');
+  }
+
+  for (final document in <MapEntry<String, String>>[
+    MapEntry<String, String>('README.md', readme),
+    MapEntry<String, String>('release_notes.md', releaseNotes),
+  ]) {
+    if (!document.value.contains('必须先卸载旧版本再重新安装') ||
+        !document.value.contains('.nalbackup')) {
+      _fail('${document.key} is missing the 0.13.0 reinstall/backup warning.');
+    }
+    if (document.value.contains('\uFFFD')) {
+      _fail('${document.key} contains invalid replacement characters.');
+    }
   }
 
   stdout.writeln(
-    'Release metadata verified: version=$expectedVersion tag=$expectedTag',
+    'Release metadata verified: version=$expectedVersion tag=$expectedTag '
+    'assets=${documentedAssets.length * 2}',
   );
 }
 

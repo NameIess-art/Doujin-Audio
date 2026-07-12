@@ -3,4 +3,15 @@
     <string name="app_name">Nameless Audio</string>
     <string name="keep_alive_timer_active">Sleep timer running</string>
     <string name="keep_alive_playback_active">Playing</string>
+    <string name="playback_notification_channel_name">Playback</string>
+    <string name="playback_notification_channel_description">Playback notification controls</string>
+    <string name="playback_action_previous">Previous</string>
+    <string name="playback_action_play">Play</string>
+    <string name="playback_action_pause">Pause</string>
+    <string name="playback_action_play_pause">Play or pause</string>
+    <string name="playback_action_next">Next</string>
+    <plurals name="playback_sessions_count">
+        <item quantity="one">%d session</item>
+        <item quantity="other">%d sessions</item>
+    </plurals>
 </resources>

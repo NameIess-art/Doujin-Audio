@@ -28,7 +28,8 @@ class ThemeProvider with ChangeNotifier {
       (mode) => mode.name == storedMode,
       orElse: () => ThemeMode.system,
     );
-    _differentiateAsmrTheme = AppPreferences.getBoolSync('differentiateAsmrTheme') ?? true;
+    _differentiateAsmrTheme =
+        AppPreferences.getBoolSync('differentiateAsmrTheme') ?? true;
   }
 
   Future<void> setThemeMode(ThemeMode value) async {
@@ -187,6 +188,7 @@ class ThemeProvider with ChangeNotifier {
 
     return ThemeData(
       useMaterial3: true,
+      materialTapTargetSize: MaterialTapTargetSize.padded,
       extensions: <ThemeExtension<dynamic>>[tokens],
       visualDensity: isDesktop ? VisualDensity.compact : VisualDensity.standard,
       colorScheme: scheme,
@@ -261,9 +263,17 @@ class ThemeProvider with ChangeNotifier {
           textStyle: const TextStyle(fontWeight: FontWeight.w700),
         ),
       ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          minimumSize: Size(tokens.minimumTapTarget, tokens.minimumTapTarget),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(tokens.radiusControl),
+          ),
+        ),
+      ),
       iconButtonTheme: IconButtonThemeData(
         style: IconButton.styleFrom(
-          minimumSize: const Size(48, 48),
+          minimumSize: Size(tokens.minimumTapTarget, tokens.minimumTapTarget),
           visualDensity: VisualDensity.standard,
         ),
       ),
@@ -305,6 +315,7 @@ class ThemeProvider with ChangeNotifier {
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
+        constraints: BoxConstraints(minHeight: tokens.minimumTapTarget),
         fillColor: scheme.surfaceContainer,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(tokens.radiusControl),

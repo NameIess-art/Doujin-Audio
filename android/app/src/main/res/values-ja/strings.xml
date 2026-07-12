@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="keep_alive_timer_active">スリープタイマー実行中</string>
+    <string name="keep_alive_playback_active">再生中</string>
+    <string name="playback_notification_channel_name">再生コントロール</string>
+    <string name="playback_notification_channel_description">再生状態とメディア操作を表示します</string>
+    <string name="playback_action_previous">前へ</string>
+    <string name="playback_action_play">再生</string>
+    <string name="playback_action_pause">一時停止</string>
+    <string name="playback_action_play_pause">再生または一時停止</string>
+    <string name="playback_action_next">次へ</string>
+    <plurals name="playback_sessions_count">
+        <item quantity="other">%d 件の再生セッション</item>
+    </plurals>
+</resources>

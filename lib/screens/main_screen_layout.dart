@@ -7,16 +7,24 @@ extension _MainScreenLayout on _MainScreenState {
     final width = layoutSize.width;
     final isLargeScreen = width >= 980;
     final radius = BorderRadius.circular(
-      isDesktop ? (isLargeScreen ? 16 : 12) : 24,
+      isDesktop
+          ? (isLargeScreen ? AppRadius.card : AppRadius.medium)
+          : AppRadius.dialog,
     );
     final padding = isDesktop
         ? (isLargeScreen
-              ? const EdgeInsets.fromLTRB(24, 22, 24, 22)
-              : const EdgeInsets.fromLTRB(12, 12, 16, 12))
+              ? const EdgeInsets.fromLTRB(AppSpacing.xl, 22, AppSpacing.xl, 22)
+              : const EdgeInsets.fromLTRB(
+                  AppSpacing.sm,
+                  AppSpacing.sm,
+                  AppSpacing.md,
+                  AppSpacing.sm,
+                ))
         : EdgeInsets.zero;
     final isWindows =
         Platform.isWindows ||
-        _orientationForSize(layoutSize) == Orientation.landscape;
+        MediaQuery.orientationOf(context) == Orientation.landscape;
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
 
     Widget pageShell(int actualIndex) {
       final bool isActive = actualIndex == _currentIndex;
@@ -34,7 +42,9 @@ extension _MainScreenLayout on _MainScreenState {
       return AnimatedOpacity(
         key: ValueKey<String>('main_page_fade_$actualIndex'),
         opacity: isActive ? 1 : 0,
-        duration: const Duration(milliseconds: 120),
+        duration: reduceMotion
+            ? Duration.zero
+            : AppDesignTokens.of(context).motionFast,
         curve: Curves.easeOutCubic,
         child: Align(
           alignment: Alignment.topCenter,
@@ -46,7 +56,7 @@ extension _MainScreenLayout on _MainScreenState {
                       color: isWindows ? cs.surface : cs.surfaceContainerLow,
                       borderRadius: isWindows
                           ? const BorderRadius.only(
-                              topLeft: Radius.circular(12),
+                              topLeft: Radius.circular(AppRadius.medium),
                             )
                           : radius,
                       border: isWindows
@@ -84,7 +94,7 @@ extension _MainScreenLayout on _MainScreenState {
                     child: ClipRRect(
                       borderRadius: isWindows
                           ? const BorderRadius.only(
-                              topLeft: Radius.circular(12),
+                              topLeft: Radius.circular(AppRadius.medium),
                             )
                           : radius,
                       clipBehavior: Clip.hardEdge,
@@ -283,7 +293,7 @@ extension _MainScreenLayout on _MainScreenState {
     return SafeArea(
       key: key,
       top: false,
-      minimum: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+      minimum: const EdgeInsets.fromLTRB(AppSpacing.sm, 0, AppSpacing.sm, 6),
       child: Align(
         alignment: Alignment.bottomCenter,
         child: ConstrainedBox(
@@ -419,10 +429,10 @@ extension _MainScreenLayout on _MainScreenState {
       width: containerWidth,
       margin: isWindows
           ? EdgeInsets.zero
-          : const EdgeInsets.fromLTRB(16, 18, 8, 18),
+          : const EdgeInsets.fromLTRB(AppSpacing.md, 18, AppSpacing.xs, 18),
       padding: isWindows
           ? const EdgeInsets.fromLTRB(8, 4, 8, 8)
-          : const EdgeInsets.fromLTRB(10, 16, 10, 10),
+          : const EdgeInsets.fromLTRB(10, AppSpacing.md, 10, 10),
       decoration: BoxDecoration(
         color: isWindows ? Colors.transparent : cs.surfaceContainerLow,
         borderRadius: isWindows ? BorderRadius.zero : BorderRadius.circular(26),
@@ -450,7 +460,9 @@ extension _MainScreenLayout on _MainScreenState {
                     navigationRailTheme: Theme.of(context).navigationRailTheme
                         .copyWith(
                           indicatorShape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
+                            borderRadius: BorderRadius.circular(
+                              AppRadius.medium,
+                            ),
                           ),
                           indicatorColor: isDark
                               ? cs.primary.withValues(alpha: 0.15)
@@ -506,7 +518,7 @@ extension _MainScreenLayout on _MainScreenState {
                                           decoration: BoxDecoration(
                                             color: cs.primaryContainer,
                                             borderRadius: BorderRadius.circular(
-                                              12,
+                                              AppRadius.medium,
                                             ),
                                           ),
                                           child: Icon(
@@ -514,7 +526,7 @@ extension _MainScreenLayout on _MainScreenState {
                                             color: cs.onPrimaryContainer,
                                           ),
                                         ),
-                                        const SizedBox(width: 10),
+                                        const SizedBox(width: AppSpacing.sm),
                                         Expanded(
                                           child: Text(
                                             i18n.tr('asmr_player'),
@@ -576,7 +588,7 @@ extension _MainScreenLayout on _MainScreenState {
           ),
           if (overlaySessions.isNotEmpty)
             Padding(
-              padding: const EdgeInsets.only(top: 10),
+              padding: const EdgeInsets.only(top: AppSpacing.sm),
               child: ActiveSessionCarousel(
                 sessions: overlaySessions,
                 provider: ref.read(audioProviderFacadeProvider),

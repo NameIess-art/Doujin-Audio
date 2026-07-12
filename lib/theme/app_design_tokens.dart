@@ -12,6 +12,27 @@ class AppDesignTokens extends ThemeExtension<AppDesignTokens> {
     required this.asmrSurface,
     required this.subtleBorderAlpha,
     required this.standardBorderAlpha,
+    required this.success,
+    required this.onSuccess,
+    required this.successContainer,
+    required this.onSuccessContainer,
+    required this.warning,
+    required this.onWarning,
+    required this.warningContainer,
+    required this.onWarningContainer,
+    this.spaceXxs = 4,
+    this.spaceXs = 8,
+    this.spaceSm = 12,
+    this.spaceMd = 16,
+    this.spaceLg = 20,
+    this.spaceXl = 24,
+    this.spaceXxl = 32,
+    this.minimumTapTarget = 48,
+    this.iconSmall = 18,
+    this.iconStandard = 24,
+    this.pageHorizontalPadding = 16,
+    this.compactContentMaxWidth = 720,
+    this.readableContentMaxWidth = 1040,
     this.radiusSmall = 12,
     this.radiusControl = 14,
     this.radiusCard = 16,
@@ -31,6 +52,14 @@ class AppDesignTokens extends ThemeExtension<AppDesignTokens> {
     asmrSurface: Color(0xFFF4F7FA),
     subtleBorderAlpha: 0.30,
     standardBorderAlpha: 0.50,
+    success: Color(0xFF216E39),
+    onSuccess: Colors.white,
+    successContainer: Color(0xFFD7F4DE),
+    onSuccessContainer: Color(0xFF0E4A24),
+    warning: Color(0xFF8A4B00),
+    onWarning: Colors.white,
+    warningContainer: Color(0xFFFFDDB7),
+    onWarningContainer: Color(0xFF5A3000),
   );
 
   static const dark = AppDesignTokens(
@@ -41,6 +70,14 @@ class AppDesignTokens extends ThemeExtension<AppDesignTokens> {
     asmrSurface: Color(0xFF181D2B),
     subtleBorderAlpha: 0.15,
     standardBorderAlpha: 0.28,
+    success: Color(0xFF8FDBA6),
+    onSuccess: Color(0xFF0B3A1D),
+    successContainer: Color(0xFF174D2A),
+    onSuccessContainer: Color(0xFFB8F2C7),
+    warning: Color(0xFFFFB95C),
+    onWarning: Color(0xFF4A2800),
+    warningContainer: Color(0xFF603B08),
+    onWarningContainer: Color(0xFFFFDDB7),
   );
 
   static AppDesignTokens of(BuildContext context) {
@@ -56,6 +93,27 @@ class AppDesignTokens extends ThemeExtension<AppDesignTokens> {
   final Color asmrSurface;
   final double subtleBorderAlpha;
   final double standardBorderAlpha;
+  final Color success;
+  final Color onSuccess;
+  final Color successContainer;
+  final Color onSuccessContainer;
+  final Color warning;
+  final Color onWarning;
+  final Color warningContainer;
+  final Color onWarningContainer;
+  final double spaceXxs;
+  final double spaceXs;
+  final double spaceSm;
+  final double spaceMd;
+  final double spaceLg;
+  final double spaceXl;
+  final double spaceXxl;
+  final double minimumTapTarget;
+  final double iconSmall;
+  final double iconStandard;
+  final double pageHorizontalPadding;
+  final double compactContentMaxWidth;
+  final double readableContentMaxWidth;
   final double radiusSmall;
   final double radiusControl;
   final double radiusCard;
@@ -75,6 +133,27 @@ class AppDesignTokens extends ThemeExtension<AppDesignTokens> {
     Color? asmrSurface,
     double? subtleBorderAlpha,
     double? standardBorderAlpha,
+    Color? success,
+    Color? onSuccess,
+    Color? successContainer,
+    Color? onSuccessContainer,
+    Color? warning,
+    Color? onWarning,
+    Color? warningContainer,
+    Color? onWarningContainer,
+    double? spaceXxs,
+    double? spaceXs,
+    double? spaceSm,
+    double? spaceMd,
+    double? spaceLg,
+    double? spaceXl,
+    double? spaceXxl,
+    double? minimumTapTarget,
+    double? iconSmall,
+    double? iconStandard,
+    double? pageHorizontalPadding,
+    double? compactContentMaxWidth,
+    double? readableContentMaxWidth,
     double? radiusSmall,
     double? radiusControl,
     double? radiusCard,
@@ -93,6 +172,30 @@ class AppDesignTokens extends ThemeExtension<AppDesignTokens> {
       asmrSurface: asmrSurface ?? this.asmrSurface,
       subtleBorderAlpha: subtleBorderAlpha ?? this.subtleBorderAlpha,
       standardBorderAlpha: standardBorderAlpha ?? this.standardBorderAlpha,
+      success: success ?? this.success,
+      onSuccess: onSuccess ?? this.onSuccess,
+      successContainer: successContainer ?? this.successContainer,
+      onSuccessContainer: onSuccessContainer ?? this.onSuccessContainer,
+      warning: warning ?? this.warning,
+      onWarning: onWarning ?? this.onWarning,
+      warningContainer: warningContainer ?? this.warningContainer,
+      onWarningContainer: onWarningContainer ?? this.onWarningContainer,
+      spaceXxs: spaceXxs ?? this.spaceXxs,
+      spaceXs: spaceXs ?? this.spaceXs,
+      spaceSm: spaceSm ?? this.spaceSm,
+      spaceMd: spaceMd ?? this.spaceMd,
+      spaceLg: spaceLg ?? this.spaceLg,
+      spaceXl: spaceXl ?? this.spaceXl,
+      spaceXxl: spaceXxl ?? this.spaceXxl,
+      minimumTapTarget: minimumTapTarget ?? this.minimumTapTarget,
+      iconSmall: iconSmall ?? this.iconSmall,
+      iconStandard: iconStandard ?? this.iconStandard,
+      pageHorizontalPadding:
+          pageHorizontalPadding ?? this.pageHorizontalPadding,
+      compactContentMaxWidth:
+          compactContentMaxWidth ?? this.compactContentMaxWidth,
+      readableContentMaxWidth:
+          readableContentMaxWidth ?? this.readableContentMaxWidth,
       radiusSmall: radiusSmall ?? this.radiusSmall,
       radiusControl: radiusControl ?? this.radiusControl,
       radiusCard: radiusCard ?? this.radiusCard,
@@ -122,6 +225,59 @@ class AppDesignTokens extends ThemeExtension<AppDesignTokens> {
       standardBorderAlpha: lerpDouble(
         standardBorderAlpha,
         other.standardBorderAlpha,
+        t,
+      )!,
+      success: Color.lerp(success, other.success, t)!,
+      onSuccess: Color.lerp(onSuccess, other.onSuccess, t)!,
+      successContainer: Color.lerp(
+        successContainer,
+        other.successContainer,
+        t,
+      )!,
+      onSuccessContainer: Color.lerp(
+        onSuccessContainer,
+        other.onSuccessContainer,
+        t,
+      )!,
+      warning: Color.lerp(warning, other.warning, t)!,
+      onWarning: Color.lerp(onWarning, other.onWarning, t)!,
+      warningContainer: Color.lerp(
+        warningContainer,
+        other.warningContainer,
+        t,
+      )!,
+      onWarningContainer: Color.lerp(
+        onWarningContainer,
+        other.onWarningContainer,
+        t,
+      )!,
+      spaceXxs: lerpDouble(spaceXxs, other.spaceXxs, t)!,
+      spaceXs: lerpDouble(spaceXs, other.spaceXs, t)!,
+      spaceSm: lerpDouble(spaceSm, other.spaceSm, t)!,
+      spaceMd: lerpDouble(spaceMd, other.spaceMd, t)!,
+      spaceLg: lerpDouble(spaceLg, other.spaceLg, t)!,
+      spaceXl: lerpDouble(spaceXl, other.spaceXl, t)!,
+      spaceXxl: lerpDouble(spaceXxl, other.spaceXxl, t)!,
+      minimumTapTarget: lerpDouble(
+        minimumTapTarget,
+        other.minimumTapTarget,
+        t,
+      )!,
+      iconSmall: lerpDouble(iconSmall, other.iconSmall, t)!,
+      iconStandard: lerpDouble(iconStandard, other.iconStandard, t)!,
+      pageHorizontalPadding: lerpDouble(
+        pageHorizontalPadding,
+        other.pageHorizontalPadding,
+        t,
+      )!,
+      compactContentMaxWidth: lerpDouble(
+        compactContentMaxWidth,
+        other.compactContentMaxWidth,
+        t,
+      )!,
+      readableContentMaxWidth: lerpDouble(
+        readableContentMaxWidth,
+        other.readableContentMaxWidth,
         t,
       )!,
       radiusSmall: lerpDouble(radiusSmall, other.radiusSmall, t)!,

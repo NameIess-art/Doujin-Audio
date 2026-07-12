@@ -43,6 +43,61 @@ internal data class UnifiedPlaybackNotificationItem(
     val hasNext: Boolean
 )
 
+internal data class NotificationTransportActionSpec(
+    val command: NotificationCommand,
+    val iconResource: Int,
+    val labelResource: Int
+)
+
+internal fun notificationTransportActionSpecs(
+    playing: Boolean,
+    hasPrevious: Boolean,
+    hasNext: Boolean
+): List<NotificationTransportActionSpec> = buildList {
+    if (hasPrevious) {
+        add(
+            NotificationTransportActionSpec(
+                NotificationCommand.previous,
+                R.drawable.ic_notification_previous_session,
+                R.string.playback_action_previous
+            )
+        )
+    }
+    add(
+        NotificationTransportActionSpec(
+            NotificationCommand.toggle,
+            if (playing) R.drawable.ic_notification_pause else R.drawable.ic_notification_play,
+            if (playing) R.string.playback_action_pause else R.string.playback_action_play
+        )
+    )
+    if (hasNext) {
+        add(
+            NotificationTransportActionSpec(
+                NotificationCommand.next,
+                R.drawable.ic_notification_next_session,
+                R.string.playback_action_next
+            )
+        )
+    }
+}
+
+internal fun addNotificationTransportActions(
+    builder: NotificationCompat.Builder,
+    context: Context,
+    playing: Boolean,
+    hasPrevious: Boolean,
+    hasNext: Boolean,
+    buildIntent: (NotificationCommand) -> PendingIntent
+) {
+    notificationTransportActionSpecs(playing, hasPrevious, hasNext).forEach { spec ->
+        builder.addAction(
+            spec.iconResource,
+            context.getString(spec.labelResource),
+            buildIntent(spec.command)
+        )
+    }
+}
+
 private fun UnifiedPlaybackNotificationItem.hasSameStableNotification(
     other: UnifiedPlaybackNotificationItem
 ): Boolean {
@@ -61,8 +116,6 @@ internal fun UnifiedPlaybackNotificationItem.stableNotificationSignature(): Stri
 
 internal object UnifiedPlaybackNotificationController {
     private const val channelId = "com.nameless.audio.channel.playback"
-    private const val channelName = "Playback"
-    private const val channelDescription = "Playback notification controls"
     const val groupKey = "com.nameless.audio.PLAYBACK_GROUP"
     const val dismissNotificationIdExtra = "notificationId"
     private const val unifiedNotificationExtra = "com.nameless.audio.UNIFIED_PLAYBACK_NOTIFICATION"
@@ -347,8 +400,20 @@ internal object UnifiedPlaybackNotificationController {
             summaryNotificationId,
             ongoing = true
         )
-            .setContentText(summaryText ?: "${items.size} sessions")
-            .setSubText("${items.size} sessions")
+            .setContentText(
+                summaryText ?: context.resources.getQuantityString(
+                    R.plurals.playback_sessions_count,
+                    items.size,
+                    items.size
+                )
+            )
+            .setSubText(
+                context.resources.getQuantityString(
+                    R.plurals.playback_sessions_count,
+                    items.size,
+                    items.size
+                )
+            )
             .setContentIntent(buildLaunchIntent(context, sessionId = mainItem.id))
             .setGroup(groupKey)
             .setGroupSummary(true)
@@ -410,7 +475,7 @@ internal object UnifiedPlaybackNotificationController {
         ongoing: Boolean
     ): NotificationCompat.Builder {
         val builder = NotificationCompat.Builder(context, channelId)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_notification_small)
             .setContentTitle(item.title)
             .setShowWhen(false)
             .setOnlyAlertOnce(true)
@@ -435,29 +500,14 @@ internal object UnifiedPlaybackNotificationController {
         context: Context,
         item: UnifiedPlaybackNotificationItem
     ) {
-        if (item.hasPrevious) {
-            builder.addAction(
-                android.R.drawable.ic_media_previous,
-                "Previous",
-                buildControlIntent(context, item.id, NotificationCommand.previous)
-            )
-        }
-        builder.addAction(
-            if (item.playing) {
-                android.R.drawable.ic_media_pause
-            } else {
-                android.R.drawable.ic_media_play
-            },
-            if (item.playing) "Pause" else "Play",
-            buildControlIntent(context, item.id, NotificationCommand.toggle)
+        addNotificationTransportActions(
+            builder = builder,
+            context = context,
+            playing = item.playing,
+            hasPrevious = item.hasPrevious,
+            hasNext = item.hasNext,
+            buildIntent = { command -> buildControlIntent(context, item.id, command) }
         )
-        if (item.hasNext) {
-            builder.addAction(
-                android.R.drawable.ic_media_next,
-                "Next",
-                buildControlIntent(context, item.id, NotificationCommand.next)
-            )
-        }
     }
 
     private fun compactActionIndicesFor(item: UnifiedPlaybackNotificationItem): List<Int> {
@@ -503,10 +553,12 @@ internal object UnifiedPlaybackNotificationController {
 
         val channel = NotificationChannel(
             channelId,
-            channelName,
+                context.getString(R.string.playback_notification_channel_name),
             NotificationManager.IMPORTANCE_LOW
         ).apply {
-            description = channelDescription
+                description = context.getString(
+                    R.string.playback_notification_channel_description
+                )
             setShowBadge(false)
         }
         manager.createNotificationChannel(channel)

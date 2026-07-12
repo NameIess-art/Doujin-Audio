@@ -24,6 +24,7 @@ import '../services/subtitle_overlay_controller.dart';
 import '../services/ui_interaction_coordinator.dart';
 import '../services/ui_operation_service.dart';
 import '../theme/app_design_tokens.dart';
+import '../theme/app_styles.dart';
 import 'asmr_tab.dart';
 import 'library_tab.dart';
 import 'playlist_tab.dart';
@@ -274,14 +275,23 @@ class _MainScreenState extends ConsumerState<MainScreen>
             ],
           ),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: Text(i18n.tr('later')),
-            ),
-            FilledButton.icon(
-              onPressed: () => Navigator.of(dialogContext).pop(true),
-              icon: const Icon(Icons.download_rounded),
-              label: Text(i18n.tr('download_update')),
+            Row(
+              children: [
+                Expanded(
+                  child: TextButton(
+                    onPressed: () => Navigator.of(dialogContext).pop(false),
+                    child: Text(i18n.tr('later')),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: () => Navigator.of(dialogContext).pop(true),
+                    icon: const Icon(Icons.download_rounded),
+                    label: Text(i18n.tr('download_update')),
+                  ),
+                ),
+              ],
             ),
           ],
         );
@@ -873,10 +883,10 @@ class _MainScreenState extends ConsumerState<MainScreen>
     }
     final layoutSize = _layoutViewSize();
     final width = layoutSize.width;
-    final isLandscape =
-        _orientationForSize(layoutSize) == Orientation.landscape;
     final isDesktop =
-        Platform.isWindows || width >= _desktopBreakpoint || isLandscape;
+        Platform.isWindows ||
+        MediaQuery.orientationOf(context) == Orientation.landscape ||
+        width >= _desktopBreakpoint;
     final isTinyWindow = width < 300 || layoutSize.height < 300;
     final mobileContentInset = isDesktop
         ? 0.0
@@ -933,7 +943,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
                               ),
                       ),
 
-                      if (Platform.isWindows)
+                      if (isDesktop)
                         _ScrollToTopButton(
                           visible: _showScrollToTopButton,
                           onPressed: _scrollCurrentPageToTop,

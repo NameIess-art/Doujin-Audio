@@ -97,7 +97,8 @@ class AudioEffectsState {
     return AudioEffectsState(
       skipSilenceEnabled: raw['skipSilenceEnabled'] as bool? ?? false,
       noiseReductionEnabled: raw['noiseReductionEnabled'] as bool? ?? false,
-      volumeNormalizationEnabled: raw['volumeNormalizationEnabled'] as bool? ?? false,
+      volumeNormalizationEnabled:
+          raw['volumeNormalizationEnabled'] as bool? ?? false,
       eqEnabled: raw['eqEnabled'] as bool? ?? false,
       eqPresetId: (raw['eqPresetId'] as String?)?.trim().isEmpty ?? true
           ? null

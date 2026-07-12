@@ -14,10 +14,13 @@ class _ScanCountChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.sm,
+        vertical: 3,
+      ),
       decoration: BoxDecoration(
         color: color.withAlpha(30),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppRadius.small),
       ),
       child: Text(
         '$label: $count',
@@ -37,7 +40,7 @@ class _LibraryEmptyState extends StatelessWidget {
     required this.onImportFile,
     required this.isBusy,
     required this.bottomInset,
-    this.topInset = 16,
+    this.topInset = AppSpacing.md,
     this.physics,
   });
 
@@ -53,15 +56,21 @@ class _LibraryEmptyState extends StatelessWidget {
   Widget build(BuildContext context) {
     final i18n = context.watch<AppLanguageProvider>();
     final cs = Theme.of(context).colorScheme;
+
     return ListView(
-      padding: EdgeInsets.fromLTRB(24, topInset, 24, bottomInset),
+      padding: EdgeInsets.fromLTRB(
+        AppSpacing.xl,
+        topInset,
+        AppSpacing.xl,
+        bottomInset,
+      ),
       physics: physics ?? const ClampingScrollPhysics(),
       children: [
-        const SizedBox(height: 20),
+        const SizedBox(height: AppSpacing.lg),
         Container(
           width: double.infinity,
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(28),
+            borderRadius: AppRadius.borderDialog,
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
@@ -73,7 +82,10 @@ class _LibraryEmptyState extends StatelessWidget {
             border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.1)),
           ),
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(24, 42, 24, 42),
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.xl,
+              vertical: 42,
+            ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -95,7 +107,7 @@ class _LibraryEmptyState extends StatelessWidget {
                             cs.primaryContainer.withValues(alpha: 0.8),
                           ],
                         ),
-                        borderRadius: BorderRadius.circular(24),
+                        borderRadius: AppRadius.borderMedium,
                         boxShadow: [
                           BoxShadow(
                             color: cs.primary.withValues(alpha: 0.12),
@@ -112,7 +124,7 @@ class _LibraryEmptyState extends StatelessWidget {
                     );
                   },
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: AppSpacing.xl),
                 Text(
                   i18n.tr('no_audio_files'),
                   textAlign: TextAlign.center,
@@ -121,7 +133,7 @@ class _LibraryEmptyState extends StatelessWidget {
                     letterSpacing: -0.5,
                   ),
                 ),
-                const SizedBox(height: 10),
+                const SizedBox(height: AppSpacing.sm),
                 Text(
                   i18n.tr('import_audio_hint'),
                   textAlign: TextAlign.center,
@@ -134,56 +146,31 @@ class _LibraryEmptyState extends StatelessWidget {
                 Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    OutlinedButton.icon(
-                      onPressed: isBusy ? () {} : onImportFolder,
-                      icon: isBusy
-                          ? const SizedBox.square(
-                              dimension: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(
-                              Icons.create_new_folder_rounded,
-                              size: 18,
-                            ),
-                      label: Text(i18n.tr('import_folder')),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: isBusy ? cs.onSurface.withValues(alpha: 0.38) : null,
-                        side: isBusy ? BorderSide(color: cs.onSurface.withValues(alpha: 0.12)) : null,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 24,
-                          vertical: 12,
-                        ),
-                        minimumSize: const Size(220, 48),
+                    SizedBox(
+                      width: 220,
+                      child: AppSecondaryButton(
+                        onPressed: isBusy ? null : onImportFolder,
+                        isLoading: isBusy,
+                        icon: Icons.create_new_folder_rounded,
+                        label: i18n.tr('import_folder'),
                       ),
                     ),
-                    const SizedBox(height: 12),
-                    OutlinedButton.icon(
-                      onPressed: isBusy ? () {} : onImportFile,
-                      icon: const Icon(Icons.upload_file_rounded, size: 18),
-                      label: Text(i18n.tr('import_file')),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: isBusy ? cs.onSurface.withValues(alpha: 0.38) : null,
-                        side: isBusy ? BorderSide(color: cs.onSurface.withValues(alpha: 0.12)) : null,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 24,
-                          vertical: 12,
-                        ),
-                        minimumSize: const Size(220, 48),
+                    const SizedBox(height: AppSpacing.md),
+                    SizedBox(
+                      width: 220,
+                      child: AppSecondaryButton(
+                        onPressed: isBusy ? null : onImportFile,
+                        icon: Icons.upload_file_rounded,
+                        label: i18n.tr('import_file'),
                       ),
                     ),
-                    const SizedBox(height: 12),
-                    OutlinedButton.icon(
-                      onPressed: isBusy ? () {} : onImportLibrary,
-                      icon: const Icon(Icons.library_add_rounded, size: 18),
-                      label: Text(i18n.tr('import_library')),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: isBusy ? cs.onSurface.withValues(alpha: 0.38) : null,
-                        side: isBusy ? BorderSide(color: cs.onSurface.withValues(alpha: 0.12)) : null,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 24,
-                          vertical: 12,
-                        ),
-                        minimumSize: const Size(220, 48),
+                    const SizedBox(height: AppSpacing.md),
+                    SizedBox(
+                      width: 220,
+                      child: AppSecondaryButton(
+                        onPressed: isBusy ? null : onImportLibrary,
+                        icon: Icons.library_add_rounded,
+                        label: i18n.tr('import_library'),
                       ),
                     ),
                   ],

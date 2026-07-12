@@ -17,6 +17,7 @@ import '../services/time_text_formatters.dart';
 import '../services/timer_runtime_calculator.dart';
 import '../services/ui_operation_service.dart';
 import '../widgets/app_feedback.dart';
+import '../widgets/confirm_action_dialog.dart';
 import '../widgets/target_countdown_builder.dart';
 import '../widgets/top_page_header.dart';
 
@@ -214,25 +215,17 @@ class _TimerTabState extends ConsumerState<TimerTab>
     final canScheduleExactAlarms = await _canScheduleExactAlarms();
     if (canScheduleExactAlarms || !mounted) return;
     final i18n = context.read<AppLanguageProvider>();
-    final openSettings = await showDialog<bool>(
+    final openSettings = await showConfirmActionDialog(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        icon: const Icon(Icons.alarm_on_rounded),
-        title: Text(i18n.tr('exact_alarm_permission_title')),
-        content: Text(i18n.tr('exact_alarm_permission_message')),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: Text(i18n.tr('later')),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: Text(i18n.tr('open_exact_alarm_settings')),
-          ),
-        ],
-      ),
+      title: i18n.tr('exact_alarm_permission_title'),
+      message: i18n.tr('exact_alarm_permission_message'),
+      cancelLabel: i18n.tr('later'),
+      confirmLabel: i18n.tr('open_exact_alarm_settings'),
+      icon: Icons.alarm_on_rounded,
+      confirmIcon: Icons.settings_rounded,
+      isDestructive: false,
     );
-    if (openSettings == true) {
+    if (openSettings) {
       await _openExactAlarmSettings();
     }
   }

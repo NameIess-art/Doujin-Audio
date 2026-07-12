@@ -39,7 +39,6 @@ const Duration _kIndicatorScaleDuration = Duration(milliseconds: 200);
 /// Used by [RefreshIndicator.onRefresh].
 typedef RefreshCallback = Future<void> Function();
 
-
 /// Indicates current status of Material `RefreshIndicator`.
 enum GlassGlassRefreshIndicatorStatus {
   /// Pointer is down.

@@ -72,9 +72,8 @@ class LibraryScannerService {
     provider.removeTracksByPath(
       provider.library
           .where(
-            (track) => !existingTrackPaths.contains(
-              PathMatcher.normalize(track.path),
-            ),
+            (track) =>
+                !existingTrackPaths.contains(PathMatcher.normalize(track.path)),
           )
           .map((track) => track.path),
     );
@@ -84,9 +83,8 @@ class LibraryScannerService {
         provider
             .libraryEntriesForLibrary(entry.key)
             .where(
-              (candidate) => !entry.value.contains(
-                PathMatcher.normalize(candidate.path),
-              ),
+              (candidate) =>
+                  !entry.value.contains(PathMatcher.normalize(candidate.path)),
             )
             .map((candidate) => candidate.path),
       );
@@ -721,10 +719,7 @@ class LibraryScannerService {
       exclusionMatcher: mergeContext?.exclusionMatcher,
     );
 
-    final result = await compute(
-      processScannedTracksInIsolate,
-      isolatePayload,
-    );
+    final result = await compute(processScannedTracksInIsolate, isolatePayload);
 
     if (!isActive()) return 0;
 
@@ -1265,6 +1260,7 @@ class LibraryScannerService {
 
     var added = 0;
     var completed = false;
+    var wasCancelled = false;
 
     try {
       provider.setScanProgress(
@@ -1332,6 +1328,7 @@ class LibraryScannerService {
         }
       }
     } finally {
+      wasCancelled = !provider.isScanGenerationActive(generation);
       completed = completed && provider.isScanGenerationActive(generation);
       if (!completed) {
         _rollbackScanAdditions(
@@ -1359,11 +1356,15 @@ class LibraryScannerService {
         unawaited(_prefillRjDetailForFolder(provider, normalizedFolderPath));
       }
     }
-    showSnack(
-      completed
-          ? i18n.tr('import_done_added', {'count': added})
-          : i18n.tr('scan_failed_next_step'),
-    );
+    if (wasCancelled) {
+      showSnack(i18n.tr('scan_cancelled'));
+    } else if (!completed) {
+      showSnack(i18n.tr('scan_failed_next_step'));
+    } else if (added == 0) {
+      showSnack(i18n.tr('no_audio_found'));
+    } else {
+      showSnack(i18n.tr('import_done_added', {'count': added}));
+    }
   }
 
   Future<void> addLibrary({

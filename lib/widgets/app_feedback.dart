@@ -132,6 +132,7 @@ void _showTopFeedback(
         right: 16,
         child: _FeedbackAnimationWrapper(
           duration: duration,
+          transitionDuration: AppDesignTokens.of(overlayContext).motionStandard,
           onRemove: removeEntry,
           child: IgnorePointer(
             ignoring: !hasAction,
@@ -174,11 +175,13 @@ class _FeedbackAnimationWrapper extends StatefulWidget {
   const _FeedbackAnimationWrapper({
     required this.child,
     required this.duration,
+    required this.transitionDuration,
     required this.onRemove,
   });
 
   final Widget child;
   final Duration duration;
+  final Duration transitionDuration;
   final VoidCallback onRemove;
 
   @override
@@ -198,7 +201,7 @@ class _FeedbackAnimationWrapperState extends State<_FeedbackAnimationWrapper>
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 250),
+      duration: widget.transitionDuration,
     );
     _opacity = CurvedAnimation(parent: _controller, curve: Curves.easeOut);
     _offset = Tween<Offset>(
@@ -208,7 +211,7 @@ class _FeedbackAnimationWrapperState extends State<_FeedbackAnimationWrapper>
 
     _controller.forward();
 
-    final stayDuration = widget.duration - const Duration(milliseconds: 250);
+    final stayDuration = widget.duration - widget.transitionDuration;
     _dismissTimer = Timer(
       stayDuration > Duration.zero ? stayDuration : Duration.zero,
       () {
@@ -229,6 +232,7 @@ class _FeedbackAnimationWrapperState extends State<_FeedbackAnimationWrapper>
 
   @override
   Widget build(BuildContext context) {
+    if (MediaQuery.disableAnimationsOf(context)) return widget.child;
     return FadeTransition(
       opacity: _opacity,
       child: SlideTransition(position: _offset, child: widget.child),
@@ -358,21 +362,18 @@ class AppFeedbackSurface extends StatelessWidget {
 }
 
 Color _accentColor(BuildContext context, AppFeedbackTone tone) {
-  final theme = Theme.of(context);
-  final cs = theme.colorScheme;
-  final isDark = theme.brightness == Brightness.dark;
+  final cs = Theme.of(context).colorScheme;
+  final tokens = AppDesignTokens.of(context);
 
   switch (tone) {
     case AppFeedbackTone.info:
-      return isDark ? cs.primary : cs.primary;
+      return cs.primary;
     case AppFeedbackTone.success:
-      return isDark ? Colors.greenAccent.shade200 : Colors.green.shade900;
+      return tokens.success;
     case AppFeedbackTone.warning:
-      return isDark ? Colors.orangeAccent.shade100 : Colors.orange.shade900;
+      return tokens.warning;
     case AppFeedbackTone.destructive:
-      return isDark
-          ? const Color(0xFFFFB4AB)
-          : const Color(0xFFBA1A1A); // Custom light/dark error colors
+      return cs.error;
   }
 }
 

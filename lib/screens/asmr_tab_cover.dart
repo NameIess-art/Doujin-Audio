@@ -76,7 +76,7 @@ class _AsmrWorkSkeletonCard extends StatelessWidget {
       side: BorderSide(
         color: cs.outlineVariant.withValues(alpha: isDark ? 0.26 : 0.42),
       ),
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: AppRadius.borderCard,
     );
 
     const infoBlockHeight = LibraryLikeCardMetrics.infoBlockHeight;
@@ -93,7 +93,7 @@ class _AsmrWorkSkeletonCard extends StatelessWidget {
         width: double.infinity,
         child: ShimmerLoader(
           child: Padding(
-            padding: EdgeInsets.all(12.0),
+            padding: EdgeInsets.all(AppSpacing.sm),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [

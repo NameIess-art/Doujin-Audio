@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import 'app_feedback.dart';
 import 'app_transitions.dart';
+import 'app_buttons.dart';
+import '../theme/app_styles.dart';
 
 Future<bool> showConfirmActionDialog({
   required BuildContext context,
@@ -10,18 +12,24 @@ Future<bool> showConfirmActionDialog({
   required String cancelLabel,
   required String confirmLabel,
   IconData? icon,
+  IconData? confirmIcon,
   Color? confirmColor,
+  Color? confirmForegroundColor,
+  bool isDestructive = true,
 }) async {
   final result = await showGeneralDialog<bool>(
     context: context,
     barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
     barrierDismissible: true,
     barrierColor: Colors.transparent,
-    transitionDuration: kSecondaryOverlayConfig.transitionDuration,
+    transitionDuration: MediaQuery.disableAnimationsOf(context)
+        ? Duration.zero
+        : kSecondaryOverlayConfig.transitionDuration,
     pageBuilder: (ctx, animation, secondaryAnimation) {
       final theme = Theme.of(ctx);
       final cs = theme.colorScheme;
-      final resolvedConfirmColor = confirmColor ?? cs.error;
+      final resolvedConfirmColor =
+          confirmColor ?? (isDestructive ? cs.error : cs.primary);
 
       return Stack(
         fit: StackFit.expand,
@@ -41,8 +49,8 @@ Future<bool> showConfirmActionDialog({
             child: Center(
               child: Padding(
                 padding: const EdgeInsets.symmetric(
-                  horizontal: 24,
-                  vertical: 24,
+                  horizontal: AppSpacing.xl,
+                  vertical: AppSpacing.xl,
                 ),
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 420),
@@ -51,7 +59,7 @@ Future<bool> showConfirmActionDialog({
                     child: Container(
                       decoration: BoxDecoration(
                         color: cs.surfaceContainerLow.withValues(alpha: 0.94),
-                        borderRadius: BorderRadius.circular(28),
+                        borderRadius: AppRadius.borderDialog,
                         border: Border.all(
                           color: cs.outlineVariant.withValues(alpha: 0.22),
                           width: 1.2,
@@ -70,7 +78,7 @@ Future<bool> showConfirmActionDialog({
                         ],
                       ),
                       child: Padding(
-                        padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
+                        padding: const EdgeInsets.all(AppSpacing.lg),
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
@@ -84,14 +92,17 @@ Future<bool> showConfirmActionDialog({
                                     color: resolvedConfirmColor.withValues(
                                       alpha: 0.12,
                                     ),
-                                    borderRadius: BorderRadius.circular(14),
+                                    borderRadius: AppRadius.borderMedium,
                                   ),
                                   child: Icon(
-                                    icon ?? Icons.delete_outline_rounded,
+                                    icon ??
+                                        (isDestructive
+                                            ? Icons.warning_amber_rounded
+                                            : Icons.info_outline_rounded),
                                     color: resolvedConfirmColor,
                                   ),
                                 ),
-                                const SizedBox(width: 12),
+                                const SizedBox(width: AppSpacing.md),
                                 Expanded(
                                   child: Column(
                                     crossAxisAlignment:
@@ -104,16 +115,15 @@ Future<bool> showConfirmActionDialog({
                                         overflow: TextOverflow.ellipsis,
                                         style: theme.textTheme.titleMedium
                                             ?.copyWith(
-                                              fontWeight: FontWeight.w900,
+                                              fontWeight: FontWeight.bold,
                                             ),
                                       ),
-                                      const SizedBox(height: 4),
+                                      const SizedBox(height: AppSpacing.xxs),
                                       Text(
                                         message,
                                         style: theme.textTheme.bodyMedium
                                             ?.copyWith(
                                               color: cs.onSurfaceVariant,
-                                              fontWeight: FontWeight.w600,
                                               height: 1.25,
                                             ),
                                       ),
@@ -122,172 +132,55 @@ Future<bool> showConfirmActionDialog({
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 14),
+                            const SizedBox(height: AppSpacing.lg),
                             LayoutBuilder(
                               builder: (context, constraints) {
                                 final stackVertically =
                                     constraints.maxWidth < 260;
 
-                                final cancelButton = stackVertically
-                                    ? SizedBox(
-                                        width: double.infinity,
-                                        child: _DialogActionButton(
-                                          child: OutlinedButton.icon(
-                                            onPressed: () =>
-                                                Navigator.of(ctx).pop(false),
-                                            style: OutlinedButton.styleFrom(
-                                              minimumSize:
-                                                  const Size.fromHeight(52),
-                                              side: BorderSide(
-                                                color: cs.outlineVariant
-                                                    .withValues(alpha: 0.72),
-                                              ),
-                                              backgroundColor:
-                                                  cs.surfaceContainer,
-                                              shape: RoundedRectangleBorder(
-                                                borderRadius:
-                                                    BorderRadius.circular(18),
-                                              ),
-                                            ),
-                                            icon: const Icon(
-                                              Icons.close_rounded,
-                                              size: 18,
-                                            ),
-                                            label: Text(
-                                              cancelLabel,
-                                              style: theme.textTheme.labelLarge
-                                                  ?.copyWith(
-                                                    fontWeight: FontWeight.w700,
-                                                  ),
-                                            ),
-                                          ),
-                                        ),
-                                      )
-                                    : Expanded(
-                                        child: _DialogActionButton(
-                                          child: OutlinedButton.icon(
-                                            onPressed: () =>
-                                                Navigator.of(ctx).pop(false),
-                                            style: OutlinedButton.styleFrom(
-                                              minimumSize:
-                                                  const Size.fromHeight(52),
-                                              side: BorderSide(
-                                                color: cs.outlineVariant
-                                                    .withValues(alpha: 0.72),
-                                              ),
-                                              backgroundColor:
-                                                  cs.surfaceContainer,
-                                              shape: RoundedRectangleBorder(
-                                                borderRadius:
-                                                    BorderRadius.circular(18),
-                                              ),
-                                            ),
-                                            icon: const Icon(
-                                              Icons.close_rounded,
-                                              size: 18,
-                                            ),
-                                            label: Text(
-                                              cancelLabel,
-                                              style: theme.textTheme.labelLarge
-                                                  ?.copyWith(
-                                                    fontWeight: FontWeight.w700,
-                                                  ),
-                                            ),
-                                          ),
-                                        ),
-                                      );
+                                final cancelButton = AppSecondaryButton(
+                                  onPressed: () => Navigator.of(ctx).pop(false),
+                                  label: cancelLabel,
+                                );
 
-                                final confirmButton = stackVertically
-                                    ? SizedBox(
-                                        width: double.infinity,
-                                        child: _DialogActionButton(
-                                          child: FilledButton.icon(
-                                            onPressed: () {
-                                              AppInteractionFeedback.trigger(
-                                                AppInteractionFeedbackType
-                                                    .destructive,
-                                              );
-                                              Navigator.of(ctx).pop(true);
-                                            },
-                                            style: FilledButton.styleFrom(
-                                              backgroundColor:
-                                                  resolvedConfirmColor,
-                                              foregroundColor: cs.onError,
-                                              minimumSize:
-                                                  const Size.fromHeight(54),
-                                              shape: RoundedRectangleBorder(
-                                                borderRadius:
-                                                    BorderRadius.circular(18),
-                                              ),
-                                            ),
-                                            icon: const Icon(
-                                              Icons.delete_sweep_rounded,
-                                              size: 18,
-                                            ),
-                                            label: Text(
-                                              confirmLabel,
-                                              style: theme.textTheme.titleSmall
-                                                  ?.copyWith(
-                                                    color: cs.onError,
-                                                    fontWeight: FontWeight.w800,
-                                                  ),
-                                            ),
-                                          ),
-                                        ),
-                                      )
-                                    : Expanded(
-                                        child: _DialogActionButton(
-                                          child: FilledButton.icon(
-                                            onPressed: () {
-                                              AppInteractionFeedback.trigger(
-                                                AppInteractionFeedbackType
-                                                    .destructive,
-                                              );
-                                              Navigator.of(ctx).pop(true);
-                                            },
-                                            style: FilledButton.styleFrom(
-                                              backgroundColor:
-                                                  resolvedConfirmColor,
-                                              foregroundColor: cs.onError,
-                                              minimumSize:
-                                                  const Size.fromHeight(54),
-                                              shape: RoundedRectangleBorder(
-                                                borderRadius:
-                                                    BorderRadius.circular(18),
-                                              ),
-                                            ),
-                                            icon: const Icon(
-                                              Icons.delete_sweep_rounded,
-                                              size: 18,
-                                            ),
-                                            label: Text(
-                                              confirmLabel,
-                                              style: theme.textTheme.titleSmall
-                                                  ?.copyWith(
-                                                    color: cs.onError,
-                                                    fontWeight: FontWeight.w800,
-                                                  ),
-                                            ),
-                                          ),
-                                        ),
-                                      );
+                                final confirmButton = AppPrimaryButton(
+                                  onPressed: () {
+                                    AppInteractionFeedback.trigger(
+                                      isDestructive
+                                          ? AppInteractionFeedbackType
+                                                .destructive
+                                          : AppInteractionFeedbackType
+                                                .confirmation,
+                                    );
+                                    Navigator.of(ctx).pop(true);
+                                  },
+                                  label: confirmLabel,
+                                  isDestructive: isDestructive,
+                                  icon: confirmIcon,
+                                );
 
                                 if (stackVertically) {
                                   return Column(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
-                                      cancelButton,
-                                      const SizedBox(height: 10),
-                                      confirmButton,
+                                      SizedBox(
+                                        width: double.infinity,
+                                        child: cancelButton,
+                                      ),
+                                      const SizedBox(height: AppSpacing.sm),
+                                      SizedBox(
+                                        width: double.infinity,
+                                        child: confirmButton,
+                                      ),
                                     ],
                                   );
                                 }
 
                                 return Row(
                                   children: [
-                                    cancelButton,
-                                    const SizedBox(width: 12),
-                                    confirmButton,
+                                    Expanded(child: cancelButton),
+                                    const SizedBox(width: AppSpacing.md),
+                                    Expanded(child: confirmButton),
                                   ],
                                 );
                               },
@@ -316,27 +209,4 @@ Future<bool> showConfirmActionDialog({
   );
 
   return result ?? false;
-}
-
-class _DialogActionButton extends StatelessWidget {
-  const _DialogActionButton({required this.child});
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(18),
-        boxShadow: [
-          BoxShadow(
-            color: Theme.of(context).colorScheme.shadow.withValues(alpha: 0.05),
-            blurRadius: 12,
-            offset: const Offset(0, 6),
-          ),
-        ],
-      ),
-      child: child,
-    );
-  }
 }

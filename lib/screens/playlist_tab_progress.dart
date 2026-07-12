@@ -435,6 +435,13 @@ class _ProgressSliderFrame extends StatelessWidget {
                             onChangeStart: value.canSeek ? onChangeStart : null,
                             onChanged: value.canSeek ? onChanged : null,
                             onChangeEnd: value.canSeek ? onChangeEnd : null,
+                            semanticFormatterCallback: (rawValue) {
+                              final position = Duration(
+                                milliseconds: rawValue.round(),
+                              );
+                              return '${formatDurationCompact(position)} / '
+                                  '${formatDurationCompact(value.duration)}';
+                            },
                           );
                         },
                       ),
@@ -749,7 +756,8 @@ class _SessionSubtitlePanel extends ConsumerStatefulWidget {
   final AudioProvider provider;
 
   @override
-  ConsumerState<_SessionSubtitlePanel> createState() => _SessionSubtitlePanelState();
+  ConsumerState<_SessionSubtitlePanel> createState() =>
+      _SessionSubtitlePanelState();
 }
 
 class _SessionSubtitlePanelState extends ConsumerState<_SessionSubtitlePanel> {

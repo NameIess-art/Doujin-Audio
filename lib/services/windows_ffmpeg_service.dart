@@ -40,27 +40,48 @@ class WindowsFfmpegService {
 
   static bool _isSupportedImageEntry(String filePath) {
     final ext = path.extension(filePath).toLowerCase();
-    return const {'.jpg', '.jpeg', '.png', '.webp', '.bmp', '.gif'}.contains(ext);
+    return const {
+      '.jpg',
+      '.jpeg',
+      '.png',
+      '.webp',
+      '.bmp',
+      '.gif',
+    }.contains(ext);
   }
 
   static int _compareCoverNames(String left, String right) {
-    const preferred = ['cover', 'folder', 'front', 'album', 'artwork', 'poster'];
+    const preferred = [
+      'cover',
+      'folder',
+      'front',
+      'album',
+      'artwork',
+      'poster',
+    ];
     final leftBase = path.basenameWithoutExtension(left);
     final rightBase = path.basenameWithoutExtension(right);
 
     final leftIndex = preferred.indexOf(leftBase);
     final rightIndex = preferred.indexOf(rightBase);
 
-    if (leftIndex >= 0 && rightIndex >= 0) return leftIndex.compareTo(rightIndex);
+    if (leftIndex >= 0 && rightIndex >= 0) {
+      return leftIndex.compareTo(rightIndex);
+    }
     if (leftIndex >= 0) return -1;
     if (rightIndex >= 0) return 1;
     return 0;
   }
 
-  static Future<String?> _cacheFileAsCover(File imageFile, String cacheKey) async {
+  static Future<String?> _cacheFileAsCover(
+    File imageFile,
+    String cacheKey,
+  ) async {
     try {
       final cacheRoot = await getTemporaryDirectory();
-      final coverCacheDir = Directory(path.join(cacheRoot.path, 'nameless_audio_covers'));
+      final coverCacheDir = Directory(
+        path.join(cacheRoot.path, 'nameless_audio_covers'),
+      );
       await coverCacheDir.create(recursive: true);
 
       final outputFile = File(

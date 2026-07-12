@@ -18,6 +18,7 @@ import '../services/path_display.dart';
 import '../services/permission_action_controller.dart';
 import '../services/ui_operation_service.dart';
 import '../theme/app_design_tokens.dart';
+import '../theme/app_styles.dart';
 import '../theme/theme_provider.dart';
 import '../widgets/app_feedback.dart';
 import '../widgets/confirm_action_dialog.dart';
@@ -256,7 +257,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                                       height: 38,
                                       decoration: BoxDecoration(
                                         color: cs.primaryContainer,
-                                        borderRadius: BorderRadius.circular(10),
+                                        borderRadius: AppRadius.borderMedium,
                                       ),
                                       child: Icon(
                                         Icons.language_rounded,
@@ -316,7 +317,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                                   height: 38,
                                   decoration: BoxDecoration(
                                     color: cs.primaryContainer,
-                                    borderRadius: BorderRadius.circular(10),
+                                    borderRadius: AppRadius.borderMedium,
                                   ),
                                   child: Icon(
                                     Icons.home_rounded,
@@ -375,7 +376,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                                   height: 38,
                                   decoration: BoxDecoration(
                                     color: cs.primaryContainer,
-                                    borderRadius: BorderRadius.circular(10),
+                                    borderRadius: AppRadius.borderMedium,
                                   ),
                                   child: Icon(
                                     Icons.public_rounded,
@@ -438,7 +439,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                                     height: 38,
                                     decoration: BoxDecoration(
                                       color: cs.primaryContainer,
-                                      borderRadius: BorderRadius.circular(10),
+                                      borderRadius: AppRadius.borderMedium,
                                     ),
                                     child: Icon(
                                       Icons.vibration_rounded,
@@ -479,7 +480,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                                   height: 38,
                                   decoration: BoxDecoration(
                                     color: cs.secondaryContainer,
-                                    borderRadius: BorderRadius.circular(10),
+                                    borderRadius: AppRadius.borderMedium,
                                   ),
                                   child: Icon(
                                     Icons.dark_mode_rounded,
@@ -512,8 +513,8 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                                 contentPadding: const EdgeInsets.symmetric(
                                   horizontal: 8,
                                 ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(14),
+                                shape: const RoundedRectangleBorder(
+                                  borderRadius: AppRadius.borderCard,
                                 ),
                               );
                             },
@@ -537,7 +538,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                                   height: 38,
                                   decoration: BoxDecoration(
                                     color: cs.secondaryContainer,
-                                    borderRadius: BorderRadius.circular(10),
+                                    borderRadius: AppRadius.borderMedium,
                                   ),
                                   child: Icon(
                                     Icons.palette_rounded,
@@ -547,8 +548,8 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                                 contentPadding: const EdgeInsets.symmetric(
                                   horizontal: 8,
                                 ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(14),
+                                shape: const RoundedRectangleBorder(
+                                  borderRadius: AppRadius.borderCard,
                                 ),
                               );
                             },
@@ -564,7 +565,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                               height: 38,
                               decoration: BoxDecoration(
                                 color: cs.secondaryContainer,
-                                borderRadius: BorderRadius.circular(10),
+                                borderRadius: AppRadius.borderMedium,
                               ),
                               child: Icon(
                                 Icons.photo_size_select_large_rounded,
@@ -608,8 +609,8 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                             contentPadding: const EdgeInsets.symmetric(
                               horizontal: 8,
                             ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
+                            shape: const RoundedRectangleBorder(
+                              borderRadius: AppRadius.borderCard,
                             ),
                           ),
                           Consumer(
@@ -640,7 +641,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                                   height: 38,
                                   decoration: BoxDecoration(
                                     color: cs.secondaryContainer,
-                                    borderRadius: BorderRadius.circular(10),
+                                    borderRadius: AppRadius.borderMedium,
                                   ),
                                   child: Icon(
                                     Icons.space_bar_rounded,
@@ -650,8 +651,8 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                                 contentPadding: const EdgeInsets.symmetric(
                                   horizontal: 8,
                                 ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(14),
+                                shape: const RoundedRectangleBorder(
+                                  borderRadius: AppRadius.borderCard,
                                 ),
                               );
                             },
@@ -678,7 +679,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                                   height: 38,
                                   decoration: BoxDecoration(
                                     color: cs.secondaryContainer,
-                                    borderRadius: BorderRadius.circular(10),
+                                    borderRadius: AppRadius.borderMedium,
                                   ),
                                   child: Icon(
                                     Icons.blur_linear_rounded,
@@ -688,8 +689,8 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                                 contentPadding: const EdgeInsets.symmetric(
                                   horizontal: 8,
                                 ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(14),
+                                shape: const RoundedRectangleBorder(
+                                  borderRadius: AppRadius.borderCard,
                                 ),
                               );
                             },
@@ -719,7 +720,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                                   height: 38,
                                   decoration: BoxDecoration(
                                     color: cs.secondaryContainer,
-                                    borderRadius: BorderRadius.circular(10),
+                                    borderRadius: AppRadius.borderMedium,
                                   ),
                                   child: Icon(
                                     Icons.blur_on_rounded,
@@ -729,8 +730,8 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                                 contentPadding: const EdgeInsets.symmetric(
                                   horizontal: 8,
                                 ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(14),
+                                shape: const RoundedRectangleBorder(
+                                  borderRadius: AppRadius.borderCard,
                                 ),
                               );
                             },
@@ -756,7 +757,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                                   height: 38,
                                   decoration: BoxDecoration(
                                     color: cs.secondaryContainer,
-                                    borderRadius: BorderRadius.circular(10),
+                                    borderRadius: AppRadius.borderMedium,
                                   ),
                                   child: Icon(
                                     Icons.play_circle_outline_rounded,
@@ -766,8 +767,8 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                                 contentPadding: const EdgeInsets.symmetric(
                                   horizontal: 8,
                                 ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(14),
+                                shape: const RoundedRectangleBorder(
+                                  borderRadius: AppRadius.borderCard,
                                 ),
                               );
                             },
@@ -797,7 +798,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                                   height: 38,
                                   decoration: BoxDecoration(
                                     color: cs.secondaryContainer,
-                                    borderRadius: BorderRadius.circular(10),
+                                    borderRadius: AppRadius.borderMedium,
                                   ),
                                   child: Icon(
                                     Icons.badge_rounded,
@@ -812,8 +813,8 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                                 contentPadding: const EdgeInsets.symmetric(
                                   horizontal: 8,
                                 ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(14),
+                                shape: const RoundedRectangleBorder(
+                                  borderRadius: AppRadius.borderCard,
                                 ),
                                 onTap: () =>
                                     _showCardInfoFieldsSettings(context),
@@ -831,7 +832,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                               height: 38,
                               decoration: BoxDecoration(
                                 color: cs.secondaryContainer,
-                                borderRadius: BorderRadius.circular(10),
+                                borderRadius: AppRadius.borderMedium,
                               ),
                               child: Icon(
                                 Icons.subtitles_rounded,
@@ -846,8 +847,8 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                             contentPadding: const EdgeInsets.symmetric(
                               horizontal: 8,
                             ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
+                            shape: const RoundedRectangleBorder(
+                              borderRadius: AppRadius.borderCard,
                             ),
                             onTap: () => _showSubtitleWindowSettings(context),
                           ),
@@ -881,7 +882,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                                   height: 38,
                                   decoration: BoxDecoration(
                                     color: cs.tertiaryContainer,
-                                    borderRadius: BorderRadius.circular(10),
+                                    borderRadius: AppRadius.borderMedium,
                                   ),
                                   child: Icon(
                                     Icons.playlist_play_rounded,
@@ -891,8 +892,8 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                                 contentPadding: const EdgeInsets.symmetric(
                                   horizontal: 8,
                                 ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(14),
+                                shape: const RoundedRectangleBorder(
+                                  borderRadius: AppRadius.borderCard,
                                 ),
                               );
                             },
@@ -920,7 +921,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                                   height: 38,
                                   decoration: BoxDecoration(
                                     color: cs.tertiaryContainer,
-                                    borderRadius: BorderRadius.circular(10),
+                                    borderRadius: AppRadius.borderMedium,
                                   ),
                                   child: Icon(
                                     Icons.cached_rounded,
@@ -930,8 +931,8 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                                 contentPadding: const EdgeInsets.symmetric(
                                   horizontal: 8,
                                 ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(14),
+                                shape: const RoundedRectangleBorder(
+                                  borderRadius: AppRadius.borderCard,
                                 ),
                               );
                             },
@@ -961,7 +962,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                                   height: 38,
                                   decoration: BoxDecoration(
                                     color: cs.tertiaryContainer,
-                                    borderRadius: BorderRadius.circular(10),
+                                    borderRadius: AppRadius.borderMedium,
                                   ),
                                   child: Icon(
                                     Icons.restore_rounded,
@@ -971,8 +972,8 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                                 contentPadding: const EdgeInsets.symmetric(
                                   horizontal: 8,
                                 ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(14),
+                                shape: const RoundedRectangleBorder(
+                                  borderRadius: AppRadius.borderCard,
                                 ),
                               );
                             },
@@ -1010,7 +1011,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                                   height: 38,
                                   decoration: BoxDecoration(
                                     color: cs.tertiaryContainer,
-                                    borderRadius: BorderRadius.circular(10),
+                                    borderRadius: AppRadius.borderMedium,
                                   ),
                                   child: Icon(
                                     Icons.multitrack_audio_rounded,
@@ -1020,8 +1021,8 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                                 contentPadding: const EdgeInsets.symmetric(
                                   horizontal: 8,
                                 ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(14),
+                                shape: const RoundedRectangleBorder(
+                                  borderRadius: AppRadius.borderCard,
                                 ),
                               );
                             },
@@ -1066,7 +1067,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                                   height: 38,
                                   decoration: BoxDecoration(
                                     color: cs.tertiaryContainer,
-                                    borderRadius: BorderRadius.circular(10),
+                                    borderRadius: AppRadius.borderMedium,
                                   ),
                                   child: Icon(
                                     Icons.folder_rounded,
@@ -1093,8 +1094,8 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                                 contentPadding: const EdgeInsets.symmetric(
                                   horizontal: 8,
                                 ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(14),
+                                shape: const RoundedRectangleBorder(
+                                  borderRadius: AppRadius.borderCard,
                                 ),
                               );
                             },
@@ -1133,7 +1134,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                                   height: 38,
                                   decoration: BoxDecoration(
                                     color: cs.tertiaryContainer,
-                                    borderRadius: BorderRadius.circular(10),
+                                    borderRadius: AppRadius.borderMedium,
                                   ),
                                   child: Icon(
                                     Icons.rule_folder_rounded,
@@ -1195,7 +1196,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                               height: 38,
                               decoration: BoxDecoration(
                                 color: cs.secondaryContainer,
-                                borderRadius: BorderRadius.circular(10),
+                                borderRadius: AppRadius.borderMedium,
                               ),
                               child: Icon(
                                 Icons.health_and_safety_rounded,
@@ -1210,8 +1211,8 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                             contentPadding: const EdgeInsets.symmetric(
                               horizontal: 8,
                             ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
+                            shape: const RoundedRectangleBorder(
+                              borderRadius: AppRadius.borderCard,
                             ),
                           ),
                           if (!Platform.isWindows) ...[
@@ -1239,7 +1240,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                                     height: 38,
                                     decoration: BoxDecoration(
                                       color: cs.primaryContainer,
-                                      borderRadius: BorderRadius.circular(10),
+                                      borderRadius: AppRadius.borderMedium,
                                     ),
                                     child: Icon(
                                       Icons.storage_rounded,
@@ -1302,7 +1303,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                                     height: 38,
                                     decoration: BoxDecoration(
                                       color: cs.primaryContainer,
-                                      borderRadius: BorderRadius.circular(10),
+                                      borderRadius: AppRadius.borderMedium,
                                     ),
                                     child: Icon(
                                       Icons.cleaning_services_rounded,
@@ -1343,7 +1344,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                                 height: 38,
                                 decoration: BoxDecoration(
                                   color: cs.secondaryContainer,
-                                  borderRadius: BorderRadius.circular(10),
+                                  borderRadius: AppRadius.borderMedium,
                                 ),
                                 child: Icon(
                                   Icons.admin_panel_settings_rounded,
@@ -1358,8 +1359,8 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                               contentPadding: const EdgeInsets.symmetric(
                                 horizontal: 8,
                               ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14),
+                              shape: const RoundedRectangleBorder(
+                                borderRadius: AppRadius.borderCard,
                               ),
                             ),
                           ],
@@ -1407,7 +1408,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                                   height: 38,
                                   decoration: BoxDecoration(
                                     color: cs.secondaryContainer,
-                                    borderRadius: BorderRadius.circular(10),
+                                    borderRadius: AppRadius.borderMedium,
                                   ),
                                   child: Icon(
                                     Icons.update_rounded,
@@ -1417,8 +1418,8 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                                 contentPadding: const EdgeInsets.symmetric(
                                   horizontal: 8,
                                 ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(14),
+                                shape: const RoundedRectangleBorder(
+                                  borderRadius: AppRadius.borderCard,
                                 ),
                               );
                             },

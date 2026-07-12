@@ -18,6 +18,8 @@ import '../services/search_query_utils.dart';
 import '../services/ui_interaction_coordinator.dart';
 import '../services/ui_operation_service.dart';
 import '../theme/app_design_tokens.dart';
+import '../theme/app_styles.dart';
+import '../widgets/app_states.dart';
 import '../widgets/app_feedback.dart';
 import '../widgets/app_transitions.dart';
 import '../widgets/async_cover_image.dart';
@@ -531,13 +533,15 @@ class _AsmrTabState extends State<AsmrTab>
                     // Maximum 5 items visible on screen (screenWidth - padding - gaps).
                     final screenWidth = MediaQuery.sizeOf(context).width;
                     const totalHorizontalPadding = 24.0;
-                    final visibleItemsCount = AppPlatform.isWindows ? 9 : 5;
-                    final totalGapsWidth = 8.0 * (visibleItemsCount - 1);
-                    final itemWidth =
-                        (screenWidth -
-                            totalHorizontalPadding -
-                            totalGapsWidth) /
-                        visibleItemsCount;
+
+                    final isPortraitMobile =
+                        !AppPlatform.isWindows &&
+                        MediaQuery.orientationOf(context) ==
+                            Orientation.portrait;
+
+                    final itemWidth = isPortraitMobile
+                        ? (screenWidth - totalHorizontalPadding - 24.0) / 4
+                        : 86.0;
 
                     return Listener(
                       onPointerSignal: (pointerSignal) {
@@ -617,11 +621,11 @@ class _AsmrTabState extends State<AsmrTab>
           ),
           ListView(
             physics: const NeverScrollableScrollPhysics(),
-            padding: EdgeInsets.fromLTRB(16, headerContentHeight + 10, 16, 0),
+            padding: EdgeInsets.fromLTRB(16, headerContentHeight, 16, 0),
             children: [
               for (int i = 0; i < 5; i++)
                 const Padding(
-                  padding: EdgeInsets.only(bottom: 8),
+                  padding: EdgeInsets.only(bottom: 6),
                   child: _AsmrWorkSkeletonCard(),
                 ),
             ],
@@ -693,16 +697,11 @@ class _AsmrTabState extends State<AsmrTab>
             : ListView(
                 key: const ValueKey('asmr_initial_placeholder'),
                 physics: const NeverScrollableScrollPhysics(),
-                padding: EdgeInsets.fromLTRB(
-                  16,
-                  headerContentHeight + 10,
-                  16,
-                  0,
-                ),
+                padding: EdgeInsets.fromLTRB(16, headerContentHeight, 16, 0),
                 children: [
                   for (int i = 0; i < 5; i++)
                     const Padding(
-                      padding: EdgeInsets.only(bottom: 8),
+                      padding: EdgeInsets.only(bottom: 6),
                       child: _AsmrWorkSkeletonCard(),
                     ),
                 ],

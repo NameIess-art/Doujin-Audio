@@ -1609,7 +1609,10 @@ class NativePlaybackService : MediaSessionService() {
                     title = foregroundSession.title,
                     subtitle = foregroundSession.subtitle,
                     mediaSession = mediaSession,
-                    allowRichSummary = usesUnifiedNotification
+                    allowRichSummary = usesUnifiedNotification,
+                    playing = foregroundSession.playerOrNull()?.let { player ->
+                        player.isPlaying || player.playWhenReady
+                    } ?: false
                 ),
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
             )

@@ -45,15 +45,21 @@ class EmbeddedCoverArtworkService {
       final header = await raf.read(12);
       await raf.close();
 
-      if (header.length >= 3 && header[0] == 0x49 && header[1] == 0x44 && header[2] == 0x33) {
+      if (header.length >= 3 &&
+          header[0] == 0x49 &&
+          header[1] == 0x44 &&
+          header[2] == 0x33) {
         picture = await _readId3v2Picture(trackFile);
         picture ??= await _readFlacPicture(trackFile);
-      } else if (header.length >= 4 && ascii.decode(header.sublist(0, 4), allowInvalid: true) == 'fLaC') {
+      } else if (header.length >= 4 &&
+          ascii.decode(header.sublist(0, 4), allowInvalid: true) == 'fLaC') {
         picture = await _readFlacPicture(trackFile);
-      } else if (header.length >= 8 && ascii.decode(header.sublist(4, 8), allowInvalid: true) == 'ftyp') {
+      } else if (header.length >= 8 &&
+          ascii.decode(header.sublist(4, 8), allowInvalid: true) == 'ftyp') {
         picture = await _readMp4Picture(trackFile);
       } else {
-        picture = await _readId3v2Picture(trackFile) ??
+        picture =
+            await _readId3v2Picture(trackFile) ??
             await _readMp4Picture(trackFile) ??
             await _readFlacPicture(trackFile);
       }
@@ -90,7 +96,10 @@ class EmbeddedCoverArtworkService {
     try {
       raf = await file.open();
       final header = await raf.read(10);
-      if (header.length != 10 || header[0] != 0x49 || header[1] != 0x44 || header[2] != 0x33) {
+      if (header.length != 10 ||
+          header[0] != 0x49 ||
+          header[1] != 0x44 ||
+          header[2] != 0x33) {
         return null;
       }
       final majorVersion = header[3];
@@ -99,7 +108,8 @@ class EmbeddedCoverArtworkService {
       final flags = header[5];
       final extHeader = (flags & 0x40) != 0;
 
-      final tagSize = ((header[6] & 0x7f) << 21) |
+      final tagSize =
+          ((header[6] & 0x7f) << 21) |
           ((header[7] & 0x7f) << 14) |
           ((header[8] & 0x7f) << 7) |
           (header[9] & 0x7f);
@@ -112,10 +122,15 @@ class EmbeddedCoverArtworkService {
       int offset = 0;
       if (extHeader) {
         if (majorVersion == 3) {
-          final extSize = ByteData.sublistView(tagData, offset, offset + 4).getUint32(0);
+          final extSize = ByteData.sublistView(
+            tagData,
+            offset,
+            offset + 4,
+          ).getUint32(0);
           offset += extSize;
         } else if (majorVersion == 4) {
-          final extSize = ((tagData[offset] & 0x7f) << 21) |
+          final extSize =
+              ((tagData[offset] & 0x7f) << 21) |
               ((tagData[offset + 1] & 0x7f) << 14) |
               ((tagData[offset + 2] & 0x7f) << 7) |
               (tagData[offset + 3] & 0x7f);
@@ -138,15 +153,23 @@ class EmbeddedCoverArtworkService {
         int frameSize;
         if (majorVersion == 2) {
           if (offset + 3 > tagData.length) break;
-          frameSize = (tagData[offset] << 16) | (tagData[offset + 1] << 8) | tagData[offset + 2];
+          frameSize =
+              (tagData[offset] << 16) |
+              (tagData[offset + 1] << 8) |
+              tagData[offset + 2];
           offset += 3;
         } else if (majorVersion == 3) {
           if (offset + 4 > tagData.length) break;
-          frameSize = ByteData.sublistView(tagData, offset, offset + 4).getUint32(0);
+          frameSize = ByteData.sublistView(
+            tagData,
+            offset,
+            offset + 4,
+          ).getUint32(0);
           offset += 4;
         } else {
           if (offset + 4 > tagData.length) break;
-          frameSize = ((tagData[offset] & 0x7f) << 21) |
+          frameSize =
+              ((tagData[offset] & 0x7f) << 21) |
               ((tagData[offset + 1] & 0x7f) << 14) |
               ((tagData[offset + 2] & 0x7f) << 7) |
               (tagData[offset + 3] & 0x7f);
@@ -169,7 +192,8 @@ class EmbeddedCoverArtworkService {
           if (majorVersion == 2) {
             frameOffset += 3;
           } else {
-            while (frameOffset < offset + frameSize && tagData[frameOffset] != 0) {
+            while (frameOffset < offset + frameSize &&
+                tagData[frameOffset] != 0) {
               frameOffset++;
             }
             frameOffset++;
@@ -186,7 +210,8 @@ class EmbeddedCoverArtworkService {
               frameOffset++;
             }
           } else {
-            while (frameOffset < offset + frameSize && tagData[frameOffset] != 0) {
+            while (frameOffset < offset + frameSize &&
+                tagData[frameOffset] != 0) {
               frameOffset++;
             }
             frameOffset++;
@@ -194,7 +219,11 @@ class EmbeddedCoverArtworkService {
 
           final pictureDataLength = (offset + frameSize) - frameOffset;
           if (pictureDataLength > 0) {
-            return Uint8List.sublistView(tagData, frameOffset, offset + frameSize);
+            return Uint8List.sublistView(
+              tagData,
+              frameOffset,
+              offset + frameSize,
+            );
           }
         }
         offset += frameSize;
@@ -213,7 +242,12 @@ class EmbeddedCoverArtworkService {
       raf = await file.open();
       final length = await file.length();
 
-      Future<Map<String, dynamic>?> readAtom(int start, int limit, String targetPath, int depth) async {
+      Future<Map<String, dynamic>?> readAtom(
+        int start,
+        int limit,
+        String targetPath,
+        int depth,
+      ) async {
         if (start >= limit) return null;
         int current = start;
         while (current < limit) {
@@ -221,8 +255,11 @@ class EmbeddedCoverArtworkService {
           final header = await raf.read(8);
           if (header.length < 8) return null;
           int size = ByteData.sublistView(header, 0, 4).getUint32(0);
-          final type = ascii.decode(Uint8List.sublistView(header, 4, 8), allowInvalid: true);
-          
+          final type = ascii.decode(
+            Uint8List.sublistView(header, 4, 8),
+            allowInvalid: true,
+          );
+
           int headerSize = 8;
           if (size == 1) {
             final size64 = await raf.read(8);
@@ -237,11 +274,20 @@ class EmbeddedCoverArtworkService {
           final targetTypes = targetPath.split('.');
           if (type == targetTypes[depth]) {
             if (depth == targetTypes.length - 1) {
-              return {'offset': current, 'size': size, 'headerSize': headerSize};
+              return {
+                'offset': current,
+                'size': size,
+                'headerSize': headerSize,
+              };
             } else {
               int childrenStart = current + headerSize;
               if (type == 'meta') childrenStart += 4;
-              return await readAtom(childrenStart, current + size, targetPath, depth + 1);
+              return await readAtom(
+                childrenStart,
+                current + size,
+                targetPath,
+                depth + 1,
+              );
             }
           }
           current += size;
@@ -249,7 +295,12 @@ class EmbeddedCoverArtworkService {
         return null;
       }
 
-      final covrAtom = await readAtom(0, length, 'moov.udta.meta.ilst.covr.data', 0);
+      final covrAtom = await readAtom(
+        0,
+        length,
+        'moov.udta.meta.ilst.covr.data',
+        0,
+      );
       if (covrAtom != null) {
         int dataOffset = covrAtom['offset'] as int;
         int dataSize = covrAtom['size'] as int;

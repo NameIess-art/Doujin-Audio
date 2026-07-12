@@ -16,6 +16,39 @@ class UnifiedPlaybackNotificationRoutingTest {
     }
 
     @Test
+    fun `transport actions keep previous toggle next order`() {
+        val actions = notificationTransportActionSpecs(
+            playing = false,
+            hasPrevious = true,
+            hasNext = true
+        )
+
+        assertEquals(
+            listOf(
+                NotificationCommand.previous,
+                NotificationCommand.toggle,
+                NotificationCommand.next
+            ),
+            actions.map { it.command }
+        )
+        assertEquals(R.drawable.ic_notification_play, actions[1].iconResource)
+        assertEquals(R.string.playback_action_play, actions[1].labelResource)
+    }
+
+    @Test
+    fun `transport toggle follows real playing state and omits unavailable skips`() {
+        val actions = notificationTransportActionSpecs(
+            playing = true,
+            hasPrevious = false,
+            hasNext = false
+        )
+
+        assertEquals(listOf(NotificationCommand.toggle), actions.map { it.command })
+        assertEquals(R.drawable.ic_notification_pause, actions.single().iconResource)
+        assertEquals(R.string.playback_action_pause, actions.single().labelResource)
+    }
+
+    @Test
     fun `foreground notification resolves a persisted active session after service restart`() {
         val sessionId = resolveNotificationSessionId(
             requestedSessionId = "",

@@ -597,14 +597,23 @@ class PlaybackQueueEditPage extends ConsumerWidget {
         title: Text(context.read<AppLanguageProvider>().tr('edit_queue_name')),
         content: TextField(controller: controller, autofocus: true),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: Text(context.read<AppLanguageProvider>().tr('cancel')),
-          ),
-          FilledButton(
-            onPressed: () =>
-                Navigator.of(dialogContext).pop(controller.text.trim()),
-            child: Text(context.read<AppLanguageProvider>().tr('save')),
+          Row(
+            children: [
+              Expanded(
+                child: TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: Text(context.read<AppLanguageProvider>().tr('cancel')),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: FilledButton(
+                  onPressed: () =>
+                      Navigator.of(dialogContext).pop(controller.text.trim()),
+                  child: Text(context.read<AppLanguageProvider>().tr('save')),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -625,7 +634,7 @@ class PlaybackQueueEditPage extends ConsumerWidget {
       title: i18n.tr('remove_queue'),
       message: i18n.tr('remove_queue_confirm'),
       cancelLabel: i18n.tr('cancel'),
-      confirmLabel: i18n.tr('remove'),
+      confirmLabel: i18n.tr('remove_queue'),
       icon: Icons.delete_outline_rounded,
     );
     if (!confirmed || !context.mounted) return;

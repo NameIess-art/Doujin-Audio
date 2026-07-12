@@ -85,6 +85,7 @@ class AsmrMetadataService {
       voiceActors: AudioDetail.normalizeList(work.voiceActors),
       tags: AudioDetail.normalizeList(work.tags),
       releaseDate: work.releaseDate,
+      duration: work.duration > Duration.zero ? work.duration : null,
       salesCount: work.dlCount > 0 ? work.dlCount : null,
       rating: work.rating > 0 ? work.rating.clamp(0, 5).toDouble() : null,
       coverUrl: _coverUrlFor(work),

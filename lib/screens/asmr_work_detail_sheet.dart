@@ -10,18 +10,13 @@ import '../services/asmr_library_controller.dart';
 import '../services/audio_state_services.dart';
 import '../services/ui_operation_service.dart';
 import '../theme/app_design_tokens.dart';
+import '../widgets/app_bottom_sheet.dart';
 import '../widgets/app_feedback.dart';
 import '../widgets/async_cover_image.dart';
 
 Future<void> showAsmrWorkDetailSheet(BuildContext context, AsmrWork work) {
-  return showModalBottomSheet<void>(
+  return AppBottomSheet.show<void>(
     context: context,
-    isScrollControlled: true,
-    showDragHandle: true,
-    useRootNavigator: true,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-    ),
     builder: (_) => _AsmrWorkDetailSheet(work: work),
   );
 }

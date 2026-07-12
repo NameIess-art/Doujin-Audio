@@ -12,9 +12,11 @@ import '../services/audio_state_services.dart';
 import '../services/audio_detail_repository.dart';
 import '../services/ui_operation_service.dart';
 import '../services/path_display.dart';
+import '../services/time_text_formatters.dart';
 import '../widgets/app_feedback.dart';
 import '../widgets/async_cover_image.dart';
 import '../widgets/operation_feedback.dart';
+import '../widgets/app_bottom_sheet.dart';
 import 'dlsite_metadata_review_page.dart';
 import '../widgets/app_transitions.dart';
 
@@ -24,14 +26,8 @@ Future<void> showAudioDetailSheet(
   BuildContext context,
   AudioDetailTarget target,
 ) {
-  return showModalBottomSheet<void>(
+  return AppBottomSheet.show<void>(
     context: context,
-    isScrollControlled: true,
-    showDragHandle: true,
-    useRootNavigator: true,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-    ),
     builder: (_) => AudioDetailSheet(target: target),
   );
 }
@@ -378,6 +374,26 @@ class _AudioDetailSheetState extends State<AudioDetailSheet> {
       context,
     ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700);
     final detail = _detail;
+    final provider = context.watch<AudioProvider>();
+
+    Duration? duration = detail?.duration;
+    if (duration == null &&
+        _target.targetType == AudioDetailTargetType.libraryRootFolder) {
+      final tree = provider.libraryTree;
+      for (final node in tree) {
+        if (node is FolderNode && node.path == _target.targetPath) {
+          if (node.totalDuration > Duration.zero) {
+            duration = node.totalDuration;
+          }
+          break;
+        }
+      }
+    } else if (duration == null) {
+      final trackDuration = provider.trackByPath(_target.targetPath)?.duration;
+      if (trackDuration != null && trackDuration > Duration.zero) {
+        duration = trackDuration;
+      }
+    }
 
     return ConstrainedBox(
       constraints: BoxConstraints(
@@ -551,6 +567,14 @@ class _AudioDetailSheetState extends State<AudioDetailSheet> {
                   onCopy: (val) => _copyText(context, val),
                 ),
               ),
+              if (duration != null)
+                _AudioDetailRow(
+                  label: i18n.tr('card_info_duration'),
+                  values: [formatDurationHms(duration)],
+                  labelStyle: labelStyle,
+                  busy: false,
+                  onCopy: (val) => _copyText(context, val),
+                ),
             ],
           ],
         ),
@@ -1015,7 +1039,7 @@ class _AudioDetailRow extends StatelessWidget {
     required this.values,
     required this.labelStyle,
     required this.busy,
-    required this.onTap,
+    this.onTap,
     this.isCapsule = false,
     this.onCopy,
   });
@@ -1024,7 +1048,7 @@ class _AudioDetailRow extends StatelessWidget {
   final List<String> values;
   final TextStyle? labelStyle;
   final bool busy;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
   final bool isCapsule;
   final void Function(String)? onCopy;
 
@@ -1054,7 +1078,7 @@ class _AudioDetailRow extends StatelessWidget {
                   height: 18,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
-              else
+              else if (onTap != null)
                 IconButton(
                   onPressed: onTap,
                   iconSize: 18,

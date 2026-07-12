@@ -18,7 +18,7 @@ import 'path_matcher.dart';
 class AppDatabase {
   AppDatabase._();
 
-  static const int schemaVersion = 2;
+  static const int schemaVersion = 3;
   static const String fileName = 'audio_player.db';
   static const int _sqliteInClauseBatchSize = 900;
   static bool _platformDatabaseInitialized = false;
@@ -248,10 +248,25 @@ class AppDatabase {
     if (oldVersion < 2) {
       await _addColumnIfMissing(db, 'audio_details', 'card_cover_path', 'TEXT');
     }
+    if (oldVersion < 3) {
+      await _addColumnIfMissing(
+        db,
+        'audio_details',
+        'duration_ms',
+        'INTEGER NOT NULL DEFAULT 0',
+      );
+    }
   }
 
   @visibleForTesting
   static Future<void> createSchemaForTest(Database db) => _onCreate(db, 1);
+
+  @visibleForTesting
+  static Future<void> upgradeSchemaForTest(
+    Database db,
+    int oldVersion,
+    int newVersion,
+  ) => _onUpgrade(db, oldVersion, newVersion);
 
   static Future<void> _addColumnIfMissing(
     Database db,
@@ -549,6 +564,7 @@ class AppDatabase {
         tags_json TEXT NOT NULL DEFAULT '[]',
         card_cover_path TEXT,
         release_date_ms INTEGER NOT NULL DEFAULT 0,
+        duration_ms INTEGER NOT NULL DEFAULT 0,
         sales_count INTEGER,
         rating REAL,
         created_at_ms INTEGER NOT NULL DEFAULT 0,

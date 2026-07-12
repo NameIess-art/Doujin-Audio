@@ -183,6 +183,7 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
             ? _RootFolderCardContent(
                 folderPath: widget.folder.path,
                 folderName: widget.folder.name,
+                folderDuration: widget.folder.totalDuration,
                 detail: rootDetail,
                 detailLoading: isRootDetailLoading,
                 expanded: _expanded,
@@ -576,10 +577,15 @@ class _TrackNodeWidget extends ConsumerWidget {
 }
 
 class _LibraryCoverThumbnail extends ConsumerStatefulWidget {
-  const _LibraryCoverThumbnail({required this.folderPath, this.width = 82});
+  const _LibraryCoverThumbnail({
+    required this.folderPath,
+    this.width = 82,
+    this.duration,
+  });
 
   final String folderPath;
   final double width;
+  final Duration? duration;
 
   @override
   ConsumerState<_LibraryCoverThumbnail> createState() =>
@@ -621,41 +627,57 @@ class _LibraryCoverThumbnailState
     return SizedBox(
       width: width,
       height: height,
-      child: Padding(
-        padding: EdgeInsets.zero,
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(
-            LibraryLikeCardMetrics.coverRadius,
-          ),
-          child: Hero(
-            tag: 'cover_${widget.folderPath}',
-            placeholderBuilder: (context, heroSize, child) => child,
-            child: AsyncLocalCoverImage(
-              future: coverPathFuture,
-              initialPath: provider.resolvedCoverPathForFolder(
-                widget.folderPath,
+      child: Stack(
+        children: [
+          SizedBox(
+            width: width,
+            height: height,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(
+                LibraryLikeCardMetrics.coverRadius,
               ),
-              retryFutureBuilder: () =>
-                  provider.coverPathFutureForFolder(widget.folderPath),
-              seed: widget.folderPath,
-              cacheWidth: coverCacheWidth,
-              useDefaultCacheWidth: coverCacheWidth != null,
-              fit: BoxFit.cover,
-              compact: true,
-              iconSize: 28,
+              child: Hero(
+                tag: 'cover_${widget.folderPath}',
+                placeholderBuilder: (context, heroSize, child) => child,
+                child: AsyncLocalCoverImage(
+                  future: coverPathFuture,
+                  initialPath: provider.resolvedCoverPathForFolder(
+                    widget.folderPath,
+                  ),
+                  retryFutureBuilder: () =>
+                      provider.coverPathFutureForFolder(widget.folderPath),
+                  seed: widget.folderPath,
+                  cacheWidth: coverCacheWidth,
+                  useDefaultCacheWidth: coverCacheWidth != null,
+                  fit: BoxFit.cover,
+                  compact: true,
+                  iconSize: 28,
+                ),
+              ),
             ),
           ),
-        ),
+          if (widget.duration != null && widget.duration! > Duration.zero)
+            Positioned(
+              right: 4,
+              bottom: 4,
+              child: DurationOverlay(duration: widget.duration!),
+            ),
+        ],
       ),
     );
   }
 }
 
 class _LibraryTrackCoverThumbnail extends ConsumerStatefulWidget {
-  const _LibraryTrackCoverThumbnail({required this.track, this.width = 82});
+  const _LibraryTrackCoverThumbnail({
+    required this.track,
+    this.width = 82,
+    this.duration,
+  });
 
   final MusicTrack track;
   final double width;
+  final Duration? duration;
 
   @override
   ConsumerState<_LibraryTrackCoverThumbnail> createState() =>
@@ -696,27 +718,40 @@ class _LibraryTrackCoverThumbnailState
 
     final width = widget.width;
     final height = width * 0.8;
-    return SizedBox(
-      width: width,
-      height: height,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(LibraryLikeCardMetrics.coverRadius),
-        child: Hero(
-          tag: 'cover_${track.path}',
-          placeholderBuilder: (context, heroSize, child) => child,
-          child: AsyncLocalCoverImage(
-            future: coverPathFuture,
-            initialPath: provider.resolvedCoverPathForTrack(track),
-            retryFutureBuilder: () => provider.coverPathFutureForTrack(track),
-            seed: track.displayName,
-            cacheWidth: coverCacheWidth,
-            useDefaultCacheWidth: coverCacheWidth != null,
-            fit: BoxFit.cover,
-            compact: true,
-            iconSize: 28,
+    return Stack(
+      children: [
+        SizedBox(
+          width: width,
+          height: height,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(
+              LibraryLikeCardMetrics.coverRadius,
+            ),
+            child: Hero(
+              tag: 'cover_${track.path}',
+              placeholderBuilder: (context, heroSize, child) => child,
+              child: AsyncLocalCoverImage(
+                future: coverPathFuture,
+                initialPath: provider.resolvedCoverPathForTrack(track),
+                retryFutureBuilder:
+                    () => provider.coverPathFutureForTrack(track),
+                seed: track.displayName,
+                cacheWidth: coverCacheWidth,
+                useDefaultCacheWidth: coverCacheWidth != null,
+                fit: BoxFit.cover,
+                compact: true,
+                iconSize: 28,
+              ),
+            ),
           ),
         ),
-      ),
+        if (widget.duration != null && widget.duration! > Duration.zero)
+          Positioned(
+            right: 4,
+            bottom: 4,
+            child: DurationOverlay(duration: widget.duration!),
+          ),
+      ],
     );
   }
 }
@@ -725,6 +760,7 @@ class _RootFolderCardContent extends StatelessWidget {
   const _RootFolderCardContent({
     required this.folderPath,
     required this.folderName,
+    required this.folderDuration,
     required this.detail,
     required this.detailLoading,
     required this.expanded,
@@ -736,6 +772,7 @@ class _RootFolderCardContent extends StatelessWidget {
 
   final String folderPath;
   final String folderName;
+  final Duration folderDuration;
   final AudioDetail? detail;
   final bool detailLoading;
   final bool expanded;
@@ -755,8 +792,11 @@ class _RootFolderCardContent extends StatelessWidget {
       onPlay: onPlay,
       index: index,
       cardPositionsLocked: cardPositionsLocked,
-      coverBuilder: (coverWidth) =>
-          _LibraryCoverThumbnail(folderPath: folderPath, width: coverWidth),
+      coverBuilder: (coverWidth) => _LibraryCoverThumbnail(
+        folderPath: folderPath,
+        width: coverWidth,
+        duration: folderDuration,
+      ),
     );
   }
 }
@@ -876,8 +916,11 @@ class _SingleMediaFileCardContent extends StatelessWidget {
       onPlay: onPlay,
       index: index,
       cardPositionsLocked: cardPositionsLocked,
-      coverBuilder: (coverWidth) =>
-          _LibraryTrackCoverThumbnail(track: track, width: coverWidth),
+      coverBuilder: (coverWidth) => _LibraryTrackCoverThumbnail(
+        track: track,
+        width: coverWidth,
+        duration: track.duration,
+      ),
     );
   }
 }

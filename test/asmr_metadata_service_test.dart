@@ -13,6 +13,7 @@ void main() {
             sourceId: 'RJ123456',
             title: 'Target',
             releaseDate: DateTime(2024, 5, 6),
+            duration: const Duration(hours: 1, minutes: 2, seconds: 3),
             dlCount: 1234,
             rating: 4.5,
           ),
@@ -25,6 +26,7 @@ void main() {
     expect(metadata.rjCode, 'RJ123456');
     expect(metadata.workTitle, 'Target');
     expect(metadata.releaseDate, DateTime(2024, 5, 6));
+    expect(metadata.duration, const Duration(hours: 1, minutes: 2, seconds: 3));
     expect(metadata.salesCount, 1234);
     expect(metadata.rating, 4.5);
   });
@@ -74,6 +76,7 @@ AsmrWork _work({
   required String sourceId,
   required String title,
   DateTime? releaseDate,
+  Duration duration = Duration.zero,
   int dlCount = 0,
   double rating = 0,
 }) {
@@ -89,7 +92,7 @@ AsmrWork _work({
     mainCoverUrl: '',
     releaseDate: releaseDate,
     createDate: null,
-    duration: Duration.zero,
+    duration: duration,
     dlCount: dlCount,
     reviewCount: 0,
     rating: rating,

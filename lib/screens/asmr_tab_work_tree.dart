@@ -207,6 +207,7 @@ class _AsmrWorkTreeCardState extends State<_AsmrWorkTreeCard> {
                   coverBuilder: (coverWidth) => _AsmrWorkCover(
                     url: _asmrWorkListCoverUrl(widget.work),
                     width: coverWidth,
+                    duration: widget.work.duration,
                   ),
                   onPlay: () => unawaited(_playWork(context)),
                   expanded: _expanded,

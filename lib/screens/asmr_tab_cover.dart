@@ -1,10 +1,11 @@
 part of 'asmr_tab.dart';
 
 class _AsmrWorkCover extends StatelessWidget {
-  const _AsmrWorkCover({required this.url, required this.width});
+  const _AsmrWorkCover({required this.url, required this.width, this.duration});
 
   final String url;
   final double width;
+  final Duration? duration;
 
   @override
   Widget build(BuildContext context) {
@@ -20,10 +21,12 @@ class _AsmrWorkCover extends StatelessWidget {
     return ClipRRect(
       clipBehavior: Clip.hardEdge,
       borderRadius: BorderRadius.circular(LibraryLikeCardMetrics.coverRadius),
-      child: SizedBox(
-        width: width,
-        height: height,
-        child: url.isEmpty
+      child: Stack(
+        children: [
+          SizedBox(
+            width: width,
+            height: height,
+            child: url.isEmpty
             ? CoverFallbackArtwork(
                 seed: url,
                 compact: true,
@@ -53,6 +56,14 @@ class _AsmrWorkCover extends StatelessWidget {
                   iconSize: 28,
                 ),
               ),
+          ),
+          if (duration != null && duration! > Duration.zero)
+            Positioned(
+              right: 4,
+              bottom: 4,
+              child: DurationOverlay(duration: duration!),
+            ),
+        ],
       ),
     );
   }

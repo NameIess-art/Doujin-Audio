@@ -158,6 +158,7 @@ extension AudioProviderAudioDetails on AudioProvider {
         metadata.voiceActors.isEmpty ||
         metadata.tags.isEmpty ||
         metadata.releaseDate == null ||
+        metadata.duration == null ||
         metadata.salesCount == null ||
         metadata.rating == null;
   }
@@ -208,6 +209,7 @@ extension AudioProviderAudioDetails on AudioProvider {
           : fallback.voiceActors,
       tags: primary.tags.isNotEmpty ? primary.tags : fallback.tags,
       releaseDate: primary.releaseDate ?? fallback.releaseDate,
+      duration: primary.duration ?? fallback.duration,
       salesCount: primary.salesCount ?? fallback.salesCount,
       rating: primary.rating ?? fallback.rating,
       coverUrl: _fallbackNullableString(primary.coverUrl, fallback.coverUrl),
@@ -261,6 +263,9 @@ extension AudioProviderAudioDetails on AudioProvider {
       releaseDate: missingOnly && detail.releaseDate != null
           ? detail.releaseDate
           : metadata.releaseDate,
+      duration: missingOnly && detail.duration != null
+          ? detail.duration
+          : metadata.duration,
       salesCount: missingOnly && detail.salesCount != null
           ? detail.salesCount
           : metadata.salesCount,

@@ -60,6 +60,7 @@ class AudioDetail {
     required this.tags,
     this.cardCoverPath,
     this.releaseDate,
+    this.duration,
     this.salesCount,
     this.rating,
     this.createdAt,
@@ -96,6 +97,7 @@ class AudioDetail {
       tags: _decodeStringList(row['tags_json']),
       cardCoverPath: row['card_cover_path'] as String?,
       releaseDate: _dateTimeFromMs(row['release_date_ms']),
+      duration: _durationFromMs(row['duration_ms']),
       salesCount: _intOrNull(row['sales_count']),
       rating: _doubleOrNull(row['rating']),
       createdAt: _dateTimeFromMs(row['created_at_ms']),
@@ -136,6 +138,7 @@ class AudioDetail {
       ),
       cardCoverPath: json['cardCoverPath'] as String?,
       releaseDate: _backupDate(json, 'releaseDate'),
+      duration: _backupDuration(json),
       salesCount: _backupSalesCount(json),
       rating: _backupRating(json),
       createdAt: _backupDate(json, 'createdAt'),
@@ -151,6 +154,7 @@ class AudioDetail {
   final List<String> tags;
   final String? cardCoverPath;
   final DateTime? releaseDate;
+  final Duration? duration;
   final int? salesCount;
   final double? rating;
   final DateTime? createdAt;
@@ -178,6 +182,7 @@ class AudioDetail {
       voiceActors.isEmpty &&
       tags.isEmpty &&
       releaseDate == null &&
+      duration == null &&
       salesCount == null &&
       rating == null;
 
@@ -192,6 +197,7 @@ class AudioDetail {
     List<String>? tags,
     Object? cardCoverPath = _copyUnset,
     Object? releaseDate = _copyUnset,
+    Object? duration = _copyUnset,
     Object? salesCount = _copyUnset,
     Object? rating = _copyUnset,
     DateTime? createdAt,
@@ -210,6 +216,7 @@ class AudioDetail {
       releaseDate: releaseDate == _copyUnset
           ? this.releaseDate
           : releaseDate as DateTime?,
+      duration: duration == _copyUnset ? this.duration : duration as Duration?,
       salesCount: salesCount == _copyUnset
           ? this.salesCount
           : salesCount as int?,
@@ -226,6 +233,9 @@ class AudioDetail {
     if (rating != null && (!rating!.isFinite || rating! < 0 || rating! > 5)) {
       throw const FormatException('Invalid audio detail field: rating');
     }
+    if (duration != null && duration! <= Duration.zero) {
+      throw const FormatException('Invalid audio detail field: duration');
+    }
     return AudioDetail(
       target: target,
       rjCode: rjCode.trim().toUpperCase(),
@@ -237,6 +247,7 @@ class AudioDetail {
           ? null
           : cardCoverPath?.trim(),
       releaseDate: releaseDate,
+      duration: duration,
       salesCount: salesCount,
       rating: rating,
       createdAt: createdAt ?? now,
@@ -255,6 +266,7 @@ class AudioDetail {
       'tags_json': json.encode(tags),
       'card_cover_path': cardCoverPath,
       'release_date_ms': releaseDate?.millisecondsSinceEpoch ?? 0,
+      'duration_ms': duration?.inMilliseconds ?? 0,
       'sales_count': salesCount,
       'rating': rating,
       'created_at_ms': createdAt?.millisecondsSinceEpoch ?? 0,
@@ -275,6 +287,7 @@ class AudioDetail {
       'tags': tags,
       'cardCoverPath': cardCoverPath,
       'releaseDate': releaseDate?.toIso8601String(),
+      'durationMs': duration?.inMilliseconds,
       'salesCount': salesCount,
       'rating': rating,
       'createdAt': createdAt?.toIso8601String(),
@@ -317,6 +330,12 @@ DateTime? _dateTimeFromMs(Object? value) {
   return null;
 }
 
+Duration? _durationFromMs(Object? value) {
+  final milliseconds = _intOrNull(value);
+  if (milliseconds == null || milliseconds <= 0) return null;
+  return Duration(milliseconds: milliseconds);
+}
+
 DateTime? _backupDate(Map<String, dynamic> json, String field) {
   if (!json.containsKey(field) || json[field] == null) return null;
   final value = json[field];
@@ -328,6 +347,16 @@ DateTime? _backupDate(Map<String, dynamic> json, String field) {
     throw FormatException('Invalid audio detail field: $field');
   }
   return parsed;
+}
+
+Duration? _backupDuration(Map<String, dynamic> json) {
+  const field = 'durationMs';
+  if (!json.containsKey(field) || json[field] == null) return null;
+  final milliseconds = _intOrNull(json[field]);
+  if (milliseconds == null || milliseconds <= 0) {
+    throw const FormatException('Invalid audio detail field: durationMs');
+  }
+  return Duration(milliseconds: milliseconds);
 }
 
 int? _backupSalesCount(Map<String, dynamic> json) {

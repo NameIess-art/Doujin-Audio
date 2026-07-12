@@ -8,6 +8,7 @@ class DlsiteMetadata {
     required this.voiceActors,
     required this.tags,
     this.releaseDate,
+    this.duration,
     this.salesCount,
     this.rating,
     this.coverUrl,
@@ -31,6 +32,7 @@ class DlsiteMetadata {
       tags: _genreNames(json),
       releaseDate:
           _dateValue(json['regist_date']) ?? _dateValue(json['release_date']),
+      duration: _durationValue(json),
       salesCount:
           _intValue(json['dl_count']) ??
           _intValue(json['sales']) ??
@@ -50,6 +52,7 @@ class DlsiteMetadata {
   final List<String> voiceActors;
   final List<String> tags;
   final DateTime? releaseDate;
+  final Duration? duration;
   final int? salesCount;
   final double? rating;
   final String? coverUrl;
@@ -61,6 +64,7 @@ class DlsiteMetadata {
     List<String>? voiceActors,
     List<String>? tags,
     Object? releaseDate = _copyUnset,
+    Object? duration = _copyUnset,
     Object? salesCount = _copyUnset,
     Object? rating = _copyUnset,
     String? coverUrl,
@@ -74,6 +78,7 @@ class DlsiteMetadata {
       releaseDate: releaseDate == _copyUnset
           ? this.releaseDate
           : releaseDate as DateTime?,
+      duration: duration == _copyUnset ? this.duration : duration as Duration?,
       salesCount: salesCount == _copyUnset
           ? this.salesCount
           : salesCount as int?,
@@ -108,6 +113,44 @@ int? _intValue(Object? value) {
   if (raw == null) return null;
   final digits = raw.replaceAll(RegExp(r'[^0-9]'), '');
   return digits.isEmpty ? null : int.tryParse(digits);
+}
+
+Duration? _durationValue(Map<String, dynamic> json) {
+  final durationMs = _intValue(json['duration_ms'] ?? json['durationMs']);
+  if (durationMs != null && durationMs > 0) {
+    return Duration(milliseconds: durationMs);
+  }
+  final raw = json['duration'];
+  if (raw is String && raw.contains(':')) {
+    final parts = raw.split(':').map(int.tryParse).toList(growable: false);
+    if (parts.length >= 2 &&
+        parts.length <= 3 &&
+        parts.every((v) => v != null)) {
+      final values = parts.cast<int>();
+      final seconds = values.reversed
+          .toList(growable: false)
+          .asMap()
+          .entries
+          .fold<int>(
+            0,
+            (sum, entry) =>
+                sum +
+                entry.value *
+                    (entry.key == 0
+                        ? 1
+                        : entry.key == 1
+                        ? 60
+                        : 3600),
+          );
+      return seconds > 0 ? Duration(seconds: seconds) : null;
+    }
+  }
+  final seconds = raw is num
+      ? raw.round()
+      : raw is String
+      ? double.tryParse(raw.trim())?.round()
+      : null;
+  return seconds != null && seconds > 0 ? Duration(seconds: seconds) : null;
 }
 
 double? _ratingValue(Object? value) {

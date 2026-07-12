@@ -647,13 +647,8 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
     final workRoot = widget.provider.workRootForTrack(
       widget.session.currentTrackPath,
     );
-    showModalBottomSheet<void>(
+    AppBottomSheet.show<void>(
       context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
       builder: (ctx) {
         final tree = _buildQueueTree(
           tracks,

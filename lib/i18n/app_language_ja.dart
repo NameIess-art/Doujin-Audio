@@ -374,6 +374,7 @@ const Map<String, String> appLanguageJa = {
   'card_info_release_date': '発売',
   'card_info_sales_count': '販売数',
   'card_info_rating': '評価',
+  'card_info_duration': '時間',
   'auto_play_added_sessions': '追加後すぐに再生',
   'auto_play_added_sessions_subtitle': '音声追加時にすぐ再生を開始します。',
   'asmr_playback_cache': 'ASMR.ONE再生後キャッシュ',

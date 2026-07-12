@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:provider/provider.dart' hide Consumer;
@@ -27,9 +26,11 @@ import '../widgets/scroll_activity_gate.dart';
 import '../widgets/subtitle_window_visual.dart';
 import '../widgets/top_page_header.dart';
 import '../widgets/unified_dropdown.dart';
+import '../widgets/app_bottom_sheet.dart';
 import '../providers/subtitle_settings_provider.dart';
-import 'permission_status_page.dart';
 import 'data_support_page.dart';
+import 'permission_status_page.dart';
+import 'main_tab_state_mixin.dart';
 
 part 'settings_tab_actions.dart';
 part 'settings_tab_widgets.dart';
@@ -42,7 +43,7 @@ class SettingsTab extends ConsumerStatefulWidget {
 }
 
 class _SettingsTabState extends ConsumerState<SettingsTab>
-    with WidgetsBindingObserver, AutomaticKeepAliveClientMixin {
+    with WidgetsBindingObserver, AutomaticKeepAliveClientMixin, MainTabStateMixin<SettingsTab> {
   static const List<int> _cacheLimitOptions = <int>[
     100 * 1024 * 1024,
     300 * 1024 * 1024,
@@ -59,10 +60,16 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
   final PermissionActionController _permissionActionController =
       PermissionActionController();
 
-  final GlobalKey _headerKey = GlobalKey();
-  double _headerHeight = 62;
   final ScrollController _scrollController = ScrollController();
-  ValueListenable<int?>? _scrollToTopListenable;
+
+  @override
+  int get tabIndex => 3;
+
+  @override
+  double get defaultHeaderHeight => 62.0;
+
+  @override
+  ScrollController get mainScrollController => _scrollController;
 
   @override
   bool get wantKeepAlive => true;
@@ -79,61 +86,17 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
         .run<T>(scope: scope, labelKey: labelKey, task: task);
   }
 
-  void _measureHeader() {
-    final box = _headerKey.currentContext?.findRenderObject() as RenderBox?;
-    if (box != null && mounted) {
-      final h = box.size.height;
-      if (h > 0 && h != _headerHeight) {
-        setState(() => _headerHeight = h);
-      }
-    }
-  }
-
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _appVersionFuture = AppUpdateService.currentAppVersion();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        _measureHeader();
-        _scrollToTopListenable = ref
-            .read(audioProviderFacadeProvider)
-            .scrollToTopTabListenable;
-        _scrollToTopListenable?.addListener(_handleScrollToTopSignal);
-      }
-    });
-  }
-
-  void _handleScrollToTopSignal() {
-    if (!mounted) return;
-    final index = _scrollToTopListenable?.value;
-    if (index == 3) {
-      // 3 is SettingsTab after inserting ASMR.ONE on the left.
-      _jumpSettingsToTop();
-    }
-  }
-
-  void _jumpSettingsToTop() {
-    if (!_scrollController.hasClients) return;
-    const fakeAnimationStartOffset = 360.0;
-    final animationStartOffset =
-        _scrollController.position.maxScrollExtent < fakeAnimationStartOffset
-        ? _scrollController.position.maxScrollExtent
-        : fakeAnimationStartOffset;
-    if (_scrollController.offset > animationStartOffset) {
-      _scrollController.jumpTo(animationStartOffset);
-    }
-    _scrollController.animateTo(
-      0,
-      duration: const Duration(milliseconds: 260),
-      curve: Curves.easeOutCubic,
-    );
+    initTabState(ref.read(audioProviderFacadeProvider).scrollToTopTabListenable);
   }
 
   @override
   void dispose() {
-    _scrollToTopListenable?.removeListener(_handleScrollToTopSignal);
+    disposeTabState();
     _scrollController.dispose();
     _permissionActionController.dispose();
     WidgetsBinding.instance.removeObserver(this);
@@ -148,37 +111,29 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
   }
 
   void _openPermissionCenter() {
-    showModalBottomSheet<void>(
+    AppBottomSheet.show<void>(
       context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
       builder: (_) => const PermissionStatusPage(),
     );
   }
 
   void _openDataAndSupport() {
-    showModalBottomSheet<void>(
+    AppBottomSheet.show<void>(
       context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
       builder: (_) => const DataSupportPage(),
     );
   }
 
   void _showSubtitleWindowSettings(BuildContext context) {
-    showModalBottomSheet<void>(
+    AppBottomSheet.show<void>(
       context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
       builder: (_) => const _SubtitleWindowSettingsSheet(),
     );
   }
 
   void _showCardInfoFieldsSettings(BuildContext context) {
-    showModalBottomSheet<void>(
+    AppBottomSheet.show<void>(
       context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
       builder: (_) => const _CardInfoFieldsSettingsSheet(),
     );
   }
@@ -225,7 +180,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
       child: Stack(
         children: [
           Positioned(
-            top: _headerHeight - 80,
+            top: headerHeight - 80,
             bottom: 0,
             left: 0,
             right: 0,
@@ -1438,8 +1393,8 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
             left: 0,
             right: 0,
             child: TopPageHeader(
-              key: _headerKey,
-              icon: Icons.settings_rounded,
+              key: headerKey,
+              icon: Icons.tune_rounded,
               title: i18n.tr('settings'),
               padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
               collapseController: _scrollController,

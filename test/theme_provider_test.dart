@@ -43,6 +43,11 @@ void main() {
     expect(darkTokens!.asmrAccent, const Color(0xFF60A5FA));
     expect(lightTokens.radiusCard, darkTokens.radiusCard);
     expect(lightTokens.radiusOverlay, 24);
+    expect(lightTokens.spaceXxs, 4);
+    expect(lightTokens.spaceXxl, 32);
+    expect(lightTokens.minimumTapTarget, 48);
+    expect(lightTokens.success, isNot(darkTokens.success));
+    expect(lightTokens.warning, isNot(darkTokens.warning));
   });
 
   test('overlay surfaces share the design token radius', () async {
@@ -64,5 +69,25 @@ void main() {
       BorderRadius.vertical(top: Radius.circular(tokens.radiusOverlay)),
     );
     expect(menuShape.borderRadius, BorderRadius.circular(tokens.radiusCard));
+  });
+
+  test('interactive component themes keep the minimum tap target', () async {
+    SharedPreferences.setMockInitialValues(const <String, Object>{});
+    await AppPreferences.init();
+    final theme = ThemeProvider().lightTheme;
+    final tokens = theme.extension<AppDesignTokens>()!;
+
+    expect(
+      theme.iconButtonTheme.style?.minimumSize?.resolve(<WidgetState>{}),
+      Size.square(tokens.minimumTapTarget),
+    );
+    expect(
+      theme.textButtonTheme.style?.minimumSize?.resolve(<WidgetState>{}),
+      Size.square(tokens.minimumTapTarget),
+    );
+    expect(
+      theme.inputDecorationTheme.constraints?.minHeight,
+      tokens.minimumTapTarget,
+    );
   });
 }

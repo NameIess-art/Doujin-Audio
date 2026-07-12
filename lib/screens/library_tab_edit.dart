@@ -189,7 +189,7 @@ Future<bool> _confirmRemoveWatchedLibrary(
       'name': _displaySourceName(libraryPath),
     }),
     cancelLabel: i18n.tr('cancel'),
-    confirmLabel: i18n.tr('remove'),
+    confirmLabel: i18n.tr('remove_library'),
     icon: Icons.library_music_rounded,
   );
   if (!confirmed || !context.mounted) return false;
@@ -601,7 +601,7 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage>
     final cs = Theme.of(context).colorScheme;
     final hasText = _searchController.text.isNotEmpty;
     return SizedBox(
-      height: 38,
+      height: 34,
       child: TextField(
         controller: _searchController,
         style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 13),
@@ -634,20 +634,26 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage>
             context,
           ).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
           border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(19),
+            borderRadius: BorderRadius.circular(
+              AppDesignTokens.of(context).radiusCard,
+            ),
             borderSide: BorderSide.none,
           ),
           enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(19),
+            borderRadius: BorderRadius.circular(
+              AppDesignTokens.of(context).radiusCard,
+            ),
             borderSide: BorderSide.none,
           ),
           focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(19),
+            borderRadius: BorderRadius.circular(
+              AppDesignTokens.of(context).radiusCard,
+            ),
             borderSide: BorderSide.none,
           ),
           contentPadding: const EdgeInsets.symmetric(
             horizontal: 12,
-            vertical: 8,
+            vertical: 7,
           ),
           isDense: true,
         ),

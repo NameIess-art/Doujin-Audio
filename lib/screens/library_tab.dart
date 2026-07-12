@@ -24,6 +24,7 @@ import '../services/path_display.dart';
 import '../services/path_matcher.dart';
 import '../services/ui_interaction_coordinator.dart';
 import '../services/ui_operation_service.dart';
+import '../theme/app_design_tokens.dart';
 import '../services/library_scanner_service.dart';
 import '../widgets/app_feedback.dart';
 import '../widgets/async_cover_image.dart';
@@ -31,6 +32,7 @@ import '../widgets/confirm_action_dialog.dart';
 import '../widgets/content_bound_reorder_area.dart';
 import '../widgets/library_like_cards.dart';
 import '../widgets/mobile_overlay_inset.dart';
+import '../widgets/operation_feedback.dart';
 import '../widgets/reorder_auto_scroller.dart';
 import '../widgets/scroll_activity_gate.dart';
 import '../widgets/swipe_reveal_card.dart';
@@ -43,6 +45,10 @@ import 'dlsite_metadata_batch_page.dart';
 import 'screen_view_models.dart';
 import 'video_converter_tab.dart';
 import '../widgets/app_transitions.dart';
+import '../theme/app_styles.dart';
+import '../platform/app_platform.dart';
+
+import '../widgets/app_buttons.dart';
 
 part 'library_tab_ui_helpers.dart';
 part 'library_tab_empty_scan.dart';
@@ -118,7 +124,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   String? _lastLibraryCoverWarmupSignature;
 
   double get _headerControlsFullHeight =>
-      _categoryType == AudioLibraryCategoryType.all ? 86.0 : 46.0;
+      _categoryType == AudioLibraryCategoryType.all ? 86.0 : 42.0;
 
   String get _effectiveSearchQuery =>
       _categoryType == AudioLibraryCategoryType.all ? _searchQuery : '';
@@ -229,7 +235,25 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
           provider: provider,
           i18n: i18n,
           showSnack: (msg) {
-            if (mounted) showAppSnackBar(context, msg);
+            if (!mounted) return;
+            final isFailure =
+                msg == i18n.tr('scan_failed_next_step') ||
+                msg == i18n.tr('import_failed_next_step');
+            final isCancelled = msg == i18n.tr('scan_cancelled');
+            showAppSnackBar(
+              context,
+              msg,
+              tone: isFailure
+                  ? AppFeedbackTone.destructive
+                  : (isCancelled
+                        ? AppFeedbackTone.warning
+                        : AppFeedbackTone.success),
+              icon: isFailure
+                  ? Icons.error_outline_rounded
+                  : (isCancelled
+                        ? Icons.cancel_outlined
+                        : Icons.check_circle_outline_rounded),
+            );
           },
           silent: silent,
           forceShowResult: forceShowResult,
@@ -525,22 +549,22 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         ref.watch(settingsStateProvider).valueOrNull ?? const SettingsState();
     final cardPositionsLocked = settingsState.cardPositionsLocked;
     final libraryRefreshOperationBusy = ref.watch(
-      uiOperationForScopeProvider(UiOperationScope.libraryRefresh)
-          .select((s) => s.isBusy),
+      uiOperationForScopeProvider(
+        UiOperationScope.libraryRefresh,
+      ).select((s) => s.isBusy),
     );
-    final libraryImportBusy = <UiOperationScope>[
-      UiOperationScope.libraryImportFolder,
-      UiOperationScope.libraryImportLibrary,
-      UiOperationScope.libraryImportFiles,
-    ].any(
-      (scope) => ref.watch(
-        uiOperationForScopeProvider(scope).select((s) => s.isBusy),
-      ),
-    );
+    final libraryImportBusy =
+        <UiOperationScope>[
+          UiOperationScope.libraryImportFolder,
+          UiOperationScope.libraryImportLibrary,
+          UiOperationScope.libraryImportFiles,
+        ].any(
+          (scope) => ref.watch(
+            uiOperationForScopeProvider(scope).select((s) => s.isBusy),
+          ),
+        );
     final libraryRefreshBusy =
-        libraryRefreshOperationBusy ||
-        libraryImportBusy ||
-        listStateIsScanning;
+        libraryRefreshOperationBusy || libraryImportBusy || listStateIsScanning;
     _ensureCategorySnapshot(
       provider: provider,
       structureRevision: listStateStructureRevision,
@@ -576,10 +600,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         Platform.isWindows ||
         MediaQuery.orientationOf(context) == Orientation.landscape;
     const double expansion = 320.0;
-    final listTopPadding =
-        (_categoryType == AudioLibraryCategoryType.all ? 4.0 : 0.0) +
-        headerControlsFullHeight +
-        expansion;
+    final listTopPadding = headerControlsFullHeight + 4.0 + expansion;
     const listBottomPadding = 16.0 + expansion;
     final listViewportBottomInset = listBottomInset + (isWindows ? 16.0 : 0.0);
     // Reduced cacheExtent to significantly lower memory footprint and improve
@@ -587,8 +608,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     final listCacheExtent = (headerContentHeight + 800)
         .clamp(headerContentHeight, 1600.0)
         .toDouble();
-    final hasLibrary =
-        listStateHasLibrary || libraryHeaderAudioCount > 0;
+    final hasLibrary = listStateHasLibrary || libraryHeaderAudioCount > 0;
     final showLibrarySkeleton =
         !hasLibrary &&
         _effectiveSearchQuery.isEmpty &&
@@ -668,16 +688,24 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
           ),
           children: [
             SizedBox(
-              height: 260,
-              child: Center(
-                child: Text(
-                  hasLibrary
-                      ? i18n.tr('no_search_results')
-                      : i18n.tr('no_audio_files'),
-                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                ),
+              height: 300,
+              child: AppEmptyState(
+                icon: Icons.search_off_rounded,
+                title: hasLibrary
+                    ? i18n.tr('no_search_results')
+                    : i18n.tr('no_audio_files'),
+                message: hasLibrary
+                    ? i18n.tr('search_try_another_term')
+                    : i18n.tr('import_audio_hint'),
+                actionLabel: hasLibrary ? i18n.tr('clear') : null,
+                actionIcon: Icons.clear_rounded,
+                onAction: hasLibrary
+                    ? () {
+                        _searchController.clear();
+                        _searchDebounceTimer?.cancel();
+                        _setLocalState(() => _searchQuery = '');
+                      }
+                    : null,
               ),
             ),
           ],
@@ -774,9 +802,9 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                         child: ListView.builder(
                           physics: const NeverScrollableScrollPhysics(),
                           padding: EdgeInsets.fromLTRB(
-                            16,
+                            16.0,
                             listTopPadding,
-                            16,
+                            16.0,
                             listBottomPadding,
                           ),
                           itemCount: 15,
@@ -786,7 +814,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                               child: Row(
                                 children: [
                                   const ShimmerContainer(width: 48, height: 48),
-                                  const SizedBox(width: 16),
+                                  const SizedBox(width: AppSpacing.lg),
                                   Expanded(
                                     child: Column(
                                       crossAxisAlignment:
@@ -832,9 +860,9 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                         key: const ValueKey('search_results_list'),
                         controller: _scrollController,
                         padding: EdgeInsets.fromLTRB(
-                          16,
+                          16.0,
                           listTopPadding,
-                          16,
+                          16.0,
                           listBottomPadding,
                         ),
                         cacheExtent: listCacheExtent,
@@ -869,9 +897,9 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                             // "empty" space above/below the restricted Positioned area.
                             clipBehavior: Clip.none,
                             padding: EdgeInsets.fromLTRB(
-                              16,
+                              16.0,
                               listTopPadding,
-                              16,
+                              16.0,
                               listBottomPadding,
                             ),
                             cacheExtent: listCacheExtent,
@@ -1154,13 +1182,13 @@ class _LibraryLoadingSkeleton extends StatelessWidget {
 
     return ListView(
       physics: const NeverScrollableScrollPhysics(),
-      padding: EdgeInsets.fromLTRB(16, topInset, 16, bottomInset),
+      padding: EdgeInsets.fromLTRB(16.0, topInset, 16.0, bottomInset),
       children: [
-        block(height: 82, margin: const EdgeInsets.only(bottom: 8)),
-        block(height: 70, margin: const EdgeInsets.only(bottom: 8)),
+        block(height: 82, margin: const EdgeInsets.only(bottom: 6)),
+        block(height: 70, margin: const EdgeInsets.only(bottom: 6)),
         block(height: 54, margin: const EdgeInsets.only(bottom: 6)),
         block(height: 54, margin: const EdgeInsets.only(bottom: 6)),
-        block(height: 62, margin: const EdgeInsets.only(bottom: 8)),
+        block(height: 62, margin: const EdgeInsets.only(bottom: 6)),
       ],
     );
   }

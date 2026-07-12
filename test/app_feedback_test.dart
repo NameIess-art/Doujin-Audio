@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/widgets/app_feedback.dart';
+import 'package:nameless_audio/widgets/confirm_action_dialog.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -95,5 +96,41 @@ void main() {
 
     expect(actionCount, 1);
     expect(find.text('Import failed'), findsNothing);
+  });
+
+  testWidgets('non-destructive confirmation uses the requested action', (
+    tester,
+  ) async {
+    bool? result;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => TextButton(
+              onPressed: () async {
+                result = await showConfirmActionDialog(
+                  context: context,
+                  title: 'Open settings',
+                  message: 'Change this permission in system settings.',
+                  cancelLabel: 'Cancel',
+                  confirmLabel: 'Open settings',
+                  confirmIcon: Icons.settings_rounded,
+                  isDestructive: false,
+                );
+              },
+              child: const Text('Show settings prompt'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Show settings prompt'));
+    await tester.pumpAndSettle();
+    expect(find.byIcon(Icons.settings_rounded), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Open settings'));
+    await tester.pumpAndSettle();
+    expect(result, isTrue);
   });
 }

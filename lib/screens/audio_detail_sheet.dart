@@ -346,13 +346,22 @@ class _AudioDetailSheetState extends State<AudioDetailSheet> {
           title: Text(title),
           content: Text(message),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: Text(i18n.tr('cancel')),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              child: Text(confirmLabel),
+            Row(
+              children: [
+                Expanded(
+                  child: TextButton(
+                    onPressed: () => Navigator.of(context).pop(false),
+                    child: Text(i18n.tr('cancel')),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: FilledButton(
+                    onPressed: () => Navigator.of(context).pop(true),
+                    child: Text(confirmLabel),
+                  ),
+                ),
+              ],
             ),
           ],
         );

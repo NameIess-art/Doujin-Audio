@@ -17,7 +17,8 @@ internal class NativeForegroundNotificationFactory(
         title: String,
         subtitle: String?,
         mediaSession: MediaSession?,
-        allowRichSummary: Boolean
+        allowRichSummary: Boolean,
+        playing: Boolean
     ): Notification {
         if (allowRichSummary) {
             UnifiedPlaybackNotificationController.lastRichSummaryNotification?.let {
@@ -25,7 +26,7 @@ internal class NativeForegroundNotificationFactory(
             }
         }
         val builder = baseBuilder()
-            .setContentTitle(title.ifBlank { "Nameless Audio" })
+            .setContentTitle(title.ifBlank { context.getString(R.string.app_name) })
             .setContentText(
                 subtitle
                     ?.takeIf { it.isNotBlank() }
@@ -37,27 +38,13 @@ internal class NativeForegroundNotificationFactory(
             MediaStyleNotificationHelper.MediaStyle(mediaSession)
         } else null
         
-        // Add default actions for fallback notification
-        builder.addAction(
-            NotificationCompat.Action(
-                android.R.drawable.ic_media_previous,
-                "Previous",
-                buildControlIntent("session_skip_previous")
-            )
-        )
-        builder.addAction(
-            NotificationCompat.Action(
-                android.R.drawable.ic_media_play,
-                "Play/Pause",
-                buildControlIntent("toggle_session_playback")
-            )
-        )
-        builder.addAction(
-            NotificationCompat.Action(
-                android.R.drawable.ic_media_next,
-                "Next",
-                buildControlIntent("session_skip_next")
-            )
+        addNotificationTransportActions(
+            builder = builder,
+            context = context,
+            playing = playing,
+            hasPrevious = true,
+            hasNext = true,
+            buildIntent = ::buildControlIntent
         )
         mediaStyle?.setShowActionsInCompactView(0, 1, 2)
 
@@ -70,7 +57,7 @@ internal class NativeForegroundNotificationFactory(
 
     fun buildBootstrapNotification(mediaSession: MediaSession?): Notification {
         val builder = baseBuilder()
-            .setContentTitle("Nameless Audio")
+            .setContentTitle(context.getString(R.string.app_name))
             .setContentText(context.getString(R.string.keep_alive_timer_active))
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
 
@@ -78,26 +65,13 @@ internal class NativeForegroundNotificationFactory(
             MediaStyleNotificationHelper.MediaStyle(mediaSession)
         } else null
         
-        builder.addAction(
-            NotificationCompat.Action(
-                android.R.drawable.ic_media_previous,
-                "Previous",
-                buildControlIntent("session_skip_previous")
-            )
-        )
-        builder.addAction(
-            NotificationCompat.Action(
-                android.R.drawable.ic_media_play,
-                "Play/Pause",
-                buildControlIntent("toggle_session_playback")
-            )
-        )
-        builder.addAction(
-            NotificationCompat.Action(
-                android.R.drawable.ic_media_next,
-                "Next",
-                buildControlIntent("session_skip_next")
-            )
+        addNotificationTransportActions(
+            builder = builder,
+            context = context,
+            playing = false,
+            hasPrevious = true,
+            hasNext = true,
+            buildIntent = ::buildControlIntent
         )
         mediaStyle?.setShowActionsInCompactView(0, 1, 2)
 
@@ -110,7 +84,7 @@ internal class NativeForegroundNotificationFactory(
 
     private fun baseBuilder(): NotificationCompat.Builder {
         return NotificationCompat.Builder(context, channelId)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_notification_small)
             .setContentIntent(launchPendingIntent())
             .setShowWhen(false)
             .setOngoing(true)
@@ -137,14 +111,19 @@ internal class NativeForegroundNotificationFactory(
         }
     }
 
-    private fun buildControlIntent(action: String): PendingIntent {
+    private fun buildControlIntent(command: NotificationCommand): PendingIntent {
         val intent = Intent().apply {
             setClassName(context, "${context.packageName}.UnifiedPlaybackActionReceiver")
-            this.action = action
+            action = command.actionName
             putExtra("sessionId", "") // Fallback for focused session
         }
         val flags = PendingIntent.FLAG_UPDATE_CURRENT or immutablePendingIntentFlag()
-        return PendingIntent.getBroadcast(context, action.hashCode(), intent, flags)
+        return PendingIntent.getBroadcast(
+            context,
+            command.actionName.hashCode(),
+            intent,
+            flags
+        )
     }
 
     private fun immutablePendingIntentFlag(): Int {

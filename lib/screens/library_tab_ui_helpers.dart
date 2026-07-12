@@ -20,32 +20,39 @@ extension _LibraryTabUiHelpers on _LibraryTabState {
         label: i18n.tr('library_category_circles'),
       ),
     ];
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final isPortraitMobile =
+        !AppPlatform.isWindows &&
+        MediaQuery.orientationOf(context) == Orientation.portrait;
+
+    final itemWidth = isPortraitMobile ? (screenWidth - 24.0 - 24.0) / 4 : 86.0;
+
     return SizedBox(
-      height: 42,
-      child: Padding(
+      height: 34 + 8,
+      child: ListView.separated(
         padding: const EdgeInsets.fromLTRB(12, 1, 12, 7),
-        child: Row(
-          children: [
-            for (var index = 0; index < items.length; index++) ...[
-              if (index > 0) const SizedBox(width: 8),
-              Expanded(
-                child: _LibraryCategoryButton(
-                  label: items[index].label,
-                  selected: _categoryType == items[index].type,
-                  onTap: () {
-                    if (_categoryType == items[index].type) return;
-                    FocusScope.of(context).unfocus();
-                    _jumpLibraryListToTop();
-                    _setLocalState(() => _categoryType = items[index].type);
-                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                      if (mounted) _measureHeader();
-                    });
-                  },
-                ),
-              ),
-            ],
-          ],
-        ),
+        scrollDirection: Axis.horizontal,
+        physics: const BouncingScrollPhysics(),
+        itemCount: items.length,
+        separatorBuilder: (context, index) => const SizedBox(width: 8),
+        itemBuilder: (context, index) {
+          return SizedBox(
+            width: itemWidth,
+            child: _LibraryCategoryButton(
+              label: items[index].label,
+              selected: _categoryType == items[index].type,
+              onTap: () {
+                if (_categoryType == items[index].type) return;
+                FocusScope.of(context).unfocus();
+                _jumpLibraryListToTop();
+                _setLocalState(() => _categoryType = items[index].type);
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (mounted) _measureHeader();
+                });
+              },
+            ),
+          );
+        },
       ),
     );
   }
@@ -84,6 +91,7 @@ extension _LibraryTabUiHelpers on _LibraryTabState {
                 suffixIcon: hasText
                     ? IconButton(
                         icon: const Icon(Icons.clear_rounded, size: 18),
+                        tooltip: i18n.tr('clear'),
                         onPressed: () {
                           _searchController.clear();
                           _searchDebounceTimer?.cancel();
@@ -103,15 +111,21 @@ extension _LibraryTabUiHelpers on _LibraryTabState {
                   context,
                 ).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(17),
+                  borderRadius: BorderRadius.circular(
+                    AppDesignTokens.of(context).radiusCard,
+                  ),
                   borderSide: BorderSide.none,
                 ),
                 enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(17),
+                  borderRadius: BorderRadius.circular(
+                    AppDesignTokens.of(context).radiusCard,
+                  ),
                   borderSide: BorderSide.none,
                 ),
                 focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(17),
+                  borderRadius: BorderRadius.circular(
+                    AppDesignTokens.of(context).radiusCard,
+                  ),
                   borderSide: BorderSide.none,
                 ),
                 contentPadding: const EdgeInsets.symmetric(
@@ -158,124 +172,127 @@ extension _LibraryTabUiHelpers on _LibraryTabState {
       FolderScanStage.loadingCovers => 'scan_stage_covers',
       FolderScanStage.idle => 'scanning_title',
     });
-    return Card(
-      key: const ValueKey('library_scan_progress_card'),
-      elevation: 4,
-      shadowColor: cs.shadow,
-      color: cs.surfaceContainerHigh,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
-              children: [
-                SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: cs.primary,
+    final tokens = AppDesignTokens.of(context);
+    return Semantics(
+      liveRegion: true,
+      container: true,
+      label: stageLabel,
+      child: Card(
+        key: const ValueKey('library_scan_progress_card'),
+        elevation: 4,
+        shadowColor: cs.shadow,
+        color: cs.surfaceContainerHigh,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(tokens.radiusControl),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: cs.primary,
+                    ),
                   ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 180),
-                    child: Text(
-                      stageLabel,
-                      key: ValueKey(scanState.stage),
-                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w700,
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 180),
+                      child: Text(
+                        stageLabel,
+                        key: ValueKey(scanState.stage),
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                     ),
                   ),
-                ),
-                TextButton.icon(
-                  onPressed: () => provider.cancelScan(),
-                  icon: Icon(Icons.close_rounded, size: 16, color: cs.error),
-                  label: Text(
-                    i18n.tr('scan_cancel'),
-                    style: TextStyle(color: cs.error, fontSize: 12),
-                  ),
-                  style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    minimumSize: Size.zero,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                ),
-              ],
-            ),
-            if (scanState.source.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Icon(
-                    Icons.folder_open_rounded,
-                    size: 14,
-                    color: cs.onSurfaceVariant,
-                  ),
-                  const SizedBox(width: 6),
-                  Flexible(
-                    child: Text(
-                      scanState.source,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: cs.onSurfaceVariant,
-                      ),
+                  TextButton.icon(
+                    onPressed: () => provider.cancelScan(),
+                    icon: Icon(Icons.close_rounded, size: 16, color: cs.error),
+                    label: Text(
+                      i18n.tr('scan_cancel'),
+                      style: TextStyle(color: cs.error, fontSize: 12),
                     ),
                   ),
                 ],
               ),
-            ],
-            const SizedBox(height: 8),
-            LinearProgressIndicator(
-              value: progress,
-              minHeight: 3,
-              borderRadius: BorderRadius.circular(99),
-            ),
-            const SizedBox(height: 6),
-            Align(
-              alignment: AlignmentDirectional.centerStart,
-              child: Text(
-                total == null
-                    ? i18n.tr('scan_processed', {
-                        'processed': scanState.processed,
-                      })
-                    : i18n.tr('scan_processed_total', {
-                        'processed': scanState.processed,
-                        'total': total,
-                      }),
-                style: Theme.of(
-                  context,
-                ).textTheme.labelSmall?.copyWith(color: cs.onSurfaceVariant),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                _ScanCountChip(
-                  label: i18n.tr('scan_found'),
-                  count: scanState.foundCount,
-                  color: cs.primary,
-                ),
-                const SizedBox(width: 8),
-                _ScanCountChip(
-                  label: i18n.tr('scan_duplicate'),
-                  count: scanState.duplicateCount,
-                  color: cs.tertiary,
-                ),
-                const SizedBox(width: 8),
-                _ScanCountChip(
-                  label: i18n.tr('scan_failure'),
-                  count: scanState.failureCount,
-                  color: cs.error,
+              if (scanState.source.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Icon(
+                      Icons.folder_open_rounded,
+                      size: 14,
+                      color: cs.onSurfaceVariant,
+                    ),
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: Text(
+                        scanState.source,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: cs.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
-            ),
-          ],
+              const SizedBox(height: 8),
+              LinearProgressIndicator(
+                value: progress,
+                minHeight: 3,
+                borderRadius: BorderRadius.circular(99),
+              ),
+              const SizedBox(height: 6),
+              Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: Text(
+                  total == null
+                      ? i18n.tr('scan_processed', {
+                          'processed': scanState.processed,
+                        })
+                      : i18n.tr('scan_processed_total', {
+                          'processed': scanState.processed,
+                          'total': total,
+                        }),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.labelSmall?.copyWith(color: cs.onSurfaceVariant),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  _ScanCountChip(
+                    label: i18n.tr('scan_found'),
+                    count: scanState.foundCount,
+                    color: cs.primary,
+                  ),
+                  const SizedBox(width: 8),
+                  _ScanCountChip(
+                    label: i18n.tr('scan_duplicate'),
+                    count: scanState.duplicateCount,
+                    color: cs.tertiary,
+                  ),
+                  const SizedBox(width: 8),
+                  _ScanCountChip(
+                    label: i18n.tr('scan_failure'),
+                    count: scanState.failureCount,
+                    color: cs.error,
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -324,29 +341,44 @@ class _LibraryCategoryButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    return Material(
-      color: selected ? cs.primaryContainer : cs.surfaceContainerHigh,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(
-          color: selected
-              ? cs.primary.withValues(alpha: 0.45)
-              : cs.outlineVariant,
+    final tokens = AppDesignTokens.of(context);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Semantics(
+      button: true,
+      selected: selected,
+      child: AnimatedContainer(
+        duration: tokens.motionStandard,
+        curve: Curves.easeOutCubic,
+        decoration: BoxDecoration(
+          color: selected ? cs.primaryContainer : cs.surfaceContainerHigh,
+          borderRadius: BorderRadius.circular(tokens.radiusCard),
+          border: Border.all(
+            color: selected
+                ? cs.primary.withValues(alpha: isDark ? 0.58 : 0.45)
+                : cs.outlineVariant.withValues(alpha: isDark ? 0.68 : 1),
+          ),
         ),
-      ),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
-        child: SizedBox(
-          height: 34,
-          child: Center(
-            child: Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
-                color: selected ? cs.onPrimaryContainer : cs.onSurfaceVariant,
+        child: Material(
+          type: MaterialType.transparency,
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(tokens.radiusCard),
+            child: SizedBox(
+              height: 34,
+              child: Center(
+                child: AnimatedDefaultTextStyle(
+                  duration: tokens.motionStandard,
+                  curve: Curves.easeOutCubic,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.labelMedium!.copyWith(
+                    fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                    color: selected
+                        ? cs.onPrimaryContainer
+                        : cs.onSurfaceVariant,
+                  ),
+                  child: Text(label),
+                ),
               ),
             ),
           ),

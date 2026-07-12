@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
-
 import 'scroll_activity_gate.dart';
 
 class MarqueePauseScope extends InheritedWidget {
@@ -170,7 +169,8 @@ class _MarqueeTextState extends State<MarqueeText> {
         overflow: TextOverflow.ellipsis,
       );
     }
-    _isScrolling = ScrollActivityGate.isScrollingOf(context) ||
+    _isScrolling =
+        ScrollActivityGate.isScrollingOf(context) ||
         MarqueePauseScope.isPausedOf(context);
     _tickerEnabled = TickerMode.valuesOf(context).enabled;
     if (_isScrolling && _scrollController.hasClients) {

@@ -211,15 +211,24 @@ class _VerticalVolumeSliderState extends State<_VerticalVolumeSlider> {
           },
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: Text(i18n.tr('cancel')),
-          ),
-          FilledButton(
-            onPressed: () {
-              _applyVolumeInput(controller.text, ctx);
-            },
-            child: Text(i18n.tr('confirm')),
+          Row(
+            children: [
+              Expanded(
+                child: TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  child: Text(i18n.tr('cancel')),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: FilledButton(
+                  onPressed: () {
+                    _applyVolumeInput(controller.text, ctx);
+                  },
+                  child: Text(i18n.tr('confirm')),
+                ),
+              ),
+            ],
           ),
         ],
       ),

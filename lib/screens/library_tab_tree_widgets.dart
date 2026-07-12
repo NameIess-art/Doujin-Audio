@@ -200,7 +200,7 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
                     size: 20,
                     color: cs.primary.withValues(alpha: 0.8),
                   ),
-                  const SizedBox(width: 10),
+                  const SizedBox(width: AppSpacing.sm),
                   Expanded(
                     child: SizedBox(
                       height: _childFolderTitleBlockHeight,
@@ -291,7 +291,7 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
     }
 
     return SwipeRevealCard(
-      margin: const EdgeInsets.only(bottom: 6),
+      margin: const EdgeInsets.only(bottom: 6.0),
       shape: cardShape,
       actionLabel: i18n.tr('remove'),
       removeTooltip: i18n.tr('remove_audio_folder'),
@@ -410,7 +410,7 @@ class _TrackNodeWidget extends ConsumerWidget {
 
     Widget buildSingleTrackCard(bool useFeaturedCard) {
       return SwipeRevealCard(
-        margin: const EdgeInsets.only(bottom: 6),
+        margin: const EdgeInsets.only(bottom: 6.0),
         shape: cardShape,
         actionLabel: i18n.tr('remove'),
         removeTooltip: i18n.tr('remove_audio'),
@@ -508,7 +508,7 @@ class _TrackNodeWidget extends ConsumerWidget {
         child: SizedBox(
           height: 38,
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 6),
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
             child: Row(
               children: [
                 Icon(
@@ -516,7 +516,7 @@ class _TrackNodeWidget extends ConsumerWidget {
                   size: 16,
                   color: cs.onSurfaceVariant.withValues(alpha: 0.6),
                 ),
-                const SizedBox(width: 10),
+                const SizedBox(width: AppSpacing.sm),
                 Expanded(
                   child: _HighlightedText(
                     text: track.displayName,
@@ -798,6 +798,7 @@ class _AudioDetailWorkCardContent extends StatelessWidget {
       tagsLabel: i18n.tr('library_category_tags'),
       releaseDateLabel: i18n.tr('card_info_release_date'),
       salesCountLabel: i18n.tr('card_info_sales_count'),
+
       ratingLabel: i18n.tr('card_info_rating'),
       loading: detailLoading || detail == null,
       coverBuilder: coverBuilder,

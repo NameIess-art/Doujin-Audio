@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="keep_alive_timer_active">睡眠定时器运行中</string>
+    <string name="keep_alive_playback_active">正在播放</string>
+    <string name="playback_notification_channel_name">播放控制</string>
+    <string name="playback_notification_channel_description">显示播放状态和媒体控制</string>
+    <string name="playback_action_previous">上一首</string>
+    <string name="playback_action_play">播放</string>
+    <string name="playback_action_pause">暂停</string>
+    <string name="playback_action_play_pause">播放或暂停</string>
+    <string name="playback_action_next">下一首</string>
+    <plurals name="playback_sessions_count">
+        <item quantity="other">%d 个播放会话</item>
+    </plurals>
+</resources>

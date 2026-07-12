@@ -50,6 +50,7 @@ class _ActiveSessionCard extends ConsumerWidget {
       }),
     );
     final isPlaying = view.playing;
+    final i18n = context.read<AppLanguageProvider>();
     final currentTrack = provider.trackByPath(view.trackPath);
     final displayName =
         currentTrack?.displayName ??
@@ -150,6 +151,10 @@ class _ActiveSessionCard extends ConsumerWidget {
     return Semantics(
       button: true,
       label: displayName,
+      value: isPlaying
+          ? i18n.tr('playback_state_playing')
+          : i18n.tr('playback_state_paused'),
+      selected: isPlaying,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(cardRadius),
         child: useBlur
@@ -240,10 +245,15 @@ class _ActiveSessionCard extends ConsumerWidget {
                     featureIcons: featureIcons,
                     color: activeColor,
                     child: _ActiveSessionPlayPauseButton(
-                      showPauseIcon: isPlaying || hasAsmrOnePlaybackError,
+                      showPauseIcon: isPlaying,
                       isLoading: view.loading,
                       enabled: view.trackPath.isNotEmpty && !view.loading,
                       activeColor: activeColor,
+                      semanticLabel: context.read<AppLanguageProvider>().tr(
+                        view.loading
+                            ? 'playback_loading'
+                            : (isPlaying ? 'pause' : 'play'),
+                      ),
                       onPressed: () {
                         AppInteractionFeedback.trigger(
                           AppInteractionFeedbackType.confirmation,
@@ -268,6 +278,7 @@ class _ActiveSessionPlayPauseButton extends StatelessWidget {
     required this.isLoading,
     required this.enabled,
     required this.activeColor,
+    required this.semanticLabel,
     required this.onPressed,
   });
 
@@ -275,52 +286,63 @@ class _ActiveSessionPlayPauseButton extends StatelessWidget {
   final bool isLoading;
   final bool enabled;
   final Color activeColor;
+  final String semanticLabel;
   final VoidCallback onPressed;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    return SizedBox.square(
-      dimension: 48,
-      child: Material(
-        color: Colors.transparent,
-        child: InkResponse(
-          onTap: enabled ? onPressed : null,
-          containedInkWell: true,
-          radius: 24,
-          customBorder: const CircleBorder(),
-          child: Center(
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 120),
-              transitionBuilder: (child, animation) {
-                return ScaleTransition(
-                  scale: Tween<double>(begin: 0.4, end: 1.0).animate(
-                    CurvedAnimation(
-                      parent: animation,
-                      curve: Curves.easeOutBack,
-                    ),
-                  ),
-                  child: FadeTransition(opacity: animation, child: child),
-                );
-              },
-              child: isLoading
-                  ? SizedBox(
-                      key: const ValueKey('loading'),
-                      width: 26,
-                      height: 26,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2.5,
-                        color: activeColor,
+    return Semantics(
+      button: true,
+      enabled: enabled,
+      label: semanticLabel,
+      child: Tooltip(
+        message: semanticLabel,
+        child: SizedBox.square(
+          dimension: 48,
+          child: Material(
+            color: Colors.transparent,
+            child: InkResponse(
+              onTap: enabled ? onPressed : null,
+              containedInkWell: true,
+              radius: 24,
+              customBorder: const CircleBorder(),
+              child: Center(
+                child: AnimatedSwitcher(
+                  duration: MediaQuery.disableAnimationsOf(context)
+                      ? Duration.zero
+                      : AppDesignTokens.of(context).motionFast,
+                  transitionBuilder: (child, animation) {
+                    return ScaleTransition(
+                      scale: Tween<double>(begin: 0.4, end: 1.0).animate(
+                        CurvedAnimation(
+                          parent: animation,
+                          curve: Curves.easeOutBack,
+                        ),
                       ),
-                    )
-                  : Icon(
-                      showPauseIcon
-                          ? Icons.pause_rounded
-                          : Icons.play_arrow_rounded,
-                      key: ValueKey(showPauseIcon),
-                      size: 38,
-                      color: showPauseIcon ? activeColor : cs.onSurface,
-                    ),
+                      child: FadeTransition(opacity: animation, child: child),
+                    );
+                  },
+                  child: isLoading
+                      ? SizedBox(
+                          key: const ValueKey('loading'),
+                          width: 26,
+                          height: 26,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.5,
+                            color: activeColor,
+                          ),
+                        )
+                      : Icon(
+                          showPauseIcon
+                              ? Icons.pause_rounded
+                              : Icons.play_arrow_rounded,
+                          key: ValueKey(showPauseIcon),
+                          size: 38,
+                          color: showPauseIcon ? activeColor : cs.onSurface,
+                        ),
+                ),
+              ),
             ),
           ),
         ),

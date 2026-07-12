@@ -8,16 +8,21 @@ class _PlaylistLoadingSkeleton extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     return ListView(
       physics: const NeverScrollableScrollPhysics(),
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.md,
+        AppSpacing.sm,
+        AppSpacing.md,
+        AppSpacing.xl,
+      ),
       children: [
         for (var index = 0; index < 4; index++)
           Container(
             height: 88,
-            margin: const EdgeInsets.only(bottom: 6),
+            margin: const EdgeInsets.only(bottom: AppSpacing.xs),
             padding: const EdgeInsets.fromLTRB(12, 7, 10, 6),
             decoration: BoxDecoration(
               color: cs.surfaceContainerLow,
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: AppRadius.borderCard,
               border: Border.all(
                 color: cs.outlineVariant.withValues(alpha: 0.32),
               ),
@@ -29,7 +34,7 @@ class _PlaylistLoadingSkeleton extends StatelessWidget {
                   height: 72,
                   decoration: BoxDecoration(
                     color: cs.surfaceContainerHigh,
-                    borderRadius: BorderRadius.circular(14),
+                    borderRadius: AppRadius.borderCard,
                   ),
                 ),
                 const SizedBox(width: 14),
@@ -99,14 +104,19 @@ class _SessionsEmptyState extends StatelessWidget {
     final i18n = context.watch<AppLanguageProvider>();
     final cs = Theme.of(context).colorScheme;
     return Padding(
-      padding: EdgeInsets.fromLTRB(24, topInset, 24, bottomInset),
+      padding: EdgeInsets.fromLTRB(
+        AppSpacing.xl,
+        topInset,
+        AppSpacing.xl,
+        bottomInset,
+      ),
       child: Column(
         children: [
-          const SizedBox(height: 20),
+          const SizedBox(height: AppSpacing.lg),
           Container(
             width: double.infinity,
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(28),
+              borderRadius: AppRadius.borderDialog,
               gradient: LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
@@ -120,7 +130,12 @@ class _SessionsEmptyState extends StatelessWidget {
               ),
             ),
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(24, 42, 24, 42),
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.xl,
+                42,
+                AppSpacing.xl,
+                42,
+              ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -136,7 +151,7 @@ class _SessionsEmptyState extends StatelessWidget {
                           cs.primaryContainer.withValues(alpha: 0.8),
                         ],
                       ),
-                      borderRadius: BorderRadius.circular(24),
+                      borderRadius: AppRadius.borderDialog,
                       boxShadow: [
                         BoxShadow(
                           color: cs.primary.withValues(alpha: 0.12),
@@ -151,7 +166,7 @@ class _SessionsEmptyState extends StatelessWidget {
                       color: cs.onPrimaryContainer,
                     ),
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: AppSpacing.xl),
                   Text(
                     i18n.tr('no_active_sessions'),
                     textAlign: TextAlign.center,
@@ -160,7 +175,7 @@ class _SessionsEmptyState extends StatelessWidget {
                       letterSpacing: -0.5,
                     ),
                   ),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: AppSpacing.sm),
                   Text(
                     i18n.tr('go_library_hint'),
                     textAlign: TextAlign.center,

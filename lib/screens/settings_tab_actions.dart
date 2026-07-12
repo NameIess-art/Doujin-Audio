@@ -34,12 +34,9 @@ extension _SettingsTabActions on _SettingsTabState {
         return;
       }
       if (!result.ok) {
-        final detail = result.message?.trim();
         showAppSnackBar(
           context,
-          detail != null && detail.isNotEmpty
-              ? i18n.tr('update_install_failed_with_detail', {'detail': detail})
-              : i18n.tr('update_install_failed_next_step'),
+          i18n.tr('update_install_failed_next_step'),
           tone: AppFeedbackTone.destructive,
           title: i18n.tr('update_install_failed'),
           icon: Icons.error_outline_rounded,
@@ -83,7 +80,7 @@ extension _SettingsTabActions on _SettingsTabState {
       title: i18n.tr('clear_app_cache'),
       message: i18n.tr('clear_app_cache_confirm'),
       cancelLabel: i18n.tr('cancel'),
-      confirmLabel: i18n.tr('clear'),
+      confirmLabel: i18n.tr('clear_app_cache'),
       icon: Icons.cleaning_services_rounded,
       confirmColor: Theme.of(context).colorScheme.error,
     );
@@ -200,14 +197,23 @@ extension _SettingsTabActions on _SettingsTabState {
             ],
           ),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: Text(i18n.tr('later')),
-            ),
-            FilledButton.icon(
-              onPressed: () => Navigator.of(dialogContext).pop(true),
-              icon: const Icon(Icons.download_rounded),
-              label: Text(i18n.tr('download_update')),
+            Row(
+              children: [
+                Expanded(
+                  child: TextButton(
+                    onPressed: () => Navigator.of(dialogContext).pop(false),
+                    child: Text(i18n.tr('later')),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: () => Navigator.of(dialogContext).pop(true),
+                    icon: const Icon(Icons.download_rounded),
+                    label: Text(i18n.tr('download_update')),
+                  ),
+                ),
+              ],
             ),
           ],
         );

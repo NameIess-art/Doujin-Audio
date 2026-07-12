@@ -910,7 +910,8 @@ class _AudioFeaturesPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final detail = ref.watch(sessionDetailTransportProvider(session.id));
     final effects = detail?.audioEffects ?? session.audioEffects;
-    final channelSwapEnabled = detail?.channelSwapEnabled ?? session.channelSwapEnabled;
+    final channelSwapEnabled =
+        detail?.channelSwapEnabled ?? session.channelSwapEnabled;
     final i18n = context.read<AppLanguageProvider>();
     return ListView(
       padding: const EdgeInsets.only(top: 6),
@@ -924,9 +925,7 @@ class _AudioFeaturesPage extends ConsumerWidget {
             AppInteractionFeedback.trigger(
               AppInteractionFeedbackType.selection,
             );
-            unawaited(
-              provider.setSessionSkipSilence(session.id, value),
-            );
+            unawaited(provider.setSessionSkipSilence(session.id, value));
           },
         ),
         const SizedBox(height: 10),
@@ -939,9 +938,7 @@ class _AudioFeaturesPage extends ConsumerWidget {
             AppInteractionFeedback.trigger(
               AppInteractionFeedbackType.selection,
             );
-            unawaited(
-              provider.setSessionNoiseReduction(session.id, value),
-            );
+            unawaited(provider.setSessionNoiseReduction(session.id, value));
           },
         ),
         const SizedBox(height: 10),
@@ -969,9 +966,7 @@ class _AudioFeaturesPage extends ConsumerWidget {
             AppInteractionFeedback.trigger(
               AppInteractionFeedbackType.selection,
             );
-            unawaited(
-              provider.setSessionChannelSwap(session.id, value),
-            );
+            unawaited(provider.setSessionChannelSwap(session.id, value));
           },
         ),
       ],
@@ -1043,7 +1038,8 @@ class _VolumeBalancePage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final detail = ref.watch(sessionDetailTransportProvider(session.id));
-    final panning = detail?.audioEffects.panning ?? session.audioEffects.panning;
+    final panning =
+        detail?.audioEffects.panning ?? session.audioEffects.panning;
     final colorScheme = Theme.of(context).colorScheme;
 
     return Center(
@@ -1131,7 +1127,7 @@ class _EqualizerPage extends ConsumerWidget {
     final detail = ref.watch(sessionDetailTransportProvider(session.id));
     final effects = detail?.audioEffects ?? session.audioEffects;
     final eqCapabilities = detail?.eqCapabilities ?? session.eqCapabilities;
-    
+
     final i18n = context.read<AppLanguageProvider>();
     final cs = Theme.of(context).colorScheme;
     final presets = [
@@ -1189,9 +1185,7 @@ class _EqualizerPage extends ConsumerWidget {
             AppInteractionFeedback.trigger(
               AppInteractionFeedbackType.selection,
             );
-            unawaited(
-              provider.applySessionEqPreset(session.id, preset),
-            );
+            unawaited(provider.applySessionEqPreset(session.id, preset));
           },
         ),
         const SizedBox(height: 12),
@@ -1253,9 +1247,7 @@ class _EqualizerPage extends ConsumerWidget {
               child: FilledButton.tonal(
                 onPressed: () {
                   final flat = AudioProvider.builtInEqPresets.first;
-                  unawaited(
-                    provider.applySessionEqPreset(session.id, flat),
-                  );
+                  unawaited(provider.applySessionEqPreset(session.id, flat));
                 },
                 child: Text(i18n.tr('eq_reset')),
               ),
@@ -1297,13 +1289,26 @@ class _EqualizerPage extends ConsumerWidget {
             decoration: InputDecoration(labelText: i18n.tr('eq_preset_name')),
           ),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: Text(MaterialLocalizations.of(context).cancelButtonLabel),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(context).pop(controller.text),
-              child: Text(MaterialLocalizations.of(context).okButtonLabel),
+            Row(
+              children: [
+                Expanded(
+                  child: TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: Text(
+                      MaterialLocalizations.of(context).cancelButtonLabel,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: FilledButton(
+                    onPressed: () => Navigator.of(context).pop(controller.text),
+                    child: Text(
+                      MaterialLocalizations.of(context).okButtonLabel,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ],
         );
@@ -1475,8 +1480,9 @@ class _SpeedWheelPageState extends ConsumerState<_SpeedWheelPage> {
       final baseIndex = _targetDesktopWheelIndex != -1
           ? _targetDesktopWheelIndex
           : _selectedIndex;
-      final nextIndex =
-          (baseIndex + steps).clamp(0, _speeds.length - 1).toInt();
+      final nextIndex = (baseIndex + steps)
+          .clamp(0, _speeds.length - 1)
+          .toInt();
       if (nextIndex == baseIndex) {
         _desktopScrollAccumulator = 0.0;
         return;
@@ -1484,16 +1490,16 @@ class _SpeedWheelPageState extends ConsumerState<_SpeedWheelPage> {
       _targetDesktopWheelIndex = nextIndex;
       _controller
           .animateToItem(
-        nextIndex,
-        duration: const Duration(milliseconds: 150),
-        curve: Curves.easeOutCubic,
-      )
+            nextIndex,
+            duration: const Duration(milliseconds: 150),
+            curve: Curves.easeOutCubic,
+          )
           .then((_) {
-        if (!mounted) return;
-        if (_targetDesktopWheelIndex == nextIndex) {
-          _targetDesktopWheelIndex = -1;
-        }
-      });
+            if (!mounted) return;
+            if (_targetDesktopWheelIndex == nextIndex) {
+              _targetDesktopWheelIndex = -1;
+            }
+          });
     });
   }
 
@@ -1511,7 +1517,7 @@ class _SpeedWheelPageState extends ConsumerState<_SpeedWheelPage> {
   Widget build(BuildContext context) {
     final detail = ref.watch(sessionDetailTransportProvider(widget.session.id));
     final speed = detail?.speed ?? widget.session.speed;
-    
+
     final nextIndex = _nearestSpeedIndex(speed);
     if (nextIndex != _selectedIndex) {
       _selectedIndex = nextIndex;
@@ -1743,16 +1749,25 @@ Future<Duration?> _showSegmentTimeInputDialog(
         },
       ),
       actions: [
-        TextButton(
-          onPressed: () => Navigator.of(ctx).pop(),
-          child: Text(i18n.tr('cancel')),
-        ),
-        FilledButton(
-          onPressed: () {
-            final parsed = _parseSegmentTime(controller.text);
-            if (parsed != null) Navigator.of(ctx).pop(parsed);
-          },
-          child: Text(i18n.tr('confirm')),
+        Row(
+          children: [
+            Expanded(
+              child: TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: Text(i18n.tr('cancel')),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: FilledButton(
+                onPressed: () {
+                  final parsed = _parseSegmentTime(controller.text);
+                  if (parsed != null) Navigator.of(ctx).pop(parsed);
+                },
+                child: Text(i18n.tr('confirm')),
+              ),
+            ),
+          ],
         ),
       ],
     ),

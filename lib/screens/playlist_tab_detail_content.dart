@@ -332,7 +332,7 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
       title: i18n.tr('segment_delete_title'),
       message: i18n.tr('segment_delete_confirm', {'name': selected.name}),
       cancelLabel: i18n.tr('cancel'),
-      confirmLabel: i18n.tr('remove'),
+      confirmLabel: i18n.tr('segment_delete_title'),
       icon: Icons.sell_rounded,
     );
     if (!confirmed || !mounted) return;

@@ -451,10 +451,9 @@ extension AudioProviderPlaybackSessions on AudioProvider {
               host == 'api.asmr-300.com';
           if (!isAsmrOne) return <Uri>[uri];
           return AsmrApiService.defaultDomains.map(
-            (domain) => Uri.parse(domain).replace(
-              path: uri.path,
-              query: uri.hasQuery ? uri.query : null,
-            ),
+            (domain) => Uri.parse(
+              domain,
+            ).replace(path: uri.path, query: uri.hasQuery ? uri.query : null),
           );
         })
         .toSet()

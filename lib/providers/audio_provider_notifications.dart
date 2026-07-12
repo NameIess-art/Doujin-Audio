@@ -1,8 +1,6 @@
 part of 'audio_provider.dart';
 
 extension AudioProviderNotifications on AudioProvider {
-
-
   Future<void> playPrimarySessionFromNotification() {
     return _notificationStateService.guardNotificationAction(
       () async {

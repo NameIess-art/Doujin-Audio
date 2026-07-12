@@ -204,13 +204,13 @@ class _AsmrDownloadPageState extends State<AsmrDownloadPage> {
       );
       if (!mounted) return;
       unawaited(Navigator.of(context).maybePop());
-    } catch (error) {
+    } catch (_) {
       if (!mounted) return;
       showAppSnackBar(
         context,
         i18n.tr('asmr_download_failed_next_step'),
         tone: AppFeedbackTone.destructive,
-        title: i18n.tr('asmr_download_failed', {'error': error}),
+        title: i18n.tr('asmr_download_failed_title'),
         icon: Icons.error_outline_rounded,
         iconColor: asmrBlue,
         actionLabel: i18n.tr('retry'),
@@ -464,7 +464,8 @@ class _TaskCard extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  if (task.status != AsmrDownloadTaskStatus.completed && task.status != AsmrDownloadTaskStatus.failed)
+                  if (task.status != AsmrDownloadTaskStatus.completed &&
+                      task.status != AsmrDownloadTaskStatus.failed)
                     SizedBox(
                       width: 32,
                       height: 32,

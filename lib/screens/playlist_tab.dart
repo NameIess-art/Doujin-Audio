@@ -24,6 +24,7 @@ import '../services/subtitle_overlay_controller.dart';
 import '../services/time_text_formatters.dart';
 import '../services/ui_interaction_coordinator.dart';
 import '../theme/app_design_tokens.dart';
+import '../theme/app_styles.dart';
 import '../widgets/app_feedback.dart';
 import '../widgets/app_transitions.dart';
 import '../widgets/async_cover_image.dart';
@@ -396,7 +397,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
       title: i18n.tr('clear_all_sessions'),
       message: i18n.tr('stop_remove_all_sessions'),
       cancelLabel: i18n.tr('cancel'),
-      confirmLabel: i18n.tr('clear'),
+      confirmLabel: i18n.tr('clear_all_sessions'),
       icon: Icons.delete_sweep_rounded,
     );
     if (!confirmed || !mounted) return;

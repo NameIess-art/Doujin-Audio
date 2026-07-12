@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/audio_provider_riverpod.dart';
 import '../theme/app_design_tokens.dart';
+import '../theme/app_styles.dart';
 import 'marquee_text.dart';
 
 class TopPageHeader extends ConsumerStatefulWidget {
@@ -20,8 +21,13 @@ class TopPageHeader extends ConsumerStatefulWidget {
     this.subtitleMaxLines = 1,
     this.subtitleFontSize,
     this.fitSubtitleToWidth = false,
-    this.padding = const EdgeInsets.fromLTRB(24, 6, 20, 0),
-    this.bottomSpacing = 10,
+    this.padding = const EdgeInsets.fromLTRB(
+      AppSpacing.xl,
+      AppSpacing.xs,
+      AppSpacing.lg,
+      0,
+    ),
+    this.bottomSpacing = AppSpacing.sm,
     this.useSafeAreaTop = true,
     this.additionalChild,
     this.marqueeTitle = false,
@@ -31,8 +37,13 @@ class TopPageHeader extends ConsumerStatefulWidget {
     this.floatingReveal = false,
     this.floatingRevealDistance = 64,
     this.floatingRevealTriggerDistance = 124,
-    this.collapsedPadding = const EdgeInsets.fromLTRB(16, 4, 12, 0),
-    this.collapsedBottomSpacing = 6,
+    this.collapsedPadding = const EdgeInsets.fromLTRB(
+      AppSpacing.md,
+      AppSpacing.xxs,
+      AppSpacing.sm,
+      0,
+    ),
+    this.collapsedBottomSpacing = AppSpacing.xs,
   });
 
   final IconData? icon;
@@ -187,6 +198,8 @@ class _TopPageHeaderState extends ConsumerState<TopPageHeader> {
       )!;
       final subtitleFactor = 1 - collapseT;
       final trailingFactor = 1 - collapseT;
+      final prefersExpandedText =
+          MediaQuery.textScalerOf(context).scale(1) > 1.3;
 
       return Padding(
         padding: resolvedPadding,
@@ -198,7 +211,7 @@ class _TopPageHeaderState extends ConsumerState<TopPageHeader> {
                 SizedBox(height: 44 * trailingFactor),
                 if (widget.leading != null) ...[
                   widget.leading!,
-                  const SizedBox(width: 8),
+                  const SizedBox(width: AppSpacing.xs),
                 ],
                 Expanded(
                   child: widget.marqueeTitle
@@ -216,18 +229,18 @@ class _TopPageHeaderState extends ConsumerState<TopPageHeader> {
                           header: true,
                           child: Text(
                             resolvedTitle,
-                            maxLines: 1,
+                            maxLines: prefersExpandedText ? 2 : 1,
                             overflow: TextOverflow.ellipsis,
                             style: titleStyle,
                           ),
                         ),
                 ),
                 if (widget.titleSuffix != null) ...[
-                  const SizedBox(width: 8),
+                  const SizedBox(width: AppSpacing.xs),
                   widget.titleSuffix!,
                 ],
                 if (widget.trailing != null) ...[
-                  SizedBox(width: 12 * trailingFactor),
+                  SizedBox(width: AppSpacing.sm * trailingFactor),
                   ClipRect(
                     child: Align(
                       widthFactor: trailingFactor,
@@ -256,7 +269,7 @@ class _TopPageHeaderState extends ConsumerState<TopPageHeader> {
                   child: Opacity(
                     opacity: subtitleFactor,
                     child: Padding(
-                      padding: const EdgeInsets.only(top: 4),
+                      padding: const EdgeInsets.only(top: AppSpacing.xxs),
                       child: LayoutBuilder(
                         builder: (context, constraints) {
                           final style = Theme.of(context).textTheme.bodySmall
@@ -269,11 +282,14 @@ class _TopPageHeaderState extends ConsumerState<TopPageHeader> {
                           final text = Text(
                             widget.subtitle!,
                             maxLines: widget.subtitleMaxLines,
-                            softWrap: false,
+                            softWrap: prefersExpandedText,
                             overflow: TextOverflow.ellipsis,
                             style: style,
                           );
-                          if (!widget.fitSubtitleToWidth) return text;
+                          if (!widget.fitSubtitleToWidth ||
+                              prefersExpandedText) {
+                            return text;
+                          }
                           return SizedBox(
                             width: constraints.maxWidth,
                             height: (widget.subtitleFontSize ?? 11) * 1.18,
@@ -335,7 +351,10 @@ class _TopPageHeaderState extends ConsumerState<TopPageHeader> {
           return Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [buildHeaderContent(collapseT), ?widget.additionalChild],
+            children: [
+              buildHeaderContent(collapseT),
+              if (widget.additionalChild != null) widget.additionalChild!,
+            ],
           );
         },
       ),

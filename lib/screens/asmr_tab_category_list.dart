@@ -162,23 +162,17 @@ class _AsmrCategoryListState extends State<_AsmrCategoryList>
                                       : 0),
                         itemBuilder: (context, index) {
                           if (works.isEmpty) {
-                            final errorText = state.lastError != null
-                                ? state.lastError.toString()
-                                : i18n.tr('asmr_empty_category');
+                            final errorText = state.lastError?.toString();
                             return Padding(
-                              padding: const EdgeInsets.only(
-                                top: 80,
-                                left: 32,
-                                right: 32,
-                              ),
-                              child: Center(
-                                child: Text(
-                                  errorText,
-                                  textAlign: TextAlign.center,
-                                  style: theme.textTheme.bodyLarge?.copyWith(
-                                    color: theme.colorScheme.onSurfaceVariant,
-                                  ),
-                                ),
+                              padding: const EdgeInsets.only(top: 80),
+                              child: AppEmptyView(
+                                icon: state.lastError != null
+                                    ? Icons.error_outline_rounded
+                                    : Icons.search_off_rounded,
+                                title: state.lastError != null
+                                    ? i18n.tr('error')
+                                    : i18n.tr('asmr_empty_category'),
+                                subtitle: errorText,
                               ),
                             );
                           }

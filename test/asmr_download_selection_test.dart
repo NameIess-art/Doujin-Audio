@@ -26,11 +26,7 @@ void main() {
     );
   }
 
-  AsmrTrackFile file(
-    String title,
-    String relativePath, {
-    int size = 1024,
-  }) {
+  AsmrTrackFile file(String title, String relativePath, {int size = 1024}) {
     return AsmrTrackFile(
       hash: relativePath,
       title: title,
@@ -48,42 +44,42 @@ void main() {
     );
   }
 
-  test('selecting a folder cascades to descendants and prunes selected roots', () {
-    final tree = <AsmrTrackFile>[
-      folder(
-        'Disc 1',
-        'Disc 1',
-        children: [
-          file('Track 1', 'Disc 1/Track 1.mp3'),
-          file('Track 2', 'Disc 1/Track 2.mp3'),
-          folder('Bonus', 'Disc 1/Bonus'),
-        ],
-      ),
-    ];
-    final model = AsmrDownloadSelectionModel(tree);
+  test(
+    'selecting a folder cascades to descendants and prunes selected roots',
+    () {
+      final tree = <AsmrTrackFile>[
+        folder(
+          'Disc 1',
+          'Disc 1',
+          children: [
+            file('Track 1', 'Disc 1/Track 1.mp3'),
+            file('Track 2', 'Disc 1/Track 2.mp3'),
+            folder('Bonus', 'Disc 1/Bonus'),
+          ],
+        ),
+      ];
+      final model = AsmrDownloadSelectionModel(tree);
 
-    model.togglePath('Disc 1', true);
-    expect(model.stateForPath('Disc 1'), true);
-    expect(model.stateForPath('Disc 1/Track 1.mp3'), true);
-    expect(model.stateForPath('Disc 1/Bonus'), true);
-    expect(model.selectedLeafCount(), 2);
-    expect(
-      model.selectedDownloadRoots().map((node) => node.relativePath),
-      equals(<String>['Disc 1']),
-    );
+      model.togglePath('Disc 1', true);
+      expect(model.stateForPath('Disc 1'), true);
+      expect(model.stateForPath('Disc 1/Track 1.mp3'), true);
+      expect(model.stateForPath('Disc 1/Bonus'), true);
+      expect(model.selectedLeafCount(), 2);
+      expect(
+        model.selectedDownloadRoots().map((node) => node.relativePath),
+        equals(<String>['Disc 1']),
+      );
 
-    model.togglePath('Disc 1/Track 1.mp3', false);
-    expect(model.stateForPath('Disc 1'), null);
-    expect(model.stateForPath('Disc 1/Track 1.mp3'), false);
-    expect(model.stateForPath('Disc 1/Track 2.mp3'), true);
-    expect(
-      model.selectedDownloadRoots().map((node) => node.relativePath),
-      equals(<String>[
-        'Disc 1/Track 2.mp3',
-        'Disc 1/Bonus',
-      ]),
-    );
-  });
+      model.togglePath('Disc 1/Track 1.mp3', false);
+      expect(model.stateForPath('Disc 1'), null);
+      expect(model.stateForPath('Disc 1/Track 1.mp3'), false);
+      expect(model.stateForPath('Disc 1/Track 2.mp3'), true);
+      expect(
+        model.selectedDownloadRoots().map((node) => node.relativePath),
+        equals(<String>['Disc 1/Track 2.mp3', 'Disc 1/Bonus']),
+      );
+    },
+  );
 
   test('selectedTotalSizeBytes sums selected files only', () {
     final tree = <AsmrTrackFile>[
@@ -118,38 +114,37 @@ void main() {
     expect(model.selectedTotalSizeBytes(), 4608);
   });
 
-  test('selecting a leaf selects its direct parent and keeps higher ancestors indeterminate', () {
-    final tree = <AsmrTrackFile>[
-      folder(
-        'Root',
-        'Root',
-        children: [
-          folder(
-            'Disc 1',
-            'Root/Disc 1',
-            children: [
-              file('Track 1', 'Root/Disc 1/Track 1.mp3'),
-            ],
-          ),
-          folder(
-            'Disc 2',
-            'Root/Disc 2',
-            children: [
-              file('Track 2', 'Root/Disc 2/Track 2.mp3'),
-            ],
-          ),
-        ],
-      ),
-    ];
-    final model = AsmrDownloadSelectionModel(tree);
+  test(
+    'selecting a leaf selects its direct parent and keeps higher ancestors indeterminate',
+    () {
+      final tree = <AsmrTrackFile>[
+        folder(
+          'Root',
+          'Root',
+          children: [
+            folder(
+              'Disc 1',
+              'Root/Disc 1',
+              children: [file('Track 1', 'Root/Disc 1/Track 1.mp3')],
+            ),
+            folder(
+              'Disc 2',
+              'Root/Disc 2',
+              children: [file('Track 2', 'Root/Disc 2/Track 2.mp3')],
+            ),
+          ],
+        ),
+      ];
+      final model = AsmrDownloadSelectionModel(tree);
 
-    model.togglePath('Root/Disc 1/Track 1.mp3', true);
-    expect(model.stateForPath('Root'), null);
-    expect(model.stateForPath('Root/Disc 1'), true);
-    expect(model.stateForPath('Root/Disc 1/Track 1.mp3'), true);
-    expect(
-      model.selectedDownloadRoots().map((node) => node.relativePath),
-      equals(<String>['Root/Disc 1']),
-    );
-  });
+      model.togglePath('Root/Disc 1/Track 1.mp3', true);
+      expect(model.stateForPath('Root'), null);
+      expect(model.stateForPath('Root/Disc 1'), true);
+      expect(model.stateForPath('Root/Disc 1/Track 1.mp3'), true);
+      expect(
+        model.selectedDownloadRoots().map((node) => node.relativePath),
+        equals(<String>['Root/Disc 1']),
+      );
+    },
+  );
 }

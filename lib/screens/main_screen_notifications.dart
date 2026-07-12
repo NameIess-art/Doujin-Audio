@@ -82,6 +82,8 @@ extension _MainScreenNotifications on _MainScreenState {
       cancelLabel: i18n.tr('later'),
       confirmLabel: i18n.tr('go_settings'),
       icon: Icons.battery_saver_rounded,
+      confirmIcon: Icons.settings_rounded,
+      isDestructive: false,
     );
     if (openSettings != true) return;
     await _openBatteryOptimizationSettings();
@@ -169,6 +171,8 @@ extension _MainScreenNotifications on _MainScreenState {
       cancelLabel: _laterLabel(i18n),
       confirmLabel: _openSettingsLabel(i18n),
       icon: Icons.notifications_active_rounded,
+      confirmIcon: Icons.settings_rounded,
+      isDestructive: false,
     );
     _notificationSettingsDialogVisible = false;
     if (openSettings != true) return;

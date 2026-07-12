@@ -244,7 +244,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('ASMR playback errors show retry subtitle and pause icon', (
+  testWidgets('ASMR playback errors show retry subtitle and play icon', (
     tester,
   ) async {
     final themeProvider = ThemeProvider();
@@ -340,8 +340,8 @@ void main() {
       find.text(languageProvider.tr('asmr_playback_network_failed_retry')),
       findsOneWidget,
     );
-    expect(find.byIcon(Icons.pause_rounded), findsOneWidget);
-    expect(find.byIcon(Icons.play_arrow_rounded), findsNothing);
+    expect(find.byIcon(Icons.pause_rounded), findsNothing);
+    expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget);
     expect(tester.takeException(), isNull);
 
     await tester.pumpWidget(const SizedBox.shrink());

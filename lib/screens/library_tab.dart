@@ -15,7 +15,6 @@ import '../i18n/app_language_provider.dart';
 import '../providers/audio_provider.dart';
 import '../providers/audio_provider_riverpod.dart';
 import '../services/audio_state_services.dart';
-import '../services/app_log_service.dart';
 import '../services/app_preferences.dart';
 import '../services/file_cache_platform_gateway.dart';
 import '../services/media_file_support.dart';
@@ -31,6 +30,7 @@ import '../widgets/async_cover_image.dart';
 import '../widgets/confirm_action_dialog.dart';
 import '../widgets/content_bound_reorder_area.dart';
 import '../widgets/library_like_cards.dart';
+import '../widgets/duration_overlay.dart';
 import '../widgets/mobile_overlay_inset.dart';
 import '../widgets/operation_feedback.dart';
 import '../widgets/reorder_auto_scroller.dart';
@@ -49,6 +49,7 @@ import '../theme/app_styles.dart';
 import '../platform/app_platform.dart';
 
 import '../widgets/app_buttons.dart';
+import 'main_tab_state_mixin.dart';
 
 part 'library_tab_ui_helpers.dart';
 part 'library_tab_empty_scan.dart';
@@ -78,7 +79,7 @@ class LibraryTab extends ConsumerStatefulWidget {
 }
 
 class _LibraryTabState extends ConsumerState<LibraryTab>
-    with AutomaticKeepAliveClientMixin {
+    with AutomaticKeepAliveClientMixin, MainTabStateMixin<LibraryTab> {
   final _scanner = LibraryScannerService();
 
   @override
@@ -114,37 +115,26 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
 
   final GlobalKey<GlassRefreshIndicatorState> _refreshIndicatorKey =
       GlobalKey<GlassRefreshIndicatorState>();
-  final GlobalKey _headerKey = GlobalKey();
-  double _headerHeight = 90;
 
   final ScrollController _scrollController = ScrollController();
-  ValueListenable<int?>? _scrollToTopTabListenable;
   int? _categorySnapshotRequestStructureRevision;
   int? _categorySnapshotRequestDetailRevision;
   String? _lastLibraryCoverWarmupSignature;
 
-  double get _headerControlsFullHeight =>
+  @override
+  int get tabIndex => 1;
+
+  @override
+  double get headerControlsFullHeight =>
       _categoryType == AudioLibraryCategoryType.all ? 86.0 : 42.0;
+
+  @override
+  ScrollController get mainScrollController => _scrollController;
 
   String get _effectiveSearchQuery =>
       _categoryType == AudioLibraryCategoryType.all ? _searchQuery : '';
 
   void _setLocalState(VoidCallback fn) => setState(fn);
-
-  Future<T> _runLibraryOperation<T>({
-    required UiOperationScope scope,
-    required String labelKey,
-    required Future<T> Function() task,
-  }) {
-    return ref
-        .read(uiOperationServiceProvider)
-        .run<T>(
-          scope: scope,
-          labelKey: labelKey,
-          task: (_) => task(),
-          cancelPrevious: false,
-        );
-  }
 
   void _ensureFilteredSearchSnapshot({
     required List<LibraryNode> tree,
@@ -227,53 +217,44 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
       if (!silent) showAppSnackBar(context, i18n.tr('scanning_title'));
       return;
     }
-    try {
-      await _runLibraryOperation<void>(
-        scope: UiOperationScope.libraryRefresh,
-        labelKey: 'loading_dot',
-        task: () => _scanner.refreshWatchedFolders(
-          provider: provider,
-          i18n: i18n,
-          showSnack: (msg) {
-            if (!mounted) return;
-            final isFailure =
-                msg == i18n.tr('scan_failed_next_step') ||
-                msg == i18n.tr('import_failed_next_step');
-            final isCancelled = msg == i18n.tr('scan_cancelled');
-            showAppSnackBar(
-              context,
-              msg,
-              tone: isFailure
-                  ? AppFeedbackTone.destructive
-                  : (isCancelled
-                        ? AppFeedbackTone.warning
-                        : AppFeedbackTone.success),
-              icon: isFailure
-                  ? Icons.error_outline_rounded
-                  : (isCancelled
-                        ? Icons.cancel_outlined
-                        : Icons.check_circle_outline_rounded),
-            );
-          },
-          silent: silent,
-          forceShowResult: forceShowResult,
-        ),
-      );
-    } catch (error, stackTrace) {
-      AppLogService.error(
-        'library_refresh_failed',
-        error: error,
-        stackTrace: stackTrace,
-      );
-      if (!mounted || (silent && !forceShowResult)) return;
-      _showLibraryFailure(
-        messageKey: 'scan_failed_next_step',
-        retry: () => _scheduleWatchedFoldersRefresh(
-          silent: silent,
-          forceShowResult: forceShowResult,
-        ),
-      );
-    }
+    await ref.read(uiOperationServiceProvider).runWithFeedback<void>(
+      context: context,
+      scope: UiOperationScope.libraryRefresh,
+      labelKey: 'loading_dot',
+      failureMessageKey: 'scan_failed_next_step',
+      cancelPrevious: false,
+      onRetry: () => _scheduleWatchedFoldersRefresh(
+        silent: silent,
+        forceShowResult: forceShowResult,
+      ),
+      task: (_) => _scanner.refreshWatchedFolders(
+        provider: provider,
+        i18n: i18n,
+        showSnack: (msg) {
+          if (!mounted) return;
+          final isFailure =
+              msg == i18n.tr('scan_failed_next_step') ||
+              msg == i18n.tr('import_failed_next_step');
+          final isCancelled = msg == i18n.tr('scan_cancelled');
+          showAppSnackBar(
+            context,
+            msg,
+            tone: isFailure
+                ? AppFeedbackTone.destructive
+                : (isCancelled
+                      ? AppFeedbackTone.warning
+                      : AppFeedbackTone.success),
+            icon: isFailure
+                ? Icons.error_outline_rounded
+                : (isCancelled
+                      ? Icons.cancel_outlined
+                      : Icons.check_circle_outline_rounded),
+          );
+        },
+        silent: silent,
+        forceShowResult: forceShowResult,
+      ),
+    );
   }
 
   Future<void> _runLibraryPullRefresh({bool showSnackbar = false}) async {
@@ -301,28 +282,28 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   }) async {
     final i18n = context.read<AppLanguageProvider>();
     final provider = context.read<AudioProvider>();
-    try {
-      await _runLibraryOperation<void>(
-        scope: switch (logEvent) {
-          'library_import_files_failed' => UiOperationScope.libraryImportFiles,
-          'library_import_library_failed' =>
-            UiOperationScope.libraryImportLibrary,
-          _ => UiOperationScope.libraryImportFolder,
+    await ref.read(uiOperationServiceProvider).runWithFeedback<void>(
+      context: context,
+      scope: switch (logEvent) {
+        'library_import_files_failed' => UiOperationScope.libraryImportFiles,
+        'library_import_library_failed' =>
+          UiOperationScope.libraryImportLibrary,
+        _ => UiOperationScope.libraryImportFolder,
+      },
+      labelKey: 'loading_dot',
+      failureMessageKey: 'import_failed_next_step',
+      cancelPrevious: false,
+      onRetry: () {
+        unawaited(retry());
+      },
+      task: (_) => action(
+        provider: provider,
+        i18n: i18n,
+        showSnack: (msg) {
+          if (mounted) showAppSnackBar(context, msg);
         },
-        labelKey: 'loading_dot',
-        task: () => action(
-          provider: provider,
-          i18n: i18n,
-          showSnack: (msg) {
-            if (mounted) showAppSnackBar(context, msg);
-          },
-        ),
-      );
-    } catch (error, stackTrace) {
-      AppLogService.error(logEvent, error: error, stackTrace: stackTrace);
-      if (!mounted) return;
-      _showLibraryFailure(messageKey: 'import_failed_next_step', retry: retry);
-    }
+      ),
+    );
   }
 
   Future<void> _addFolder() {
@@ -349,72 +330,15 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     );
   }
 
-  void _showLibraryFailure({
-    required String messageKey,
-    required Future<void> Function() retry,
-  }) {
-    final i18n = context.read<AppLanguageProvider>();
-    showAppSnackBar(
-      context,
-      i18n.tr(messageKey),
-      tone: AppFeedbackTone.destructive,
-      title: i18n.tr('operation_failed'),
-      icon: Icons.error_outline_rounded,
-      actionLabel: i18n.tr('retry'),
-      onAction: () => unawaited(retry()),
-      duration: const Duration(seconds: 6),
-    );
-  }
-
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         unawaited(_scheduleWatchedFoldersRefresh(silent: true));
-        _measureHeader();
-        _scrollToTopTabListenable = ref
-            .read(audioProviderFacadeProvider)
-            .scrollToTopTabListenable;
-        _scrollToTopTabListenable?.addListener(_handleScrollToTopSignal);
       }
     });
-  }
-
-  void _handleScrollToTopSignal() {
-    if (!mounted) return;
-    final index = _scrollToTopTabListenable?.value;
-    if (index == 1) {
-      // 1 is LibraryTab after inserting ASMR.ONE on the left.
-      _jumpLibraryListToTop();
-    }
-  }
-
-  void _jumpLibraryListToTop() {
-    if (!_scrollController.hasClients) return;
-    const fakeAnimationStartOffset = 360.0;
-    final animationStartOffset =
-        _scrollController.position.maxScrollExtent < fakeAnimationStartOffset
-        ? _scrollController.position.maxScrollExtent
-        : fakeAnimationStartOffset;
-    if (_scrollController.offset > animationStartOffset) {
-      _scrollController.jumpTo(animationStartOffset);
-    }
-    _scrollController.animateTo(
-      0,
-      duration: const Duration(milliseconds: 260),
-      curve: Curves.easeOutCubic,
-    );
-  }
-
-  void _measureHeader() {
-    final box = _headerKey.currentContext?.findRenderObject() as RenderBox?;
-    if (box != null && mounted) {
-      final h = box.size.height - _headerControlsFullHeight;
-      if (h > 0 && h != _headerHeight) {
-        setState(() => _headerHeight = h);
-      }
-    }
+    initTabState(ref.read(audioProviderFacadeProvider).scrollToTopTabListenable);
   }
 
   void _ensureCategorySnapshot({
@@ -503,7 +427,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
 
   @override
   void dispose() {
-    _scrollToTopTabListenable?.removeListener(_handleScrollToTopSignal);
+    disposeTabState();
     _searchDebounceTimer?.cancel();
     _searchController.dispose();
     _scrollController.dispose();
@@ -591,8 +515,8 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         searchQuery.isNotEmpty && visibleSearchResult == null;
     final bottomInset = MobileOverlayInset.of(context);
 
-    final headerControlsFullHeight = _headerControlsFullHeight;
-    final topTotalHeight = _headerHeight + 4;
+    final headerControlsFullHeight = this.headerControlsFullHeight;
+    final topTotalHeight = headerHeight + 4;
     final headerContentHeight = topTotalHeight + headerControlsFullHeight;
     // Remove the extra 96px to make content flush with the bottom dock.
     final listBottomInset = bottomInset;
@@ -790,7 +714,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                 ),
               ),
               child: ContentBoundReorderArea(
-                headerHeight: _headerHeight,
+                headerHeight: headerHeight,
                 bottomInset: listViewportBottomInset,
                 topExpansion: expansion,
                 bottomExpansion: expansion,
@@ -979,7 +903,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
               left: 0,
               right: 0,
               child: TopPageHeader(
-                key: _headerKey,
+                key: headerKey,
                 icon: Icons.library_music_rounded,
                 title: i18n.tr('music_library'),
                 subtitle: i18n.tr('audio_count', {

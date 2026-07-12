@@ -20,6 +20,7 @@ class FolderNode extends LibraryNode {
   MusicTrack? _firstTrackCache;
   int? _cachedTotalTrackCount;
   int? _cachedLeafFolderCount;
+  Duration? _cachedTotalDuration;
 
   bool get isModuleNode => depth == 0;
 
@@ -71,6 +72,19 @@ class FolderNode extends LibraryNode {
     return allTracks.length;
   }
 
+  Duration get totalDuration {
+    final cached = _cachedTotalDuration;
+    if (cached != null) {
+      return cached;
+    }
+    final duration = allTracks.fold<Duration>(
+      Duration.zero,
+      (sum, track) => sum + track.duration,
+    );
+    _cachedTotalDuration = duration;
+    return duration;
+  }
+
   int get leafFolderCount {
     final cached = _cachedLeafFolderCount;
     if (cached != null) {
@@ -89,10 +103,12 @@ class FolderNode extends LibraryNode {
     required int totalTrackCount,
     required int leafFolderCount,
     required MusicTrack? firstTrack,
+    Duration? totalDuration,
   }) {
     _cachedTotalTrackCount = totalTrackCount;
     _cachedLeafFolderCount = leafFolderCount;
     _firstTrackCache = firstTrack;
+    _cachedTotalDuration = totalDuration;
   }
 }
 

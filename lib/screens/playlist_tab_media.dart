@@ -108,6 +108,7 @@ class _SessionCoverThumbnail extends StatefulWidget {
     required this.coverPath,
     required this.coverGeneration,
     required this.coverCacheWidth,
+    this.duration,
   });
 
   static const double _width = 96;
@@ -118,6 +119,7 @@ class _SessionCoverThumbnail extends StatefulWidget {
   final String? coverPath;
   final int coverGeneration;
   final int? coverCacheWidth;
+  final Duration? duration;
 
   @override
   State<_SessionCoverThumbnail> createState() => _SessionCoverThumbnailState();
@@ -142,29 +144,39 @@ class _SessionCoverThumbnailState extends State<_SessionCoverThumbnail> {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: _SessionCoverThumbnail._width,
-      height: _SessionCoverThumbnail._height,
-      child: Material(
-        type: MaterialType.transparency,
-        borderRadius: BorderRadius.circular(LibraryLikeCardMetrics.coverRadius),
-        clipBehavior: Clip.antiAlias,
-        child: AsyncLocalCoverImage(
-          future: _futureFor(context.read<AudioProvider>()),
-          initialPath: widget.coverPath,
-          retryFutureBuilder: () =>
-              _coverFutureForTrack(context.read<AudioProvider>(), widget.track),
-          seed:
-              widget.track?.displayName ??
-              widget.track?.path ??
-              widget.sessionId,
-          cacheWidth: widget.coverCacheWidth,
-          useDefaultCacheWidth: widget.coverCacheWidth != null,
-          fit: BoxFit.cover,
-          compact: true,
-          iconSize: 26,
+    return Stack(
+      children: [
+        SizedBox(
+          width: _SessionCoverThumbnail._width,
+          height: _SessionCoverThumbnail._height,
+          child: Material(
+            type: MaterialType.transparency,
+            borderRadius: BorderRadius.circular(LibraryLikeCardMetrics.coverRadius),
+            clipBehavior: Clip.antiAlias,
+            child: AsyncLocalCoverImage(
+              future: _futureFor(context.read<AudioProvider>()),
+              initialPath: widget.coverPath,
+              retryFutureBuilder: () =>
+                  _coverFutureForTrack(context.read<AudioProvider>(), widget.track),
+              seed:
+                  widget.track?.displayName ??
+                  widget.track?.path ??
+                  widget.sessionId,
+              cacheWidth: widget.coverCacheWidth,
+              useDefaultCacheWidth: widget.coverCacheWidth != null,
+              fit: BoxFit.cover,
+              compact: true,
+              iconSize: 26,
+            ),
+          ),
         ),
-      ),
+        if (widget.duration != null && widget.duration! > Duration.zero)
+          Positioned(
+            right: 4,
+            bottom: 4,
+            child: DurationOverlay(duration: widget.duration!),
+          ),
+      ],
     );
   }
 }

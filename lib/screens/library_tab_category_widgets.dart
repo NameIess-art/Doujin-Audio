@@ -763,6 +763,7 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
               title: _RootFolderCardContent(
                 folderPath: entry.path,
                 folderName: entry.title,
+                folderDuration: folderNode.totalDuration,
                 detail: entry.detail,
                 detailLoading: false,
                 expanded: false,
@@ -851,6 +852,7 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
           child: _RootFolderCardContent(
             folderPath: entry.path,
             folderName: entry.title,
+            folderDuration: folder?.totalDuration ?? Duration.zero,
             detail: entry.detail,
             detailLoading: false,
             expanded: false,

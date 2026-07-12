@@ -44,10 +44,10 @@ extension _LibraryTabUiHelpers on _LibraryTabState {
               onTap: () {
                 if (_categoryType == items[index].type) return;
                 FocusScope.of(context).unfocus();
-                _jumpLibraryListToTop();
+
                 _setLocalState(() => _categoryType = items[index].type);
                 WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (mounted) _measureHeader();
+                  if (mounted) measureHeader();
                 });
               },
             ),
@@ -95,7 +95,7 @@ extension _LibraryTabUiHelpers on _LibraryTabState {
                         onPressed: () {
                           _searchController.clear();
                           _searchDebounceTimer?.cancel();
-                          _jumpLibraryListToTop();
+                          jumpToTop();
                           _setLocalState(() => _searchQuery = '');
                         },
                         color: cs.onSurfaceVariant,
@@ -142,7 +142,7 @@ extension _LibraryTabUiHelpers on _LibraryTabState {
                     if (!mounted) return;
                     final nextQuery = value.trim();
                     if (_searchQuery == nextQuery) return;
-                    _jumpLibraryListToTop();
+                    jumpToTop();
                     _setLocalState(() => _searchQuery = nextQuery);
                   },
                 );

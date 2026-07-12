@@ -138,6 +138,7 @@ class _FakeDlsiteMetadataService extends DlsiteMetadataService {
       voiceActors: const <String>['Voice'],
       tags: const <String>['ASMR'],
       releaseDate: DateTime(2024, 5, 6),
+      duration: const Duration(hours: 1, minutes: 2, seconds: 3),
       salesCount: 1234,
       rating: 4.5,
     );
@@ -1449,6 +1450,7 @@ void main() {
     expect(textFieldValues, contains('ASMR fetched title'));
     expect(textFieldValues, contains('Circle'));
     expect(textFieldValues, contains('2024-05-06'));
+    expect(textFieldValues, contains('01:02:03'));
     expect(textFieldValues, contains('1234'));
     expect(textFieldValues, contains('4.5'));
   });
@@ -1486,6 +1488,10 @@ void main() {
       expect(metadata.workTitle, 'ASMR fetched title');
       expect(metadata.circleName, 'Circle');
       expect(metadata.releaseDate, DateTime(2024, 5, 6));
+      expect(
+        metadata.duration,
+        const Duration(hours: 1, minutes: 2, seconds: 3),
+      );
       expect(metadata.salesCount, 1234);
       expect(metadata.rating, 4.5);
     },

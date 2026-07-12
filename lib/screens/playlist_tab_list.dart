@@ -348,6 +348,7 @@ class _SessionListCard extends StatelessWidget {
                             coverPath: coverPath,
                             coverGeneration: coverGeneration,
                             coverCacheWidth: coverCacheWidth,
+                            duration: track?.duration,
                           ),
                           const SizedBox(width: 14),
                         ],

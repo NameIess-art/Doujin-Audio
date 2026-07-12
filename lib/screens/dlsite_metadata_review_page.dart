@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../i18n/app_language_provider.dart';
 import '../providers/audio_provider.dart';
 import '../services/audio_state_services.dart';
+import '../services/time_text_formatters.dart';
 import '../services/ui_operation_service.dart';
 import '../widgets/app_feedback.dart';
 import '../widgets/async_cover_image.dart';
@@ -58,6 +59,7 @@ class _DlsiteMetadataReviewPageState extends State<DlsiteMetadataReviewPage> {
   final _voiceActorsController = TextEditingController();
   final _tagsController = TextEditingController();
   final _releaseDateController = TextEditingController();
+  final _durationController = TextEditingController();
   final _salesController = TextEditingController();
   final _ratingController = TextEditingController();
 
@@ -86,6 +88,7 @@ class _DlsiteMetadataReviewPageState extends State<DlsiteMetadataReviewPage> {
     _voiceActorsController.dispose();
     _tagsController.dispose();
     _releaseDateController.dispose();
+    _durationController.dispose();
     _salesController.dispose();
     _ratingController.dispose();
     super.dispose();
@@ -137,6 +140,9 @@ class _DlsiteMetadataReviewPageState extends State<DlsiteMetadataReviewPage> {
     _voiceActorsController.text = metadata.voiceActors.join('\uFF0C');
     _tagsController.text = metadata.tags.join('\uFF0C');
     _releaseDateController.text = _formatDateValue(metadata.releaseDate);
+    _durationController.text = metadata.duration == null
+        ? ''
+        : formatDurationHms(metadata.duration!);
     _salesController.text = metadata.salesCount?.toString() ?? '';
     _ratingController.text = _formatRatingValue(metadata.rating);
     setState(() {
@@ -163,6 +169,7 @@ class _DlsiteMetadataReviewPageState extends State<DlsiteMetadataReviewPage> {
       ),
       tags: AudioDetail.normalizeList(_tagsController.text.split('\uFF0C')),
       releaseDate: _parseDateValue(_releaseDateController.text.trim()),
+      duration: _parseDurationValue(_durationController.text.trim()),
       salesCount: _salesController.text.trim().isEmpty
           ? null
           : int.tryParse(_salesController.text.trim()),
@@ -346,6 +353,11 @@ class _DlsiteMetadataReviewPageState extends State<DlsiteMetadataReviewPage> {
                     hint: 'YYYY-MM-DD',
                   ),
                   _ReviewTextField(
+                    controller: _durationController,
+                    label: i18n.tr('card_info_duration'),
+                    hint: 'HH:MM:SS',
+                  ),
+                  _ReviewTextField(
                     controller: _salesController,
                     label: i18n.tr('audio_detail_sales_count'),
                   ),
@@ -387,6 +399,25 @@ DateTime? _parseDateValue(String value) {
   final month = int.parse(match.group(2)!);
   final day = int.parse(match.group(3)!);
   return DateTime(year, month, day);
+}
+
+Duration? _parseDurationValue(String value) {
+  if (value.isEmpty) return null;
+  final parts = value.split(':').map(int.tryParse).toList(growable: false);
+  if (parts.length < 2 ||
+      parts.length > 3 ||
+      parts.any((part) => part == null)) {
+    return null;
+  }
+  final values = parts.cast<int>();
+  if (values.any((part) => part < 0) ||
+      values.skip(1).any((part) => part >= 60)) {
+    return null;
+  }
+  final seconds = values.length == 3
+      ? values[0] * 3600 + values[1] * 60 + values[2]
+      : values[0] * 60 + values[1];
+  return seconds > 0 ? Duration(seconds: seconds) : null;
 }
 
 String _formatRatingValue(double? value) {

@@ -409,6 +409,7 @@ const Map<String, String> appLanguageEn = {
   'card_info_release_date': 'Release',
   'card_info_sales_count': 'Sales',
   'card_info_rating': 'Rating',
+  'card_info_duration': 'Duration',
   'auto_play_added_sessions': 'Play immediately after adding',
   'auto_play_added_sessions_subtitle':
       'Create library-added audio sessions in the playing state.',

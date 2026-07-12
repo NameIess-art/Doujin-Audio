@@ -27,8 +27,25 @@ void main() {
 
   tearDown(() => db.close());
 
-  test('schema starts from version 2', () {
-    expect(AppDatabase.schemaVersion, 2);
+  test('schema starts from version 3', () {
+    expect(AppDatabase.schemaVersion, 3);
+  });
+
+  test('version 3 migration adds audio detail duration', () async {
+    await db.execute('DROP TABLE audio_details');
+    await db.execute('''
+      CREATE TABLE audio_details (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        target_type TEXT NOT NULL,
+        target_path TEXT NOT NULL,
+        card_cover_path TEXT
+      )
+    ''');
+
+    await AppDatabase.upgradeSchemaForTest(db, 2, 3);
+
+    final columns = await db.rawQuery('PRAGMA table_info(audio_details)');
+    expect(columns.map((row) => row['name']), contains('duration_ms'));
   });
 
   test(
@@ -903,6 +920,7 @@ void main() {
       tags: const <String>['tag'],
       cardCoverPath: '/library/root/cover.jpg',
       releaseDate: DateTime(2024, 5, 6),
+      duration: const Duration(hours: 1, minutes: 2, seconds: 3),
       salesCount: 1234,
       rating: 4.5,
       createdAt: DateTime.fromMillisecondsSinceEpoch(1000),
@@ -917,6 +935,7 @@ void main() {
     expect(loaded?.tags, const <String>['tag']);
     expect(loaded?.cardCoverPath, '/library/root/cover.jpg');
     expect(loaded?.releaseDate, DateTime(2024, 5, 6));
+    expect(loaded?.duration, const Duration(hours: 1, minutes: 2, seconds: 3));
     expect(loaded?.salesCount, 1234);
     expect(loaded?.rating, 4.5);
 
@@ -932,6 +951,7 @@ void main() {
       final detail = AudioDetail.empty(target).copyWith(
         cardCoverPath: '/library/root/cover.jpg',
         releaseDate: DateTime(2024, 5, 6),
+        duration: const Duration(hours: 1, minutes: 2, seconds: 3),
         salesCount: 1234,
         rating: 4.5,
       );
@@ -942,6 +962,10 @@ void main() {
       );
       expect(restored, isNotNull);
       expect(restored.releaseDate, DateTime(2024, 5, 6));
+      expect(
+        restored.duration,
+        const Duration(hours: 1, minutes: 2, seconds: 3),
+      );
       expect(restored.salesCount, 1234);
       expect(restored.rating, 4.5);
       expect(restored.cardCoverPath, '/library/root/cover.jpg');
@@ -952,6 +976,7 @@ void main() {
       });
       expect(oldRestored, isNotNull);
       expect(oldRestored.releaseDate, isNull);
+      expect(oldRestored.duration, isNull);
       expect(oldRestored.salesCount, isNull);
       expect(oldRestored.rating, isNull);
       expect(oldRestored.cardCoverPath, isNull);

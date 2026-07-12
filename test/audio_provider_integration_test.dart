@@ -2870,6 +2870,7 @@ void main() {
           rjCode: 'RJ111111',
           workTitle: 'Existing title',
           voiceActors: const <String>['Existing voice'],
+          duration: const Duration(minutes: 30),
         );
 
         final result = await provider.applyDlsiteMetadata(
@@ -2881,6 +2882,7 @@ void main() {
             voiceActors: const <String>['Fetched voice'],
             tags: const <String>['ASMR'],
             releaseDate: DateTime(2024, 5, 6),
+            duration: const Duration(hours: 2),
             salesCount: 1234,
             rating: 4.5,
           ),
@@ -2894,6 +2896,7 @@ void main() {
         expect(result.detail.circleName, 'Fetched circle');
         expect(result.detail.tags, const <String>['ASMR']);
         expect(result.detail.releaseDate, DateTime(2024, 5, 6));
+        expect(result.detail.duration, const Duration(minutes: 30));
         expect(result.detail.salesCount, 1234);
         expect(result.detail.rating, 4.5);
       },

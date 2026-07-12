@@ -3,6 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../theme/app_design_tokens.dart';
+import '../services/ui_operation_service.dart';
+import '../services/app_log_service.dart';
+import '../i18n/app_language_provider.dart';
+import 'package:provider/provider.dart';
 
 enum AppFeedbackTone { info, success, warning, destructive }
 
@@ -387,5 +391,46 @@ IconData _defaultIconForTone(AppFeedbackTone tone) {
       return Icons.warning_amber_rounded;
     case AppFeedbackTone.destructive:
       return Icons.delete_outline_rounded;
+  }
+}
+
+extension UiOperationServiceFeedback on UiOperationService {
+  Future<T?> runWithFeedback<T>({
+    required BuildContext context,
+    required UiOperationScope scope,
+    required String labelKey,
+    required UiOperationTask<T> task,
+    required String failureMessageKey,
+    bool cancelPrevious = true,
+    VoidCallback? onRetry,
+  }) async {
+    try {
+      return await run<T>(
+        scope: scope,
+        labelKey: labelKey,
+        task: task,
+        cancelPrevious: cancelPrevious,
+      );
+    } catch (error, stackTrace) {
+      AppLogService.error(
+        'operation_failed: $scope',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      if (context.mounted) {
+        final i18n = context.read<AppLanguageProvider>();
+        showAppSnackBar(
+          context,
+          i18n.tr(failureMessageKey),
+          tone: AppFeedbackTone.destructive,
+          title: i18n.tr('operation_failed'),
+          icon: Icons.error_outline_rounded,
+          actionLabel: onRetry != null ? i18n.tr('retry') : null,
+          onAction: onRetry,
+          duration: onRetry != null ? const Duration(seconds: 6) : null,
+        );
+      }
+      return null;
+    }
   }
 }

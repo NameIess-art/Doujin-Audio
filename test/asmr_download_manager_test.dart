@@ -314,6 +314,7 @@ void main() {
     final manager = _manager();
     final work = _work(
       releaseDate: DateTime(2024, 5, 6),
+      duration: const Duration(hours: 1, minutes: 2, seconds: 3),
       dlCount: 1234,
       rating: 4.5,
     );
@@ -353,6 +354,7 @@ void main() {
         Map<String, dynamic>.from(jsonDecode(backup) as Map),
       );
       expect(detail.releaseDate, DateTime(2024, 5, 6));
+      expect(detail.duration, const Duration(hours: 1, minutes: 2, seconds: 3));
       expect(detail.salesCount, 1234);
       expect(detail.rating, 4.5);
     } finally {
@@ -687,7 +689,12 @@ Future<void> _waitForTaskStatus(
   fail('Timed out waiting for task $workId to reach $status');
 }
 
-AsmrWork _work({DateTime? releaseDate, int dlCount = 0, double rating = 0}) {
+AsmrWork _work({
+  DateTime? releaseDate,
+  Duration duration = Duration.zero,
+  int dlCount = 0,
+  double rating = 0,
+}) {
   return AsmrWork(
     id: 1,
     title: 'Work',
@@ -700,7 +707,7 @@ AsmrWork _work({DateTime? releaseDate, int dlCount = 0, double rating = 0}) {
     mainCoverUrl: '',
     releaseDate: releaseDate,
     createDate: null,
-    duration: Duration.zero,
+    duration: duration,
     dlCount: dlCount,
     reviewCount: 0,
     rating: rating,

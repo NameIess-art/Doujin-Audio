@@ -372,6 +372,7 @@ const Map<String, String> appLanguageZh = {
   'card_info_release_date': '发售',
   'card_info_sales_count': '销量',
   'card_info_rating': '评分',
+  'card_info_duration': '时长',
   'auto_play_added_sessions': '添加后立即播放',
   'auto_play_added_sessions_subtitle': '添加音频时立即开始播放。',
   'asmr_playback_cache': 'ASMR.ONE播放后缓存',

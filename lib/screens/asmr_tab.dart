@@ -26,6 +26,7 @@ import '../widgets/async_cover_image.dart';
 import '../widgets/glass_refresh_indicator.dart';
 import '../widgets/marquee_text.dart';
 import '../widgets/library_like_cards.dart';
+import '../widgets/duration_overlay.dart';
 import '../widgets/mobile_overlay_inset.dart';
 import '../widgets/scroll_activity_gate.dart';
 import '../widgets/shimmer_loading.dart';
@@ -35,6 +36,7 @@ import '../widgets/unified_popup_menu.dart';
 
 import 'asmr_download_page.dart';
 import 'asmr_work_detail_sheet.dart';
+import 'main_tab_state_mixin.dart';
 
 part 'asmr_tab_header.dart';
 part 'asmr_tab_category_list.dart';
@@ -50,7 +52,7 @@ class AsmrTab extends StatefulWidget {
 }
 
 class _AsmrTabState extends State<AsmrTab>
-    with AutomaticKeepAliveClientMixin, TickerProviderStateMixin {
+    with AutomaticKeepAliveClientMixin, TickerProviderStateMixin, MainTabStateMixin<AsmrTab> {
   final List<AsmrCategoryType> _categories = kAsmrSelectableCategories;
   late final TabController _tabController = TabController(
     length: _categories.length,
@@ -68,7 +70,6 @@ class _AsmrTabState extends State<AsmrTab>
       <AsmrCategoryType, Timer>{};
   final Object _tabSwitchInteraction = Object();
   int _lastHandledTabIndex = 0;
-  ValueListenable<int?>? _scrollToTopTabListenable;
   String _searchQuery = '';
   final GlobalKey _headerKey = GlobalKey();
   final ScrollController _categoryScrollController = ScrollController();
@@ -80,6 +81,15 @@ class _AsmrTabState extends State<AsmrTab>
   @override
   bool get wantKeepAlive => true;
 
+  @override
+  int get tabIndex => 0;
+
+  @override
+  double get headerControlsFullHeight => 86.0;
+
+  @override
+  ScrollController get mainScrollController => _scrollControllers[_currentCategory] ?? _categoryScrollController;
+
   AsmrCategoryType get _currentCategory {
     final index = _tabController.index;
     if (index < 0 || index >= _categories.length) {
@@ -89,8 +99,6 @@ class _AsmrTabState extends State<AsmrTab>
   }
 
   String get _normalizedSearchQuery => normalizeSearchQuery(_searchQuery);
-
-  double get _headerControlsFullHeight => 86.0;
 
   UiOperationService get _operations => UiOperationService.instance;
 
@@ -113,6 +121,7 @@ class _AsmrTabState extends State<AsmrTab>
   @override
   void initState() {
     super.initState();
+    initTabState(context.read<AudioProvider>().scrollToTopTabListenable);
     _tabController.addListener(_handleTabChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) {
@@ -122,10 +131,6 @@ class _AsmrTabState extends State<AsmrTab>
       if (asmrController == null) {
         return;
       }
-      _scrollToTopTabListenable = context
-          .read<AudioProvider>()
-          .scrollToTopTabListenable;
-      _scrollToTopTabListenable?.addListener(_handleScrollToTopSignal);
       _measureHeader();
       final defaultLanguage = AsmrContentLanguage.fromAppLanguageName(
         context.read<AppLanguageProvider>().language.name,
@@ -173,7 +178,6 @@ class _AsmrTabState extends State<AsmrTab>
 
   void _handleCategoryScroll(AsmrCategoryType category) {
     if (!AppPlatform.isWindows) {
-      // Auto-loading has been replaced by manual pull-up to load in _AsmrCategoryListState.
       return;
     }
     final controller = _scrollControllers[category];
@@ -245,36 +249,13 @@ class _AsmrTabState extends State<AsmrTab>
           ?.globalViewState;
       final hasControls = globalState != null;
       final measuredHeight =
-          box.size.height - (hasControls ? _headerControlsFullHeight : 0);
+          box.size.height - (hasControls ? headerControlsFullHeight : 0);
       final minimumHeight = _minimumExpandedHeaderHeight(context);
       final h = measuredHeight < minimumHeight ? minimumHeight : measuredHeight;
       if (h > 0 && (_headerHeight == 0 || h > _headerHeight + 0.5)) {
         setState(() => _headerHeight = h);
       }
     }
-  }
-
-  void _handleScrollToTopSignal() {
-    if (!mounted || _scrollToTopTabListenable?.value != 0) {
-      return;
-    }
-    final controller = _scrollControllers[_currentCategory];
-    if (controller == null || !controller.hasClients) {
-      return;
-    }
-    const fakeAnimationStartOffset = 360.0;
-    final animationStartOffset =
-        controller.position.maxScrollExtent < fakeAnimationStartOffset
-        ? controller.position.maxScrollExtent
-        : fakeAnimationStartOffset;
-    if (controller.offset > animationStartOffset) {
-      controller.jumpTo(animationStartOffset);
-    }
-    controller.animateTo(
-      0,
-      duration: const Duration(milliseconds: 260),
-      curve: Curves.easeOutCubic,
-    );
   }
 
   Future<void> _ensureCategoryLoaded(AsmrCategoryType category) async {
@@ -455,8 +436,8 @@ class _AsmrTabState extends State<AsmrTab>
 
   @override
   void dispose() {
+    disposeTabState();
     UiInteractionCoordinator.instance.cancelInteraction(_tabSwitchInteraction);
-    _scrollToTopTabListenable?.removeListener(_handleScrollToTopSignal);
     _searchDebounceTimer?.cancel();
     for (final timer in _loadMoreDebounceTimers.values) {
       timer.cancel();
@@ -509,7 +490,7 @@ class _AsmrTabState extends State<AsmrTab>
         Platform.isWindows ||
         MediaQuery.orientationOf(context) == Orientation.landscape;
     final bottomInset = MobileOverlayInset.of(context);
-    final headerControlsFullHeight = _headerControlsFullHeight;
+    final headerControlsFullHeight = this.headerControlsFullHeight;
     final effectiveHeaderHeight = _headerHeight > 0
         ? _headerHeight
         : _minimumExpandedHeaderHeight(context);
@@ -530,7 +511,6 @@ class _AsmrTabState extends State<AsmrTab>
                 child: AnimatedBuilder(
                   animation: _tabController,
                   builder: (context, _) {
-                    // Maximum 5 items visible on screen (screenWidth - padding - gaps).
                     final screenWidth = MediaQuery.sizeOf(context).width;
                     const totalHorizontalPadding = 24.0;
 
@@ -678,8 +658,7 @@ class _AsmrTabState extends State<AsmrTab>
                                 child: _AsmrCategoryList(
                                   key: ValueKey(category),
                                   category: category,
-                                  scrollController:
-                                      _scrollControllers[category]!,
+                                  scrollController: _scrollControllers[category]!,
                                   searchQuery: _searchQuery,
                                   topInset: headerContentHeight,
                                   bottomInset: bottomInset,

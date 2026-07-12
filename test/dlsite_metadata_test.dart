@@ -45,6 +45,7 @@ void main() {
       'work_name': 'Work title',
       'maker_name': 'Circle',
       'regist_date': '2024-05-06',
+      'duration': 3723,
       'dl_count': '1,234',
       'rate_average_star': 50,
       'image_main': {'url': '//img.dlsite.jp/path/cover.jpg'},
@@ -68,6 +69,7 @@ void main() {
     expect(metadata.tags, const <String>['ASMR', 'Ear cleaning']);
     expect(metadata.coverUrl, 'https://img.dlsite.jp/path/cover.jpg');
     expect(metadata.releaseDate, DateTime(2024, 5, 6));
+    expect(metadata.duration, const Duration(hours: 1, minutes: 2, seconds: 3));
     expect(metadata.salesCount, 1234);
     expect(metadata.rating, 5.0);
   });

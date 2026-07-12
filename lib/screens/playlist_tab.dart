@@ -31,6 +31,7 @@ import '../widgets/async_cover_image.dart';
 import '../widgets/confirm_action_dialog.dart';
 import '../widgets/content_bound_reorder_area.dart';
 import '../widgets/library_like_cards.dart';
+import '../widgets/duration_overlay.dart';
 import '../widgets/marquee_text.dart';
 import '../widgets/mobile_overlay_inset.dart';
 import '../widgets/playback_position_ui_gate.dart';
@@ -41,11 +42,13 @@ import '../widgets/target_countdown_builder.dart';
 import '../widgets/top_page_header.dart';
 import '../widgets/unified_popup_menu.dart';
 import '../widgets/unified_dropdown.dart';
+import '../widgets/app_bottom_sheet.dart';
 import '../models/asmr_models.dart';
 import 'audio_detail_sheet.dart';
 import 'asmr_work_detail_sheet.dart';
 import 'screen_view_models.dart';
 import 'timer_tab.dart';
+import 'main_tab_state_mixin.dart';
 
 part 'playlist_tab_list.dart';
 part 'playlist_tab_detail.dart';
@@ -287,14 +290,17 @@ class PlaylistTab extends ConsumerStatefulWidget {
 }
 
 class _PlaylistTabState extends ConsumerState<PlaylistTab>
-    with AutomaticKeepAliveClientMixin {
-  final GlobalKey _headerKey = GlobalKey();
-  double _headerHeight = 90;
+    with AutomaticKeepAliveClientMixin, MainTabStateMixin<PlaylistTab> {
   final ScrollController _scrollController = ScrollController();
-  ValueListenable<int?>? _scrollToTopListenable;
   bool _isReordering = false;
   PlaylistListState? _reorderSnapshot;
   String? _lastPlaybackCoverWarmupSignature;
+
+  @override
+  int get tabIndex => 2;
+
+  @override
+  ScrollController get mainScrollController => _scrollController;
 
   @override
   bool get wantKeepAlive => true;
@@ -302,47 +308,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      _measureHeader();
-      _scrollToTopListenable = ref
-          .read(audioProviderFacadeProvider)
-          .scrollToTopTabListenable;
-      _scrollToTopListenable?.addListener(_handleScrollToTopSignal);
-    });
-  }
-
-  void _handleScrollToTopSignal() {
-    if (!mounted) return;
-    if (_scrollToTopListenable?.value == 2) {
-      _jumpPlaylistToTop();
-    }
-  }
-
-  void _jumpPlaylistToTop() {
-    if (!_scrollController.hasClients) return;
-    const fakeAnimationStartOffset = 360.0;
-    final animationStartOffset =
-        _scrollController.position.maxScrollExtent < fakeAnimationStartOffset
-        ? _scrollController.position.maxScrollExtent
-        : fakeAnimationStartOffset;
-    if (_scrollController.offset > animationStartOffset) {
-      _scrollController.jumpTo(animationStartOffset);
-    }
-    _scrollController.animateTo(
-      0,
-      duration: const Duration(milliseconds: 260),
-      curve: Curves.easeOutCubic,
-    );
-  }
-
-  void _measureHeader() {
-    final box = _headerKey.currentContext?.findRenderObject() as RenderBox?;
-    if (box == null || !mounted) return;
-    final nextHeight = box.size.height;
-    if (nextHeight > 0 && nextHeight != _headerHeight) {
-      setState(() => _headerHeight = nextHeight);
-    }
+    initTabState(ref.read(audioProviderFacadeProvider).scrollToTopTabListenable);
   }
 
   void _schedulePlaybackCoverWarmup(
@@ -429,7 +395,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
 
   @override
   void dispose() {
-    _scrollToTopListenable?.removeListener(_handleScrollToTopSignal);
+    disposeTabState();
     _scrollController.dispose();
     super.dispose();
   }
@@ -460,8 +426,8 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
       settingsState.coverImageResolution,
     );
     final listBottomInset = MobileOverlayInset.of(context);
-    final listCacheExtent = (_headerHeight + 800)
-        .clamp(_headerHeight + 4, 1600.0)
+    final listCacheExtent = (headerHeight + 800)
+        .clamp(headerHeight + 4, 1600.0)
         .toDouble();
     final isWindows =
         Platform.isWindows ||
@@ -524,13 +490,13 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
           MediaQuery(
             data: MediaQuery.of(context).copyWith(
               padding: EdgeInsets.only(
-                top: _headerHeight + 4,
+                top: headerHeight + 4,
                 bottom: listBottomInset,
                 right: 4,
               ),
             ),
             child: ContentBoundReorderArea(
-              headerHeight: _headerHeight,
+              headerHeight: headerHeight,
               bottomInset: listBottomInset,
               topExpansion: expansion,
               bottomExpansion: expansion,
@@ -652,7 +618,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                     '${i18n.tr('sessions_count', {'count': headerState.sessionCount})} · '
                     '${i18n.tr('playing_count', {'count': headerState.playingCount})}';
                 return TopPageHeader(
-                  key: _headerKey,
+                  key: headerKey,
                   icon: Icons.graphic_eq_rounded,
                   title: i18n.tr('playback_sessions'),
                   subtitle: sessionSummary,

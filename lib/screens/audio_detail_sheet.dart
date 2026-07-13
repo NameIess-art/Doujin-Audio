@@ -61,12 +61,18 @@ class _AudioDetailSheetState extends State<AudioDetailSheet> {
 
   Future<void> _load() async {
     try {
+      final provider = context.read<AudioProvider>();
       final result = await UiOperationService.instance
           .run<AudioDetailLoadResult>(
             scope: _operationScope,
             labelKey: 'audio_detail_title',
-            task: (_) => context.read<AudioProvider>().loadAudioDetail(_target),
+            task: (_) => provider.loadAudioDetail(_target),
           );
+
+      if (_target.isLibraryRootFolder && result.detail.duration == null) {
+        await provider.calculateMissingFolderDurations(_target.targetPath);
+      }
+
       if (!mounted) return;
       setState(() {
         _detail = result.detail;
@@ -379,14 +385,20 @@ class _AudioDetailSheetState extends State<AudioDetailSheet> {
     Duration? duration = detail?.duration;
     if (duration == null &&
         _target.targetType == AudioDetailTargetType.libraryRootFolder) {
-      final tree = provider.libraryTree;
-      for (final node in tree) {
-        if (node is FolderNode && node.path == _target.targetPath) {
-          if (node.totalDuration > Duration.zero) {
-            duration = node.totalDuration;
+      FolderNode? findFolder(List<LibraryNode> nodes) {
+        for (final node in nodes) {
+          if (node is FolderNode) {
+            if (node.path == _target.targetPath) return node;
+            final child = findFolder(node.children);
+            if (child != null) return child;
           }
-          break;
         }
+        return null;
+      }
+
+      final folderNode = findFolder(provider.libraryTree);
+      if (folderNode != null && folderNode.totalDuration > Duration.zero) {
+        duration = folderNode.totalDuration;
       }
     } else if (duration == null) {
       final trackDuration = provider.trackByPath(_target.targetPath)?.duration;
@@ -555,26 +567,19 @@ class _AudioDetailSheetState extends State<AudioDetailSheet> {
               const SizedBox(height: 8),
               ...[
                 _AudioDetailField.releaseDate,
+                _AudioDetailField.duration,
                 _AudioDetailField.salesCount,
                 _AudioDetailField.rating,
               ].map(
                 (field) => _AudioDetailRow(
                   label: field.label(i18n, detail),
-                  values: field.readValues(detail),
+                  values: field.readValues(detail, fallbackDuration: duration),
                   labelStyle: labelStyle,
                   busy: _savingField == field,
                   onTap: () => _editField(field),
                   onCopy: (val) => _copyText(context, val),
                 ),
               ),
-              if (duration != null)
-                _AudioDetailRow(
-                  label: i18n.tr('card_info_duration'),
-                  values: [formatDurationHms(duration)],
-                  labelStyle: labelStyle,
-                  busy: false,
-                  onCopy: (val) => _copyText(context, val),
-                ),
             ],
           ],
         ),
@@ -1247,6 +1252,7 @@ enum _AudioDetailField {
   voiceActors,
   tags,
   releaseDate,
+  duration,
   salesCount,
   rating;
 
@@ -1265,12 +1271,13 @@ enum _AudioDetailField {
       _AudioDetailField.voiceActors => i18n.tr('audio_detail_voice_actors'),
       _AudioDetailField.tags => i18n.tr('audio_detail_tags'),
       _AudioDetailField.releaseDate => i18n.tr('audio_detail_release_date'),
+      _AudioDetailField.duration => i18n.tr('card_info_duration'),
       _AudioDetailField.salesCount => i18n.tr('audio_detail_sales_count'),
       _AudioDetailField.rating => i18n.tr('audio_detail_rating'),
     };
   }
 
-  String readText(AudioDetail detail) {
+  String readText(AudioDetail detail, {Duration? fallbackDuration}) {
     return switch (this) {
       _AudioDetailField.targetName => _targetDisplayName(detail.target),
       _AudioDetailField.rjCode => detail.rjCode,
@@ -1281,6 +1288,9 @@ enum _AudioDetailField {
       ),
       _AudioDetailField.tags => detail.tags.join(_multiValueSeparator),
       _AudioDetailField.releaseDate => _formatDateValue(detail.releaseDate),
+      _AudioDetailField.duration => detail.duration != null 
+          ? formatDurationHms(detail.duration!) 
+          : (fallbackDuration != null ? formatDurationHms(fallbackDuration) : ''),
       _AudioDetailField.salesCount => detail.salesCount?.toString() ?? '',
       _AudioDetailField.rating => _formatRatingValue(detail.rating),
     };
@@ -1294,8 +1304,8 @@ enum _AudioDetailField {
     };
   }
 
-  List<String> readValues(AudioDetail detail) {
-    return isMulti ? readList(detail) : [readText(detail)];
+  List<String> readValues(AudioDetail detail, {Duration? fallbackDuration}) {
+    return isMulti ? readList(detail) : [readText(detail, fallbackDuration: fallbackDuration)];
   }
 
   AudioDetail apply(AudioDetail detail, String rawValue) {
@@ -1315,6 +1325,9 @@ enum _AudioDetailField {
       ),
       _AudioDetailField.releaseDate => detail.copyWith(
         releaseDate: _parseDateValue(trimmed),
+      ),
+      _AudioDetailField.duration => detail.copyWith(
+        duration: _parseDurationValue(trimmed),
       ),
       _AudioDetailField.salesCount => detail.copyWith(
         salesCount: trimmed.isEmpty ? null : int.tryParse(trimmed),
@@ -1341,6 +1354,30 @@ DateTime? _parseDateValue(String value) {
   final month = int.parse(match.group(2)!);
   final day = int.parse(match.group(3)!);
   return DateTime(year, month, day);
+}
+
+Duration? _parseDurationValue(String value) {
+  if (value.isEmpty) return null;
+  final parts = value.split(':');
+  if (parts.isEmpty || parts.length > 3) return null;
+  try {
+    if (parts.length == 3) {
+      return Duration(
+        hours: int.parse(parts[0]),
+        minutes: int.parse(parts[1]),
+        seconds: int.parse(parts[2]),
+      );
+    } else if (parts.length == 2) {
+      return Duration(
+        minutes: int.parse(parts[0]),
+        seconds: int.parse(parts[1]),
+      );
+    } else {
+      return Duration(seconds: int.parse(parts[0]));
+    }
+  } catch (_) {
+    return null;
+  }
 }
 
 String _formatRatingValue(double? value) {

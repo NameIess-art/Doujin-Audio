@@ -268,10 +268,17 @@ extension _LibraryTabCategoryView on _LibraryTabState {
     AudioLibraryCategoryEntry entry,
   ) {
     if (!entry.isFolder) return null;
-    for (final node in provider.libraryTree) {
-      if (node is FolderNode &&
-          PathMatcher.equalsNormalized(node.path, entry.path)) {
-        return node;
+    return _findFolder(provider.libraryTree, entry.path);
+  }
+
+  FolderNode? _findFolder(List<LibraryNode> nodes, String path) {
+    for (final node in nodes) {
+      if (node is FolderNode) {
+        if (PathMatcher.equalsNormalized(node.path, path)) {
+          return node;
+        }
+        final child = _findFolder(node.children, path);
+        if (child != null) return child;
       }
     }
     return null;

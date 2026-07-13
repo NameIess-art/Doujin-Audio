@@ -15,15 +15,16 @@ import '../widgets/operation_feedback.dart';
 enum DlsiteMetadataReviewOutcome { applied, skipped }
 
 class DlsiteMetadataReviewResult {
-  const DlsiteMetadataReviewResult.applied(this.detail)
+  const DlsiteMetadataReviewResult.applied(this.detail, this.saveCover)
     : outcome = DlsiteMetadataReviewOutcome.applied;
 
-  const DlsiteMetadataReviewResult.skipped()
+  const DlsiteMetadataReviewResult.skipped([this.saveCover])
     : outcome = DlsiteMetadataReviewOutcome.skipped,
       detail = null;
 
   final DlsiteMetadataReviewOutcome outcome;
   final AudioDetail? detail;
+  final bool? saveCover;
 
   bool get isApplied => outcome == DlsiteMetadataReviewOutcome.applied;
 }
@@ -38,6 +39,7 @@ class DlsiteMetadataReviewPage extends StatefulWidget {
     this.batchTotal,
     this.allowSkip = false,
     this.missingOnly = false,
+    this.initialSaveCover = true,
   }) : assert(rjCode != null || searchTitles.length > 0);
 
   final AudioDetail detail;
@@ -47,6 +49,7 @@ class DlsiteMetadataReviewPage extends StatefulWidget {
   final int? batchTotal;
   final bool allowSkip;
   final bool missingOnly;
+  final bool initialSaveCover;
 
   @override
   State<DlsiteMetadataReviewPage> createState() =>
@@ -150,8 +153,9 @@ class _DlsiteMetadataReviewPageState extends State<DlsiteMetadataReviewPage> {
       _candidates = nextCandidates;
       _metadata = metadata;
       _loading = false;
-      _saveCover =
-          widget.detail.target.isLibraryRootFolder && metadata.coverUrl != null;
+      _saveCover = widget.initialSaveCover &&
+          widget.detail.target.isLibraryRootFolder &&
+          metadata.coverUrl != null;
     });
   }
 
@@ -200,7 +204,7 @@ class _DlsiteMetadataReviewPageState extends State<DlsiteMetadataReviewPage> {
       }
       Navigator.of(
         context,
-      ).pop(DlsiteMetadataReviewResult.applied(result.detail));
+      ).pop(DlsiteMetadataReviewResult.applied(result.detail, _saveCover));
     } catch (_) {
       if (!mounted) return;
       setState(() {
@@ -216,7 +220,7 @@ class _DlsiteMetadataReviewPageState extends State<DlsiteMetadataReviewPage> {
 
   void _skip() {
     if (_saving) return;
-    Navigator.of(context).pop(const DlsiteMetadataReviewResult.skipped());
+    Navigator.of(context).pop(DlsiteMetadataReviewResult.skipped(_saveCover));
   }
 
   @override

@@ -119,14 +119,15 @@ class CoverArtworkCacheService {
   }
 
   String? resolvedForPlaybackTrack(MusicTrack? track, {String? trackPath}) {
-    final trackCoverPath = resolvedForTrack(track, trackPath: trackPath);
-    if (trackCoverPath != null) return trackCoverPath;
     final folderScope = _playbackFallbackFolderScopeForTrack(
       track,
       trackPath: trackPath,
     );
-    if (folderScope == null) return null;
-    return resolvedForFolder(folderScope);
+    if (folderScope != null) {
+      final folderCoverPath = resolvedForFolder(folderScope);
+      if (folderCoverPath != null) return folderCoverPath;
+    }
+    return resolvedForTrack(track, trackPath: trackPath);
   }
 
   String? resolvedForFolder(String folderPath) {
@@ -179,29 +180,31 @@ class CoverArtworkCacheService {
     MusicTrack? track, {
     String? trackPath,
   }) async {
-    final trackCoverPath = await futureForTrack(track, trackPath: trackPath);
-    if (trackCoverPath != null) return trackCoverPath;
     final folderScope = _playbackFallbackFolderScopeForTrack(
       track,
       trackPath: trackPath,
     );
-    if (folderScope == null) return null;
-    final previousPlaybackCover = resolvedForPlaybackTrack(
-      track,
-      trackPath: trackPath,
-    );
-    final folderCoverPath = await futureForFolder(folderScope);
-    if (folderCoverPath != null && previousPlaybackCover != folderCoverPath) {
-      final coverSearchKey = coverSearchKeyForTrack(
+    if (folderScope != null) {
+      final previousPlaybackCover = resolvedForPlaybackTrack(
         track,
         trackPath: trackPath,
       );
-      if (coverSearchKey != null &&
-          (_isActiveCoverKey?.call(coverSearchKey) ?? false)) {
-        _onActiveCoverChanged?.call();
+      final folderCoverPath = await futureForFolder(folderScope);
+      if (folderCoverPath != null) {
+        if (previousPlaybackCover != folderCoverPath) {
+          final coverSearchKey = coverSearchKeyForTrack(
+            track,
+            trackPath: trackPath,
+          );
+          if (coverSearchKey != null &&
+              (_isActiveCoverKey?.call(coverSearchKey) ?? false)) {
+            _onActiveCoverChanged?.call();
+          }
+        }
+        return folderCoverPath;
       }
     }
-    return folderCoverPath;
+    return futureForTrack(track, trackPath: trackPath);
   }
 
   Future<String?> futureForFolder(String folderPath) {
@@ -980,11 +983,12 @@ class CoverArtworkCacheService {
   Future<String?> _resolvePlatformCoverPathForTrack(
     MusicTrack track, {
     String? rootFolder,
+    bool includeGroupCoverFallback = true,
   }) async {
     try {
       final nativeCover = await _fileCacheGateway.resolveTrackCover(
         path: track.path,
-        groupKey: track.groupKey,
+        groupKey: includeGroupCoverFallback ? track.groupKey : null,
         rootFolder: rootFolder,
       );
       if (nativeCover != null && nativeCover.isNotEmpty) {
@@ -1040,11 +1044,16 @@ class CoverArtworkCacheService {
     for (final imagePath in await _discoverFolderImages(folderPath)) {
       addCandidate(imagePath);
     }
-    for (final track in _tracksInCoverScope(folderPath)) {
+    for (final track in _tracksInCompleteCoverScope(folderPath)) {
       if (track.isVideo) {
         addCandidate(await _resolveVideoFramePathForTrack(track));
       } else {
-        addCandidate(await _resolvePlatformCoverPathForTrack(track));
+        addCandidate(
+          await _resolvePlatformCoverPathForTrack(
+            track,
+            includeGroupCoverFallback: false,
+          ),
+        );
       }
     }
     return List<String>.unmodifiable(candidates);
@@ -1107,6 +1116,22 @@ class CoverArtworkCacheService {
     }
     images.sort();
     return List<String>.unmodifiable(images);
+  }
+
+  List<MusicTrack> _tracksInCompleteCoverScope(String folderPath) {
+    final normalizedFolderPath = PathMatcher.normalize(folderPath);
+    if (normalizedFolderPath.isEmpty) return const <MusicTrack>[];
+    return _libraryService.library
+        .where((track) {
+          final groupKey = track.groupKey.trim();
+          return PathMatcher.isWithinOrEqual(
+                track.path,
+                normalizedFolderPath,
+              ) ||
+              (groupKey.isNotEmpty &&
+                  PathMatcher.isWithinOrEqual(groupKey, normalizedFolderPath));
+        })
+        .toList(growable: false);
   }
 
   List<MusicTrack> _tracksInCoverScope(String folderPath) {

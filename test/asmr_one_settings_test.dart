@@ -489,13 +489,15 @@ AsmrTrackFile _trackFile(
   String title,
   String relativePath, {
   String type = 'audio',
+  bool officialMedia = false,
 }) {
+  final mediaHost = officialMedia ? 'api.asmr.one' : 'example.test';
   return AsmrTrackFile(
     hash: relativePath,
     title: title,
     type: type,
-    streamUrl: 'https://example.test/$relativePath',
-    downloadUrl: 'https://example.test/$relativePath',
+    streamUrl: 'https://$mediaHost/$relativePath',
+    downloadUrl: 'https://$mediaHost/$relativePath',
     lowQualityUrl: null,
     duration: const Duration(minutes: 1),
     size: 1024,

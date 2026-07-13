@@ -284,7 +284,7 @@ extension AudioProviderPersistence on AudioProvider {
       // Phase 3: In-memory syncs that depend on library + loaded order data.
       _syncGroupOrderFromLibrary();
       _syncLibraryNodeOrder(persist: false);
-      await _ensureLibraryTreeSnapshot(notifyOnCommit: false);
+      await _ensureLibraryCardSnapshot(notifyOnCommit: false);
       _libraryInitialized = true;
       _syncLibraryStateSlice(preserveSliceInitialized: true);
 
@@ -317,7 +317,7 @@ extension AudioProviderPersistence on AudioProvider {
       // Phase 7: Deferred warmup, keep-alive sync, final UI update.
       scheduleUiWarmup(currentPageIndex: 0);
       _syncKeepCpuAwake();
-      await _ensureLibraryTreeSnapshot(notifyOnCommit: false);
+      await _ensureLibraryCardSnapshot(notifyOnCommit: false);
       _settingsInitialized = true;
       _libraryInitialized = true;
       _playbackInitialized = true;

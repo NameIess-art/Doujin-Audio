@@ -665,7 +665,7 @@ class _SingleFileCoverPreviewState extends State<_SingleFileCoverPreview> {
             Text(i18n.tr('audio_detail_cover_image'), style: labelStyle),
             const SizedBox(height: 10),
             ClipRRect(
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(16),
               child: AspectRatio(
                 aspectRatio: 1.45,
                 child: RetryingFileImage(
@@ -849,7 +849,7 @@ class _FolderCoverSelectorState extends State<_FolderCoverSelector> {
               margin: EdgeInsets.zero,
               color: cs.surfaceContainer,
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
+                borderRadius: BorderRadius.circular(16),
                 side: BorderSide(color: cs.outlineVariant),
               ),
               child: const AspectRatio(
@@ -878,7 +878,7 @@ class _FolderCoverSelectorState extends State<_FolderCoverSelector> {
         const SizedBox(height: 10),
         ClipRRect(
           key: const ValueKey('audio_detail_cover_content'),
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(16),
           child: AspectRatio(
             aspectRatio: 1.45,
             child: Stack(

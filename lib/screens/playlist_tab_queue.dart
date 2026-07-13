@@ -249,7 +249,7 @@ class _QueueCoverGrid extends StatelessWidget {
     }
     return ClipRRect(
       key: const ValueKey('playback_queue_cover_grid'),
-      borderRadius: BorderRadius.circular(10),
+      borderRadius: BorderRadius.circular(16),
       child: SizedBox(width: 96, height: 72, child: content),
     );
   }
@@ -427,7 +427,7 @@ class PlaybackQueueEditPage extends ConsumerWidget {
       elevation: 12,
       shadowColor: cs.shadow.withValues(alpha: 0.22),
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(28),
+        borderRadius: BorderRadius.circular(16),
         side: BorderSide(color: cs.primary.withValues(alpha: 0.45)),
       ),
       clipBehavior: Clip.antiAlias,
@@ -444,7 +444,7 @@ class PlaybackQueueEditPage extends ConsumerWidget {
                   height: 40,
                   decoration: BoxDecoration(
                     color: cs.primaryContainer,
-                    borderRadius: BorderRadius.circular(14),
+                    borderRadius: BorderRadius.circular(16),
                   ),
                   child: Icon(
                     Icons.edit_rounded,
@@ -552,7 +552,7 @@ class PlaybackQueueEditPage extends ConsumerWidget {
                     color: destructive
                         ? cs.errorContainer.withValues(alpha: 0.46)
                         : cs.primaryContainer.withValues(alpha: 0.62),
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(16),
                   ),
                   child: Icon(
                     icon,
@@ -878,7 +878,7 @@ class _QueueAudioEditCard extends StatelessWidget {
       elevation: 0,
       color: cs.surfaceContainerLow,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(16),
         side: BorderSide(color: cs.outlineVariant.withValues(alpha: 0.42)),
       ),
       clipBehavior: Clip.antiAlias,
@@ -890,7 +890,7 @@ class _QueueAudioEditCard extends StatelessWidget {
             children: [
               if (showCover) ...[
                 ClipRRect(
-                  borderRadius: BorderRadius.circular(14),
+                  borderRadius: BorderRadius.circular(16),
                   child: SizedBox(
                     width: 96,
                     height: 72,
@@ -965,7 +965,7 @@ class _PlaybackQueueColorPanel extends ConsumerWidget {
       elevation: 12,
       shadowColor: cs.shadow.withValues(alpha: 0.22),
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(28),
+        borderRadius: BorderRadius.circular(16),
         side: BorderSide(color: cs.primary.withValues(alpha: 0.45)),
       ),
       clipBehavior: Clip.antiAlias,
@@ -982,7 +982,7 @@ class _PlaybackQueueColorPanel extends ConsumerWidget {
                   height: 40,
                   decoration: BoxDecoration(
                     color: color.withValues(alpha: 0.22),
-                    borderRadius: BorderRadius.circular(14),
+                    borderRadius: BorderRadius.circular(16),
                   ),
                   child: Icon(Icons.palette_outlined, color: color, size: 20),
                 ),
@@ -1088,7 +1088,7 @@ class _QueueColorSlider extends StatelessWidget {
             height: 28,
             decoration: BoxDecoration(
               color: cs.surfaceContainerHigh,
-              borderRadius: BorderRadius.circular(9),
+              borderRadius: BorderRadius.circular(16),
             ),
             alignment: Alignment.center,
             child: Text(

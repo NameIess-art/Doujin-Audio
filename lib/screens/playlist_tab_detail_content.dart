@@ -508,9 +508,9 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
                             key: const ValueKey('segments_landscape_container'),
                             child: ClipRRect(
                               borderRadius: const BorderRadius.only(
-                                topLeft: Radius.circular(24),
-                                topRight: Radius.circular(24),
-                                bottomRight: Radius.circular(24),
+                                topLeft: Radius.circular(16),
+                                topRight: Radius.circular(16),
+                                bottomRight: Radius.circular(16),
                               ),
                               child: BackdropFilter(
                                 filter: ImageFilter.blur(

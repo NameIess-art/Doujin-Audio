@@ -87,6 +87,8 @@ void main() {
       final first = await service.categorySnapshot(onCommitted: () {});
       final second = await service.categorySnapshot(onCommitted: () {});
 
+      expect(service.treeSnapshotRevision, -1);
+      expect(service.cardSnapshotRevision, library.structureRevision);
       expect(first.entries.single.detail.workTitle, 'Initial');
       expect(second.entries.single.detail.workTitle, 'Initial');
       expect(repository.loadCount, 1);
@@ -125,7 +127,7 @@ void main() {
       final service = LibrarySnapshotCacheService(
         libraryService: library,
         detailCacheService: AudioDetailCacheService(repository: repository),
-      )..adoptTreeSnapshot(derived.treeSnapshot);
+      )..adoptCardSnapshot(derived.cardSnapshot);
 
       final snapshot = await service.categorySnapshot(onCommitted: () {});
 
@@ -213,21 +215,48 @@ void main() {
           repository: _FakeAudioDetailRepository(),
         ),
       );
-      await service.treeSnapshot(onCommitted: () {});
-      final initialOrder = service.tree.map((node) => node.path).toList();
+      await service.cardSnapshot(onCommitted: () {});
+      final initialOrder = service.cards.map((node) => node.path).toList();
 
       library.reorderLibraryNodes(
         0,
         initialOrder.length,
-        currentTree: service.tree,
+        currentTree: service.cards,
       );
 
       expect(service.applyCurrentTopLevelOrder(), isTrue);
-      expect(service.tree.map((node) => node.path), <String>[
+      expect(service.cards.map((node) => node.path), <String>[
         initialOrder.last,
         initialOrder.first,
       ]);
-      expect(service.treeSnapshotRevision, library.structureRevision);
+      expect(service.cardSnapshotRevision, library.structureRevision);
+    },
+  );
+
+  test(
+    'card snapshot keeps folder tracks without building child nodes',
+    () async {
+      final library = LibraryService()
+        ..watchedFolders.add('/library')
+        ..library.addAll(<MusicTrack>[
+          _track(path: '/library/work/disc/01.mp3', groupKey: '/library/work'),
+          _track(path: '/library/work/disc/02.mp3', groupKey: '/library/work'),
+        ])
+        ..markStructureChanged();
+      final service = LibrarySnapshotCacheService(
+        libraryService: library,
+        detailCacheService: AudioDetailCacheService(
+          repository: _FakeAudioDetailRepository(),
+        ),
+      );
+
+      final snapshot = await service.cardSnapshot(onCommitted: () {});
+      final folder = snapshot.tree.single as FolderNode;
+
+      expect(folder.children, isEmpty);
+      expect(folder.allTracks, hasLength(2));
+      expect(folder.totalTrackCount, 2);
+      expect(service.treeSnapshotRevision, -1);
     },
   );
 }

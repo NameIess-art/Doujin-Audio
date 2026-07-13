@@ -204,7 +204,7 @@ class _VerticalVolumeSliderState extends State<_VerticalVolumeSlider> {
           autofocus: true,
           decoration: InputDecoration(
             hintText: i18n.tr('volume_range_hint'),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
           ),
           onSubmitted: (text) {
             _applyVolumeInput(text, ctx);

@@ -21,7 +21,7 @@ class _SettingsGroupCard extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: cs.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color: cs.outlineVariant.withValues(alpha: tokens.subtleBorderAlpha),
           width: 0.5,
@@ -355,7 +355,7 @@ class _SubtitleWindowSettingsSheet extends StatelessWidget {
                                       vertical: 10,
                                     ),
                                     border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(12),
+                                      borderRadius: BorderRadius.circular(16),
                                     ),
                                   ),
                                   child: UnifiedDropdownButton<String>(

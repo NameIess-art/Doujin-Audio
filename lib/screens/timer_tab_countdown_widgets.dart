@@ -52,7 +52,7 @@ class _CountdownCard extends StatelessWidget {
 
     return Container(
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(32),
+        borderRadius: BorderRadius.circular(16),
         color: cs.surfaceContainerLow,
       ),
       child: Padding(
@@ -348,7 +348,7 @@ class _WheelPickerState extends State<_WheelPicker> {
           margin: const EdgeInsets.symmetric(horizontal: 8),
           decoration: BoxDecoration(
             color: cs.primaryContainer.withValues(alpha: 0.5),
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(16),
           ),
         ),
         ScrollConfiguration(

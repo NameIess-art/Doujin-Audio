@@ -101,7 +101,7 @@ extension AudioProviderWarmup on AudioProvider {
 
   void _scheduleLibraryWarmup({required int generation}) {
     if (_isScanning) return;
-    final folders = libraryTree.whereType<FolderNode>().take(4).toList();
+    final folders = libraryCards.whereType<FolderNode>().take(4).toList();
     for (var index = 0; index < folders.length; index++) {
       final folder = folders[index];
       final key = 'folder_cover:${folder.path}:$coverGeneration';

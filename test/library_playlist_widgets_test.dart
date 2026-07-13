@@ -68,6 +68,22 @@ Future<void> _pumpUntilNotFound(
   fail('Timed out waiting for $finder to disappear');
 }
 
+Future<void> _pumpUntilFound(
+  WidgetTester tester,
+  Finder finder, {
+  Duration timeout = const Duration(seconds: 10),
+}) async {
+  final ticks = timeout.inMilliseconds ~/ 50;
+  for (var i = 0; i < ticks; i++) {
+    await tester.pump(const Duration(milliseconds: 50));
+    if (finder.evaluate().isNotEmpty) return;
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 10)),
+    );
+  }
+  fail('Timed out waiting for $finder to appear');
+}
+
 Future<void> _pumpUntilLibraryTreeReady(
   WidgetTester tester,
   AudioProvider audioProvider, {
@@ -1015,13 +1031,22 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 500));
 
+      expect(audioProvider.libraryTreeSnapshotRevision, -1);
+
       await tester.enterText(find.byType(TextField), 'forest');
       await tester.pump(const Duration(milliseconds: 260));
-      await tester.pump(const Duration(milliseconds: 300));
+      await _pumpUntilFound(
+        tester,
+        find.text(languageProvider.tr('no_search_results')),
+      );
 
       expect(
         find.text(languageProvider.tr('no_search_results')),
         findsOneWidget,
+      );
+      expect(
+        audioProvider.libraryTreeSnapshotRevision,
+        libraryService.structureRevision,
       );
     },
   );

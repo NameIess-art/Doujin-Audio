@@ -151,7 +151,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   void _setLocalState(VoidCallback fn) => setState(fn);
 
   void _ensureFilteredSearchSnapshot({
-    required List<LibraryNode> tree,
+    required AudioProvider provider,
     required String query,
     required int structureRevision,
   }) {
@@ -163,16 +163,18 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     }
     final requestKey = '$structureRevision|$query';
     _pendingSearchKey = requestKey;
-    final request = LibrarySearchSnapshotRequest(
-      tree: tree,
-      query: query,
-      structureRevision: structureRevision,
-    );
-    final searchFuture = libraryTreeTrackCount(tree) > 200
-        ? compute(buildFilteredLibraryTreeSnapshot, request)
-        : Future<FilteredLibraryTreeResult>.microtask(
-            () => buildFilteredLibraryTreeSnapshot(request),
-          );
+    final searchFuture = provider.loadLibraryTree().then((tree) {
+      final request = LibrarySearchSnapshotRequest(
+        tree: tree,
+        query: query,
+        structureRevision: structureRevision,
+      );
+      return libraryTreeTrackCount(tree) > 200
+          ? compute(buildFilteredLibraryTreeSnapshot, request)
+          : Future<FilteredLibraryTreeResult>.microtask(
+              () => buildFilteredLibraryTreeSnapshot(request),
+            );
+    });
     unawaited(
       searchFuture.then((result) {
         if (!mounted || _pendingSearchKey != requestKey) return;
@@ -532,7 +534,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     );
     final searchQuery = _effectiveSearchQuery;
     _ensureFilteredSearchSnapshot(
-      tree: listStateRawTree,
+      provider: provider,
       query: searchQuery,
       structureRevision: listStateStructureRevision,
     );

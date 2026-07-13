@@ -420,7 +420,7 @@ extension _MainScreenLayout on _MainScreenState {
           : const EdgeInsets.fromLTRB(10, AppSpacing.md, 10, 10),
       decoration: BoxDecoration(
         color: isWindows ? Colors.transparent : cs.surfaceContainerLow,
-        borderRadius: isWindows ? BorderRadius.zero : BorderRadius.circular(26),
+        borderRadius: isWindows ? BorderRadius.zero : BorderRadius.circular(16),
         border: isWindows
             ? null
             : Border.all(color: cs.outlineVariant.withValues(alpha: 0.85)),

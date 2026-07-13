@@ -237,7 +237,7 @@ class _AsmrDownloadDetailsNodeTileState
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
           color: cs.surfaceContainerHigh.withValues(alpha: 0.5),
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(16),
         ),
         child: Row(
           children: [

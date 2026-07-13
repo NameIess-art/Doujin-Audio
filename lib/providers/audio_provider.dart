@@ -931,11 +931,11 @@ class AudioProvider with ChangeNotifier {
           (preserveSliceInitialized &&
               _libraryService.slice.state.isInitialized),
       detailRevision: _audioDetailCacheService.revision,
-      treeSnapshotRevision: _librarySnapshotCacheService.treeSnapshotRevision,
+      treeSnapshotRevision: _librarySnapshotCacheService.cardSnapshotRevision,
       categorySnapshotRevision:
           _librarySnapshotCacheService.categorySnapshotRevision,
     );
-    unawaited(_ensureLibraryTreeSnapshot());
+    unawaited(_ensureLibraryCardSnapshot());
   }
 
   void _syncPlaybackStateSlice() {

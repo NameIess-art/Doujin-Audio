@@ -58,24 +58,47 @@ extension AudioProviderState on AudioProvider {
   List<String> get watchedLibraries => UnmodifiableListView(_watchedLibraries);
   int get watchedFolderCount => _watchedFolders.length;
   int get watchedLibraryCount => _watchedLibraries.length;
-  List<LibraryNode> get libraryTree {
-    if (_librarySnapshotCacheService.treeSnapshotRevision !=
+  List<LibraryNode> get libraryCards {
+    if (_librarySnapshotCacheService.cardSnapshotRevision !=
         _libraryService.structureRevision) {
-      unawaited(_ensureLibraryTreeSnapshot());
+      unawaited(_ensureLibraryCardSnapshot());
     } else if (_libraryService.slice.state.treeSnapshotRevision !=
-        _librarySnapshotCacheService.treeSnapshotRevision) {
+        _librarySnapshotCacheService.cardSnapshotRevision) {
       scheduleMicrotask(
         () => _syncLibraryStateSlice(preserveSliceInitialized: true),
       );
     }
+    return _librarySnapshotCacheService.cards;
+  }
+
+  List<LibraryNode> get libraryTree {
+    if (_librarySnapshotCacheService.treeSnapshotRevision !=
+        _libraryService.structureRevision) {
+      unawaited(_ensureLibraryTreeSnapshot());
+    }
     return _librarySnapshotCacheService.tree;
   }
+
+  int get libraryCardSnapshotRevision =>
+      _librarySnapshotCacheService.cardSnapshotRevision;
 
   int get libraryTreeSnapshotRevision =>
       _librarySnapshotCacheService.treeSnapshotRevision;
 
   int get libraryLeafFolderCount {
     return _librarySnapshotCacheService.leafFolderCount;
+  }
+
+  Future<List<LibraryNode>> loadLibraryTree() async {
+    return (await _ensureLibraryTreeSnapshot()).tree;
+  }
+
+  Future<FolderNode?> loadLibraryFolderTree(String folderPath) async {
+    final tree = await loadLibraryTree();
+    for (final node in tree.whereType<FolderNode>()) {
+      if (PathMatcher.equalsNormalized(node.path, folderPath)) return node;
+    }
+    return null;
   }
 
   int get playingSessionCount => _playbackService.playingSessionCount;
@@ -255,6 +278,19 @@ extension AudioProviderCoreState on AudioProvider {
     bool notifyOnCommit = true,
   }) {
     return _librarySnapshotCacheService.treeSnapshot(
+      onCommitted: () {
+        _syncLibraryStateSlice(preserveSliceInitialized: true);
+        if (notifyOnCommit) {
+          _notifyPresentationListeners();
+        }
+      },
+    );
+  }
+
+  Future<LibraryTreeSnapshot> _ensureLibraryCardSnapshot({
+    bool notifyOnCommit = true,
+  }) {
+    return _librarySnapshotCacheService.cardSnapshot(
       onCommitted: () {
         _syncLibraryStateSlice(preserveSliceInitialized: true);
         if (notifyOnCommit) {

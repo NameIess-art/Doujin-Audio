@@ -268,18 +268,8 @@ extension _LibraryTabCategoryView on _LibraryTabState {
     AudioLibraryCategoryEntry entry,
   ) {
     if (!entry.isFolder) return null;
-    return _findFolder(provider.libraryTree, entry.path);
-  }
-
-  FolderNode? _findFolder(List<LibraryNode> nodes, String path) {
-    for (final node in nodes) {
-      if (node is FolderNode) {
-        if (PathMatcher.equalsNormalized(node.path, path)) {
-          return node;
-        }
-        final child = _findFolder(node.children, path);
-        if (child != null) return child;
-      }
+    for (final folder in provider.libraryCards.whereType<FolderNode>()) {
+      if (PathMatcher.equalsNormalized(folder.path, entry.path)) return folder;
     }
     return null;
   }
@@ -403,7 +393,7 @@ class _LibraryCategoryTermBoxState extends State<_LibraryCategoryTermBox> {
       padding: const EdgeInsets.fromLTRB(10, 5, 10, 5),
       decoration: BoxDecoration(
         color: cs.surfaceContainerHigh,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(color: cs.outlineVariant),
       ),
       child: widget.terms.isEmpty && _localSearchQuery.isEmpty
@@ -738,63 +728,10 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
     final folderNode = folder;
 
     if (entry.isFolder && folderNode != null) {
-      return SwipeRevealCard(
-        margin: const EdgeInsets.only(bottom: 6),
-        shape: cardShape,
-        actionLabel: i18n.tr('remove'),
-        removeTooltip: i18n.tr('remove_audio_folder'),
-        secondaryActionLabel: i18n.tr('audio_detail'),
-        secondaryActionTooltip: i18n.tr('audio_detail'),
-        verticalActions: true,
-        onSecondaryAction: () =>
-            unawaited(showAudioDetailSheet(context, entry.target)),
-        onRemove: () => _remove(context, provider),
-        child: Card(
-          margin: EdgeInsets.zero,
-          clipBehavior: Clip.antiAlias,
-          shape: cardShape,
-          color: cs.surfaceContainerLow,
-          child: Theme(
-            data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-            child: ExpansionTile(
-              minTileHeight: cardHeight,
-              showTrailingIcon: false,
-              tilePadding: const EdgeInsets.fromLTRB(12, 2, 12, 2),
-              childrenPadding: const EdgeInsets.fromLTRB(12, 0, 0, 0),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-              ),
-              collapsedShape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-              ),
-              title: _RootFolderCardContent(
-                folderPath: entry.path,
-                folderName: entry.title,
-                folderDuration: folderNode.totalDuration,
-                detail: entry.detail,
-                detailLoading: false,
-                expanded: false,
-                hasChildren: folderNode.children.isNotEmpty,
-                onPlay: firstTrack == null
-                    ? () {}
-                    : () => _play(context, provider),
-              ),
-              children: folderNode.children
-                  .map(
-                    (childNode) => Padding(
-                      padding: const EdgeInsets.only(top: 6),
-                      child: RepaintBoundary(
-                        child: _LibraryTreeItem(
-                          key: ValueKey(childNode.path),
-                          node: childNode,
-                        ),
-                      ),
-                    ),
-                  )
-                  .toList(),
-            ),
-          ),
-        ),
+      return _FolderNodeWidget(
+        folder: folderNode,
+        initiallyExpanded: false,
+        searchQuery: '',
       );
     }
 

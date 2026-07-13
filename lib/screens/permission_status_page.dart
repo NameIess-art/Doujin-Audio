@@ -326,7 +326,7 @@ class _PermissionTile extends StatelessWidget {
           height: 42,
           decoration: BoxDecoration(
             color: statusColor.withValues(alpha: 0.14),
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(16),
           ),
           child: Icon(icon, color: statusColor, size: 22),
         ),

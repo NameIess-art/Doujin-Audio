@@ -109,7 +109,7 @@ void main() {
     provider.addTracks(tracks, notify: false, persist: false);
 
     final requestedPaths = <String>[];
-    final duration = await provider.calculateMissingFolderDurations(
+    final duration = await provider.calculateMissingLibraryDuration(
       folder.path,
       durationReader: (trackPath) async {
         requestedPaths.add(trackPath);
@@ -146,7 +146,7 @@ void main() {
       persist: false,
     );
     final retryPaths = <String>[];
-    final incompleteDuration = await provider.calculateMissingFolderDurations(
+    final incompleteDuration = await provider.calculateMissingLibraryDuration(
       folder.path,
       durationReader: (trackPath) async {
         retryPaths.add(trackPath);
@@ -176,12 +176,47 @@ void main() {
       notify: false,
       persist: false,
     );
-    final contentDuration = await provider.calculateMissingFolderDurations(
+    final contentDuration = await provider.calculateMissingLibraryDuration(
       contentRoot,
       durationReader: (trackPath) async =>
           trackPath == contentTrackPath ? const Duration(minutes: 5) : null,
     );
     expect(contentDuration, const Duration(minutes: 5));
+  });
+
+  test('missing duration is resolved for a single video file', () async {
+    const videoPath = r'C:\library\standalone-video.mp4';
+    provider.addTracks(
+      const <MusicTrack>[
+        MusicTrack(
+          path: videoPath,
+          displayName: 'standalone-video',
+          groupKey: r'C:\library',
+          groupTitle: 'standalone-video',
+          groupSubtitle: r'C:\library',
+          isSingle: true,
+          isVideo: true,
+        ),
+      ],
+      notify: false,
+      persist: false,
+    );
+
+    final requestedPaths = <String>[];
+    final duration = await provider.calculateMissingLibraryDuration(
+      videoPath.toUpperCase(),
+      durationReader: (trackPath) async {
+        requestedPaths.add(trackPath);
+        return const Duration(minutes: 7, seconds: 12);
+      },
+    );
+
+    expect(requestedPaths, const <String>[videoPath]);
+    expect(duration, const Duration(minutes: 7, seconds: 12));
+    expect(
+      provider.trackByPath(videoPath)?.duration,
+      const Duration(minutes: 7, seconds: 12),
+    );
   });
 
   // ── multi-session playback stability ──────────────────────────

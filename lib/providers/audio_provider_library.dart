@@ -1493,26 +1493,35 @@ extension AudioProviderLibrary on AudioProvider {
     return '';
   }
 
-  Future<Duration?> calculateMissingFolderDurations(
-    String folderPath, {
+  Future<Duration?> calculateMissingLibraryDuration(
+    String targetPath, {
     @visibleForTesting Future<Duration?> Function(String path)? durationReader,
   }) async {
-    final folderTracks = _library
+    final singleTracks = _library
         .where(
           (track) =>
-              !track.isSingle &&
-              (PathMatcher.isWithinOrEqual(track.groupKey, folderPath) ||
-                  PathMatcher.isWithinOrEqual(track.path, folderPath)),
+              track.isSingle &&
+              PathMatcher.equalsNormalized(track.path, targetPath),
         )
         .toList(growable: false);
-    if (folderTracks.isEmpty) return null;
+    final targetTracks = singleTracks.isNotEmpty
+        ? singleTracks
+        : _library
+              .where(
+                (track) =>
+                    !track.isSingle &&
+                    (PathMatcher.isWithinOrEqual(track.groupKey, targetPath) ||
+                        PathMatcher.isWithinOrEqual(track.path, targetPath)),
+              )
+              .toList(growable: false);
+    if (targetTracks.isEmpty) return null;
 
     final tracksToUpdate = <MusicTrack>[];
     AudioPlayer? player;
     var totalDuration = Duration.zero;
     var hasUnknownDuration = false;
     try {
-      for (final track in folderTracks) {
+      for (final track in targetTracks) {
         var duration = track.duration;
         if (duration <= Duration.zero) {
           try {
@@ -1533,7 +1542,7 @@ extension AudioProviderLibrary on AudioProvider {
             }
           } catch (error, stackTrace) {
             AppLogService.warning(
-              'folder_duration_probe_failed path=${track.path}',
+              'library_duration_probe_failed path=${track.path}',
               error: error,
               stackTrace: stackTrace,
             );
@@ -1549,7 +1558,7 @@ extension AudioProviderLibrary on AudioProvider {
         } else {
           hasUnknownDuration = true;
           AppLogService.warning(
-            'folder_duration_unresolved path=${track.path} video=${track.isVideo}',
+            'library_duration_unresolved path=${track.path} video=${track.isVideo}',
           );
         }
       }

@@ -44,7 +44,7 @@ class AudioDetailSheet extends StatefulWidget {
 class _AudioDetailSheetState extends State<AudioDetailSheet> {
   late AudioDetailTarget _target = widget.target;
   AudioDetail? _detail;
-  Duration? _calculatedFolderDuration;
+  Duration? _calculatedDuration;
   Object? _loadError;
   bool _loading = true;
   bool _runningAction = false;
@@ -60,14 +60,14 @@ class _AudioDetailSheetState extends State<AudioDetailSheet> {
     unawaited(_load());
   }
 
-  Future<Duration?> _calculateAutomaticFolderDuration(
+  Future<Duration?> _calculateAutomaticDuration(
     AudioProvider provider,
     AudioDetail detail,
   ) {
-    if (!_target.isLibraryRootFolder || detail.duration != null) {
+    if (detail.duration != null) {
       return Future<Duration?>.value();
     }
-    return provider.calculateMissingFolderDurations(_target.targetPath);
+    return provider.calculateMissingLibraryDuration(_target.targetPath);
   }
 
   Future<void> _load() async {
@@ -80,7 +80,7 @@ class _AudioDetailSheetState extends State<AudioDetailSheet> {
             task: (_) => provider.loadAudioDetail(_target),
           );
 
-      final calculatedFolderDuration = await _calculateAutomaticFolderDuration(
+      final calculatedDuration = await _calculateAutomaticDuration(
         provider,
         result.detail,
       );
@@ -88,7 +88,7 @@ class _AudioDetailSheetState extends State<AudioDetailSheet> {
       if (!mounted) return;
       setState(() {
         _detail = result.detail;
-        _calculatedFolderDuration = calculatedFolderDuration;
+        _calculatedDuration = calculatedDuration;
         _loading = false;
       });
     } catch (error) {
@@ -220,13 +220,13 @@ class _AudioDetailSheetState extends State<AudioDetailSheet> {
             labelKey: 'audio_detail_save_failed',
             task: (_) => provider.saveAudioDetail(nextDetail),
           );
-      final calculatedFolderDuration = field == _AudioDetailField.duration
-          ? await _calculateAutomaticFolderDuration(provider, result.detail)
-          : _calculatedFolderDuration;
+      final calculatedDuration = field == _AudioDetailField.duration
+          ? await _calculateAutomaticDuration(provider, result.detail)
+          : _calculatedDuration;
       if (!mounted) return;
       setState(() {
         _detail = result.detail;
-        _calculatedFolderDuration = calculatedFolderDuration;
+        _calculatedDuration = calculatedDuration;
         _savingField = null;
       });
       final i18n = context.read<AppLanguageProvider>();
@@ -398,7 +398,7 @@ class _AudioDetailSheetState extends State<AudioDetailSheet> {
     final detail = _detail;
     final provider = context.watch<AudioProvider>();
 
-    Duration? duration = detail?.duration ?? _calculatedFolderDuration;
+    Duration? duration = detail?.duration ?? _calculatedDuration;
     if (duration == null && !_target.isLibraryRootFolder) {
       final trackDuration = provider.trackByPath(_target.targetPath)?.duration;
       if (trackDuration != null && trackDuration > Duration.zero) {

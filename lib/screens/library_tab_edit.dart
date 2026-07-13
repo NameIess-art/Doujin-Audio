@@ -215,8 +215,8 @@ class LibraryEditPage extends ConsumerStatefulWidget {
 
 class _LibraryEditPageState extends ConsumerState<LibraryEditPage>
     with WidgetsBindingObserver {
-  static final FileCachePlatformGateway _fileCacheGateway =
-      FileCachePlatformGateway.instance;
+  final LibraryEntryEditorService _entryEditorService =
+      LibraryEntryEditorService();
   final TextEditingController _searchController = TextEditingController();
   List<String> _diskAudioFilePaths = const <String>[];
   Set<String> _diskAudioFilePathSet = const <String>{};
@@ -248,14 +248,11 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage>
   }
 
   Future<void> _loadDiskLibrarySnapshot() async {
-    if (PathMatcher.isContentUri(widget.libraryPath)) {
-      if (await _loadNativeLibrarySnapshot()) {
-        if (mounted && _initialLoadPending) {
-          setState(() => _initialLoadPending = false);
-        }
-        return;
-      }
-      if (!mounted) return;
+    final snapshot = await _entryEditorService.loadDiskSnapshot(
+      widget.libraryPath,
+    );
+    if (!mounted) return;
+    if (!snapshot.authoritative) {
       setState(() {
         _diskAudioFilePaths = const <String>[];
         _diskAudioFilePathSet = const <String>{};
@@ -265,82 +262,26 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage>
       });
       return;
     }
-    final directory = Directory(widget.libraryPath);
-    if (!await directory.exists()) {
-      if (!mounted) return;
-      final provider = ref.read(audioProviderFacadeProvider);
-      provider.removeTracksDeletedFromFolder(
-        widget.libraryPath,
-        const <String>{},
-      );
-      provider.removeLibraryEntriesDeletedFromFolder(
-        widget.libraryPath,
-        widget.libraryPath,
-        const <String>{},
-      );
-      setState(() {
-        _diskAudioFilePaths = const <String>[];
-        _diskAudioFilePathSet = const <String>{};
-        _diskLiveFolderPaths = const <String>{};
-        _diskSnapshotLoaded = true;
-        _initialLoadPending = false;
-      });
-      return;
-    }
-    final audioFiles = <String>{};
-    final pendingDirs = Queue<Directory>()..add(directory);
-    var processedEntities = 0;
 
-    try {
-      while (pendingDirs.isNotEmpty) {
-        final currentDir = pendingDirs.removeFirst();
-        late final Stream<FileSystemEntity> stream;
-        try {
-          stream = currentDir.list(followLinks: false);
-        } catch (_) {
-          continue;
-        }
-        await for (final entity in stream.handleError((_) {})) {
-          processedEntities++;
-          if (processedEntities % 200 == 0) {
-            await Future<void>.delayed(Duration.zero);
-          }
-          final normalizedPath = PathMatcher.normalize(entity.path);
-          if (entity is Directory) {
-            pendingDirs.add(entity);
-            continue;
-          }
-          if (entity is File && isSupportedMediaFile(normalizedPath)) {
-            audioFiles.add(normalizedPath);
-          }
-        }
-      }
-    } catch (_) {
-      // Live disk discovery is optional; retain the latest scanned paths.
-    }
+    final audioFilePaths = snapshot.audioFilePathSet;
     final liveFolderPaths = _buildLiveDiskFolderPathSet(
-      scannedTrackPaths: audioFiles,
+      scannedTrackPaths: audioFilePaths,
+      scannedFolderPaths: snapshot.scannedFolderPaths,
     );
-
-    final sortedAudioFiles = audioFiles.toList(growable: false)
-      ..sort(
-        (a, b) => compareNatural(
-          path.basenameWithoutExtension(a),
-          path.basenameWithoutExtension(b),
-        ),
-      );
-    if (!mounted) return;
-    final retainedPaths = <String>{...sortedAudioFiles, ...liveFolderPaths};
+    final retainedPaths = <String>{
+      ...snapshot.audioFilePaths,
+      ...liveFolderPaths,
+    };
     final provider = ref.read(audioProviderFacadeProvider);
-    provider.removeTracksDeletedFromFolder(widget.libraryPath, audioFiles);
+    provider.removeTracksDeletedFromFolder(widget.libraryPath, audioFilePaths);
     provider.removeLibraryEntriesDeletedFromFolder(
       widget.libraryPath,
       widget.libraryPath,
       retainedPaths,
     );
     setState(() {
-      _diskAudioFilePaths = sortedAudioFiles;
-      _diskAudioFilePathSet = audioFiles;
+      _diskAudioFilePaths = snapshot.audioFilePaths;
+      _diskAudioFilePathSet = audioFilePaths;
       _diskLiveFolderPaths = liveFolderPaths;
       _diskSnapshotLoaded = true;
       _initialLoadPending = false;
@@ -364,66 +305,6 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage>
     if (removed && context.mounted) {
       await Navigator.of(context).maybePop();
     }
-  }
-
-  Future<bool> _loadNativeLibrarySnapshot() async {
-    if (!Platform.isAndroid) return false;
-    final audioFiles = <String>{};
-    final folderPaths = <String>{};
-    try {
-      final data = await _fileCacheGateway.scanFolderPayload(
-        widget.libraryPath,
-      );
-      if (data == null) return false;
-      for (final item in data) {
-        if (item is! Map) continue;
-        final map = item.cast<Object?, Object?>();
-        final scannedPath = map['path']?.toString().trim();
-        if (scannedPath == null ||
-            scannedPath.isEmpty ||
-            !isSupportedMediaFile(scannedPath)) {
-          continue;
-        }
-        audioFiles.add(PathMatcher.normalize(scannedPath));
-        final groupKey = map['groupKey']?.toString().trim();
-        if (groupKey != null &&
-            groupKey.isNotEmpty &&
-            !PathMatcher.equalsNormalized(groupKey, widget.libraryPath)) {
-          folderPaths.add(PathMatcher.normalize(groupKey));
-        }
-      }
-    } catch (_) {
-      return false;
-    }
-
-    if (!mounted) return true;
-    final liveFolderPaths = _buildLiveDiskFolderPathSet(
-      scannedTrackPaths: audioFiles,
-      scannedFolderPaths: folderPaths,
-    );
-    final sortedAudioFiles = audioFiles.toList(growable: false)
-      ..sort(
-        (a, b) => compareNatural(
-          path.basenameWithoutExtension(a),
-          path.basenameWithoutExtension(b),
-        ),
-      );
-    final retainedPaths = <String>{...sortedAudioFiles, ...liveFolderPaths};
-    final provider = ref.read(audioProviderFacadeProvider);
-    provider.removeTracksDeletedFromFolder(widget.libraryPath, audioFiles);
-    provider.removeLibraryEntriesDeletedFromFolder(
-      widget.libraryPath,
-      widget.libraryPath,
-      retainedPaths,
-    );
-    setState(() {
-      _diskAudioFilePaths = sortedAudioFiles;
-      _diskAudioFilePathSet = audioFiles;
-      _diskLiveFolderPaths = liveFolderPaths;
-      _diskSnapshotLoaded = true;
-      _initialLoadPending = false;
-    });
-    return true;
   }
 
   @override

@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:collection';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -17,8 +16,7 @@ import '../providers/audio_provider_library_catalog.dart';
 import '../providers/audio_provider_riverpod.dart';
 import '../services/audio_state_services.dart';
 import '../services/app_preferences.dart';
-import '../services/file_cache_platform_gateway.dart';
-import '../services/media_file_support.dart';
+import '../services/library_entry_editor_service.dart';
 import '../services/natural_sort.dart';
 import '../services/path_display.dart';
 import '../services/path_matcher.dart';

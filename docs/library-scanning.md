@@ -4,6 +4,7 @@
 LibraryTab
   -> LibraryScanCoordinator
   -> LibraryScannerService
+  -> LibraryScanDataSource
   -> FileCachePlatformGateway / file-system isolate
   -> AudioProviderLibraryCatalog
   -> AudioProvider facade
@@ -13,6 +14,15 @@ LibraryTab
 `LibraryScanCoordinator` exposes `refresh`, `importFolder`, `importLibrary`,
 `importFiles`, and `cancel`, and publishes idle/running/success/cancelled/failure
 operation state. UI feedback remains a presentation concern.
+
+The coordinator converts localized picker labels into `LibraryScanLabels` and
+translates the returned `LibraryScanOutcome`. The scanner reports stable codes,
+an operation source, and count details; it does not import localization or call
+snackbar callbacks.
+
+`LibraryScanDataSource` owns Android permission checks, picker fallbacks,
+temporary imports, native local/SAF calls, and the isolate-backed local scan.
+`LibraryScanRules` is pure Dart and owns duplicate/nested/overlap decisions.
 
 `LibraryScannerService` does not depend on the concrete `AudioProvider` type.
 It uses `LibraryCatalogReader` for immutable snapshots and

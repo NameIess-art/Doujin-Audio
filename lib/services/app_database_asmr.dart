@@ -71,14 +71,14 @@ extension AppDatabaseAsmr on AppDatabase {
       );
       if (rows.isEmpty) return const <AsmrWork>[];
       final ids = rows.map((row) => row['id'] as int).toList(growable: false);
-      final voiceActorsById = await AppDatabase._loadAsmrWorkTextValues(
+      final voiceActorsById = await _loadAsmrWorkTextValues(
         db,
         table: 'asmr_work_voice_actors',
         idColumn: 'work_id',
         valueColumn: 'name',
         ids: ids,
       );
-      final tagsById = await AppDatabase._loadAsmrWorkTextValues(
+      final tagsById = await _loadAsmrWorkTextValues(
         db,
         table: 'asmr_work_tags',
         idColumn: 'work_id',
@@ -87,7 +87,7 @@ extension AppDatabaseAsmr on AppDatabase {
       );
       return rows
           .map(
-            (row) => AppDatabase._asmrWorkFromRow(
+            (row) => _asmrWorkFromRow(
               row,
               voiceActors: voiceActorsById[row['id'] as int],
               tags: tagsById[row['id'] as int],
@@ -100,7 +100,7 @@ extension AppDatabaseAsmr on AppDatabase {
   Future<void> saveAsmrWorkList(String listType, List<AsmrWork> works) async {
     await _runDatabaseWrite((db) async {
       final batch = db.batch();
-      AppDatabase._replaceAsmrWorkListInBatch(batch, listType, works);
+      _replaceAsmrWorkListInBatch(batch, listType, works);
       await batch.commit(noResult: true);
     });
   }
@@ -133,7 +133,7 @@ extension AppDatabaseAsmr on AppDatabase {
   ) async {
     await _runDatabaseWrite((db) async {
       final batch = db.batch();
-      AppDatabase._replaceAsmrSyncOperationsInBatch(batch, operations);
+      _replaceAsmrSyncOperationsInBatch(batch, operations);
       await batch.commit(noResult: true);
     });
   }
@@ -146,8 +146,8 @@ extension AppDatabaseAsmr on AppDatabase {
     await _runDatabaseWrite((db) async {
       await db.transaction((txn) async {
         final batch = txn.batch();
-        AppDatabase._replaceAsmrWorkListInBatch(batch, listType, works);
-        AppDatabase._replaceAsmrSyncOperationsInBatch(batch, operations);
+        _replaceAsmrWorkListInBatch(batch, listType, works);
+        _replaceAsmrSyncOperationsInBatch(batch, operations);
         await batch.commit(noResult: true);
       });
     });

@@ -12,6 +12,7 @@ import 'asmr_auth_service.dart';
 import 'asmr_playback_coordinator.dart';
 import 'asmr_preferences.dart';
 import 'asmr_recommendation_engine.dart';
+import 'app_database.dart';
 import 'search_query_utils.dart';
 import 'ui_interaction_coordinator.dart';
 
@@ -250,7 +251,9 @@ class AsmrLibraryController extends ChangeNotifier
        _authService = authService ?? AsmrAuthService(apiService: apiService),
        _audioDatabaseRepository =
            audioDatabaseRepository ?? AudioDatabaseRepository(),
-       _preferencesStore = preferencesStore ?? AsmrPreferencesStore(),
+       _preferencesStore =
+           preferencesStore ??
+           AsmrPreferencesStore(database: AppDatabase.instance),
        _recommendationEngine = recommendationEngine;
 
   static const int _historyLimit = 60;

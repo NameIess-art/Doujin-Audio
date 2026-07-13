@@ -1,23 +1,21 @@
 import 'dart:async';
 import 'dart:collection';
 import 'dart:io';
-import 'dart:isolate';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
 import 'package:path/path.dart' as path;
-import 'package:permission_handler/permission_handler.dart';
-import 'package:file_picker/file_picker.dart';
-import 'package:path_provider/path_provider.dart';
 
-import '../i18n/app_language_provider.dart';
+export 'library_scan_data_source.dart' show scanFileSystemFolderPayloadForTest;
+
 import '../models/music_track.dart';
 import 'audio_state_services.dart';
 import 'library_catalog.dart';
 import 'path_matcher.dart';
 import 'path_display.dart';
 import 'media_file_support.dart';
+import 'library_scan_data_source.dart';
 import 'library_scan_models.dart';
+import 'library_scan_rules.dart';
 import 'library_refresh_chunk_planner.dart';
 import 'library_scanner_isolate.dart';
 import 'file_cache_platform_gateway.dart';
@@ -55,10 +53,15 @@ class _FolderImportOutcome {
 }
 
 class LibraryScannerService {
-  LibraryScannerService({FileCachePlatformGateway? platformGateway})
-    : _platformGateway = platformGateway ?? FileCachePlatformGateway.instance;
+  LibraryScannerService({
+    LibraryScanDataSource? dataSource,
+    FileCachePlatformGateway? platformGateway,
+  }) : _dataSource =
+           dataSource ??
+           PlatformLibraryScanDataSource(platformGateway: platformGateway);
 
-  final FileCachePlatformGateway _platformGateway;
+  final LibraryScanDataSource _dataSource;
+  final LibraryScanRules _rules = const LibraryScanRules();
 
   void _rollbackScanAdditions({
     required LibraryCatalog provider,
@@ -87,54 +90,33 @@ class LibraryScannerService {
     }
   }
 
-  bool _pathsOverlap(String first, String second) {
-    return PathMatcher.isWithinOrEqual(first, second) ||
-        PathMatcher.isWithinOrEqual(second, first);
-  }
-
   Future<bool> _flushRefreshBatch(LibraryCatalogReader provider) async {
     await Future<void>.delayed(Duration.zero);
     return provider.isScanning;
   }
 
-  Future<bool> _ensureReadPermissionForSources(Iterable<String> sources) async {
-    if (!Platform.isAndroid) return true;
-    final sourceList = sources
-        .where((source) => source.trim().isNotEmpty)
-        .toList(growable: false);
-    if (sourceList.isNotEmpty && sourceList.every(PathMatcher.isContentUri)) {
-      return true;
-    }
-    final manageStatus = await Permission.manageExternalStorage.request();
-    if (manageStatus.isGranted) return true;
-    final statuses = await [
-      Permission.audio,
-      Permission.videos,
-      Permission.storage,
-    ].request();
-    return statuses.values.any(
-      (status) => status.isGranted || status.isLimited,
-    );
-  }
-
-  Future<void> refreshWatchedFolders({
+  Future<LibraryScanOutcome> refreshWatchedFolders({
     required LibraryCatalog provider,
-    required AppLanguageProvider i18n,
-    required void Function(String) showSnack,
-    bool silent = false,
-    bool forceShowResult = false,
+    required LibraryScanLabels labels,
   }) async {
     final watchedFolders = provider.watchedFolders;
     final watchedLibraries = provider.watchedLibraries;
-    if (watchedFolders.isEmpty && watchedLibraries.isEmpty) return;
+    if (watchedFolders.isEmpty && watchedLibraries.isEmpty) {
+      return const LibraryScanOutcome(
+        code: LibraryScanOutcomeCode.noSources,
+        source: 'refresh',
+      );
+    }
 
-    final permissionGranted = await _ensureReadPermissionForSources([
+    final permissionGranted = await _dataSource.ensureReadPermissionForSources([
       ...watchedFolders,
       ...watchedLibraries,
     ]);
     if (!permissionGranted) {
-      if (!silent) showSnack(i18n.tr('need_storage_permission_scan_folder'));
-      return;
+      return const LibraryScanOutcome(
+        code: LibraryScanOutcomeCode.permissionDenied,
+        source: 'refresh',
+      );
     }
 
     final generation = provider.tryBeginScan(
@@ -145,7 +127,12 @@ class LibraryScannerService {
       ),
       background: true,
     );
-    if (generation == 0) return;
+    if (generation == 0) {
+      return const LibraryScanOutcome(
+        code: LibraryScanOutcomeCode.alreadyRunning,
+        source: 'refresh',
+      );
+    }
     final existingTrackPaths = provider.library
         .map((track) => PathMatcher.normalize(track.path))
         .toSet();
@@ -163,6 +150,7 @@ class LibraryScannerService {
     var chunkIndex = 0;
     var batchOpen = true;
     var batchStarted = false;
+    var wasCancelled = false;
     final deferredCleanupChunks = <LibraryRefreshChunk>[];
 
     Future<void> applyFolderResult(LibraryRefreshFolderResult result) async {
@@ -221,7 +209,7 @@ class LibraryScannerService {
             await _scanLibraryRootForRefresh(
               libraryRoot: libraryRoot,
               provider: provider,
-              i18n: i18n,
+              labels: labels,
               generation: generation,
             ),
           );
@@ -245,7 +233,7 @@ class LibraryScannerService {
                   ? folderPath
                   : libraryRoot,
               provider: provider,
-              i18n: i18n,
+              labels: labels,
               progressPrefix: '[$processedFolders/$totalFolders]',
               generation: generation,
             ),
@@ -272,7 +260,7 @@ class LibraryScannerService {
         }
       }
     } finally {
-      final wasCancelled = !provider.isScanGenerationActive(generation);
+      wasCancelled = !provider.isScanGenerationActive(generation);
       if (wasCancelled) {
         provider.beginLibraryBatch();
         _rollbackScanAdditions(
@@ -283,21 +271,26 @@ class LibraryScannerService {
         await provider.endLibraryBatch();
       }
       provider.finishScan(generation);
-
-      if (!silent || forceShowResult || totalAdded > 0) {
-        showSnack(
-          totalAdded > 0
-              ? i18n.tr('refresh_done_added', {'count': totalAdded})
-              : i18n.tr('refresh_done_no_new'),
-        );
-      }
     }
+    if (wasCancelled) {
+      return const LibraryScanOutcome(
+        code: LibraryScanOutcomeCode.cancelled,
+        source: 'refresh',
+      );
+    }
+    return LibraryScanOutcome(
+      code: totalAdded > 0
+          ? LibraryScanOutcomeCode.refreshAdded
+          : LibraryScanOutcomeCode.refreshNoChanges,
+      source: 'refresh',
+      details: <String, Object?>{'count': totalAdded},
+    );
   }
 
   Future<LibraryRefreshFolderResult> _scanLibraryRootForRefresh({
     required String libraryRoot,
     required LibraryCatalog provider,
-    required AppLanguageProvider i18n,
+    required LibraryScanLabels labels,
     required int generation,
   }) async {
     final childFolderResult = await _listImmediateChildFoldersResult(
@@ -314,7 +307,7 @@ class LibraryScannerService {
       sourceFolderPath: libraryRoot,
       libraryRoot: libraryRoot,
       provider: provider,
-      i18n: i18n,
+      labels: labels,
       promoteRootTracksToSingles: true,
       folderPaths: childFolders,
       removeWatchedFolders: [libraryRoot],
@@ -329,7 +322,7 @@ class LibraryScannerService {
     required String folderPath,
     required String effectiveLibraryRoot,
     required LibraryCatalog provider,
-    required AppLanguageProvider i18n,
+    required LibraryScanLabels labels,
     required String progressPrefix,
     required int generation,
   }) {
@@ -337,7 +330,7 @@ class LibraryScannerService {
       sourceFolderPath: folderPath,
       libraryRoot: effectiveLibraryRoot,
       provider: provider,
-      i18n: i18n,
+      labels: labels,
       progressPrefix: progressPrefix,
       generation: generation,
     );
@@ -347,7 +340,7 @@ class LibraryScannerService {
     required String sourceFolderPath,
     required String libraryRoot,
     required LibraryCatalog provider,
-    required AppLanguageProvider i18n,
+    required LibraryScanLabels labels,
     bool promoteRootTracksToSingles = false,
     List<String> folderPaths = const <String>[],
     List<String> removeWatchedFolders = const <String>[],
@@ -362,7 +355,7 @@ class LibraryScannerService {
         sourceFolderPath: sourceFolderPath,
         libraryRoot: libraryRoot,
         provider: provider,
-        i18n: i18n,
+        labels: labels,
         scannedTracks: nativeScan.tracks,
         retainedTrackPaths: nativeScan.paths,
         retainedEntryPaths: nativeScan.paths,
@@ -379,9 +372,7 @@ class LibraryScannerService {
 
     if (nativeScan.notSupported ||
         !PathMatcher.isContentUri(sourceFolderPath)) {
-      final payload = await Isolate.run(
-        () => _scanFileSystemFolderPayload(sourceFolderPath),
-      );
+      final payload = await _dataSource.scanFileSystemFolder(sourceFolderPath);
       if (!provider.isScanGenerationActive(generation)) {
         return LibraryRefreshFolderResult(
           sourceFolderPath: sourceFolderPath,
@@ -410,7 +401,7 @@ class LibraryScannerService {
         sourceFolderPath: sourceFolderPath,
         libraryRoot: libraryRoot,
         provider: provider,
-        i18n: i18n,
+        labels: labels,
         scannedTracks: scannedTracks,
         retainedTrackPaths: discoveredPaths,
         retainedEntryPaths: retainedEntryPaths,
@@ -448,7 +439,7 @@ class LibraryScannerService {
     required String sourceFolderPath,
     required String libraryRoot,
     required LibraryCatalog provider,
-    required AppLanguageProvider i18n,
+    required LibraryScanLabels labels,
     required List<ScannedTrack> scannedTracks,
     required Set<String> retainedTrackPaths,
     required Set<String> retainedEntryPaths,
@@ -470,8 +461,8 @@ class LibraryScannerService {
       library: provider.library,
       libraryRoot: libraryRoot,
       promoteRootTracksToSingles: promoteRootTracksToSingles,
-      i18nImportedFiles: i18n.tr('imported_files'),
-      i18nManuallySelectedFiles: i18n.tr('manually_selected_files'),
+      i18nImportedFiles: labels.importedFiles,
+      i18nManuallySelectedFiles: labels.manuallySelectedFiles,
       exclusionMatcher: mergeContext.exclusionMatcher,
       sourceFolderPath: sourceFolderPath,
       allowRemoval: allowRemoval,
@@ -528,7 +519,7 @@ class LibraryScannerService {
     required List<ScannedTrack> scannedTracks,
     required String? libraryRoot,
     bool promoteRootTracksToSingles = false,
-    AppLanguageProvider? i18n,
+    required LibraryScanLabels labels,
     Future<bool> Function()? onChunkCommitted,
     int? generation,
   }) async {
@@ -549,9 +540,8 @@ class LibraryScannerService {
       library: provider.library,
       libraryRoot: libraryRoot,
       promoteRootTracksToSingles: promoteRootTracksToSingles,
-      i18nImportedFiles: i18n?.tr('imported_files') ?? 'Imported Files',
-      i18nManuallySelectedFiles:
-          i18n?.tr('manually_selected_files') ?? 'Manually Selected Files',
+      i18nImportedFiles: labels.importedFiles,
+      i18nManuallySelectedFiles: labels.manuallySelectedFiles,
       exclusionMatcher: mergeContext?.exclusionMatcher,
     );
 
@@ -629,7 +619,7 @@ class LibraryScannerService {
     LibraryCatalog provider,
     String? libraryRoot, {
     bool promoteRootTracksToSingles = false,
-    AppLanguageProvider? i18n,
+    required LibraryScanLabels labels,
     Future<bool> Function()? onChunkCommitted,
     int? generation,
   }) async {
@@ -643,18 +633,7 @@ class LibraryScannerService {
       );
       return 0;
     }
-    final folder = Directory(folderPath);
-    if (!await folder.exists()) {
-      provider.setScanProgress(
-        failureCount: provider.scanFailureCount + 1,
-        generation: generation,
-      );
-      return 0;
-    }
-
-    final payload = await Isolate.run(
-      () => _scanFileSystemFolderPayload(folderPath),
-    );
+    final payload = await _dataSource.scanFileSystemFolder(folderPath);
     if (!isActive()) return 0;
 
     final scannedTracks =
@@ -692,9 +671,8 @@ class LibraryScannerService {
       library: provider.library,
       libraryRoot: libraryRoot,
       promoteRootTracksToSingles: promoteRootTracksToSingles,
-      i18nImportedFiles: i18n?.tr('imported_files') ?? 'Imported Files',
-      i18nManuallySelectedFiles:
-          i18n?.tr('manually_selected_files') ?? 'Manually Selected Files',
+      i18nImportedFiles: labels.importedFiles,
+      i18nManuallySelectedFiles: labels.manuallySelectedFiles,
       exclusionMatcher: mergeContext?.exclusionMatcher,
     );
 
@@ -779,14 +757,14 @@ class LibraryScannerService {
   }
 
   Future<NativeScanResult> _scanFolderViaNative(String folderPath) async {
-    return _platformGateway.scanFolder(folderPath);
+    return _dataSource.scanFolder(folderPath);
   }
 
   Future<_IncrementalNativeImport?> _importNativeFolderChunkedIncrementally({
     required String sourceFolderPath,
     required LibraryCatalog provider,
     required String? libraryRoot,
-    required AppLanguageProvider i18n,
+    required LibraryScanLabels labels,
     bool promoteRootTracksToSingles = false,
     Future<bool> Function()? onChunkCommitted,
     required int generation,
@@ -794,7 +772,7 @@ class LibraryScannerService {
     var added = 0;
     var failures = 0;
     final baseFailureCount = provider.scanFailureCount;
-    final result = await _platformGateway.scanFolderChunked(
+    final result = await _dataSource.scanFolderChunked(
       sourceFolderPath,
       (chunk) async {
         if (!provider.isScanGenerationActive(generation)) return false;
@@ -814,7 +792,7 @@ class LibraryScannerService {
           scannedTracks: chunk.tracks,
           libraryRoot: libraryRoot,
           promoteRootTracksToSingles: promoteRootTracksToSingles,
-          i18n: i18n,
+          labels: labels,
           onChunkCommitted: onChunkCommitted,
           generation: generation,
         );
@@ -867,7 +845,7 @@ class LibraryScannerService {
   Future<_FolderImportOutcome> _importLibraryWithSingleScan(
     String libraryRoot,
     LibraryCatalog provider,
-    AppLanguageProvider i18n, {
+    LibraryScanLabels labels, {
     Future<bool> Function()? onChunkCommitted,
     required int generation,
   }) async {
@@ -880,7 +858,7 @@ class LibraryScannerService {
       provider: provider,
       libraryRoot: libraryRoot,
       promoteRootTracksToSingles: true,
-      i18n: i18n,
+      labels: labels,
       onChunkCommitted: onChunkCommitted,
       generation: generation,
     );
@@ -902,7 +880,7 @@ class LibraryScannerService {
           provider,
           libraryRoot,
           promoteRootTracksToSingles: true,
-          i18n: i18n,
+          labels: labels,
           onChunkCommitted: onChunkCommitted,
           generation: generation,
         );
@@ -930,7 +908,7 @@ class LibraryScannerService {
       scannedTracks: nativeScan.tracks,
       libraryRoot: libraryRoot,
       promoteRootTracksToSingles: true,
-      i18n: i18n,
+      labels: labels,
       onChunkCommitted: onChunkCommitted,
       generation: generation,
     );
@@ -951,38 +929,13 @@ class LibraryScannerService {
   }
 
   Future<List<String>> _listImmediateChildFolders(String folderPath) async {
-    return (await _listImmediateChildFoldersResult(folderPath)).folders;
+    return (await _dataSource.listImmediateChildFolders(folderPath)).folders;
   }
 
-  Future<({List<String> folders, bool complete})>
-  _listImmediateChildFoldersResult(String folderPath) async {
-    if (Platform.isAndroid) {
-      final folders = await _platformGateway.listChildFolders(folderPath);
-      if (folders != null) {
-        return (folders: folders, complete: true);
-      }
-      if (PathMatcher.isContentUri(folderPath)) {
-        return (folders: const <String>[], complete: false);
-      }
-    }
-
-    final directory = Directory(folderPath);
-    if (!await directory.exists()) {
-      return (folders: const <String>[], complete: false);
-    }
-
-    final childFolders = <String>[];
-    try {
-      await for (final entity in directory.list(followLinks: false)) {
-        if (entity is! Directory) continue;
-        childFolders.add(path.normalize(entity.path));
-      }
-    } catch (_) {
-      return (folders: const <String>[], complete: false);
-    }
-
-    childFolders.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
-    return (folders: childFolders, complete: true);
+  Future<LibraryChildFolderListing> _listImmediateChildFoldersResult(
+    String folderPath,
+  ) {
+    return _dataSource.listImmediateChildFolders(folderPath);
   }
 
   String _displaySourceName(String source) {
@@ -1008,203 +961,68 @@ class LibraryScannerService {
     }
   }
 
-  bool _isFolderAlreadyInLibrary(LibraryCatalog provider, String folderPath) {
-    final normalizedFolderPath = PathMatcher.normalize(folderPath);
-    if (provider.watchedFolders.any(
-      (value) => _pathsOverlap(value, normalizedFolderPath),
-    )) {
-      return true;
-    }
-    if (provider.watchedLibraries.any(
-      (value) => _pathsOverlap(value, normalizedFolderPath),
-    )) {
-      return true;
-    }
-    return provider.library.any(
-      (track) =>
-          _pathsOverlap(track.path, normalizedFolderPath) ||
-          (track.groupKey != '__single_files__' &&
-              _pathsOverlap(track.groupKey, normalizedFolderPath)),
-    );
-  }
-
-  bool _isTrackAlreadyInLibrary(LibraryCatalog provider, String trackPath) {
-    final normalizedTrackPath = PathMatcher.normalize(trackPath);
-    if (provider.trackByPath(normalizedTrackPath) != null) {
-      return true;
-    }
-    if (provider.watchedFolders.any(
-      (value) => PathMatcher.isWithinOrEqual(normalizedTrackPath, value),
-    )) {
-      return true;
-    }
-    if (provider.watchedLibraries.any(
-      (value) => PathMatcher.isWithinOrEqual(normalizedTrackPath, value),
-    )) {
-      return true;
-    }
-    return provider.library.any(
-      (track) =>
-          PathMatcher.equalsNormalized(track.path, normalizedTrackPath) ||
-          (track.groupKey != '__single_files__' &&
-              PathMatcher.isWithinOrEqual(normalizedTrackPath, track.groupKey)),
-    );
-  }
-
-  bool _hasWatchedLibraryOverlap(
-    LibraryCatalog provider,
-    String normalizedFolderPath,
-  ) {
-    return provider.watchedLibraries.any(
-      (value) => _pathsOverlap(value, normalizedFolderPath),
-    );
-  }
-
-  bool _isNestedInsideStandaloneFolder(
-    LibraryCatalog provider,
-    String normalizedFolderPath,
-  ) {
-    return provider.watchedFolders.any(
-      (value) =>
-          PathMatcher.isWithinOrEqual(normalizedFolderPath, value) &&
-          !PathMatcher.equalsNormalized(value, normalizedFolderPath),
-    );
-  }
-
-  List<String> _watchedFoldersToPromote(
-    LibraryCatalog provider,
-    String normalizedFolderPath,
-  ) {
-    return provider.watchedFolders
-        .where(
-          (value) => PathMatcher.isWithinOrEqual(value, normalizedFolderPath),
-        )
-        .toList(growable: false);
-  }
-
-  bool _hasUnmanagedLibraryContentOverlap(
-    LibraryCatalog provider,
-    String normalizedFolderPath,
-    List<String> promotedFolders,
-  ) {
-    return provider.library.any((track) {
-      final belongsToPromotedFolder = promotedFolders.any(
-        (folderPath) =>
-            PathMatcher.isWithinOrEqual(track.path, folderPath) ||
-            (track.groupKey != '__single_files__' &&
-                PathMatcher.isWithinOrEqual(track.groupKey, folderPath)),
-      );
-      if (belongsToPromotedFolder) return false;
-      return _pathsOverlap(track.path, normalizedFolderPath) ||
-          (track.groupKey != '__single_files__' &&
-              _pathsOverlap(track.groupKey, normalizedFolderPath));
-    });
-  }
-
-  Future<String?> _pickAudioFolderViaNative() async {
-    return _platformGateway.pickAudioFolder();
-  }
-
-  Future<List<PickedAudioFile>?> _pickAudioFilesViaNative() async {
-    return _platformGateway.pickAudioFiles();
-  }
-
-  List<MusicTrack> _tracksFromPickedAudioFiles(
+  Future<List<MusicTrack>> _tracksFromPickedAudioFiles(
     List<PickedAudioFile> files,
-    AppLanguageProvider i18n,
-  ) {
-    return files
-        .map(
-          (file) => MusicTrack(
-            path: file.uri,
-            displayName: path.basenameWithoutExtension(file.name),
-            groupKey: '__single_files__',
-            groupTitle: i18n.tr('imported_files'),
-            groupSubtitle: i18n.tr('manually_selected_files'),
-            isSingle: true,
-            isVideo: isVideoMediaFile(file.name),
-            scannedAt: DateTime.now(),
-          ),
-        )
-        .toList(growable: false);
-  }
-
-  Future<Directory> _persistentImportDirectory() async {
-    final supportDir = await getApplicationSupportDirectory();
-    return Directory(path.join(supportDir.path, 'nameless_audio_imports'));
-  }
-
-  Future<String?> _cachePickedFile(PlatformFile file, int index) async {
-    final stream = file.readStream;
-    final identifier = file.identifier;
-
-    if (stream != null) {
-      try {
-        final cacheDir = await _persistentImportDirectory();
-        if (!await cacheDir.exists()) await cacheDir.create(recursive: true);
-
-        final extension = path.extension(file.name);
-        final outPath = path.join(
-          cacheDir.path,
-          '${DateTime.now().microsecondsSinceEpoch}_$index${extension.isEmpty ? '.bin' : extension}',
-        );
-
-        final sink = File(outPath).openWrite();
-        await stream.pipe(sink);
-        await sink.close();
-        return outPath;
-      } catch (_) {
-        // Failed archive extraction falls through to the next import strategy.
+    LibraryScanLabels labels,
+  ) async {
+    final tracks = <MusicTrack>[];
+    for (final pickedFile in files) {
+      if (!isSupportedMediaFile(pickedFile.name) &&
+          !isSupportedMediaFile(pickedFile.uri)) {
+        continue;
       }
-    }
 
-    if (Platform.isAndroid &&
-        identifier != null &&
-        identifier.startsWith('content://')) {
-      try {
-        return await _platformGateway.cacheFromUri(
-          uri: identifier,
-          name: file.name,
-          index: index,
-        );
-      } catch (_) {
-        // Failed native import falls through to the remaining import strategy.
+      FileStat? fileStat;
+      if (!PathMatcher.isContentUri(pickedFile.uri)) {
+        try {
+          fileStat = await File(pickedFile.uri).stat();
+        } catch (_) {
+          // File timestamps are optional scan metadata.
+        }
       }
+      tracks.add(
+        MusicTrack(
+          path: pickedFile.uri,
+          displayName: path.basenameWithoutExtension(pickedFile.name),
+          groupKey: '__single_files__',
+          groupTitle: labels.importedFiles,
+          groupSubtitle: labels.manuallySelectedFiles,
+          isSingle: true,
+          isVideo:
+              isVideoMediaFile(pickedFile.name) ||
+              isVideoMediaFile(pickedFile.uri),
+          scannedAt: DateTime.now(),
+          fileSizeBytes: fileStat?.size,
+          modifiedAt: fileStat?.modified,
+        ),
+      );
     }
-    return null;
+    return tracks;
   }
 
-  Future<void> addFolder({
+  Future<LibraryScanOutcome?> addFolder({
     required LibraryCatalog provider,
-    required AppLanguageProvider i18n,
-    required void Function(String) showSnack,
+    required LibraryScanLabels labels,
   }) async {
-    if (Platform.isAndroid) {
-      try {
-        final folderPath = await _pickAudioFolderViaNative();
-        if (folderPath == null || folderPath.isEmpty) return;
-        await _addFolderFromPath(folderPath, provider, i18n, showSnack);
-        return;
-      } on PlatformException {
-        // Fall back to the generic picker below.
-      }
-    }
-
-    final folderPath = await FilePicker.platform.getDirectoryPath(
-      dialogTitle: i18n.tr('choose_music_folder'),
+    final folderPath = await _dataSource.pickAudioFolder(
+      dialogTitle: labels.chooseMusicFolder,
     );
-    if (folderPath == null || folderPath.isEmpty) return;
-    await _addFolderFromPath(folderPath, provider, i18n, showSnack);
+    if (folderPath == null || folderPath.isEmpty) return null;
+    return _addFolderFromPath(folderPath, provider, labels);
   }
 
-  Future<void> _addFolderFromPath(
+  Future<LibraryScanOutcome> _addFolderFromPath(
     String folderPath,
     LibraryCatalog provider,
-    AppLanguageProvider i18n,
-    void Function(String) showSnack,
+    LibraryScanLabels labels,
   ) async {
     final normalizedFolderPath = PathMatcher.normalize(folderPath);
-    if (_isFolderAlreadyInLibrary(provider, folderPath)) {
+    if (_rules.isFolderAlreadyInLibrary(
+      folderPath: folderPath,
+      watchedFolders: provider.watchedFolders,
+      watchedLibraries: provider.watchedLibraries,
+      tracks: provider.library,
+    )) {
       final isExistingStandaloneFolder = provider.watchedFolders.any(
         (value) => PathMatcher.equalsNormalized(value, normalizedFolderPath),
       );
@@ -1216,8 +1034,10 @@ class LibraryScannerService {
           provider.hasLibraryExclusions(normalizedFolderPath)) {
         provider.clearLibraryExclusions(normalizedFolderPath);
       } else {
-        showSnack(i18n.tr('library_folder_exists'));
-        return;
+        return const LibraryScanOutcome(
+          code: LibraryScanOutcomeCode.folderExists,
+          source: 'import_folder',
+        );
       }
     }
 
@@ -1225,8 +1045,10 @@ class LibraryScannerService {
       source: _displaySourceName(folderPath),
     );
     if (generation == 0) {
-      showSnack(i18n.tr('scanning_title'));
-      return;
+      return const LibraryScanOutcome(
+        code: LibraryScanOutcomeCode.alreadyRunning,
+        source: 'import_folder',
+      );
     }
     final existingTrackPaths = provider.library
         .map((track) => PathMatcher.normalize(track.path))
@@ -1250,7 +1072,7 @@ class LibraryScannerService {
         sourceFolderPath: folderPath,
         provider: provider,
         libraryRoot: normalizedFolderPath,
-        i18n: i18n,
+        labels: labels,
         onChunkCommitted: () async {
           if (!provider.isScanGenerationActive(generation)) return false;
           return _flushRefreshBatch(provider);
@@ -1270,6 +1092,7 @@ class LibraryScannerService {
             provider: provider,
             scannedTracks: nativeScan.tracks,
             libraryRoot: normalizedFolderPath,
+            labels: labels,
             onChunkCommitted: () async {
               if (!provider.isScanGenerationActive(generation)) return false;
               return _flushRefreshBatch(provider);
@@ -1286,6 +1109,7 @@ class LibraryScannerService {
             folderPath,
             provider,
             normalizedFolderPath,
+            labels: labels,
             onChunkCommitted: () async {
               if (!provider.isScanGenerationActive(generation)) return false;
               return _flushRefreshBatch(provider);
@@ -1335,66 +1159,77 @@ class LibraryScannerService {
       }
     }
     if (wasCancelled) {
-      showSnack(i18n.tr('scan_cancelled'));
-    } else if (!completed) {
-      showSnack(i18n.tr('scan_failed_next_step'));
-    } else if (added == 0) {
-      showSnack(i18n.tr('no_audio_found'));
-    } else {
-      showSnack(i18n.tr('import_done_added', {'count': added}));
+      return const LibraryScanOutcome(
+        code: LibraryScanOutcomeCode.cancelled,
+        source: 'import_folder',
+      );
     }
-  }
-
-  Future<void> addLibrary({
-    required LibraryCatalog provider,
-    required AppLanguageProvider i18n,
-    required void Function(String) showSnack,
-  }) async {
-    if (Platform.isAndroid) {
-      try {
-        final folderPath = await _pickAudioFolderViaNative();
-        if (folderPath == null || folderPath.isEmpty) return;
-        await _addLibraryFromPath(folderPath, provider, i18n, showSnack);
-        return;
-      } on PlatformException {
-        // Fall back to the generic picker below.
-      }
+    if (!completed) {
+      return const LibraryScanOutcome(
+        code: LibraryScanOutcomeCode.failed,
+        source: 'import_folder',
+      );
     }
-
-    final folderPath = await FilePicker.platform.getDirectoryPath(
-      dialogTitle: i18n.tr('choose_library_folder'),
+    if (added == 0) {
+      return const LibraryScanOutcome(
+        code: LibraryScanOutcomeCode.noAudio,
+        source: 'import_folder',
+      );
+    }
+    return LibraryScanOutcome(
+      code: LibraryScanOutcomeCode.importAdded,
+      source: 'import_folder',
+      details: <String, Object?>{'count': added},
     );
-    if (folderPath == null || folderPath.isEmpty) return;
-    await _addLibraryFromPath(folderPath, provider, i18n, showSnack);
   }
 
-  Future<void> _addLibraryFromPath(
+  Future<LibraryScanOutcome?> addLibrary({
+    required LibraryCatalog provider,
+    required LibraryScanLabels labels,
+  }) async {
+    final folderPath = await _dataSource.pickAudioFolder(
+      dialogTitle: labels.chooseLibraryFolder,
+    );
+    if (folderPath == null || folderPath.isEmpty) return null;
+    return _addLibraryFromPath(folderPath, provider, labels);
+  }
+
+  Future<LibraryScanOutcome> _addLibraryFromPath(
     String folderPath,
     LibraryCatalog provider,
-    AppLanguageProvider i18n,
-    void Function(String) showSnack,
+    LibraryScanLabels labels,
   ) async {
     final normalizedFolderPath = PathMatcher.normalize(folderPath);
-    final promotedFolders = _watchedFoldersToPromote(
-      provider,
-      normalizedFolderPath,
+    final promotedFolders = _rules.watchedFoldersToPromote(
+      folderPath: normalizedFolderPath,
+      watchedFolders: provider.watchedFolders,
     );
-    if (_hasWatchedLibraryOverlap(provider, normalizedFolderPath) ||
-        _isNestedInsideStandaloneFolder(provider, normalizedFolderPath) ||
-        _hasUnmanagedLibraryContentOverlap(
-          provider,
-          normalizedFolderPath,
-          promotedFolders,
+    if (_rules.hasWatchedLibraryOverlap(
+          folderPath: normalizedFolderPath,
+          watchedLibraries: provider.watchedLibraries,
+        ) ||
+        _rules.isNestedInsideStandaloneFolder(
+          folderPath: normalizedFolderPath,
+          watchedFolders: provider.watchedFolders,
+        ) ||
+        _rules.hasUnmanagedLibraryContentOverlap(
+          folderPath: normalizedFolderPath,
+          promotedFolders: promotedFolders,
+          tracks: provider.library,
         )) {
-      showSnack(i18n.tr('library_exists'));
-      return;
+      return const LibraryScanOutcome(
+        code: LibraryScanOutcomeCode.libraryExists,
+        source: 'import_library',
+      );
     }
     final generation = provider.tryBeginScan(
       source: _displaySourceName(normalizedFolderPath),
     );
     if (generation == 0) {
-      showSnack(i18n.tr('scanning_title'));
-      return;
+      return const LibraryScanOutcome(
+        code: LibraryScanOutcomeCode.alreadyRunning,
+        source: 'import_library',
+      );
     }
     final childFolders = await _listImmediateChildFolders(normalizedFolderPath);
     final importTargets = childFolders;
@@ -1408,11 +1243,12 @@ class LibraryScannerService {
     provider.beginLibraryBatch();
     var added = 0;
     var completed = false;
+    var wasCancelled = false;
     try {
       final outcome = await _importLibraryWithSingleScan(
         normalizedFolderPath,
         provider,
-        i18n,
+        labels,
         onChunkCommitted: () async {
           if (!provider.isScanGenerationActive(generation)) return false;
           return _flushRefreshBatch(provider);
@@ -1446,6 +1282,7 @@ class LibraryScannerService {
         }
       }
     } finally {
+      wasCancelled = !provider.isScanGenerationActive(generation);
       completed = completed && provider.isScanGenerationActive(generation);
       if (!completed) {
         _rollbackScanAdditions(
@@ -1469,232 +1306,74 @@ class LibraryScannerService {
         }
       }
     }
-    showSnack(
-      completed
-          ? i18n.tr('import_library_done', {
-              'count': added,
-              'folderCount': importTargets.length,
-            })
-          : i18n.tr('scan_failed_next_step'),
+    if (!completed) {
+      return LibraryScanOutcome(
+        code: wasCancelled
+            ? LibraryScanOutcomeCode.cancelled
+            : LibraryScanOutcomeCode.failed,
+        source: 'import_library',
+      );
+    }
+    return LibraryScanOutcome(
+      code: LibraryScanOutcomeCode.libraryImported,
+      source: 'import_library',
+      details: <String, Object?>{
+        'count': added,
+        'folderCount': importTargets.length,
+      },
     );
   }
 
-  Future<void> addFiles({
+  Future<LibraryScanOutcome?> addFiles({
     required LibraryCatalog provider,
-    required AppLanguageProvider i18n,
-    required void Function(String) showSnack,
+    required LibraryScanLabels labels,
   }) async {
-    if (Platform.isAndroid) {
-      try {
-        final pickedFiles = await _pickAudioFilesViaNative();
-        if (pickedFiles == null || pickedFiles.isEmpty) return;
-
-        final generation = provider.tryBeginScan(
-          source: i18n.tr('imported_files'),
-        );
-        if (generation == 0) {
-          showSnack(i18n.tr('scanning_title'));
-          return;
-        }
-        provider.beginLibraryBatch();
-
-        try {
-          final candidates = _tracksFromPickedAudioFiles(pickedFiles, i18n);
-          if (candidates.any(
-            (track) => _isTrackAlreadyInLibrary(provider, track.path),
-          )) {
-            showSnack(i18n.tr('library_file_exists'));
-            return;
-          }
-          final beforeCount = provider.library.length;
-          provider.addTracks(candidates, notify: false);
-          final added = provider.library.length - beforeCount;
-          showSnack(i18n.tr('import_done_added', {'count': added}));
-        } finally {
-          await provider.endLibraryBatch();
-          provider.finishScan(generation);
-        }
-        return;
-      } on PlatformException {
-        // Fall back to the generic picker below.
-      }
-    }
-
-    final result = await FilePicker.platform.pickFiles(
-      allowMultiple: true,
-      withReadStream: true,
-      dialogTitle: i18n.tr('choose_audio_files'),
+    final pickedFiles = await _dataSource.pickAudioFiles(
+      dialogTitle: labels.chooseAudioFiles,
     );
-    if (result == null) return;
+    if (pickedFiles == null || pickedFiles.isEmpty) return null;
 
-    final generation = provider.tryBeginScan(source: i18n.tr('imported_files'));
+    final generation = provider.tryBeginScan(source: labels.importedFiles);
     if (generation == 0) {
-      showSnack(i18n.tr('scanning_title'));
-      return;
+      return const LibraryScanOutcome(
+        code: LibraryScanOutcomeCode.alreadyRunning,
+        source: 'import_files',
+      );
     }
     provider.beginLibraryBatch();
 
+    var added = 0;
+    var fileExists = false;
     try {
-      final resolvedPaths = <String>[];
-      for (var i = 0; i < result.files.length; i++) {
-        final file = result.files[i];
-        final rawPath = file.path;
-        final needsCopy =
-            rawPath == null ||
-            rawPath.isEmpty ||
-            rawPath.startsWith('content://');
-
-        if (!needsCopy) {
-          resolvedPaths.add(path.normalize(rawPath));
-          continue;
-        }
-
-        final cachedPath = await _cachePickedFile(file, i);
-        if (cachedPath != null) {
-          resolvedPaths.add(path.normalize(cachedPath));
-        }
-      }
-
-      if (resolvedPaths.any(
-        (trackPath) => _isTrackAlreadyInLibrary(provider, trackPath),
+      final candidates = await _tracksFromPickedAudioFiles(pickedFiles, labels);
+      if (candidates.any(
+        (track) => _rules.isTrackAlreadyInLibrary(
+          trackPath: track.path,
+          watchedFolders: provider.watchedFolders,
+          watchedLibraries: provider.watchedLibraries,
+          tracks: provider.library,
+        ),
       )) {
-        showSnack(i18n.tr('library_file_exists'));
-        return;
+        fileExists = true;
+      } else {
+        final beforeCount = provider.library.length;
+        provider.addTracks(candidates, notify: false);
+        added = provider.library.length - beforeCount;
       }
-
-      final candidates = <MusicTrack>[];
-      for (final p in resolvedPaths.where(isSupportedMediaFile)) {
-        final file = File(p);
-        FileStat? fileStat;
-        try {
-          fileStat = await file.stat();
-        } catch (_) {
-          // File timestamps are optional scan metadata.
-        }
-        candidates.add(
-          MusicTrack(
-            path: p,
-            displayName: PathDisplay.fileName(p, withoutExtension: true),
-            groupKey: '__single_files__',
-            groupTitle: i18n.tr('imported_files'),
-            groupSubtitle: i18n.tr('manually_selected_files'),
-            isSingle: true,
-            isVideo: isVideoMediaFile(p),
-            scannedAt: DateTime.now(),
-            fileSizeBytes: fileStat?.size,
-            modifiedAt: fileStat?.modified,
-          ),
-        );
-      }
-
-      final beforeCount = provider.library.length;
-      provider.addTracks(candidates, notify: false);
-      final added = provider.library.length - beforeCount;
-      showSnack(i18n.tr('import_done_added', {'count': added}));
     } finally {
       await provider.endLibraryBatch();
       provider.finishScan(generation);
     }
-  }
-}
-
-Map<String, Object?> _scanFileSystemFolderPayload(String folderPath) {
-  final folder = Directory(folderPath);
-  final normalizedRoot = path.normalize(folderPath);
-  if (!folder.existsSync()) {
-    return const <String, Object?>{
-      'tracks': <Object?>[],
-      'folderPaths': <Object?>[],
-      'discoveredPaths': <String>{},
-      'failureCount': 1,
-    };
-  }
-
-  final pendingDirs = Queue<Directory>()..add(folder);
-  final folderPaths = <String>[];
-  final tracks = <Map<String, Object?>>[];
-  final seenPaths = <String>{};
-  var failures = 0;
-
-  while (pendingDirs.isNotEmpty) {
-    final currentDir = pendingDirs.removeFirst();
-    List<FileSystemEntity> children;
-    try {
-      children = currentDir.listSync(followLinks: false);
-    } catch (_) {
-      failures++;
-      continue;
+    if (fileExists) {
+      return const LibraryScanOutcome(
+        code: LibraryScanOutcomeCode.fileExists,
+        source: 'import_files',
+      );
     }
-
-    for (final entity in children) {
-      if (entity is Directory) {
-        final directoryPath = path.normalize(entity.path);
-        pendingDirs.add(Directory(directoryPath));
-        folderPaths.add(directoryPath);
-        continue;
-      }
-      if (entity is! File) continue;
-
-      final absolutePath = path.normalize(entity.path);
-      if (!isSupportedMediaFile(absolutePath) || !seenPaths.add(absolutePath)) {
-        continue;
-      }
-
-      FileStat? fileStat;
-      try {
-        fileStat = entity.statSync();
-      } catch (_) {
-        // File timestamps are optional scan metadata.
-      }
-
-      final parentFolder = path.dirname(absolutePath);
-
-      final relative = PathMatcher.relativeWithin(absolutePath, normalizedRoot);
-      String groupKey = parentFolder;
-      String groupTitle = path.basename(parentFolder);
-      String groupSubtitle = parentFolder;
-
-      if (relative != null) {
-        final relativeDir = path.dirname(relative).replaceAll('\\', '/');
-        if (relativeDir == '.' || relativeDir.isEmpty) {
-          groupKey = normalizedRoot;
-          groupTitle = path.basename(normalizedRoot);
-          groupSubtitle = normalizedRoot;
-        } else {
-          final topLevel = relativeDir.split('/').first;
-          groupKey = path.join(normalizedRoot, topLevel);
-          groupTitle = topLevel;
-          groupSubtitle = groupKey;
-        }
-      } else {
-        final folderName = path.basename(parentFolder);
-        groupTitle = folderName.isEmpty ? parentFolder : folderName;
-      }
-
-      tracks.add(<String, Object?>{
-        'path': absolutePath,
-        'displayName': path.basenameWithoutExtension(absolutePath),
-        'groupKey': groupKey,
-        'groupTitle': groupTitle,
-        'groupSubtitle': groupSubtitle,
-        'isSingle': false,
-        'isVideo': isVideoMediaFile(absolutePath),
-        'scannedAtMs': DateTime.now().millisecondsSinceEpoch,
-        'fileSizeBytes': fileStat?.size,
-        'modifiedAtMs': fileStat?.modified.millisecondsSinceEpoch,
-      });
-    }
+    return LibraryScanOutcome(
+      code: LibraryScanOutcomeCode.importAdded,
+      source: 'import_files',
+      details: <String, Object?>{'count': added},
+    );
   }
-
-  return <String, Object?>{
-    'tracks': tracks,
-    'folderPaths': folderPaths,
-    'discoveredPaths': Set<String>.unmodifiable(seenPaths),
-    'failureCount': failures,
-  };
-}
-
-@visibleForTesting
-Map<String, Object?> scanFileSystemFolderPayloadForTest(String folderPath) {
-  return _scanFileSystemFolderPayload(folderPath);
 }

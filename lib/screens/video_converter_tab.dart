@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as path;
@@ -12,6 +11,7 @@ import '../providers/audio_provider_riverpod.dart';
 import '../services/audio_state_services.dart';
 import '../services/ui_operation_service.dart';
 import '../services/video_conversion_plan.dart';
+import '../services/video_conversion_input_service.dart';
 import '../services/video_conversion_runner.dart';
 import '../widgets/app_feedback.dart';
 import '../widgets/operation_feedback.dart';
@@ -38,17 +38,17 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
   int _conversionGeneration = 0;
   Timer? _successResetTimer;
   final VideoConversionRunner _conversionRunner = VideoConversionRunner();
+  final VideoConversionInputService _inputService =
+      VideoConversionInputService();
 
   Future<void> _pickVideoFile() async {
     final i18n = context.read<AppLanguageProvider>();
-    final result = await UiOperationService.instance.run<FilePickerResult?>(
+    final selectedPath = await UiOperationService.instance.run<String?>(
       scope: UiOperationScope.videoConverterPick,
       labelKey: 'source_video_file',
-      task: (_) => FilePicker.platform.pickFiles(type: FileType.video),
+      task: (_) => _inputService.pickVideoPath(),
     );
     if (!mounted) return;
-    final selectedFile = result?.files.singleOrNull;
-    final selectedPath = selectedFile?.path;
     if (selectedPath != null && selectedPath.isNotEmpty) {
       final videoPath = selectedPath;
       _successResetTimer?.cancel();
@@ -68,7 +68,7 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
     final result = await UiOperationService.instance.run<String?>(
       scope: UiOperationScope.videoConverterPick,
       labelKey: 'output_directory',
-      task: (_) => FilePicker.platform.getDirectoryPath(),
+      task: (_) => _inputService.pickOutputDirectory(),
     );
     if (!mounted) return;
     if (result != null && result.isNotEmpty) {

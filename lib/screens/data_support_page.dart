@@ -1,19 +1,11 @@
-import 'dart:io';
-
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:path/path.dart' as path;
-import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 
 import '../i18n/app_language_provider.dart';
-import '../platform/app_platform.dart';
 import '../providers/audio_provider.dart';
-import '../services/app_backup_service.dart';
 import '../services/app_log_service.dart';
-import '../services/diagnostic_report_service.dart';
 import '../services/asmr_library_controller.dart';
-import '../services/file_cache_platform_gateway.dart';
+import '../services/data_support_file_service.dart';
 import '../services/ui_operation_service.dart';
 import '../theme/app_design_tokens.dart';
 import '../widgets/app_feedback.dart';
@@ -29,67 +21,8 @@ class DataSupportPage extends StatefulWidget {
 }
 
 class _DataSupportPageState extends State<DataSupportPage> {
-  final _backupService = AppBackupService();
-  final _diagnosticService = DiagnosticReportService();
   final _operationService = UiOperationService.instance;
-  final _fileCacheGateway = FileCachePlatformGateway.instance;
-
-  Future<File> _temporaryFile(String name) async {
-    final directory = await getTemporaryDirectory();
-    final exportDirectory = Directory(path.join(directory.path, 'exports'));
-    await exportDirectory.create(recursive: true);
-    return File(path.join(exportDirectory.path, name));
-  }
-
-  Future<void> _deleteTemporaryFile(File file) async {
-    try {
-      if (await file.exists()) {
-        await file.delete();
-      }
-      final parent = file.parent;
-      if (await parent.exists() && await parent.list().isEmpty) {
-        await parent.delete();
-      }
-    } catch (error, stackTrace) {
-      AppLogService.warning(
-        'temporary_export_cleanup_failed',
-        error: error,
-        stackTrace: stackTrace,
-      );
-    }
-  }
-
-  String _timestamp() {
-    final now = DateTime.now();
-    String two(int value) => value.toString().padLeft(2, '0');
-    return '${now.year}${two(now.month)}${two(now.day)}-'
-        '${two(now.hour)}${two(now.minute)}${two(now.second)}';
-  }
-
-  Future<String?> _saveGeneratedFile({
-    required File source,
-    required String dialogTitle,
-    required List<String> allowedExtensions,
-    required String mimeType,
-  }) async {
-    if (AppPlatform.isAndroid) {
-      return _fileCacheGateway.exportFile(
-        sourcePath: source.path,
-        fileName: path.basename(source.path),
-        mimeType: mimeType,
-      );
-    }
-    final savedPath = await FilePicker.platform.saveFile(
-      dialogTitle: dialogTitle,
-      fileName: path.basename(source.path),
-      type: FileType.custom,
-      allowedExtensions: allowedExtensions,
-      lockParentWindow: true,
-    );
-    if (savedPath == null) return null;
-    await source.openRead().pipe(File(savedPath).openWrite());
-    return savedPath;
-  }
+  final _fileService = DataSupportFileService();
 
   Future<void> _exportBackup() async {
     final dialogTitle = context.read<AppLanguageProvider>().tr('export_backup');
@@ -97,27 +30,16 @@ class _DataSupportPageState extends State<DataSupportPage> {
       scope: UiOperationScope.dataSupportBackupExport,
       labelKey: 'export_backup',
       action: () async {
-        final temporary = await _temporaryFile(
-          'NamelessAudio-${_timestamp()}.nalbackup',
+        final savedPath = await _fileService.exportBackup(
+          dialogTitle: dialogTitle,
         );
-        try {
-          final backup = await _backupService.exportBackup(temporary.path);
-          final savedPath = await _saveGeneratedFile(
-            source: backup,
-            dialogTitle: dialogTitle,
-            allowedExtensions: const <String>['nalbackup'],
-            mimeType: 'application/zip',
+        if (savedPath != null && mounted) {
+          _showSuccess(
+            'backup_exported',
+            titleKey: 'operation_completed',
+            detail: savedPath,
+            duration: const Duration(seconds: 5),
           );
-          if (savedPath != null && mounted) {
-            _showSuccess(
-              'backup_exported',
-              titleKey: 'operation_completed',
-              detail: savedPath,
-              duration: const Duration(seconds: 5),
-            );
-          }
-        } finally {
-          await _deleteTemporaryFile(temporary);
         }
       },
     );
@@ -141,57 +63,33 @@ class _DataSupportPageState extends State<DataSupportPage> {
       scope: UiOperationScope.dataSupportBackupRestore,
       labelKey: 'restore_backup',
       action: () async {
-        final selection = await FilePicker.platform.pickFiles(
-          type: FileType.custom,
-          allowedExtensions: const <String>['nalbackup'],
-          lockParentWindow: true,
-        );
-        final selected = selection?.files.singleOrNull;
-        if (selected == null) return;
-        try {
-          final selectedPath = selected.path;
-          if (selectedPath == null || selectedPath.trim().isEmpty) {
-            throw const FileSystemException('Selected backup is not readable.');
-          }
-          final result = await _backupService.restoreBackup(selectedPath);
-          if (!result.isValid) {
-            if (!mounted) return;
-            showAppSnackBar(
-              context,
-              i18n.tr('backup_invalid_next_step'),
-              tone: AppFeedbackTone.destructive,
-              title: i18n.tr('backup_invalid'),
-              icon: Icons.error_outline_rounded,
-              actionLabel: i18n.tr('export_diagnostics'),
-              onAction: _exportDiagnostics,
-              duration: const Duration(seconds: 6),
-            );
-            return;
-          }
-          await audioProvider.reloadPersistedStateAfterBackupRestore();
-          await asmrController.reloadPersistedStateAfterBackupRestore();
+        final result = await _fileService.pickAndRestoreBackup();
+        if (result == null) return;
+        if (!result.isValid) {
           if (!mounted) return;
           showAppSnackBar(
             context,
-            i18n.tr('backup_restored_loaded'),
-            tone: AppFeedbackTone.success,
-            title: i18n.tr('operation_completed'),
-            icon: Icons.check_circle_outline_rounded,
-            duration: const Duration(seconds: 4),
+            i18n.tr('backup_invalid_next_step'),
+            tone: AppFeedbackTone.destructive,
+            title: i18n.tr('backup_invalid'),
+            icon: Icons.error_outline_rounded,
+            actionLabel: i18n.tr('export_diagnostics'),
+            onAction: _exportDiagnostics,
+            duration: const Duration(seconds: 6),
           );
-        } finally {
-          if (AppPlatform.isAndroid) {
-            try {
-              await FilePicker.platform.clearTemporaryFiles();
-            } catch (error, stackTrace) {
-              AppLogService.warning(
-                'backup_picker_cache_cleanup_failed',
-                error: error,
-                stackTrace: stackTrace,
-              );
-            }
-          }
+          return;
         }
+        await audioProvider.reloadPersistedStateAfterBackupRestore();
+        await asmrController.reloadPersistedStateAfterBackupRestore();
+        if (!mounted) return;
+        showAppSnackBar(
+          context,
+          i18n.tr('backup_restored_loaded'),
+          tone: AppFeedbackTone.success,
+          title: i18n.tr('operation_completed'),
+          icon: Icons.check_circle_outline_rounded,
+          duration: const Duration(seconds: 4),
+        );
       },
     );
   }
@@ -204,27 +102,16 @@ class _DataSupportPageState extends State<DataSupportPage> {
       scope: UiOperationScope.dataSupportDiagnosticsExport,
       labelKey: 'export_diagnostics',
       action: () async {
-        final temporary = await _temporaryFile(
-          'NamelessAudio-diagnostic-${_timestamp()}.zip',
+        final savedPath = await _fileService.exportDiagnostics(
+          dialogTitle: dialogTitle,
         );
-        try {
-          final report = await _diagnosticService.exportReport(temporary.path);
-          final savedPath = await _saveGeneratedFile(
-            source: report,
-            dialogTitle: dialogTitle,
-            allowedExtensions: const <String>['zip'],
-            mimeType: 'application/zip',
+        if (savedPath != null && mounted) {
+          _showSuccess(
+            'diagnostics_exported',
+            titleKey: 'operation_completed',
+            detail: savedPath,
+            duration: const Duration(seconds: 5),
           );
-          if (savedPath != null && mounted) {
-            _showSuccess(
-              'diagnostics_exported',
-              titleKey: 'operation_completed',
-              detail: savedPath,
-              duration: const Duration(seconds: 5),
-            );
-          }
-        } finally {
-          await _deleteTemporaryFile(temporary);
         }
       },
     );

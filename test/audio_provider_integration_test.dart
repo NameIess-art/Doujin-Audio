@@ -10,6 +10,7 @@ import 'package:nameless_audio/providers/audio_provider.dart';
 import 'package:nameless_audio/services/app_database.dart';
 import 'package:nameless_audio/services/asmr_playback_cache_service.dart';
 import 'package:nameless_audio/services/audio_database_repository.dart';
+import 'package:nameless_audio/services/audio_detail_repository.dart';
 import 'package:nameless_audio/services/audio_state_services.dart';
 import 'package:nameless_audio/services/cover_artwork_cache_service.dart';
 import 'package:nameless_audio/services/library_scanner_service.dart';
@@ -2470,6 +2471,15 @@ void main() {
 
         await provider.setFolderManualCover(workDir.path, coverPath);
 
+        final backupFile = File(
+          '${workDir.path}${Platform.pathSeparator}'
+          '${AudioDetailRepository.backupFileName}',
+        );
+        final selectedCoverBackup =
+            json.decode(await backupFile.readAsString())
+                as Map<String, dynamic>;
+        expect(selectedCoverBackup['cardCoverRelativePath'], 'folder.jpg');
+
         final updatedTrack = provider.trackByPath(trackPath);
         expect(updatedTrack?.manualCoverPath, isNull);
         expect(
@@ -2484,6 +2494,11 @@ void main() {
         expect(provider.coverPathForTrack(updatedTrack), coverPath);
 
         await provider.setFolderManualCover(workDir.path, replacementCoverPath);
+
+        final replacementCoverBackup =
+            json.decode(await backupFile.readAsString())
+                as Map<String, dynamic>;
+        expect(replacementCoverBackup['cardCoverRelativePath'], 'folder-2.jpg');
 
         expect(
           provider.coverPathForTrack(provider.trackByPath(trackPath)),

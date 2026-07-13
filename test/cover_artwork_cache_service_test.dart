@@ -887,11 +887,12 @@ class _MemoryAudioDetailCacheService extends AudioDetailCacheService {
   }
 
   @override
-  Future<void> saveCardCoverPath(
+  Future<String?> saveCardCoverPath(
     AudioDetailTarget target,
     String? coverPath,
   ) async {
     _cardCoverPaths[_key(target)] = coverPath;
+    return coverPath;
   }
 }
 

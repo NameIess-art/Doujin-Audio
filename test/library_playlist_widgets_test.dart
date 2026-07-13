@@ -367,6 +367,80 @@ void main() {
     expect(find.byIcon(Icons.pause_rounded), findsOneWidget);
   });
 
+  testWidgets('first playlist card shows duration discovered after adding', (
+    WidgetTester tester,
+  ) async {
+    final notificationService = PlaybackNotificationService();
+    final audioDatabaseRepository = AudioDatabaseRepository();
+    final nativePlaybackRepository = NativePlaybackRepository();
+    const playbackCommandRunner = PlaybackCommandRunner();
+    final libraryService = LibraryService();
+    final playbackService = PlaybackSessionService();
+    final timerService = TimerService();
+    final notificationCoordinatorService = NotificationCoordinatorService();
+    final settingsRepository = SettingsRepository();
+    final languageProvider = AppLanguageProvider();
+    final audioProvider = AudioProvider.test(
+      notificationService: notificationService,
+      audioDatabaseRepository: audioDatabaseRepository,
+      nativePlaybackRepository: nativePlaybackRepository,
+      libraryService: libraryService,
+      playbackService: playbackService,
+      timerService: timerService,
+      notificationStateService: notificationCoordinatorService,
+      settingsRepository: settingsRepository,
+    );
+    final track = _track(
+      name: 'Duration card',
+      path: '/library/duration/card.mp3',
+      groupKey: '/library/duration',
+      groupTitle: 'Duration',
+    );
+    final session = PlaybackSession(
+      id: 'duration-session',
+      currentTrackPath: track.path,
+      loopMode: SessionLoopMode.single,
+      nonSingleLoopMode: SessionLoopMode.single,
+      volume: 1,
+      createdAt: DateTime(2026),
+      state: PlayerState(false, ProcessingState.ready),
+    );
+    addTearDown(audioProvider.dispose);
+    audioProvider.addTracks([track], notify: false, persist: false);
+    playbackService.registerSession(session);
+    playbackService.syncSlice(
+      activeSessions: [session],
+      playingSessionCount: 0,
+      focusedSessionId: session.id,
+      multiThreadPlaybackEnabled: false,
+      coverGeneration: 0,
+      isInitialized: true,
+    );
+
+    await tester.pumpWidget(
+      _buildTestApp(
+        audioProvider: audioProvider,
+        audioDatabaseRepository: audioDatabaseRepository,
+        nativePlaybackRepository: nativePlaybackRepository,
+        playbackCommandRunner: playbackCommandRunner,
+        libraryService: libraryService,
+        playbackService: playbackService,
+        timerService: timerService,
+        notificationCoordinatorService: notificationCoordinatorService,
+        settingsRepository: settingsRepository,
+        languageProvider: languageProvider,
+        child: const PlaylistTab(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('02:05'), findsNothing);
+
+    session.setOptimisticDuration(const Duration(minutes: 2, seconds: 5));
+    await tester.pump();
+
+    expect(find.text('02:05'), findsOneWidget);
+  });
+
   testWidgets('playlist reordering does not trigger additional cover futures', (
     WidgetTester tester,
   ) async {

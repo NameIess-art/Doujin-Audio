@@ -520,6 +520,11 @@ class _AudioDetailSheetState extends State<AudioDetailSheet> {
                       initialCoverPath: provider.resolvedCoverPathForFolder(
                         _target.targetPath,
                       ),
+                      onCoverSelected: (coverPath) {
+                        setState(() {
+                          _detail = _detail?.copyWith(cardCoverPath: coverPath);
+                        });
+                      },
                     );
                   },
                 ),
@@ -684,10 +689,12 @@ class _FolderCoverSelector extends StatefulWidget {
     super.key,
     required this.folderPath,
     this.initialCoverPath,
+    this.onCoverSelected,
   });
 
   final String folderPath;
   final String? initialCoverPath;
+  final ValueChanged<String>? onCoverSelected;
 
   @override
   State<_FolderCoverSelector> createState() => _FolderCoverSelectorState();
@@ -785,14 +792,14 @@ class _FolderCoverSelectorState extends State<_FolderCoverSelector> {
       _saving = true;
     });
     try {
-      await context.read<AudioProvider>().setFolderManualCover(
-        widget.folderPath,
-        _images[index],
-      );
+      final storedCoverPath = await context
+          .read<AudioProvider>()
+          .setFolderManualCover(widget.folderPath, _images[index]);
       if (!mounted) return;
       setState(() {
         _currentCoverPath = _images[index];
       });
+      widget.onCoverSelected?.call(storedCoverPath ?? _images[index]);
     } catch (_) {
       if (!mounted) return;
       showAppSnackBar(
@@ -1287,9 +1294,12 @@ enum _AudioDetailField {
       ),
       _AudioDetailField.tags => detail.tags.join(_multiValueSeparator),
       _AudioDetailField.releaseDate => _formatDateValue(detail.releaseDate),
-      _AudioDetailField.duration => detail.duration != null 
-          ? formatDurationHms(detail.duration!) 
-          : (fallbackDuration != null ? formatDurationHms(fallbackDuration) : ''),
+      _AudioDetailField.duration =>
+        detail.duration != null
+            ? formatDurationHms(detail.duration!)
+            : (fallbackDuration != null
+                  ? formatDurationHms(fallbackDuration)
+                  : ''),
       _AudioDetailField.salesCount => detail.salesCount?.toString() ?? '',
       _AudioDetailField.rating => _formatRatingValue(detail.rating),
     };
@@ -1304,7 +1314,9 @@ enum _AudioDetailField {
   }
 
   List<String> readValues(AudioDetail detail, {Duration? fallbackDuration}) {
-    return isMulti ? readList(detail) : [readText(detail, fallbackDuration: fallbackDuration)];
+    return isMulti
+        ? readList(detail)
+        : [readText(detail, fallbackDuration: fallbackDuration)];
   }
 
   AudioDetail apply(AudioDetail detail, String rawValue) {

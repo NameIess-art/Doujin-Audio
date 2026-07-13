@@ -6,6 +6,7 @@ import 'package:nameless_audio/models/audio_detail.dart';
 import 'package:nameless_audio/services/app_database.dart';
 import 'package:nameless_audio/services/audio_database_repository.dart';
 import 'package:nameless_audio/services/audio_detail_repository.dart';
+import 'package:nameless_audio/services/file_cache_platform_gateway.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 void main() {
@@ -15,6 +16,10 @@ void main() {
   late Directory tempDir;
 
   final fixedNow = DateTime.fromMillisecondsSinceEpoch(123456);
+  final pngCoverBytes = base64Decode(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk'
+    '+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+  );
 
   setUpAll(() {
     sqfliteFfiInit();
@@ -25,11 +30,13 @@ void main() {
     db = await databaseFactoryFfi.openDatabase(inMemoryDatabasePath);
     await AppDatabase.createSchemaForTest(db);
     appDatabase = AppDatabase.test(db);
+    tempDir = await Directory.systemTemp.createTemp('audio_detail_test_');
     repository = AudioDetailRepository(
       databaseRepository: AudioDatabaseRepository(database: appDatabase),
       now: () => fixedNow,
+      portableCoverDirectory: () async =>
+          Directory('${tempDir.path}${Platform.pathSeparator}portable-covers'),
     );
-    tempDir = await Directory.systemTemp.createTemp('audio_detail_test_');
   });
 
   tearDown(() async {
@@ -68,6 +75,7 @@ void main() {
       backup['cardCoverPath'],
       '${tempDir.path}${Platform.pathSeparator}cover.jpg',
     );
+    expect(backup['cardCoverRelativePath'], 'cover.jpg');
 
     final databaseDetail = await appDatabase.loadAudioDetail(target);
     expect(databaseDetail?.workTitle, 'Work');
@@ -134,6 +142,7 @@ void main() {
         'rjCode': 'RJ654321',
         'workTitle': 'Backup work',
         'circleName': 'Backup circle',
+        'cardCoverPath': '${tempDir.path}${Platform.pathSeparator}legacy.jpg',
         'voiceActors': ['A', 'A', 'B'],
         'tags': ['tag'],
       }),
@@ -143,8 +152,318 @@ void main() {
 
     expect(result.restoredFromBackup, isTrue);
     expect(result.detail.workTitle, 'Backup work');
+    expect(
+      result.detail.cardCoverPath,
+      '${tempDir.path}${Platform.pathSeparator}legacy.jpg',
+    );
     expect(result.detail.voiceActors, const <String>['A', 'B']);
     expect((await appDatabase.loadAudioDetail(target))?.rjCode, 'RJ654321');
+  });
+
+  test('root folder backup restores selected cover after re-import', () async {
+    final oldFolder = Directory(
+      '${tempDir.path}${Platform.pathSeparator}old-work',
+    );
+    final coverFolder = Directory(
+      '${oldFolder.path}${Platform.pathSeparator}artwork',
+    );
+    await coverFolder.create(recursive: true);
+    final oldCoverPath =
+        '${coverFolder.path}${Platform.pathSeparator}selected.jpg';
+    await File(oldCoverPath).writeAsBytes(const <int>[1, 2, 3]);
+    final oldTarget = AudioDetailTarget.libraryRootFolder(oldFolder.path);
+
+    final saved = await repository.save(
+      AudioDetail.empty(oldTarget).copyWith(cardCoverPath: oldCoverPath),
+    );
+    expect(saved.backupSaved, isTrue);
+
+    final newFolder = await oldFolder.rename(
+      '${tempDir.path}${Platform.pathSeparator}reimported-work',
+    );
+    final newTarget = AudioDetailTarget.libraryRootFolder(newFolder.path);
+    final restored = await repository.load(newTarget);
+
+    expect(restored.restoredFromBackup, isTrue);
+    expect(
+      restored.detail.cardCoverPath,
+      '${newFolder.path}${Platform.pathSeparator}artwork'
+      '${Platform.pathSeparator}selected.jpg',
+    );
+  });
+
+  test('derived audio and video covers round-trip through JSON', () async {
+    for (final sourceName in <String>[
+      'embedded-audio.image',
+      'video-frame.jpg',
+    ]) {
+      final workFolder = Directory(
+        '${tempDir.path}${Platform.pathSeparator}$sourceName-work',
+      );
+      await workFolder.create();
+      final cacheFile = File(
+        '${tempDir.path}${Platform.pathSeparator}cache-$sourceName',
+      );
+      await cacheFile.writeAsBytes(pngCoverBytes);
+      final target = AudioDetailTarget.libraryRootFolder(workFolder.path);
+
+      final saved = await repository.save(
+        AudioDetail.empty(
+          target,
+        ).copyWith(workTitle: sourceName, cardCoverPath: cacheFile.path),
+      );
+      expect(saved.backupSaved, isTrue);
+      expect(saved.detail.cardCoverPath, isNot(cacheFile.path));
+      expect(await File(saved.detail.cardCoverPath!).exists(), isTrue);
+      final backupFile = File(
+        '${workFolder.path}${Platform.pathSeparator}'
+        '${AudioDetailRepository.backupFileName}',
+      );
+      final backup =
+          json.decode(await backupFile.readAsString()) as Map<String, dynamic>;
+      final embedded = backup['cardCoverEmbedded'] as Map<String, dynamic>;
+      expect(backup['cardCoverRelativePath'], isNull);
+      expect(embedded['mimeType'], 'image/png');
+      expect(embedded['byteLength'], pngCoverBytes.length);
+      expect(base64Decode(embedded['data'] as String), pngCoverBytes);
+
+      await cacheFile.delete();
+      await repository.delete(target);
+      final restored = await repository.load(target);
+
+      expect(restored.restoredFromBackup, isTrue);
+      expect(restored.detail.workTitle, sourceName);
+      final restoredCover = File(restored.detail.cardCoverPath!);
+      expect(await restoredCover.exists(), isTrue);
+      expect(await restoredCover.readAsBytes(), pngCoverBytes);
+    }
+  });
+
+  test('missing database cache cover self-heals from JSON', () async {
+    final workFolder = Directory(
+      '${tempDir.path}${Platform.pathSeparator}self-heal-work',
+    );
+    await workFolder.create();
+    final cacheFile = File(
+      '${tempDir.path}${Platform.pathSeparator}self-heal-frame.jpg',
+    );
+    await cacheFile.writeAsBytes(pngCoverBytes);
+    final target = AudioDetailTarget.libraryRootFolder(workFolder.path);
+    final saved = await repository.save(
+      AudioDetail.empty(target).copyWith(
+        workTitle: 'Keep database metadata',
+        cardCoverPath: cacheFile.path,
+      ),
+    );
+    await cacheFile.delete();
+    await File(saved.detail.cardCoverPath!).delete();
+
+    final restored = await repository.load(target);
+
+    expect(restored.restoredFromBackup, isFalse);
+    expect(restored.detail.workTitle, 'Keep database metadata');
+    expect(restored.detail.cardCoverPath, saved.detail.cardCoverPath);
+    expect(
+      await File(restored.detail.cardCoverPath!).readAsBytes(),
+      pngCoverBytes,
+    );
+    expect(
+      (await appDatabase.loadAudioDetail(target))?.cardCoverPath,
+      restored.detail.cardCoverPath,
+    );
+  });
+
+  test('standalone embedded cover round-trips in array backup', () async {
+    final audioDirectory = Directory(
+      '${tempDir.path}${Platform.pathSeparator}standalone-work',
+    );
+    await audioDirectory.create();
+    final audioFile = File(
+      '${audioDirectory.path}${Platform.pathSeparator}standalone.mp3',
+    );
+    await audioFile.writeAsBytes(const <int>[1, 2, 3]);
+    final cacheFile = File(
+      '${tempDir.path}${Platform.pathSeparator}standalone-embedded.image',
+    );
+    await cacheFile.writeAsBytes(pngCoverBytes);
+    final target = AudioDetailTarget.singleAudioFile(audioFile.path);
+
+    await repository.save(
+      AudioDetail.empty(target).copyWith(cardCoverPath: cacheFile.path),
+    );
+    final backupFile = File(
+      '${audioDirectory.path}${Platform.pathSeparator}'
+      '${AudioDetailRepository.backupFileName}',
+    );
+    final entries = json.decode(await backupFile.readAsString()) as List;
+    expect(
+      (entries.single as Map<String, dynamic>)['cardCoverEmbedded'],
+      isA<Map<String, dynamic>>(),
+    );
+
+    await cacheFile.delete();
+    await repository.delete(target);
+    final restored = await repository.load(target);
+
+    expect(restored.restoredFromBackup, isTrue);
+    expect(
+      await File(restored.detail.cardCoverPath!).readAsBytes(),
+      pngCoverBytes,
+    );
+  });
+
+  test(
+    'content folder backup restores selected cover after re-import',
+    () async {
+      const oldTargetPath =
+          'content://com.android.externalstorage.documents/tree/'
+          'primary%3AMusic::OldWork';
+      const newTargetPath =
+          'content://com.android.externalstorage.documents/tree/'
+          'primary%3AMusic::ImportedWork';
+      const oldCoverPath =
+          'content://com.android.externalstorage.documents/tree/'
+          'primary%3AMusic/document/'
+          'primary%3AMusic%2FOldWork%2Fartwork%2Fselected.jpg';
+      const expectedCoverPath =
+          'content://com.android.externalstorage.documents/tree/'
+          'primary%3AMusic/document/'
+          'primary%3AMusic%2FImportedWork%2Fartwork%2Fselected.jpg';
+      final gateway = _MemoryFileCacheGateway();
+      final contentRepository = AudioDetailRepository(
+        databaseRepository: AudioDatabaseRepository(database: appDatabase),
+        fileCacheGateway: gateway,
+        now: () => fixedNow,
+        portableCoverDirectory: () async => Directory(
+          '${tempDir.path}${Platform.pathSeparator}portable-content-covers',
+        ),
+      );
+      final oldTarget = AudioDetailTarget.libraryRootFolder(oldTargetPath);
+
+      final saved = await contentRepository.save(
+        AudioDetail.empty(oldTarget).copyWith(cardCoverPath: oldCoverPath),
+      );
+      expect(saved.backupSaved, isTrue);
+      expect(
+        (json.decode(gateway.backup!)
+            as Map<String, dynamic>)['cardCoverRelativePath'],
+        'artwork/selected.jpg',
+      );
+
+      final restored = await contentRepository.load(
+        AudioDetailTarget.libraryRootFolder(newTargetPath),
+      );
+
+      expect(restored.restoredFromBackup, isTrue);
+      expect(restored.detail.cardCoverPath, expectedCoverPath);
+    },
+  );
+
+  test('content folder derived cover restores from embedded JSON', () async {
+    const targetPath =
+        'content://com.android.externalstorage.documents/tree/'
+        'primary%3AMusic::DerivedWork';
+    final cacheFile = File(
+      '${tempDir.path}${Platform.pathSeparator}android-video-frame.jpg',
+    );
+    await cacheFile.writeAsBytes(pngCoverBytes);
+    final gateway = _MemoryFileCacheGateway();
+    final contentRepository = AudioDetailRepository(
+      databaseRepository: AudioDatabaseRepository(database: appDatabase),
+      fileCacheGateway: gateway,
+      now: () => fixedNow,
+      portableCoverDirectory: () async => Directory(
+        '${tempDir.path}${Platform.pathSeparator}portable-content-derived',
+      ),
+    );
+    final target = AudioDetailTarget.libraryRootFolder(targetPath);
+
+    await contentRepository.save(
+      AudioDetail.empty(target).copyWith(cardCoverPath: cacheFile.path),
+    );
+    final backup = json.decode(gateway.backup!) as Map<String, dynamic>;
+    expect(backup['cardCoverRelativePath'], isNull);
+    expect(backup['cardCoverEmbedded'], isA<Map<String, dynamic>>());
+
+    await cacheFile.delete();
+    await contentRepository.delete(target);
+    final restored = await contentRepository.load(target);
+
+    expect(restored.restoredFromBackup, isTrue);
+    expect(
+      await File(restored.detail.cardCoverPath!).readAsBytes(),
+      pngCoverBytes,
+    );
+  });
+
+  test('content standalone derived cover restores from array JSON', () async {
+    const audioPath =
+        'content://com.android.externalstorage.documents/tree/'
+        'primary%3AMusic/document/primary%3AMusic%2Fsingle.m4a';
+    final cacheFile = File(
+      '${tempDir.path}${Platform.pathSeparator}android-embedded.image',
+    );
+    await cacheFile.writeAsBytes(pngCoverBytes);
+    final gateway = _MemoryFileCacheGateway();
+    final contentRepository = AudioDetailRepository(
+      databaseRepository: AudioDatabaseRepository(database: appDatabase),
+      fileCacheGateway: gateway,
+      now: () => fixedNow,
+      portableCoverDirectory: () async => Directory(
+        '${tempDir.path}${Platform.pathSeparator}portable-content-single',
+      ),
+    );
+    final target = AudioDetailTarget.singleAudioFile(audioPath);
+
+    await contentRepository.save(
+      AudioDetail.empty(target).copyWith(cardCoverPath: cacheFile.path),
+    );
+    final entries = json.decode(gateway.singleBackup!) as List;
+    expect(
+      (entries.single as Map<String, dynamic>)['cardCoverEmbedded'],
+      isA<Map<String, dynamic>>(),
+    );
+
+    await cacheFile.delete();
+    await contentRepository.delete(target);
+    final restored = await contentRepository.load(target);
+
+    expect(restored.restoredFromBackup, isTrue);
+    expect(
+      await File(restored.detail.cardCoverPath!).readAsBytes(),
+      pngCoverBytes,
+    );
+  });
+
+  test('embedded cover with invalid digest is rejected', () async {
+    final target = AudioDetailTarget.libraryRootFolder(tempDir.path);
+    final missingCover =
+        '${tempDir.path}${Platform.pathSeparator}missing-cache.image';
+    final backupFile = File(
+      '${tempDir.path}${Platform.pathSeparator}'
+      '${AudioDetailRepository.backupFileName}',
+    );
+    await backupFile.writeAsString(
+      json.encode({
+        'schemaVersion': 1,
+        'type': 'audio-detail',
+        'targetType': 'library-root-folder',
+        'targetPath': tempDir.path,
+        'cardCoverPath': missingCover,
+        'cardCoverEmbedded': {
+          'encoding': 'base64',
+          'mimeType': 'image/png',
+          'byteLength': pngCoverBytes.length,
+          'sha256': List<String>.filled(64, '0').join(),
+          'data': base64Encode(pngCoverBytes),
+        },
+      }),
+    );
+
+    final restored = await repository.load(target);
+
+    expect(restored.restoredFromBackup, isTrue);
+    expect(restored.detail.cardCoverPath, missingCover);
   });
 
   test('loadMany restores missing backups in caller order', () async {
@@ -533,4 +852,36 @@ void main() {
     expect(result.detail.isEmpty, isTrue);
     expect(await appDatabase.loadAudioDetail(target), isNull);
   });
+}
+
+class _MemoryFileCacheGateway extends FileCachePlatformGateway {
+  _MemoryFileCacheGateway() : super(isAndroid: () => true);
+
+  String? backup;
+  String? singleBackup;
+
+  @override
+  Future<bool> writeAudioDetailBackup({
+    required String folder,
+    required String json,
+  }) async {
+    backup = json;
+    return true;
+  }
+
+  @override
+  Future<String?> readAudioDetailBackup(String folderPath) async => backup;
+
+  @override
+  Future<bool> writeSingleFileDetailBackup({
+    required String filePath,
+    required String json,
+  }) async {
+    singleBackup = json;
+    return true;
+  }
+
+  @override
+  Future<String?> readSingleFileDetailBackup(String filePath) async =>
+      singleBackup;
 }

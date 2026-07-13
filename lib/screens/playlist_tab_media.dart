@@ -144,6 +144,7 @@ class _SessionCoverThumbnailState extends State<_SessionCoverThumbnail> {
 
   @override
   Widget build(BuildContext context) {
+    final session = context.read<AudioProvider>().sessionById(widget.sessionId);
     return Stack(
       children: [
         SizedBox(
@@ -151,13 +152,17 @@ class _SessionCoverThumbnailState extends State<_SessionCoverThumbnail> {
           height: _SessionCoverThumbnail._height,
           child: Material(
             type: MaterialType.transparency,
-            borderRadius: BorderRadius.circular(LibraryLikeCardMetrics.coverRadius),
+            borderRadius: BorderRadius.circular(
+              LibraryLikeCardMetrics.coverRadius,
+            ),
             clipBehavior: Clip.antiAlias,
             child: AsyncLocalCoverImage(
               future: _futureFor(context.read<AudioProvider>()),
               initialPath: widget.coverPath,
-              retryFutureBuilder: () =>
-                  _coverFutureForTrack(context.read<AudioProvider>(), widget.track),
+              retryFutureBuilder: () => _coverFutureForTrack(
+                context.read<AudioProvider>(),
+                widget.track,
+              ),
               seed:
                   widget.track?.displayName ??
                   widget.track?.path ??
@@ -170,12 +175,21 @@ class _SessionCoverThumbnailState extends State<_SessionCoverThumbnail> {
             ),
           ),
         ),
-        if (widget.duration != null && widget.duration! > Duration.zero)
-          Positioned(
-            right: 4,
-            bottom: 4,
-            child: DurationOverlay(duration: widget.duration!),
+        Positioned(
+          right: 4,
+          bottom: 4,
+          child: StreamBuilder<Duration?>(
+            stream: session?.durationStream,
+            initialData: session?.duration ?? widget.duration,
+            builder: (context, snapshot) {
+              final duration = snapshot.data;
+              if (duration == null || duration <= Duration.zero) {
+                return const SizedBox.shrink();
+              }
+              return DurationOverlay(duration: duration);
+            },
           ),
+        ),
       ],
     );
   }

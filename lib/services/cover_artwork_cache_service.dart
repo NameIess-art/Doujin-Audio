@@ -301,22 +301,22 @@ class CoverArtworkCacheService {
     return _resolveFolderCoverCandidates(normalizedFolder);
   }
 
-  Future<void> setFolderCoverSelection(
+  Future<String?> setFolderCoverSelection(
     String folderPath,
     String coverPath, {
     bool newlySaved = false,
   }) async {
     final normalizedFolder = PathMatcher.normalize(folderPath);
     final normalizedCover = coverPath.trim();
-    if (normalizedFolder.isEmpty || normalizedCover.isEmpty) return;
+    if (normalizedFolder.isEmpty || normalizedCover.isEmpty) return null;
     if (!newlySaved) {
       final candidates = await _resolveFolderCoverCandidates(normalizedFolder);
-      if (!candidates.contains(normalizedCover)) return;
+      if (!candidates.contains(normalizedCover)) return null;
     }
     await _ensureFolderCoverSelections();
     _folderCoverSelections[normalizedFolder] = normalizedCover;
     await _saveFolderCoverSelections();
-    await _saveCardCoverPath(
+    final storedCoverPath = await _saveCardCoverPath(
       AudioDetailTarget.libraryRootFolder(normalizedFolder),
       normalizedCover,
     );
@@ -325,6 +325,7 @@ class CoverArtworkCacheService {
     _resolvedFolderCoverFutures[normalizedFolder] = SynchronousFuture<String?>(
       normalizedCover,
     );
+    return storedCoverPath ?? normalizedCover;
   }
 
   Future<void> retargetFolderCoverSelection(
@@ -808,18 +809,22 @@ class CoverArtworkCacheService {
     }
   }
 
-  Future<void> _saveCardCoverPath(
+  Future<String?> _saveCardCoverPath(
     AudioDetailTarget target,
     String? coverPath,
   ) async {
     try {
-      await _audioDetailCacheService?.saveCardCoverPath(target, coverPath);
+      return await _audioDetailCacheService?.saveCardCoverPath(
+        target,
+        coverPath,
+      );
     } catch (error, stackTrace) {
       AppLogService.warning(
         'Unable to save card cover path.',
         error: error,
         stackTrace: stackTrace,
       );
+      return null;
     }
   }
 

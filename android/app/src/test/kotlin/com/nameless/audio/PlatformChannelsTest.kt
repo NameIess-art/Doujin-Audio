@@ -72,4 +72,12 @@ class PlatformChannelsTest {
         assertEquals("installApk", UpdateMethods.INSTALL_APK)
         assertEquals("openReleasePage", UpdateMethods.OPEN_RELEASE_PAGE)
     }
+
+    @Test
+    fun `native failure codes remain protocol compatible`() {
+        assertEquals("invalid_argument", ChannelErrorCodes.INVALID_ARGUMENT)
+        assertEquals("service_unavailable", ChannelErrorCodes.SERVICE_UNAVAILABLE)
+        assertEquals("player_error", ChannelErrorCodes.PLAYER_ERROR)
+        assertEquals("platform_error", ChannelErrorCodes.PLATFORM_ERROR)
+    }
 }

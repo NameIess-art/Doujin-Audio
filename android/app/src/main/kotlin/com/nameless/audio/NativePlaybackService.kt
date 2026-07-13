@@ -8,8 +8,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ServiceInfo
-import android.media.AudioAttributes as AndroidAudioAttributes
-import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.net.ConnectivityManager
 import android.net.Network
@@ -256,8 +254,15 @@ class NativePlaybackService : MediaSessionService() {
     private var playbackSuspended = false
     private var playbackForegroundStarted = false
     private var playbackForegroundSignature: String? = null
-    private var audioFocusRequest: AudioFocusRequest? = null
-    private var audioFocusHeld = false
+    private val audioFocusController by lazy {
+        NativeAudioFocusController(
+            context = applicationContext,
+            handler = mainHandler,
+            logInfo = ::logInfo,
+            logWarn = { message, error -> logWarn(message, error = error) },
+            onFocusChange = ::handleAudioFocusChange
+        )
+    }
     private var transientAudioFocusLossActive = false
     private val pendingAudioFocusResumeSessionIds = linkedSetOf<String>()
     private val intendedPlaybackSessionIds = linkedSetOf<String>()
@@ -279,13 +284,11 @@ class NativePlaybackService : MediaSessionService() {
     // Whether a deferred foreground-stop is pending (grace period after
     // playback appears to have stopped).
     private var foregroundStopGracePending = false
-    private val audioFocusChangeListener = AudioManager.OnAudioFocusChangeListener { change ->
-        logInfo("audio_focus_change focus=${audioFocusChangeName(change)}")
+    private fun handleAudioFocusChange(change: Int) {
         when (change) {
             AudioManager.AUDIOFOCUS_LOSS -> {
                 // Mark focus as no longer held so the next syncForegroundState
                 // call will re-request it when playback resumes.
-                audioFocusHeld = false
                 transientAudioFocusLossActive = false
                 pendingAudioFocusResumeSessionIds.clear()
                 intendedPlaybackSessionIds.clear()
@@ -294,7 +297,6 @@ class NativePlaybackService : MediaSessionService() {
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
                 if (shouldPauseForAudioFocusChange(change)) {
-                    audioFocusHeld = false
                     transientAudioFocusLossActive = true
                     sessions.values.forEach { session ->
                         val player = session.playerOrNull()
@@ -312,7 +314,6 @@ class NativePlaybackService : MediaSessionService() {
                 }
             }
             AudioManager.AUDIOFOCUS_GAIN -> {
-                audioFocusHeld = true
                 transientAudioFocusLossActive = false
                 if (resumePendingAudioFocusSessionsIfPossible("audio_focus_gain")) {
                     schedulePersistSessionState()
@@ -1798,51 +1799,12 @@ class NativePlaybackService : MediaSessionService() {
     }
 
     private fun requestAudioFocusIfNeeded(): Boolean {
-        if (audioFocusHeld) return true
-        val manager = getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: run {
-            logInfo("audio_focus_request_skip no_audio_manager")
-            return false
-        }
-        val result = try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                val request = audioFocusRequest ?: AudioFocusRequest.Builder(
-                    AudioManager.AUDIOFOCUS_GAIN
-                )
-                    .setAudioAttributes(
-                        AndroidAudioAttributes.Builder()
-                            .setUsage(AndroidAudioAttributes.USAGE_MEDIA)
-                            .setContentType(AndroidAudioAttributes.CONTENT_TYPE_MUSIC)
-                            .build()
-                    )
-                    .setAcceptsDelayedFocusGain(false)
-                    .setWillPauseWhenDucked(false)
-                    .setOnAudioFocusChangeListener(audioFocusChangeListener, mainHandler)
-                    .build()
-                    .also { audioFocusRequest = it }
-                manager.requestAudioFocus(request)
-            } else {
-                @Suppress("DEPRECATION")
-                manager.requestAudioFocus(
-                    audioFocusChangeListener,
-                    AudioManager.STREAM_MUSIC,
-                    AudioManager.AUDIOFOCUS_GAIN
-                )
-            }
-        } catch (e: RuntimeException) {
-            logWarn("audio_focus_request_failed", error = e)
-            AudioManager.AUDIOFOCUS_REQUEST_FAILED
-        }
-        audioFocusHeld = result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
-        logInfo(
-            "audio_focus_request_result result=${audioFocusRequestResultName(result)} " +
-                "held=$audioFocusHeld"
-        )
-        return audioFocusHeld
+        return audioFocusController.requestIfNeeded()
     }
 
     private fun resumePendingAudioFocusSessionsIfPossible(trigger: String): Boolean {
         if (!shouldResumePendingAudioFocusPause(
-                audioFocusHeld = audioFocusHeld,
+                audioFocusHeld = audioFocusController.isHeld,
                 hasPendingAudioFocusResume = hasPendingAudioFocusResume(),
                 playbackSuspended = playbackSuspended
             )
@@ -1868,25 +1830,7 @@ class NativePlaybackService : MediaSessionService() {
     }
 
     private fun abandonAudioFocus(reason: String) {
-        if (!audioFocusHeld && audioFocusRequest == null) return
-        val manager = getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: run {
-            logInfo("audio_focus_abandon_skip no_audio_manager reason=$reason")
-            audioFocusHeld = false
-            return
-        }
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                audioFocusRequest?.let(manager::abandonAudioFocusRequest)
-            } else {
-                @Suppress("DEPRECATION")
-                manager.abandonAudioFocus(audioFocusChangeListener)
-            }
-            logInfo("audio_focus_abandoned reason=$reason")
-        } catch (e: RuntimeException) {
-            logWarn("audio_focus_abandon_failed reason=$reason", error = e)
-        } finally {
-            audioFocusHeld = false
-        }
+        audioFocusController.abandon(reason)
     }
 
     private fun acquireWakeLock() {
@@ -1973,11 +1917,14 @@ class NativePlaybackService : MediaSessionService() {
     }
 
     private fun okResult(value: Any?): Map<String, Any?> {
-        return mapOf("ok" to true, "value" to value)
+        return channelSuccess(value)
     }
 
     private fun errorResult(message: String): Map<String, Any?> {
-        return mapOf("ok" to false, "error" to message)
+        return channelFailure(
+            code = ChannelErrorCodes.PLAYER_ERROR,
+            message = message
+        )
     }
 
 
@@ -2044,25 +1991,6 @@ internal fun shouldResumePendingAudioFocusPause(
     return audioFocusHeld &&
         hasPendingAudioFocusResume &&
         !playbackSuspended
-}
-
-private fun audioFocusChangeName(change: Int): String {
-    return when (change) {
-        AudioManager.AUDIOFOCUS_GAIN -> "gain"
-        AudioManager.AUDIOFOCUS_LOSS -> "loss"
-        AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> "loss_transient"
-        AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> "loss_transient_can_duck"
-        else -> "unknown($change)"
-    }
-}
-
-private fun audioFocusRequestResultName(result: Int): String {
-    return when (result) {
-        AudioManager.AUDIOFOCUS_REQUEST_GRANTED -> "granted"
-        AudioManager.AUDIOFOCUS_REQUEST_FAILED -> "failed"
-        AudioManager.AUDIOFOCUS_REQUEST_DELAYED -> "delayed"
-        else -> "unknown($result)"
-    }
 }
 
 internal fun shouldAttemptStickyPlaybackRestore(

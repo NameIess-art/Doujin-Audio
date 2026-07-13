@@ -10,9 +10,10 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
 
-import '../providers/audio_provider.dart';
 import '../i18n/app_language_provider.dart';
+import '../models/music_track.dart';
 import 'audio_state_services.dart';
+import 'library_catalog.dart';
 import 'path_matcher.dart';
 import 'path_display.dart';
 import 'media_file_support.dart';
@@ -26,7 +27,7 @@ export 'library_refresh_chunk_planner.dart';
 
 class LibraryScanMergeContext {
   LibraryScanMergeContext({
-    required AudioProvider provider,
+    required LibraryCatalogReader provider,
     required String libraryRoot,
   }) : exclusionMatcher = provider.libraryExclusionMatcherForLibrary(
          libraryRoot,
@@ -60,7 +61,7 @@ class LibraryScannerService {
   final FileCachePlatformGateway _platformGateway;
 
   void _rollbackScanAdditions({
-    required AudioProvider provider,
+    required LibraryCatalog provider,
     required Set<String> existingTrackPaths,
     required Map<String, Set<String>> existingEntryPathsByRoot,
   }) {
@@ -91,7 +92,7 @@ class LibraryScannerService {
         PathMatcher.isWithinOrEqual(second, first);
   }
 
-  Future<bool> _flushRefreshBatch(AudioProvider provider) async {
+  Future<bool> _flushRefreshBatch(LibraryCatalogReader provider) async {
     await Future<void>.delayed(Duration.zero);
     return provider.isScanning;
   }
@@ -117,7 +118,7 @@ class LibraryScannerService {
   }
 
   Future<void> refreshWatchedFolders({
-    required AudioProvider provider,
+    required LibraryCatalog provider,
     required AppLanguageProvider i18n,
     required void Function(String) showSnack,
     bool silent = false,
@@ -295,7 +296,7 @@ class LibraryScannerService {
 
   Future<LibraryRefreshFolderResult> _scanLibraryRootForRefresh({
     required String libraryRoot,
-    required AudioProvider provider,
+    required LibraryCatalog provider,
     required AppLanguageProvider i18n,
     required int generation,
   }) async {
@@ -327,7 +328,7 @@ class LibraryScannerService {
   Future<LibraryRefreshFolderResult> _scanWatchedFolderForRefresh({
     required String folderPath,
     required String effectiveLibraryRoot,
-    required AudioProvider provider,
+    required LibraryCatalog provider,
     required AppLanguageProvider i18n,
     required String progressPrefix,
     required int generation,
@@ -345,7 +346,7 @@ class LibraryScannerService {
   Future<LibraryRefreshFolderResult> _scanFolderForRefresh({
     required String sourceFolderPath,
     required String libraryRoot,
-    required AudioProvider provider,
+    required LibraryCatalog provider,
     required AppLanguageProvider i18n,
     bool promoteRootTracksToSingles = false,
     List<String> folderPaths = const <String>[],
@@ -446,7 +447,7 @@ class LibraryScannerService {
   Future<LibraryRefreshFolderResult> _buildFolderRefreshResult({
     required String sourceFolderPath,
     required String libraryRoot,
-    required AudioProvider provider,
+    required LibraryCatalog provider,
     required AppLanguageProvider i18n,
     required List<ScannedTrack> scannedTracks,
     required Set<String> retainedTrackPaths,
@@ -523,7 +524,7 @@ class LibraryScannerService {
 
   Future<int> _mergeScannedTracksIncrementally({
     required String sourceFolderPath,
-    required AudioProvider provider,
+    required LibraryCatalog provider,
     required List<ScannedTrack> scannedTracks,
     required String? libraryRoot,
     bool promoteRootTracksToSingles = false,
@@ -625,7 +626,7 @@ class LibraryScannerService {
 
   Future<int> _importFolderIncrementally(
     String folderPath,
-    AudioProvider provider,
+    LibraryCatalog provider,
     String? libraryRoot, {
     bool promoteRootTracksToSingles = false,
     AppLanguageProvider? i18n,
@@ -783,7 +784,7 @@ class LibraryScannerService {
 
   Future<_IncrementalNativeImport?> _importNativeFolderChunkedIncrementally({
     required String sourceFolderPath,
-    required AudioProvider provider,
+    required LibraryCatalog provider,
     required String? libraryRoot,
     required AppLanguageProvider i18n,
     bool promoteRootTracksToSingles = false,
@@ -865,7 +866,7 @@ class LibraryScannerService {
 
   Future<_FolderImportOutcome> _importLibraryWithSingleScan(
     String libraryRoot,
-    AudioProvider provider,
+    LibraryCatalog provider,
     AppLanguageProvider i18n, {
     Future<bool> Function()? onChunkCommitted,
     required int generation,
@@ -994,12 +995,12 @@ class LibraryScannerService {
   }
 
   Future<void> _prefillRjDetailForFolder(
-    AudioProvider provider,
+    LibraryCatalog provider,
     String folderPath,
   ) async {
     try {
       await provider.prefillAudioDetailRjCodeFromText(
-        AudioDetailTarget.libraryRootFolder(folderPath),
+        folderPath,
         _displaySourceName(folderPath),
       );
     } catch (_) {
@@ -1007,7 +1008,7 @@ class LibraryScannerService {
     }
   }
 
-  bool _isFolderAlreadyInLibrary(AudioProvider provider, String folderPath) {
+  bool _isFolderAlreadyInLibrary(LibraryCatalog provider, String folderPath) {
     final normalizedFolderPath = PathMatcher.normalize(folderPath);
     if (provider.watchedFolders.any(
       (value) => _pathsOverlap(value, normalizedFolderPath),
@@ -1027,7 +1028,7 @@ class LibraryScannerService {
     );
   }
 
-  bool _isTrackAlreadyInLibrary(AudioProvider provider, String trackPath) {
+  bool _isTrackAlreadyInLibrary(LibraryCatalog provider, String trackPath) {
     final normalizedTrackPath = PathMatcher.normalize(trackPath);
     if (provider.trackByPath(normalizedTrackPath) != null) {
       return true;
@@ -1051,7 +1052,7 @@ class LibraryScannerService {
   }
 
   bool _hasWatchedLibraryOverlap(
-    AudioProvider provider,
+    LibraryCatalog provider,
     String normalizedFolderPath,
   ) {
     return provider.watchedLibraries.any(
@@ -1060,7 +1061,7 @@ class LibraryScannerService {
   }
 
   bool _isNestedInsideStandaloneFolder(
-    AudioProvider provider,
+    LibraryCatalog provider,
     String normalizedFolderPath,
   ) {
     return provider.watchedFolders.any(
@@ -1071,7 +1072,7 @@ class LibraryScannerService {
   }
 
   List<String> _watchedFoldersToPromote(
-    AudioProvider provider,
+    LibraryCatalog provider,
     String normalizedFolderPath,
   ) {
     return provider.watchedFolders
@@ -1082,7 +1083,7 @@ class LibraryScannerService {
   }
 
   bool _hasUnmanagedLibraryContentOverlap(
-    AudioProvider provider,
+    LibraryCatalog provider,
     String normalizedFolderPath,
     List<String> promotedFolders,
   ) {
@@ -1174,7 +1175,7 @@ class LibraryScannerService {
   }
 
   Future<void> addFolder({
-    required AudioProvider provider,
+    required LibraryCatalog provider,
     required AppLanguageProvider i18n,
     required void Function(String) showSnack,
   }) async {
@@ -1198,7 +1199,7 @@ class LibraryScannerService {
 
   Future<void> _addFolderFromPath(
     String folderPath,
-    AudioProvider provider,
+    LibraryCatalog provider,
     AppLanguageProvider i18n,
     void Function(String) showSnack,
   ) async {
@@ -1345,7 +1346,7 @@ class LibraryScannerService {
   }
 
   Future<void> addLibrary({
-    required AudioProvider provider,
+    required LibraryCatalog provider,
     required AppLanguageProvider i18n,
     required void Function(String) showSnack,
   }) async {
@@ -1369,7 +1370,7 @@ class LibraryScannerService {
 
   Future<void> _addLibraryFromPath(
     String folderPath,
-    AudioProvider provider,
+    LibraryCatalog provider,
     AppLanguageProvider i18n,
     void Function(String) showSnack,
   ) async {
@@ -1479,7 +1480,7 @@ class LibraryScannerService {
   }
 
   Future<void> addFiles({
-    required AudioProvider provider,
+    required LibraryCatalog provider,
     required AppLanguageProvider i18n,
     required void Function(String) showSnack,
   }) async {

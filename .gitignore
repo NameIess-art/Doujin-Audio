@@ -67,6 +67,16 @@ test.json
 work.json
 work2.json
 
+# Root-level one-off diagnostics and manual probes
+/jobs.json
+/logs.zip
+/old_test.dart
+/old_old_test.dart
+/poll.ps1
+/test.mp3
+/test_duration.dart
+/test_works.json
+
 # Local planning notes and unreferenced presentation assets
 /docs/plans/
 /docs/screenshots/

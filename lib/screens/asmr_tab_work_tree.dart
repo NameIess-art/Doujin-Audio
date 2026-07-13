@@ -16,12 +16,11 @@ class _AsmrWorkTreeCardState extends State<_AsmrWorkTreeCard> {
   bool _expanded = false;
 
   Future<void> _playWork(BuildContext context) async {
-    final asmrController = context.read<AsmrLibraryController>();
     await UiOperationService.instance.run<void>(
       scope: UiOperationScope.asmrWork(AsmrOperationKind.play, widget.work.id),
       labelKey: 'loading_dot',
       task: (_) =>
-          asmrController.playWork(context.read<AudioProvider>(), widget.work),
+          context.read<AsmrPlaybackCoordinator>().playWork(widget.work),
     );
     if (!context.mounted) {
       return;
@@ -548,11 +547,8 @@ class _AsmrTrackLeafRow extends StatelessWidget {
     await UiOperationService.instance.run<void>(
       scope: _trackPlayScope(work, node),
       labelKey: 'loading_dot',
-      task: (_) => context.read<AsmrLibraryController>().playTrack(
-        context.read<AudioProvider>(),
-        work,
-        node,
-      ),
+      task: (_) =>
+          context.read<AsmrPlaybackCoordinator>().playTrack(work, node),
     );
     if (!context.mounted) {
       return;

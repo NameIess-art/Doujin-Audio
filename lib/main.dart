@@ -13,11 +13,14 @@ import 'i18n/app_language_provider.dart';
 import 'platform/app_platform.dart';
 import 'platform/app_window_bootstrap.dart';
 import 'providers/audio_provider.dart';
+import 'providers/audio_provider_playback_launcher.dart';
 import 'providers/audio_provider_riverpod.dart';
 import 'screens/main_screen.dart';
 import 'screens/onboarding_page.dart';
 import 'services/asmr_library_controller.dart';
 import 'services/asmr_download_manager.dart';
+import 'services/asmr_playback_coordinator.dart';
+import 'services/asmr_preferences.dart';
 import 'services/audio_database_repository.dart';
 import 'services/audio_state_services.dart';
 import 'services/cover_image_cache_policy.dart';
@@ -94,9 +97,6 @@ Future<void> _runAudioPlayerApp() async {
   final timerService = TimerService();
   final notificationCoordinatorService = NotificationCoordinatorService();
   final settingsRepository = SettingsRepository();
-  final asmrLibraryController = AsmrLibraryController(
-    audioDatabaseRepository: audioDatabaseRepository,
-  );
   final asmrDownloadManager = AsmrDownloadManager();
   final audioProvider = AudioProvider(
     notificationService: notificationService,
@@ -108,6 +108,14 @@ Future<void> _runAudioPlayerApp() async {
     notificationStateService: notificationCoordinatorService,
     settingsRepository: settingsRepository,
     deferRuntimeStart: true,
+  );
+  final asmrLibraryController = AsmrLibraryController(
+    audioDatabaseRepository: audioDatabaseRepository,
+    preferencesStore: AsmrPreferencesStore(database: AppDatabase.instance),
+  );
+  final asmrPlaybackCoordinator = AsmrPlaybackCoordinator(
+    source: asmrLibraryController,
+    launcher: AudioProviderPlaybackLauncher(audioProvider),
   );
 
   runApp(
@@ -130,6 +138,7 @@ Future<void> _runAudioPlayerApp() async {
           ChangeNotifierProvider.value(value: audioProvider),
           ChangeNotifierProvider.value(value: asmrLibraryController),
           ChangeNotifierProvider.value(value: asmrDownloadManager),
+          Provider.value(value: asmrPlaybackCoordinator),
         ],
         child: const MusicPlayerApp(),
       ),

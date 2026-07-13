@@ -740,9 +740,12 @@ class NativePlaybackBridge implements NativePlaybackBridgeBase {
     final result = await _invokeValue<Object?>(method, (_) => null, arguments);
     return switch (result) {
       NativeSuccess<Object?>() => const NativeSuccess<void>(),
-      NativeFailure<Object?>(message: final message) => NativeFailure<void>(
-        message,
-      ),
+      NativeFailure<Object?>(
+        message: final message,
+        code: final code,
+        details: final details,
+      ) =>
+        NativeFailure<void>(message, code: code, details: details),
     };
   }
 
@@ -765,14 +768,20 @@ class NativePlaybackBridge implements NativePlaybackBridgeBase {
       final raw = await _invokeRaw(method, arguments);
       final ok = raw['ok'] as bool? ?? false;
       if (!ok) {
+        final code =
+            raw['errorCode'] as String? ?? NativeErrorCode.platformError;
         final message =
             raw['error'] as String? ??
             'Native playback call failed: $method returned no error message.';
-        return NativeFailure<T>(message);
+        return NativeFailure<T>(message, code: code, details: raw['details']);
       }
       return NativeSuccess<T>(decode(raw['value']));
     } on PlatformException catch (error) {
-      return NativeFailure<T>(error.message ?? error.code);
+      return NativeFailure<T>(
+        error.message ?? error.code,
+        code: error.code,
+        details: error.details,
+      );
     } catch (error) {
       return NativeFailure<T>(error.toString());
     }

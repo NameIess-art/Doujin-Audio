@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:nameless_audio/services/native_result.dart';
 import 'package:nameless_audio/services/platform_channels.dart';
 
 void main() {
@@ -77,5 +78,12 @@ void main() {
     expect(UpdateMethod.getAppVersion, 'getAppVersion');
     expect(UpdateMethod.installApk, 'installApk');
     expect(UpdateMethod.openReleasePage, 'openReleasePage');
+  });
+
+  test('native failure codes remain protocol compatible', () {
+    expect(NativeErrorCode.invalidArgument, 'invalid_argument');
+    expect(NativeErrorCode.serviceUnavailable, 'service_unavailable');
+    expect(NativeErrorCode.playerError, 'player_error');
+    expect(NativeErrorCode.platformError, 'platform_error');
   });
 }

@@ -13,6 +13,7 @@ import 'package:lottie/lottie.dart';
 
 import '../i18n/app_language_provider.dart';
 import '../providers/audio_provider.dart';
+import '../providers/audio_provider_library_catalog.dart';
 import '../providers/audio_provider_riverpod.dart';
 import '../services/audio_state_services.dart';
 import '../services/app_preferences.dart';
@@ -25,6 +26,8 @@ import '../services/ui_interaction_coordinator.dart';
 import '../services/ui_operation_service.dart';
 import '../theme/app_design_tokens.dart';
 import '../services/library_scanner_service.dart';
+import '../services/library_catalog.dart';
+import '../services/library_scan_coordinator.dart';
 import '../widgets/app_feedback.dart';
 import '../widgets/async_cover_image.dart';
 import '../widgets/confirm_action_dialog.dart';
@@ -82,7 +85,7 @@ class LibraryTab extends ConsumerStatefulWidget {
 
 class _LibraryTabState extends ConsumerState<LibraryTab>
     with AutomaticKeepAliveClientMixin, MainTabStateMixin<LibraryTab> {
-  final _scanner = LibraryScannerService();
+  final _scanCoordinator = LibraryScanCoordinator();
 
   @override
   bool get wantKeepAlive => true;
@@ -222,6 +225,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   }) async {
     final i18n = context.read<AppLanguageProvider>();
     final provider = context.read<AudioProvider>();
+    final catalog = AudioProviderLibraryCatalog(provider);
     final operations = ref.read(uiOperationServiceProvider);
     final importBusy = <UiOperationScope>[
       UiOperationScope.libraryRefresh,
@@ -245,10 +249,10 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
             silent: silent,
             forceShowResult: forceShowResult,
           ),
-          task: (_) => _scanner.refreshWatchedFolders(
-            provider: provider,
+          task: (_) => _scanCoordinator.refresh(
+            catalog: catalog,
             i18n: i18n,
-            showSnack: (msg) {
+            onMessage: (String msg) {
               if (!mounted) return;
               final isFailure =
                   msg == i18n.tr('scan_failed_next_step') ||
@@ -291,15 +295,16 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   Future<void> _runLibraryImportAction({
     required String logEvent,
     required Future<void> Function({
-      required AudioProvider provider,
+      required LibraryCatalog catalog,
       required AppLanguageProvider i18n,
-      required void Function(String) showSnack,
+      required ValueChanged<String> onMessage,
     })
     action,
     required Future<void> Function() retry,
   }) async {
     final i18n = context.read<AppLanguageProvider>();
     final provider = context.read<AudioProvider>();
+    final catalog = AudioProviderLibraryCatalog(provider);
     await ref
         .read(uiOperationServiceProvider)
         .runWithFeedback<void>(
@@ -318,9 +323,9 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
             unawaited(retry());
           },
           task: (_) => action(
-            provider: provider,
+            catalog: catalog,
             i18n: i18n,
-            showSnack: (msg) {
+            onMessage: (String msg) {
               if (mounted) showAppSnackBar(context, msg);
             },
           ),
@@ -330,7 +335,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   Future<void> _addFolder() {
     return _runLibraryImportAction(
       logEvent: 'library_import_folder_failed',
-      action: _scanner.addFolder,
+      action: _scanCoordinator.importFolder,
       retry: _addFolder,
     );
   }
@@ -338,7 +343,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   Future<void> _addLibrary() async {
     return _runLibraryImportAction(
       logEvent: 'library_import_library_failed',
-      action: _scanner.addLibrary,
+      action: _scanCoordinator.importLibrary,
       retry: _addLibrary,
     );
   }
@@ -346,7 +351,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   Future<void> _addFiles() async {
     return _runLibraryImportAction(
       logEvent: 'library_import_files_failed',
-      action: _scanner.addFiles,
+      action: _scanCoordinator.importFiles,
       retry: _addFiles,
     );
   }
@@ -466,6 +471,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     widget.activeTabIndexListenable?.removeListener(_handleActiveTabChanged);
     disposeTabState();
     _searchDebounceTimer?.cancel();
+    _scanCoordinator.dispose();
     _searchController.dispose();
     _scrollController.dispose();
     super.dispose();

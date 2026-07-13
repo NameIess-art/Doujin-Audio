@@ -24,70 +24,71 @@ class NativePlaybackBridge(
         val response = try {
             when (call.method) {
                 NativePlaybackMethods.PREPARE_SESSION -> service?.prepareSession(call.argumentsMap())
-                    ?: mapOf("ok" to false, "error" to "Native playback service is not ready.")
+                    ?: serviceUnavailable(call.method)
                 NativePlaybackMethods.PLAY -> service?.play(
                     call.requiredString("sessionId"),
                     call.requiredLong("transportCommandId"),
                     call.argument<Boolean>("exclusive") ?: false
                 )
-                    ?: mapOf("ok" to false, "error" to "Native playback service is not ready.")
+                    ?: serviceUnavailable(call.method)
                 NativePlaybackMethods.PAUSE -> service?.pause(
                     call.requiredString("sessionId"),
                     call.requiredLong("transportCommandId")
                 )
-                    ?: mapOf("ok" to false, "error" to "Native playback service is not ready.")
+                    ?: serviceUnavailable(call.method)
                 NativePlaybackMethods.STOP -> service?.stop(call.requiredString("sessionId"))
-                    ?: mapOf("ok" to false, "error" to "Native playback service is not ready.")
+                    ?: serviceUnavailable(call.method)
                 NativePlaybackMethods.SEEK -> service?.seek(
                     call.requiredString("sessionId"),
                     call.requiredLong("positionMs")
-                ) ?: mapOf("ok" to false, "error" to "Native playback service is not ready.")
+                ) ?: serviceUnavailable(call.method)
                 NativePlaybackMethods.SET_VOLUME -> service?.setVolume(
                     call.requiredString("sessionId"),
                     call.requiredDouble("volume").toFloat()
-                ) ?: mapOf("ok" to false, "error" to "Native playback service is not ready.")
+                ) ?: serviceUnavailable(call.method)
                 NativePlaybackMethods.SET_SPEED -> service?.setSpeed(
                     call.requiredString("sessionId"),
                     call.requiredDouble("speed").toFloat()
-                ) ?: mapOf("ok" to false, "error" to "Native playback service is not ready.")
+                ) ?: serviceUnavailable(call.method)
                 NativePlaybackMethods.SET_FADE_MULTIPLIER -> service?.setFadeMultiplier(
                     call.requiredString("sessionId"),
                     call.requiredDouble("multiplier").toFloat()
-                ) ?: mapOf("ok" to false, "error" to "Native playback service is not ready.")
+                ) ?: serviceUnavailable(call.method)
                 NativePlaybackMethods.SET_REPEAT_ONE -> service?.setRepeatOne(
                     call.requiredString("sessionId"),
                     call.argument<Boolean>("repeatOne") ?: false,
                     call.argumentsMap()
-                ) ?: mapOf("ok" to false, "error" to "Native playback service is not ready.")
+                ) ?: serviceUnavailable(call.method)
                 NativePlaybackMethods.SET_AUDIO_EFFECTS -> service?.setAudioEffects(
                     call.requiredString("sessionId"),
                     call.argument<Map<String, Any?>>("effects") ?: emptyMap()
-                ) ?: mapOf("ok" to false, "error" to "Native playback service is not ready.")
+                ) ?: serviceUnavailable(call.method)
                 NativePlaybackMethods.REMOVE_SESSION -> service?.removeSession(call.requiredString("sessionId"))
-                    ?: mapOf("ok" to false, "error" to "Native playback service is not ready.")
+                    ?: serviceUnavailable(call.method)
                 NativePlaybackMethods.PAUSE_ALL -> service?.pauseAll()
-                    ?: mapOf("ok" to false, "error" to "Native playback service is not ready.")
+                    ?: serviceUnavailable(call.method)
                 NativePlaybackMethods.CLEAR_ALL -> service?.clearAll()
-                    ?: mapOf("ok" to true, "value" to null)
+                    ?: channelSuccess(null)
                 NativePlaybackMethods.SET_FOREGROUND_ENABLED -> service?.setForegroundEnabled(
                     call.argument<Boolean>("enabled") ?: true
-                ) ?: mapOf("ok" to false, "error" to "Native playback service is not ready.")
+                ) ?: serviceUnavailable(call.method)
                 NativePlaybackMethods.DISMISS_NOTIFICATIONS -> service?.dismissNotifications()
-                    ?: mapOf("ok" to false, "error" to "Native playback service is not ready.")
+                    ?: serviceUnavailable(call.method)
                 NativePlaybackMethods.UNDISMISS_NOTIFICATIONS -> service?.undismissNotifications()
-                    ?: mapOf("ok" to false, "error" to "Native playback service is not ready.")
+                    ?: serviceUnavailable(call.method)
                 NativePlaybackMethods.SNAPSHOT -> service?.snapshot()
-                    ?: mapOf(
-                        "ok" to true,
-                        "value" to mapOf("sessions" to emptyList<Map<String, Any?>>())
-                    )
+                    ?: channelSuccess(mapOf("sessions" to emptyList<Map<String, Any?>>()))
                 else -> {
                     result.notImplemented()
                     return
                 }
             }
         } catch (error: IllegalArgumentException) {
-            mapOf("ok" to false, "error" to (error.message ?: "Invalid arguments."))
+            channelFailure(
+                code = ChannelErrorCodes.INVALID_ARGUMENT,
+                message = error.message ?: "Invalid arguments.",
+                details = mapOf("method" to call.method)
+            )
         }
         result.success(response)
     }
@@ -133,37 +134,16 @@ class NativePlaybackBridge(
     }
 }
 
+private fun serviceUnavailable(method: String): Map<String, Any?> = channelFailure(
+    code = ChannelErrorCodes.SERVICE_UNAVAILABLE,
+    message = "Native playback service is not ready.",
+    details = mapOf("method" to method)
+)
+
 private fun MethodCall.requiresForegroundBootstrap(): Boolean {
     return when (method) {
         NativePlaybackMethods.PLAY -> true
         NativePlaybackMethods.PREPARE_SESSION -> argument<Boolean>("autoPlay") == true
         else -> false
-    }
-}
-
-private fun MethodCall.argumentsMap(): Map<String, Any?> {
-    @Suppress("UNCHECKED_CAST")
-    return arguments as? Map<String, Any?> ?: emptyMap()
-}
-
-private fun MethodCall.requiredString(key: String): String {
-    val value = argument<String>(key)?.trim()
-    if (value.isNullOrEmpty()) {
-        throw IllegalArgumentException("Missing required argument: $key")
-    }
-    return value
-}
-
-private fun MethodCall.requiredLong(key: String): Long {
-    return when (val value = argument<Any>(key)) {
-        is Number -> value.toLong()
-        else -> 0L
-    }
-}
-
-private fun MethodCall.requiredDouble(key: String): Double {
-    return when (val value = argument<Any>(key)) {
-        is Number -> value.toDouble()
-        else -> 0.0
     }
 }

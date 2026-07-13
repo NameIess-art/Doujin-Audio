@@ -15,12 +15,17 @@ no separate Dart audio-service notification handler.
 
 Current platform responsibility boundaries include:
 
-- `LibraryScannerService`: refresh/import orchestration and scan-result merging.
+- `LibraryScanCoordinator`: UI-facing refresh/import/cancel operation state.
+- `LibraryScannerService`: platform scanning and scan-result merging. It reads and writes the catalog only through `LibraryCatalogReader` / `LibraryCatalogWriter`.
+- `AudioProviderLibraryCatalog`: the compatibility adapter from the catalog ports to the existing `AudioProvider` facade; it must not own a second state copy.
+- `AsmrPlaybackCoordinator`: resolves an ASMR work or track queue and launches it through `PlaybackSessionLauncher`, without coupling `AsmrLibraryController` to `AudioProvider`.
+- `AsmrPreferencesStore`: instance-scoped ASMR persistence backed by an injected `AppDatabase`.
 - `FileCachePlatformGateway`: the only Dart owner of `file_cache` MethodChannel/EventChannel I/O, including scanning, document operations, cache operations, media helpers, backup, and subtitle resolution.
 - `FileCacheMediaScanOrchestrator`: media-scan strategy and fallback ordering.
 - `MediaNameMetadata`: display-name normalization and media-type rules.
 - `ApplicationCachePolicy`: application-cache preferences, accounting, and eviction.
-- `NativePlaybackService`: MediaSession lifecycle, playback commands, and foreground-service decisions.
+- `NativePlaybackService`: MediaSession lifecycle, playback commands, session recovery coordination, and foreground-service decisions.
+- `NativeAudioFocusController`: Android AudioFocus request/abandon mechanics and focus-held state.
 - `NativePlaybackSessionRestorer`: persisted native-session reconstruction.
 
 Screens, providers, repositories, and feature services must use
@@ -46,3 +51,13 @@ Large screen and provider files are split with same-library `part` files when th
 `audio_state_services.dart` is the stable import entry point. Its state models,
 library service, playback/timer services, and notification/settings services
 are maintained in responsibility-specific part files.
+
+`AppDatabase` remains one Dart library and keeps schema version 3. Public data
+operations are grouped into `app_database_tracks.dart`,
+`app_database_sessions.dart`, `app_database_audio_details.dart`,
+`app_database_library_entries.dart`, and `app_database_asmr.dart`; connection,
+schema, maintenance, and shared row codecs remain in `app_database.dart`.
+
+See [`platform-channels.md`](platform-channels.md) and
+[`library-scanning.md`](library-scanning.md) for the boundary contracts and
+end-to-end call flows.

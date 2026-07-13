@@ -1237,7 +1237,7 @@ class LibraryScannerService {
           provider.hasLibraryExclusions(normalizedFolderPath)) {
         provider.clearLibraryExclusions(normalizedFolderPath);
       } else {
-        showSnack(i18n.tr('library_item_exists'));
+        showSnack(i18n.tr('library_folder_exists'));
         return;
       }
     }
@@ -1408,7 +1408,7 @@ class LibraryScannerService {
           normalizedFolderPath,
           promotedFolders,
         )) {
-      showSnack(i18n.tr('library_item_exists'));
+      showSnack(i18n.tr('library_exists'));
       return;
     }
     final generation = provider.tryBeginScan(
@@ -1525,7 +1525,7 @@ class LibraryScannerService {
           if (candidates.any(
             (track) => _isTrackAlreadyInLibrary(provider, track.path),
           )) {
-            showSnack(i18n.tr('library_item_exists'));
+            showSnack(i18n.tr('library_file_exists'));
             return;
           }
           final beforeCount = provider.library.length;
@@ -1580,7 +1580,7 @@ class LibraryScannerService {
       if (resolvedPaths.any(
         (trackPath) => _isTrackAlreadyInLibrary(provider, trackPath),
       )) {
-        showSnack(i18n.tr('library_item_exists'));
+        showSnack(i18n.tr('library_file_exists'));
         return;
       }
 

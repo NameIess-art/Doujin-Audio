@@ -1,7 +1,11 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
+import 'package:crypto/crypto.dart';
+import 'package:mime/mime.dart';
 import 'package:path/path.dart' as path;
+import 'package:path_provider/path_provider.dart';
 
 import '../models/audio_detail.dart';
 import 'audio_database_repository.dart';
@@ -41,15 +45,27 @@ class AudioDetailRepository {
     AudioDatabaseRepository? databaseRepository,
     FileCachePlatformGateway? fileCacheGateway,
     DateTime Function()? now,
+    Future<Directory> Function()? portableCoverDirectory,
   }) : _databaseRepository = databaseRepository ?? AudioDatabaseRepository(),
        _fileCacheGateway =
            fileCacheGateway ?? FileCachePlatformGateway.instance,
-       _now = now ?? DateTime.now;
+       _now = now ?? DateTime.now,
+       _portableCoverDirectory =
+           portableCoverDirectory ?? _defaultPortableCoverDirectory;
 
   static const backupFileName = 'nameless-audio.json';
+  static const _cardCoverRelativePathKey = 'cardCoverRelativePath';
+  static const _cardCoverEmbeddedKey = 'cardCoverEmbedded';
+  static const _maxEmbeddedCoverBytes = 64 * 1024 * 1024;
   final AudioDatabaseRepository _databaseRepository;
   final FileCachePlatformGateway _fileCacheGateway;
   final DateTime Function() _now;
+  final Future<Directory> Function() _portableCoverDirectory;
+
+  static Future<Directory> _defaultPortableCoverDirectory() async {
+    final supportDirectory = await getApplicationSupportDirectory();
+    return Directory(path.join(supportDirectory.path, 'portable_card_covers'));
+  }
 
   Future<AudioDetailLoadResult> load(AudioDetailTarget target) async {
     final normalizedTarget = _normalizeTarget(target);
@@ -57,7 +73,9 @@ class AudioDetailRepository {
       normalizedTarget,
     );
     if (databaseDetail != null) {
-      return AudioDetailLoadResult(detail: databaseDetail);
+      return AudioDetailLoadResult(
+        detail: await _restoreMissingDatabaseCover(databaseDetail),
+      );
     }
 
     final backupDetail = await _readBackup(normalizedTarget);
@@ -82,8 +100,11 @@ class AudioDetailRepository {
       for (final target in normalizedTargets)
         _detailKeyForTarget(target): target,
     };
-    final databaseDetails = await _databaseRepository.loadAudioDetails(
+    final loadedDatabaseDetails = await _databaseRepository.loadAudioDetails(
       targetsByKey.values,
+    );
+    final databaseDetails = await Future.wait(
+      loadedDatabaseDetails.map(_restoreMissingDatabaseCover),
     );
     final resultsByKey = <String, AudioDetailLoadResult>{
       for (final detail in databaseDetails)
@@ -127,9 +148,10 @@ class AudioDetailRepository {
   }
 
   Future<AudioDetailSaveResult> save(AudioDetail detail) async {
-    final normalized = detail
+    var normalized = detail
         .copyWith(target: _normalizeTarget(detail.target))
         .normalizedForSave(_now());
+    normalized = await _persistDerivedCover(normalized);
     await _databaseRepository.upsertAudioDetail(normalized);
 
     if (!normalized.target.isLibraryRootFolder) {
@@ -156,7 +178,7 @@ class AudioDetailRepository {
     try {
       final payload = const JsonEncoder.withIndent(
         '  ',
-      ).convert(normalized.toBackupJson());
+      ).convert(await _backupJson(normalized));
       if (PathMatcher.isContentUri(normalized.target.targetPath)) {
         final saved = await _fileCacheGateway.writeAudioDetailBackup(
           folder: normalized.target.targetPath,
@@ -249,7 +271,10 @@ class AudioDetailRepository {
 
   /// Parses [raw] JSON and returns the entry whose
   /// targetPath matches [target.targetPath], or null.
-  AudioDetail? _parseSingleFileEntry(AudioDetailTarget target, String raw) {
+  Future<AudioDetail?> _parseSingleFileEntry(
+    AudioDetailTarget target,
+    String raw,
+  ) async {
     if (raw.isEmpty) return null;
     try {
       final decoded = json.decode(raw);
@@ -273,7 +298,7 @@ class AudioDetailRepository {
           }
         }
         if (matchedEntry != null && !hasTie) {
-          final detail = AudioDetail.fromBackupJson(target, matchedEntry);
+          final detail = await _detailFromBackup(target, matchedEntry);
           if (detail.target.targetType == target.targetType) {
             return detail.copyWith(target: target);
           }
@@ -317,7 +342,7 @@ class AudioDetailRepository {
     }
 
     // Update the matching entry or append a new one.
-    final newEntry = detail.toBackupJson();
+    final newEntry = await _backupJson(detail);
     final idx = _singleFileBackupEntryIndex(detail.target, entries);
     if (idx >= 0) {
       entries[idx] = newEntry;
@@ -353,7 +378,7 @@ class AudioDetailRepository {
       }
     }
 
-    final newEntry = detail.toBackupJson();
+    final newEntry = await _backupJson(detail);
     final idx = _singleFileBackupEntryIndex(detail.target, entries);
     if (idx >= 0) {
       entries[idx] = newEntry;
@@ -386,7 +411,7 @@ class AudioDetailRepository {
       if (rawJson == null || rawJson.isEmpty) return null;
       final decoded = json.decode(rawJson);
       if (decoded is! Map<String, dynamic>) return null;
-      final detail = AudioDetail.fromBackupJson(target, decoded);
+      final detail = await _detailFromBackup(target, decoded);
       if (detail.target.targetType != target.targetType) return null;
       return detail.copyWith(target: target);
     } catch (error, stackTrace) {
@@ -406,6 +431,281 @@ class AudioDetailRepository {
     final backupFile = _folderBackupFile(target.targetPath);
     if (!await backupFile.exists()) return null;
     return backupFile.readAsString();
+  }
+
+  Future<Map<String, dynamic>> _backupJson(AudioDetail detail) async {
+    final backup = detail.toBackupJson();
+    final coverPath = detail.cardCoverPath;
+    if (coverPath == null) return backup;
+    final portableBasePath = _portableBasePath(
+      detail.target.targetType,
+      detail.target.targetPath,
+    );
+    final relativePath = portableBasePath == null
+        ? null
+        : PathMatcher.relativeWithin(coverPath, portableBasePath);
+    final portablePath = _normalizeRelativeCoverPath(relativePath);
+    if (portablePath != null) {
+      backup[_cardCoverRelativePathKey] = portablePath;
+      return backup;
+    }
+
+    if (PathMatcher.isContentUri(coverPath) ||
+        PathMatcher.isRemoteUri(coverPath)) {
+      return backup;
+    }
+    final coverFile = File(coverPath);
+    if (!await coverFile.exists()) return backup;
+    final byteLength = await coverFile.length();
+    if (byteLength <= 0 || byteLength > _maxEmbeddedCoverBytes) return backup;
+    final bytes = await coverFile.readAsBytes();
+    final mimeType = _imageMimeType(coverPath, bytes);
+    if (mimeType == null) return backup;
+    final digest = sha256.convert(bytes).toString();
+    backup[_cardCoverEmbeddedKey] = <String, Object>{
+      'encoding': 'base64',
+      'mimeType': mimeType,
+      'byteLength': bytes.length,
+      'sha256': digest,
+      'data': base64Encode(bytes),
+    };
+    return backup;
+  }
+
+  Future<AudioDetail> _detailFromBackup(
+    AudioDetailTarget target,
+    Map<String, dynamic> backup,
+  ) async {
+    final detail = AudioDetail.fromBackupJson(target, backup);
+    final relativePath = _normalizeRelativeCoverPath(
+      backup[_cardCoverRelativePathKey],
+    );
+    if (relativePath != null) {
+      final restoredRelativeCover = _restoreRelativeCoverPath(
+        target,
+        backup,
+        relativePath,
+      );
+      if (restoredRelativeCover != null) {
+        return detail.copyWith(cardCoverPath: restoredRelativeCover);
+      }
+    }
+
+    final embeddedCoverPath = await _restoreEmbeddedCoverPath(
+      backup[_cardCoverEmbeddedKey],
+    );
+    return embeddedCoverPath == null
+        ? detail
+        : detail.copyWith(cardCoverPath: embeddedCoverPath);
+  }
+
+  String? _restoreRelativeCoverPath(
+    AudioDetailTarget target,
+    Map<String, dynamic> backup,
+    String relativePath,
+  ) {
+    final previousTargetPath = backup['targetPath'] as String?;
+    final previousCoverPath = backup['cardCoverPath'] as String?;
+    final currentBasePath = _portableBasePath(
+      target.targetType,
+      target.targetPath,
+    );
+    if (currentBasePath == null) return null;
+
+    if (previousTargetPath != null && previousCoverPath != null) {
+      final previousBasePath = _portableBasePath(
+        target.targetType,
+        previousTargetPath,
+      );
+      if (previousBasePath != null) {
+        final previousRelativePath = _normalizeRelativeCoverPath(
+          PathMatcher.relativeWithin(previousCoverPath, previousBasePath),
+        );
+        if (previousRelativePath == relativePath) {
+          final migratedPath = PathMatcher.replaceWithinOrEqual(
+            previousCoverPath,
+            previousBasePath,
+            currentBasePath,
+          );
+          final migratedRelativePath = _normalizeRelativeCoverPath(
+            PathMatcher.relativeWithin(migratedPath, currentBasePath),
+          );
+          if (migratedRelativePath == relativePath) return migratedPath;
+        }
+      }
+    }
+
+    if (!PathMatcher.isContentUri(currentBasePath)) {
+      final restoredPath = PathMatcher.join(currentBasePath, relativePath);
+      final restoredRelativePath = _normalizeRelativeCoverPath(
+        PathMatcher.relativeWithin(restoredPath, currentBasePath),
+      );
+      if (restoredRelativePath == relativePath) return restoredPath;
+    }
+    return null;
+  }
+
+  Future<String?> _restoreEmbeddedCoverPath(Object? value) async {
+    if (value is! Map) return null;
+    final embedded = value.cast<Object?, Object?>();
+    if (embedded['encoding'] != 'base64') return null;
+    final mimeType = embedded['mimeType'] as String?;
+    final expectedDigest = embedded['sha256'] as String?;
+    final encoded = embedded['data'] as String?;
+    final expectedLength = (embedded['byteLength'] as num?)?.toInt();
+    if (mimeType == null ||
+        !mimeType.toLowerCase().startsWith('image/') ||
+        expectedDigest == null ||
+        !RegExp(r'^[0-9a-f]{64}$').hasMatch(expectedDigest) ||
+        expectedLength == null ||
+        expectedLength <= 0 ||
+        expectedLength > _maxEmbeddedCoverBytes ||
+        encoded == null ||
+        encoded.length > ((_maxEmbeddedCoverBytes + 2) ~/ 3) * 4) {
+      return null;
+    }
+
+    late final Uint8List bytes;
+    try {
+      bytes = base64Decode(encoded);
+    } on FormatException {
+      return null;
+    }
+    if (bytes.length != expectedLength ||
+        sha256.convert(bytes).toString() != expectedDigest ||
+        _imageMimeType('', bytes) != mimeType.toLowerCase()) {
+      return null;
+    }
+
+    return _writePortableCover(bytes, mimeType, expectedDigest);
+  }
+
+  Future<AudioDetail> _persistDerivedCover(AudioDetail detail) async {
+    final coverPath = detail.cardCoverPath;
+    if (coverPath == null ||
+        PathMatcher.isContentUri(coverPath) ||
+        PathMatcher.isRemoteUri(coverPath)) {
+      return detail;
+    }
+    final portableBasePath = _portableBasePath(
+      detail.target.targetType,
+      detail.target.targetPath,
+    );
+    if (portableBasePath != null &&
+        _normalizeRelativeCoverPath(
+              PathMatcher.relativeWithin(coverPath, portableBasePath),
+            ) !=
+            null) {
+      return detail;
+    }
+
+    final source = File(coverPath);
+    if (!await source.exists()) return detail;
+    final byteLength = await source.length();
+    if (byteLength <= 0 || byteLength > _maxEmbeddedCoverBytes) return detail;
+    final bytes = await source.readAsBytes();
+    final mimeType = _imageMimeType(coverPath, bytes);
+    if (mimeType == null) return detail;
+    final digest = sha256.convert(bytes).toString();
+    final storedPath = await _writePortableCover(bytes, mimeType, digest);
+    return detail.copyWith(cardCoverPath: storedPath);
+  }
+
+  Future<String> _writePortableCover(
+    Uint8List bytes,
+    String mimeType,
+    String digest,
+  ) async {
+    final directory = await _portableCoverDirectory();
+    await directory.create(recursive: true);
+    final extension = _extensionForImageMimeType(mimeType);
+    final output = File(path.join(directory.path, '$digest.$extension'));
+    if (await output.exists()) {
+      final existingBytes = await output.readAsBytes();
+      if (existingBytes.length == bytes.length &&
+          sha256.convert(existingBytes).toString() == digest) {
+        return output.path;
+      }
+    }
+
+    final partial = File('${output.path}.part');
+    try {
+      await partial.writeAsBytes(bytes, flush: true);
+      if (await output.exists()) await output.delete();
+      await partial.rename(output.path);
+      return output.path;
+    } finally {
+      if (await partial.exists()) await partial.delete();
+    }
+  }
+
+  String? _portableBasePath(
+    AudioDetailTargetType targetType,
+    String targetPath,
+  ) {
+    if (targetType == AudioDetailTargetType.libraryRootFolder) {
+      return targetPath;
+    }
+    if (PathMatcher.isContentUri(targetPath)) return null;
+    return path.dirname(targetPath);
+  }
+
+  String? _imageMimeType(String filePath, Uint8List bytes) {
+    final detected = lookupMimeType(filePath, headerBytes: bytes);
+    return detected?.toLowerCase().startsWith('image/') == true
+        ? detected!.toLowerCase()
+        : null;
+  }
+
+  String _extensionForImageMimeType(String mimeType) {
+    return switch (mimeType.toLowerCase()) {
+      'image/jpeg' => 'jpg',
+      'image/png' => 'png',
+      'image/webp' => 'webp',
+      'image/gif' => 'gif',
+      'image/bmp' => 'bmp',
+      'image/avif' => 'avif',
+      'image/heic' || 'image/heif' => 'heic',
+      _ => 'image',
+    };
+  }
+
+  String? _normalizeRelativeCoverPath(Object? value) {
+    if (value is! String) return null;
+    final normalized = value.trim().replaceAll('\\', '/');
+    if (normalized.isEmpty || normalized.startsWith('/')) return null;
+    final segments = normalized.split('/');
+    if (segments.any(
+      (segment) => segment.isEmpty || segment == '.' || segment == '..',
+    )) {
+      return null;
+    }
+    return segments.join('/');
+  }
+
+  Future<AudioDetail> _restoreMissingDatabaseCover(AudioDetail detail) async {
+    final coverPath = detail.cardCoverPath;
+    if (coverPath == null ||
+        PathMatcher.isContentUri(coverPath) ||
+        PathMatcher.isRemoteUri(coverPath) ||
+        await File(coverPath).exists()) {
+      return detail;
+    }
+
+    final backupDetail = await _readBackup(detail.target);
+    final restoredCoverPath = backupDetail?.cardCoverPath;
+    if (restoredCoverPath == null || restoredCoverPath == coverPath) {
+      return detail;
+    }
+    if (!PathMatcher.isContentUri(restoredCoverPath) &&
+        !PathMatcher.isRemoteUri(restoredCoverPath) &&
+        !await File(restoredCoverPath).exists()) {
+      return detail;
+    }
+
+    final restored = detail.copyWith(cardCoverPath: restoredCoverPath);
+    await _databaseRepository.upsertAudioDetail(restored);
+    return restored;
   }
 
   AudioDetailTarget _normalizeTarget(AudioDetailTarget target) {

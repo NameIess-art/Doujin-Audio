@@ -25,19 +25,17 @@ extension AudioProviderLibraryCovers on AudioProvider {
     _notifyLibraryAndPlaybackChanged();
   }
 
-  Future<void> setFolderManualCover(
+  Future<String?> setFolderManualCover(
     String folderPath,
     String imagePath, {
     bool newlySaved = false,
   }) async {
-    await _coverArtworkCacheService.setFolderCoverSelection(
-      folderPath,
-      imagePath,
-      newlySaved: newlySaved,
-    );
+    final storedCoverPath = await _coverArtworkCacheService
+        .setFolderCoverSelection(folderPath, imagePath, newlySaved: newlySaved);
     _markActiveSessionsDirty();
     _syncNotificationState();
     _notifyLibraryAndPlaybackChanged();
+    return storedCoverPath;
   }
 
   Future<void> _retargetFolderCoverSelection(

@@ -119,7 +119,7 @@ class AudioDetailCacheService {
     return (await load(target)).detail.cardCoverPath;
   }
 
-  Future<void> saveCardCoverPath(
+  Future<String?> saveCardCoverPath(
     AudioDetailTarget target,
     String? coverPath,
   ) async {
@@ -128,8 +128,9 @@ class AudioDetailCacheService {
     final nextPath = normalizedPath == null || normalizedPath.isEmpty
         ? null
         : normalizedPath;
-    if (current.cardCoverPath == nextPath) return;
-    await save(current.copyWith(cardCoverPath: nextPath));
+    if (current.cardCoverPath == nextPath) return current.cardCoverPath;
+    final result = await save(current.copyWith(cardCoverPath: nextPath));
+    return result.detail.cardCoverPath;
   }
 
   Future<void> delete(AudioDetailTarget target) async {

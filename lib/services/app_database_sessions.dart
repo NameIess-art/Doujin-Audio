@@ -34,33 +34,32 @@ extension AppDatabaseSessions on AppDatabase {
     ''');
       if (rows.isEmpty) return const <PersistedSession>[];
       final sessionIds = rows.map((row) => row['id'] as String).toList();
-      final eqBandsBySession = await AppDatabase._loadSessionEqBandsBySession(
+      final eqBandsBySession = await _loadSessionEqBandsBySession(
         db,
         sessionIds,
       );
-      final queueEntriesBySession =
-          await AppDatabase._loadPlaybackQueueEntriesBySession(db, sessionIds);
-      final queueTracksByEntry = await AppDatabase._loadQueueTracksByEntry(
+      final queueEntriesBySession = await _loadPlaybackQueueEntriesBySession(
         db,
         sessionIds,
       );
+      final queueTracksByEntry = await _loadQueueTracksByEntry(db, sessionIds);
       final sessions = <PersistedSession>[];
       for (final row in rows) {
         final id = row['id'] as String;
         sessions.add(
-          AppDatabase._sessionFromRow(
+          _sessionFromRow(
             row,
-            customQueueTracks: AppDatabase._customQueueTracksForSession(
+            customQueueTracks: _customQueueTracksForSession(
               id,
               queueTracksByEntry,
             ),
-            playbackQueue: AppDatabase._playbackQueueForSession(
+            playbackQueue: _playbackQueueForSession(
               id,
               row,
               queueEntriesBySession,
               queueTracksByEntry,
             ),
-            audioEffects: AppDatabase._sessionAudioEffectsFromRow(
+            audioEffects: _sessionAudioEffectsFromRow(
               row,
               eqBandsBySession[id] ?? const <int, double>{},
             ),
@@ -82,7 +81,7 @@ extension AppDatabaseSessions on AppDatabase {
       batch.delete('session_playback_state');
       batch.delete('sessions');
       for (var i = 0; i < sessions.length; i++) {
-        AppDatabase._writeSessionToBatch(batch, sessions[i], i);
+        _writeSessionToBatch(batch, sessions[i], i);
       }
       await batch.commit(noResult: true);
     });
@@ -126,7 +125,7 @@ extension AppDatabaseSessions on AppDatabase {
       final batch = db.batch();
       batch.insert(
         'session_playback_state',
-        AppDatabase._sessionPlaybackStateRow(session),
+        _sessionPlaybackStateRow(session),
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
       await batch.commit(noResult: true);

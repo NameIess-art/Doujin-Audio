@@ -5,15 +5,10 @@ extension AppDatabaseTracks on AppDatabase {
 
   Future<List<MusicTrack>> loadAllTracks() async {
     return _runDatabaseRead((db) async {
-      final rows = await AppDatabase._queryFullTrackRows(db);
-      final tagsByPath = await AppDatabase._loadTrackTags(db);
+      final rows = await _queryFullTrackRows(db);
+      final tagsByPath = await _loadTrackTags(db);
       return rows
-          .map(
-            (row) => AppDatabase._trackFromRow(
-              row,
-              tagsByPath[row['path'] as String],
-            ),
-          )
+          .map((row) => _trackFromRow(row, tagsByPath[row['path'] as String]))
           .toList();
     });
   }
@@ -33,25 +28,21 @@ extension AppDatabaseTracks on AppDatabase {
           'duration_ms',
         ],
       );
-      return rows.map((row) => AppDatabase._trackSummaryFromRow(row)).toList();
+      return rows.map((row) => _trackSummaryFromRow(row)).toList();
     });
   }
 
   Future<List<MusicTrack>> loadStartupTracks() async {
-    final rows = await _runDatabaseRead(AppDatabase._queryStartupTrackRows);
+    final rows = await _runDatabaseRead(_queryStartupTrackRows);
     return compute(_startupTracksFromRows, rows);
   }
 
   Future<MusicTrack?> loadTrackDetail(String path) async {
     return _runDatabaseRead((db) async {
-      final rows = await AppDatabase._queryFullTrackRows(
-        db,
-        path: path,
-        limit: 1,
-      );
+      final rows = await _queryFullTrackRows(db, path: path, limit: 1);
       if (rows.isEmpty) return null;
-      final tagsByPath = await AppDatabase._loadTrackTags(db, paths: [path]);
-      return AppDatabase._trackFromRow(rows.first, tagsByPath[path]);
+      final tagsByPath = await _loadTrackTags(db, paths: [path]);
+      return _trackFromRow(rows.first, tagsByPath[path]);
     });
   }
 
@@ -65,7 +56,7 @@ extension AppDatabaseTracks on AppDatabase {
       batch.delete('track_scan_info');
       batch.delete('tracks');
       for (final track in tracks) {
-        AppDatabase._writeTrackToBatch(batch, track);
+        _writeTrackToBatch(batch, track);
       }
       await batch.commit(noResult: true);
     });
@@ -82,11 +73,7 @@ extension AppDatabaseTracks on AppDatabase {
     await _runDatabaseWrite((db) async {
       final batch = db.batch();
       for (final track in tracks) {
-        AppDatabase._writeTrackToBatch(
-          batch,
-          track,
-          scanGeneration: scanGeneration,
-        );
+        _writeTrackToBatch(batch, track, scanGeneration: scanGeneration);
       }
       await batch.commit(noResult: true);
     });
@@ -114,7 +101,7 @@ extension AppDatabaseTracks on AppDatabase {
         );
         final batch = txn.batch();
         for (final track in replacements.values) {
-          AppDatabase._writeTrackToBatch(batch, track);
+          _writeTrackToBatch(batch, track);
         }
         await batch.commit(noResult: true);
       });
@@ -161,12 +148,9 @@ extension AppDatabaseTracks on AppDatabase {
     for (
       var start = 0;
       start < paths.length;
-      start += AppDatabase._sqliteInClauseBatchSize
+      start += _sqliteInClauseBatchSize
     ) {
-      final end = (start + AppDatabase._sqliteInClauseBatchSize).clamp(
-        0,
-        paths.length,
-      );
+      final end = (start + _sqliteInClauseBatchSize).clamp(0, paths.length);
       final chunk = paths.sublist(start, end);
       final placeholders = List.filled(chunk.length, '?').join(', ');
       for (final table in <String>[

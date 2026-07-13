@@ -6,7 +6,7 @@ extension AppDatabaseLibraryEntries on AppDatabase {
   Future<List<LibraryEntry>> loadAllLibraryEntries() async {
     return _runDatabaseRead((db) async {
       final rows = await db.query('library_entries');
-      return rows.map(AppDatabase._libraryEntryFromRow).toList();
+      return rows.map(_libraryEntryFromRow).toList();
     });
   }
 
@@ -18,7 +18,7 @@ extension AppDatabaseLibraryEntries on AppDatabase {
         where: 'library_path = ?',
         whereArgs: [normalizedLibraryPath],
       );
-      return rows.map(AppDatabase._libraryEntryFromRow).toList();
+      return rows.map(_libraryEntryFromRow).toList();
     });
   }
 
@@ -32,7 +32,7 @@ extension AppDatabaseLibraryEntries on AppDatabase {
       for (final entry in entries) {
         batch.insert(
           'library_entries',
-          AppDatabase._libraryEntryToRow(entry, scanGeneration: scanGeneration),
+          _libraryEntryToRow(entry, scanGeneration: scanGeneration),
           conflictAlgorithm: ConflictAlgorithm.replace,
         );
       }

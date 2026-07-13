@@ -33,6 +33,13 @@ method, or stable error code changes, update both
 `test/platform_channels_test.dart` and Android `PlatformChannelsTest` /
 `ChannelContractTest`.
 
+File-cache calls use `ChannelArgumentReader` in the Android handler for required
+strings, integers, floating-point values, booleans, byte arrays, lists, and
+maps. A missing or wrongly typed required value is reported as
+`invalid_argument` with the method name in details. Cache indexes, cache limits,
+scan chunk sizes, and overwrite flags are never synthesized from missing
+arguments. File and scan work remains on the existing bounded executors.
+
 ## Android playback lifecycle
 
 `NativePlaybackService` owns MediaSessionService lifecycle, sessions, foreground

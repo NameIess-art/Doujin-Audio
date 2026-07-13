@@ -3,21 +3,13 @@ import '../models/asmr_models.dart';
 import 'app_database.dart';
 
 class AsmrPreferencesStore {
-  AsmrPreferencesStore({AppDatabase? database}) : _providedDatabase = database;
+  AsmrPreferencesStore({required AppDatabase database}) : _database = database;
 
   static const String _lastSyncAtKey = 'asmr_last_sync_at_v1';
   static const String _syncOutboxSeededKey = 'asmr_sync_outbox_seeded_v2';
   static const String _contentLanguageKey = 'asmr_content_language_v1';
 
-  final AppDatabase? _providedDatabase;
-
-  AppDatabase get _database {
-    if (_providedDatabase case final database?) {
-      return database;
-    }
-    AppDatabase.initializeForPlatform();
-    return AppDatabase.instance;
-  }
+  final AppDatabase _database;
 
   Future<void> clearForTest() async {
     final db = await _database.databaseForTest;

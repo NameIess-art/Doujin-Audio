@@ -16,10 +16,15 @@ no separate Dart audio-service notification handler.
 Current platform responsibility boundaries include:
 
 - `LibraryScanCoordinator`: UI-facing refresh/import/cancel operation state.
-- `LibraryScannerService`: platform scanning and scan-result merging. It reads and writes the catalog only through `LibraryCatalogReader` / `LibraryCatalogWriter`.
+- `LibraryScannerService`: scan generation, rollback, merge, and catalog writes. It reads and writes the catalog only through `LibraryCatalogReader` / `LibraryCatalogWriter` and returns typed outcomes instead of localized UI messages.
+- `LibraryScanDataSource`: permission requests, file/folder selection, local file-system enumeration, and native local/SAF scanning.
+- `LibraryScanRules`: pure duplicate, nested-directory, path-overlap, and standalone-folder promotion rules.
 - `AudioProviderLibraryCatalog`: the compatibility adapter from the catalog ports to the existing `AudioProvider` facade; it must not own a second state copy.
 - `AsmrPlaybackCoordinator`: resolves an ASMR work or track queue and launches it through `PlaybackSessionLauncher`, without coupling `AsmrLibraryController` to `AudioProvider`.
 - `AsmrPreferencesStore`: instance-scoped ASMR persistence backed by an injected `AppDatabase`.
+- `LibraryEntryEditorService`: local/SAF disk snapshots used by library editing; presentation only applies the typed snapshot to the existing facade.
+- `DataSupportFileService` and `DiagnosticReportExporter`: picker, temporary-file, backup, and diagnostic-export lifecycles kept outside presentation.
+- `VideoConversionInputService`: video source and output-directory selection kept outside the converter screen.
 - `FileCachePlatformGateway`: the only Dart owner of `file_cache` MethodChannel/EventChannel I/O, including scanning, document operations, cache operations, media helpers, backup, and subtitle resolution.
 - `FileCacheMediaScanOrchestrator`: media-scan strategy and fallback ordering.
 - `MediaNameMetadata`: display-name normalization and media-type rules.
@@ -56,7 +61,11 @@ are maintained in responsibility-specific part files.
 operations are grouped into `app_database_tracks.dart`,
 `app_database_sessions.dart`, `app_database_audio_details.dart`,
 `app_database_library_entries.dart`, and `app_database_asmr.dart`; connection,
-schema, maintenance, and shared row codecs remain in `app_database.dart`.
+schema/migration, maintenance, and shared row codecs are separated into
+`app_database.dart`, `app_database_schema.dart`,
+`app_database_maintenance.dart`, and `app_database_row_codecs.dart` within the
+same Dart library. This preserves private helper access, transactions, schema
+version, and backup compatibility.
 
 See [`platform-channels.md`](platform-channels.md) and
 [`library-scanning.md`](library-scanning.md) for the boundary contracts and

@@ -1,11 +1,8 @@
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:path/path.dart' as path;
-import 'package:path_provider/path_provider.dart';
 
 import '../services/app_log_service.dart';
-import '../services/diagnostic_report_service.dart';
+import '../services/diagnostic_report_exporter.dart';
 import '../i18n/app_language_en.dart';
 import '../i18n/app_language_ja.dart';
 import '../i18n/app_language_zh.dart';
@@ -28,17 +25,8 @@ class _AppErrorViewState extends State<AppErrorView> {
     if (_exporting) return;
     setState(() => _exporting = true);
     try {
-      final directory = await getTemporaryDirectory();
-      final report = await DiagnosticReportService().exportReport(
-        path.join(directory.path, 'NamelessAudio-diagnostic.zip'),
-      );
-      await FilePicker.platform.saveFile(
+      await DiagnosticReportExporter().export(
         dialogTitle: 'Export diagnostics',
-        fileName: path.basename(report.path),
-        type: FileType.custom,
-        allowedExtensions: const <String>['zip'],
-        bytes: await report.readAsBytes(),
-        lockParentWindow: true,
       );
     } catch (error, stackTrace) {
       AppLogService.error(

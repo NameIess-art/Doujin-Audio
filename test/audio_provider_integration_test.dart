@@ -5,7 +5,6 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio/just_audio.dart';
-import 'package:nameless_audio/i18n/app_language_provider.dart';
 import 'package:nameless_audio/providers/audio_provider.dart';
 import 'package:nameless_audio/providers/audio_provider_library_catalog.dart';
 import 'package:nameless_audio/services/app_database.dart';
@@ -3384,9 +3383,13 @@ void main() {
         final scanner = LibraryScannerService();
         await scanner.refreshWatchedFolders(
           provider: AudioProviderLibraryCatalog(provider),
-          i18n: AppLanguageProvider(),
-          showSnack: (_) {},
-          silent: true,
+          labels: const LibraryScanLabels(
+            chooseMusicFolder: 'Choose music folder',
+            chooseLibraryFolder: 'Choose library folder',
+            chooseAudioFiles: 'Choose audio files',
+            importedFiles: 'Imported Files',
+            manuallySelectedFiles: 'Manually Selected Files',
+          ),
         );
 
         final refreshedTrack = provider.trackByPath(trackPath);

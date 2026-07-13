@@ -60,6 +60,12 @@ void main() {
     expect(find.text(harness.language.tr('nav_library')), findsWidgets);
     expect(find.text(harness.language.tr('nav_sessions')), findsWidgets);
     expect(find.text(harness.language.tr('nav_settings')), findsWidgets);
+    expect(
+      find.byWidgetPredicate(
+        (widget) => widget is PageView && widget.key is ValueKey<int>,
+      ),
+      findsOneWidget,
+    );
     expect(find.byKey(const ValueKey<String>('main_page_fade_1')), findsOne);
     expect(
       find.byKey(const ValueKey<String>('main_page_fade_0')),
@@ -77,13 +83,11 @@ void main() {
     await _tapSettingsDestination(tester);
     await _pumpMainScreenAnimations(tester);
 
-    final pageFades = <AnimatedOpacity>[
-      tester.widget(find.byKey(const ValueKey<String>('main_page_fade_1'))),
-      tester.widget(find.byKey(const ValueKey<String>('main_page_fade_3'))),
-    ];
-    expect(pageFades.where((widget) => widget.opacity == 1), hasLength(1));
-    expect(pageFades.where((widget) => widget.opacity == 0), hasLength(1));
-    expect(pageFades.every((widget) => widget.child is Align), isTrue);
+    expect(find.byKey(const ValueKey<String>('main_page_fade_3')), findsOne);
+    expect(
+      find.byKey(const ValueKey<String>('main_page_fade_1')),
+      findsNothing,
+    );
     expect(tester.takeException(), isNull);
   });
 
@@ -222,11 +226,11 @@ void main() {
     await _tapSettingsDestination(tester);
     await _pumpMainScreenAnimations(tester);
 
-    Stack mainPageStack() => tester
-        .widgetList<Stack>(find.byType(Stack))
+    PageView mainPageView() => tester
+        .widgetList<PageView>(find.byType(PageView))
         .firstWhere((widget) => widget.key is ValueKey<int>);
 
-    expect((mainPageStack().key! as ValueKey<int>).value, 0);
+    expect((mainPageView().key! as ValueKey<int>).value, 0);
     tester.view.viewInsets = const FakeViewPadding(bottom: 600);
     tester.view.physicalSize = const Size(1080, 1800);
     addTearDown(() {
@@ -235,7 +239,7 @@ void main() {
     });
     await tester.pump(const Duration(milliseconds: 32));
 
-    expect((mainPageStack().key! as ValueKey<int>).value, 0);
+    expect((mainPageView().key! as ValueKey<int>).value, 0);
     expect(find.byType(ActiveSessionCarousel), findsOneWidget);
     expect(tester.takeException(), isNull);
 

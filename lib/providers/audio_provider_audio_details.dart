@@ -62,6 +62,10 @@ extension AudioProviderAudioDetails on AudioProvider {
     return _audioDetailCacheService.load(target);
   }
 
+  AudioDetail? resolvedAudioDetail(AudioDetailTarget target) {
+    return _audioDetailCacheService.resolvedDetail(target);
+  }
+
   Future<AudioDetailSaveResult> saveAudioDetail(AudioDetail detail) async {
     final result = await _audioDetailCacheService.save(detail);
     _librarySnapshotCacheService.markDetailChanged(result.detail);

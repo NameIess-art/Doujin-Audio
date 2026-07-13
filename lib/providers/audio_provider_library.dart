@@ -787,11 +787,36 @@ extension AudioProviderLibrary on AudioProvider {
 
     if (didChangeLibrary) {
       _clearResolvedCoverPaths();
-      _rebuildLibraryIndexes();
       _syncGroupOrderFromLibrary();
       _syncLibraryNodeOrder(persist: false);
-      if (notify) {
-        _notifyLibraryAndPlaybackChanged();
+      final derivedGeneration = ++_libraryDerivedGeneration;
+      final derivedSnapshot = await AppLogService.measureAsync(
+        'library_derived_snapshot_build',
+        () => compute(
+          buildLibraryDerivedSnapshot,
+          LibraryDerivedSnapshotPayload(
+            tracks: List<MusicTrack>.unmodifiable(_library),
+            watchedFolders: List<String>.unmodifiable(_watchedFolders),
+            nodeOrder: List<String>.unmodifiable(_libraryNodeOrder),
+          ),
+        ),
+        details: <String, Object?>{'tracks': _library.length},
+      );
+      if (derivedGeneration == _libraryDerivedGeneration) {
+        _libraryService
+          ..library = derivedSnapshot.library
+          ..libraryByPath = derivedSnapshot.libraryByPath
+          ..libraryIndexByPath = derivedSnapshot.libraryIndexByPath
+          ..tracksByGroup = derivedSnapshot.tracksByGroup
+          ..sortedLibraryTracks = derivedSnapshot.sortedLibraryTracks
+          ..sortedLibraryTrackPaths = derivedSnapshot.sortedLibraryTrackPaths;
+        _markLibraryStructureDirty();
+        _librarySnapshotCacheService.adoptTreeSnapshot(
+          derivedSnapshot.treeSnapshot,
+        );
+        if (notify) {
+          _notifyLibraryAndPlaybackChanged();
+        }
       }
     }
     final persistenceTasks = <Future<void>>[];

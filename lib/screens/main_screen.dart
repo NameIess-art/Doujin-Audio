@@ -67,7 +67,8 @@ class _MainScreenState extends ConsumerState<MainScreen>
   int _currentIndex = 1;
   bool _isMenuCollapsed = false;
   late final List<Widget> _pages;
-  final Set<int> _visitedPageIndices = <int>{};
+  late final PageController _pageController;
+  late final ValueNotifier<int> _activePageIndex;
   final Object _pageSwitchInteraction = Object();
   final GlobalKey _dockContentKey = GlobalKey();
 
@@ -134,10 +135,15 @@ class _MainScreenState extends ConsumerState<MainScreen>
   @override
   void initState() {
     super.initState();
+    _pageController = PageController(initialPage: _currentIndex);
+    _activePageIndex = ValueNotifier<int>(_currentIndex);
     _pages = [
       const AsmrTab(),
-      const LibraryTab(),
-      PlaylistTab(onTimerTap: _openTimerFromPlaylist),
+      LibraryTab(activeTabIndexListenable: _activePageIndex),
+      PlaylistTab(
+        onTimerTap: _openTimerFromPlaylist,
+        activeTabIndexListenable: _activePageIndex,
+      ),
       const SettingsTab(),
     ];
     AppPreferences.getBool('desktop_menu_collapsed').then((collapsed) {
@@ -450,6 +456,8 @@ class _MainScreenState extends ConsumerState<MainScreen>
     unawaited(_stopGlobalSubtitleOverlay(immediate: true));
     _permissionActionController.dispose();
     _notificationsPlatformService.setOpenSessionHandler(null);
+    _pageController.dispose();
+    _activePageIndex.dispose();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -760,10 +768,13 @@ class _MainScreenState extends ConsumerState<MainScreen>
     coordinator.beginInteraction(_pageSwitchInteraction);
     final generation = coordinator.beginGeneration();
     setState(() {
-      if (_isDataReady) _visitedPageIndices.add(_currentIndex);
       _currentIndex = index;
       _showScrollToTopButton = false;
     });
+    _activePageIndex.value = index;
+    if (_pageController.hasClients) {
+      _pageController.jumpToPage(index);
+    }
     if (index == 0) {
       unawaited(_showAsmrOnlineNoticeOnce());
     }
@@ -879,7 +890,13 @@ class _MainScreenState extends ConsumerState<MainScreen>
     }
     if (!_isDataReady && overlayUi.startupReady) {
       _currentIndex = startupPage.index;
+      _activePageIndex.value = _currentIndex;
       _isDataReady = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _pageController.hasClients) {
+          _pageController.jumpToPage(_currentIndex);
+        }
+      });
     }
     final layoutSize = _layoutViewSize();
     final width = layoutSize.width;

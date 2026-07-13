@@ -1536,6 +1536,50 @@ void main() {
   });
 
   group('playback queues', () {
+    test('queue edit is visible before native preparation completes', () async {
+      final prepareResult = Completer<Object?>();
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(nativePlaybackChannel, (call) {
+            if (call.method == NativePlaybackMethod.prepareSession) {
+              return prepareResult.future;
+            }
+            return Future<Object?>.value(<String, Object?>{
+              'ok': true,
+              'value': null,
+            });
+          });
+      const track = MusicTrack(
+        path: '/library/optimistic/01.mp3',
+        displayName: '01',
+        groupKey: '/library/optimistic',
+        groupTitle: 'Optimistic',
+        groupSubtitle: 'Optimistic',
+        isSingle: false,
+      );
+      provider.addTracks(<MusicTrack>[track], notify: false, persist: false);
+      final queueSession = provider.createPlaybackQueue('Queue 1');
+
+      final addFuture = provider.addTrackToPlaybackQueue(
+        queueSession.id,
+        track,
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      final optimisticSession = provider.sessionById(queueSession.id)!;
+      expect(optimisticSession.playbackQueue?.entries, hasLength(1));
+      expect(
+        PathMatcher.equalsNormalized(
+          optimisticSession.currentTrackPath,
+          track.path,
+        ),
+        isTrue,
+      );
+      expect(prepareResult.isCompleted, isFalse);
+
+      prepareResult.complete(<String, Object?>{'ok': true, 'value': null});
+      await addFuture;
+    });
+
     test(
       'duplicate single-file entries reprepare at the next queue index',
       () async {

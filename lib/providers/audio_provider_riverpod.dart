@@ -197,6 +197,19 @@ final libraryCategoryRevisionProvider = Provider<int>((ref) {
       serviceState.categorySnapshotRevision;
 });
 
+typedef LibraryDetailUiState = ({AudioDetail? detail, bool isLoading});
+
+final libraryDetailForTargetProvider =
+    Provider.family<LibraryDetailUiState, AudioDetailTarget>((ref, target) {
+      ref.watch(libraryCategoryRevisionProvider);
+      ref.watch(libraryDetailRevisionProvider);
+      final provider = ref.read(audioProviderFacadeProvider);
+      final snapshot = provider.audioLibraryCategorySnapshotSync;
+      final detail =
+          provider.resolvedAudioDetail(target) ?? snapshot?.detailFor(target);
+      return (detail: detail, isLoading: detail == null);
+    });
+
 final playlistHeaderUiProvider = Provider<PlaylistHeaderState>((ref) {
   final playbackState =
       ref.watch(playbackStateProvider).valueOrNull ??
@@ -233,6 +246,15 @@ final activeTrackPathsProvider = Provider<ActiveTrackPaths>((ref) {
         .map((session) => session.currentTrackPath)
         .where((path) => path.isNotEmpty)
         .toSet(),
+  );
+});
+
+final isTrackActiveProvider = Provider.family<bool, String>((ref, trackPath) {
+  final playbackState =
+      ref.watch(playbackStateProvider).valueOrNull ??
+      ref.watch(playbackSessionServiceProvider).slice.state;
+  return playbackState.activeSessions.any(
+    (session) => session.currentTrackPath == trackPath,
   );
 });
 

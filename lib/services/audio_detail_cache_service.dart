@@ -22,6 +22,10 @@ class AudioDetailCacheService {
 
   int get revision => _revision;
 
+  AudioDetail? resolvedDetail(AudioDetailTarget target) {
+    return _resolved[AudioLibraryDetailKey.forTarget(target)]?.detail;
+  }
+
   Future<AudioDetailLoadResult> load(AudioDetailTarget target) {
     final key = AudioLibraryDetailKey.forTarget(target);
     final cached = _takeResolved(key);

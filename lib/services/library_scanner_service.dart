@@ -57,12 +57,7 @@ class LibraryScannerService {
   LibraryScannerService({FileCachePlatformGateway? platformGateway})
     : _platformGateway = platformGateway ?? FileCachePlatformGateway.instance;
 
-  static const Duration _foregroundRefreshCommitInterval = Duration(
-    milliseconds: 400,
-  );
-
   final FileCachePlatformGateway _platformGateway;
-  DateTime? _lastBatchFlushTime;
 
   void _rollbackScanAdditions({
     required AudioProvider provider,
@@ -97,26 +92,8 @@ class LibraryScannerService {
   }
 
   Future<bool> _flushRefreshBatch(AudioProvider provider) async {
-    final now = DateTime.now();
-    final lastFlush = _lastBatchFlushTime;
-    if (lastFlush != null &&
-        now.difference(lastFlush) < _foregroundRefreshCommitInterval) {
-      await Future<void>.delayed(Duration.zero);
-      if (!provider.isScanning) {
-        await provider.endLibraryBatch();
-        return false;
-      }
-      return true;
-    }
-    _lastBatchFlushTime = now;
-    await provider.endLibraryBatch();
     await Future<void>.delayed(Duration.zero);
-    if (!provider.isScanning) {
-      return false;
-    }
-    provider.beginLibraryBatch();
-
-    return true;
+    return provider.isScanning;
   }
 
   Future<bool> _ensureReadPermissionForSources(Iterable<String> sources) async {
@@ -222,7 +199,8 @@ class LibraryScannerService {
           generation: generation,
         );
         if (chunkIndex % 2 == 0) {
-          batchOpen = await provider.flushStagedLibraryRefreshChunk();
+          await Future<void>.delayed(Duration.zero);
+          batchOpen = provider.isScanGenerationActive(generation);
         }
       }
     }
@@ -1338,9 +1316,7 @@ class LibraryScannerService {
             normalizedFolderPath: existingEntryPaths,
           },
         );
-      }
-      await provider.endLibraryBatch();
-      if (completed) {
+      } else {
         provider.setScanProgress(
           generation: generation,
           stage: FolderScanStage.saving,
@@ -1351,6 +1327,7 @@ class LibraryScannerService {
           const <MusicTrack>[],
         );
       }
+      await provider.endLibraryBatch();
       provider.finishScan(generation);
       if (completed) {
         unawaited(_prefillRjDetailForFolder(provider, normalizedFolderPath));

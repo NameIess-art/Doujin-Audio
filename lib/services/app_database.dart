@@ -664,10 +664,8 @@ class AppDatabase {
   }
 
   Future<List<MusicTrack>> loadStartupTracks() async {
-    return _runDatabaseRead((db) async {
-      final rows = await _queryStartupTrackRows(db);
-      return rows.map(_trackStartupFromRow).toList();
-    });
+    final rows = await _runDatabaseRead(_queryStartupTrackRows);
+    return compute(_startupTracksFromRows, rows);
   }
 
   Future<MusicTrack?> loadTrackDetail(String path) async {
@@ -2234,6 +2232,10 @@ Map<String, Object?>? _decodeJsonMap(Object? value) {
   } catch (_) {
     return null;
   }
+}
+
+List<MusicTrack> _startupTracksFromRows(List<Map<String, Object?>> rows) {
+  return rows.map(AppDatabase._trackStartupFromRow).toList(growable: false);
 }
 
 class PersistedSession {

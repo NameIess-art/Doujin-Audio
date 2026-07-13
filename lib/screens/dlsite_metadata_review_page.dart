@@ -153,7 +153,8 @@ class _DlsiteMetadataReviewPageState extends State<DlsiteMetadataReviewPage> {
       _candidates = nextCandidates;
       _metadata = metadata;
       _loading = false;
-      _saveCover = widget.initialSaveCover &&
+      _saveCover =
+          widget.initialSaveCover &&
           widget.detail.target.isLibraryRootFolder &&
           metadata.coverUrl != null;
     });

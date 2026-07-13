@@ -157,13 +157,8 @@ extension AudioProviderPersistence on AudioProvider {
         'audio_provider_load_library_tracks',
         db.loadStartupTracks,
       );
-      await AppCacheService.cleanupOrphanedPersistentImports(
-        tracks.map((track) => track.path),
-      );
       if (tracks.isNotEmpty) {
         _library.addAll(tracks);
-        _rebuildLibraryIndexes();
-        _notifyListeners();
       }
     } catch (error, stackTrace) {
       _logAudioProviderPersistenceFailure(error, stackTrace);
@@ -261,31 +256,34 @@ extension AudioProviderPersistence on AudioProvider {
 
   Future<void> _loadData() async {
     try {
-      // Phase 1: Load library (foundation — everything else depends on it).
-      await _loadLibrary();
-
-      // Phase 2: Load all independent SharedPreferences settings in parallel.
       await Future.wait<void>([
-        _loadGroupOrder(),
-        _loadWatchedFolders(),
-        _loadWatchedLibraries(),
-        _loadLibraryExclusions(),
-        _loadLibraryNodeOrder(),
-        _loadSessionOrder(),
-        _loadPlaybackSettings(),
-        _loadConverterSettings(),
-        _loadTimerSettings(),
+        _loadLibrary(),
+        Future.wait<void>([
+          _loadGroupOrder(),
+          _loadWatchedFolders(),
+          _loadWatchedLibraries(),
+          _loadLibraryExclusions(),
+          _loadLibraryNodeOrder(),
+          _loadSessionOrder(),
+          _loadPlaybackSettings(),
+          _loadConverterSettings(),
+          _loadTimerSettings(),
+        ]),
       ]);
       _settingsInitialized = true;
       _syncSettingsStateSlice();
 
-      await _loadLibraryEntries();
-      await _ensureLibraryEntriesForLoadedTracks();
+      beginLibraryBatch();
+      _libraryBatchChanged = _library.isNotEmpty;
+      try {
+        await _loadLibraryEntries();
+      } finally {
+        await endLibraryBatch(notify: false, waitForPersistence: false);
+      }
 
       // Phase 3: In-memory syncs that depend on library + loaded order data.
       _syncGroupOrderFromLibrary();
       _syncLibraryNodeOrder(persist: false);
-      _markLibraryStructureDirty();
       await _ensureLibraryTreeSnapshot(notifyOnCommit: false);
       _libraryInitialized = true;
       _syncLibraryStateSlice(preserveSliceInitialized: true);
@@ -325,7 +323,40 @@ extension AudioProviderPersistence on AudioProvider {
       _playbackInitialized = true;
       _isInitialized = true;
       _notifyListeners();
+      _schedulePostStartupLibraryMaintenance();
     }
+  }
+
+  void _schedulePostStartupLibraryMaintenance() {
+    if (_postStartupLibraryMaintenance != null) return;
+    final retainedPaths = _library
+        .map((track) => track.path)
+        .toList(growable: false);
+    late final Future<void> task;
+    task = Future<void>.delayed(const Duration(milliseconds: 500))
+        .then((_) async {
+          while (!_isDisposed &&
+              UiInteractionCoordinator.instance.isInteracting) {
+            await Future<void>.delayed(const Duration(milliseconds: 160));
+          }
+          if (_isDisposed) return;
+          await AppLogService.measureAsync(
+            'audio_provider_post_startup_library_maintenance',
+            () async {
+              await AppCacheService.cleanupOrphanedPersistentImports(
+                retainedPaths,
+              );
+              await _ensureLibraryEntriesForLoadedTracks();
+            },
+            details: <String, Object?>{'tracks': retainedPaths.length},
+          );
+        })
+        .whenComplete(() {
+          if (identical(_postStartupLibraryMaintenance, task)) {
+            _postStartupLibraryMaintenance = null;
+          }
+        });
+    _postStartupLibraryMaintenance = task;
   }
 
   Future<void> _loadPlaybackSettings() async {

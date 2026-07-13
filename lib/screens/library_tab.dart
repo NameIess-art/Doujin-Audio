@@ -72,7 +72,9 @@ enum _LibraryMoreAction {
 }
 
 class LibraryTab extends ConsumerStatefulWidget {
-  const LibraryTab({super.key});
+  const LibraryTab({super.key, this.activeTabIndexListenable});
+
+  final ValueListenable<int>? activeTabIndexListenable;
 
   @override
   ConsumerState<LibraryTab> createState() => _LibraryTabState();
@@ -84,6 +86,18 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
 
   @override
   bool get wantKeepAlive => true;
+
+  bool get _isActive =>
+      widget.activeTabIndexListenable == null ||
+      widget.activeTabIndexListenable!.value == tabIndex;
+
+  T _readOrWatch<T>(ProviderListenable<T> provider) {
+    return _isActive ? ref.watch(provider) : ref.read(provider);
+  }
+
+  void _handleActiveTabChanged() {
+    if (mounted) setState(() {});
+  }
 
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
@@ -217,44 +231,46 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
       if (!silent) showAppSnackBar(context, i18n.tr('scanning_title'));
       return;
     }
-    await ref.read(uiOperationServiceProvider).runWithFeedback<void>(
-      context: context,
-      scope: UiOperationScope.libraryRefresh,
-      labelKey: 'loading_dot',
-      failureMessageKey: 'scan_failed_next_step',
-      cancelPrevious: false,
-      onRetry: () => _scheduleWatchedFoldersRefresh(
-        silent: silent,
-        forceShowResult: forceShowResult,
-      ),
-      task: (_) => _scanner.refreshWatchedFolders(
-        provider: provider,
-        i18n: i18n,
-        showSnack: (msg) {
-          if (!mounted) return;
-          final isFailure =
-              msg == i18n.tr('scan_failed_next_step') ||
-              msg == i18n.tr('import_failed_next_step');
-          final isCancelled = msg == i18n.tr('scan_cancelled');
-          showAppSnackBar(
-            context,
-            msg,
-            tone: isFailure
-                ? AppFeedbackTone.destructive
-                : (isCancelled
-                      ? AppFeedbackTone.warning
-                      : AppFeedbackTone.success),
-            icon: isFailure
-                ? Icons.error_outline_rounded
-                : (isCancelled
-                      ? Icons.cancel_outlined
-                      : Icons.check_circle_outline_rounded),
-          );
-        },
-        silent: silent,
-        forceShowResult: forceShowResult,
-      ),
-    );
+    await ref
+        .read(uiOperationServiceProvider)
+        .runWithFeedback<void>(
+          context: context,
+          scope: UiOperationScope.libraryRefresh,
+          labelKey: 'loading_dot',
+          failureMessageKey: 'scan_failed_next_step',
+          cancelPrevious: false,
+          onRetry: () => _scheduleWatchedFoldersRefresh(
+            silent: silent,
+            forceShowResult: forceShowResult,
+          ),
+          task: (_) => _scanner.refreshWatchedFolders(
+            provider: provider,
+            i18n: i18n,
+            showSnack: (msg) {
+              if (!mounted) return;
+              final isFailure =
+                  msg == i18n.tr('scan_failed_next_step') ||
+                  msg == i18n.tr('import_failed_next_step');
+              final isCancelled = msg == i18n.tr('scan_cancelled');
+              showAppSnackBar(
+                context,
+                msg,
+                tone: isFailure
+                    ? AppFeedbackTone.destructive
+                    : (isCancelled
+                          ? AppFeedbackTone.warning
+                          : AppFeedbackTone.success),
+                icon: isFailure
+                    ? Icons.error_outline_rounded
+                    : (isCancelled
+                          ? Icons.cancel_outlined
+                          : Icons.check_circle_outline_rounded),
+              );
+            },
+            silent: silent,
+            forceShowResult: forceShowResult,
+          ),
+        );
   }
 
   Future<void> _runLibraryPullRefresh({bool showSnackbar = false}) async {
@@ -282,28 +298,31 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   }) async {
     final i18n = context.read<AppLanguageProvider>();
     final provider = context.read<AudioProvider>();
-    await ref.read(uiOperationServiceProvider).runWithFeedback<void>(
-      context: context,
-      scope: switch (logEvent) {
-        'library_import_files_failed' => UiOperationScope.libraryImportFiles,
-        'library_import_library_failed' =>
-          UiOperationScope.libraryImportLibrary,
-        _ => UiOperationScope.libraryImportFolder,
-      },
-      labelKey: 'loading_dot',
-      failureMessageKey: 'import_failed_next_step',
-      cancelPrevious: false,
-      onRetry: () {
-        unawaited(retry());
-      },
-      task: (_) => action(
-        provider: provider,
-        i18n: i18n,
-        showSnack: (msg) {
-          if (mounted) showAppSnackBar(context, msg);
-        },
-      ),
-    );
+    await ref
+        .read(uiOperationServiceProvider)
+        .runWithFeedback<void>(
+          context: context,
+          scope: switch (logEvent) {
+            'library_import_files_failed' =>
+              UiOperationScope.libraryImportFiles,
+            'library_import_library_failed' =>
+              UiOperationScope.libraryImportLibrary,
+            _ => UiOperationScope.libraryImportFolder,
+          },
+          labelKey: 'loading_dot',
+          failureMessageKey: 'import_failed_next_step',
+          cancelPrevious: false,
+          onRetry: () {
+            unawaited(retry());
+          },
+          task: (_) => action(
+            provider: provider,
+            i18n: i18n,
+            showSnack: (msg) {
+              if (mounted) showAppSnackBar(context, msg);
+            },
+          ),
+        );
   }
 
   Future<void> _addFolder() {
@@ -333,12 +352,27 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   @override
   void initState() {
     super.initState();
+    widget.activeTabIndexListenable?.addListener(_handleActiveTabChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        unawaited(_scheduleWatchedFoldersRefresh(silent: true));
+        unawaited(_refreshAfterStartupIdle());
       }
     });
-    initTabState(ref.read(audioProviderFacadeProvider).scrollToTopTabListenable);
+    initTabState(
+      ref.read(audioProviderFacadeProvider).scrollToTopTabListenable,
+    );
+  }
+
+  Future<void> _refreshAfterStartupIdle() async {
+    while (mounted &&
+        !ref.read(libraryServiceProvider).slice.state.isInitialized) {
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    }
+    while (mounted && UiInteractionCoordinator.instance.isInteracting) {
+      await Future<void>.delayed(const Duration(milliseconds: 160));
+    }
+    if (!mounted) return;
+    await _scheduleWatchedFoldersRefresh(silent: true);
   }
 
   void _ensureCategorySnapshot({
@@ -427,6 +461,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
 
   @override
   void dispose() {
+    widget.activeTabIndexListenable?.removeListener(_handleActiveTabChanged);
     disposeTabState();
     _searchDebounceTimer?.cancel();
     _searchController.dispose();
@@ -439,40 +474,41 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     super.build(context);
     final i18n = context.watch<AppLanguageProvider>();
     final provider = ref.read(audioProviderFacadeProvider);
-    final libraryHeaderAudioCount = ref.watch(
+    final libraryHeaderAudioCount = _readOrWatch(
       libraryHeaderUiProvider.select((s) => s.audioCount),
     );
-    final libraryHeaderHasWatchedSources = ref.watch(
+    final libraryHeaderHasWatchedSources = _readOrWatch(
       libraryHeaderUiProvider.select((s) => s.hasWatchedSources),
     );
-    final listStateRawTree = ref.watch(
+    final listStateRawTree = _readOrWatch(
       libraryListUiProvider.select((s) => s.rawTree),
     );
-    final listStateStructureRevision = ref.watch(
+    final listStateStructureRevision = _readOrWatch(
       libraryListUiProvider.select((s) => s.structureRevision),
     );
-    final listStateIsScanning = ref.watch(
+    final listStateIsScanning = _readOrWatch(
       libraryListUiProvider.select((s) => s.isScanning),
     );
-    final listStateIsBackgroundScanning = ref.watch(
+    final listStateIsBackgroundScanning = _readOrWatch(
       libraryListUiProvider.select((s) => s.isBackgroundScanning),
     );
-    final listStateIsInitialized = ref.watch(
+    final listStateIsInitialized = _readOrWatch(
       libraryListUiProvider.select((s) => s.isInitialized),
     );
-    final listStateHasLibrary = ref.watch(
+    final listStateHasLibrary = _readOrWatch(
       libraryListUiProvider.select((s) => s.hasLibrary),
     );
-    final listStateCanPullRefresh = ref.watch(
+    final listStateCanPullRefresh = _readOrWatch(
       libraryListUiProvider.select((s) => s.canPullRefresh),
     );
-    final detailRevision = ref.watch(libraryDetailRevisionProvider);
-    ref.watch(libraryCategoryRevisionProvider);
-    final coverGeneration = ref.watch(coverGenerationProvider);
+    final detailRevision = _readOrWatch(libraryDetailRevisionProvider);
+    _readOrWatch(libraryCategoryRevisionProvider);
+    final coverGeneration = _readOrWatch(coverGenerationProvider);
     final settingsState =
-        ref.watch(settingsStateProvider).valueOrNull ?? const SettingsState();
+        _readOrWatch(settingsStateProvider).valueOrNull ??
+        const SettingsState();
     final cardPositionsLocked = settingsState.cardPositionsLocked;
-    final libraryRefreshOperationBusy = ref.watch(
+    final libraryRefreshOperationBusy = _readOrWatch(
       uiOperationForScopeProvider(
         UiOperationScope.libraryRefresh,
       ).select((s) => s.isBusy),
@@ -483,7 +519,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
           UiOperationScope.libraryImportLibrary,
           UiOperationScope.libraryImportFiles,
         ].any(
-          (scope) => ref.watch(
+          (scope) => _readOrWatch(
             uiOperationForScopeProvider(scope).select((s) => s.isBusy),
           ),
         );
@@ -891,7 +927,9 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                 right: 12,
                 child: Consumer(
                   builder: (context, ref, _) {
-                    final scanState = ref.watch(libraryScanUiProvider);
+                    final scanState = _isActive
+                        ? ref.watch(libraryScanUiProvider)
+                        : ref.read(libraryScanUiProvider);
                     return _buildScanProgressCard(i18n, provider, scanState);
                   },
                 ),

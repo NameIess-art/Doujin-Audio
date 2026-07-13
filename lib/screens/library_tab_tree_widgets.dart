@@ -795,7 +795,7 @@ class _RootFolderCardContent extends StatelessWidget {
       coverBuilder: (coverWidth) => _LibraryCoverThumbnail(
         folderPath: folderPath,
         width: coverWidth,
-        duration: folderDuration,
+        duration: detail?.duration ?? folderDuration,
       ),
     );
   }
@@ -838,7 +838,6 @@ class _AudioDetailWorkCardContent extends StatelessWidget {
       tagsLabel: i18n.tr('library_category_tags'),
       releaseDateLabel: i18n.tr('card_info_release_date'),
       salesCountLabel: i18n.tr('card_info_sales_count'),
-
       ratingLabel: i18n.tr('card_info_rating'),
       loading: detailLoading || detail == null,
       coverBuilder: coverBuilder,
@@ -919,7 +918,7 @@ class _SingleMediaFileCardContent extends StatelessWidget {
       coverBuilder: (coverWidth) => _LibraryTrackCoverThumbnail(
         track: track,
         width: coverWidth,
-        duration: track.duration,
+        duration: detail?.duration ?? track.duration,
       ),
     );
   }
@@ -934,6 +933,7 @@ LibraryLikeInfoMetadata _audioDetailMetadata(AudioDetail? detail) {
     circleName: d.circleName,
     tags: d.tags,
     releaseDate: d.releaseDate,
+    duration: d.duration,
     salesCount: d.salesCount,
     rating: d.rating,
   );

@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-
 import '../models/card_info_field.dart';
 import 'app_feedback.dart';
 import 'marquee_text.dart';
@@ -51,6 +50,7 @@ class LibraryLikeInfoMetadata {
     this.circleName = '',
     this.tags = const <String>[],
     this.releaseDate,
+    this.duration,
     this.salesCount,
     this.rating,
   });
@@ -60,6 +60,7 @@ class LibraryLikeInfoMetadata {
   final String circleName;
   final List<String> tags;
   final DateTime? releaseDate;
+  final Duration? duration;
   final int? salesCount;
   final double? rating;
 }
@@ -121,6 +122,7 @@ List<LibraryLikeInfoLineData> buildLibraryLikeInfoLines({
           result.add(LibraryLikeInfoLineData(releaseDateLabel, value));
         }
         break;
+
       case CardInfoField.salesCount:
         final value = metadata.salesCount;
         if (value != null && value > 0) {

@@ -119,6 +119,7 @@ class _DlsiteMetadataBatchPageState extends State<DlsiteMetadataBatchPage> {
     final queue = List<AudioLibraryCategoryEntry>.of(_selectedEntries);
     var applied = 0;
     var skipped = 0;
+    var saveCover = true;
     setState(() {
       _running = true;
       _summary = null;
@@ -148,6 +149,7 @@ class _DlsiteMetadataBatchPageState extends State<DlsiteMetadataBatchPage> {
                 batchIndex: index + 1,
                 batchTotal: queue.length,
                 allowSkip: true,
+                initialSaveCover: saveCover,
               ),
             ),
           );
@@ -168,6 +170,9 @@ class _DlsiteMetadataBatchPageState extends State<DlsiteMetadataBatchPage> {
         applied++;
       } else {
         skipped++;
+      }
+      if (result.saveCover != null) {
+        saveCover = result.saveCover!;
       }
       await Future<void>.delayed(Duration.zero);
     }

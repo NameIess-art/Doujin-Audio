@@ -580,6 +580,7 @@ LibraryLikeInfoMetadata _workMetadata(AsmrWork work) {
     circleName: work.circleName,
     tags: work.tags,
     releaseDate: work.releaseDate,
+    duration: work.duration,
     salesCount: work.dlCount,
     rating: work.rating,
   );

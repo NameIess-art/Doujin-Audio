@@ -32,6 +32,10 @@ void main() {
             vendorBackgroundSettingsAvailable: true,
             cleanerForceStopDetected: true,
             lastExitDescription: 'single-cleaner',
+            recentExits: <Map<String, Object?>>[
+              <String, Object?>{'reasonName': 'user_requested'},
+            ],
+            nativePlayback: <String, Object?>{'foregroundStarted': true},
           ),
       platformName: 'test',
       platformVersion: 'test-version',
@@ -55,6 +59,11 @@ void main() {
     expect(
       (report['backgroundRun']
           as Map<String, dynamic>)['cleanerForceStopDetected'],
+      isTrue,
+    );
+    expect(
+      ((report['backgroundRun'] as Map<String, dynamic>)['nativePlayback']
+          as Map<String, dynamic>)['foregroundStarted'],
       isTrue,
     );
     expect(report, isNot(contains('mediaFiles')));

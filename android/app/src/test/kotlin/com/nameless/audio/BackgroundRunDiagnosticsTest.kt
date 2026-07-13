@@ -45,4 +45,17 @@ class BackgroundRunDiagnosticsTest {
         assertTrue(vivoBackgroundSettingsTargets("VIVO").isNotEmpty())
         assertTrue(vivoBackgroundSettingsTargets("google").isEmpty())
     }
+
+    @Test
+    fun `exit reason names distinguish force stop and low memory`() {
+        assertEquals(
+            "user_requested",
+            applicationExitReasonName(ApplicationExitInfo.REASON_USER_REQUESTED)
+        )
+        assertEquals(
+            "low_memory",
+            applicationExitReasonName(ApplicationExitInfo.REASON_LOW_MEMORY)
+        )
+        assertEquals("unknown", applicationExitReasonName(null))
+    }
 }

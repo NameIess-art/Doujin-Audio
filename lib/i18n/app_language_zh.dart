@@ -236,7 +236,7 @@ const Map<String, String> appLanguageZh = {
   'create_another_session': '再创建一个会话',
   'remove_audio': '移除音频',
   'audio_detail': '详细信息',
-  'audio_detail_title': '音频详细信息',
+  'audio_detail_title': '详细信息',
   'audio_detail_library_root': '音频库根文件夹',
   'audio_detail_single_file': '单独添加的音频',
   'audio_detail_cover_image': '封面图片',

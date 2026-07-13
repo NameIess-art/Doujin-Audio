@@ -1492,4 +1492,47 @@ extension AudioProviderLibrary on AudioProvider {
     }
     return '';
   }
+
+  Future<void> calculateMissingFolderDurations(String folderPath) async {
+    FolderNode? findFolder(List<LibraryNode> nodes) {
+      for (final node in nodes) {
+        if (node is FolderNode) {
+          if (node.path == folderPath) return node;
+          final child = findFolder(node.children);
+          if (child != null) return child;
+        }
+      }
+      return null;
+    }
+
+    final folderNode = findFolder(libraryTree);
+    if (folderNode == null) return;
+
+    final tracksToUpdate = <MusicTrack>[];
+    final player = AudioPlayer();
+    try {
+      for (final track in folderNode.allTracks) {
+        if (track.duration > Duration.zero) continue;
+        try {
+          final duration = await player.setFilePath(track.path);
+          if (duration != null && duration > Duration.zero) {
+            tracksToUpdate.add(track.copyWith(duration: duration));
+          }
+        } catch (_) {}
+      }
+    } finally {
+      await player.dispose();
+    }
+
+    if (tracksToUpdate.isNotEmpty) {
+      for (final track in tracksToUpdate) {
+        final index = _library.indexWhere((t) => t.path == track.path);
+        if (index >= 0) _library[index] = track;
+        _libraryByPath[track.path] = track;
+      }
+      await _audioDatabaseRepository.upsertTracks(tracksToUpdate);
+      _rebuildLibraryIndexes();
+      _notifyListeners();
+    }
+  }
 }

@@ -581,6 +581,14 @@ internal class NativePlaybackSession(
         )
     }
 
+    fun recreatePlayerForRecovery() {
+        val player = _player
+        val shouldResume = player?.let { it.playWhenReady || it.isPlaying } ?: lastPlayWhenReady
+        releasePlayer()
+        lastPlayWhenReady = shouldResume
+        ensurePlayer()
+    }
+
     override fun snapshot(): Map<String, Any?> {
         val p = _player
         if (p != null) {

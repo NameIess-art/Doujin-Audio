@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:nameless_audio/i18n/app_language_provider.dart';
 import 'package:nameless_audio/providers/audio_provider.dart';
+import 'package:nameless_audio/providers/audio_provider_library_catalog.dart';
 import 'package:nameless_audio/services/app_database.dart';
 import 'package:nameless_audio/services/asmr_playback_cache_service.dart';
 import 'package:nameless_audio/services/audio_database_repository.dart';
@@ -3382,7 +3383,7 @@ void main() {
 
         final scanner = LibraryScannerService();
         await scanner.refreshWatchedFolders(
-          provider: provider,
+          provider: AudioProviderLibraryCatalog(provider),
           i18n: AppLanguageProvider(),
           showSnack: (_) {},
           silent: true,

@@ -75,7 +75,7 @@ internal class FileCacheMethodHandler(
                 val name = call.argument<String>("name") ?: "picked_audio"
                 val index = call.argument<Int>("index") ?: 0
                 if (uriString.isNullOrBlank()) {
-                    result.error("invalid_args", "uri is required", null)
+                    result.error(ChannelErrorCodes.INVALID_ARGUMENT, "uri is required", null)
                     return
                 }
                 runAsync(
@@ -110,7 +110,7 @@ internal class FileCacheMethodHandler(
             FileCacheMethods.SCAN_FOLDER -> {
                 val folder = call.argument<String>("folder")
                 if (folder.isNullOrBlank()) {
-                    result.error("invalid_args", "folder is required", null)
+                    result.error(ChannelErrorCodes.INVALID_ARGUMENT, "folder is required", null)
                     return
                 }
                 runScanAsync(
@@ -136,7 +136,7 @@ internal class FileCacheMethodHandler(
                 val folder = call.argument<String>("folder")
                 val chunkSize = call.argument<Int>("chunkSize") ?: 120
                 if (sessionId.isNullOrBlank() || folder.isNullOrBlank()) {
-                    result.error("invalid_args", "sessionId and folder are required", null)
+                    result.error(ChannelErrorCodes.INVALID_ARGUMENT, "sessionId and folder are required", null)
                     return
                 }
                 result.success(
@@ -146,7 +146,7 @@ internal class FileCacheMethodHandler(
             FileCacheMethods.CANCEL_FOLDER_SCAN -> {
                 val sessionId = call.argument<String>("sessionId")
                 if (sessionId.isNullOrBlank()) {
-                    result.error("invalid_args", "sessionId is required", null)
+                    result.error(ChannelErrorCodes.INVALID_ARGUMENT, "sessionId is required", null)
                     return
                 }
                 scanStreamHandler.cancelFolderScan(sessionId)
@@ -155,7 +155,7 @@ internal class FileCacheMethodHandler(
             FileCacheMethods.LIST_CHILD_FOLDERS -> {
                 val folder = call.argument<String>("folder")
                 if (folder.isNullOrBlank()) {
-                    result.error("invalid_args", "folder is required", null)
+                    result.error(ChannelErrorCodes.INVALID_ARGUMENT, "folder is required", null)
                     return
                 }
                 runAsync(result, errorCode = { "list_child_folders_failed" }) {
@@ -166,7 +166,7 @@ internal class FileCacheMethodHandler(
                 val targetPath = call.argument<String>("path")
                 val name = call.argument<String>("name")
                 if (targetPath.isNullOrBlank() || name.isNullOrBlank()) {
-                    result.error("invalid_args", "path and name are required", null)
+                    result.error(ChannelErrorCodes.INVALID_ARGUMENT, "path and name are required", null)
                     return
                 }
                 runAsync(
@@ -181,7 +181,7 @@ internal class FileCacheMethodHandler(
             FileCacheMethods.READ_AUDIO_DETAIL_BACKUP -> {
                 val folder = call.argument<String>("folder")
                 if (folder.isNullOrBlank()) {
-                    result.error("invalid_args", "folder is required", null)
+                    result.error(ChannelErrorCodes.INVALID_ARGUMENT, "folder is required", null)
                     return
                 }
                 runAsync(result, errorCode = { "detail_backup_read_failed" }) {
@@ -192,7 +192,7 @@ internal class FileCacheMethodHandler(
                 val folder = call.argument<String>("folder")
                 val json = call.argument<String>("json")
                 if (folder.isNullOrBlank() || json == null) {
-                    result.error("invalid_args", "folder and json are required", null)
+                    result.error(ChannelErrorCodes.INVALID_ARGUMENT, "folder and json are required", null)
                     return
                 }
                 runAsync(result, errorCode = { "detail_backup_write_failed" }) {
@@ -202,7 +202,7 @@ internal class FileCacheMethodHandler(
             FileCacheMethods.READ_SINGLE_FILE_DETAIL_BACKUP -> {
                 val filePath = call.argument<String>("filePath")
                 if (filePath.isNullOrBlank()) {
-                    result.error("invalid_args", "filePath is required", null)
+                    result.error(ChannelErrorCodes.INVALID_ARGUMENT, "filePath is required", null)
                     return
                 }
                 runAsync(result, errorCode = { "single_detail_backup_read_failed" }) {
@@ -213,7 +213,7 @@ internal class FileCacheMethodHandler(
                 val filePath = call.argument<String>("filePath")
                 val json = call.argument<String>("json")
                 if (filePath.isNullOrBlank() || json == null) {
-                    result.error("invalid_args", "filePath and json are required", null)
+                    result.error(ChannelErrorCodes.INVALID_ARGUMENT, "filePath and json are required", null)
                     return
                 }
                 runAsync(result, errorCode = { "single_detail_backup_write_failed" }) {
@@ -226,7 +226,7 @@ internal class FileCacheMethodHandler(
                 val bytes = call.argument<ByteArray>("bytes")
                 val mimeType = call.argument<String>("mimeType")
                 if (folder.isNullOrBlank() || name.isNullOrBlank() || bytes == null) {
-                    result.error("invalid_args", "folder, name and bytes are required", null)
+                    result.error(ChannelErrorCodes.INVALID_ARGUMENT, "folder, name and bytes are required", null)
                     return
                 }
                 runAsync(result, errorCode = { "folder_file_write_failed" }) {
@@ -236,7 +236,7 @@ internal class FileCacheMethodHandler(
             FileCacheMethods.DOCUMENT_PATH_EXISTS -> {
                 val targetPath = call.argument<String>("path")
                 if (targetPath.isNullOrBlank()) {
-                    result.error("invalid_args", "path is required", null)
+                    result.error(ChannelErrorCodes.INVALID_ARGUMENT, "path is required", null)
                     return
                 }
                 runAsync(result, errorCode = { "document_path_exists_failed" }) {
@@ -248,7 +248,7 @@ internal class FileCacheMethodHandler(
                 val relativePath = call.argument<String>("relativePath")
                 val overwrite = call.argument<Boolean>("overwrite") ?: false
                 if (folder.isNullOrBlank() || relativePath == null) {
-                    result.error("invalid_args", "folder and relativePath are required", null)
+                    result.error(ChannelErrorCodes.INVALID_ARGUMENT, "folder and relativePath are required", null)
                     return
                 }
                 runAsync(result, errorCode = { "ensure_folder_failed" }) {
@@ -265,7 +265,7 @@ internal class FileCacheMethodHandler(
                     mimeType.isNullOrBlank()
                 ) {
                     result.error(
-                        "invalid_args",
+                        ChannelErrorCodes.INVALID_ARGUMENT,
                         "sourcePath, fileName and mimeType are required",
                         null
                     )
@@ -282,7 +282,7 @@ internal class FileCacheMethodHandler(
                     folder.isNullOrBlank() ||
                     relativePath.isNullOrBlank()
                 ) {
-                    result.error("invalid_args", "sourcePath, folder and relativePath are required", null)
+                    result.error(ChannelErrorCodes.INVALID_ARGUMENT, "sourcePath, folder and relativePath are required", null)
                     return
                 }
                 runAsync(result, errorCode = { "copy_file_failed" }) {
@@ -292,7 +292,7 @@ internal class FileCacheMethodHandler(
             FileCacheMethods.DELETE_DOCUMENT_PATH -> {
                 val targetPath = call.argument<String>("path")
                 if (targetPath.isNullOrBlank()) {
-                    result.error("invalid_args", "path is required", null)
+                    result.error(ChannelErrorCodes.INVALID_ARGUMENT, "path is required", null)
                     return
                 }
                 runAsync(result, errorCode = { "delete_document_failed" }) {
@@ -304,7 +304,7 @@ internal class FileCacheMethodHandler(
                 val groupKey = call.argument<String>("groupKey")
                 val rootFolder = call.argument<String>("rootFolder")
                 if (trackPath.isNullOrBlank()) {
-                    result.error("invalid_args", "path is required", null)
+                    result.error(ChannelErrorCodes.INVALID_ARGUMENT, "path is required", null)
                     return
                 }
                 runAsync(result, errorCode = { "cover_resolve_failed" }) {
@@ -315,7 +315,7 @@ internal class FileCacheMethodHandler(
                 val trackPath = call.argument<String>("path")
                 val modifiedAtMs = call.argument<Long>("modifiedAtMs")
                 if (trackPath.isNullOrBlank()) {
-                    result.error("invalid_args", "path is required", null)
+                    result.error(ChannelErrorCodes.INVALID_ARGUMENT, "path is required", null)
                     return
                 }
                 runAsync(result, errorCode = { "video_frame_resolve_failed" }) {
@@ -325,7 +325,7 @@ internal class FileCacheMethodHandler(
             FileCacheMethods.RESOLVE_MEDIA_DURATION -> {
                 val trackPath = call.argument<String>("path")
                 if (trackPath.isNullOrBlank()) {
-                    result.error("invalid_args", "path is required", null)
+                    result.error(ChannelErrorCodes.INVALID_ARGUMENT, "path is required", null)
                     return
                 }
                 runAsync(result, errorCode = { "media_duration_resolve_failed" }) {
@@ -337,7 +337,7 @@ internal class FileCacheMethodHandler(
                 val groupKey = call.argument<String>("groupKey")
                 val rootFolder = call.argument<String>("rootFolder")
                 if (trackPath.isNullOrBlank()) {
-                    result.error("invalid_args", "path is required", null)
+                    result.error(ChannelErrorCodes.INVALID_ARGUMENT, "path is required", null)
                     return
                 }
                 runAsync(result, errorCode = { "cover_discover_failed" }) {
@@ -348,7 +348,7 @@ internal class FileCacheMethodHandler(
                 val trackPath = call.argument<String>("path")
                 val groupKey = call.argument<String>("groupKey")
                 if (trackPath.isNullOrBlank()) {
-                    result.error("invalid_args", "path is required", null)
+                    result.error(ChannelErrorCodes.INVALID_ARGUMENT, "path is required", null)
                     return
                 }
                 runAsync(result, errorCode = { "subtitle_resolve_failed" }) {

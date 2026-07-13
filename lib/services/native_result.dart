@@ -11,6 +11,22 @@ sealed class NativeResult<T> {
     NativeSuccess<T>() => null,
     NativeFailure<T>(message: final message) => message,
   };
+  String? get errorCodeOrNull => switch (this) {
+    NativeSuccess<T>() => null,
+    NativeFailure<T>(code: final code) => code,
+  };
+  Object? get errorDetailsOrNull => switch (this) {
+    NativeSuccess<T>() => null,
+    NativeFailure<T>(details: final details) => details,
+  };
+}
+
+abstract final class NativeErrorCode {
+  static const String invalidArgument = 'invalid_argument';
+  static const String serviceUnavailable = 'service_unavailable';
+  static const String playerError = 'player_error';
+  static const String platformError = 'platform_error';
+  static const String unexpected = 'unexpected';
 }
 
 class NativeSuccess<T> extends NativeResult<T> {
@@ -20,7 +36,13 @@ class NativeSuccess<T> extends NativeResult<T> {
 }
 
 class NativeFailure<T> extends NativeResult<T> {
-  const NativeFailure(this.message);
+  const NativeFailure(
+    this.message, {
+    this.code = NativeErrorCode.unexpected,
+    this.details,
+  });
 
   final String message;
+  final String code;
+  final Object? details;
 }

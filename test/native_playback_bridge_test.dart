@@ -230,7 +230,7 @@ void main() {
   });
 
   test(
-    'snapshot decodes bundle payload and failure keeps the error message',
+    'snapshot decodes bundle payload and failure keeps structured details',
     () async {
       var callCount = 0;
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -259,7 +259,9 @@ void main() {
             }
             return <String, Object?>{
               'ok': false,
+              'errorCode': 'service_unavailable',
               'error': 'native unavailable',
+              'details': <String, Object?>{'method': 'pause'},
             };
           });
 
@@ -272,8 +274,29 @@ void main() {
       expect(snapshot.valueOrNull?.sessions.single.speed, 1.0);
       expect(failure.isFailure, isTrue);
       expect(failure.errorOrNull, 'native unavailable');
+      expect(failure.errorCodeOrNull, 'service_unavailable');
+      expect(failure.errorDetailsOrNull, <String, Object?>{'method': 'pause'});
     },
   );
+
+  test('PlatformException preserves code and details', () async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          throw PlatformException(
+            code: 'invalid_argument',
+            message: 'sessionId is required',
+            details: <String, Object?>{'argument': 'sessionId'},
+          );
+        });
+
+    final failure = await NativePlaybackBridge.instance.pause('session-1');
+
+    expect(failure.errorOrNull, 'sessionId is required');
+    expect(failure.errorCodeOrNull, 'invalid_argument');
+    expect(failure.errorDetailsOrNull, <String, Object?>{
+      'argument': 'sessionId',
+    });
+  });
 
   test('a valid event resets the EventChannel reconnect backoff', () async {
     const eventsChannel = EventChannel(NativePlaybackChannel.eventName);

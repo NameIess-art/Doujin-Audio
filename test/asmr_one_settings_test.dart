@@ -18,12 +18,13 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 void main() {
   late Database db;
+  late AsmrPreferencesStore preferences;
 
   Future<void> resetPrefs([Map<String, Object> values = const {}]) async {
     FlutterSecureStorage.setMockInitialValues(<String, String>{});
     SharedPreferences.setMockInitialValues(values);
     await AppPreferences.init();
-    await AsmrPreferences.clearForTest();
+    await preferences.clearForTest();
   }
 
   setUpAll(() async {
@@ -31,7 +32,9 @@ void main() {
     databaseFactory = databaseFactoryFfi;
     db = await databaseFactoryFfi.openDatabase(inMemoryDatabasePath);
     await AppDatabase.createSchemaForTest(db);
-    AppDatabase.setInstanceForTest(AppDatabase.test(db));
+    final appDatabase = AppDatabase.test(db);
+    AppDatabase.setInstanceForTest(appDatabase);
+    preferences = AsmrPreferencesStore(database: appDatabase);
   });
 
   tearDownAll(() async {
@@ -45,7 +48,7 @@ void main() {
       await resetPrefs();
 
       expect(
-        await AsmrPreferences.loadVisibleCategories(),
+        await preferences.loadVisibleCategories(),
         kDefaultVisibleAsmrCategories,
       );
     },
@@ -53,7 +56,7 @@ void main() {
 
   test('ASMR visible categories are sanitized and capped at five', () async {
     await resetPrefs();
-    await AsmrPreferences.saveVisibleCategories(const <AsmrCategoryType>[
+    await preferences.saveVisibleCategories(const <AsmrCategoryType>[
       AsmrCategoryType.sales,
       AsmrCategoryType.rating,
       AsmrCategoryType.release,
@@ -63,7 +66,7 @@ void main() {
     ]);
 
     if (Platform.isWindows) {
-      expect(await AsmrPreferences.loadVisibleCategories(), <AsmrCategoryType>[
+      expect(await preferences.loadVisibleCategories(), <AsmrCategoryType>[
         AsmrCategoryType.sales,
         AsmrCategoryType.rating,
         AsmrCategoryType.release,
@@ -72,7 +75,7 @@ void main() {
         AsmrCategoryType.collected,
       ]);
     } else {
-      expect(await AsmrPreferences.loadVisibleCategories(), <AsmrCategoryType>[
+      expect(await preferences.loadVisibleCategories(), <AsmrCategoryType>[
         AsmrCategoryType.sales,
         AsmrCategoryType.rating,
         AsmrCategoryType.release,
@@ -88,14 +91,14 @@ void main() {
       await resetPrefs();
 
       expect(
-        await AsmrPreferences.loadContentLanguage(AsmrContentLanguage.en),
+        await preferences.loadContentLanguage(AsmrContentLanguage.en),
         AsmrContentLanguage.en,
       );
 
-      await AsmrPreferences.saveContentLanguage(AsmrContentLanguage.ja);
+      await preferences.saveContentLanguage(AsmrContentLanguage.ja);
 
       expect(
-        await AsmrPreferences.loadContentLanguage(AsmrContentLanguage.en),
+        await preferences.loadContentLanguage(AsmrContentLanguage.en),
         AsmrContentLanguage.ja,
       );
     },
@@ -628,8 +631,8 @@ void main() {
         title: 'History Sleep',
         tags: <String>['sleep'],
       );
-      await AsmrPreferences.saveFavoriteWorks(<AsmrWork>[favorite]);
-      await AsmrPreferences.saveHistoryWorks(<AsmrWork>[history]);
+      await preferences.saveFavoriteWorks(<AsmrWork>[favorite]);
+      await preferences.saveHistoryWorks(<AsmrWork>[history]);
       final api = _FakeAsmrApiService(
         recommendationWorks: <AsmrWork>[
           favorite,
@@ -670,7 +673,7 @@ void main() {
         tags: <String>['sleep'],
       );
       await resetPrefs();
-      await AsmrPreferences.saveFavoriteWorks(<AsmrWork>[favorite]);
+      await preferences.saveFavoriteWorks(<AsmrWork>[favorite]);
       final controller = AsmrLibraryController(
         audioDatabaseRepository: _FakeAudioDatabaseRepository(
           const <MusicTrack>[],
@@ -777,7 +780,7 @@ void main() {
       await resetPrefs();
       final local = _work(id: 71, title: 'Local Favorite');
       final remote = _work(id: 72, title: 'Remote Favorite');
-      await AsmrPreferences.saveFavoriteWorks(<AsmrWork>[local]);
+      await preferences.saveFavoriteWorks(<AsmrWork>[local]);
       final api = _FakeAsmrApiService(
         remoteReviewRecords: <AsmrReviewRecord>[
           AsmrReviewRecord(
@@ -828,7 +831,7 @@ void main() {
     () async {
       await resetPrefs();
       final work = _work(id: 82, title: 'Marked Favorite');
-      await AsmrPreferences.saveFavoriteWorks(<AsmrWork>[work]);
+      await preferences.saveFavoriteWorks(<AsmrWork>[work]);
       final api = _FakeAsmrApiService(
         remoteReviewRecords: <AsmrReviewRecord>[
           AsmrReviewRecord(

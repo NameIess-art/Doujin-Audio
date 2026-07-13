@@ -5,10 +5,11 @@ import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as path;
 
 import '../models/asmr_models.dart';
-import '../providers/audio_provider.dart';
+import '../models/music_track.dart';
 import 'audio_database_repository.dart';
 import 'asmr_api_service.dart';
 import 'asmr_auth_service.dart';
+import 'asmr_playback_coordinator.dart';
 import 'asmr_preferences.dart';
 import 'asmr_recommendation_engine.dart';
 import 'search_query_utils.dart';
@@ -236,17 +237,20 @@ class _StaleAsmrRequest implements Exception {
   const _StaleAsmrRequest();
 }
 
-class AsmrLibraryController extends ChangeNotifier {
+class AsmrLibraryController extends ChangeNotifier
+    implements AsmrPlaybackSource {
   AsmrLibraryController({
     AsmrApiService? apiService,
     AsmrAuthService? authService,
     AudioDatabaseRepository? audioDatabaseRepository,
+    AsmrPreferencesStore? preferencesStore,
     AsmrRecommendationEngine recommendationEngine =
         const AsmrRecommendationEngine(),
   }) : _apiService = apiService ?? AsmrApiService(),
        _authService = authService ?? AsmrAuthService(apiService: apiService),
        _audioDatabaseRepository =
            audioDatabaseRepository ?? AudioDatabaseRepository(),
+       _preferencesStore = preferencesStore ?? AsmrPreferencesStore(),
        _recommendationEngine = recommendationEngine;
 
   static const int _historyLimit = 60;
@@ -279,6 +283,7 @@ class AsmrLibraryController extends ChangeNotifier {
   final AsmrApiService _apiService;
   final AsmrAuthService _authService;
   final AudioDatabaseRepository _audioDatabaseRepository;
+  final AsmrPreferencesStore _preferencesStore;
   final AsmrRecommendationEngine _recommendationEngine;
   final Map<AsmrCategoryType, Future<void>> _refreshTasks =
       <AsmrCategoryType, Future<void>>{};
@@ -539,16 +544,16 @@ class AsmrLibraryController extends ChangeNotifier {
   Future<void> _initializeLocalState({
     AsmrContentLanguage? defaultLanguage,
   }) async {
-    _visibleCategories = await AsmrPreferences.loadVisibleCategories();
-    _contentLanguage = await AsmrPreferences.loadContentLanguage(
+    _visibleCategories = await _preferencesStore.loadVisibleCategories();
+    _contentLanguage = await _preferencesStore.loadContentLanguage(
       defaultLanguage ?? AsmrContentLanguage.zh,
     );
-    _favoriteWorks = await AsmrPreferences.loadFavoriteWorks();
+    _favoriteWorks = await _preferencesStore.loadFavoriteWorks();
     _favoriteIds = _favoriteWorks.map((work) => work.id).toSet();
-    _historyWorks = await AsmrPreferences.loadHistoryWorks();
-    _syncOperations = await AsmrPreferences.loadSyncOperations();
+    _historyWorks = await _preferencesStore.loadHistoryWorks();
+    _syncOperations = await _preferencesStore.loadSyncOperations();
     await _seedSyncOutboxIfNeeded();
-    _lastSyncAt = await AsmrPreferences.loadLastSyncAt();
+    _lastSyncAt = await _preferencesStore.loadLastSyncAt();
     _updateLocalCategoryCounts();
     _initialized = true;
     _bumpGlobalRevision();
@@ -744,7 +749,7 @@ class AsmrLibraryController extends ChangeNotifier {
                     !uploadedKeys.contains(_syncOperationKey(operation)),
               )
               .toList(growable: false);
-          await AsmrPreferences.saveSyncOperations(next);
+          await _preferencesStore.saveSyncOperations(next);
           _ensureSyncRequestCurrent(key);
           _syncOperations = next;
         });
@@ -771,7 +776,7 @@ class AsmrLibraryController extends ChangeNotifier {
   Future<void> _markAsmrAccountSyncSucceeded(_AsmrSyncRequestKey key) async {
     _ensureSyncRequestCurrent(key);
     final syncedAt = DateTime.now();
-    await AsmrPreferences.saveLastSyncAt(syncedAt);
+    await _preferencesStore.saveLastSyncAt(syncedAt);
     _ensureSyncRequestCurrent(key);
     _lastSyncAt = syncedAt;
     _syncPhase = AsmrSyncPhase.succeeded;
@@ -800,7 +805,7 @@ class AsmrLibraryController extends ChangeNotifier {
       return;
     }
     _visibleCategories = next;
-    await AsmrPreferences.saveVisibleCategories(next);
+    await _preferencesStore.saveVisibleCategories(next);
     _bumpGlobalRevision();
     notifyListeners();
   }
@@ -820,7 +825,7 @@ class AsmrLibraryController extends ChangeNotifier {
     _refreshTasks.clear();
     _refreshTaskQueries.clear();
     _refreshTaskContentEpochs.clear();
-    await AsmrPreferences.saveContentLanguage(language);
+    await _preferencesStore.saveContentLanguage(language);
     _worksByCategory.clear();
     _detailCache.clear();
     _trackCache.clear();
@@ -1351,6 +1356,7 @@ class AsmrLibraryController extends ChangeNotifier {
     return merged;
   }
 
+  @override
   Future<List<MusicTrack>> loadPlayableTracks(AsmrWork work) async {
     final tree = await ensureTrackTree(work);
     return _flattenTracks(work, tree);
@@ -1363,6 +1369,7 @@ class AsmrLibraryController extends ChangeNotifier {
     return _flattenTracks(work, <AsmrTrackFile>[node]);
   }
 
+  @override
   Future<List<MusicTrack>> loadPlayableTracksStartingAt(
     AsmrWork work,
     AsmrTrackFile target,
@@ -1536,7 +1543,7 @@ class AsmrLibraryController extends ChangeNotifier {
       createdAt: DateTime.now(),
     );
     final nextSyncOperations = _syncOperationsAfterEnqueue(operation);
-    await AsmrPreferences.saveWorkListAndSyncOperations(
+    await _preferencesStore.saveWorkListAndSyncOperations(
       'favorites',
       nextFavoriteWorks,
       nextSyncOperations,
@@ -1582,6 +1589,7 @@ class AsmrLibraryController extends ChangeNotifier {
     notifyListeners();
   }
 
+  @override
   Future<void> recordHistory(AsmrWork work) {
     return _runStateMutation(() => _recordHistoryNow(work));
   }
@@ -1598,7 +1606,7 @@ class AsmrLibraryController extends ChangeNotifier {
       createdAt: DateTime.now(),
     );
     final nextSyncOperations = _syncOperationsAfterEnqueue(operation);
-    await AsmrPreferences.saveWorkListAndSyncOperations(
+    await _preferencesStore.saveWorkListAndSyncOperations(
       'history',
       nextHistoryWorks,
       nextSyncOperations,
@@ -1613,45 +1621,6 @@ class AsmrLibraryController extends ChangeNotifier {
     _updateLocalCategoryCounts();
     _bumpCategoryRevision(AsmrCategoryType.history);
     notifyListeners();
-  }
-
-  Future<void> playWork(
-    AudioProvider provider,
-    AsmrWork work, {
-    bool? autoPlay,
-  }) async {
-    final tracks = await loadPlayableTracks(work);
-    if (tracks.isEmpty) {
-      return;
-    }
-    await recordHistory(work);
-    await provider.spawnSessionWithQueue(
-      tracks,
-      autoPlay: autoPlay,
-      loopMode: tracks.length > 1
-          ? SessionLoopMode.folderSequential
-          : SessionLoopMode.single,
-    );
-  }
-
-  Future<void> playTrack(
-    AudioProvider provider,
-    AsmrWork work,
-    AsmrTrackFile target, {
-    bool? autoPlay,
-  }) async {
-    final queue = await loadPlayableTracksStartingAt(work, target);
-    if (queue.isEmpty) {
-      return;
-    }
-    await recordHistory(work);
-    await provider.spawnSessionWithQueue(
-      queue,
-      autoPlay: autoPlay,
-      loopMode: queue.length > 1
-          ? SessionLoopMode.folderSequential
-          : SessionLoopMode.single,
-    );
   }
 
   List<AsmrSyncOperation> _syncOperationsAfterEnqueue(
@@ -1675,7 +1644,7 @@ class AsmrLibraryController extends ChangeNotifier {
   }
 
   Future<void> _seedSyncOutboxIfNeeded() async {
-    if (await AsmrPreferences.isSyncOutboxSeeded()) {
+    if (await _preferencesStore.isSyncOutboxSeeded()) {
       return;
     }
     final existingKeys = _syncOperations
@@ -1715,9 +1684,9 @@ class AsmrLibraryController extends ChangeNotifier {
     }
     if (seeded.isNotEmpty) {
       _syncOperations = <AsmrSyncOperation>[..._syncOperations, ...seeded];
-      await AsmrPreferences.saveSyncOperations(_syncOperations);
+      await _preferencesStore.saveSyncOperations(_syncOperations);
     }
-    await AsmrPreferences.markSyncOutboxSeeded();
+    await _preferencesStore.markSyncOutboxSeeded();
   }
 
   Future<List<AsmrSyncOperation>> _flushSyncOperations(
@@ -1827,7 +1796,7 @@ class AsmrLibraryController extends ChangeNotifier {
                   : operation.copyWith(retryCount: operation.retryCount + 1);
             })
             .toList(growable: false);
-        await AsmrPreferences.saveSyncOperations(next);
+        await _preferencesStore.saveSyncOperations(next);
         _ensureSyncRequestCurrent(key);
         _syncOperations = next;
       });
@@ -1910,7 +1879,7 @@ class AsmrLibraryController extends ChangeNotifier {
         }
       }
       final nextFavorites = byId.values.toList(growable: false);
-      await AsmrPreferences.saveFavoriteWorks(nextFavorites);
+      await _preferencesStore.saveFavoriteWorks(nextFavorites);
       _ensureSyncRequestCurrent(key);
       _favoriteWorks = nextFavorites;
       _favoriteIds = nextFavorites.map((work) => work.id).toSet();
@@ -1989,7 +1958,7 @@ class AsmrLibraryController extends ChangeNotifier {
       }
 
       final nextHistory = merged.take(_historyLimit).toList(growable: false);
-      await AsmrPreferences.saveHistoryWorks(nextHistory);
+      await _preferencesStore.saveHistoryWorks(nextHistory);
       _ensureSyncRequestCurrent(key);
       _historyWorks = nextHistory;
     });

@@ -50,6 +50,20 @@ channel constants. Keep `test/platform_channels_test.dart` and
 `android/app/src/test/.../PlatformChannelsTest.kt` aligned whenever the
 protocol changes.
 
+Playback envelopes and required-argument behavior also have focused coverage:
+
+```bash
+flutter test test/native_playback_bridge_test.dart test/platform_channels_test.dart
+cd android && ./gradlew testDebugUnitTest --tests com.nameless.audio.ChannelContractTest
+```
+
+Database responsibility files remain one library. Run both database suites and
+the ASMR persistence suite after moving methods between those files:
+
+```bash
+flutter test test/app_database_test.dart test/app_database_maintenance_test.dart test/asmr_one_settings_test.dart
+```
+
 All Dart `file_cache` platform behavior is exercised through
 `FileCachePlatformGateway`. Add gateway tests for payload construction, native
 value parsing, missing-plugin/error degradation, and scan-stream fallback

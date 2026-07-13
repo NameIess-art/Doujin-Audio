@@ -24,28 +24,20 @@ extension _MainScreenLayout on _MainScreenState {
     final isWindows =
         Platform.isWindows ||
         MediaQuery.orientationOf(context) == Orientation.landscape;
-    final reduceMotion = MediaQuery.disableAnimationsOf(context);
-
     Widget pageShell(int actualIndex) {
-      final bool isActive = actualIndex == _currentIndex;
       final Widget page = TickerMode(
-        enabled: isActive,
+        enabled: actualIndex == _currentIndex,
         child: ExcludeFocus(
-          excluding: !isActive,
+          excluding: actualIndex != _currentIndex,
           child: ExcludeSemantics(
-            excluding: !isActive,
+            excluding: actualIndex != _currentIndex,
             child: _pages[actualIndex],
           ),
         ),
       );
 
-      return AnimatedOpacity(
+      return KeyedSubtree(
         key: ValueKey<String>('main_page_fade_$actualIndex'),
-        opacity: isActive ? 1 : 0,
-        duration: reduceMotion
-            ? Duration.zero
-            : AppDesignTokens.of(context).motionFast,
-        curve: Curves.easeOutCubic,
         child: Align(
           alignment: Alignment.topCenter,
           child: isDesktop
@@ -110,19 +102,12 @@ extension _MainScreenLayout on _MainScreenState {
       );
     }
 
-    return Stack(
+    return PageView.builder(
       key: ValueKey<int>(_metricsEpoch),
-      clipBehavior: Clip.none,
-      children: <int>{..._visitedPageIndices, if (_isDataReady) _currentIndex}
-          .map((i) {
-            final bool isActive = i == _currentIndex;
-            return IgnorePointer(
-              key: ValueKey<int>(i),
-              ignoring: !isActive,
-              child: pageShell(i),
-            );
-          })
-          .toList(growable: false),
+      controller: _pageController,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: _pages.length,
+      itemBuilder: (context, index) => pageShell(index),
     );
   }
 

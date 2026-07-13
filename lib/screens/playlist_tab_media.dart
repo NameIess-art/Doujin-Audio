@@ -109,6 +109,7 @@ class _SessionCoverThumbnail extends StatefulWidget {
     required this.coverGeneration,
     required this.coverCacheWidth,
     this.duration,
+    this.detailDuration,
   });
 
   static const double _width = 96;
@@ -120,6 +121,7 @@ class _SessionCoverThumbnail extends StatefulWidget {
   final int coverGeneration;
   final int? coverCacheWidth;
   final Duration? duration;
+  final Duration? detailDuration;
 
   @override
   State<_SessionCoverThumbnail> createState() => _SessionCoverThumbnailState();
@@ -182,7 +184,7 @@ class _SessionCoverThumbnailState extends State<_SessionCoverThumbnail> {
             stream: session?.durationStream,
             initialData: session?.duration ?? widget.duration,
             builder: (context, snapshot) {
-              final duration = snapshot.data;
+              final duration = widget.detailDuration ?? snapshot.data;
               if (duration == null || duration <= Duration.zero) {
                 return const SizedBox.shrink();
               }

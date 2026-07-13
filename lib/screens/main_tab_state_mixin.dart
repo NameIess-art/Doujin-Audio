@@ -46,8 +46,8 @@ mixin MainTabStateMixin<T extends StatefulWidget> on State<T> {
     const fakeAnimationStartOffset = 360.0;
     final animationStartOffset =
         controller.position.maxScrollExtent < fakeAnimationStartOffset
-            ? controller.position.maxScrollExtent
-            : fakeAnimationStartOffset;
+        ? controller.position.maxScrollExtent
+        : fakeAnimationStartOffset;
     if (controller.offset > animationStartOffset) {
       controller.jumpTo(animationStartOffset);
     }

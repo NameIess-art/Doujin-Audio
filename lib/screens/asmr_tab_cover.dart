@@ -27,35 +27,35 @@ class _AsmrWorkCover extends StatelessWidget {
             width: width,
             height: height,
             child: url.isEmpty
-            ? CoverFallbackArtwork(
-                seed: url,
-                compact: true,
-                icon: Icons.graphic_eq_rounded,
-                iconSize: 28,
-              )
-            : AsyncRemoteCoverImage(
-                url: url,
-                future: provider.coverPathFutureForRemoteCover(url),
-                initialPath: provider.resolvedCoverPathForRemoteCover(url),
-                retryFutureBuilder: () =>
-                    provider.coverPathFutureForRemoteCover(url),
-                fit: BoxFit.cover,
-                cacheWidth: coverCacheWidth,
-                useDefaultCacheWidth: coverCacheWidth != null,
-                loadingBuilder: (_) => CoverLoadingArtwork(
-                  placeholder: CoverFallbackArtwork(
+                ? CoverFallbackArtwork(
                     seed: url,
-                    showIcon: false,
                     compact: true,
+                    icon: Icons.graphic_eq_rounded,
+                    iconSize: 28,
+                  )
+                : AsyncRemoteCoverImage(
+                    url: url,
+                    future: provider.coverPathFutureForRemoteCover(url),
+                    initialPath: provider.resolvedCoverPathForRemoteCover(url),
+                    retryFutureBuilder: () =>
+                        provider.coverPathFutureForRemoteCover(url),
+                    fit: BoxFit.cover,
+                    cacheWidth: coverCacheWidth,
+                    useDefaultCacheWidth: coverCacheWidth != null,
+                    loadingBuilder: (_) => CoverLoadingArtwork(
+                      placeholder: CoverFallbackArtwork(
+                        seed: url,
+                        showIcon: false,
+                        compact: true,
+                      ),
+                    ),
+                    fallbackBuilder: (_) => CoverFallbackArtwork(
+                      seed: url,
+                      compact: true,
+                      icon: Icons.graphic_eq_rounded,
+                      iconSize: 28,
+                    ),
                   ),
-                ),
-                fallbackBuilder: (_) => CoverFallbackArtwork(
-                  seed: url,
-                  compact: true,
-                  icon: Icons.graphic_eq_rounded,
-                  iconSize: 28,
-                ),
-              ),
           ),
           if (duration != null && duration! > Duration.zero)
             Positioned(

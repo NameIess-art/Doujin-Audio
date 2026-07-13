@@ -101,6 +101,70 @@ void main() {
     },
   );
 
+  test(
+    'derived snapshot keeps nested tracks under the watched work root for detail lookup',
+    () async {
+      const workRoot = '/library/work';
+      final target = AudioDetailTarget.libraryRootFolder(workRoot);
+      final repository = _FakeAudioDetailRepository(
+        details: {AudioLibraryDetailKey.forTarget(target): 'Backup title'},
+      );
+      final library = LibraryService()
+        ..watchedFolders.add(workRoot)
+        ..library.add(
+          _track(path: '$workRoot/disc/track.mp3', groupKey: '$workRoot/disc'),
+        )
+        ..markStructureChanged();
+      final derived = buildLibraryDerivedSnapshot(
+        LibraryDerivedSnapshotPayload(
+          tracks: List<MusicTrack>.of(library.library),
+          watchedFolders: List<String>.of(library.watchedFolders),
+          nodeOrder: const <String>[],
+        ),
+      );
+      final service = LibrarySnapshotCacheService(
+        libraryService: library,
+        detailCacheService: AudioDetailCacheService(repository: repository),
+      )..adoptTreeSnapshot(derived.treeSnapshot);
+
+      final snapshot = await service.categorySnapshot(onCommitted: () {});
+
+      expect(snapshot.entries, hasLength(1));
+      expect(snapshot.entries.single.target, target);
+      expect(snapshot.entries.single.detail.workTitle, 'Backup title');
+    },
+  );
+
+  test('category detail batch failure falls back per work', () async {
+    final firstTarget = AudioDetailTarget.libraryRootFolder('/library/first');
+    final secondTarget = AudioDetailTarget.libraryRootFolder('/library/second');
+    final repository = _FakeAudioDetailRepository(
+      details: {
+        AudioLibraryDetailKey.forTarget(firstTarget): 'First backup',
+        AudioLibraryDetailKey.forTarget(secondTarget): 'Second backup',
+      },
+      failBatchLoad: true,
+    );
+    final library = LibraryService()
+      ..watchedFolders.addAll(<String>['/library/first', '/library/second'])
+      ..library.addAll(<MusicTrack>[
+        _track(path: '/library/first/track.mp3', groupKey: '/library/first'),
+        _track(path: '/library/second/track.mp3', groupKey: '/library/second'),
+      ])
+      ..markStructureChanged();
+    final service = LibrarySnapshotCacheService(
+      libraryService: library,
+      detailCacheService: AudioDetailCacheService(repository: repository),
+    );
+
+    final snapshot = await service.categorySnapshot(onCommitted: () {});
+
+    expect(
+      snapshot.entries.map((entry) => entry.detail.workTitle),
+      containsAll(<String>['First backup', 'Second backup']),
+    );
+  });
+
   test('tree cache updates only after async snapshot commits', () async {
     final library = LibraryService();
     library.watchedFolders.add('/library');
@@ -180,10 +244,13 @@ MusicTrack _track({required String path, required String groupKey}) {
 }
 
 class _FakeAudioDetailRepository implements AudioDetailRepository {
-  _FakeAudioDetailRepository({Map<String, String>? details})
-    : _details = details ?? const <String, String>{};
+  _FakeAudioDetailRepository({
+    Map<String, String>? details,
+    this.failBatchLoad = false,
+  }) : _details = details ?? const <String, String>{};
 
   final Map<String, String> _details;
+  final bool failBatchLoad;
   int loadCount = 0;
 
   @override
@@ -199,6 +266,11 @@ class _FakeAudioDetailRepository implements AudioDetailRepository {
   Future<List<AudioDetailLoadResult>> loadMany(
     Iterable<AudioDetailTarget> targets,
   ) {
+    if (failBatchLoad) {
+      return Future<List<AudioDetailLoadResult>>.error(
+        StateError('batch load failed'),
+      );
+    }
     return Future.wait(targets.map(load));
   }
 

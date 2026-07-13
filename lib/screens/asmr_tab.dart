@@ -52,7 +52,10 @@ class AsmrTab extends StatefulWidget {
 }
 
 class _AsmrTabState extends State<AsmrTab>
-    with AutomaticKeepAliveClientMixin, TickerProviderStateMixin, MainTabStateMixin<AsmrTab> {
+    with
+        AutomaticKeepAliveClientMixin,
+        TickerProviderStateMixin,
+        MainTabStateMixin<AsmrTab> {
   final List<AsmrCategoryType> _categories = kAsmrSelectableCategories;
   late final TabController _tabController = TabController(
     length: _categories.length,
@@ -88,7 +91,8 @@ class _AsmrTabState extends State<AsmrTab>
   double get headerControlsFullHeight => 86.0;
 
   @override
-  ScrollController get mainScrollController => _scrollControllers[_currentCategory] ?? _categoryScrollController;
+  ScrollController get mainScrollController =>
+      _scrollControllers[_currentCategory] ?? _categoryScrollController;
 
   AsmrCategoryType get _currentCategory {
     final index = _tabController.index;
@@ -658,7 +662,8 @@ class _AsmrTabState extends State<AsmrTab>
                                 child: _AsmrCategoryList(
                                   key: ValueKey(category),
                                   category: category,
-                                  scrollController: _scrollControllers[category]!,
+                                  scrollController:
+                                      _scrollControllers[category]!,
                                   searchQuery: _searchQuery,
                                   topInset: headerContentHeight,
                                   bottomInset: bottomInset,

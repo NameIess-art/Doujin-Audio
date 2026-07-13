@@ -129,22 +129,23 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
   Widget build(BuildContext context) {
     final i18n = context.watch<AppLanguageProvider>();
     final provider = ref.read(audioProviderFacadeProvider);
-    ref.watch(libraryCategoryRevisionProvider);
-    final categorySnapshot = provider.audioLibraryCategorySnapshotSync;
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final isRootFolder = widget.folder.depth == 0;
+    final rootDetailState = isRootFolder
+        ? ref.watch(
+            libraryDetailForTargetProvider(
+              AudioDetailTarget.libraryRootFolder(widget.folder.path),
+            ),
+          )
+        : null;
     final hasChildren = widget.folder.children.isNotEmpty;
     final cardShape = LibraryLikeCardMetrics.cardShape(
       cs,
       borderAlpha: isDark ? 0.26 : 0.42,
     );
-    final rootDetail = isRootFolder
-        ? categorySnapshot?.detailFor(
-            AudioDetailTarget.libraryRootFolder(widget.folder.path),
-          )
-        : null;
-    final isRootDetailLoading = isRootFolder && categorySnapshot == null;
+    final rootDetail = rootDetailState?.detail;
+    final isRootDetailLoading = rootDetailState?.isLoading ?? false;
 
     Widget content = Theme(
       data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
@@ -269,21 +270,23 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
                   ],
                 ),
               ),
-        children: widget.folder.children
-            .map(
-              (childNode) => Padding(
-                padding: EdgeInsets.zero,
-                child: RepaintBoundary(
-                  child: _LibraryTreeItem(
-                    key: ValueKey(childNode.path),
-                    node: childNode,
-                    initiallyExpanded: widget.initiallyExpanded,
-                    searchQuery: widget.searchQuery,
-                  ),
-                ),
-              ),
-            )
-            .toList(),
+        children: !_expanded
+            ? const <Widget>[]
+            : widget.folder.children
+                  .map(
+                    (childNode) => Padding(
+                      padding: EdgeInsets.zero,
+                      child: RepaintBoundary(
+                        child: _LibraryTreeItem(
+                          key: ValueKey(childNode.path),
+                          node: childNode,
+                          initiallyExpanded: widget.initiallyExpanded,
+                          searchQuery: widget.searchQuery,
+                        ),
+                      ),
+                    ),
+                  )
+                  .toList(),
       ),
     );
 
@@ -365,14 +368,17 @@ class _TrackNodeWidget extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final i18n = context.watch<AppLanguageProvider>();
     final provider = ref.read(audioProviderFacadeProvider);
-    ref.watch(libraryCategoryRevisionProvider);
-    final categorySnapshot = provider.audioLibraryCategorySnapshotSync;
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final track = trackNode.track;
-    final isAlreadyPlaying = ref
-        .watch(activeTrackPathsProvider)
-        .contains(track.path);
+    final singleDetailState = track.isSingle
+        ? ref.watch(
+            libraryDetailForTargetProvider(
+              AudioDetailTarget.singleAudioFile(track.path),
+            ),
+          )
+        : null;
+    final isAlreadyPlaying = ref.watch(isTrackActiveProvider(track.path));
     final cardShape = track.isSingle
         ? LibraryLikeCardMetrics.cardShape(
             cs,
@@ -383,12 +389,8 @@ class _TrackNodeWidget extends ConsumerWidget {
               LibraryLikeCardMetrics.cardRadius,
             ),
           );
-    final singleDetail = track.isSingle
-        ? categorySnapshot?.detailFor(
-            AudioDetailTarget.singleAudioFile(track.path),
-          )
-        : null;
-    final isSingleDetailLoading = track.isSingle && categorySnapshot == null;
+    final singleDetail = singleDetailState?.detail;
+    final isSingleDetailLoading = singleDetailState?.isLoading ?? false;
     final resolvedCoverPath = provider.resolvedCoverPathForTrack(track);
     final useFeaturedSingleCard =
         track.isVideo || hasDisplayableCoverArtwork(track, resolvedCoverPath);
@@ -733,8 +735,8 @@ class _LibraryTrackCoverThumbnailState
               child: AsyncLocalCoverImage(
                 future: coverPathFuture,
                 initialPath: provider.resolvedCoverPathForTrack(track),
-                retryFutureBuilder:
-                    () => provider.coverPathFutureForTrack(track),
+                retryFutureBuilder: () =>
+                    provider.coverPathFutureForTrack(track),
                 seed: track.displayName,
                 cacheWidth: coverCacheWidth,
                 useDefaultCacheWidth: coverCacheWidth != null,

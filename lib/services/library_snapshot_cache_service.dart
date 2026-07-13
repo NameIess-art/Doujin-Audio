@@ -12,6 +12,81 @@ import 'audio_state_services.dart';
 import 'library_organizer.dart';
 import 'ui_interaction_coordinator.dart';
 
+@immutable
+class LibraryDerivedSnapshotPayload {
+  const LibraryDerivedSnapshotPayload({
+    required this.tracks,
+    required this.watchedFolders,
+    required this.nodeOrder,
+  });
+
+  final List<MusicTrack> tracks;
+  final List<String> watchedFolders;
+  final List<String> nodeOrder;
+}
+
+@immutable
+class LibraryDerivedSnapshot {
+  const LibraryDerivedSnapshot({
+    required this.library,
+    required this.libraryByPath,
+    required this.libraryIndexByPath,
+    required this.tracksByGroup,
+    required this.sortedLibraryTracks,
+    required this.sortedLibraryTrackPaths,
+    required this.treeSnapshot,
+  });
+
+  final List<MusicTrack> library;
+  final Map<String, MusicTrack> libraryByPath;
+  final Map<String, int> libraryIndexByPath;
+  final Map<String, List<MusicTrack>> tracksByGroup;
+  final List<MusicTrack> sortedLibraryTracks;
+  final List<String> sortedLibraryTrackPaths;
+  final LibraryTreeSnapshot treeSnapshot;
+}
+
+LibraryDerivedSnapshot buildLibraryDerivedSnapshot(
+  LibraryDerivedSnapshotPayload payload,
+) {
+  const organizer = LibraryOrganizer();
+  final library = List<MusicTrack>.of(payload.tracks);
+  final libraryByPath = <String, MusicTrack>{};
+  final libraryIndexByPath = <String, int>{};
+  final tracksByGroup = <String, List<MusicTrack>>{};
+  for (var index = 0; index < library.length; index++) {
+    final track = library[index];
+    libraryByPath[track.path] = track;
+    libraryIndexByPath[track.path] = index;
+    tracksByGroup.putIfAbsent(track.groupKey, () => <MusicTrack>[]).add(track);
+  }
+  for (final tracks in tracksByGroup.values) {
+    tracks.sort(organizer.compareTracks);
+  }
+  final immutableTracksByGroup = tracksByGroup.map(
+    (groupKey, tracks) =>
+        MapEntry(groupKey, List<MusicTrack>.unmodifiable(tracks)),
+  );
+  final sortedTracks = List<MusicTrack>.of(library)
+    ..sort(organizer.compareTracks);
+  final treeSnapshot = organizer.buildTree(
+    tracks: library,
+    watchedFolders: payload.watchedFolders,
+    nodeOrder: payload.nodeOrder,
+  );
+  return LibraryDerivedSnapshot(
+    library: library,
+    libraryByPath: libraryByPath,
+    libraryIndexByPath: libraryIndexByPath,
+    tracksByGroup: immutableTracksByGroup,
+    sortedLibraryTracks: List<MusicTrack>.unmodifiable(sortedTracks),
+    sortedLibraryTrackPaths: List<String>.unmodifiable(
+      sortedTracks.map((track) => track.path),
+    ),
+    treeSnapshot: treeSnapshot,
+  );
+}
+
 class LibrarySnapshotCacheService {
   LibrarySnapshotCacheService({
     required LibraryService libraryService,
@@ -53,6 +128,14 @@ class LibrarySnapshotCacheService {
   int get categorySnapshotRevision => _categorySnapshotRevision;
 
   AudioLibraryCategorySnapshot? get categorySnapshotSync => _categorySnapshot;
+
+  void adoptTreeSnapshot(LibraryTreeSnapshot snapshot) {
+    _cacheTreeSnapshot(snapshot);
+    _treeFuture = null;
+    _treeFutureRevision = -1;
+    _treeCommitCallbacks.clear();
+    _categoryFuture = null;
+  }
 
   Future<LibraryTreeSnapshot> treeSnapshot({
     required VoidCallback onCommitted,
@@ -315,9 +398,15 @@ class LibrarySnapshotCacheService {
       final results = await _detailCacheService.loadMany(orderedTargets);
       return results.map((result) => result.detail).toList(growable: false);
     } catch (_) {
-      return <AudioDetail>[
-        for (final target in orderedTargets) AudioDetail.empty(target),
-      ];
+      return Future.wait(
+        orderedTargets.map((target) async {
+          try {
+            return (await _detailCacheService.load(target)).detail;
+          } catch (_) {
+            return AudioDetail.empty(target);
+          }
+        }),
+      );
     }
   }
 

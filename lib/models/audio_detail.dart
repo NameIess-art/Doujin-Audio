@@ -48,6 +48,17 @@ class AudioDetailTarget {
 
   bool get isLibraryRootFolder =>
       targetType == AudioDetailTargetType.libraryRootFolder;
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        other is AudioDetailTarget &&
+            targetType == other.targetType &&
+            targetPath == other.targetPath;
+  }
+
+  @override
+  int get hashCode => Object.hash(targetType, targetPath);
 }
 
 class AudioDetail {

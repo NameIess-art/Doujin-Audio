@@ -117,7 +117,14 @@ extension AudioProviderQueues on AudioProvider {
         entry,
       ]),
     );
-    await _syncPlaybackQueueSession(session, selectFirst: wasEmpty);
+    _markActiveSessionsDirty();
+    _notifyPlaybackChanged();
+    _scheduleSessionPersistence();
+    await _syncPlaybackQueueSession(
+      session,
+      selectFirst: wasEmpty,
+      persistSession: false,
+    );
     requestCarouselSnapTo(session.id);
   }
 

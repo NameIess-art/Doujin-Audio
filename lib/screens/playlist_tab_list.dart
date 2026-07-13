@@ -194,7 +194,7 @@ class _SessionsEmptyState extends StatelessWidget {
   }
 }
 
-class _SessionListCard extends StatelessWidget {
+class _SessionListCard extends ConsumerWidget {
   const _SessionListCard({
     required this.sessionId,
     required this.cardState,
@@ -245,7 +245,7 @@ class _SessionListCard extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final i18n = context.watch<AppLanguageProvider>();
     final cs = Theme.of(context).colorScheme;
     final displayName =
@@ -264,6 +264,13 @@ class _SessionListCard extends StatelessWidget {
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final isAsmrOne = track?.remoteMetadataKind == 'asmr.one';
+    final detailDuration = track == null || isAsmrOne
+        ? null
+        : ref.watch(
+            libraryDetailForTargetProvider(
+              provider.audioDetailTargetForTrack(track!),
+            ).select((state) => state.detail?.duration),
+          );
     final tokens = AppDesignTokens.of(context);
     final asmrBlue = tokens.asmrAccent;
     final localPlayRose = cs.primary;
@@ -349,6 +356,7 @@ class _SessionListCard extends StatelessWidget {
                             coverGeneration: coverGeneration,
                             coverCacheWidth: coverCacheWidth,
                             duration: track?.duration,
+                            detailDuration: detailDuration,
                           ),
                           const SizedBox(width: 14),
                         ],

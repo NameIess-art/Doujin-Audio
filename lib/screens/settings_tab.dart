@@ -43,7 +43,10 @@ class SettingsTab extends ConsumerStatefulWidget {
 }
 
 class _SettingsTabState extends ConsumerState<SettingsTab>
-    with WidgetsBindingObserver, AutomaticKeepAliveClientMixin, MainTabStateMixin<SettingsTab> {
+    with
+        WidgetsBindingObserver,
+        AutomaticKeepAliveClientMixin,
+        MainTabStateMixin<SettingsTab> {
   static const List<int> _cacheLimitOptions = <int>[
     100 * 1024 * 1024,
     300 * 1024 * 1024,
@@ -91,7 +94,9 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _appVersionFuture = AppUpdateService.currentAppVersion();
-    initTabState(ref.read(audioProviderFacadeProvider).scrollToTopTabListenable);
+    initTabState(
+      ref.read(audioProviderFacadeProvider).scrollToTopTabListenable,
+    );
   }
 
   @override

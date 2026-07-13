@@ -245,6 +245,7 @@ class AudioProvider with ChangeNotifier {
   bool _isDisposed = false;
   bool _nativeRuntimeStarted = false;
   int _transportCommandSequence = 0;
+  Future<void>? _postStartupLibraryMaintenance;
 
   void requestCarouselSnapTo(String sessionId) {
     _carouselSnapNotifier.value = sessionId;
@@ -325,6 +326,11 @@ class AudioProvider with ChangeNotifier {
       _libraryService.libraryBatchChangedGroupOrder;
   set _libraryBatchChangedGroupOrder(bool value) {
     _libraryService.libraryBatchChangedGroupOrder = value;
+  }
+
+  int get _libraryDerivedGeneration => _libraryService.libraryDerivedGeneration;
+  set _libraryDerivedGeneration(int value) {
+    _libraryService.libraryDerivedGeneration = value;
   }
 
   List<MusicTrack> get _libraryBatchPersistTracks =>

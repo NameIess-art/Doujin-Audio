@@ -28,6 +28,7 @@ import 'package:nameless_audio/services/playback_command_runner.dart';
 import 'package:nameless_audio/services/playback_notification_service.dart';
 import 'package:nameless_audio/theme/theme_provider.dart';
 import 'package:nameless_audio/widgets/content_bound_reorder_area.dart';
+import 'package:nameless_audio/widgets/duration_overlay.dart';
 import 'package:nameless_audio/widgets/top_page_header.dart';
 import 'package:provider/provider.dart' as legacy_provider;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -265,6 +266,8 @@ void main() {
 
     expect(paths.contains('/tracks/active.mp3'), isTrue);
     expect(paths.contains(''), isFalse);
+    expect(container.read(isTrackActiveProvider('/tracks/active.mp3')), isTrue);
+    expect(container.read(isTrackActiveProvider('/tracks/other.mp3')), isFalse);
   });
 
   testWidgets('playlist cards freeze background updates while reordering', (
@@ -392,8 +395,12 @@ void main() {
     );
     final track = _track(
       name: 'Duration card',
-      path: '/library/duration/card.mp3',
-      groupKey: '/library/duration',
+      path: Platform.isWindows
+          ? r'C:\library\duration\card.mp3'
+          : '/library/duration/card.mp3',
+      groupKey: Platform.isWindows
+          ? r'C:\library\duration'
+          : '/library/duration',
       groupTitle: 'Duration',
     );
     final session = PlaybackSession(
@@ -406,7 +413,7 @@ void main() {
       state: PlayerState(false, ProcessingState.ready),
     );
     addTearDown(audioProvider.dispose);
-    audioProvider.addTracks([track], notify: false, persist: false);
+    audioProvider.addTracks([track], persist: false);
     playbackService.registerSession(session);
     playbackService.syncSlice(
       activeSessions: [session],
@@ -436,9 +443,49 @@ void main() {
     expect(find.text('02:05'), findsNothing);
 
     session.setOptimisticDuration(const Duration(minutes: 2, seconds: 5));
-    await tester.pump();
+    await tester.pumpAndSettle();
 
     expect(find.text('02:05'), findsOneWidget);
+
+    final detailTarget = AudioDetailTarget.libraryRootFolder(track.groupKey);
+    await tester.runAsync(
+      () => audioProvider.saveAudioDetail(
+        AudioDetail.empty(
+          detailTarget,
+        ).copyWith(duration: const Duration(minutes: 3, seconds: 40)),
+      ),
+    );
+    playbackService.syncSlice(
+      activeSessions: [session],
+      playingSessionCount: 0,
+      focusedSessionId: session.id,
+      multiThreadPlaybackEnabled: false,
+      coverGeneration: 0,
+      isInitialized: true,
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      audioProvider.resolvedAudioDetail(detailTarget)?.duration,
+      const Duration(minutes: 3, seconds: 40),
+    );
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(PlaylistTab)),
+    );
+    expect(
+      container
+          .read(libraryDetailForTargetProvider(detailTarget))
+          .detail
+          ?.duration,
+      const Duration(minutes: 3, seconds: 40),
+    );
+    expect(find.text('Duration card'), findsOneWidget);
+    expect(
+      tester.widget<DurationOverlay>(find.byType(DurationOverlay)).duration,
+      const Duration(minutes: 3, seconds: 40),
+    );
+    expect(find.text('03:40'), findsOneWidget);
+    expect(find.text('02:05'), findsNothing);
   });
 
   testWidgets('playlist reordering does not trigger additional cover futures', (

@@ -281,9 +281,14 @@ class _SessionDetailRoute extends PageRoute<void> {
 }
 
 class PlaylistTab extends ConsumerStatefulWidget {
-  const PlaylistTab({super.key, this.onTimerTap});
+  const PlaylistTab({
+    super.key,
+    this.onTimerTap,
+    this.activeTabIndexListenable,
+  });
 
   final VoidCallback? onTimerTap;
+  final ValueListenable<int>? activeTabIndexListenable;
 
   @override
   ConsumerState<PlaylistTab> createState() => _PlaylistTabState();
@@ -305,10 +310,21 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
   @override
   bool get wantKeepAlive => true;
 
+  bool get _isActive =>
+      widget.activeTabIndexListenable == null ||
+      widget.activeTabIndexListenable!.value == tabIndex;
+
+  void _handleActiveTabChanged() {
+    if (mounted) setState(() {});
+  }
+
   @override
   void initState() {
     super.initState();
-    initTabState(ref.read(audioProviderFacadeProvider).scrollToTopTabListenable);
+    widget.activeTabIndexListenable?.addListener(_handleActiveTabChanged);
+    initTabState(
+      ref.read(audioProviderFacadeProvider).scrollToTopTabListenable,
+    );
   }
 
   void _schedulePlaybackCoverWarmup(
@@ -395,6 +411,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
 
   @override
   void dispose() {
+    widget.activeTabIndexListenable?.removeListener(_handleActiveTabChanged);
     disposeTabState();
     _scrollController.dispose();
     super.dispose();
@@ -409,17 +426,23 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     if (_isReordering) {
       listState = _reorderSnapshot ?? ref.read(playlistListUiProvider);
     } else {
-      listState = ref.watch(playlistListUiProvider);
+      listState = _isActive
+          ? ref.watch(playlistListUiProvider)
+          : ref.read(playlistListUiProvider);
     }
     final settingsState =
         (_isReordering
                 ? ref.read(settingsStateProvider)
-                : ref.watch(settingsStateProvider))
+                : (_isActive
+                      ? ref.watch(settingsStateProvider)
+                      : ref.read(settingsStateProvider)))
             .valueOrNull ??
         const SettingsState();
     final subtitleSettings = _isReordering
         ? ref.read(subtitleSettingsProvider)
-        : ref.watch(subtitleSettingsProvider);
+        : (_isActive
+              ? ref.watch(subtitleSettingsProvider)
+              : ref.read(subtitleSettingsProvider));
     _schedulePlaybackCoverWarmup(listState, provider);
     final cardPositionsLocked = settingsState.cardPositionsLocked;
     final coverCacheWidth = coverCacheWidthForResolution(
@@ -613,7 +636,9 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
             right: 0,
             child: Consumer(
               builder: (context, ref, child) {
-                final headerState = ref.watch(playlistHeaderUiProvider);
+                final headerState = _isActive
+                    ? ref.watch(playlistHeaderUiProvider)
+                    : ref.read(playlistHeaderUiProvider);
                 final sessionSummary =
                     '${i18n.tr('sessions_count', {'count': headerState.sessionCount})} · '
                     '${i18n.tr('playing_count', {'count': headerState.playingCount})}';

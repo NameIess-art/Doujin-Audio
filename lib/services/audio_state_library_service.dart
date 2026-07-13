@@ -3,15 +3,14 @@ part of 'audio_state_services.dart';
 class LibraryService {
   static const LibraryOrganizer organizer = LibraryOrganizer();
 
-  final List<MusicTrack> library = <MusicTrack>[];
-  final Map<String, MusicTrack> libraryByPath = <String, MusicTrack>{};
+  List<MusicTrack> library = <MusicTrack>[];
+  Map<String, MusicTrack> libraryByPath = <String, MusicTrack>{};
 
   /// Maps each track path to its index in [library].  Kept in sync by
   /// [_rebuildLibraryIndexes] so that [addOrReplaceTracks] can update
   /// existing entries in O(1) instead of O(n).
-  final Map<String, int> libraryIndexByPath = <String, int>{};
-  final Map<String, List<MusicTrack>> tracksByGroup =
-      <String, List<MusicTrack>>{};
+  Map<String, int> libraryIndexByPath = <String, int>{};
+  Map<String, List<MusicTrack>> tracksByGroup = <String, List<MusicTrack>>{};
   List<MusicTrack> sortedLibraryTracks = const <MusicTrack>[];
   List<String> sortedLibraryTrackPaths = const <String>[];
   final List<String> groupOrder = <String>[];
@@ -40,6 +39,7 @@ class LibraryService {
   int libraryBatchDepth = 0;
   bool libraryBatchChanged = false;
   bool libraryBatchChangedGroupOrder = false;
+  int libraryDerivedGeneration = 0;
   final List<MusicTrack> libraryBatchPersistTracks = <MusicTrack>[];
   final Map<String, LibraryEntry> libraryBatchPersistEntriesByKey =
       <String, LibraryEntry>{};

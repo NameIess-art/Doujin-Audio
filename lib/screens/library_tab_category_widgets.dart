@@ -728,7 +728,7 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
     final firstTrack = entry.firstTrack;
     final isAlreadyPlaying = firstTrack == null
         ? false
-        : ref.watch(activeTrackPathsProvider).contains(firstTrack.path);
+        : ref.watch(isTrackActiveProvider(firstTrack.path));
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final cardShape = LibraryLikeCardMetrics.cardShape(
       cs,

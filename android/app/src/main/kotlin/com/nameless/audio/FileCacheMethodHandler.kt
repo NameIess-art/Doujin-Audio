@@ -248,6 +248,16 @@ internal class FileCacheMethodHandler(
                     operations.resolveVideoFrame(trackPath, modifiedAtMs)
                 }
             }
+            FileCacheMethods.RESOLVE_MEDIA_DURATION -> {
+                val trackPath = call.argument<String>("path")
+                if (trackPath.isNullOrBlank()) {
+                    result.error("invalid_args", "path is required", null)
+                    return
+                }
+                runAsync(result, errorCode = { "media_duration_resolve_failed" }) {
+                    operations.resolveMediaDurationMs(trackPath)
+                }
+            }
             FileCacheMethods.DISCOVER_ROOT_IMAGES -> {
                 val trackPath = call.argument<String>("path")
                 val groupKey = call.argument<String>("groupKey")

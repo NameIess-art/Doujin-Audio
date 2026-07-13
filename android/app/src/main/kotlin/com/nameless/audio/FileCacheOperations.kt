@@ -1492,6 +1492,29 @@ internal class FileCacheOperations(
             return 0
         }
 
+        fun resolveMediaDurationMs(source: String): Long? {
+            var retriever: MediaMetadataRetriever? = null
+            return try {
+                retriever = MediaMetadataRetriever()
+                if (source.startsWith("content://")) {
+                    retriever.setDataSource(context, Uri.parse(source))
+                } else {
+                    retriever.setDataSource(source)
+                }
+                retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                    ?.toLongOrNull()
+                    ?.takeIf { it > 0L }
+            } catch (_: Exception) {
+                null
+            } finally {
+                try {
+                    retriever?.release()
+                } catch (_: Exception) {
+                    // Ignore release failures after metadata probing.
+                }
+            }
+        }
+
         private fun rememberScannedTrack(
             output: MutableMap<String, ScannedTrack>,
             track: ScannedTrack,

@@ -60,6 +60,7 @@ void main() {
           'text': 'subtitle',
           'extension': '.srt',
         },
+        FileCacheMethod.resolveMediaDuration => 123456,
         _ => null,
       };
     });
@@ -74,6 +75,10 @@ void main() {
     expect(
       await gateway.resolveTrackSubtitle(path: 'content://track'),
       containsPair('extension', '.srt'),
+    );
+    expect(
+      await gateway.resolveMediaDuration('content://track'),
+      const Duration(milliseconds: 123456),
     );
   });
 
@@ -122,6 +127,10 @@ void main() {
         isTrue,
       );
       expect(await nonAndroidGateway.listChildFolders('/music'), isNull);
+      expect(
+        await nonAndroidGateway.resolveMediaDuration('/music/track.flac'),
+        isNull,
+      );
     },
   );
 }

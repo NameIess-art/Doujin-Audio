@@ -1497,6 +1497,138 @@ void main() {
     },
   );
 
+  testWidgets(
+    'clearing a manual folder duration shows the calculated track total',
+    (WidgetTester tester) async {
+      final notificationService = PlaybackNotificationService();
+      final audioDatabaseRepository = AudioDatabaseRepository();
+      final nativePlaybackRepository = NativePlaybackRepository();
+      const playbackCommandRunner = PlaybackCommandRunner();
+      final libraryService = LibraryService();
+      final playbackService = PlaybackSessionService();
+      final timerService = TimerService();
+      final notificationCoordinatorService = NotificationCoordinatorService();
+      final settingsRepository = SettingsRepository();
+      final languageProvider = AppLanguageProvider();
+      final audioProvider = AudioProvider.test(
+        notificationService: notificationService,
+        audioDatabaseRepository: audioDatabaseRepository,
+        nativePlaybackRepository: nativePlaybackRepository,
+        libraryService: libraryService,
+        playbackService: playbackService,
+        timerService: timerService,
+        notificationStateService: notificationCoordinatorService,
+        settingsRepository: settingsRepository,
+      );
+      addTearDown(audioProvider.dispose);
+
+      const folderPath = r'C:\library\Work';
+      const target = AudioDetailTarget(
+        targetType: AudioDetailTargetType.libraryRootFolder,
+        targetPath: folderPath,
+      );
+      audioProvider.addWatchedFolder(folderPath, notify: false);
+      audioProvider.addTracks(
+        const <MusicTrack>[
+          MusicTrack(
+            path: r'C:\library\Work\01.mp3',
+            displayName: '01',
+            groupKey: folderPath,
+            groupTitle: 'Work',
+            groupSubtitle: folderPath,
+            isSingle: false,
+            duration: Duration(minutes: 2),
+          ),
+          MusicTrack(
+            path: r'C:\library\Work\02.mp3',
+            displayName: '02',
+            groupKey: folderPath,
+            groupTitle: 'Work',
+            groupSubtitle: folderPath,
+            isSingle: false,
+            duration: Duration(minutes: 4),
+          ),
+        ],
+        notify: false,
+        persist: false,
+      );
+      await tester.runAsync(
+        () => audioProvider.saveAudioDetail(
+          AudioDetail.empty(
+            target,
+          ).copyWith(duration: const Duration(minutes: 9)),
+        ),
+      );
+
+      await tester.pumpWidget(
+        _buildTestApp(
+          audioProvider: audioProvider,
+          audioDatabaseRepository: audioDatabaseRepository,
+          nativePlaybackRepository: nativePlaybackRepository,
+          playbackCommandRunner: playbackCommandRunner,
+          libraryService: libraryService,
+          playbackService: playbackService,
+          timerService: timerService,
+          notificationCoordinatorService: notificationCoordinatorService,
+          settingsRepository: settingsRepository,
+          languageProvider: languageProvider,
+          child: const AudioDetailSheet(target: target),
+        ),
+      );
+      await _pumpUntilLibraryTreeReady(tester, audioProvider);
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 50)),
+      );
+      await tester.pump();
+
+      final durationLabel = find.text(
+        languageProvider.tr('card_info_duration'),
+      );
+      await tester.ensureVisible(durationLabel);
+      await tester.pumpAndSettle();
+      final durationRow = find
+          .ancestor(of: durationLabel, matching: find.byType(Row))
+          .first;
+      await tester.tap(
+        find.descendant(
+          of: durationRow,
+          matching: find.byIcon(Icons.edit_rounded),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), '');
+      final saveLabel = MaterialLocalizations.of(
+        tester.element(find.byType(AlertDialog)),
+      ).saveButtonLabel;
+      await tester.tap(find.widgetWithText(FilledButton, saveLabel));
+      await _pumpUntilNotFound(tester, find.byType(AlertDialog));
+      for (
+        var i = 0;
+        i < 100 && find.text('00:06:00').evaluate().isEmpty;
+        i++
+      ) {
+        await tester.pump(const Duration(milliseconds: 50));
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 10)),
+        );
+      }
+
+      final saved = await tester.runAsync(
+        () => audioProvider.loadAudioDetail(target),
+      );
+      expect(saved?.detail.duration, isNull);
+      expect(
+        find.text('00:06:00'),
+        findsOneWidget,
+        reason: tester
+            .widgetList<Text>(find.byType(Text))
+            .map((text) => text.data)
+            .whereType<String>()
+            .join(' | '),
+      );
+    },
+  );
+
   testWidgets('audio detail fetch opens metadata scope page', (
     WidgetTester tester,
   ) async {

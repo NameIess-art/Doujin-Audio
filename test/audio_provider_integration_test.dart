@@ -63,6 +63,127 @@ void main() {
     await db.close();
   });
 
+  test('missing folder durations include every audio track', () async {
+    final folder = await Directory.systemTemp.createTemp(
+      'folder_duration_sum_',
+    );
+    addTearDown(() async {
+      if (await folder.exists()) {
+        await folder.delete(recursive: true);
+      }
+    });
+    final firstPath = path.join(folder.path, '01.mp3');
+    final secondFolder = path.join(folder.path, 'disc-1');
+    final thirdFolder = path.join(secondFolder, 'bonus');
+    final secondPath = path.join(secondFolder, '02.flac');
+    final thirdPath = path.join(thirdFolder, '03.mp4');
+    final tracks = <MusicTrack>[
+      MusicTrack(
+        path: firstPath,
+        displayName: '01',
+        groupKey: folder.path,
+        groupTitle: 'Work',
+        groupSubtitle: folder.path,
+        isSingle: false,
+        duration: const Duration(minutes: 1),
+      ),
+      MusicTrack(
+        path: secondPath,
+        displayName: '02',
+        groupKey: secondFolder,
+        groupTitle: 'disc-1',
+        groupSubtitle: secondFolder,
+        isSingle: false,
+      ),
+      MusicTrack(
+        path: thirdPath,
+        displayName: '03',
+        groupKey: thirdFolder,
+        groupTitle: 'bonus',
+        groupSubtitle: thirdFolder,
+        isSingle: false,
+        isVideo: true,
+      ),
+    ];
+    provider.addWatchedFolder(folder.path, notify: false);
+    provider.addTracks(tracks, notify: false, persist: false);
+
+    final requestedPaths = <String>[];
+    final duration = await provider.calculateMissingFolderDurations(
+      folder.path,
+      durationReader: (trackPath) async {
+        requestedPaths.add(trackPath);
+        return trackPath == secondPath
+            ? const Duration(minutes: 2)
+            : const Duration(minutes: 3);
+      },
+    );
+
+    expect(requestedPaths, <String>[secondPath, thirdPath]);
+    expect(duration, const Duration(minutes: 6));
+    expect(
+      provider.trackByPath(secondPath)?.duration,
+      const Duration(minutes: 2),
+    );
+    expect(
+      provider.trackByPath(thirdPath)?.duration,
+      const Duration(minutes: 3),
+    );
+
+    final unreadablePath = path.join(thirdFolder, '04.ogg');
+    provider.addTracks(
+      <MusicTrack>[
+        MusicTrack(
+          path: unreadablePath,
+          displayName: '04',
+          groupKey: thirdFolder,
+          groupTitle: 'bonus',
+          groupSubtitle: thirdFolder,
+          isSingle: false,
+        ),
+      ],
+      notify: false,
+      persist: false,
+    );
+    final retryPaths = <String>[];
+    final incompleteDuration = await provider.calculateMissingFolderDurations(
+      folder.path,
+      durationReader: (trackPath) async {
+        retryPaths.add(trackPath);
+        return null;
+      },
+    );
+    expect(retryPaths, <String>[unreadablePath]);
+    expect(incompleteDuration, isNull);
+
+    const contentRoot =
+        'content://com.android.externalstorage.documents/tree/primary%3AMusic::Work';
+    const contentTrackPath =
+        'content://com.android.externalstorage.documents/tree/primary%3AMusic/'
+        'document/primary%3AMusic%2FWork%2FDisc%2F05.m4a';
+    provider.addWatchedFolder(contentRoot, notify: false);
+    provider.addTracks(
+      const <MusicTrack>[
+        MusicTrack(
+          path: contentTrackPath,
+          displayName: '05',
+          groupKey: '$contentRoot/Disc',
+          groupTitle: 'Disc',
+          groupSubtitle: 'Work/Disc',
+          isSingle: false,
+        ),
+      ],
+      notify: false,
+      persist: false,
+    );
+    final contentDuration = await provider.calculateMissingFolderDurations(
+      contentRoot,
+      durationReader: (trackPath) async =>
+          trackPath == contentTrackPath ? const Duration(minutes: 5) : null,
+    );
+    expect(contentDuration, const Duration(minutes: 5));
+  });
+
   // ── multi-session playback stability ──────────────────────────
 
   group('multi-session playback stability', () {

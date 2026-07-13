@@ -589,6 +589,21 @@ internal class FileCacheOperations(
             return true
         }
 
+        fun copyFileToUri(sourcePath: String, targetUri: String): Boolean {
+            val source = File(sourcePath)
+            if (!source.exists() || !source.isFile) {
+                throw IllegalArgumentException("source file does not exist")
+            }
+            val uri = Uri.parse(targetUri)
+            java.io.FileInputStream(source).use { input ->
+                contentResolver.openOutputStream(uri, "w")?.use { output ->
+                    input.copyTo(output, 64 * 1024)
+                    output.flush()
+                } ?: throw IllegalStateException("cannot open export destination")
+            }
+            return true
+        }
+
         fun deleteDocumentPath(targetPath: String): Boolean {
             val target = resolveDocumentFileForFolderPath(targetPath) ?: return false
             return target.delete()

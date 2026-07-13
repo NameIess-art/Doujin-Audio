@@ -46,6 +46,60 @@ void main() {
     });
   });
 
+  test(
+    'exportFile maps arguments and preserves success or cancellation',
+    () async {
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        calls.add(call);
+        return calls.length == 1 ? 'content://exported' : null;
+      });
+
+      expect(
+        await gateway.exportFile(
+          sourcePath: '/tmp/backup.nalbackup',
+          fileName: 'backup.nalbackup',
+          mimeType: 'application/zip',
+        ),
+        'content://exported',
+      );
+      expect(
+        await gateway.exportFile(
+          sourcePath: '/tmp/backup.nalbackup',
+          fileName: 'backup.nalbackup',
+          mimeType: 'application/zip',
+        ),
+        isNull,
+      );
+      expect(calls.first.method, FileCacheMethod.exportFile);
+      expect(calls.first.arguments, <String, Object?>{
+        'sourcePath': '/tmp/backup.nalbackup',
+        'fileName': 'backup.nalbackup',
+        'mimeType': 'application/zip',
+      });
+    },
+  );
+
+  test('exportFile skips the native channel outside Android', () async {
+    final nonAndroidGateway = FileCachePlatformGateway(
+      channel: channel,
+      isAndroid: () => false,
+    );
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      calls.add(call);
+      return 'unexpected';
+    });
+
+    expect(
+      await nonAndroidGateway.exportFile(
+        sourcePath: '/tmp/report.zip',
+        fileName: 'report.zip',
+        mimeType: 'application/zip',
+      ),
+      isNull,
+    );
+    expect(calls, isEmpty);
+  });
+
   test('typed media helpers parse native values', () async {
     messenger.setMockMethodCallHandler(channel, (call) async {
       calls.add(call);

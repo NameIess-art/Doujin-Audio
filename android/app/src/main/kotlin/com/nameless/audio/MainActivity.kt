@@ -15,6 +15,10 @@ class MainActivity : FlutterFragmentActivity() {
     }
 
     private var notificationsMethodChannel: MethodChannel? = null
+    private var fileCacheMethodChannel: MethodChannel? = null
+    private var fileCacheMethodHandler: FileCacheMethodHandler? = null
+    private var fileCacheTaskExecutor: FileCacheTaskExecutor? = null
+    private var fileExportCoordinator: FileExportCoordinator? = null
     private var fileCacheScanStreamHandler: FileCacheScanStreamHandler? = null
     private var pendingNotificationSessionId: String? = null
     private val subtitleOverlayCoordinator by lazy { SubtitleOverlayCoordinator(this) }
@@ -45,26 +49,44 @@ class MainActivity : FlutterFragmentActivity() {
             NotificationsMethodHandler(this) { consumePendingNotificationSessionId() }
         )
 
-        val fileCacheOperations = FileCacheOperations(this)
+        fileCacheMethodChannel?.setMethodCallHandler(null)
+        fileCacheMethodHandler?.shutdown()
+        fileExportCoordinator?.dispose()
+        fileCacheTaskExecutor?.shutdownNow()
         fileCacheScanStreamHandler?.shutdown()
+
+        val fileCacheOperations = FileCacheOperations(applicationContext)
+        val fileCacheTaskExecutor = FileCacheTaskExecutor()
+        this.fileCacheTaskExecutor = fileCacheTaskExecutor
+        val fileExportCoordinator = FileExportCoordinator(
+            this,
+            fileCacheOperations,
+            fileCacheTaskExecutor
+        )
+        this.fileExportCoordinator = fileExportCoordinator
         val fileCacheScanStreamHandler = FileCacheScanStreamHandler(this, fileCacheOperations)
         this.fileCacheScanStreamHandler = fileCacheScanStreamHandler
         EventChannel(messenger, PlatformChannelNames.FILE_CACHE_SCAN_EVENTS)
             .setStreamHandler(fileCacheScanStreamHandler)
-        MethodChannel(messenger, PlatformChannelNames.FILE_CACHE)
-            .setMethodCallHandler(
-                FileCacheMethodHandler(
-                    activity = this,
-                    operations = fileCacheOperations,
-                    scanStreamHandler = fileCacheScanStreamHandler,
-                    launchPickAudioSource = audioPickerCoordinator::launchPickAudioSource,
-                    launchPickAudioFiles = audioPickerCoordinator::launchPickAudioFiles,
-                    launchPickAudioFolder = audioPickerCoordinator::launchPickAudioFolder
-                )
-            )
+        val fileCacheMethodHandler = FileCacheMethodHandler(
+            operations = fileCacheOperations,
+            scanStreamHandler = fileCacheScanStreamHandler,
+            taskExecutor = fileCacheTaskExecutor,
+            launchExportFile = fileExportCoordinator::launch,
+            launchPickAudioSource = audioPickerCoordinator::launchPickAudioSource,
+            launchPickAudioFiles = audioPickerCoordinator::launchPickAudioFiles,
+            launchPickAudioFolder = audioPickerCoordinator::launchPickAudioFolder
+        )
+        this.fileCacheMethodHandler = fileCacheMethodHandler
+        fileCacheMethodChannel = MethodChannel(messenger, PlatformChannelNames.FILE_CACHE).also {
+            it.setMethodCallHandler(fileCacheMethodHandler)
+        }
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        if (fileExportCoordinator?.handleActivityResult(requestCode, resultCode, data) == true) {
+            return
+        }
         if (audioPickerCoordinator.handleActivityResult(requestCode, resultCode, data)) return
         super.onActivityResult(requestCode, resultCode, data)
     }
@@ -77,6 +99,14 @@ class MainActivity : FlutterFragmentActivity() {
 
     override fun onDestroy() {
         notificationsMethodChannel = null
+        fileCacheMethodChannel?.setMethodCallHandler(null)
+        fileCacheMethodChannel = null
+        fileCacheMethodHandler?.shutdown()
+        fileCacheMethodHandler = null
+        fileExportCoordinator?.dispose()
+        fileExportCoordinator = null
+        fileCacheTaskExecutor?.shutdownNow()
+        fileCacheTaskExecutor = null
         fileCacheScanStreamHandler?.shutdown()
         fileCacheScanStreamHandler = null
         subtitleOverlayCoordinator.dispose()

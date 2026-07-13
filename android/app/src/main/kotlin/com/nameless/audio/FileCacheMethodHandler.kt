@@ -1,17 +1,73 @@
 package com.nameless.audio
 
-import android.app.Activity
+import android.os.Handler
+import android.os.Looper
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
+import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
+
+internal sealed interface FileCacheTaskResult<out T> {
+    data class Success<T>(val value: T) : FileCacheTaskResult<T>
+    data class Failure(val exception: Exception) : FileCacheTaskResult<Nothing>
+}
+
+internal class FileCacheTaskExecutor {
+    private val closed = AtomicBoolean(false)
+    private val threadIndex = AtomicInteger()
+    private val executor = Executors.newFixedThreadPool(2) { runnable ->
+        Thread(
+            runnable,
+            "nameless-file-task-${threadIndex.incrementAndGet()}"
+        ).apply { isDaemon = true }
+    }
+
+    fun <T> submit(
+        block: () -> T,
+        completion: (FileCacheTaskResult<T>) -> Unit
+    ): Boolean {
+        if (closed.get()) return false
+        return try {
+            executor.execute {
+                val taskResult = try {
+                    FileCacheTaskResult.Success(block())
+                } catch (exception: Exception) {
+                    FileCacheTaskResult.Failure(exception)
+                }
+                completion(taskResult)
+            }
+            true
+        } catch (_: RejectedExecutionException) {
+            false
+        }
+    }
+
+    fun shutdownNow() {
+        if (closed.compareAndSet(false, true)) {
+            executor.shutdownNow()
+        }
+    }
+}
 
 internal class FileCacheMethodHandler(
-    private val activity: Activity,
     private val operations: FileCacheOperations,
     private val scanStreamHandler: FileCacheScanStreamHandler,
+    private val taskExecutor: FileCacheTaskExecutor,
+    private val launchExportFile: (
+        String,
+        String,
+        String,
+        MethodChannel.Result
+    ) -> Unit,
     private val launchPickAudioSource: (MethodChannel.Result) -> Unit,
     private val launchPickAudioFiles: (MethodChannel.Result) -> Unit,
     private val launchPickAudioFolder: (MethodChannel.Result) -> Unit
 ) : MethodChannel.MethodCallHandler {
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val closed = AtomicBoolean(false)
+
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
             FileCacheMethods.CACHE_FROM_URI -> {
@@ -57,7 +113,7 @@ internal class FileCacheMethodHandler(
                     result.error("invalid_args", "folder is required", null)
                     return
                 }
-                runAsync(
+                runScanAsync(
                     result = result,
                     errorCode = { e ->
                         when (e) {
@@ -199,6 +255,24 @@ internal class FileCacheMethodHandler(
                     operations.ensureFolderPath(folder, relativePath, overwrite)
                 }
             }
+            FileCacheMethods.EXPORT_FILE -> {
+                val sourcePath = call.argument<String>("sourcePath")
+                val fileName = call.argument<String>("fileName")
+                val mimeType = call.argument<String>("mimeType")
+                if (
+                    sourcePath.isNullOrBlank() ||
+                    fileName.isNullOrBlank() ||
+                    mimeType.isNullOrBlank()
+                ) {
+                    result.error(
+                        "invalid_args",
+                        "sourcePath, fileName and mimeType are required",
+                        null
+                    )
+                    return
+                }
+                launchExportFile(sourcePath, fileName, mimeType, result)
+            }
             FileCacheMethods.COPY_FILE_TO_FOLDER -> {
                 val sourcePath = call.argument<String>("sourcePath")
                 val folder = call.argument<String>("folder")
@@ -293,15 +367,58 @@ internal class FileCacheMethodHandler(
         errorCode: (Exception) -> String = { "operation_failed" },
         block: () -> Any?
     ) {
-        Thread {
-            try {
-                val value = block()
-                activity.runOnUiThread { result.success(value) }
-            } catch (e: Exception) {
-                activity.runOnUiThread {
-                    result.error(errorCode(e), e.message ?: "unknown error", null)
+        if (closed.get()) {
+            result.error("operation_failed", "file operations are unavailable", null)
+            return
+        }
+        val accepted = taskExecutor.submit(block) { taskResult ->
+            deliver(result, errorCode, taskResult)
+        }
+        if (!accepted) {
+            result.error("operation_failed", "file operations are unavailable", null)
+        }
+    }
+
+    private fun runScanAsync(
+        result: MethodChannel.Result,
+        errorCode: (Exception) -> String,
+        block: () -> Any?
+    ) {
+        if (closed.get()) {
+            result.error("operation_failed", "file operations are unavailable", null)
+            return
+        }
+        val accepted = scanStreamHandler.submitLegacyTask(block) { taskResult ->
+            deliver(result, errorCode, taskResult)
+        }
+        if (!accepted) {
+            result.error("operation_failed", "file operations are unavailable", null)
+        }
+    }
+
+    private fun deliver(
+        result: MethodChannel.Result,
+        errorCode: (Exception) -> String,
+        taskResult: FileCacheTaskResult<Any?>
+    ) {
+        if (closed.get()) return
+        mainHandler.post {
+            if (closed.get()) return@post
+            when (taskResult) {
+                is FileCacheTaskResult.Success -> result.success(taskResult.value)
+                is FileCacheTaskResult.Failure -> {
+                    val exception = taskResult.exception
+                    result.error(
+                        errorCode(exception),
+                        exception.message ?: "unknown error",
+                        null
+                    )
                 }
             }
-        }.start()
+        }
+    }
+
+    fun shutdown() {
+        closed.set(true)
     }
 }

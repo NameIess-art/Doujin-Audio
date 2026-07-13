@@ -56,6 +56,26 @@ internal class FileCacheScanStreamHandler(
         cancellations[sessionId]?.set(true)
     }
 
+    fun <T> submitLegacyTask(
+        block: () -> T,
+        completion: (FileCacheTaskResult<T>) -> Unit
+    ): Boolean {
+        if (closed.get()) return false
+        return try {
+            executor.execute {
+                val taskResult = try {
+                    FileCacheTaskResult.Success(block())
+                } catch (exception: Exception) {
+                    FileCacheTaskResult.Failure(exception)
+                }
+                completion(taskResult)
+            }
+            true
+        } catch (_: RejectedExecutionException) {
+            false
+        }
+    }
+
     fun shutdown() {
         if (!closed.compareAndSet(false, true)) return
         cancelAll()

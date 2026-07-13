@@ -104,6 +104,7 @@ abstract final class FileCacheMethod {
   static const String documentPathExists = 'documentPathExists';
   static const String ensureFolderPath = 'ensureFolderPath';
   static const String copyFileToFolder = 'copyFileToFolder';
+  static const String exportFile = 'exportFile';
   static const String deleteDocumentPath = 'deleteDocumentPath';
   static const String clearApplicationCache = 'clearApplicationCache';
   static const String setApplicationCacheLimit = 'setApplicationCacheLimit';

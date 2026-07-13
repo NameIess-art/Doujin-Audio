@@ -83,6 +83,7 @@ internal object FileCacheMethods {
     const val DOCUMENT_PATH_EXISTS = "documentPathExists"
     const val ENFORCE_APPLICATION_CACHE_LIMIT = "enforceApplicationCacheLimit"
     const val ENSURE_FOLDER_PATH = "ensureFolderPath"
+    const val EXPORT_FILE = "exportFile"
     const val LIST_CHILD_FOLDERS = "listChildFolders"
     const val PICK_AUDIO_FILES = "pickAudioFiles"
     const val PICK_AUDIO_FOLDER = "pickAudioFolder"

@@ -62,7 +62,9 @@ void main() {
     expect(find.text(harness.language.tr('nav_settings')), findsWidgets);
     expect(
       find.byWidgetPredicate(
-        (widget) => widget is PageView && widget.key is ValueKey<int>,
+        (widget) =>
+            widget is PageView &&
+            widget.key == const ValueKey<String>('main_page_view'),
       ),
       findsOneWidget,
     );
@@ -150,6 +152,63 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('app shell keeps the active page after orientation changes', (
+    tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1080, 2400);
+    addTearDown(() {
+      debugDefaultTargetPlatformOverride = null;
+      tester.view.resetDevicePixelRatio();
+      tester.view.resetPhysicalSize();
+    });
+    await _pumpAppShell(tester, includePlaybackSession: false);
+    await _tapSettingsDestination(tester);
+    await _pumpMainScreenAnimations(tester);
+
+    PageController mainPageController() => tester
+        .widget<PageView>(find.byKey(const ValueKey<String>('main_page_view')))
+        .controller!;
+
+    expect(mainPageController().page, 3);
+
+    // Reproduce the controller reset observed while Android reattaches the
+    // responsive PageView during a configuration change.
+    mainPageController().jumpToPage(1);
+    await tester.pump();
+    expect(mainPageController().page, 1);
+
+    tester.view.physicalSize = const Size(2400, 1080);
+    await tester.pump(const Duration(milliseconds: 32));
+    await _pumpMainScreenAnimations(tester);
+
+    expect(mainPageController().page, 3);
+    expect(find.byKey(const ValueKey<String>('main_page_fade_3')), findsOne);
+
+    await tester.tap(
+      find.descendant(
+        of: find.byType(NavigationRail),
+        matching: find.byIcon(Icons.podcasts_outlined),
+      ),
+    );
+    await _pumpMainScreenAnimations(tester);
+    expect(mainPageController().page, 0);
+
+    mainPageController().jumpToPage(1);
+    await tester.pump();
+    expect(mainPageController().page, 1);
+
+    tester.view.physicalSize = const Size(1080, 2400);
+    await tester.pump(const Duration(milliseconds: 32));
+    await _pumpMainScreenAnimations(tester);
+
+    expect(mainPageController().page, 0);
+    expect(find.byKey(const ValueKey<String>('main_page_fade_0')), findsOne);
+    debugDefaultTargetPlatformOverride = null;
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('Windows keeps desktop rail without side menu scrolling', (
     tester,
   ) async {
@@ -228,9 +287,11 @@ void main() {
 
     PageView mainPageView() => tester
         .widgetList<PageView>(find.byType(PageView))
-        .firstWhere((widget) => widget.key is ValueKey<int>);
+        .firstWhere(
+          (widget) => widget.key == const ValueKey<String>('main_page_view'),
+        );
 
-    expect((mainPageView().key! as ValueKey<int>).value, 0);
+    expect(mainPageView().controller!.page, 3);
     tester.view.viewInsets = const FakeViewPadding(bottom: 600);
     tester.view.physicalSize = const Size(1080, 1800);
     addTearDown(() {
@@ -239,7 +300,7 @@ void main() {
     });
     await tester.pump(const Duration(milliseconds: 32));
 
-    expect((mainPageView().key! as ValueKey<int>).value, 0);
+    expect(mainPageView().controller!.page, 3);
     expect(find.byType(ActiveSessionCarousel), findsOneWidget);
     expect(tester.takeException(), isNull);
 

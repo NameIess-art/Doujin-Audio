@@ -103,7 +103,7 @@ extension _MainScreenLayout on _MainScreenState {
     }
 
     return PageView.builder(
-      key: ValueKey<int>(_metricsEpoch),
+      key: const ValueKey<String>('main_page_view'),
       controller: _pageController,
       physics: const NeverScrollableScrollPhysics(),
       itemCount: _pages.length,

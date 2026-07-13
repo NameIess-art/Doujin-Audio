@@ -1493,35 +1493,68 @@ extension AudioProviderLibrary on AudioProvider {
     return '';
   }
 
-  Future<void> calculateMissingFolderDurations(String folderPath) async {
-    FolderNode? findFolder(List<LibraryNode> nodes) {
-      for (final node in nodes) {
-        if (node is FolderNode) {
-          if (node.path == folderPath) return node;
-          final child = findFolder(node.children);
-          if (child != null) return child;
-        }
-      }
-      return null;
-    }
-
-    final folderNode = findFolder(libraryTree);
-    if (folderNode == null) return;
+  Future<Duration?> calculateMissingFolderDurations(
+    String folderPath, {
+    @visibleForTesting Future<Duration?> Function(String path)? durationReader,
+  }) async {
+    final folderTracks = _library
+        .where(
+          (track) =>
+              !track.isSingle &&
+              (PathMatcher.isWithinOrEqual(track.groupKey, folderPath) ||
+                  PathMatcher.isWithinOrEqual(track.path, folderPath)),
+        )
+        .toList(growable: false);
+    if (folderTracks.isEmpty) return null;
 
     final tracksToUpdate = <MusicTrack>[];
-    final player = AudioPlayer();
+    AudioPlayer? player;
+    var totalDuration = Duration.zero;
+    var hasUnknownDuration = false;
     try {
-      for (final track in folderNode.allTracks) {
-        if (track.duration > Duration.zero) continue;
-        try {
-          final duration = await player.setFilePath(track.path);
-          if (duration != null && duration > Duration.zero) {
-            tracksToUpdate.add(track.copyWith(duration: duration));
+      for (final track in folderTracks) {
+        var duration = track.duration;
+        if (duration <= Duration.zero) {
+          try {
+            duration = await durationReader?.call(track.path) ?? Duration.zero;
+            if (durationReader == null) {
+              duration =
+                  await AudioProvider._fileCacheGateway.resolveMediaDuration(
+                    track.path,
+                  ) ??
+                  await _readLocalMediaDuration(
+                    player ??= AudioPlayer(),
+                    track.path,
+                  ) ??
+                  Duration.zero;
+            }
+            if (duration > Duration.zero) {
+              tracksToUpdate.add(track.copyWith(duration: duration));
+            }
+          } catch (error, stackTrace) {
+            AppLogService.warning(
+              'folder_duration_probe_failed path=${track.path}',
+              error: error,
+              stackTrace: stackTrace,
+            );
+            try {
+              await player?.dispose();
+            } catch (_) {}
+            player = null;
+            duration = Duration.zero;
           }
-        } catch (_) {}
+        }
+        if (duration > Duration.zero) {
+          totalDuration += duration;
+        } else {
+          hasUnknownDuration = true;
+          AppLogService.warning(
+            'folder_duration_unresolved path=${track.path} video=${track.isVideo}',
+          );
+        }
       }
     } finally {
-      await player.dispose();
+      await player?.dispose();
     }
 
     if (tracksToUpdate.isNotEmpty) {
@@ -1534,5 +1567,21 @@ extension AudioProviderLibrary on AudioProvider {
       _rebuildLibraryIndexes();
       _notifyListeners();
     }
+
+    return !hasUnknownDuration && totalDuration > Duration.zero
+        ? totalDuration
+        : null;
   }
+}
+
+Future<Duration?> _readLocalMediaDuration(
+  AudioPlayer player,
+  String mediaPath,
+) {
+  if (PathMatcher.isContentUri(mediaPath)) {
+    return player
+        .setAudioSource(AudioSource.uri(Uri.parse(mediaPath)))
+        .timeout(const Duration(seconds: 8));
+  }
+  return player.setFilePath(mediaPath).timeout(const Duration(seconds: 8));
 }

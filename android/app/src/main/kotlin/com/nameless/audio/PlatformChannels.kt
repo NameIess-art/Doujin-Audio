@@ -93,6 +93,7 @@ internal object FileCacheMethods {
     const val RESOLVE_TRACK_COVER = "resolveTrackCover"
     const val RESOLVE_TRACK_SUBTITLE = "resolveTrackSubtitle"
     const val RESOLVE_VIDEO_FRAME = "resolveVideoFrame"
+    const val RESOLVE_MEDIA_DURATION = "resolveMediaDuration"
     const val SCAN_FOLDER = "scanFolder"
     const val START_FOLDER_SCAN = "startFolderScan"
     const val CANCEL_FOLDER_SCAN = "cancelFolderScan"

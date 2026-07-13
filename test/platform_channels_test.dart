@@ -25,6 +25,7 @@ void main() {
       FileCacheMethod.resolveTrackCover,
       FileCacheMethod.resolveTrackSubtitle,
       FileCacheMethod.resolveVideoFrame,
+      FileCacheMethod.resolveMediaDuration,
       FileCacheMethod.cacheFromUri,
       FileCacheMethod.scanFolder,
       FileCacheMethod.startFolderScan,

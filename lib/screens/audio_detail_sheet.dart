@@ -44,6 +44,7 @@ class AudioDetailSheet extends StatefulWidget {
 class _AudioDetailSheetState extends State<AudioDetailSheet> {
   late AudioDetailTarget _target = widget.target;
   AudioDetail? _detail;
+  Duration? _calculatedFolderDuration;
   Object? _loadError;
   bool _loading = true;
   bool _runningAction = false;
@@ -59,6 +60,16 @@ class _AudioDetailSheetState extends State<AudioDetailSheet> {
     unawaited(_load());
   }
 
+  Future<Duration?> _calculateAutomaticFolderDuration(
+    AudioProvider provider,
+    AudioDetail detail,
+  ) {
+    if (!_target.isLibraryRootFolder || detail.duration != null) {
+      return Future<Duration?>.value();
+    }
+    return provider.calculateMissingFolderDurations(_target.targetPath);
+  }
+
   Future<void> _load() async {
     try {
       final provider = context.read<AudioProvider>();
@@ -69,13 +80,15 @@ class _AudioDetailSheetState extends State<AudioDetailSheet> {
             task: (_) => provider.loadAudioDetail(_target),
           );
 
-      if (_target.isLibraryRootFolder && result.detail.duration == null) {
-        await provider.calculateMissingFolderDurations(_target.targetPath);
-      }
+      final calculatedFolderDuration = await _calculateAutomaticFolderDuration(
+        provider,
+        result.detail,
+      );
 
       if (!mounted) return;
       setState(() {
         _detail = result.detail;
+        _calculatedFolderDuration = calculatedFolderDuration;
         _loading = false;
       });
     } catch (error) {
@@ -95,11 +108,10 @@ class _AudioDetailSheetState extends State<AudioDetailSheet> {
     final initialValue = field.isMulti
         ? field.readList(detail).join(_multiValueSeparator)
         : field.readText(detail);
-    final controller = TextEditingController(
-      text: field == _AudioDetailField.rjCode && initialValue.trim().isEmpty
-          ? 'RJ'
-          : initialValue,
-    );
+    var editedValue =
+        field == _AudioDetailField.rjCode && initialValue.trim().isEmpty
+        ? 'RJ'
+        : initialValue;
     final value = await showDialog<String>(
       context: context,
       builder: (context) {
@@ -109,8 +121,8 @@ class _AudioDetailSheetState extends State<AudioDetailSheet> {
               'name': field.label(i18n, detail),
             }),
           ),
-          content: TextField(
-            controller: controller,
+          content: TextFormField(
+            initialValue: editedValue,
             autofocus: true,
             minLines: 1,
             maxLines: field.isMulti ? 3 : 1,
@@ -120,7 +132,8 @@ class _AudioDetailSheetState extends State<AudioDetailSheet> {
                   ? i18n.tr('audio_detail_multi_hint')
                   : null,
             ),
-            onSubmitted: (_) => Navigator.of(context).pop(controller.text),
+            onChanged: (value) => editedValue = value,
+            onFieldSubmitted: (value) => Navigator.of(context).pop(value),
           ),
           actions: [
             TextButton(
@@ -128,14 +141,13 @@ class _AudioDetailSheetState extends State<AudioDetailSheet> {
               child: Text(i18n.tr('cancel')),
             ),
             FilledButton(
-              onPressed: () => Navigator.of(context).pop(controller.text),
+              onPressed: () => Navigator.of(context).pop(editedValue),
               child: Text(MaterialLocalizations.of(context).saveButtonLabel),
             ),
           ],
         );
       },
     );
-    controller.dispose();
     if (value == null || !mounted) return;
 
     if (field == _AudioDetailField.targetName) {
@@ -201,16 +213,20 @@ class _AudioDetailSheetState extends State<AudioDetailSheet> {
       _savingField = field;
     });
     try {
+      final provider = context.read<AudioProvider>();
       final result = await UiOperationService.instance
           .run<AudioDetailSaveResult>(
             scope: _operationScope,
             labelKey: 'audio_detail_save_failed',
-            task: (_) =>
-                context.read<AudioProvider>().saveAudioDetail(nextDetail),
+            task: (_) => provider.saveAudioDetail(nextDetail),
           );
+      final calculatedFolderDuration = field == _AudioDetailField.duration
+          ? await _calculateAutomaticFolderDuration(provider, result.detail)
+          : _calculatedFolderDuration;
       if (!mounted) return;
       setState(() {
         _detail = result.detail;
+        _calculatedFolderDuration = calculatedFolderDuration;
         _savingField = null;
       });
       final i18n = context.read<AppLanguageProvider>();
@@ -382,25 +398,8 @@ class _AudioDetailSheetState extends State<AudioDetailSheet> {
     final detail = _detail;
     final provider = context.watch<AudioProvider>();
 
-    Duration? duration = detail?.duration;
-    if (duration == null &&
-        _target.targetType == AudioDetailTargetType.libraryRootFolder) {
-      FolderNode? findFolder(List<LibraryNode> nodes) {
-        for (final node in nodes) {
-          if (node is FolderNode) {
-            if (node.path == _target.targetPath) return node;
-            final child = findFolder(node.children);
-            if (child != null) return child;
-          }
-        }
-        return null;
-      }
-
-      final folderNode = findFolder(provider.libraryTree);
-      if (folderNode != null && folderNode.totalDuration > Duration.zero) {
-        duration = folderNode.totalDuration;
-      }
-    } else if (duration == null) {
+    Duration? duration = detail?.duration ?? _calculatedFolderDuration;
+    if (duration == null && !_target.isLibraryRootFolder) {
       final trackDuration = provider.trackByPath(_target.targetPath)?.duration;
       if (trackDuration != null && trackDuration > Duration.zero) {
         duration = trackDuration;

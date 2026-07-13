@@ -178,6 +178,22 @@ class FileCachePlatformGateway {
     );
   }
 
+  Future<Duration?> resolveMediaDuration(String mediaPath) async {
+    if (!_isAndroid()) return null;
+    try {
+      final milliseconds = await _channel
+          .invokeMethod<num>(
+            FileCacheMethod.resolveMediaDuration,
+            <String, Object?>{'path': mediaPath},
+          )
+          .timeout(const Duration(seconds: 8));
+      if (milliseconds == null || milliseconds <= 0) return null;
+      return Duration(milliseconds: milliseconds.toInt());
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<Map<String, Object?>?> resolveTrackSubtitle({
     required String path,
     String? groupKey,

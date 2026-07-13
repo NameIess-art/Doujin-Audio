@@ -1,5 +1,7 @@
 package com.nameless.audio
 
+import com.nameless.audio.channel.*
+
 import android.app.ApplicationExitInfo
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

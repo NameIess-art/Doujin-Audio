@@ -115,6 +115,15 @@ Android 应用内自动更新始终下载 universal APK 并交给系统安装器
 | 视频 | `mp4`、`mkv`、`webm`、`mov`、`m4v`、`avi`、`3gp` |
 | 字幕 | `.srt`、`.ass`、`.ssa`、`.vtt`、`.lrc` |
 
+## 代码结构
+
+- `lib/app`：应用壳、主页面、本地化、主题，以及兼容的 `AudioProvider` / Riverpod 投影。
+- `lib/core`：错误、日志、平台网关、SQLite 持久化、共享媒体对象和通用组件。
+- `lib/features`：library、player、ASMR、settings、data-support 和 video-converter 的 domain/application/presentation 代码。
+- Android 原生代码按 `channel`、`scanner`、`storage`、`metadata`、`subtitle`、`update` 和 `player/*` 分包；根包仅保留 `MainActivity`。
+
+详细边界和真实调用链参见 [`docs/architecture.md`](docs/architecture.md)、[`docs/platform-channels.md`](docs/platform-channels.md) 与 [`docs/library-scanning.md`](docs/library-scanning.md)。
+
 ## Android 权限
 
 | 权限 | 用途 |

@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/models/music_track.dart';
-import 'package:nameless_audio/models/time_segment_label.dart';
-import 'package:nameless_audio/services/path_matcher.dart';
+import 'package:nameless_audio/core/media/music_track.dart';
+import 'package:nameless_audio/features/player/domain/time_segment_label.dart';
+import 'package:nameless_audio/core/media/path_matcher.dart';
 
 void main() {
   test('uses normalized local path as track key', () {

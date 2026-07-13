@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/services/ui_operation_service.dart';
+import 'package:nameless_audio/features/settings/application/ui_operation_service.dart';
 
 void main() {
   group('UiOperationService', () {

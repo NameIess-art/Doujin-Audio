@@ -1,13 +1,13 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/models/audio_effects.dart';
-import 'package:nameless_audio/models/audio_detail.dart';
-import 'package:nameless_audio/models/library_entry.dart';
-import 'package:nameless_audio/models/music_track.dart';
-import 'package:nameless_audio/models/asmr_models.dart';
-import 'package:nameless_audio/models/playback_queue.dart';
-import 'package:nameless_audio/models/time_segment_label.dart';
-import 'package:nameless_audio/services/app_database.dart';
-import 'package:nameless_audio/services/path_matcher.dart';
+import 'package:nameless_audio/features/player/domain/audio_effects.dart';
+import 'package:nameless_audio/core/media/audio_detail.dart';
+import 'package:nameless_audio/features/library/domain/library_entry.dart';
+import 'package:nameless_audio/core/media/music_track.dart';
+import 'package:nameless_audio/features/asmr/domain/asmr_models.dart';
+import 'package:nameless_audio/features/player/domain/playback_queue.dart';
+import 'package:nameless_audio/features/player/domain/time_segment_label.dart';
+import 'package:nameless_audio/core/persistence/app_database.dart';
+import 'package:nameless_audio/core/media/path_matcher.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 void main() {

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/i18n/app_language_provider.dart';
-import 'package:nameless_audio/screens/onboarding_page.dart';
-import 'package:nameless_audio/services/app_preferences.dart';
+import 'package:nameless_audio/app/localization/app_language_provider.dart';
+import 'package:nameless_audio/app/presentation/onboarding_page.dart';
+import 'package:nameless_audio/features/settings/application/app_preferences.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 

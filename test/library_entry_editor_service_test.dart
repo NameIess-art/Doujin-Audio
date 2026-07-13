@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/services/library_entry_editor_service.dart';
+import 'package:nameless_audio/features/library/application/library_entry_editor_service.dart';
 import 'package:path/path.dart' as path;
 
 void main() {

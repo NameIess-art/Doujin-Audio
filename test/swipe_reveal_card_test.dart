@@ -4,7 +4,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/widgets/swipe_reveal_card.dart';
+import 'package:nameless_audio/core/widgets/swipe_reveal_card.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

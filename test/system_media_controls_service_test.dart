@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/services/system_media_controls_service.dart';
+import 'package:nameless_audio/features/player/application/system_media_controls_service.dart';
 import 'package:smtc_windows/smtc_windows.dart';
 
 void main() {

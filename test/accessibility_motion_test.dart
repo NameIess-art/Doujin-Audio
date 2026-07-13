@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/widgets/shimmer_loading.dart';
-import 'package:nameless_audio/widgets/unified_popup_menu.dart';
+import 'package:nameless_audio/core/widgets/shimmer_loading.dart';
+import 'package:nameless_audio/core/widgets/unified_popup_menu.dart';
 
 void main() {
   testWidgets('reduced motion disables shimmer animation', (tester) async {

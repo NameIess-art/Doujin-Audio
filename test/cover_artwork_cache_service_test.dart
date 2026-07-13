@@ -2,16 +2,16 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/models/music_track.dart';
-import 'package:nameless_audio/models/audio_detail.dart';
-import 'package:nameless_audio/services/audio_database_repository.dart';
-import 'package:nameless_audio/services/audio_detail_cache_service.dart';
-import 'package:nameless_audio/services/audio_detail_repository.dart';
-import 'package:nameless_audio/services/audio_state_services.dart';
-import 'package:nameless_audio/services/app_cache_service.dart';
-import 'package:nameless_audio/services/cover_artwork_cache_service.dart';
-import 'package:nameless_audio/services/file_cache_platform_gateway.dart';
-import 'package:nameless_audio/services/path_matcher.dart';
+import 'package:nameless_audio/core/media/music_track.dart';
+import 'package:nameless_audio/core/media/audio_detail.dart';
+import 'package:nameless_audio/core/persistence/audio_database_repository.dart';
+import 'package:nameless_audio/features/library/application/audio_detail_cache_service.dart';
+import 'package:nameless_audio/features/library/application/audio_detail_repository.dart';
+import 'package:nameless_audio/features/player/application/audio_state_services.dart';
+import 'package:nameless_audio/features/settings/application/app_cache_service.dart';
+import 'package:nameless_audio/features/library/application/cover_artwork_cache_service.dart';
+import 'package:nameless_audio/core/platform/file_cache_platform_gateway.dart';
+import 'package:nameless_audio/core/media/path_matcher.dart';
 
 void main() {
   test('folder cover future reuses the same in-flight lookup', () async {

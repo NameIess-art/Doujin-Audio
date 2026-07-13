@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:media_kit/media_kit.dart' as media;
-import 'package:nameless_audio/models/audio_effects.dart';
-import 'package:nameless_audio/services/dart_playback_bridge.dart';
+import 'package:nameless_audio/features/player/domain/audio_effects.dart';
+import 'package:nameless_audio/features/player/application/dart_playback_bridge.dart';
 
 void main() {
   test('Windows dart playback exposes fixed EQ capabilities', () {

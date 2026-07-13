@@ -3,10 +3,10 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/models/asmr_download.dart';
-import 'package:nameless_audio/models/audio_detail.dart';
-import 'package:nameless_audio/models/asmr_models.dart';
-import 'package:nameless_audio/services/asmr_download_manager.dart';
+import 'package:nameless_audio/features/asmr/domain/asmr_download.dart';
+import 'package:nameless_audio/core/media/audio_detail.dart';
+import 'package:nameless_audio/features/asmr/domain/asmr_models.dart';
+import 'package:nameless_audio/features/asmr/application/asmr_download_manager.dart';
 
 void main() {
   test('ASMR media requests include the scoped gateway language header', () {

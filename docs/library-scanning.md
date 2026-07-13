@@ -37,6 +37,14 @@ tracks and library entries added by that operation. Successful refreshes defer
 destructive cleanup until staged chunks have completed, so an old or cancelled
 task cannot delete state produced by a newer scan.
 
+On Android, `FolderScanOperations` owns local, SAF, DocumentsContract, and
+MediaStore enumeration. `DocumentStorageOperations`,
+`MediaMetadataOperations`, `SubtitleOperations`, and
+`CoverArtworkOperations` own their respective boundaries; the channel-facing
+`FileCacheOperations` facade contains no scan or parsing rules. Stream events
+are correlated with `taskId` plus `generationId`, and are suppressed after
+cancellation or listener detachment.
+
 Manual Android checks should cover local and SAF folders, duplicate and nested
 directories, cancellation, empty folders, permission denial, and application
 restart after a completed import.

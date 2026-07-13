@@ -1,9 +1,11 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/models/asmr_models.dart';
-import 'package:nameless_audio/services/asmr_library_controller.dart';
-import 'package:nameless_audio/services/subtitle_parser.dart';
+import 'package:nameless_audio/features/asmr/domain/asmr_models.dart';
+import 'package:nameless_audio/core/persistence/app_database.dart';
+import 'package:nameless_audio/features/asmr/application/asmr_library_controller.dart';
+import 'package:nameless_audio/features/asmr/application/asmr_preferences.dart';
+import 'package:nameless_audio/core/media/subtitle_parser.dart';
 
 void main() {
   test('ASMR work persists and restores card fields', () {
@@ -190,7 +192,9 @@ void main() {
       ],
     );
 
-    final controller = AsmrLibraryController();
+    final controller = AsmrLibraryController(
+      preferencesStore: AsmrPreferencesStore(database: AppDatabase.instance),
+    );
     final tracks = controller.buildPlayableTracksFromNode(work, folder);
 
     expect(tracks, hasLength(1));
@@ -275,7 +279,9 @@ void main() {
       ],
     );
 
-    final controller = AsmrLibraryController();
+    final controller = AsmrLibraryController(
+      preferencesStore: AsmrPreferencesStore(database: AppDatabase.instance),
+    );
     final tracks = controller.buildPlayableTracksFromNode(work, folder);
 
     expect(tracks, hasLength(1));

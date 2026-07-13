@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/i18n/app_language_provider.dart';
-import 'package:nameless_audio/models/audio_library_category.dart';
-import 'package:nameless_audio/screens/dlsite_metadata_batch_page.dart';
+import 'package:nameless_audio/app/localization/app_language_provider.dart';
+import 'package:nameless_audio/features/library/domain/audio_library_category.dart';
+import 'package:nameless_audio/features/library/presentation/dlsite_metadata_batch_page.dart';
 import 'package:provider/provider.dart' as legacy_provider;
 
 void main() {

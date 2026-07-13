@@ -1,9 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/models/asmr_models.dart';
-import 'package:nameless_audio/models/music_track.dart';
-import 'package:nameless_audio/models/playback_mode.dart';
-import 'package:nameless_audio/services/asmr_playback_coordinator.dart';
-import 'package:nameless_audio/services/playback_session_launcher.dart';
+import 'package:nameless_audio/features/asmr/domain/asmr_models.dart';
+import 'package:nameless_audio/core/media/music_track.dart';
+import 'package:nameless_audio/features/player/domain/playback_mode.dart';
+import 'package:nameless_audio/features/asmr/application/asmr_playback_coordinator.dart';
+import 'package:nameless_audio/features/player/application/playback_session_launcher.dart';
 
 void main() {
   const work = AsmrWork(

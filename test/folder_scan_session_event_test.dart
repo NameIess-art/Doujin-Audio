@@ -1,16 +1,17 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/models/music_track.dart';
-import 'package:nameless_audio/services/library_scanner_isolate.dart';
-import 'package:nameless_audio/services/library_scanner_service.dart';
-import 'package:nameless_audio/services/path_matcher.dart';
+import 'package:nameless_audio/core/media/music_track.dart';
+import 'package:nameless_audio/features/library/application/library_scanner_isolate.dart';
+import 'package:nameless_audio/features/library/application/library_scanner_service.dart';
+import 'package:nameless_audio/core/media/path_matcher.dart';
 
 void main() {
   test('parses Android folder scan chunk events', () {
     final event = FolderScanSessionEvent.fromPayload(<Object?, Object?>{
-      'sessionId': 'scan-1',
-      'type': 'chunk',
+      'taskId': 'scan-1',
+      'generationId': 'generation-1',
+      'eventType': 'chunk',
       'tracks': <Object?>[
         <Object?, Object?>{
           'path': '/music/work/01.mp3',
@@ -29,7 +30,7 @@ void main() {
       'failureCount': 2,
     });
 
-    expect(event.sessionId, 'scan-1');
+    expect(event.taskId, 'scan-1');
     expect(event.isChunk, isTrue);
     expect(event.chunk.tracks, hasLength(1));
     expect(event.chunk.tracks.single.displayName, '01');
@@ -43,10 +44,11 @@ void main() {
 
   test('parses Android folder scan error events', () {
     final event = FolderScanSessionEvent.fromPayload(<Object?, Object?>{
-      'sessionId': 'scan-2',
-      'type': 'error',
-      'code': 'scan_provider_error',
-      'message': 'provider failed',
+      'taskId': 'scan-2',
+      'generationId': 'generation-2',
+      'eventType': 'failed',
+      'errorCode': 'scan_provider_error',
+      'error': 'provider failed',
       'failureCount': 1,
     });
 
@@ -58,16 +60,17 @@ void main() {
 
   test('parses staged scan progress with a nullable total', () {
     final known = FolderScanSessionEvent.fromPayload(<Object?, Object?>{
-      'sessionId': 'scan-3',
+      'taskId': 'scan-3',
       'generationId': 'scan-3',
-      'type': 'progress',
+      'eventType': 'progress',
       'stage': 'enumerating',
       'processed': 120,
       'total': 500,
     });
     final unknown = FolderScanSessionEvent.fromPayload(<Object?, Object?>{
-      'sessionId': 'scan-3',
-      'type': 'stageChanged',
+      'taskId': 'scan-3',
+      'generationId': 'scan-3',
+      'eventType': 'stageChanged',
       'stage': 'preparing',
       'processed': 0,
     });
@@ -84,8 +87,9 @@ void main() {
   test('recognizes explicit completed cancelled and failed terminals', () {
     FolderScanSessionEvent event(String type) =>
         FolderScanSessionEvent.fromPayload(<Object?, Object?>{
-          'sessionId': 'scan-terminal',
-          'type': type,
+          'taskId': 'scan-terminal',
+          'generationId': 'generation-terminal',
+          'eventType': type,
         });
 
     expect(event('completed').isDone, isTrue);

@@ -1,8 +1,8 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/providers/audio_provider.dart';
-import 'package:nameless_audio/services/playback_notification_service.dart';
+import 'package:nameless_audio/app/state/audio_provider.dart';
+import 'package:nameless_audio/features/player/application/playback_notification_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {

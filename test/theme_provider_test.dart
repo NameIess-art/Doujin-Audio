@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/services/app_preferences.dart';
-import 'package:nameless_audio/theme/app_design_tokens.dart';
-import 'package:nameless_audio/theme/theme_provider.dart';
+import 'package:nameless_audio/features/settings/application/app_preferences.dart';
+import 'package:nameless_audio/app/theme/app_design_tokens.dart';
+import 'package:nameless_audio/app/theme/theme_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {

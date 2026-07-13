@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/services/path_matcher.dart';
+import 'package:nameless_audio/core/media/path_matcher.dart';
 
 void main() {
   test('SAF tree, document, and synthetic child paths match by document id', () {

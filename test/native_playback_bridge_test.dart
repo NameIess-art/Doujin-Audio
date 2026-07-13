@@ -1,8 +1,8 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/models/audio_effects.dart';
-import 'package:nameless_audio/services/native_playback_bridge.dart';
-import 'package:nameless_audio/services/platform_channels.dart';
+import 'package:nameless_audio/features/player/domain/audio_effects.dart';
+import 'package:nameless_audio/features/player/application/native_playback_bridge.dart';
+import 'package:nameless_audio/core/platform/platform_channels.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:ui';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -94,7 +95,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
   int _pendingNotificationSessionRetryCount = 0;
   String? _lastOpenedNotificationSessionId;
   DateTime? _lastOpenedNotificationAt;
-  int _metricsEpoch = 0;
   Timer? _metricsRecoveryTimer;
   Size? _lastRecoveredViewSize;
   Orientation? _lastRecoveredOrientation;
@@ -525,7 +525,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
     _lastRecoveredViewSize = size;
     _lastRecoveredOrientation = orientation;
 
-    if (Platform.isWindows) {
+    if (defaultTargetPlatform == TargetPlatform.windows) {
       return false;
     }
 
@@ -546,16 +546,24 @@ class _MainScreenState extends ConsumerState<MainScreen>
       return;
     }
 
-    setState(() {
-      _metricsEpoch++;
-    });
+    // The cached view metrics were updated above. Rebuild the layout while
+    // preserving the PageView state and its currently selected page.
+    setState(() {});
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      _restoreActivePageAfterMetricsChange();
       ref
           .read(audioProviderFacadeProvider)
           .scheduleUiWarmup(currentPageIndex: _currentIndex, immediate: true);
     });
+  }
+
+  void _restoreActivePageAfterMetricsChange() {
+    _activePageIndex.value = _currentIndex;
+    if (_pageController.hasClients) {
+      _pageController.jumpToPage(_currentIndex);
+    }
   }
 
   PlaybackSession? _globalSubtitleOverlaySession(

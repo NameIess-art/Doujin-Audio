@@ -643,6 +643,7 @@ class _LibraryCoverThumbnailState
                 placeholderBuilder: (context, heroSize, child) => child,
                 child: AsyncLocalCoverImage(
                   future: coverPathFuture,
+                  requestKey: widget.folderPath,
                   initialPath: provider.resolvedCoverPathForFolder(
                     widget.folderPath,
                   ),
@@ -734,6 +735,7 @@ class _LibraryTrackCoverThumbnailState
               placeholderBuilder: (context, heroSize, child) => child,
               child: AsyncLocalCoverImage(
                 future: coverPathFuture,
+                requestKey: track.path,
                 initialPath: provider.resolvedCoverPathForTrack(track),
                 retryFutureBuilder: () =>
                     provider.coverPathFutureForTrack(track),

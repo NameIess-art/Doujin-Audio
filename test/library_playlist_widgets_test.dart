@@ -27,6 +27,7 @@ import 'package:nameless_audio/services/native_playback_repository.dart';
 import 'package:nameless_audio/services/playback_command_runner.dart';
 import 'package:nameless_audio/services/playback_notification_service.dart';
 import 'package:nameless_audio/theme/theme_provider.dart';
+import 'package:nameless_audio/widgets/async_cover_image.dart';
 import 'package:nameless_audio/widgets/content_bound_reorder_area.dart';
 import 'package:nameless_audio/widgets/duration_overlay.dart';
 import 'package:nameless_audio/widgets/top_page_header.dart';
@@ -370,7 +371,7 @@ void main() {
     expect(find.byIcon(Icons.pause_rounded), findsOneWidget);
   });
 
-  testWidgets('first playlist card shows duration discovered after adding', (
+  testWidgets('playlist cards keep track and single-file durations separate', (
     WidgetTester tester,
   ) async {
     final notificationService = PlaybackNotificationService();
@@ -393,32 +394,53 @@ void main() {
       notificationStateService: notificationCoordinatorService,
       settingsRepository: settingsRepository,
     );
-    final track = _track(
-      name: 'Duration card',
+    final workTrack = _track(
+      name: 'Work track',
       path: Platform.isWindows
-          ? r'C:\library\duration\card.mp3'
-          : '/library/duration/card.mp3',
+          ? r'C:\library\duration\work-track.mp3'
+          : '/library/duration/work-track.mp3',
       groupKey: Platform.isWindows
           ? r'C:\library\duration'
           : '/library/duration',
       groupTitle: 'Duration',
     );
-    final session = PlaybackSession(
-      id: 'duration-session',
-      currentTrackPath: track.path,
+    final singleTrack = _track(
+      name: 'Single track',
+      path: Platform.isWindows
+          ? r'C:\imports\single-track.mp3'
+          : '/imports/single-track.mp3',
+      groupKey: Platform.isWindows
+          ? r'C:\imports\single-track.mp3'
+          : '/imports/single-track.mp3',
+      groupTitle: 'Single track',
+      isSingle: true,
+    ).copyWith(manualCoverPath: '/covers/single.jpg');
+    final workSession = PlaybackSession(
+      id: 'work-duration-session',
+      currentTrackPath: workTrack.path,
       loopMode: SessionLoopMode.single,
       nonSingleLoopMode: SessionLoopMode.single,
       volume: 1,
       createdAt: DateTime(2026),
       state: PlayerState(false, ProcessingState.ready),
     );
+    final singleSession = PlaybackSession(
+      id: 'single-duration-session',
+      currentTrackPath: singleTrack.path,
+      loopMode: SessionLoopMode.single,
+      nonSingleLoopMode: SessionLoopMode.single,
+      volume: 1,
+      createdAt: DateTime(2026, 1, 2),
+      state: PlayerState(false, ProcessingState.ready),
+    );
     addTearDown(audioProvider.dispose);
-    audioProvider.addTracks([track], persist: false);
-    playbackService.registerSession(session);
+    audioProvider.addTracks([workTrack, singleTrack], persist: false);
+    playbackService.registerSession(workSession);
+    playbackService.registerSession(singleSession);
     playbackService.syncSlice(
-      activeSessions: [session],
+      activeSessions: [workSession, singleSession],
       playingSessionCount: 0,
-      focusedSessionId: session.id,
+      focusedSessionId: workSession.id,
       multiThreadPlaybackEnabled: false,
       coverGeneration: 0,
       isInitialized: true,
@@ -442,23 +464,37 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('02:05'), findsNothing);
 
-    session.setOptimisticDuration(const Duration(minutes: 2, seconds: 5));
+    workSession.setOptimisticDuration(const Duration(minutes: 2, seconds: 5));
+    singleSession.setOptimisticDuration(
+      const Duration(minutes: 1, seconds: 10),
+    );
     await tester.pumpAndSettle();
 
     expect(find.text('02:05'), findsOneWidget);
+    expect(find.text('01:10'), findsOneWidget);
 
-    final detailTarget = AudioDetailTarget.libraryRootFolder(track.groupKey);
-    await tester.runAsync(
-      () => audioProvider.saveAudioDetail(
-        AudioDetail.empty(
-          detailTarget,
-        ).copyWith(duration: const Duration(minutes: 3, seconds: 40)),
-      ),
+    final workDetailTarget = AudioDetailTarget.libraryRootFolder(
+      workTrack.groupKey,
     );
+    final singleDetailTarget = AudioDetailTarget.singleAudioFile(
+      singleTrack.path,
+    );
+    await tester.runAsync(() async {
+      await audioProvider.saveAudioDetail(
+        AudioDetail.empty(
+          workDetailTarget,
+        ).copyWith(duration: const Duration(minutes: 3, seconds: 40)),
+      );
+      await audioProvider.saveAudioDetail(
+        AudioDetail.empty(
+          singleDetailTarget,
+        ).copyWith(duration: const Duration(minutes: 4, seconds: 50)),
+      );
+    });
     playbackService.syncSlice(
-      activeSessions: [session],
+      activeSessions: [workSession, singleSession],
       playingSessionCount: 0,
-      focusedSessionId: session.id,
+      focusedSessionId: workSession.id,
       multiThreadPlaybackEnabled: false,
       coverGeneration: 0,
       isInitialized: true,
@@ -466,26 +502,27 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      audioProvider.resolvedAudioDetail(detailTarget)?.duration,
+      audioProvider.resolvedAudioDetail(workDetailTarget)?.duration,
       const Duration(minutes: 3, seconds: 40),
-    );
-    final container = ProviderScope.containerOf(
-      tester.element(find.byType(PlaylistTab)),
     );
     expect(
-      container
-          .read(libraryDetailForTargetProvider(detailTarget))
-          .detail
-          ?.duration,
-      const Duration(minutes: 3, seconds: 40),
+      audioProvider.resolvedAudioDetail(singleDetailTarget)?.duration,
+      const Duration(minutes: 4, seconds: 50),
     );
-    expect(find.text('Duration card'), findsOneWidget);
+    final shownDurations = tester
+        .widgetList<DurationOverlay>(find.byType(DurationOverlay))
+        .map((overlay) => overlay.duration)
+        .toList(growable: false);
+    expect(shownDurations, contains(const Duration(minutes: 2, seconds: 5)));
+    expect(shownDurations, contains(const Duration(minutes: 4, seconds: 50)));
     expect(
-      tester.widget<DurationOverlay>(find.byType(DurationOverlay)).duration,
-      const Duration(minutes: 3, seconds: 40),
+      shownDurations,
+      isNot(contains(const Duration(minutes: 3, seconds: 40))),
     );
-    expect(find.text('03:40'), findsOneWidget);
-    expect(find.text('02:05'), findsNothing);
+    expect(find.text('02:05'), findsOneWidget);
+    expect(find.text('04:50'), findsOneWidget);
+    expect(find.text('03:40'), findsNothing);
+    expect(find.text('01:10'), findsNothing);
   });
 
   testWidgets('playlist reordering does not trigger additional cover futures', (
@@ -870,6 +907,54 @@ void main() {
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(milliseconds: 1));
+  });
+
+  testWidgets('expanding a library folder keeps its resolved cover visible', (
+    WidgetTester tester,
+  ) async {
+    Future<String?> coverFuture = SynchronousFuture<String?>('cover-path');
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Material(
+          child: StatefulBuilder(
+            builder: (context, setState) => ExpansionTile(
+              onExpansionChanged: (expanded) {
+                if (!expanded) return;
+                setState(() {
+                  coverFuture = SynchronousFuture<String?>(null);
+                });
+              },
+              title: SizedBox(
+                width: 80,
+                height: 64,
+                child: AsyncCoverImage(
+                  requestKey: 'library-folder',
+                  initialPath: 'cover-path',
+                  future: coverFuture,
+                  retryFutureBuilder: () => SynchronousFuture<String?>(null),
+                  imageBuilder: (_, _) => const ColoredBox(
+                    key: ValueKey('resolved-cover'),
+                    color: Colors.blue,
+                  ),
+                  fallbackBuilder: (_) =>
+                      const SizedBox(key: ValueKey('cover-fallback')),
+                ),
+              ),
+              children: const [SizedBox(height: 40)],
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(find.byKey(const ValueKey('resolved-cover')), findsOneWidget);
+
+    await tester.tap(find.byType(ExpansionTile));
+    await tester.pump(const Duration(seconds: 1));
+
+    expect(find.byKey(const ValueKey('resolved-cover')), findsOneWidget);
+    expect(find.byKey(const ValueKey('cover-fallback')), findsNothing);
   });
 
   testWidgets(
